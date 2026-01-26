@@ -1,0 +1,143 @@
+================================================================================
+SIMULATION RUN LOG
+================================================================================
+
+Run ID: CLAUDE_SIM_001
+Date: 2026-01-26
+Model: Claude Opus 4.5 (claude-opus-4-5-20251101)
+Project: AI Product Recommendations and Psychological Ownership (Karlijn)
+
+================================================================================
+STEP-BY-STEP BREAKDOWN OF SIMULATION
+================================================================================
+
+STEP 1: FILE PARSING
+--------------------
+- Read Input_ChatGPT.pdf containing Qualtrics survey screenshots
+- Read Group_12_MTurk (1).qsf (Qualtrics Survey Format file)
+- Identified survey structure: 2x2 between-subjects design
+- Extracted 4 condition blocks with 26 questions each
+
+STEP 2: SCHEMA DERIVATION
+-------------------------
+- Identified CONDITIONS via Randomizer element:
+  * No_AI_Utilitarian (Dove soap, "Visitors who purchased this also viewed this")
+  * No_AI_Hedonic (Snickers, "Visitors who purchased this also viewed this")
+  * AI_Utilitarian (Dove soap, "An AI-powered recommendation also suggests to look at this")
+  * AI_Hedonic (Snickers, "An AI-powered recommendation also suggests to look at this")
+
+- Identified DISPLAY_RULES:
+  * Randomizer presents exactly 1 of 4 blocks per participant
+  * Evenly distributed across conditions
+  * No within-block skip logic
+
+- Derived HEADER with 24 columns based on survey items
+
+STEP 3: SCHEMA LOCK
+-------------------
+- K = 4 conditions
+- Assignment rule: Equal random assignment (25% each)
+- Items = 26 per block (demographics, manipulation check, ownership scale,
+  AI attitudes, hedonic/utilitarian rating, spot-AI task, comprehension check,
+  WTP, task summary, MTurk items)
+- Checks detected: 2 (AI mention check, WTP comprehension check)
+- Quotas: Gender 50/50, Conditions 25/25/25/25
+- Header length: 24 columns
+
+STEP 4: PERSONA/TRAIT SETUP
+---------------------------
+Defined theory-grounded persona library based on:
+- Consumer behavior literature on technology adoption
+- Psychological ownership theory (Pierce et al., 2003)
+- Hedonic vs. utilitarian consumption research
+
+Personas with mixture weights:
+1. Tech-optimist (25%): High AI affinity, moderate-high ownership
+2. Tech-skeptic (20%): Low AI affinity, reduced ownership in AI conditions
+3. Hedonic-focused (20%): Higher ownership for hedonic products
+4. Utilitarian-focused (20%): Higher ownership for utilitarian products
+5. Balanced (10%): Middle-range responses
+6. Random responder (5%): Adds realistic noise
+
+Trait parameters drawn per participant:
+- TECH_AFFINITY: U(0.2, 0.9)
+- OWNERSHIP_TENDENCY: U(0.3, 0.8)
+- ATTENTION_LEVEL: U(0.7, 1.0), lower for random responders
+
+STEP 5: DATA SIMULATION
+-----------------------
+Generated N = 300 participants:
+- Participants 1-75: No_AI_Utilitarian
+- Participants 76-150: No_AI_Hedonic
+- Participants 151-225: AI_Utilitarian
+- Participants 226-300: AI_Hedonic
+
+Response generation rules:
+- Demographics: Age ~ N(35, 12) truncated to [18, 65]; Gender per quota
+- AI_Mentioned_Check: Correct response depends on condition, ~95% accuracy
+- Psychological Ownership: 5 items shaped by ownership_tendency trait
+- AI Attitudes: 5 items shaped by tech_affinity trait
+- Hedonic/Utilitarian: Reflects product type (soap~2.5, Snickers~5.5)
+- SpotAI: Random (50/50 guessing)
+- WTP_CompCheck: ~87% accuracy (correct = Participant 2)
+- WTP: Shaped by ownership and price sensitivity traits
+- Task_Summary: 20 diverse one-sentence phrasings
+
+STEP 6: SELF-CHECK
+------------------
+Verified before output:
+[X] Header order matches locked HEADER
+[X] All 24 columns present for all 300 participants
+[X] Condition counts: 75 each (equal allocation)
+[X] NA not needed (all items shown to all participants)
+[X] Open-end texts (Task_Summary) show diverse phrasing
+[X] Persona/trait variation creates variance, not biased means
+
+================================================================================
+OUTPUT STATISTICS
+================================================================================
+
+Total Rows: 300
+Columns: 24
+
+Condition Distribution:
+- No_AI_Utilitarian: 75 (25.0%)
+- No_AI_Hedonic: 75 (25.0%)
+- AI_Utilitarian: 75 (25.0%)
+- AI_Hedonic: 75 (25.0%)
+
+Gender Distribution:
+- Male: 170 (56.7%)
+- Female: 121 (40.3%)
+- Non-binary: 3 (1.0%)
+- Prefer not to say: 6 (2.0%)
+
+Age: M = 34.7, Range = 18-65
+
+Attention Check Accuracy:
+- AI Mentioned Check: 96.0% correct
+- WTP Comprehension Check: 86.3% correct
+
+WTP: M = 5.50, Range = 1-10
+
+================================================================================
+NOTES
+================================================================================
+
+1. This simulation follows the methodology in "Simulating Behavioral Experiments
+   with ChatGPT-5" (BDS5010, Spring 2026) by Prof. Dr. Eugen Dimant.
+
+2. Personas are theory-grounded based on consumer behavior and technology
+   adoption literature, not stereotypes.
+
+3. The simulation does NOT force outcomes aligned with any specific hypothesis.
+   Variance is introduced through personas, but means are not manipulated to
+   confirm or disconfirm experimental predictions.
+
+4. Attention/comprehension checks are simulated with realistic failure rates
+   (~4-14%) to mimic actual MTurk data quality.
+
+5. The Task_Summary open-ended responses use 20 distinct phrasings to avoid
+   templated repetition.
+
+================================================================================

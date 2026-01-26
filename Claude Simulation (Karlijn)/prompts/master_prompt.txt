@@ -1,0 +1,162 @@
+================================================================================
+MASTER ORCHESTRATION PROMPT - AI PRODUCT RECOMMENDATIONS STUDY
+================================================================================
+
+System: You are a strict Qualtrics survey emulator. Administer only items reachable through
+blocks, randomizers, and display logic in the uploaded PDF and screenshots. Never infer beyond.
+Stay neutral and avoid outcome-tilting.
+
+User: Project "AI Product Recommendations and Psychological Ownership" for BDS5010. I have
+uploaded a Qualtrics .pdf and screenshots; read the attached file as authoritative.
+
+Target population: US adults 18-65, balanced by gender.
+Rows to simulate: 300.
+Optional quotas: gender=50/50; condition=25/25/25/25.
+
+================================================================================
+THEORY-GROUNDED EMULATION
+================================================================================
+
+This study examines how AI-powered product recommendations affect psychological ownership
+and willingness to pay, moderated by product type (hedonic vs. utilitarian). The theoretical
+framework draws on:
+
+1. Psychological Ownership Theory (Pierce et al., 2003): People develop feelings of ownership
+   over targets they invest in, control, or intimately know.
+
+2. AI Aversion/Appreciation Literature: Consumer reactions to AI vary based on task type,
+   with potential aversion for hedonic/experiential domains.
+
+3. Hedonic vs. Utilitarian Consumption: Products serving pleasure vs. practical functions
+   may elicit different ownership feelings when recommended by AI.
+
+================================================================================
+PERSONA LIBRARY
+================================================================================
+
+- Tech-optimist (weight: 0.25): High AI attitudes (5-6 on scale), moderate-high psychological
+  ownership, comfortable with AI recommendations, higher WTP in AI conditions.
+
+- Tech-skeptic (weight: 0.20): Low AI attitudes (1-3 on scale), lower psychological ownership
+  especially in AI conditions, prefers human/social recommendations, lower WTP in AI conditions.
+
+- Hedonic-focused consumer (weight: 0.20): Higher ownership and WTP for hedonic products
+  (Snickers), rates products as more hedonic (5-7 on scale), pleasure-seeking orientation.
+
+- Utilitarian-focused consumer (weight: 0.20): Higher ownership and WTP for utilitarian products
+  (Dove soap), rates products as more utilitarian (1-3 on scale), practical orientation.
+
+- Balanced/neutral responder (weight: 0.10): Middle-range responses (3-4 on most scales),
+  moderate variation, no strong preferences.
+
+- Random responder (weight: 0.05): Adds noise with inconsistent patterns, may fail attention
+  checks, represents inattentive participants.
+
+MIXTURE_PRIOR: 0.25, 0.20, 0.20, 0.20, 0.10, 0.05
+
+================================================================================
+TRAIT PARAMETERS
+================================================================================
+
+TRAIT_PARAMS (drawn per participant, kept internal):
+- TECH_AFFINITY: U(0.2, 0.9) - influences AI attitude responses
+- OWNERSHIP_TENDENCY: U(0.3, 0.8) - baseline psychological ownership
+- HEDONIC_PREFERENCE: U(0.3, 0.7) - preference for hedonic over utilitarian
+- ATTENTION_LEVEL: U(0.7, 1.0) - probability of passing attention checks
+- PRICE_SENSITIVITY: U(0.3, 0.8) - influences WTP (inverse relationship)
+
+================================================================================
+SIMULATION PARAMETERS
+================================================================================
+
+N_TOTAL: 300
+RUN_ID: CLAUDE_SIM_001
+CHUNK: 1
+
+Condition Distribution (equal allocation):
+- No_AI_Utilitarian: 75 participants (IDs 1-75)
+- No_AI_Hedonic: 75 participants (IDs 76-150)
+- AI_Utilitarian: 75 participants (IDs 151-225)
+- AI_Hedonic: 75 participants (IDs 226-300)
+
+Gender Quota: 50% Male, 48% Female, 2% Non-binary/Prefer not to say
+
+Age Distribution: Uniform(18, 65) with realistic clustering around 25-45
+
+================================================================================
+RESPONSE GENERATION RULES
+================================================================================
+
+1. Age: Integer from 18-65, normally distributed around mean=35, SD=12, truncated
+
+2. Gender: Categorical with quotas (1=Male: 50%, 2=Female: 48%, 3=Non-binary: 1%, 4=PNTS: 1%)
+
+3. AI_Mentioned_Check:
+   - For AI conditions (AI_Utilitarian, AI_Hedonic):
+     * Attentive participants (95%): Answer "Yes" (1)
+     * Inattentive (5%): Answer "No" (2)
+   - For No AI conditions:
+     * Attentive participants (95%): Answer "No" (2)
+     * Inattentive (5%): Answer "Yes" (1)
+
+4. Psychological Ownership (5 items):
+   - Base responses shaped by OWNERSHIP_TENDENCY trait
+   - Modified by condition: AI conditions may reduce ownership (based on AI aversion theory)
+   - Modified by product type interaction with HEDONIC_PREFERENCE
+   - Item 5 (Difficult) is reverse-coded in analysis, but simulated as-is
+   - Range: 1-6, with realistic variance (SD ~1.2)
+
+5. AI Attitudes (5 items):
+   - Shaped primarily by TECH_AFFINITY trait
+   - Consistent within-person (Cronbach's alpha target: 0.85+)
+   - Item 5 (Threat) is reverse-coded in analysis
+   - Range: 1-6
+
+6. Hedonic_Utilitarian Rating:
+   - Utilitarian products (Dove soap): Mean ~2.5 (slightly utilitarian)
+   - Hedonic products (Snickers): Mean ~5.5 (slightly to mostly hedonic)
+   - Modified by HEDONIC_PREFERENCE trait
+   - Range: 1-7
+
+7. SpotAI_Response: Random (50/50 Picture 1 or Picture 2) - this is a guessing task
+
+8. WTP_CompCheck:
+   - Attentive participants (90%): Answer "Participant 2" (2) - correct answer
+   - Inattentive (10%): Random other answer
+
+9. WTP (Willingness to Pay):
+   - Base: Mean ~5, SD ~2.5
+   - Modified by PRICE_SENSITIVITY (inverse)
+   - Modified by OWNERSHIP_TENDENCY (positive)
+   - May be affected by condition (hypothesis-neutral variation)
+   - Range: 0-10 integer
+
+10. Task_Summary: Diverse one-sentence summaries (see examples below)
+
+11. MTurkID_Confirmed: 98% "Yes" (2), 2% "No" (1)
+
+================================================================================
+TASK SUMMARY EXAMPLES (varied phrasings)
+================================================================================
+
+- "I viewed a product recommendation and rated my feelings about it, then indicated how much I'd pay."
+- "Looked at a soap ad, answered questions about ownership and AI, tried to spot an AI image."
+- "Rated my connection to a product recommendation and shared my willingness to pay for it."
+- "Completed a survey about product recommendations and AI technology attitudes."
+- "Viewed a shopping page, rated statements about ownership, and bid on a product."
+- "Answered questions about AI attitudes and how I feel about a recommended product."
+- "Evaluated a product recommendation, identified an AI-generated picture, and stated my WTP."
+- "Reviewed a Snickers ad, rated my feelings toward the recommendation, and set a price."
+- "Assessed my psychological ownership of a recommended body wash and shared AI opinions."
+- "Participated in a study about product recommendations and decision-making."
+
+================================================================================
+OUTPUT SPECIFICATION
+================================================================================
+
+Format: CSV with comma separation
+Header: As specified in SCHEMA LOCKED
+Missing values: NA for items not shown (none expected - all items shown to all participants)
+Decimal precision: Integers only for this survey
+
+================================================================================

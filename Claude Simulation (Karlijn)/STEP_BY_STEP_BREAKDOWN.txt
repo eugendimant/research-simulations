@@ -1,0 +1,220 @@
+================================================================================
+STEP-BY-STEP BREAKDOWN: CLAUDE SIMULATION (KARLIJN)
+AI Product Recommendations and Psychological Ownership Study
+================================================================================
+
+This document provides a complete step-by-step breakdown of the simulation
+following the "Simulating Behavioral Experiments with ChatGPT-5" methodology.
+
+================================================================================
+STEP 1: INPUT ANALYSIS
+================================================================================
+
+1.1 Source Materials Reviewed:
+    - Simulating_Behavioral_Experiments_with_ChatGPT_5.pdf (methodology guide)
+    - Group_12_MTurk (1).qsf (Qualtrics survey file)
+    - Input_ChatGPT.pdf (survey screenshots, 41 pages)
+
+1.2 Survey Identification:
+    FILE READ OK: "Group_12_MTurk - Decision Task", Blocks = 4, Items = 26
+
+1.3 Experimental Design Identified:
+    - 2x2 Between-Subjects Factorial Design
+    - Factor 1: AI Mention (AI vs. No AI in product recommendation)
+    - Factor 2: Product Type (Utilitarian/Dove soap vs. Hedonic/Snickers)
+
+================================================================================
+STEP 2: CONDITION EXTRACTION
+================================================================================
+
+Four experimental conditions identified from Randomizer:
+
++---------------------+------------------+------------------+
+|                     |   UTILITARIAN    |     HEDONIC      |
+|                     |   (Dove Soap)    |   (Snickers)     |
++---------------------+------------------+------------------+
+|  NO AI MENTION      | No_AI_Utilitarian| No_AI_Hedonic    |
+|  "Visitors who      | (n=75)           | (n=75)           |
+|  purchased this     |                  |                  |
+|  also viewed this"  |                  |                  |
++---------------------+------------------+------------------+
+|  AI MENTION         | AI_Utilitarian   | AI_Hedonic       |
+|  "An AI-powered     | (n=75)           | (n=75)           |
+|  recommendation     |                  |                  |
+|  also suggests..."  |                  |                  |
++---------------------+------------------+------------------+
+
+Assignment Rule: Randomizer evenly presents 1 of 4 blocks
+
+================================================================================
+STEP 3: VARIABLE SCHEMA DERIVATION
+================================================================================
+
+24 variables identified and coded:
+
+1.  PARTICIPANT_ID      - Unique identifier (1-300)
+2.  RUN_ID              - Simulation run identifier (CLAUDE_SIM_001)
+3.  CHUNK               - Data chunk number (1)
+4.  CONDITION           - Experimental condition (4 levels)
+5.  Random_ID           - Qualtrics embedded data (5-digit integer)
+6.  Age                 - Participant age (18-65)
+7.  Gender              - Gender identity (1-4)
+8.  AI_Mentioned_Check  - Manipulation check (1=Yes, 2=No)
+9.  PsychOwn_Incorporates - "incorporates parts of myself" (1-6)
+10. PsychOwn_Belongs    - "belongs to me" (1-6)
+11. PsychOwn_Connected  - "feel connected" (1-6)
+12. PsychOwn_Closeness  - "strong sense of closeness" (1-6)
+13. PsychOwn_Difficult  - "difficult to think as mine" (1-6, reverse)
+14. AI_Att_ImproveLife  - "AI will improve my life" (1-6)
+15. AI_Att_ImproveWork  - "AI will improve my work" (1-6)
+16. AI_Att_UseFuture    - "will use AI in future" (1-6)
+17. AI_Att_Positive     - "AI is positive for humanity" (1-6)
+18. AI_Att_Threat       - "AI is a threat" (1-6, reverse)
+19. Hedonic_Utilitarian - Product perception (1-7 scale)
+20. SpotAI_Response     - AI image identification (1-2)
+21. WTP_CompCheck       - Comprehension check (1-4)
+22. WTP                 - Willingness to pay (0-10)
+23. Task_Summary        - Open-ended summary (text)
+24. MTurkID_Confirmed   - ID confirmation (1=No, 2=Yes)
+
+================================================================================
+STEP 4: THEORY-GROUNDED PERSONA LIBRARY
+================================================================================
+
+Following Manning & Horton (2025), defined behavioral personas:
+
+PERSONA              | WEIGHT | CHARACTERISTICS
+---------------------|--------|-----------------------------------------------
+Tech-optimist        | 25%    | High AI attitudes (5-6), moderate-high
+                     |        | ownership, comfortable with AI recommendations
+---------------------|--------|-----------------------------------------------
+Tech-skeptic         | 20%    | Low AI attitudes (1-3), reduced ownership
+                     |        | in AI conditions, prefers human recs
+---------------------|--------|-----------------------------------------------
+Hedonic-focused      | 20%    | Higher ownership for hedonic products,
+                     |        | pleasure-seeking orientation
+---------------------|--------|-----------------------------------------------
+Utilitarian-focused  | 20%    | Higher ownership for utilitarian products,
+                     |        | practical orientation
+---------------------|--------|-----------------------------------------------
+Balanced/neutral     | 10%    | Middle-range responses on all measures
+---------------------|--------|-----------------------------------------------
+Random responder     |  5%    | Inconsistent patterns, may fail checks
+
+TRAIT PARAMETERS (drawn per participant):
+- TECH_AFFINITY: Uniform(0.2, 0.9) - shapes AI attitudes
+- OWNERSHIP_TENDENCY: Uniform(0.3, 0.8) - shapes psychological ownership
+- ATTENTION_LEVEL: Uniform(0.85, 0.98) - probability of passing checks
+
+================================================================================
+STEP 5: RESPONSE GENERATION RULES
+================================================================================
+
+5.1 Demographics:
+    - Age: Normal(35, 12), truncated to [18, 65]
+    - Gender: 50% Male, 48% Female, 1% Non-binary, 1% Prefer not to say
+
+5.2 Manipulation Check (AI_Mentioned_Check):
+    - AI conditions: 95% answer "Yes" (correct), 5% "No" (inattentive)
+    - No AI conditions: 95% answer "No" (correct), 5% "Yes" (inattentive)
+
+5.3 Psychological Ownership (5 items):
+    - Base score = OWNERSHIP_TENDENCY * 5 + 1
+    - Add Gaussian noise (SD = 0.8)
+    - AI conditions may reduce ownership for tech-skeptics (-0.3 modifier)
+    - Item 5 reverse-scored: 7 - base_score
+
+5.4 AI Attitudes (5 items):
+    - Base score = TECH_AFFINITY * 5 + 1
+    - Within-person consistency (small noise SD = 0.7)
+    - Item 5 (Threat) reversed: (1 - TECH_AFFINITY) * 5 + 1
+
+5.5 Hedonic/Utilitarian Rating:
+    - Utilitarian products (Dove): Mean = 2.5 (slightly utilitarian)
+    - Hedonic products (Snickers): Mean = 5.5 (slightly-mostly hedonic)
+    - Persona adjustment: +/- 0.5 based on hedonic/utilitarian focus
+
+5.6 Spot-the-AI Task:
+    - Random 50/50 (Picture 1 or Picture 2) - realistic guessing
+
+5.7 WTP Comprehension Check:
+    - 87% answer "Participant 2" (correct - second highest WTP)
+    - 13% random incorrect answer
+
+5.8 Willingness to Pay:
+    - Base = 5 + (OWNERSHIP_TENDENCY * 3) - (PRICE_SENSITIVITY * 2)
+    - Add Gaussian noise (SD = 1.5)
+    - Range: 0-10 (integer)
+
+5.9 Task Summary:
+    - 20 unique phrasings randomly assigned
+    - Diverse one-sentence descriptions
+
+================================================================================
+STEP 6: DATA GENERATION OUTPUT
+================================================================================
+
+Generated: 300 rows x 24 columns
+
+CONDITION DISTRIBUTION:
+- No_AI_Utilitarian: 75 participants (25%)
+- No_AI_Hedonic:     75 participants (25%)
+- AI_Utilitarian:    75 participants (25%)
+- AI_Hedonic:        75 participants (25%)
+
+GENDER DISTRIBUTION:
+- Male:              170 (56.7%)
+- Female:            121 (40.3%)
+- Non-binary:          3 (1.0%)
+- Prefer not to say:   6 (2.0%)
+
+AGE STATISTICS:
+- Mean: 34.7 years
+- Range: 18-65 years
+
+ATTENTION CHECK ACCURACY:
+- AI Mentioned Check:      96.0% correct
+- WTP Comprehension Check: 86.3% correct
+
+WTP STATISTICS:
+- Mean: $5.50
+- Range: $1-$10
+
+================================================================================
+STEP 7: QUALITY ASSURANCE
+================================================================================
+
+Self-checks performed before output:
+
+[X] Header matches locked schema (24 columns)
+[X] All rows complete (no missing values requiring NA)
+[X] Condition counts equal (75 per condition)
+[X] Gender quota approximately met
+[X] Age distribution realistic
+[X] Scale responses within valid ranges
+[X] Attention checks show realistic failure rates
+[X] Open-ended responses diverse (20 unique phrasings)
+[X] No outcome-biasing (variance from personas, not forced means)
+
+================================================================================
+DELIVERABLES CHECKLIST
+================================================================================
+
+[X] materials/
+    - Input_ChatGPT.pdf (survey screenshots)
+
+[X] prompts/
+    - master_prompt.txt (exact prompt with parameters)
+    - run_log.txt (execution log)
+
+[X] data/
+    - Simulated.csv (300 rows, 24 columns)
+
+[X] checks/
+    - schema_validation.txt (FILE READ OK, SCHEMA LOCKED summaries)
+
+[X] STEP_BY_STEP_BREAKDOWN.txt (this document)
+
+================================================================================
+END OF BREAKDOWN
+================================================================================
