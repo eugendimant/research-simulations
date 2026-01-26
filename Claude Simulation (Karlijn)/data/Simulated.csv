@@ -1,0 +1,301 @@
+PARTICIPANT_ID,RUN_ID,CHUNK,CONDITION,Random_ID,Age,Gender,AI_Mentioned_Check,PsychOwn_Incorporates,PsychOwn_Belongs,PsychOwn_Connected,PsychOwn_Closeness,PsychOwn_Difficult,AI_Att_ImproveLife,AI_Att_ImproveWork,AI_Att_UseFuture,AI_Att_Positive,AI_Att_Threat,Hedonic_Utilitarian,SpotAI_Response,WTP_CompCheck,WTP,Task_Summary,MTurkID_Confirmed
+1,CLAUDE_SIM_001,1,No_AI_Utilitarian,93810,50,1,2,5,5,5,4,4,5,5,4,5,3,3,2,2,5,Completed questions about a recommended product and my attitudes toward AI technology.,2
+2,CLAUDE_SIM_001,1,No_AI_Utilitarian,15695,33,2,2,3,4,3,4,3,3,2,3,3,4,2,1,2,5,Participated in a decision task about product recommendations and AI perceptions.,2
+3,CLAUDE_SIM_001,1,No_AI_Utilitarian,52504,46,1,1,3,4,5,4,3,6,3,4,6,2,3,1,2,6,Answered survey questions about a product recommendation and AI technology perceptions.,2
+4,CLAUDE_SIM_001,1,No_AI_Utilitarian,60432,18,2,1,4,2,2,1,6,4,4,5,4,3,2,1,4,4,Completed questions about a recommended product and my attitudes toward AI technology.,2
+5,CLAUDE_SIM_001,1,No_AI_Utilitarian,12552,43,3,2,4,5,2,2,5,4,5,3,3,3,2,2,2,5,Saw a product page and answered questions about how connected I felt to the recommendation.,2
+6,CLAUDE_SIM_001,1,No_AI_Utilitarian,82603,36,1,2,4,3,3,3,4,2,4,4,3,3,3,2,2,5,Completed a survey about product recommendations and AI technology attitudes.,2
+7,CLAUDE_SIM_001,1,No_AI_Utilitarian,34931,28,1,2,2,2,1,2,5,5,5,4,5,2,3,2,2,7,Looked at a product ad and answered questions about ownership and AI then tried to spot an AI image.,2
+8,CLAUDE_SIM_001,1,No_AI_Utilitarian,81066,44,1,2,3,4,4,4,4,4,4,4,4,2,3,2,2,5,Rated my connection to a product recommendation and shared my willingness to pay for it.,2
+9,CLAUDE_SIM_001,1,No_AI_Utilitarian,91416,65,1,2,5,6,6,6,3,5,4,3,5,3,2,2,2,8,Assessed my psychological ownership of a recommended product and shared AI opinions.,2
+10,CLAUDE_SIM_001,1,No_AI_Utilitarian,42914,54,1,2,2,2,1,3,5,2,2,2,3,4,4,1,2,2,Rated various statements about AI and product ownership then indicated willingness to pay.,2
+11,CLAUDE_SIM_001,1,No_AI_Utilitarian,63264,54,2,2,4,6,4,5,3,6,5,5,4,3,3,1,2,6,Rated my connection to a product recommendation and shared my willingness to pay for it.,2
+12,CLAUDE_SIM_001,1,No_AI_Utilitarian,46585,26,2,2,4,4,4,3,4,3,4,4,4,3,4,1,2,5,Saw a product page and answered questions about how connected I felt to the recommendation.,2
+13,CLAUDE_SIM_001,1,No_AI_Utilitarian,96951,46,1,2,2,4,3,3,3,2,1,2,2,6,4,1,2,4,Completed questions about a recommended product and my attitudes toward AI technology.,2
+14,CLAUDE_SIM_001,1,No_AI_Utilitarian,40784,31,1,2,4,4,4,4,3,5,6,5,5,2,3,2,2,9,Looked at a shopping page recommendation and rated how much I felt it was mine.,1
+15,CLAUDE_SIM_001,1,No_AI_Utilitarian,88047,26,1,2,5,4,4,4,1,4,4,4,5,3,2,1,2,6,Participated in a decision task about product recommendations and AI perceptions.,2
+16,CLAUDE_SIM_001,1,No_AI_Utilitarian,18161,38,2,2,4,2,5,3,2,4,4,5,4,2,4,1,4,7,Viewed an online shopping recommendation and completed questions about my reactions to it.,2
+17,CLAUDE_SIM_001,1,No_AI_Utilitarian,96900,51,1,2,3,2,4,3,2,2,2,2,4,4,4,1,2,6,Evaluated a product recommendation and identified an AI-generated picture and stated my WTP.,2
+18,CLAUDE_SIM_001,1,No_AI_Utilitarian,43586,35,2,2,4,4,6,4,3,2,3,2,4,4,1,2,2,7,I viewed a product recommendation and rated my feelings about it then indicated how much I would pay.,2
+19,CLAUDE_SIM_001,1,No_AI_Utilitarian,74251,59,2,1,5,4,3,4,4,3,4,4,4,3,2,1,2,5,Assessed my psychological ownership of a recommended product and shared AI opinions.,2
+20,CLAUDE_SIM_001,1,No_AI_Utilitarian,46211,21,1,2,4,4,4,4,1,6,6,5,5,2,2,1,2,4,Assessed my psychological ownership of a recommended product and shared AI opinions.,2
+21,CLAUDE_SIM_001,1,No_AI_Utilitarian,78765,18,2,2,2,3,4,3,4,2,1,4,3,5,1,1,2,5,Participated in a study about product recommendations and decision-making.,2
+22,CLAUDE_SIM_001,1,No_AI_Utilitarian,42530,50,2,2,5,5,4,4,5,4,4,3,2,4,2,2,2,7,Reviewed a product recommendation and rated my feelings toward it then set a price.,2
+23,CLAUDE_SIM_001,1,No_AI_Utilitarian,91927,18,1,2,3,4,3,3,3,5,4,5,5,1,3,1,4,5,Viewed a product and rated ownership feelings then indicated purchase willingness.,2
+24,CLAUDE_SIM_001,1,No_AI_Utilitarian,32962,18,2,2,5,4,6,4,4,5,5,5,5,2,4,2,2,6,Rated various statements about AI and product ownership then indicated willingness to pay.,2
+25,CLAUDE_SIM_001,1,No_AI_Utilitarian,75338,20,1,2,2,3,2,3,5,4,5,5,4,3,4,1,2,2,Evaluated a product recommendation and identified an AI-generated picture and stated my WTP.,2
+26,CLAUDE_SIM_001,1,No_AI_Utilitarian,76616,34,1,2,4,3,3,5,4,4,3,6,5,3,3,2,2,4,Viewed an online shopping recommendation and completed questions about my reactions to it.,2
+27,CLAUDE_SIM_001,1,No_AI_Utilitarian,96991,39,1,2,4,5,5,5,1,2,2,3,2,6,1,2,1,5,Reviewed a product recommendation and rated my feelings toward it then set a price.,2
+28,CLAUDE_SIM_001,1,No_AI_Utilitarian,47667,54,1,2,5,6,5,5,1,5,6,6,5,2,2,2,2,6,Completed a task involving product recommendations and willingness to pay decisions.,2
+29,CLAUDE_SIM_001,1,No_AI_Utilitarian,98815,30,2,1,5,4,6,4,2,4,3,2,3,2,4,2,1,5,Rated various statements about AI and product ownership then indicated willingness to pay.,2
+30,CLAUDE_SIM_001,1,No_AI_Utilitarian,34920,21,2,2,4,3,5,3,1,5,5,4,4,4,1,2,2,6,Rated my connection to a product recommendation and shared my willingness to pay for it.,2
+31,CLAUDE_SIM_001,1,No_AI_Utilitarian,39571,47,2,1,2,2,3,2,5,4,6,5,5,3,3,2,1,3,Looked at a product ad and answered questions about ownership and AI then tried to spot an AI image.,2
+32,CLAUDE_SIM_001,1,No_AI_Utilitarian,74569,41,2,2,4,4,2,3,4,3,2,2,1,6,2,2,2,6,Completed a task involving product recommendations and willingness to pay decisions.,2
+33,CLAUDE_SIM_001,1,No_AI_Utilitarian,37801,24,1,2,3,4,5,4,3,3,4,4,4,4,2,2,2,5,Viewed a shopping page and rated statements about ownership then bid on a product.,2
+34,CLAUDE_SIM_001,1,No_AI_Utilitarian,78955,38,1,2,3,4,2,6,3,2,2,2,3,5,2,2,2,4,Participated in a study about product recommendations and decision-making.,2
+35,CLAUDE_SIM_001,1,No_AI_Utilitarian,89354,18,1,2,5,3,5,4,2,6,4,4,4,2,2,2,2,6,Answered survey questions about a product recommendation and AI technology perceptions.,2
+36,CLAUDE_SIM_001,1,No_AI_Utilitarian,16743,50,1,2,3,3,4,5,6,2,5,4,4,5,3,1,2,7,Viewed an online shopping recommendation and completed questions about my reactions to it.,2
+37,CLAUDE_SIM_001,1,No_AI_Utilitarian,92991,40,2,2,3,2,1,3,4,3,2,3,3,5,1,2,2,4,Completed questions about a recommended product and my attitudes toward AI technology.,2
+38,CLAUDE_SIM_001,1,No_AI_Utilitarian,36794,32,1,2,3,2,2,4,4,2,3,1,2,5,3,2,2,5,Rated my connection to a product recommendation and shared my willingness to pay for it.,2
+39,CLAUDE_SIM_001,1,No_AI_Utilitarian,23875,35,2,2,4,4,4,2,5,2,2,3,3,6,1,2,2,5,Completed questions about a recommended product and my attitudes toward AI technology.,2
+40,CLAUDE_SIM_001,1,No_AI_Utilitarian,92210,29,1,2,4,4,3,3,4,4,5,4,4,3,2,1,2,4,Saw a product page and answered questions about how connected I felt to the recommendation.,1
+41,CLAUDE_SIM_001,1,No_AI_Utilitarian,21053,27,1,2,3,2,4,3,5,3,2,1,2,6,3,2,2,6,Rated my connection to a product recommendation and shared my willingness to pay for it.,2
+42,CLAUDE_SIM_001,1,No_AI_Utilitarian,59372,28,1,2,4,5,5,5,2,6,4,6,4,2,1,1,2,4,Answered questions about AI attitudes and how I feel about a recommended product.,2
+43,CLAUDE_SIM_001,1,No_AI_Utilitarian,91885,37,1,2,2,2,3,2,3,4,2,3,4,4,3,2,2,4,Rated various statements about AI and product ownership then indicated willingness to pay.,2
+44,CLAUDE_SIM_001,1,No_AI_Utilitarian,23446,31,1,2,3,5,4,4,2,5,5,5,5,3,5,2,2,7,Rated my feelings about a recommended product and answered questions about AI attitudes.,2
+45,CLAUDE_SIM_001,1,No_AI_Utilitarian,10688,36,1,2,4,5,5,6,1,6,5,5,5,2,3,2,2,8,Looked at a shopping page recommendation and rated how much I felt it was mine.,2
+46,CLAUDE_SIM_001,1,No_AI_Utilitarian,76535,23,1,2,2,2,2,3,3,4,4,4,5,2,3,2,2,3,Looked at a product ad and answered questions about ownership and AI then tried to spot an AI image.,2
+47,CLAUDE_SIM_001,1,No_AI_Utilitarian,50642,18,2,2,3,3,3,3,5,4,1,3,3,4,1,2,2,4,Participated in a study about product recommendations and decision-making.,2
+48,CLAUDE_SIM_001,1,No_AI_Utilitarian,88986,33,1,2,3,4,4,2,3,3,3,2,2,4,3,1,2,5,Rated various statements about AI and product ownership then indicated willingness to pay.,2
+49,CLAUDE_SIM_001,1,No_AI_Utilitarian,20077,21,1,2,2,2,2,3,5,3,4,3,4,4,3,2,2,4,Participated in a study about product recommendations and decision-making.,2
+50,CLAUDE_SIM_001,1,No_AI_Utilitarian,30644,28,2,2,2,5,4,3,4,4,4,3,6,4,1,2,2,4,Participated in a decision task about product recommendations and AI perceptions.,2
+51,CLAUDE_SIM_001,1,No_AI_Utilitarian,33850,35,2,2,3,4,5,4,3,4,4,4,4,3,1,2,2,3,I viewed a product recommendation and rated my feelings about it then indicated how much I would pay.,2
+52,CLAUDE_SIM_001,1,No_AI_Utilitarian,94076,36,1,2,2,2,3,1,4,5,4,4,4,3,2,1,2,6,Assessed my psychological ownership of a recommended product and shared AI opinions.,2
+53,CLAUDE_SIM_001,1,No_AI_Utilitarian,28465,43,1,2,4,3,5,3,5,4,4,3,2,4,2,1,3,4,Assessed my psychological ownership of a recommended product and shared AI opinions.,2
+54,CLAUDE_SIM_001,1,No_AI_Utilitarian,62855,26,2,2,4,5,3,3,2,6,6,6,5,2,1,1,2,6,Answered questions about AI attitudes and how I feel about a recommended product.,2
+55,CLAUDE_SIM_001,1,No_AI_Utilitarian,90805,34,1,2,4,3,3,5,5,4,4,3,4,3,1,2,2,4,Looked at a product ad and answered questions about ownership and AI then tried to spot an AI image.,2
+56,CLAUDE_SIM_001,1,No_AI_Utilitarian,24404,39,1,2,4,3,2,4,3,3,1,2,2,4,2,1,2,7,Participated in a study about product recommendations and decision-making.,2
+57,CLAUDE_SIM_001,1,No_AI_Utilitarian,37168,29,1,2,2,4,3,4,4,4,4,3,4,3,3,1,2,6,Looked at a shopping page recommendation and rated how much I felt it was mine.,2
+58,CLAUDE_SIM_001,1,No_AI_Utilitarian,40518,46,2,1,4,5,3,4,3,4,4,5,6,1,3,1,3,4,Answered questions about AI attitudes and how I feel about a recommended product.,2
+59,CLAUDE_SIM_001,1,No_AI_Utilitarian,47941,36,2,2,4,5,3,4,3,6,5,5,6,3,4,2,2,4,Answered questions about AI attitudes and how I feel about a recommended product.,1
+60,CLAUDE_SIM_001,1,No_AI_Utilitarian,72580,30,1,2,5,4,3,4,1,5,5,6,5,1,3,2,2,7,Rated my feelings about a recommended product and answered questions about AI attitudes.,2
+61,CLAUDE_SIM_001,1,No_AI_Utilitarian,97044,44,2,2,2,5,4,2,4,4,4,4,5,3,2,2,2,6,I viewed a product recommendation and rated my feelings about it then indicated how much I would pay.,2
+62,CLAUDE_SIM_001,1,No_AI_Utilitarian,10395,34,1,2,3,5,4,5,2,3,3,1,1,4,2,1,3,5,Reviewed a product recommendation and rated my feelings toward it then set a price.,2
+63,CLAUDE_SIM_001,1,No_AI_Utilitarian,12979,48,2,2,3,3,1,2,5,2,1,2,2,5,1,1,2,5,Reviewed a product recommendation and rated my feelings toward it then set a price.,2
+64,CLAUDE_SIM_001,1,No_AI_Utilitarian,85511,28,2,2,4,4,4,3,4,2,2,1,2,5,3,1,2,3,Completed a task involving product recommendations and willingness to pay decisions.,2
+65,CLAUDE_SIM_001,1,No_AI_Utilitarian,83713,24,2,2,3,1,2,3,5,3,2,1,2,6,3,1,2,6,Reviewed a product recommendation and rated my feelings toward it then set a price.,2
+66,CLAUDE_SIM_001,1,No_AI_Utilitarian,36805,27,1,2,4,2,4,3,3,3,3,2,2,4,3,1,2,6,Saw a product page and answered questions about how connected I felt to the recommendation.,2
+67,CLAUDE_SIM_001,1,No_AI_Utilitarian,74044,51,1,2,4,3,3,4,5,4,6,5,5,1,1,2,2,5,Participated in a decision task about product recommendations and AI perceptions.,2
+68,CLAUDE_SIM_001,1,No_AI_Utilitarian,11553,54,2,1,4,4,3,4,3,2,2,3,2,4,4,1,2,5,Participated in a decision task about product recommendations and AI perceptions.,2
+69,CLAUDE_SIM_001,1,No_AI_Utilitarian,93459,42,1,2,3,4,4,3,5,3,3,3,4,4,3,2,3,3,Reviewed a product recommendation and rated my feelings toward it then set a price.,2
+70,CLAUDE_SIM_001,1,No_AI_Utilitarian,61007,28,1,2,4,5,4,4,3,4,4,3,4,3,1,2,2,5,Rated my connection to a product recommendation and shared my willingness to pay for it.,2
+71,CLAUDE_SIM_001,1,No_AI_Utilitarian,59807,30,2,2,1,3,3,2,4,2,2,2,3,6,5,1,2,3,Assessed my psychological ownership of a recommended product and shared AI opinions.,2
+72,CLAUDE_SIM_001,1,No_AI_Utilitarian,74634,39,1,2,3,2,2,1,2,4,2,3,2,5,2,1,3,4,Rated my feelings about a recommended product and answered questions about AI attitudes.,2
+73,CLAUDE_SIM_001,1,No_AI_Utilitarian,41775,30,2,2,3,4,3,3,6,3,3,2,3,5,2,2,2,6,Answered survey questions about a product recommendation and AI technology perceptions.,2
+74,CLAUDE_SIM_001,1,No_AI_Utilitarian,57124,28,2,2,2,2,3,3,3,3,3,2,2,4,2,1,2,4,Completed a survey about product recommendations and AI technology attitudes.,2
+75,CLAUDE_SIM_001,1,No_AI_Utilitarian,21253,56,1,2,4,3,2,4,3,1,3,2,1,4,3,1,2,6,Viewed an online shopping recommendation and completed questions about my reactions to it.,2
+76,CLAUDE_SIM_001,1,No_AI_Hedonic,90492,44,1,2,3,4,3,4,1,5,4,5,4,2,5,1,2,3,Reviewed a product recommendation and rated my feelings toward it then set a price.,2
+77,CLAUDE_SIM_001,1,No_AI_Hedonic,33992,30,1,2,4,5,4,4,1,3,4,4,3,3,4,2,2,6,I viewed a product recommendation and rated my feelings about it then indicated how much I would pay.,2
+78,CLAUDE_SIM_001,1,No_AI_Hedonic,38905,32,2,2,5,5,6,4,3,4,6,6,6,2,4,2,2,9,Reviewed a product recommendation and rated my feelings toward it then set a price.,2
+79,CLAUDE_SIM_001,1,No_AI_Hedonic,87060,26,2,2,2,3,3,4,3,2,3,2,3,5,5,1,2,3,Reviewed a product recommendation and rated my feelings toward it then set a price.,2
+80,CLAUDE_SIM_001,1,No_AI_Hedonic,98635,29,2,2,4,4,3,2,4,3,4,3,4,3,7,2,2,5,Saw a product page and answered questions about how connected I felt to the recommendation.,2
+81,CLAUDE_SIM_001,1,No_AI_Hedonic,27117,22,1,2,2,3,1,3,3,4,3,3,2,5,6,2,2,6,Answered survey questions about a product recommendation and AI technology perceptions.,2
+82,CLAUDE_SIM_001,1,No_AI_Hedonic,22475,48,1,2,4,4,3,3,4,6,5,4,6,2,7,2,2,6,Viewed a shopping page and rated statements about ownership then bid on a product.,2
+83,CLAUDE_SIM_001,1,No_AI_Hedonic,90750,25,1,1,3,5,4,3,3,4,5,5,5,1,7,1,2,7,Rated my feelings about a recommended product and answered questions about AI attitudes.,2
+84,CLAUDE_SIM_001,1,No_AI_Hedonic,19307,18,3,2,3,4,2,4,3,3,2,3,3,4,4,2,2,6,Evaluated a product recommendation and identified an AI-generated picture and stated my WTP.,2
+85,CLAUDE_SIM_001,1,No_AI_Hedonic,30365,23,2,2,2,3,3,2,5,3,4,3,3,3,5,1,2,4,Completed a survey about product recommendations and AI technology attitudes.,2
+86,CLAUDE_SIM_001,1,No_AI_Hedonic,13847,28,2,2,4,3,3,5,5,4,3,3,3,4,6,2,2,6,Saw a product page and answered questions about how connected I felt to the recommendation.,2
+87,CLAUDE_SIM_001,1,No_AI_Hedonic,20208,29,2,2,4,6,3,3,3,6,5,6,5,1,4,1,2,5,Reviewed a product recommendation and rated my feelings toward it then set a price.,2
+88,CLAUDE_SIM_001,1,No_AI_Hedonic,93354,48,2,2,3,5,5,5,4,5,5,5,5,2,6,1,2,5,Reviewed a product recommendation and rated my feelings toward it then set a price.,2
+89,CLAUDE_SIM_001,1,No_AI_Hedonic,51288,45,2,2,2,3,3,3,4,2,2,2,2,4,6,1,2,8,Rated various statements about AI and product ownership then indicated willingness to pay.,2
+90,CLAUDE_SIM_001,1,No_AI_Hedonic,16416,30,4,2,4,4,3,5,3,4,5,4,5,2,6,1,2,5,Saw a product page and answered questions about how connected I felt to the recommendation.,2
+91,CLAUDE_SIM_001,1,No_AI_Hedonic,70423,60,1,2,3,3,3,2,4,4,4,4,4,3,6,1,4,5,Participated in a decision task about product recommendations and AI perceptions.,2
+92,CLAUDE_SIM_001,1,No_AI_Hedonic,55093,47,1,2,3,4,4,5,3,4,5,5,5,1,4,1,2,8,Rated various statements about AI and product ownership then indicated willingness to pay.,2
+93,CLAUDE_SIM_001,1,No_AI_Hedonic,13697,31,2,1,4,5,5,6,2,6,6,6,6,1,5,1,2,5,Rated my connection to a product recommendation and shared my willingness to pay for it.,2
+94,CLAUDE_SIM_001,1,No_AI_Hedonic,96787,30,1,1,5,6,6,5,3,4,4,4,6,2,7,1,2,6,Completed questions about a recommended product and my attitudes toward AI technology.,2
+95,CLAUDE_SIM_001,1,No_AI_Hedonic,84127,46,1,1,5,4,3,4,1,6,6,5,4,3,5,2,2,7,Reviewed a product recommendation and rated my feelings toward it then set a price.,2
+96,CLAUDE_SIM_001,1,No_AI_Hedonic,19661,35,1,2,3,5,2,4,4,2,2,2,1,6,7,2,2,5,Viewed an online shopping recommendation and completed questions about my reactions to it.,2
+97,CLAUDE_SIM_001,1,No_AI_Hedonic,74349,41,1,2,4,3,4,2,3,2,3,4,2,5,6,1,2,6,Completed a survey about product recommendations and AI technology attitudes.,2
+98,CLAUDE_SIM_001,1,No_AI_Hedonic,55061,39,2,1,3,5,3,2,3,5,3,4,3,3,6,1,2,7,Answered survey questions about a product recommendation and AI technology perceptions.,2
+99,CLAUDE_SIM_001,1,No_AI_Hedonic,92211,44,1,2,3,1,2,2,5,4,3,3,4,2,6,2,2,2,Viewed a product and rated ownership feelings then indicated purchase willingness.,2
+100,CLAUDE_SIM_001,1,No_AI_Hedonic,14910,40,2,2,4,2,3,3,6,2,4,3,4,3,5,1,2,3,Answered survey questions about a product recommendation and AI technology perceptions.,2
+101,CLAUDE_SIM_001,1,No_AI_Hedonic,77698,49,2,2,3,5,5,5,3,4,5,4,5,2,5,2,2,5,Answered questions about AI attitudes and how I feel about a recommended product.,2
+102,CLAUDE_SIM_001,1,No_AI_Hedonic,43903,34,1,2,2,3,3,3,6,2,2,2,1,6,5,2,2,4,Evaluated a product recommendation and identified an AI-generated picture and stated my WTP.,2
+103,CLAUDE_SIM_001,1,No_AI_Hedonic,98761,18,2,2,5,5,6,5,1,6,6,5,6,2,6,2,2,5,Rated my feelings about a recommended product and answered questions about AI attitudes.,1
+104,CLAUDE_SIM_001,1,No_AI_Hedonic,44003,45,2,2,4,4,4,4,2,4,3,5,6,2,7,1,2,5,Participated in a study about product recommendations and decision-making.,2
+105,CLAUDE_SIM_001,1,No_AI_Hedonic,53426,23,1,2,5,5,5,3,3,6,6,5,5,2,6,1,2,7,Completed a task involving product recommendations and willingness to pay decisions.,2
+106,CLAUDE_SIM_001,1,No_AI_Hedonic,32099,28,2,2,3,4,3,4,5,3,3,3,4,4,5,1,2,6,Looked at a shopping page recommendation and rated how much I felt it was mine.,2
+107,CLAUDE_SIM_001,1,No_AI_Hedonic,54280,18,1,2,5,5,4,5,3,3,4,3,3,3,6,1,2,6,Completed a task involving product recommendations and willingness to pay decisions.,2
+108,CLAUDE_SIM_001,1,No_AI_Hedonic,81733,34,1,2,4,3,3,2,5,2,3,2,3,4,3,2,2,5,Rated my connection to a product recommendation and shared my willingness to pay for it.,2
+109,CLAUDE_SIM_001,1,No_AI_Hedonic,85255,31,1,2,3,4,4,4,3,4,5,5,4,3,5,2,1,7,Saw a product page and answered questions about how connected I felt to the recommendation.,2
+110,CLAUDE_SIM_001,1,No_AI_Hedonic,62530,24,2,2,3,2,1,3,5,3,4,3,4,2,4,2,2,6,Saw a product page and answered questions about how connected I felt to the recommendation.,2
+111,CLAUDE_SIM_001,1,No_AI_Hedonic,98857,18,2,2,5,4,5,5,3,4,6,6,5,1,6,2,1,5,Participated in a decision task about product recommendations and AI perceptions.,2
+112,CLAUDE_SIM_001,1,No_AI_Hedonic,62858,36,1,1,4,5,4,5,5,3,2,3,4,3,7,2,2,5,Completed a task involving product recommendations and willingness to pay decisions.,2
+113,CLAUDE_SIM_001,1,No_AI_Hedonic,96364,36,2,1,4,3,4,5,3,4,2,3,1,5,6,2,2,4,Looked at a shopping page recommendation and rated how much I felt it was mine.,2
+114,CLAUDE_SIM_001,1,No_AI_Hedonic,75382,54,2,2,4,5,5,3,4,2,2,2,2,6,6,2,2,7,Saw a product page and answered questions about how connected I felt to the recommendation.,2
+115,CLAUDE_SIM_001,1,No_AI_Hedonic,82559,29,2,2,3,3,3,2,2,2,2,1,3,4,6,1,2,5,Answered questions about AI attitudes and how I feel about a recommended product.,1
+116,CLAUDE_SIM_001,1,No_AI_Hedonic,99573,34,2,2,4,3,1,3,3,2,3,3,3,5,6,2,2,5,Rated various statements about AI and product ownership then indicated willingness to pay.,2
+117,CLAUDE_SIM_001,1,No_AI_Hedonic,81645,34,2,1,4,5,5,5,2,5,6,6,4,1,5,2,2,9,Looked at a shopping page recommendation and rated how much I felt it was mine.,2
+118,CLAUDE_SIM_001,1,No_AI_Hedonic,34100,18,1,2,4,3,6,3,3,3,4,5,5,4,5,1,2,7,Participated in a study about product recommendations and decision-making.,2
+119,CLAUDE_SIM_001,1,No_AI_Hedonic,77746,40,2,2,3,5,6,4,3,1,2,2,2,4,7,1,2,4,Looked at a product ad and answered questions about ownership and AI then tried to spot an AI image.,2
+120,CLAUDE_SIM_001,1,No_AI_Hedonic,17113,38,1,2,3,2,3,4,5,5,4,4,4,4,4,1,2,7,Viewed a shopping page and rated statements about ownership then bid on a product.,2
+121,CLAUDE_SIM_001,1,No_AI_Hedonic,81529,30,1,1,5,4,3,3,3,4,4,4,4,3,5,1,2,5,Looked at a product ad and answered questions about ownership and AI then tried to spot an AI image.,2
+122,CLAUDE_SIM_001,1,No_AI_Hedonic,81939,20,1,2,5,4,4,5,2,4,4,4,5,2,6,2,2,9,Saw a product page and answered questions about how connected I felt to the recommendation.,2
+123,CLAUDE_SIM_001,1,No_AI_Hedonic,70666,18,1,2,4,4,5,5,3,4,5,5,6,1,5,2,2,5,Participated in a study about product recommendations and decision-making.,2
+124,CLAUDE_SIM_001,1,No_AI_Hedonic,75683,22,2,2,3,3,4,5,4,4,4,4,4,4,4,2,2,7,Saw a product page and answered questions about how connected I felt to the recommendation.,2
+125,CLAUDE_SIM_001,1,No_AI_Hedonic,78337,28,2,2,4,5,5,2,2,5,5,4,3,3,6,1,2,7,Saw a product page and answered questions about how connected I felt to the recommendation.,2
+126,CLAUDE_SIM_001,1,No_AI_Hedonic,73113,28,2,2,3,2,3,4,3,5,5,3,4,4,5,1,4,6,Viewed a product and rated ownership feelings then indicated purchase willingness.,2
+127,CLAUDE_SIM_001,1,No_AI_Hedonic,33839,24,1,2,2,4,4,4,5,6,5,4,3,1,5,2,2,5,Looked at a product ad and answered questions about ownership and AI then tried to spot an AI image.,2
+128,CLAUDE_SIM_001,1,No_AI_Hedonic,66224,37,2,2,5,4,4,4,2,3,3,1,2,4,5,1,2,7,Assessed my psychological ownership of a recommended product and shared AI opinions.,2
+129,CLAUDE_SIM_001,1,No_AI_Hedonic,65517,19,4,2,3,1,4,3,3,2,2,1,2,4,4,1,2,3,I viewed a product recommendation and rated my feelings about it then indicated how much I would pay.,2
+130,CLAUDE_SIM_001,1,No_AI_Hedonic,29048,19,1,2,4,3,3,3,4,2,3,2,1,5,4,2,2,4,Answered questions about AI attitudes and how I feel about a recommended product.,2
+131,CLAUDE_SIM_001,1,No_AI_Hedonic,46167,37,1,2,4,5,3,5,1,5,4,4,3,5,7,2,2,2,Viewed a product and rated ownership feelings then indicated purchase willingness.,2
+132,CLAUDE_SIM_001,1,No_AI_Hedonic,41886,36,1,2,2,5,3,4,5,4,5,5,4,3,5,2,2,8,Evaluated a product recommendation and identified an AI-generated picture and stated my WTP.,2
+133,CLAUDE_SIM_001,1,No_AI_Hedonic,36170,35,1,2,5,6,6,5,4,5,6,5,6,3,4,1,2,6,Rated my feelings about a recommended product and answered questions about AI attitudes.,2
+134,CLAUDE_SIM_001,1,No_AI_Hedonic,14268,22,2,2,5,4,5,5,1,6,5,6,5,2,5,1,4,7,Completed a survey about product recommendations and AI technology attitudes.,2
+135,CLAUDE_SIM_001,1,No_AI_Hedonic,40907,18,1,2,2,3,2,2,4,4,4,4,5,4,5,2,2,7,Rated various statements about AI and product ownership then indicated willingness to pay.,2
+136,CLAUDE_SIM_001,1,No_AI_Hedonic,89374,39,2,2,5,5,3,4,3,5,4,5,5,2,5,2,2,7,Rated various statements about AI and product ownership then indicated willingness to pay.,2
+137,CLAUDE_SIM_001,1,No_AI_Hedonic,78280,47,1,2,4,4,4,5,2,6,5,6,5,2,5,1,2,8,Looked at a product ad and answered questions about ownership and AI then tried to spot an AI image.,2
+138,CLAUDE_SIM_001,1,No_AI_Hedonic,52624,43,2,2,2,2,4,2,5,3,4,4,4,4,6,2,2,5,Rated my feelings about a recommended product and answered questions about AI attitudes.,2
+139,CLAUDE_SIM_001,1,No_AI_Hedonic,72530,28,2,1,6,4,6,5,2,4,4,3,4,3,6,1,2,6,Completed questions about a recommended product and my attitudes toward AI technology.,2
+140,CLAUDE_SIM_001,1,No_AI_Hedonic,91625,24,1,2,5,4,5,4,1,1,2,2,3,5,5,1,2,7,Viewed an online shopping recommendation and completed questions about my reactions to it.,2
+141,CLAUDE_SIM_001,1,No_AI_Hedonic,25985,53,1,2,5,6,5,6,2,4,3,3,2,4,4,1,3,3,Assessed my psychological ownership of a recommended product and shared AI opinions.,2
+142,CLAUDE_SIM_001,1,No_AI_Hedonic,61879,35,1,2,3,4,4,3,4,3,4,4,4,2,4,2,2,6,Looked at a product ad and answered questions about ownership and AI then tried to spot an AI image.,2
+143,CLAUDE_SIM_001,1,No_AI_Hedonic,67344,21,1,2,4,4,4,4,3,4,4,2,3,3,7,2,2,7,Participated in a decision task about product recommendations and AI perceptions.,2
+144,CLAUDE_SIM_001,1,No_AI_Hedonic,47110,27,1,1,6,4,5,5,3,3,3,3,1,4,7,1,2,7,Answered survey questions about a product recommendation and AI technology perceptions.,2
+145,CLAUDE_SIM_001,1,No_AI_Hedonic,17641,39,1,2,4,5,5,4,2,4,4,4,5,2,6,2,2,8,Completed questions about a recommended product and my attitudes toward AI technology.,2
+146,CLAUDE_SIM_001,1,No_AI_Hedonic,56179,47,4,2,3,2,3,3,3,4,3,4,6,3,5,2,4,6,Viewed a product and rated ownership feelings then indicated purchase willingness.,2
+147,CLAUDE_SIM_001,1,No_AI_Hedonic,14946,28,1,2,3,3,3,1,4,2,3,3,3,2,4,2,2,8,Reviewed a product recommendation and rated my feelings toward it then set a price.,2
+148,CLAUDE_SIM_001,1,No_AI_Hedonic,88944,50,2,2,3,5,5,4,4,6,6,6,5,2,5,1,2,7,Evaluated a product recommendation and identified an AI-generated picture and stated my WTP.,2
+149,CLAUDE_SIM_001,1,No_AI_Hedonic,95491,21,4,2,3,5,4,3,2,3,4,2,4,3,6,1,2,5,Completed questions about a recommended product and my attitudes toward AI technology.,2
+150,CLAUDE_SIM_001,1,No_AI_Hedonic,47707,53,1,2,4,4,5,3,2,3,3,4,4,4,7,2,2,5,Rated various statements about AI and product ownership then indicated willingness to pay.,2
+151,CLAUDE_SIM_001,1,AI_Utilitarian,12500,28,1,2,6,4,4,3,4,4,2,3,3,4,5,2,4,6,Viewed an online shopping recommendation and completed questions about my reactions to it.,2
+152,CLAUDE_SIM_001,1,AI_Utilitarian,13862,62,1,1,1,2,1,1,5,2,2,2,3,6,4,2,1,3,Viewed a product and rated ownership feelings then indicated purchase willingness.,2
+153,CLAUDE_SIM_001,1,AI_Utilitarian,51614,48,2,1,4,5,4,3,4,6,6,6,5,1,3,1,2,6,Looked at a shopping page recommendation and rated how much I felt it was mine.,2
+154,CLAUDE_SIM_001,1,AI_Utilitarian,71441,32,2,1,2,2,4,3,6,2,3,3,3,4,3,2,2,3,Viewed a product and rated ownership feelings then indicated purchase willingness.,2
+155,CLAUDE_SIM_001,1,AI_Utilitarian,78843,23,1,1,4,5,5,6,1,6,5,5,5,1,1,1,2,7,Viewed a product and rated ownership feelings then indicated purchase willingness.,2
+156,CLAUDE_SIM_001,1,AI_Utilitarian,81618,43,1,1,5,4,3,5,2,5,4,6,5,2,3,1,2,3,Looked at a product ad and answered questions about ownership and AI then tried to spot an AI image.,2
+157,CLAUDE_SIM_001,1,AI_Utilitarian,50569,31,1,1,3,4,5,4,2,5,6,6,5,1,3,1,2,8,Looked at a product ad and answered questions about ownership and AI then tried to spot an AI image.,2
+158,CLAUDE_SIM_001,1,AI_Utilitarian,89073,26,1,1,4,2,1,2,5,3,3,2,3,6,2,1,2,7,Completed a survey about product recommendations and AI technology attitudes.,2
+159,CLAUDE_SIM_001,1,AI_Utilitarian,92441,29,2,1,3,2,3,2,3,4,4,5,3,3,3,2,2,4,Participated in a decision task about product recommendations and AI perceptions.,2
+160,CLAUDE_SIM_001,1,AI_Utilitarian,37831,43,1,1,4,4,5,4,2,4,4,2,4,3,1,2,1,8,Participated in a study about product recommendations and decision-making.,2
+161,CLAUDE_SIM_001,1,AI_Utilitarian,98892,29,1,2,6,6,5,4,2,3,4,3,4,3,1,1,2,8,Rated various statements about AI and product ownership then indicated willingness to pay.,2
+162,CLAUDE_SIM_001,1,AI_Utilitarian,36489,46,1,1,2,3,3,4,6,5,4,3,4,2,4,1,2,6,Participated in a study about product recommendations and decision-making.,2
+163,CLAUDE_SIM_001,1,AI_Utilitarian,50913,29,1,1,2,3,4,1,5,4,2,2,2,5,5,1,2,7,Answered survey questions about a product recommendation and AI technology perceptions.,2
+164,CLAUDE_SIM_001,1,AI_Utilitarian,88134,48,2,1,1,3,3,3,5,2,1,1,3,6,2,1,2,6,Saw a product page and answered questions about how connected I felt to the recommendation.,2
+165,CLAUDE_SIM_001,1,AI_Utilitarian,13966,40,1,1,4,4,4,3,2,3,4,4,3,3,3,2,2,6,Rated my connection to a product recommendation and shared my willingness to pay for it.,2
+166,CLAUDE_SIM_001,1,AI_Utilitarian,85260,38,2,1,1,1,1,1,6,2,2,1,1,5,2,1,2,4,Viewed a product and rated ownership feelings then indicated purchase willingness.,2
+167,CLAUDE_SIM_001,1,AI_Utilitarian,99071,25,1,1,4,2,2,2,5,2,4,2,3,4,2,1,3,6,Participated in a decision task about product recommendations and AI perceptions.,2
+168,CLAUDE_SIM_001,1,AI_Utilitarian,57223,38,4,1,3,1,4,3,3,2,4,4,3,4,1,1,2,4,Participated in a decision task about product recommendations and AI perceptions.,2
+169,CLAUDE_SIM_001,1,AI_Utilitarian,14385,50,2,1,4,6,4,4,2,5,6,6,6,2,3,2,2,5,Rated various statements about AI and product ownership then indicated willingness to pay.,2
+170,CLAUDE_SIM_001,1,AI_Utilitarian,48616,34,2,1,5,6,5,4,1,4,4,5,4,3,2,2,2,6,Reviewed a product recommendation and rated my feelings toward it then set a price.,2
+171,CLAUDE_SIM_001,1,AI_Utilitarian,79125,42,1,2,3,4,5,3,3,5,6,6,6,1,1,2,2,7,Answered survey questions about a product recommendation and AI technology perceptions.,2
+172,CLAUDE_SIM_001,1,AI_Utilitarian,68827,27,2,1,4,3,3,3,4,2,2,3,1,3,2,1,1,6,Looked at a shopping page recommendation and rated how much I felt it was mine.,2
+173,CLAUDE_SIM_001,1,AI_Utilitarian,68450,23,1,1,5,3,4,2,4,4,6,5,5,1,1,2,2,7,Saw a product page and answered questions about how connected I felt to the recommendation.,2
+174,CLAUDE_SIM_001,1,AI_Utilitarian,19698,34,1,1,5,5,4,5,1,3,2,3,2,3,4,1,4,6,Viewed a shopping page and rated statements about ownership then bid on a product.,2
+175,CLAUDE_SIM_001,1,AI_Utilitarian,61292,22,2,1,3,5,4,1,4,4,2,2,4,3,1,1,2,6,Viewed an online shopping recommendation and completed questions about my reactions to it.,2
+176,CLAUDE_SIM_001,1,AI_Utilitarian,49173,26,2,1,1,1,1,1,4,2,2,2,2,5,3,2,4,4,Viewed a product and rated ownership feelings then indicated purchase willingness.,2
+177,CLAUDE_SIM_001,1,AI_Utilitarian,19441,41,2,1,3,3,3,3,4,4,5,4,5,1,3,1,2,3,Evaluated a product recommendation and identified an AI-generated picture and stated my WTP.,2
+178,CLAUDE_SIM_001,1,AI_Utilitarian,87736,37,1,1,4,5,5,5,2,3,3,2,4,3,2,2,2,6,Answered questions about AI attitudes and how I feel about a recommended product.,2
+179,CLAUDE_SIM_001,1,AI_Utilitarian,14931,19,2,1,3,6,4,5,2,6,6,5,6,1,4,1,2,9,Answered survey questions about a product recommendation and AI technology perceptions.,2
+180,CLAUDE_SIM_001,1,AI_Utilitarian,90847,41,1,1,2,4,3,4,2,5,5,5,4,3,1,1,2,6,Answered questions about AI attitudes and how I feel about a recommended product.,2
+181,CLAUDE_SIM_001,1,AI_Utilitarian,27878,27,1,1,1,1,1,1,6,1,2,2,1,5,3,2,2,6,Reviewed a product recommendation and rated my feelings toward it then set a price.,2
+182,CLAUDE_SIM_001,1,AI_Utilitarian,66917,18,2,1,3,4,3,4,5,5,6,6,5,3,3,2,2,6,Viewed a product and rated ownership feelings then indicated purchase willingness.,2
+183,CLAUDE_SIM_001,1,AI_Utilitarian,13199,48,1,1,5,4,4,4,1,2,4,4,4,3,3,1,2,6,Completed questions about a recommended product and my attitudes toward AI technology.,2
+184,CLAUDE_SIM_001,1,AI_Utilitarian,58029,41,1,1,6,6,5,4,3,4,3,3,3,4,2,2,2,4,Rated my connection to a product recommendation and shared my willingness to pay for it.,2
+185,CLAUDE_SIM_001,1,AI_Utilitarian,70014,45,1,1,3,2,3,1,5,2,2,2,2,4,2,2,3,5,Looked at a shopping page recommendation and rated how much I felt it was mine.,2
+186,CLAUDE_SIM_001,1,AI_Utilitarian,68360,20,2,1,2,2,2,2,5,3,4,2,3,4,2,1,2,6,Saw a product page and answered questions about how connected I felt to the recommendation.,2
+187,CLAUDE_SIM_001,1,AI_Utilitarian,29391,24,1,1,2,2,2,1,4,3,4,3,4,4,2,1,2,3,Participated in a study about product recommendations and decision-making.,2
+188,CLAUDE_SIM_001,1,AI_Utilitarian,90939,42,1,2,4,5,4,5,2,6,6,5,6,1,2,2,2,7,Participated in a decision task about product recommendations and AI perceptions.,2
+189,CLAUDE_SIM_001,1,AI_Utilitarian,68224,34,1,1,4,5,4,5,3,5,6,5,4,2,3,2,2,6,Participated in a study about product recommendations and decision-making.,2
+190,CLAUDE_SIM_001,1,AI_Utilitarian,49834,18,1,1,4,3,3,4,3,2,3,3,3,5,4,2,2,5,Assessed my psychological ownership of a recommended product and shared AI opinions.,2
+191,CLAUDE_SIM_001,1,AI_Utilitarian,17669,43,2,2,2,1,2,1,6,2,1,3,1,5,2,1,2,5,Rated various statements about AI and product ownership then indicated willingness to pay.,2
+192,CLAUDE_SIM_001,1,AI_Utilitarian,64000,20,1,1,5,3,4,5,4,5,4,5,6,2,3,2,2,4,Reviewed a product recommendation and rated my feelings toward it then set a price.,2
+193,CLAUDE_SIM_001,1,AI_Utilitarian,28659,31,1,1,4,3,4,3,3,4,3,3,2,3,3,1,2,8,Assessed my psychological ownership of a recommended product and shared AI opinions.,2
+194,CLAUDE_SIM_001,1,AI_Utilitarian,55591,20,2,1,4,2,1,4,5,3,3,4,5,4,4,1,2,4,Saw a product page and answered questions about how connected I felt to the recommendation.,2
+195,CLAUDE_SIM_001,1,AI_Utilitarian,24459,21,1,1,1,1,1,1,4,3,3,1,2,3,2,1,2,6,Viewed a product and rated ownership feelings then indicated purchase willingness.,2
+196,CLAUDE_SIM_001,1,AI_Utilitarian,32114,64,1,1,3,2,1,2,4,5,4,5,4,3,3,1,2,4,Rated my feelings about a recommended product and answered questions about AI attitudes.,2
+197,CLAUDE_SIM_001,1,AI_Utilitarian,33474,21,1,1,3,3,4,1,2,3,2,4,2,4,4,2,2,6,Answered survey questions about a product recommendation and AI technology perceptions.,2
+198,CLAUDE_SIM_001,1,AI_Utilitarian,60997,29,2,1,4,4,5,3,1,4,4,4,4,3,3,2,2,7,Reviewed a product recommendation and rated my feelings toward it then set a price.,2
+199,CLAUDE_SIM_001,1,AI_Utilitarian,94945,33,2,1,3,2,4,2,4,4,4,4,2,4,2,2,2,4,Rated my feelings about a recommended product and answered questions about AI attitudes.,2
+200,CLAUDE_SIM_001,1,AI_Utilitarian,19872,42,1,1,3,4,4,4,4,6,5,6,6,2,2,1,4,4,Answered questions about AI attitudes and how I feel about a recommended product.,2
+201,CLAUDE_SIM_001,1,AI_Utilitarian,37912,23,2,1,1,3,2,2,3,1,3,1,3,5,3,1,2,8,Evaluated a product recommendation and identified an AI-generated picture and stated my WTP.,2
+202,CLAUDE_SIM_001,1,AI_Utilitarian,50703,20,1,1,3,3,3,3,4,3,4,2,3,4,5,1,2,4,Looked at a shopping page recommendation and rated how much I felt it was mine.,2
+203,CLAUDE_SIM_001,1,AI_Utilitarian,78414,26,2,1,2,3,2,3,5,4,2,4,4,3,2,1,1,5,Rated various statements about AI and product ownership then indicated willingness to pay.,2
+204,CLAUDE_SIM_001,1,AI_Utilitarian,12762,19,1,1,2,2,5,4,4,5,6,4,5,2,1,1,2,8,Answered survey questions about a product recommendation and AI technology perceptions.,2
+205,CLAUDE_SIM_001,1,AI_Utilitarian,45918,49,2,1,2,4,2,2,5,3,4,4,4,4,2,1,2,5,Viewed a shopping page and rated statements about ownership then bid on a product.,2
+206,CLAUDE_SIM_001,1,AI_Utilitarian,99883,18,1,1,4,4,3,3,5,3,3,3,3,5,4,2,2,5,Answered questions about AI attitudes and how I feel about a recommended product.,2
+207,CLAUDE_SIM_001,1,AI_Utilitarian,25381,49,2,1,4,4,3,3,3,5,4,4,4,3,2,2,2,6,Saw a product page and answered questions about how connected I felt to the recommendation.,2
+208,CLAUDE_SIM_001,1,AI_Utilitarian,62108,27,2,1,2,6,3,3,4,4,3,4,3,3,2,2,1,8,Looked at a shopping page recommendation and rated how much I felt it was mine.,2
+209,CLAUDE_SIM_001,1,AI_Utilitarian,44131,37,1,1,4,3,3,4,5,4,4,3,4,4,3,2,2,5,Rated my feelings about a recommended product and answered questions about AI attitudes.,2
+210,CLAUDE_SIM_001,1,AI_Utilitarian,56729,50,1,1,4,4,3,3,4,5,6,6,6,2,2,1,2,10,Completed a survey about product recommendations and AI technology attitudes.,2
+211,CLAUDE_SIM_001,1,AI_Utilitarian,30155,48,2,1,3,2,3,4,6,5,4,5,4,3,3,2,2,6,Answered questions about AI attitudes and how I feel about a recommended product.,2
+212,CLAUDE_SIM_001,1,AI_Utilitarian,62742,30,2,1,5,5,5,2,2,5,5,4,5,2,2,1,2,7,Rated my feelings about a recommended product and answered questions about AI attitudes.,2
+213,CLAUDE_SIM_001,1,AI_Utilitarian,94833,25,1,2,3,3,3,3,4,4,3,3,3,4,2,1,1,5,Participated in a study about product recommendations and decision-making.,2
+214,CLAUDE_SIM_001,1,AI_Utilitarian,69637,35,2,1,1,3,3,1,5,2,2,2,3,3,2,2,2,2,Viewed a shopping page and rated statements about ownership then bid on a product.,2
+215,CLAUDE_SIM_001,1,AI_Utilitarian,24668,42,1,1,3,4,4,3,4,4,5,5,5,3,2,1,2,6,Answered survey questions about a product recommendation and AI technology perceptions.,2
+216,CLAUDE_SIM_001,1,AI_Utilitarian,85846,22,1,1,3,2,3,3,4,3,2,4,4,3,3,1,2,6,Saw a product page and answered questions about how connected I felt to the recommendation.,2
+217,CLAUDE_SIM_001,1,AI_Utilitarian,96108,18,2,1,3,3,2,3,4,3,3,1,1,4,2,1,2,6,Looked at a shopping page recommendation and rated how much I felt it was mine.,2
+218,CLAUDE_SIM_001,1,AI_Utilitarian,18344,31,1,1,4,2,3,4,5,4,5,4,3,2,4,1,2,7,Evaluated a product recommendation and identified an AI-generated picture and stated my WTP.,2
+219,CLAUDE_SIM_001,1,AI_Utilitarian,30582,32,2,1,1,3,5,2,5,5,4,4,4,2,3,2,2,4,Completed a task involving product recommendations and willingness to pay decisions.,2
+220,CLAUDE_SIM_001,1,AI_Utilitarian,77653,38,1,1,4,5,4,4,3,4,4,4,4,3,2,2,2,6,Assessed my psychological ownership of a recommended product and shared AI opinions.,2
+221,CLAUDE_SIM_001,1,AI_Utilitarian,90006,51,1,1,4,5,4,5,2,4,6,5,4,2,3,2,2,6,Answered survey questions about a product recommendation and AI technology perceptions.,1
+222,CLAUDE_SIM_001,1,AI_Utilitarian,24475,32,1,1,2,4,3,2,5,3,3,4,3,4,2,1,2,7,Rated various statements about AI and product ownership then indicated willingness to pay.,2
+223,CLAUDE_SIM_001,1,AI_Utilitarian,29209,29,1,1,3,3,4,3,2,6,6,5,5,1,2,1,2,3,Looked at a product ad and answered questions about ownership and AI then tried to spot an AI image.,2
+224,CLAUDE_SIM_001,1,AI_Utilitarian,83272,18,2,1,3,2,2,3,5,2,2,3,1,6,1,2,3,6,Completed questions about a recommended product and my attitudes toward AI technology.,2
+225,CLAUDE_SIM_001,1,AI_Utilitarian,28156,21,1,1,1,1,2,3,5,2,2,2,4,5,3,1,4,7,Rated my feelings about a recommended product and answered questions about AI attitudes.,2
+226,CLAUDE_SIM_001,1,AI_Hedonic,12446,55,1,1,5,4,3,3,3,6,5,6,5,2,5,2,4,7,Completed questions about a recommended product and my attitudes toward AI technology.,2
+227,CLAUDE_SIM_001,1,AI_Hedonic,33784,39,1,1,2,1,3,1,6,2,2,3,3,4,7,1,2,4,Viewed a shopping page and rated statements about ownership then bid on a product.,2
+228,CLAUDE_SIM_001,1,AI_Hedonic,63313,18,2,1,4,4,2,4,4,3,3,3,5,4,5,2,2,8,Viewed a product and rated ownership feelings then indicated purchase willingness.,2
+229,CLAUDE_SIM_001,1,AI_Hedonic,21759,30,1,2,4,4,3,4,3,3,3,3,4,4,7,2,2,4,Rated my feelings about a recommended product and answered questions about AI attitudes.,2
+230,CLAUDE_SIM_001,1,AI_Hedonic,80533,56,2,1,6,4,5,6,4,5,5,5,4,2,7,1,2,4,Rated various statements about AI and product ownership then indicated willingness to pay.,2
+231,CLAUDE_SIM_001,1,AI_Hedonic,74597,50,1,1,3,3,4,4,3,6,5,5,6,2,7,2,2,5,I viewed a product recommendation and rated my feelings about it then indicated how much I would pay.,2
+232,CLAUDE_SIM_001,1,AI_Hedonic,94012,26,2,1,1,1,2,2,6,3,4,2,2,3,6,2,2,5,Completed a survey about product recommendations and AI technology attitudes.,2
+233,CLAUDE_SIM_001,1,AI_Hedonic,66616,40,2,1,1,1,3,1,6,1,2,2,3,5,6,2,2,4,Completed a survey about product recommendations and AI technology attitudes.,2
+234,CLAUDE_SIM_001,1,AI_Hedonic,83303,57,1,1,5,4,5,3,4,4,4,4,4,2,7,2,2,7,Completed a task involving product recommendations and willingness to pay decisions.,2
+235,CLAUDE_SIM_001,1,AI_Hedonic,28045,36,1,1,2,3,3,3,5,3,4,2,3,6,6,2,2,4,Completed questions about a recommended product and my attitudes toward AI technology.,2
+236,CLAUDE_SIM_001,1,AI_Hedonic,85813,25,1,1,2,2,1,1,5,1,1,2,1,6,6,2,2,7,Evaluated a product recommendation and identified an AI-generated picture and stated my WTP.,2
+237,CLAUDE_SIM_001,1,AI_Hedonic,38697,49,1,1,3,3,3,4,4,5,5,3,4,4,7,1,2,8,Rated various statements about AI and product ownership then indicated willingness to pay.,2
+238,CLAUDE_SIM_001,1,AI_Hedonic,66300,43,1,1,4,4,3,5,3,4,4,4,3,4,5,2,2,6,Rated my feelings about a recommended product and answered questions about AI attitudes.,2
+239,CLAUDE_SIM_001,1,AI_Hedonic,86177,18,2,1,5,4,4,3,3,5,4,4,4,2,6,2,2,4,Assessed my psychological ownership of a recommended product and shared AI opinions.,2
+240,CLAUDE_SIM_001,1,AI_Hedonic,57067,43,2,1,4,3,4,3,4,3,4,4,3,5,6,2,4,7,I viewed a product recommendation and rated my feelings about it then indicated how much I would pay.,2
+241,CLAUDE_SIM_001,1,AI_Hedonic,77193,64,2,1,4,2,4,4,4,5,5,5,5,3,4,2,2,6,Viewed an online shopping recommendation and completed questions about my reactions to it.,2
+242,CLAUDE_SIM_001,1,AI_Hedonic,80464,30,2,1,6,6,4,5,2,5,6,4,4,2,6,1,2,5,Viewed an online shopping recommendation and completed questions about my reactions to it.,2
+243,CLAUDE_SIM_001,1,AI_Hedonic,40544,31,1,1,2,3,2,2,6,1,2,1,2,6,5,1,2,5,Completed questions about a recommended product and my attitudes toward AI technology.,2
+244,CLAUDE_SIM_001,1,AI_Hedonic,78925,27,1,1,5,4,2,4,4,4,2,4,3,4,6,2,2,5,Evaluated a product recommendation and identified an AI-generated picture and stated my WTP.,2
+245,CLAUDE_SIM_001,1,AI_Hedonic,63907,50,4,1,5,4,4,5,3,3,5,5,5,2,7,1,2,7,Rated my feelings about a recommended product and answered questions about AI attitudes.,2
+246,CLAUDE_SIM_001,1,AI_Hedonic,31150,36,1,1,2,2,2,1,6,1,2,2,2,5,7,1,3,5,Evaluated a product recommendation and identified an AI-generated picture and stated my WTP.,2
+247,CLAUDE_SIM_001,1,AI_Hedonic,65270,37,2,1,3,4,3,3,2,2,3,3,4,4,6,1,2,5,Completed questions about a recommended product and my attitudes toward AI technology.,2
+248,CLAUDE_SIM_001,1,AI_Hedonic,18825,44,2,1,4,5,5,3,1,4,4,4,5,3,7,1,2,5,I viewed a product recommendation and rated my feelings about it then indicated how much I would pay.,2
+249,CLAUDE_SIM_001,1,AI_Hedonic,90786,35,1,1,1,1,2,2,6,2,2,2,2,4,6,2,2,7,Reviewed a product recommendation and rated my feelings toward it then set a price.,2
+250,CLAUDE_SIM_001,1,AI_Hedonic,39156,25,1,1,2,3,2,3,6,2,1,3,2,6,4,2,3,7,Rated various statements about AI and product ownership then indicated willingness to pay.,2
+251,CLAUDE_SIM_001,1,AI_Hedonic,31989,22,2,1,3,4,3,2,5,2,1,2,3,6,7,2,2,5,Viewed an online shopping recommendation and completed questions about my reactions to it.,2
+252,CLAUDE_SIM_001,1,AI_Hedonic,58908,27,3,2,5,5,3,4,1,5,5,6,6,1,5,1,2,6,Viewed a shopping page and rated statements about ownership then bid on a product.,2
+253,CLAUDE_SIM_001,1,AI_Hedonic,88924,19,1,1,4,6,6,3,1,5,4,4,5,2,4,1,2,5,Viewed an online shopping recommendation and completed questions about my reactions to it.,2
+254,CLAUDE_SIM_001,1,AI_Hedonic,10841,57,1,1,4,3,5,5,3,5,6,6,5,2,4,1,2,4,Completed a survey about product recommendations and AI technology attitudes.,2
+255,CLAUDE_SIM_001,1,AI_Hedonic,54846,43,1,1,3,4,3,1,4,4,3,3,3,4,4,1,3,6,I viewed a product recommendation and rated my feelings about it then indicated how much I would pay.,2
+256,CLAUDE_SIM_001,1,AI_Hedonic,62665,31,1,1,2,3,3,5,2,4,4,5,3,3,5,1,2,6,Rated my feelings about a recommended product and answered questions about AI attitudes.,1
+257,CLAUDE_SIM_001,1,AI_Hedonic,23166,34,1,1,4,4,4,5,3,5,5,6,6,2,5,2,2,5,Reviewed a product recommendation and rated my feelings toward it then set a price.,2
+258,CLAUDE_SIM_001,1,AI_Hedonic,97285,18,1,1,5,6,4,4,2,4,4,5,5,2,7,1,2,8,Rated various statements about AI and product ownership then indicated willingness to pay.,2
+259,CLAUDE_SIM_001,1,AI_Hedonic,51074,50,1,1,4,4,4,5,1,5,6,5,5,2,5,1,2,4,Completed a survey about product recommendations and AI technology attitudes.,2
+260,CLAUDE_SIM_001,1,AI_Hedonic,85231,18,1,1,4,3,2,3,4,4,3,3,3,4,7,2,2,5,Participated in a study about product recommendations and decision-making.,2
+261,CLAUDE_SIM_001,1,AI_Hedonic,35571,30,1,2,1,2,1,3,5,2,2,4,3,4,7,1,1,5,Rated my feelings about a recommended product and answered questions about AI attitudes.,2
+262,CLAUDE_SIM_001,1,AI_Hedonic,16877,45,1,1,3,2,3,3,6,2,2,1,2,5,7,1,2,7,Viewed a product and rated ownership feelings then indicated purchase willingness.,2
+263,CLAUDE_SIM_001,1,AI_Hedonic,22393,37,1,1,4,5,4,3,3,3,3,3,3,2,7,1,2,5,Saw a product page and answered questions about how connected I felt to the recommendation.,2
+264,CLAUDE_SIM_001,1,AI_Hedonic,26884,19,1,1,1,3,3,3,5,2,3,3,4,4,4,1,2,5,Participated in a study about product recommendations and decision-making.,2
+265,CLAUDE_SIM_001,1,AI_Hedonic,38208,50,1,1,2,2,1,1,5,2,3,2,1,4,5,1,2,4,Viewed an online shopping recommendation and completed questions about my reactions to it.,2
+266,CLAUDE_SIM_001,1,AI_Hedonic,89116,35,2,2,3,4,4,3,5,3,2,3,4,4,4,2,2,4,Answered questions about AI attitudes and how I feel about a recommended product.,2
+267,CLAUDE_SIM_001,1,AI_Hedonic,61060,44,2,1,5,3,2,2,5,3,4,3,3,3,4,2,2,5,Reviewed a product recommendation and rated my feelings toward it then set a price.,2
+268,CLAUDE_SIM_001,1,AI_Hedonic,21395,46,1,1,4,4,4,6,2,5,2,5,4,3,7,2,2,4,Reviewed a product recommendation and rated my feelings toward it then set a price.,1
+269,CLAUDE_SIM_001,1,AI_Hedonic,96661,56,2,1,4,4,4,3,3,4,5,5,4,3,6,1,2,7,Viewed an online shopping recommendation and completed questions about my reactions to it.,2
+270,CLAUDE_SIM_001,1,AI_Hedonic,49953,62,2,1,3,3,4,3,5,4,2,4,5,3,5,2,2,7,Answered questions about AI attitudes and how I feel about a recommended product.,2
+271,CLAUDE_SIM_001,1,AI_Hedonic,45321,45,2,1,5,4,4,5,3,6,5,6,5,1,6,2,2,2,I viewed a product recommendation and rated my feelings about it then indicated how much I would pay.,2
+272,CLAUDE_SIM_001,1,AI_Hedonic,55104,18,1,1,3,2,3,2,4,2,4,5,4,2,4,1,2,6,Looked at a product ad and answered questions about ownership and AI then tried to spot an AI image.,2
+273,CLAUDE_SIM_001,1,AI_Hedonic,35189,46,2,1,4,3,5,4,2,5,4,5,4,2,3,1,2,7,Rated my feelings about a recommended product and answered questions about AI attitudes.,2
+274,CLAUDE_SIM_001,1,AI_Hedonic,49892,48,2,1,4,2,2,3,4,3,4,3,3,4,6,2,2,4,Evaluated a product recommendation and identified an AI-generated picture and stated my WTP.,2
+275,CLAUDE_SIM_001,1,AI_Hedonic,30142,42,2,2,2,1,3,1,4,3,3,2,3,3,5,1,2,4,Viewed an online shopping recommendation and completed questions about my reactions to it.,2
+276,CLAUDE_SIM_001,1,AI_Hedonic,61150,27,1,1,5,4,3,4,3,5,5,5,5,3,5,1,2,6,Rated various statements about AI and product ownership then indicated willingness to pay.,2
+277,CLAUDE_SIM_001,1,AI_Hedonic,58380,21,2,2,4,3,3,2,4,1,1,1,2,6,5,2,2,5,Viewed a product and rated ownership feelings then indicated purchase willingness.,2
+278,CLAUDE_SIM_001,1,AI_Hedonic,61834,39,2,1,2,2,2,2,6,4,3,3,3,4,4,1,2,5,I viewed a product recommendation and rated my feelings about it then indicated how much I would pay.,2
+279,CLAUDE_SIM_001,1,AI_Hedonic,11776,36,1,1,3,5,4,3,3,5,5,5,4,1,7,1,2,8,Answered survey questions about a product recommendation and AI technology perceptions.,2
+280,CLAUDE_SIM_001,1,AI_Hedonic,39401,47,1,1,4,4,3,3,4,3,5,3,2,3,5,2,2,5,Completed a survey about product recommendations and AI technology attitudes.,2
+281,CLAUDE_SIM_001,1,AI_Hedonic,75437,20,2,1,1,2,3,2,3,2,5,4,3,5,5,2,2,3,Reviewed a product recommendation and rated my feelings toward it then set a price.,2
+282,CLAUDE_SIM_001,1,AI_Hedonic,82002,20,2,1,3,3,2,2,3,3,4,4,4,3,6,2,2,7,Looked at a product ad and answered questions about ownership and AI then tried to spot an AI image.,2
+283,CLAUDE_SIM_001,1,AI_Hedonic,25366,53,1,1,4,4,2,4,2,5,6,6,6,2,5,1,2,8,Looked at a product ad and answered questions about ownership and AI then tried to spot an AI image.,2
+284,CLAUDE_SIM_001,1,AI_Hedonic,32751,33,2,1,3,3,2,1,4,5,4,5,5,2,4,2,2,6,Rated various statements about AI and product ownership then indicated willingness to pay.,2
+285,CLAUDE_SIM_001,1,AI_Hedonic,35523,34,1,1,3,4,3,3,6,4,4,3,3,5,5,1,2,1,Rated various statements about AI and product ownership then indicated willingness to pay.,2
+286,CLAUDE_SIM_001,1,AI_Hedonic,98432,45,2,1,4,4,3,4,4,4,5,4,5,1,4,2,2,3,Participated in a study about product recommendations and decision-making.,2
+287,CLAUDE_SIM_001,1,AI_Hedonic,66479,53,2,1,5,5,5,5,4,5,6,6,6,1,5,2,3,4,Viewed a shopping page and rated statements about ownership then bid on a product.,2
+288,CLAUDE_SIM_001,1,AI_Hedonic,84545,23,1,1,2,2,2,4,6,3,3,2,3,5,4,1,2,4,Rated my connection to a product recommendation and shared my willingness to pay for it.,2
+289,CLAUDE_SIM_001,1,AI_Hedonic,71405,18,1,1,4,4,6,4,3,6,4,6,5,1,6,2,1,6,I viewed a product recommendation and rated my feelings about it then indicated how much I would pay.,2
+290,CLAUDE_SIM_001,1,AI_Hedonic,99610,26,1,1,4,4,5,4,4,5,5,5,6,2,7,1,2,4,Evaluated a product recommendation and identified an AI-generated picture and stated my WTP.,2
+291,CLAUDE_SIM_001,1,AI_Hedonic,97551,29,2,1,3,5,3,3,4,2,5,3,5,3,6,1,2,8,Evaluated a product recommendation and identified an AI-generated picture and stated my WTP.,2
+292,CLAUDE_SIM_001,1,AI_Hedonic,99080,33,2,1,4,4,4,3,3,6,6,6,6,1,5,1,1,7,I viewed a product recommendation and rated my feelings about it then indicated how much I would pay.,2
+293,CLAUDE_SIM_001,1,AI_Hedonic,63907,50,2,1,5,5,6,5,3,5,5,4,5,3,5,2,2,5,Answered survey questions about a product recommendation and AI technology perceptions.,2
+294,CLAUDE_SIM_001,1,AI_Hedonic,10544,45,1,1,4,6,4,6,1,4,6,6,6,2,5,1,2,6,Viewed an online shopping recommendation and completed questions about my reactions to it.,2
+295,CLAUDE_SIM_001,1,AI_Hedonic,92223,54,1,1,1,1,1,2,6,2,2,3,2,4,6,2,2,4,Viewed a shopping page and rated statements about ownership then bid on a product.,2
+296,CLAUDE_SIM_001,1,AI_Hedonic,93674,58,1,1,3,4,1,3,4,3,2,4,3,4,7,1,2,4,Rated various statements about AI and product ownership then indicated willingness to pay.,2
+297,CLAUDE_SIM_001,1,AI_Hedonic,90478,34,2,1,2,2,3,1,5,2,2,2,1,5,3,1,2,7,Assessed my psychological ownership of a recommended product and shared AI opinions.,2
+298,CLAUDE_SIM_001,1,AI_Hedonic,23486,18,1,1,2,4,2,2,4,4,5,5,5,2,6,1,2,4,Answered survey questions about a product recommendation and AI technology perceptions.,2
+299,CLAUDE_SIM_001,1,AI_Hedonic,56890,35,1,1,4,3,3,3,3,6,6,5,4,1,4,1,2,6,Rated my feelings about a recommended product and answered questions about AI attitudes.,2
+300,CLAUDE_SIM_001,1,AI_Hedonic,45968,29,1,1,2,4,2,1,4,2,3,3,2,6,4,2,2,7,Participated in a study about product recommendations and decision-making.,2

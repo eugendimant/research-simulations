@@ -1,0 +1,125 @@
+================================================================================
+FILE READ OK
+================================================================================
+FILE READ OK: "Group_12_MTurk - AI Product Recommendations Study", Blocks = 4, Items = 26 per block
+
+Survey Name: Group_12_MTurk (Decision Task)
+Total Blocks: 4 condition blocks + survey flow elements
+Items per Block: 26 questions
+Embedded Data: Random ID (${rand://int/10000:99999})
+
+================================================================================
+SCHEMA LOCKED
+================================================================================
+
+1. CONDITIONS (K=4):
+   - No_AI_Utilitarian: No AI mention + Dove body soap (utilitarian product)
+   - No_AI_Hedonic: No AI mention + Snickers chocolate (hedonic product)
+   - AI_Utilitarian: AI-powered recommendation + Dove body soap
+   - AI_Hedonic: AI-powered recommendation + Snickers chocolate
+
+2. ASSIGNMENT RULE:
+   - Randomizer: Evenly present 1 of 4 blocks
+   - Equal distribution (25% per condition = 75 participants each for N=300)
+
+3. NUMBER OF ITEMS: 26 items per condition block
+   - Demographics: 2 items (Age, Gender)
+   - Product display: 1 item (condition-specific image)
+   - Manipulation check: 1 item (AI mentioned?)
+   - Psychological ownership: 5 items (6-point Likert)
+   - AI attitudes: 5 items (6-point Likert)
+   - Hedonic/Utilitarian perception: 1 item (7-point scale)
+   - Spot-the-AI task: 1 item
+   - Comprehension check: 1 item (WTP winner)
+   - Willingness to pay: 1 item (0-10 slider)
+   - Task summary: 1 item (open-ended)
+   - MTurk items: 3 items (ID entry, confirmation, completion code)
+
+4. CHECKS DETECTED:
+   - Attention check: "Was AI mentioned anywhere on the shopping page?"
+     * Correct answer for AI conditions: Yes
+     * Correct answer for No AI conditions: No
+   - Comprehension check: "Who would win the $10 gift card?"
+     * Correct answer: Participant 2 (second highest WTP = $8)
+
+5. QUOTAS:
+   - Gender: 50/50 (Male/Female), with small allowance for Non-binary/Prefer not to say
+   - Condition: 25% each (evenly distributed)
+
+6. HEADER LENGTH: 24 columns
+
+================================================================================
+LOCKED HEADER
+================================================================================
+PARTICIPANT_ID,RUN_ID,CHUNK,CONDITION,Random_ID,Age,Gender,AI_Mentioned_Check,PsychOwn_Incorporates,PsychOwn_Belongs,PsychOwn_Connected,PsychOwn_Closeness,PsychOwn_Difficult,AI_Att_ImproveLife,AI_Att_ImproveWork,AI_Att_UseFuture,AI_Att_Positive,AI_Att_Threat,Hedonic_Utilitarian,SpotAI_Response,WTP_CompCheck,WTP,Task_Summary,MTurkID_Confirmed
+
+================================================================================
+VARIABLE CODING
+================================================================================
+
+Gender:
+  1 = Male
+  2 = Female
+  3 = Non-binary
+  4 = Prefer not to say
+
+AI_Mentioned_Check:
+  1 = Yes
+  2 = No
+
+Psychological Ownership (PsychOwn_*) - 6-point scale:
+  1 = Strongly disagree
+  2 = Disagree
+  3 = Somewhat disagree
+  4 = Neither agree nor disagree
+  5 = Somewhat agree
+  6 = Agree
+
+AI Attitudes (AI_Att_*) - 6-point scale:
+  1 = Strongly Disagree
+  2 = Disagree
+  3 = Somewhat Disagree
+  4 = Neither Disagree nor Agree
+  5 = Somewhat Agree
+  6 = Agree
+
+Hedonic_Utilitarian - 7-point scale:
+  1 = Entirely utilitarian
+  2 = Mostly utilitarian
+  3 = Slightly utilitarian
+  4 = Neutral
+  5 = Slightly hedonic
+  6 = Mostly hedonic
+  7 = Entirely hedonic
+
+SpotAI_Response:
+  1 = Picture 1
+  2 = Picture 2
+
+WTP_CompCheck (Who wins the $10 gift card?):
+  1 = Participant 1
+  2 = Participant 2 (CORRECT - second highest WTP)
+  3 = Participant 3
+  4 = Participant 4
+
+WTP: 0-10 (continuous slider, integer values)
+
+MTurkID_Confirmed:
+  1 = No
+  2 = Yes
+
+================================================================================
+DISPLAY RULES / BRANCHING LOGIC
+================================================================================
+
+1. Each participant sees exactly ONE condition block (randomized)
+2. Within each block, all items are displayed sequentially
+3. No skip logic within blocks
+4. AI_Mentioned_Check correct response depends on condition:
+   - AI conditions (AI_Utilitarian, AI_Hedonic): Should answer "Yes" (1)
+   - No AI conditions (No_AI_Utilitarian, No_AI_Hedonic): Should answer "No" (2)
+5. Product description varies by Product Type:
+   - Utilitarian conditions: "body wash" / "body soap"
+   - Hedonic conditions: "chocolate bar" / "snack bar"
+
+================================================================================
