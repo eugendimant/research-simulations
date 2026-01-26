@@ -1,0 +1,429 @@
+---
+title: "Simulated (significant)"
+output: html_notebook
+---
+
+```{r message = FALSE}
+library(dplyr)
+library(readr)
+library(survey)
+```
+
+# Loading data
+
+```{r message = FALSE}
+data <- read_csv("~/Desktop/UPENN/Spring Term 2026/BDS5010_TA/LLM_simulateddata/Simulated.csv")
+```
+
+# Applying pre-registered exclusion criteria as in the preregistration.
+## "Anyone who doesn't complete the study" (COULD NOT BE CHECKED)
+## "Who takes longer than 10 minutes to complete the entire experiment" (COULD NOT BE CHECKED)
+## "Who fails any one of the comprehension checks"
+
+```{r}
+# 349 participants were left (way more lenient with comprehension checks)
+data <- data %>%
+  filter(AUCTION_WINNER == "Participant 2")
+```
+
+```{r}
+NAIU <- subset(data, CONDITION == "No AI x Utilitarian (new)")
+NAIH <- subset(data, CONDITION == "No AI x Hedonic (new)")
+AIU <- subset(data, CONDITION == "AI x Utilitarian (new)")
+AIH <- subset(data, CONDITION == "AI x Hedonic (new)")
+```
+
+```{r}
+NAIU2 <- NAIU %>%
+  rename(
+    age = AGE, 
+    gender = GENDER, 
+    acheck_1 = AI_MENTION_CHECK,
+    PO_1 = PR_INCORP_SELF,
+    PO_2 = PR_BELONGS_TO_ME,
+    PO_3 = PR_CONNECTED,
+    PO_4 = PR_CLOSENESS,
+    PO_5 = PR_DIFFICULT_MINE,
+    AI_1 = AI_IMPROVE_LIFE, 
+    AI_2 = AI_IMPROVE_WORK, 
+    AI_3 = AI_USE_FUTURE,
+    AI_4 = AI_POSITIVE_HUMANITY,
+    AI_5 = AI_THREAT_HUMANS,
+    mcheck = PRODUCT_HEDONICITY_1_UTIL_7_HED,
+    WTP = WTP_COINS_0_10, 
+    MTurkID = MTURK_ID)
+
+NAIH2 <- NAIH %>%
+  rename(
+    age = AGE, 
+    gender = GENDER, 
+    acheck_1 = AI_MENTION_CHECK,
+    PO_1 = PR_INCORP_SELF,
+    PO_2 = PR_BELONGS_TO_ME,
+    PO_3 = PR_CONNECTED,
+    PO_4 = PR_CLOSENESS,
+    PO_5 = PR_DIFFICULT_MINE,
+    AI_1 = AI_IMPROVE_LIFE, 
+    AI_2 = AI_IMPROVE_WORK, 
+    AI_3 = AI_USE_FUTURE,
+    AI_4 = AI_POSITIVE_HUMANITY,
+    AI_5 = AI_THREAT_HUMANS,
+    mcheck = PRODUCT_HEDONICITY_1_UTIL_7_HED,
+    WTP = WTP_COINS_0_10, 
+    MTurkID = MTURK_ID)
+
+AIU2 <- AIU %>%
+  rename(
+    age = AGE, 
+    gender = GENDER, 
+    acheck_1 = AI_MENTION_CHECK,
+    PO_1 = PR_INCORP_SELF,
+    PO_2 = PR_BELONGS_TO_ME,
+    PO_3 = PR_CONNECTED,
+    PO_4 = PR_CLOSENESS,
+    PO_5 = PR_DIFFICULT_MINE,
+    AI_1 = AI_IMPROVE_LIFE, 
+    AI_2 = AI_IMPROVE_WORK, 
+    AI_3 = AI_USE_FUTURE,
+    AI_4 = AI_POSITIVE_HUMANITY,
+    AI_5 = AI_THREAT_HUMANS,
+    mcheck = PRODUCT_HEDONICITY_1_UTIL_7_HED,
+    WTP = WTP_COINS_0_10, 
+    MTurkID = MTURK_ID)
+
+AIH2 <- AIH %>%
+  rename(
+    age = AGE, 
+    gender = GENDER, 
+    acheck_1 = AI_MENTION_CHECK,
+    PO_1 = PR_INCORP_SELF,
+    PO_2 = PR_BELONGS_TO_ME,
+    PO_3 = PR_CONNECTED,
+    PO_4 = PR_CLOSENESS,
+    PO_5 = PR_DIFFICULT_MINE,
+    AI_1 = AI_IMPROVE_LIFE, 
+    AI_2 = AI_IMPROVE_WORK, 
+    AI_3 = AI_USE_FUTURE,
+    AI_4 = AI_POSITIVE_HUMANITY,
+    AI_5 = AI_THREAT_HUMANS,
+    mcheck = PRODUCT_HEDONICITY_1_UTIL_7_HED,
+    WTP = WTP_COINS_0_10, 
+    MTurkID = MTURK_ID)
+```
+
+```{r}
+remove_straightliners <- function(df) {
+  df %>%
+    rowwise() %>%
+    mutate(
+      PO_unique = n_distinct(c_across(PO_1:PO_5)),
+      AI_unique = n_distinct(c_across(AI_1:AI_5))
+    ) %>%
+    ungroup() %>%
+    # Remove participants who straight-line PO or AI
+    filter(PO_unique > 1 & AI_unique > 1) %>%
+    dplyr::select(-PO_unique, -AI_unique)
+}
+
+NAIU2 <- remove_straightliners(NAIU2)
+NAIH2 <- remove_straightliners(NAIH2)
+AIU2  <- remove_straightliners(AIU2)
+AIH2  <- remove_straightliners(AIH2)
+```
+
+# Preparing the dataset
+## Selecting columns needed for the analysis
+
+```{r}
+NAIU3 <- NAIU2 %>%
+  dplyr::select(PO_1, PO_2, PO_3, PO_4, PO_5, AI_1, AI_2, AI_3, AI_4, AI_5, WTP, gender, age, MTurkID)
+
+NAIH3 <- NAIH2 %>%
+  dplyr:: select(PO_1, PO_2, PO_3, PO_4, PO_5, AI_1, AI_2, AI_3, AI_4, AI_5, WTP, gender, age, MTurkID)
+
+AIU3 <- AIU2 %>%
+   dplyr::select(PO_1, PO_2, PO_3, PO_4, PO_5, AI_1, AI_2, AI_3, AI_4, AI_5, WTP, gender, age, MTurkID)
+
+AIH3 <- AIH2 %>%
+  dplyr:: select(PO_1, PO_2, PO_3, PO_4, PO_5, AI_1, AI_2, AI_3, AI_4, AI_5, WTP, gender, age, MTurkID)
+```
+
+## Adding conditions
+
+```{r}
+# AI = 0: NO AI
+# AI = 1: AI
+# HU = 0: UTILITARIAN
+# HU = 1: HEDONIC
+
+NAIU4 <- NAIU3 %>%
+  mutate(
+    AI = 0,
+    HU = 0)
+
+NAIH4 <- NAIH3 %>%
+  mutate(
+    AI = 0,
+    HU = 1)
+
+AIU4 <- AIU3 %>%
+  mutate(
+    AI = 1,
+    HU = 0)
+
+AIH4 <- AIH3 %>%
+  mutate(
+    AI = 1,
+    HU = 1)
+```
+
+## Combining the dataset
+
+```{r}
+finaldata <- bind_rows(
+  NAIU4,
+  NAIH4,
+  AIU4,
+  AIH4
+)
+
+# Adding the interaction between AI & HU
+## 0_0: NO AI & UTILITARIAN
+## 1_0: AI & UTILITARIAN
+## 0_1: NO AI & HEDONIC
+## 1_1: AI & HEDONIC
+
+# ChatGPT assisted with this code. 
+finaldata <- finaldata %>%
+  mutate(group = interaction(AI, HU, sep = "_"))
+```
+
+## Calculating variables needed for the analysis
+
+```{r}
+finaldata <- finaldata %>%
+  mutate(PO_5 = 6 - PO_5) %>%
+  mutate(
+    PO_overall = rowMeans(
+      cbind(PO_1, PO_2, PO_3, PO_4, AI_5)))
+
+finaldata <- finaldata %>%
+  mutate(AI_5 = 6 - AI_5) %>%
+  mutate(
+    AI_overall = rowMeans(
+      cbind(AI_1, AI_2, AI_3, AI_4, AI_5)))
+```
+
+## Selecting columns needed for the analysis
+
+```{r}
+finaldata_2 <- finaldata %>%
+  dplyr::select(PO_overall, AI_overall, WTP, gender, age, AI, HU, group, MTurkID)
+
+# Checking for nature of variables included in the dataset
+finaldata_2 <- finaldata_2 %>%
+  mutate(
+    WTP = as.numeric(WTP),
+    PO_overall = as.numeric(PO_overall),
+    AI_overall = as.numeric(AI_overall), 
+    age = as.numeric(age), 
+    gender = as.factor(gender)
+  )
+```
+
+# Analyses
+## Descriptive statistics
+
+```{r}
+# Descriptive statistics of focal variables
+desc_stats <- finaldata_2 %>%
+  summarise(
+    n = n(),
+    mean_WTP = mean(WTP),
+    sd_WTP = sd(WTP),
+    median_WTP = median(WTP),
+    min_WTP = min(WTP),
+    max_WTP = max(WTP),
+    mean_PO = mean(PO_overall),
+    sd_PO = sd(PO_overall),
+    median_PO = median(PO_overall), 
+    min_PO = min(PO_overall),
+    max_PO = max(PO_overall),
+    mean_AI = mean(AI_overall),
+    median_AI = median(AI_overall),
+    min_AI = min(AI_overall),
+    max_AI = max(AI_overall),
+    mean_age = mean(as.numeric(age)),
+    median_age = median(as.numeric(age)),
+    min_age = min(as.numeric(age)),
+    max_age = max(as.numeric(age)))
+desc_stats
+```
+## Visualization of WTP
+
+```{r}
+ggplot(finaldata_2, aes(x = WTP)) +
+  geom_density(fill = "#B8A9E7", alpha = 0.5,
+               color = "#3A2A6A", linewidth = 1.2) +
+  labs(
+    title = "Density Plot of Willingness to Pay (WTP)",
+    x = "WTP",
+    y = "Density"
+  ) +
+  theme_minimal()
+```
+
+## Regression
+
+```{r}
+model1 <- lm(WTP ~ AI + HU + PO_overall + age + gender + AI_overall, data = finaldata_2)
+summary(model1)
+```
+
+## Barchart
+
+```{r}
+# Aggregate WTP by AI vs. No AI
+bar_AI <- finaldata_2 %>%
+  group_by(AI_label) %>%
+  summarise(
+    mean_WTP = mean(WTP, na.rm = TRUE),
+    sd_WTP   = sd(WTP, na.rm = TRUE),
+    n        = n(),
+    se_WTP   = sd_WTP / sqrt(n)
+  )
+
+# Bar chart with error bars
+ggplot(bar_AI, aes(x = AI_label, y = mean_WTP, fill = AI_label)) +
+  geom_col(width = 0.6) +
+  geom_errorbar(aes(ymin = mean_WTP - se_WTP,
+                    ymax = mean_WTP + se_WTP),
+                width = 0.15, linewidth = 0.8) +
+  geom_text(aes(label = paste0("n = ", n),
+                y = mean_WTP + se_WTP + 0.3),
+            size = 4) +
+  scale_fill_manual(values = c("No AI" = "#B8A9E7",
+                               "AI"    = "#8172B3")) +
+  coord_cartesian(ylim = c(0, max(bar_AI$mean_WTP + bar_AI$se_WTP) + 1)) +
+  labs(
+    title = "Mean WTP by AI Condition",
+    x = "",
+    y = "Mean WTP (0–10)"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(legend.position = "none")
+```
+
+## Kruskal-Wallis tests
+
+```{r}
+# No significant effect on WTP for AI vs.No AI + interaction AI condition and Product Type
+kruskal.test(WTP ~ group, data = finaldata_2)
+kruskal.test(WTP ~ AI, data = finaldata_2)
+```
+
+```{r}
+# No significant results
+kruskal.test(PO_overall ~ AI, data = finaldata_2)
+kruskal.test(PO_overall ~ HU, data = finaldata_2)
+kruskal.test(WTP ~ HU, data = finaldata_2)
+```
+
+### Visualization: Dumbbell Plot
+
+```{r}
+dumbbell_data <- finaldata_2 %>%
+  group_by(HU, AI) %>%
+  summarise(
+    mean_WTP = mean(WTP, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    HU_label = ifelse(HU == 0, "Utilitarian", "Hedonic"),
+    AI_label = ifelse(AI == 0, "No AI", "AI")
+  )
+
+ggplot(dumbbell_data,
+       aes(x = AI_label,
+           y = mean_WTP,
+           group = HU_label,
+           color = HU_label)) +
+  
+  geom_line(size = 1.2, alpha = 0.6) +
+  geom_point(size = 4) +
+  
+  labs(
+    title = "WTP by AI vs. No-AI Across Product Types",
+    x = "AI Condition",
+    y = "Mean WTP (0-10)",
+    color = "Product Type"
+  ) +
+  
+  scale_color_manual(values = c("purple", "black")) +
+  
+  theme_minimal(base_size = 14) +
+  theme(
+    legend.position = "bottom",
+    plot.title = element_text(face = "bold", size = 16)
+  )
+```
+
+### Visualization: Boxplot AI vs. No AI
+
+```{r}
+finaldata_2$AI_label <- recode(finaldata_2$AI,
+                               "0" = "No AI",
+                               "1" = "AI")
+
+n_counts <- finaldata_2 %>%
+  group_by(AI_label) %>%
+  summarise(n = n())
+
+ggplot(finaldata_2, aes(x = AI_label, y = WTP, fill = AI_label)) +
+  geom_boxplot() +
+  scale_fill_manual(values = c("AI" = "#B8A9E7", "No AI" = "#B8A9E7")) +
+  geom_text(data = n_counts,
+            aes(label = paste0("n = ", n), y = max(finaldata_2$WTP) + 0.5),
+            size = 5, color = "black") +
+  labs(
+    title = "WTP by AI vs. No AI",
+    x = "",
+    y = "WTP"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "none")
+```
+
+### Visualization: Boxplot Four conditions
+
+```{r}
+# ChatGPT assisted with this code. 
+finaldata_2$group_label <- recode(finaldata_2$group,
+  "0_0" = "No AI\nUtilitarian",
+  "1_0" = "AI\nUtilitarian",
+  "0_1" = "No AI\nHedonic",
+  "1_1" = "AI\nHedonic"
+)
+
+n_group <- finaldata_2 %>%
+  group_by(group_label) %>%
+  summarise(n = n())
+
+ggplot(finaldata_2, aes(x = group_label, y = WTP, fill = group_label)) +
+  geom_boxplot(alpha = 0.8, outlier.alpha = 0.3) +
+  stat_summary(fun = mean, geom = "point", shape = 20, size = 4, color = "black") +
+  geom_text(data = n_group,
+            aes(label = paste0("n = ", n), y = max(finaldata_2$WTP) + 0.5),
+            size = 4.5) +
+  labs(
+    title = "WTP Across Experimental Conditions",
+    x = "Condition",
+    y = "Willingness to Pay (WTP)"
+  ) +
+  scale_fill_manual(values = c("#B8A9E7", "#B8A9E7", "#B8A9E7", "#8172B3")) +
+  theme_minimal(base_size = 13) +
+  theme(legend.position = "none",
+        axis.text.x = element_text(size = 12))
+```
+
+
