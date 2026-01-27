@@ -713,35 +713,9 @@ with tabs[3]:
             )
 
             try:
-                status = st.status("Running simulation...", expanded=True)
-                progress = st.progress(0)
-                timer_placeholder = st.empty()
-                start_time = time.monotonic()
-
-                def _generate_payload():
-                    df_local, metadata_local = engine.generate()
-                    explainer_local = engine.generate_explainer()
-                    r_script_local = engine.generate_r_export(df_local)
-                    schema_local = validate_schema(
-                        df=df_local,
-                        expected_conditions=inferred["conditions"],
-                        expected_scales=inferred["scales"],
-                        expected_n=N,
-                    )
-                    return df_local, metadata_local, explainer_local, r_script_local, schema_local
-
-                with ThreadPoolExecutor(max_workers=1) as executor:
-                    future = executor.submit(_generate_payload)
-                    while not future.done():
-                        elapsed = time.monotonic() - start_time
-                        timer_placeholder.info(f"Simulation running... {elapsed:.1f}s elapsed.")
-                        progress.progress(min(0.95, elapsed / 45.0))
-                        time.sleep(0.5)
-
-                df, metadata, explainer, r_script, schema_results = future.result()
-                progress.progress(1.0)
-                elapsed_total = time.monotonic() - start_time
-                status.update(label=f"Simulation complete in {elapsed_total:.1f}s.", state="complete")
+                df, metadata = engine.generate()
+                explainer = engine.generate_explainer()
+                r_script = engine.generate_r_export(df)
 
                 metadata["preregistration_summary"] = {
                     "outcomes": st.session_state.get("prereg_outcomes", ""),
@@ -750,15 +724,13 @@ with tabs[3]:
                     "analysis_plan": st.session_state.get("prereg_analysis", ""),
                     "notes_sanitized": st.session_state.get("prereg_text_sanitized", ""),
                 }
-                prereg_notes = [
-                    f"Primary outcomes: {st.session_state.get('prereg_outcomes', '').strip()}",
-                    f"Independent variables: {st.session_state.get('prereg_iv', '').strip()}",
-                    f"Exclusion criteria: {st.session_state.get('prereg_exclusions', '').strip()}",
-                    f"Analysis plan: {st.session_state.get('prereg_analysis', '').strip()}",
-                ]
-                prereg_text = "\n".join([line for line in prereg_notes if line.split(": ", 1)[-1]])
-                if st.session_state.get("prereg_text_sanitized"):
-                    prereg_text += "\n\nAdditional notes:\n" + st.session_state.get("prereg_text_sanitized", "")
+
+                schema_results = validate_schema(
+                    df=df,
+                    expected_conditions=inferred["conditions"],
+                    expected_scales=inferred["scales"],
+                    expected_n=N,
+                )
 
                 csv_bytes = df.to_csv(index=False).encode("utf-8")
                 meta_bytes = _safe_json(metadata).encode("utf-8")
