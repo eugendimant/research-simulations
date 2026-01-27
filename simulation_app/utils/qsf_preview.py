@@ -1,0 +1,722 @@
+"""
+Interactive QSF Preview with Error Logging
+==========================================
+Module for parsing, previewing, and validating Qualtrics Survey Format (QSF) files
+with comprehensive error detection and logging for instructor review.
+"""
+
+import json
+from typing import Dict, List, Any, Optional, Tuple
+from dataclasses import dataclass, field
+from datetime import datetime
+from enum import Enum
+import re
+
+
+class LogLevel(Enum):
+    """Log severity levels."""
+    INFO = "INFO"
+    WARNING = "WARNING"
+    ERROR = "ERROR"
+    CRITICAL = "CRITICAL"
+
+
+@dataclass
+class LogEntry:
+    """A single log entry."""
+    timestamp: str
+    level: LogLevel
+    category: str
+    message: str
+    details: Optional[Dict[str, Any]] = None
+
+    def to_dict(self) -> Dict:
+        return {
+            'timestamp': self.timestamp,
+            'level': self.level.value,
+            'category': self.category,
+            'message': self.message,
+            'details': self.details
+        }
+
+
+@dataclass
+class QuestionInfo:
+    """Parsed information about a survey question."""
+    question_id: str
+    question_text: str
+    question_type: str
+    block_name: str
+    choices: List[str] = field(default_factory=list)
+    scale_points: Optional[int] = None
+    is_matrix: bool = False
+    sub_questions: List[str] = field(default_factory=list)
+    validation_issues: List[str] = field(default_factory=list)
+
+
+@dataclass
+class BlockInfo:
+    """Parsed information about a survey block."""
+    block_id: str
+    block_name: str
+    questions: List[QuestionInfo] = field(default_factory=list)
+    is_randomizer: bool = False
+    randomizer_type: Optional[str] = None
+
+
+@dataclass
+class QSFPreviewResult:
+    """Complete result of QSF parsing and validation."""
+    success: bool
+    survey_name: str
+    total_questions: int
+    total_blocks: int
+    blocks: List[BlockInfo]
+    detected_conditions: List[str]
+    detected_scales: List[Dict[str, Any]]
+    embedded_data: List[str]
+    flow_elements: List[str]
+    validation_errors: List[str]
+    validation_warnings: List[str]
+    log_entries: List[LogEntry]
+    raw_structure: Dict[str, Any]
+
+
+class QSFPreviewParser:
+    """
+    Parser for Qualtrics Survey Format files with comprehensive validation.
+
+    Features:
+    - Extracts all questions, blocks, and survey flow
+    - Detects experimental conditions from randomizers
+    - Identifies multi-item scales
+    - Validates survey structure
+    - Generates detailed error logs
+    """
+
+    def __init__(self):
+        self.log_entries: List[LogEntry] = []
+        self.errors: List[str] = []
+        self.warnings: List[str] = []
+
+    def _log(
+        self,
+        level: LogLevel,
+        category: str,
+        message: str,
+        details: Optional[Dict] = None
+    ):
+        """Add a log entry."""
+        entry = LogEntry(
+            timestamp=datetime.now().isoformat(),
+            level=level,
+            category=category,
+            message=message,
+            details=details
+        )
+        self.log_entries.append(entry)
+
+        if level == LogLevel.ERROR or level == LogLevel.CRITICAL:
+            self.errors.append(f"[{category}] {message}")
+        elif level == LogLevel.WARNING:
+            self.warnings.append(f"[{category}] {message}")
+
+    def parse(self, qsf_content: bytes) -> QSFPreviewResult:
+        """
+        Parse QSF file content and return structured preview.
+
+        Args:
+            qsf_content: Raw bytes of the QSF file
+
+        Returns:
+            QSFPreviewResult with all parsed information and validation results
+        """
+        self.log_entries = []
+        self.errors = []
+        self.warnings = []
+
+        self._log(LogLevel.INFO, "PARSE_START", "Beginning QSF file parsing")
+
+        # Attempt to parse JSON
+        try:
+            qsf_data = json.loads(qsf_content.decode('utf-8'))
+            self._log(LogLevel.INFO, "JSON_PARSE", "Successfully parsed JSON structure")
+        except json.JSONDecodeError as e:
+            self._log(
+                LogLevel.CRITICAL, "JSON_PARSE",
+                f"Failed to parse QSF as JSON: {str(e)}",
+                {'error_position': e.pos if hasattr(e, 'pos') else None}
+            )
+            return QSFPreviewResult(
+                success=False,
+                survey_name="Unknown",
+                total_questions=0,
+                total_blocks=0,
+                blocks=[],
+                detected_conditions=[],
+                detected_scales=[],
+                embedded_data=[],
+                flow_elements=[],
+                validation_errors=self.errors,
+                validation_warnings=self.warnings,
+                log_entries=self.log_entries,
+                raw_structure={}
+            )
+
+        # Extract survey info
+        survey_entry = qsf_data.get('SurveyEntry', {})
+        survey_name = survey_entry.get('SurveyName', 'Unnamed Survey')
+        self._log(LogLevel.INFO, "SURVEY_INFO", f"Survey name: {survey_name}")
+
+        # Parse survey elements
+        elements = qsf_data.get('SurveyElements', [])
+        self._log(LogLevel.INFO, "ELEMENTS", f"Found {len(elements)} survey elements")
+
+        # Organize elements by type
+        blocks_map = {}
+        questions_map = {}
+        flow_data = None
+        embedded_data_fields = []
+
+        for element in elements:
+            elem_type = element.get('Element', '')
+
+            if elem_type == 'BL':
+                # Block definitions
+                self._parse_blocks(element, blocks_map)
+
+            elif elem_type == 'SQ':
+                # Survey question
+                self._parse_question(element, questions_map)
+
+            elif elem_type == 'FL':
+                # Survey flow
+                flow_data = element
+                self._log(LogLevel.INFO, "FLOW", "Found survey flow definition")
+
+            elif elem_type == 'ED':
+                # Embedded data
+                self._parse_embedded_data(element, embedded_data_fields)
+
+        # Map questions to blocks
+        blocks = self._map_questions_to_blocks(blocks_map, questions_map)
+
+        # Detect conditions from flow/randomizers
+        detected_conditions = self._detect_conditions(flow_data, blocks)
+
+        # Detect scales
+        detected_scales = self._detect_scales(questions_map)
+
+        # Parse flow elements
+        flow_elements = self._parse_flow(flow_data)
+
+        # Validate structure
+        self._validate_structure(blocks, questions_map, detected_conditions)
+
+        self._log(
+            LogLevel.INFO, "PARSE_COMPLETE",
+            f"Parsing complete. {len(self.errors)} errors, {len(self.warnings)} warnings"
+        )
+
+        return QSFPreviewResult(
+            success=len(self.errors) == 0 or all('CRITICAL' not in e for e in self.errors),
+            survey_name=survey_name,
+            total_questions=len(questions_map),
+            total_blocks=len(blocks),
+            blocks=blocks,
+            detected_conditions=detected_conditions,
+            detected_scales=detected_scales,
+            embedded_data=embedded_data_fields,
+            flow_elements=flow_elements,
+            validation_errors=self.errors,
+            validation_warnings=self.warnings,
+            log_entries=self.log_entries,
+            raw_structure={
+                'survey_name': survey_name,
+                'element_count': len(elements),
+                'block_count': len(blocks_map),
+                'question_count': len(questions_map)
+            }
+        )
+
+    def _parse_blocks(self, element: Dict, blocks_map: Dict):
+        """Parse block definitions."""
+        payload = element.get('Payload', {})
+
+        for block_id, block_data in payload.items():
+            if isinstance(block_data, dict):
+                block_name = block_data.get('Description', f'Block {block_id}')
+                block_type = block_data.get('Type', 'Standard')
+
+                blocks_map[block_id] = {
+                    'name': block_name,
+                    'type': block_type,
+                    'elements': block_data.get('BlockElements', [])
+                }
+
+                self._log(
+                    LogLevel.INFO, "BLOCK",
+                    f"Found block: {block_name} (Type: {block_type})"
+                )
+
+    def _parse_question(self, element: Dict, questions_map: Dict):
+        """Parse a survey question."""
+        payload = element.get('Payload', {})
+        q_id = payload.get('QuestionID', element.get('PrimaryAttribute', ''))
+
+        question_text = payload.get('QuestionText', '')
+        # Clean HTML
+        question_text = re.sub(r'<[^>]+>', '', question_text)
+
+        question_type = payload.get('QuestionType', 'Unknown')
+        selector = payload.get('Selector', '')
+
+        # Determine question category
+        category = self._categorize_question(question_type, selector)
+
+        # Extract choices
+        choices = []
+        choices_data = payload.get('Choices', {})
+        if isinstance(choices_data, dict):
+            for choice_id, choice_data in choices_data.items():
+                if isinstance(choice_data, dict):
+                    choice_text = choice_data.get('Display', str(choice_data))
+                    choices.append(choice_text)
+                else:
+                    choices.append(str(choice_data))
+
+        # Check for matrix (scale) questions
+        is_matrix = question_type in ['Matrix', 'MC'] and selector in ['Likert', 'Bipolar']
+
+        # Extract sub-questions for matrix
+        sub_questions = []
+        answers_data = payload.get('Answers', {})
+        if isinstance(answers_data, dict) and is_matrix:
+            for ans_id, ans_data in answers_data.items():
+                if isinstance(ans_data, dict):
+                    sub_questions.append(ans_data.get('Display', ''))
+
+        # Determine scale points
+        scale_points = len(choices) if choices else None
+
+        questions_map[q_id] = QuestionInfo(
+            question_id=q_id,
+            question_text=question_text[:200] + ('...' if len(question_text) > 200 else ''),
+            question_type=category,
+            block_name='',  # Will be filled when mapping
+            choices=choices,
+            scale_points=scale_points,
+            is_matrix=is_matrix,
+            sub_questions=sub_questions
+        )
+
+        self._log(
+            LogLevel.INFO, "QUESTION",
+            f"Parsed question {q_id}: {category}",
+            {'text_preview': question_text[:100]}
+        )
+
+    def _categorize_question(self, q_type: str, selector: str) -> str:
+        """Categorize question type."""
+        if q_type == 'Matrix':
+            return 'Likert Scale Matrix'
+        elif q_type == 'MC':
+            if selector in ['Likert', 'SAVR']:
+                return 'Single Choice (Radio)'
+            elif selector in ['MAVR', 'MACOL']:
+                return 'Multiple Choice'
+            else:
+                return 'Multiple Choice'
+        elif q_type == 'TE':
+            return 'Text Entry'
+        elif q_type == 'Slider':
+            return 'Slider'
+        elif q_type == 'DB':
+            return 'Descriptive Text'
+        else:
+            return f'{q_type} ({selector})'
+
+    def _parse_embedded_data(self, element: Dict, fields: List[str]):
+        """Parse embedded data fields."""
+        payload = element.get('Payload', {})
+        flow = payload.get('Flow', [])
+
+        for item in flow:
+            if isinstance(item, dict):
+                field_name = item.get('EmbeddedData', [])
+                if isinstance(field_name, list):
+                    for fd in field_name:
+                        if isinstance(fd, dict):
+                            fields.append(fd.get('Field', 'Unknown'))
+                elif isinstance(field_name, str):
+                    fields.append(field_name)
+
+        if fields:
+            self._log(
+                LogLevel.INFO, "EMBEDDED_DATA",
+                f"Found {len(fields)} embedded data fields",
+                {'fields': fields}
+            )
+
+    def _map_questions_to_blocks(
+        self,
+        blocks_map: Dict,
+        questions_map: Dict
+    ) -> List[BlockInfo]:
+        """Map questions to their containing blocks."""
+        blocks = []
+
+        for block_id, block_data in blocks_map.items():
+            block_questions = []
+
+            for elem in block_data.get('elements', []):
+                if isinstance(elem, dict) and elem.get('Type') == 'Question':
+                    q_id = elem.get('QuestionID', '')
+                    if q_id in questions_map:
+                        q_info = questions_map[q_id]
+                        q_info.block_name = block_data['name']
+                        block_questions.append(q_info)
+
+            is_randomizer = 'random' in block_data['name'].lower()
+
+            blocks.append(BlockInfo(
+                block_id=block_id,
+                block_name=block_data['name'],
+                questions=block_questions,
+                is_randomizer=is_randomizer
+            ))
+
+        return blocks
+
+    def _detect_conditions(
+        self,
+        flow_data: Optional[Dict],
+        blocks: List[BlockInfo]
+    ) -> List[str]:
+        """Detect experimental conditions from randomizers and flow."""
+        conditions = []
+
+        # Look for randomizer blocks
+        for block in blocks:
+            if block.is_randomizer or 'condition' in block.block_name.lower():
+                conditions.append(block.block_name)
+                self._log(
+                    LogLevel.INFO, "CONDITION",
+                    f"Detected potential condition: {block.block_name}"
+                )
+
+        # Parse flow for branch/randomizer elements
+        if flow_data:
+            payload = flow_data.get('Payload', {})
+            flow = payload.get('Flow', [])
+            self._find_conditions_in_flow(flow, conditions)
+
+        if not conditions:
+            self._log(
+                LogLevel.WARNING, "CONDITIONS",
+                "No experimental conditions automatically detected. "
+                "Please define conditions manually."
+            )
+
+        return conditions
+
+    def _find_conditions_in_flow(self, flow: List, conditions: List[str]):
+        """Recursively find conditions in flow structure."""
+        for item in flow:
+            if isinstance(item, dict):
+                flow_type = item.get('Type', '')
+
+                if flow_type == 'Randomizer':
+                    # Randomizer found
+                    sub_flow = item.get('Flow', [])
+                    for sub_item in sub_flow:
+                        if isinstance(sub_item, dict):
+                            block_id = sub_item.get('ID', '')
+                            conditions.append(f"Randomizer Branch: {block_id}")
+
+                elif flow_type == 'Branch':
+                    # Branch logic
+                    conditions.append(f"Branch: {item.get('Description', 'Unnamed')}")
+
+                # Recurse
+                if 'Flow' in item:
+                    self._find_conditions_in_flow(item['Flow'], conditions)
+
+    def _detect_scales(self, questions_map: Dict) -> List[Dict[str, Any]]:
+        """Detect multi-item scales from question patterns."""
+        scales = []
+        scale_patterns = {}
+
+        # Look for numbered items (e.g., "Ownership_1", "Ownership_2")
+        for q_id, q_info in questions_map.items():
+            if q_info.is_matrix or q_info.question_type == 'Likert Scale Matrix':
+                # Matrix questions are scales
+                scales.append({
+                    'name': q_info.question_text[:50],
+                    'question_id': q_id,
+                    'items': len(q_info.sub_questions) if q_info.sub_questions else 1,
+                    'scale_points': q_info.scale_points,
+                    'type': 'matrix'
+                })
+
+            # Check for numbered pattern
+            match = re.match(r'^(.+?)[-_]?(\d+)$', q_id)
+            if match:
+                base_name = match.group(1)
+                item_num = int(match.group(2))
+                if base_name not in scale_patterns:
+                    scale_patterns[base_name] = []
+                scale_patterns[base_name].append({
+                    'item_num': item_num,
+                    'scale_points': q_info.scale_points
+                })
+
+        # Consolidate numbered scales
+        for base_name, items in scale_patterns.items():
+            if len(items) >= 2:  # At least 2 items = scale
+                scales.append({
+                    'name': base_name,
+                    'items': len(items),
+                    'scale_points': items[0]['scale_points'],
+                    'type': 'numbered_items'
+                })
+                self._log(
+                    LogLevel.INFO, "SCALE",
+                    f"Detected scale: {base_name} ({len(items)} items)"
+                )
+
+        return scales
+
+    def _parse_flow(self, flow_data: Optional[Dict]) -> List[str]:
+        """Parse survey flow into readable list."""
+        if not flow_data:
+            return []
+
+        elements = []
+        payload = flow_data.get('Payload', {})
+        flow = payload.get('Flow', [])
+
+        self._parse_flow_recursive(flow, elements, 0)
+
+        return elements
+
+    def _parse_flow_recursive(self, flow: List, elements: List[str], depth: int):
+        """Recursively parse flow structure."""
+        indent = "  " * depth
+        for item in flow:
+            if isinstance(item, dict):
+                flow_type = item.get('Type', 'Unknown')
+                flow_id = item.get('ID', item.get('FlowID', ''))
+
+                if flow_type == 'Block':
+                    elements.append(f"{indent}[Block] {flow_id}")
+                elif flow_type == 'Randomizer':
+                    elements.append(f"{indent}[Randomizer] {item.get('Description', '')}")
+                elif flow_type == 'Branch':
+                    elements.append(f"{indent}[Branch] {item.get('Description', '')}")
+                elif flow_type == 'EmbeddedData':
+                    elements.append(f"{indent}[Embedded Data]")
+                elif flow_type == 'EndSurvey':
+                    elements.append(f"{indent}[End Survey]")
+
+                if 'Flow' in item:
+                    self._parse_flow_recursive(item['Flow'], elements, depth + 1)
+
+    def _validate_structure(
+        self,
+        blocks: List[BlockInfo],
+        questions_map: Dict,
+        conditions: List[str]
+    ):
+        """Validate survey structure and log issues."""
+
+        # Check for empty blocks
+        for block in blocks:
+            if len(block.questions) == 0 and not block.is_randomizer:
+                self._log(
+                    LogLevel.WARNING, "VALIDATION",
+                    f"Block '{block.block_name}' has no questions"
+                )
+
+        # Check for questions without proper scale points
+        for q_id, q_info in questions_map.items():
+            if q_info.question_type in ['Likert Scale Matrix', 'Single Choice (Radio)']:
+                if not q_info.scale_points or q_info.scale_points < 2:
+                    self._log(
+                        LogLevel.WARNING, "VALIDATION",
+                        f"Question {q_id} appears to be a scale but has unclear scale points",
+                        {'question_text': q_info.question_text}
+                    )
+
+        # Check for potential attention check questions
+        attention_keywords = ['attention', 'check', 'please select', 'instructed']
+        found_attention = False
+        for q_id, q_info in questions_map.items():
+            for keyword in attention_keywords:
+                if keyword in q_info.question_text.lower():
+                    found_attention = True
+                    self._log(
+                        LogLevel.INFO, "ATTENTION_CHECK",
+                        f"Potential attention check found: {q_id}"
+                    )
+
+        if not found_attention:
+            self._log(
+                LogLevel.WARNING, "VALIDATION",
+                "No attention check questions detected. Consider adding attention checks."
+            )
+
+        # Check condition count
+        if len(conditions) == 0:
+            self._log(
+                LogLevel.ERROR, "VALIDATION",
+                "No experimental conditions detected. Please define conditions manually."
+            )
+        elif len(conditions) > 8:
+            self._log(
+                LogLevel.WARNING, "VALIDATION",
+                f"Large number of conditions detected ({len(conditions)}). "
+                "Verify this is correct."
+            )
+
+    def generate_log_report(self) -> str:
+        """Generate a formatted log report for instructor review."""
+        lines = [
+            "=" * 70,
+            "QSF PARSING LOG REPORT",
+            "=" * 70,
+            f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+            "",
+        ]
+
+        # Summary
+        error_count = len([e for e in self.log_entries if e.level in [LogLevel.ERROR, LogLevel.CRITICAL]])
+        warning_count = len([e for e in self.log_entries if e.level == LogLevel.WARNING])
+        info_count = len([e for e in self.log_entries if e.level == LogLevel.INFO])
+
+        lines.extend([
+            "SUMMARY",
+            "-" * 70,
+            f"  Errors: {error_count}",
+            f"  Warnings: {warning_count}",
+            f"  Info: {info_count}",
+            "",
+        ])
+
+        # Errors (if any)
+        if error_count > 0:
+            lines.extend([
+                "ERRORS (Require Attention)",
+                "-" * 70,
+            ])
+            for entry in self.log_entries:
+                if entry.level in [LogLevel.ERROR, LogLevel.CRITICAL]:
+                    lines.append(f"  [{entry.category}] {entry.message}")
+            lines.append("")
+
+        # Warnings
+        if warning_count > 0:
+            lines.extend([
+                "WARNINGS (Review Recommended)",
+                "-" * 70,
+            ])
+            for entry in self.log_entries:
+                if entry.level == LogLevel.WARNING:
+                    lines.append(f"  [{entry.category}] {entry.message}")
+            lines.append("")
+
+        # Full log
+        lines.extend([
+            "FULL LOG",
+            "-" * 70,
+        ])
+        for entry in self.log_entries:
+            level_str = entry.level.value.ljust(8)
+            lines.append(f"  [{level_str}] [{entry.category}] {entry.message}")
+
+        lines.extend([
+            "",
+            "=" * 70,
+            "END OF LOG REPORT",
+            "=" * 70
+        ])
+
+        return "\n".join(lines)
+
+
+class QSFCorrections:
+    """
+    Handles user corrections to parsed QSF data.
+
+    When automatic parsing has errors, this class manages:
+    - Manual condition definitions
+    - Scale corrections
+    - Variable mapping overrides
+    """
+
+    def __init__(self, preview_result: QSFPreviewResult):
+        self.original = preview_result
+        self.corrections = {
+            'conditions': [],
+            'scales': [],
+            'variable_mappings': {},
+            'ignored_questions': [],
+            'notes': []
+        }
+
+    def override_conditions(self, conditions: List[str]):
+        """Override detected conditions with manual definitions."""
+        self.corrections['conditions'] = conditions
+
+    def add_scale(
+        self,
+        name: str,
+        num_items: int,
+        scale_points: int,
+        reverse_items: List[int] = None
+    ):
+        """Add or correct a scale definition."""
+        self.corrections['scales'].append({
+            'name': name,
+            'num_items': num_items,
+            'scale_points': scale_points,
+            'reverse_items': reverse_items or []
+        })
+
+    def ignore_question(self, question_id: str, reason: str = ""):
+        """Mark a question to be ignored in simulation."""
+        self.corrections['ignored_questions'].append({
+            'question_id': question_id,
+            'reason': reason
+        })
+
+    def add_note(self, note: str):
+        """Add a note about corrections made."""
+        self.corrections['notes'].append({
+            'timestamp': datetime.now().isoformat(),
+            'note': note
+        })
+
+    def get_final_config(self) -> Dict[str, Any]:
+        """Get the final configuration after corrections."""
+        return {
+            'conditions': self.corrections['conditions'] if self.corrections['conditions']
+                         else self.original.detected_conditions,
+            'scales': self.corrections['scales'] if self.corrections['scales']
+                     else self.original.detected_scales,
+            'ignored_questions': self.corrections['ignored_questions'],
+            'corrections_made': len(self.corrections['notes']) > 0,
+            'notes': self.corrections['notes']
+        }
+
+
+# Export
+__all__ = [
+    'QSFPreviewParser',
+    'QSFPreviewResult',
+    'QSFCorrections',
+    'QuestionInfo',
+    'BlockInfo',
+    'LogEntry',
+    'LogLevel'
+]
