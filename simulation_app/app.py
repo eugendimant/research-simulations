@@ -52,6 +52,8 @@ APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF"
 BASE_STORAGE = Path("data")
 BASE_STORAGE.mkdir(parents=True, exist_ok=True)
 
+MAX_SIMULATED_N = 2000
+
 STANDARD_DEFAULTS = {
     "demographics": {"gender_quota": 50, "age_mean": 35, "age_sd": 12},
     "attention_rate": 0.95,
@@ -86,6 +88,60 @@ def _bytes_to_zip(files: Dict[str, bytes]) -> bytes:
         for name, content in files.items():
             zf.writestr(name, content)
     return buf.getvalue()
+
+
+def _sanitize_prereg_text(raw_text: str) -> Tuple[str, List[str]]:
+    """
+    Remove hypothesis-like language to avoid biasing simulation settings.
+
+    Returns sanitized text and list of removed lines.
+    """
+    if not raw_text:
+        return "", []
+
+    removed: List[str] = []
+    kept: List[str] = []
+    flagged_tokens = ("hypothesis", "hypotheses", "predict", "prediction", "expect", "expectation", "h1", "h2", "h3")
+    for line in raw_text.splitlines():
+        normalized = line.strip()
+        if not normalized:
+            continue
+        if any(token in normalized.lower() for token in flagged_tokens):
+            removed.append(line)
+        else:
+            kept.append(line)
+    return "\n".join(kept).strip(), removed
+
+
+def _extract_qsf_payload(uploaded_bytes: bytes) -> Tuple[bytes, str]:
+    """
+    Return JSON bytes from a QSF upload (supports raw JSON or ZIP wrappers).
+    """
+    if zipfile.is_zipfile(io.BytesIO(uploaded_bytes)):
+        with zipfile.ZipFile(io.BytesIO(uploaded_bytes)) as zf:
+            candidates = [n for n in zf.namelist() if n.lower().endswith((".qsf", ".json"))]
+            if not candidates:
+                raise ValueError("ZIP did not contain a .qsf or .json file.")
+            selected = candidates[0]
+            return zf.read(selected), selected
+    return uploaded_bytes, "uploaded.qsf"
+
+
+def _extract_pdf_text(uploaded_bytes: bytes) -> str:
+    """
+    Extract text from a PDF using pypdf if available.
+    """
+    try:
+        from pypdf import PdfReader
+    except Exception:
+        return ""
+
+    try:
+        reader = PdfReader(io.BytesIO(uploaded_bytes))
+        pages_text = [page.extract_text() or "" for page in reader.pages]
+        return "\n".join(pages_text).strip()
+    except Exception:
+        return ""
 
 
 def _send_email_with_sendgrid(
@@ -295,12 +351,12 @@ with tabs[0]:
         )
 
         sample_size = st.number_input(
-            "Target sample size (N)",
+            "Pre-registered target sample size (N)",
             min_value=10,
-            max_value=5000,
+            max_value=MAX_SIMULATED_N,
             value=int(st.session_state.get("sample_size", 200)),
             step=10,
-            help="Balanced across detected conditions.",
+            help="Use the pre-registered N from your power calculation (capped for standardization).",
         )
 
         st.session_state["study_title"] = study_title
@@ -320,20 +376,78 @@ with tabs[1]:
     parser = _get_qsf_preview_parser()
 
     qsf_file = st.file_uploader("QSF file", type=["qsf", "zip", "json"])
-    prereg_text = st.text_area(
-        "Optional: paste key preregistration notes (aspredicted excerpt)",
-        value=st.session_state.get("prereg_text", ""),
-        height=140,
-        help="Optional. Used only to improve labels and instructor-facing summaries. It does not change simulation defaults in Simple mode.",
+    st.markdown("### Aspredicted-style checklist (used only for labeling, not for simulation logic)")
+    st.write(
+        "To avoid bias, **do not include hypotheses**. We only record design facts needed for comparability."
     )
-    st.session_state["prereg_text"] = prereg_text
+
+    prereg_outcomes = st.text_area(
+        "Primary outcome variable(s)",
+        value=st.session_state.get("prereg_outcomes", ""),
+        height=80,
+        help="Example: Purchase intention (7-point scale).",
+    )
+    prereg_iv = st.text_area(
+        "Independent variable(s) / conditions",
+        value=st.session_state.get("prereg_iv", ""),
+        height=80,
+        help="Example: AI-generated ad vs. human-written ad.",
+    )
+    prereg_exclusions = st.text_area(
+        "Exclusion criteria",
+        value=st.session_state.get("prereg_exclusions", ""),
+        height=80,
+        help="Example: failed attention checks, unrealistically fast completion.",
+    )
+    prereg_analysis = st.text_area(
+        "Planned analysis (high-level)",
+        value=st.session_state.get("prereg_analysis", ""),
+        height=80,
+        help="Example: independent-samples t-test on the main DV.",
+    )
+
+    st.session_state["prereg_outcomes"] = prereg_outcomes
+    st.session_state["prereg_iv"] = prereg_iv
+    st.session_state["prereg_exclusions"] = prereg_exclusions
+    st.session_state["prereg_analysis"] = prereg_analysis
+
+    st.markdown("### Optional: paste preregistration notes (hypotheses will be removed)")
+    prereg_text = st.text_area(
+        "Preregistration notes (optional)",
+        value=st.session_state.get("prereg_text_raw", ""),
+        height=140,
+        help="If pasted, any lines that look like hypotheses or predictions are removed.",
+    )
+    sanitized_text, removed_lines = _sanitize_prereg_text(prereg_text)
+    st.session_state["prereg_text_raw"] = prereg_text
+    st.session_state["prereg_text_sanitized"] = sanitized_text
+
+    if prereg_text and removed_lines:
+        with st.expander("Removed hypothesis-like lines (not used)"):
+            for line in removed_lines:
+                st.write(f"- {line}")
+
+    prereg_pdf = st.file_uploader("Optional: upload aspredicted PDF", type=["pdf"])
+    if prereg_pdf is not None:
+        pdf_text = _extract_pdf_text(prereg_pdf.read())
+        st.session_state["prereg_pdf_text"] = pdf_text
+        if pdf_text:
+            st.caption("Extracted text (read-only). Hypotheses are ignored by the app.")
+            with st.expander("Extracted preregistration text"):
+                st.text(pdf_text[:4000] + ("..." if len(pdf_text) > 4000 else ""))
+        else:
+            st.warning("Could not extract text from the PDF. You can still use the checklist above.")
 
     if qsf_file is not None:
         try:
             content = qsf_file.read()
-            preview = parser.parse(content)
+            payload, payload_name = _extract_qsf_payload(content)
+            preview = parser.parse(payload)
             st.session_state["qsf_preview"] = preview
-            st.success("QSF parsed successfully.")
+            if preview.success:
+                st.success(f"QSF parsed successfully ({payload_name}).")
+            else:
+                st.error("QSF parsed but validation failed. See warnings below.")
         except Exception as e:
             st.session_state["qsf_preview"] = None
             st.error(f"QSF parsing failed: {e}")
@@ -345,11 +459,19 @@ with tabs[1]:
         c1.metric("Questions", int(preview.total_questions))
         c2.metric("Scales detected", int(len(preview.detected_scales or [])))
         c3.metric("Conditions detected", int(len(preview.detected_conditions or [])))
-        c4.metric("Warnings", int(len(preview.warnings or [])))
+        warnings = getattr(preview, "validation_warnings", []) or []
+        c4.metric("Warnings", int(len(warnings)))
 
-        if preview.warnings:
+        errors = getattr(preview, "validation_errors", []) or []
+
+        if errors:
+            with st.expander("Show QSF errors"):
+                for err in errors:
+                    st.error(err)
+
+        if warnings:
             with st.expander("Show QSF warnings"):
-                for w in preview.warnings:
+                for w in warnings:
                     st.warning(w)
 
         st.caption("Next: Review the auto-detected design and run your simulation.")
@@ -538,7 +660,13 @@ with tabs[3]:
         if st.button("Generate simulated dataset", type="primary"):
             title = st.session_state.get("study_title", "") or "Untitled Study"
             desc = st.session_state.get("study_description", "") or ""
-            N = int(st.session_state.get("sample_size", 200))
+            requested_n = int(st.session_state.get("sample_size", 200))
+            if requested_n > MAX_SIMULATED_N:
+                st.warning(
+                    f"Requested N ({requested_n}) exceeds the cap ({MAX_SIMULATED_N}). "
+                    "Using the capped value for standardization."
+                )
+            N = min(requested_n, MAX_SIMULATED_N)
 
             engine = EnhancedSimulationEngine(
                 study_title=title,
@@ -563,6 +691,14 @@ with tabs[3]:
                 df, metadata = engine.generate()
                 explainer = engine.generate_explainer()
                 r_script = engine.generate_r_export(df)
+
+                metadata["preregistration_summary"] = {
+                    "outcomes": st.session_state.get("prereg_outcomes", ""),
+                    "independent_variables": st.session_state.get("prereg_iv", ""),
+                    "exclusion_criteria": st.session_state.get("prereg_exclusions", ""),
+                    "analysis_plan": st.session_state.get("prereg_analysis", ""),
+                    "notes_sanitized": st.session_state.get("prereg_text_sanitized", ""),
+                }
 
                 schema_results = validate_schema(
                     df=df,
