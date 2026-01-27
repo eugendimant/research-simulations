@@ -36,7 +36,6 @@ from .qsf_preview import (
 )
 from .instructor_report import (
     InstructorReportGenerator,
-    generate_instructor_package
 )
 from .group_management import (
     GroupManager,
@@ -70,7 +69,6 @@ __all__ = [
     'QSFCorrections',
     # Instructor reports
     'InstructorReportGenerator',
-    'generate_instructor_package',
     # Group management
     'GroupManager',
     'APIKeyManager',
