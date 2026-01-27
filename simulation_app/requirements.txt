@@ -1,0 +1,30 @@
+# BDS5010 Behavioral Experiment Simulation Tool - Requirements
+# ============================================================
+
+# Core web framework
+streamlit>=1.28.0
+
+# Data processing
+pandas>=2.0.0
+numpy>=1.24.0
+
+# PDF generation (optional - fallback to text if not available)
+reportlab>=4.0.0
+
+# For deployment on Streamlit Community Cloud
+# All dependencies are listed explicitly for reproducibility
+
+# Standard library modules used (no install needed):
+# - json
+# - os
+# - hashlib
+# - zipfile
+# - io
+# - datetime
+# - pathlib
+# - base64
+# - re
+# - typing
+# - string
+# - random
+# - itertools
