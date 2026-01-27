@@ -24,7 +24,9 @@ from __future__ import annotations
 import base64
 import io
 import json
+import time
 import zipfile
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
@@ -36,6 +38,7 @@ import streamlit as st
 from utils.group_management import GroupManager, APIKeyManager
 from utils.qsf_preview import QSFPreviewParser, QSFPreviewResult
 from utils.schema_validator import validate_schema
+from utils.instructor_report import InstructorReportGenerator
 from utils.enhanced_simulation_engine import (
     EnhancedSimulationEngine,
     EffectSizeSpec,
@@ -582,6 +585,25 @@ with tabs[3]:
         st.warning("Complete the previous steps first (upload QSF, then review).")
     else:
         st.subheader("Generate simulation")
+        preview: Optional[QSFPreviewResult] = st.session_state.get("qsf_preview", None)
+
+        required_fields = {
+            "Study title": bool(st.session_state.get("study_title", "").strip()),
+            "Study description": bool(st.session_state.get("study_description", "").strip()),
+            "Pre-registered sample size": int(st.session_state.get("sample_size", 0)) >= 10,
+            "Primary outcome variable(s)": bool(st.session_state.get("prereg_outcomes", "").strip()),
+            "Independent variable(s)": bool(st.session_state.get("prereg_iv", "").strip()),
+            "QSF uploaded": bool(preview and preview.success),
+        }
+        completed = sum(required_fields.values())
+        total_required = len(required_fields)
+        st.progress(
+            completed / total_required,
+            text=f"Setup completion: {completed}/{total_required} required fields filled",
+        )
+        missing = [label for label, ok in required_fields.items() if not ok]
+        if missing:
+            st.warning("Missing required fields: " + ", ".join(missing))
 
         if not st.session_state.get("advanced_mode", False):
             demographics = STANDARD_DEFAULTS["demographics"].copy()
@@ -657,7 +679,10 @@ with tabs[3]:
 
             custom_persona_weights = None
 
-        if st.button("Generate simulated dataset", type="primary"):
+        is_generating = st.session_state.get("is_generating", False)
+        can_generate = completed == total_required and not is_generating
+        if st.button("Generate simulated dataset", type="primary", disabled=not can_generate):
+            st.session_state["is_generating"] = True
             title = st.session_state.get("study_title", "") or "Untitled Study"
             desc = st.session_state.get("study_description", "") or ""
             requested_n = int(st.session_state.get("sample_size", 200))
@@ -711,6 +736,17 @@ with tabs[3]:
                 meta_bytes = _safe_json(metadata).encode("utf-8")
                 explainer_bytes = explainer.encode("utf-8")
                 r_bytes = r_script.encode("utf-8")
+                instructor_report = InstructorReportGenerator().generate_markdown_report(
+                    df=df,
+                    metadata=metadata,
+                    schema_validation=schema_results,
+                    prereg_text=prereg_text,
+                    team_info={
+                        "team_name": st.session_state.get("team_name", ""),
+                        "team_members": st.session_state.get("team_members_raw", ""),
+                    },
+                )
+                instructor_bytes = instructor_report.encode("utf-8")
 
                 files = {
                     "Simulated.csv": csv_bytes,
@@ -718,6 +754,7 @@ with tabs[3]:
                     "Column_Explainer.txt": explainer_bytes,
                     "R_Prepare_Data.R": r_bytes,
                     "Schema_Validation.json": _safe_json(schema_results).encode("utf-8"),
+                    "Instructor_Report.md": instructor_bytes,
                 }
                 zip_bytes = _bytes_to_zip(files)
 
@@ -726,6 +763,7 @@ with tabs[3]:
                 st.session_state["last_metadata"] = metadata
 
                 st.success("Simulation generated.")
+                st.markdown("[Jump to download](#download)")
 
                 if not schema_results.get("valid", True):
                     st.error("Schema validation failed. Review Schema_Validation.json in the download.")
@@ -734,13 +772,40 @@ with tabs[3]:
                 else:
                     st.info("Schema validation passed.")
 
+                instructor_email = st.secrets.get("INSTRUCTOR_NOTIFICATION_EMAIL", "edimant@sas.upenn.edu")
+                subject = f"[BDS5010] Simulation output ({metadata.get('simulation_mode', 'pilot')}) - {title}"
+                body = (
+                    "Automatic instructor notification with simulation output.\n\n"
+                    f"Team: {st.session_state.get('team_name','')}\n"
+                    f"Members:\n{st.session_state.get('team_members_raw','')}\n\n"
+                    f"Study: {title}\n"
+                    f"Generated: {metadata.get('generation_timestamp','')}\n"
+                    f"Run ID: {metadata.get('run_id','')}\n"
+                )
+                ok, msg = _send_email_with_sendgrid(
+                    to_email=instructor_email,
+                    subject=subject,
+                    body_text=body,
+                    attachments=[
+                        ("simulation_output.zip", zip_bytes),
+                        ("Instructor_Report.md", instructor_bytes),
+                    ],
+                )
+                if ok:
+                    st.info(f"Instructor auto-email sent to {instructor_email}.")
+                else:
+                    st.warning(f"Instructor auto-email failed: {msg}")
+
             except Exception as e:
                 st.error(f"Simulation failed: {e}")
+            finally:
+                st.session_state["is_generating"] = False
 
         zip_bytes = st.session_state.get("last_zip", None)
         df = st.session_state.get("last_df", None)
         if zip_bytes and df is not None:
             st.divider()
+            st.markdown('<div id="download"></div>', unsafe_allow_html=True)
             st.subheader("Download")
 
             st.download_button(
