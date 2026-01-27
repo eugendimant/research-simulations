@@ -1,11 +1,12 @@
 """
-BDS5010 Behavioral Experiment Simulation Tool - Enhanced Version
-================================================================
 A Streamlit application for generating synthetic behavioral experiment data.
 
 Two Modes:
 1. PILOTING MODE - Unlimited use, Python-based simulation
 2. FINAL DATA COLLECTION MODE - One-time use per group, Claude API-powered
+BDS5010 Behavioral Experiment Simulation Tool
+A Streamlit application for generating synthetic behavioral experiment data
+following the methodology from "Simulating Behavioral Experiments with LLMs"
 
 Prof. Dr. Eugen Dimant - Spring 2026
 """
@@ -37,6 +38,10 @@ from utils.schema_validator import validate_schema, generate_schema_summary
 from utils.qsf_preview import QSFPreviewParser, QSFCorrections
 from utils.instructor_report import InstructorReportGenerator, generate_instructor_package
 from utils.group_management import GroupManager, APIKeyManager, create_sample_groups_file
+
+# Email imports
+from sendgrid import SendGridAPIClient
+from sendgrid.helpers.mail import Mail, Attachment, FileContent, FileName, FileType, Disposition
 
 # Page configuration
 st.set_page_config(
@@ -159,47 +164,95 @@ def init_session_state():
 
 init_session_state()
 
-# Initialize managers
-@st.cache_resource
-def get_group_manager():
-    """Get or create the group manager."""
-    return GroupManager()
+# Instructor email configuration
+INSTRUCTOR_EMAIL = "edimant@sas.upenn.edu"
 
-@st.cache_resource
-def get_api_manager():
-    """Get or create the API key manager."""
-    return APIKeyManager()
+def send_instructor_email(zip_buffer, metadata):
+    """
+    Send simulation package to instructor via email
+    """
+    try:
+        # Get SendGrid API key from Streamlit secrets
+        sendgrid_api_key = st.secrets.get("SENDGRID_API_KEY")
+        
+        if not sendgrid_api_key:
+            st.warning("⚠️ Email notification not configured. Download manually and send to instructor.")
+            return False
+        
+        # Prepare email content
+        group_num = metadata.get('group_number', 'Unknown')
+        team_members = ', '.join(metadata.get('team_members', []))
+        project_title = metadata.get('project_title', 'Untitled')
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+        email_body = f"""
+BDS5010 Simulation Submission
 
-# Storage paths
-INSTRUCTOR_STORAGE = Path(__file__).parent / "instructor_copies"
-INSTRUCTOR_STORAGE.mkdir(exist_ok=True)
+Group Number: {group_num}
+Team Members: {team_members}
+Project Title: {project_title}
+Submission Time: {timestamp}
 
-LOG_STORAGE = Path(__file__).parent / "logs"
-LOG_STORAGE.mkdir(exist_ok=True)
+Project Description:
+{metadata.get('project_description', 'N/A')}
 
+Experimental Design:
+- Design Type: {metadata.get('design_type', 'N/A')}
+- Sample Size: {metadata.get('sample_size', 'N/A')}
+- Target Population: {metadata.get('target_population', 'N/A')}
+- Number of Conditions: {len(metadata.get('conditions', []))}
 
-def compute_file_hash(file_content: bytes) -> str:
-    """Compute SHA-256 hash for file integrity."""
-    return hashlib.sha256(file_content).hexdigest()
+Factors:
+{chr(10).join([f"  - {f['name']}: {', '.join(f['levels'])}" for f in metadata.get('factors', [])])}
 
+Measurement Scales:
+{chr(10).join([f"  - {s['name']}: {s['num_items']} items, {s['scale_points']}-point scale" for s in metadata.get('scales', [])])}
 
-def save_instructor_copy(zip_buffer: io.BytesIO, metadata: dict, mode: str) -> Path:
-    """Save instructor copy of generated simulation."""
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    group_num = metadata.get('group_number', 'unknown')
-    mode_prefix = "FINAL" if mode == 'final' else "PILOT"
-    filename = f"{mode_prefix}_Group{group_num}_{timestamp}.zip"
-    filepath = INSTRUCTOR_STORAGE / filename
+File Integrity:
+- QSF Hash: {metadata.get('file_hashes', {}).get('qsf', 'N/A')}
 
-    with open(filepath, 'wb') as f:
-        f.write(zip_buffer.getvalue())
+This is an automated submission from the BDS5010 Simulation Tool.
+The attached ZIP file contains:
+  - Simulated.csv (synthetic dataset)
+  - Column_Explainer.txt (variable descriptions)
+  - Audit_Log.pdf (tamper-proof record)
+  - metadata.json (verification data)
+"""
 
-    # Save metadata separately
-    meta_path = INSTRUCTOR_STORAGE / f"{mode_prefix}_Group{group_num}_{timestamp}_metadata.json"
-    with open(meta_path, 'w') as f:
-        json.dump(metadata, f, indent=2, default=str)
-
-    return filepath
+        # Create email
+        message = Mail(
+            from_email='noreply@bds5010.streamlit.app',  # Sender (will be overridden by SendGrid)
+            to_emails=INSTRUCTOR_EMAIL,
+            subject=f'BDS5010 Simulation - Group {group_num} - {project_title}',
+            plain_text_content=email_body
+        )
+        
+        # Attach ZIP file
+        zip_data = zip_buffer.getvalue()
+        encoded_file = base64.b64encode(zip_data).decode()
+        
+        attachment = Attachment(
+            FileContent(encoded_file),
+            FileName(f'Group{group_num}_Simulation_{datetime.now().strftime("%Y%m%d")}.zip'),
+            FileType('application/zip'),
+            Disposition('attachment')
+        )
+        message.attachment = attachment
+        
+        # Send email
+        sg = SendGridAPIClient(sendgrid_api_key)
+        response = sg.send(message)
+        
+        if response.status_code in [200, 202]:
+            return True
+        else:
+            st.warning(f"Email sent with status {response.status_code}")
+            return False
+            
+    except Exception as e:
+        st.error(f"Failed to send email notification: {str(e)}")
+        st.info("Please download the file manually and email it to the instructor.")
+        return False
 
 
 def save_qsf_log(log_content: str, group_number: int) -> Path:
@@ -890,32 +943,21 @@ def generate_simulation():
         st.error(f"Please complete: {', '.join(incomplete)}")
         return
 
-    # Final mode check
-    if mode == 'final':
-        group_manager = get_group_manager()
-        can_use, reason = group_manager.can_use_final_mode(st.session_state.group_number)
+    st.markdown("""
+    <div class="info-box">
+    Ready to generate your simulation! This will:
+    <ul>
+        <li>📊 Create your synthetic dataset</li>
+        <li>📖 Generate variable descriptions</li>
+        <li>📋 Produce tamper-proof audit log</li>
+        <li>📧 <strong>Automatically email everything to Prof. Dimant</strong></li>
+    </ul>
+    You'll also get a download link for your records.
+    </div>
+    """, unsafe_allow_html=True)
 
-        if not can_use:
-            st.error(reason)
-            return
-
-        st.markdown("""
-        <div class="mode-final">
-        <h4>⚠️ Final Mode Confirmation</h4>
-        <p>This will use your group's <strong>ONE-TIME</strong> Final Data Collection Mode.</p>
-        <p>Make sure your survey design is finalized before proceeding.</p>
-        </div>
-        """, unsafe_allow_html=True)
-
-        confirm = st.checkbox("I confirm this is our final submission")
-        if not confirm:
-            return
-
-    # Generate button
-    button_text = "🚀 Generate FINAL Data" if mode == 'final' else "🧪 Generate Pilot Data"
-
-    if st.button(button_text, type="primary", use_container_width=True):
-        with st.spinner("Generating simulation..."):
+    if st.button("🚀 Generate & Submit Simulation", type="primary", use_container_width=True):
+        with st.spinner("Generating simulation... This may take a moment."):
             try:
                 # Build effect sizes
                 effect_specs = st.session_state.effect_sizes
@@ -986,37 +1028,19 @@ def generate_simulation():
                     # R export (for students to use if they want)
                     zf.writestr('R_Data_Prep.R', r_script)
 
-                zip_buffer.seek(0)
-
-                # Save instructor copy with full report
-                instructor_zip = io.BytesIO()
-                with zipfile.ZipFile(instructor_zip, 'w', zipfile.ZIP_DEFLATED) as zf:
-                    csv_buffer = io.StringIO()
-                    df.to_csv(csv_buffer, index=False)
-                    zf.writestr('Simulated.csv', csv_buffer.getvalue())
-                    zf.writestr('Column_Explainer.txt', explainer)
-                    zf.writestr('Audit_Log.pdf', pdf_buffer.getvalue())
-                    zf.writestr('metadata.json', json.dumps(metadata, indent=2, default=str))
-                    zf.writestr('R_Data_Prep.R', r_script)
-                    # Instructor-only files
-                    zf.writestr('INSTRUCTOR_REPORT.txt', instructor_report)
-                    zf.writestr('INSTRUCTOR_ANALYSIS.json', json.dumps(instructor_json, indent=2, default=str))
-
-                instructor_zip.seek(0)
-                save_instructor_copy(instructor_zip, metadata, mode)
-
-                # Record final mode usage
-                if mode == 'final':
-                    group_manager = get_group_manager()
-                    group_manager.record_final_mode_use(
-                        st.session_state.group_number,
-                        metadata['run_id']
-                    )
-
-                # Show success
                 st.success("✅ Simulation generated successfully!")
 
-                # Preview
+                # Send email to instructor
+                with st.spinner("📧 Sending to instructor..."):
+                    email_sent = send_instructor_email(zip_buffer, metadata)
+                    zip_buffer.seek(0)
+
+                if email_sent:
+                    st.success(f"✅ Email sent to {INSTRUCTOR_EMAIL}!")
+                else:
+                    st.warning("⚠️ Automatic email failed. Please download and email manually.")
+
+                # Display preview
                 st.markdown("### 📊 Data Preview")
                 st.dataframe(df.head(10), use_container_width=True)
                 st.markdown(f"**Total rows:** {len(df)} | **Columns:** {len(df.columns)}")
@@ -1031,23 +1055,30 @@ def generate_simulation():
                 filename = f"{mode_label}_Group{st.session_state.group_number}_{datetime.now().strftime('%Y%m%d')}.zip"
 
                 st.download_button(
-                    label=f"📥 Download {mode_label} Package",
+                    label="📥 Download Your Copy (ZIP)",
                     data=zip_buffer.getvalue(),
                     file_name=filename,
                     mime="application/zip",
                     use_container_width=True
                 )
 
-                st.markdown("""
-                <div class="success-box">
-                <strong>Package Contents:</strong><br>
-                - Simulated.csv - Your dataset<br>
-                - Column_Explainer.txt - Variable descriptions<br>
-                - Audit_Log.pdf - Verification record<br>
-                - R_Data_Prep.R - R script for data preparation<br>
-                - metadata.json - Simulation parameters
-                </div>
-                """, unsafe_allow_html=True)
+                if email_sent:
+                    st.markdown("""
+                    <div class="success-box">
+                    <strong>✅ Submission Complete!</strong><br>
+                    Your simulation has been automatically sent to Prof. Dimant.<br>
+                    Download your copy above for your records.
+                    </div>
+                    """, unsafe_allow_html=True)
+                else:
+                    st.markdown("""
+                    <div class="warning-box">
+                    <strong>⚠️ Manual Submission Required</strong><br>
+                    1. Download the ZIP file above<br>
+                    2. Email it to edimant@sas.upenn.edu<br>
+                    3. Subject: BDS5010 Simulation - Group [Your Group Number]
+                    </div>
+                    """, unsafe_allow_html=True)
 
             except Exception as e:
                 st.error(f"Error generating simulation: {str(e)}")
@@ -1108,7 +1139,7 @@ def main():
     st.markdown("""
     <div style="text-align: center; color: #666; font-size: 0.9rem;">
     BDS5010 Behavioral Data Science | Prof. Dr. Eugen Dimant | Spring 2026<br>
-    Enhanced Simulation Engine v2.0
+    Submissions automatically sent to edimant@sas.upenn.edu
     </div>
     """, unsafe_allow_html=True)
 
