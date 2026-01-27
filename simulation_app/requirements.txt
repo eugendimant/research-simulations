@@ -1,5 +1,6 @@
 # BDS5010 Behavioral Experiment Simulation Tool - Requirements
 # ============================================================
+# Enhanced Version 2.0
 
 # Core web framework
 streamlit>=1.28.0
@@ -10,6 +11,9 @@ numpy>=1.24.0
 
 # PDF generation (optional - fallback to text if not available)
 reportlab>=4.0.0
+
+# For Claude API integration in Final Mode (optional)
+# anthropic>=0.18.0  # Uncomment when enabling Final Mode
 
 # For deployment on Streamlit Community Cloud
 # All dependencies are listed explicitly for reproducibility
@@ -28,3 +32,6 @@ reportlab>=4.0.0
 # - string
 # - random
 # - itertools
+# - threading
+# - dataclasses
+# - enum

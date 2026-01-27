@@ -1,0 +1,45 @@
+{
+  "groups": {
+    "1": {
+      "group_number": 1,
+      "members": [
+        {"name": "PLACEHOLDER - Student 1A", "email": null},
+        {"name": "PLACEHOLDER - Student 1B", "email": null},
+        {"name": "PLACEHOLDER - Student 1C", "email": null}
+      ],
+      "project_title": "PLACEHOLDER - Update with actual project",
+      "registered_at": "2026-01-27T00:00:00",
+      "final_mode_used": false,
+      "final_mode_used_at": null,
+      "final_mode_run_id": null,
+      "pilot_runs_count": 0,
+      "last_pilot_run": null
+    },
+    "2": {
+      "group_number": 2,
+      "members": [
+        {"name": "PLACEHOLDER - Student 2A", "email": null},
+        {"name": "PLACEHOLDER - Student 2B", "email": null}
+      ],
+      "project_title": "PLACEHOLDER - Update with actual project",
+      "registered_at": "2026-01-27T00:00:00",
+      "final_mode_used": false,
+      "final_mode_used_at": null,
+      "final_mode_run_id": null,
+      "pilot_runs_count": 0,
+      "last_pilot_run": null
+    }
+  },
+  "last_updated": "2026-01-27T00:00:00",
+  "_instructions": {
+    "note": "INSTRUCTOR: Replace the PLACEHOLDER entries with actual student groups",
+    "format": {
+      "group_number": "Integer group identifier",
+      "members": "List of {name, email} objects for each student",
+      "project_title": "The group's project title",
+      "final_mode_used": "DO NOT EDIT - automatically tracks one-time usage",
+      "pilot_runs_count": "Automatically tracks pilot runs"
+    },
+    "how_to_add_group": "Copy an existing group entry, change the group_number key and update members/title"
+  }
+}
