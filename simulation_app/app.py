@@ -1,793 +1,670 @@
-# app.py
+# simulation_app/app.py
 """
-A Streamlit application for generating synthetic behavioral experiment data.
+BDS5010 Behavioral Experiment Simulation Tool (Streamlit App)
+============================================================
 
-Two Modes:
-1) PILOTING MODE - Unlimited use, Python-based simulation
-2) FINAL DATA COLLECTION MODE - One-time use per group, Claude API-powered
+Design goal: students should be able to run a simulation quickly with minimal
+manual configuration. The app infers as much as possible from a Qualtrics QSF
+export. Advanced mode exposes additional controls for power users.
 
-BDS5010 Behavioral Experiment Simulation Tool
-Prof. Dr. Eugen Dimant - Spring 2026
+Deployment:
+- This file is intended to be used as `simulation_app/app.py` on Streamlit Cloud.
+- The `utils/` directory must be a Python package (must contain __init__.py).
+
+Email:
+- If you want automatic email delivery, set Streamlit secrets:
+  - SENDGRID_API_KEY
+  - SENDGRID_FROM_EMAIL
+  - (optional) SENDGRID_FROM_NAME
+  - (optional) INSTRUCTOR_NOTIFICATION_EMAIL
 """
 
 from __future__ import annotations
 
 import base64
-import hashlib
 import io
 import json
-import os
 import zipfile
-from dataclasses import dataclass
+from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
+import pandas as pd
 import streamlit as st
 
-# -----------------------------------------------------------------------------
-# Streamlit config (must be the first Streamlit call)
-# -----------------------------------------------------------------------------
-st.set_page_config(
-    page_title="BDS5010 Simulation Tool",
-    page_icon="🔬",
-    layout="wide",
-    initial_sidebar_state="expanded",
+from utils.group_management import GroupManager, APIKeyManager
+from utils.qsf_preview import QSFPreviewParser, QSFPreviewResult
+from utils.schema_validator import validate_schema
+from utils.enhanced_simulation_engine import (
+    EnhancedSimulationEngine,
+    EffectSizeSpec,
+    ExclusionCriteria,
 )
 
-# -----------------------------------------------------------------------------
-# Writable storage on Streamlit Cloud
-# -----------------------------------------------------------------------------
-APP_DATA_DIR = Path(os.getenv("BDS5010_APP_DATA_DIR", "/tmp/bds5010_simulation_app")).resolve()
-LOG_STORAGE = APP_DATA_DIR / "logs"
-GROUP_STORAGE = APP_DATA_DIR / "groups"
-for p in (APP_DATA_DIR, LOG_STORAGE, GROUP_STORAGE):
-    p.mkdir(parents=True, exist_ok=True)
 
-INSTRUCTOR_EMAIL = "edimant@sas.upenn.edu"
+# -----------------------------
+# App constants
+# -----------------------------
+APP_TITLE = "BDS5010 Behavioral Experiment Simulation Tool"
+APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF"
 
-# -----------------------------------------------------------------------------
-# Import your custom modules, but do not crash the whole app at import time
-# -----------------------------------------------------------------------------
-CUSTOM_IMPORT_ERROR: Optional[str] = None
-try:
-    from utils.enhanced_simulation_engine import EnhancedSimulationEngine, EffectSizeSpec, ExclusionCriteria
-    from utils.persona_library import PersonaLibrary
-    from utils.pdf_generator import generate_audit_log_pdf
-    from utils.qsf_preview import QSFPreviewParser
-    from utils.instructor_report import InstructorReportGenerator
-    from utils.group_management import GroupManager, APIKeyManager
-except Exception as e:  # noqa: BLE001
-    CUSTOM_IMPORT_ERROR = f"{type(e).__name__}: {e}"
+BASE_STORAGE = Path("data")
+BASE_STORAGE.mkdir(parents=True, exist_ok=True)
 
-# -----------------------------------------------------------------------------
-# Minimal fallbacks for group + API enablement (keeps UI usable if that module breaks)
-# -----------------------------------------------------------------------------
-@dataclass
-class _Member:
-    name: str
+STANDARD_DEFAULTS = {
+    "demographics": {"gender_quota": 50, "age_mean": 35, "age_sd": 12},
+    "attention_rate": 0.95,
+    "random_responder_rate": 0.05,
+    "exclusion_criteria": {
+        "attention_check_threshold": 0.0,
+        "completion_time_min_seconds": 60,
+        "completion_time_max_seconds": 1800,
+        "straight_line_threshold": 10,
+        "duplicate_ip_check": True,
+        "exclude_careless_responders": False,
+    },
+}
+
+ADVANCED_DEFAULTS = {
+    "demographics": {"gender_quota": 50, "age_mean": 35, "age_sd": 12},
+    "attention_rate": 0.95,
+    "random_responder_rate": 0.05,
+}
 
 
-@dataclass
-class _Group:
-    group_number: int
-    members: List[_Member]
-    project_title: str = ""
-    final_mode_used: bool = False
+# -----------------------------
+# Utilities
+# -----------------------------
+def _safe_json(obj: Any) -> str:
+    return json.dumps(obj, indent=2, ensure_ascii=False, default=str)
 
 
-class _FallbackAPIKeyManager:
-    def is_final_mode_enabled(self) -> bool:
-        return bool(st.secrets.get("FINAL_MODE_ENABLED", False))
+def _bytes_to_zip(files: Dict[str, bytes]) -> bytes:
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        for name, content in files.items():
+            zf.writestr(name, content)
+    return buf.getvalue()
 
 
-class _FallbackGroupManager:
-    def __init__(self, storage_dir: Path):
-        self.storage_dir = storage_dir
-        self.file = storage_dir / "groups.json"
-        if not self.file.exists():
-            self.file.write_text(json.dumps({"groups": {}, "pilot_runs": {}}, indent=2), encoding="utf-8")
+def _send_email_with_sendgrid(
+    to_email: str,
+    subject: str,
+    body_text: str,
+    attachments: Optional[List[Tuple[str, bytes]]] = None,
+) -> Tuple[bool, str]:
+    """
+    Send an email using SendGrid.
 
-    def _read(self) -> Dict[str, Any]:
-        try:
-            return json.loads(self.file.read_text(encoding="utf-8"))
-        except Exception:
-            return {"groups": {}, "pilot_runs": {}}
+    Returns: (ok, message)
+    """
+    api_key = st.secrets.get("SENDGRID_API_KEY", "")
+    from_email = st.secrets.get("SENDGRID_FROM_EMAIL", "")
+    from_name = st.secrets.get("SENDGRID_FROM_NAME", "BDS5010 Simulation Tool")
 
-    def _write(self, data: Dict[str, Any]) -> None:
-        self.file.write_text(json.dumps(data, indent=2), encoding="utf-8")
-
-    def get_all_groups(self) -> Dict[int, _Group]:
-        raw = self._read().get("groups", {})
-        out: Dict[int, _Group] = {}
-        for k, v in raw.items():
-            try:
-                num = int(k)
-            except Exception:
-                continue
-            members = [_Member(name=m) for m in (v.get("members") or [])]
-            out[num] = _Group(
-                group_number=num,
-                members=members,
-                project_title=v.get("project_title", "") or "",
-                final_mode_used=bool(v.get("final_mode_used", False)),
-            )
-        return out
-
-    def record_pilot_run(self, group_number: int) -> None:
-        data = self._read()
-        pilot = data.setdefault("pilot_runs", {})
-        key = str(int(group_number))
-        pilot[key] = int(pilot.get(key, 0)) + 1
-        self._write(data)
-
-
-@st.cache_resource
-def get_group_manager():
-    if "GroupManager" in globals():
-        for args, kwargs in [
-            ([], {"storage_dir": str(GROUP_STORAGE)}),
-            ([], {"storage_path": str(GROUP_STORAGE)}),
-            ([str(GROUP_STORAGE)], {}),
-            ([], {}),
-        ]:
-            try:
-                return GroupManager(*args, **kwargs)  # type: ignore[name-defined]
-            except TypeError:
-                continue
-            except Exception:
-                break
-    return _FallbackGroupManager(GROUP_STORAGE)
-
-
-@st.cache_resource
-def get_api_manager():
-    if "APIKeyManager" in globals():
-        for args, kwargs in [
-            ([], {"storage_dir": str(GROUP_STORAGE)}),
-            ([], {"storage_path": str(GROUP_STORAGE)}),
-            ([str(GROUP_STORAGE)], {}),
-            ([], {}),
-        ]:
-            try:
-                return APIKeyManager(*args, **kwargs)  # type: ignore[name-defined]
-            except TypeError:
-                continue
-            except Exception:
-                break
-    return _FallbackAPIKeyManager()
-
-
-def compute_file_hash(content: bytes) -> str:
-    return hashlib.sha256(content).hexdigest()
-
-
-def save_qsf_log(log_content: str, group_number: int) -> Path:
-    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    path = LOG_STORAGE / f"QSF_Log_Group{group_number}_{ts}.txt"
-    path.write_text(log_content or "", encoding="utf-8")
-    return path
-
-
-def send_instructor_email(zip_buffer: io.BytesIO, metadata: Dict[str, Any]) -> bool:
-    sendgrid_api_key = st.secrets.get("SENDGRID_API_KEY")
-    if not sendgrid_api_key:
-        st.warning("⚠️ Email not configured (missing SENDGRID_API_KEY). Download and email manually.")
-        return False
+    if not api_key or not from_email:
+        return False, "Missing SENDGRID_API_KEY or SENDGRID_FROM_EMAIL in Streamlit secrets."
 
     try:
         from sendgrid import SendGridAPIClient
-        from sendgrid.helpers.mail import Attachment, Disposition, FileContent, FileName, FileType, Mail
+        from sendgrid.helpers.mail import (
+            Mail,
+            Email,
+            To,
+            Content,
+            Attachment,
+            FileContent,
+            FileName,
+            FileType,
+            Disposition,
+        )
     except Exception as e:
-        st.warning(f"⚠️ SendGrid package not available: {e}. Download and email manually.")
-        return False
+        return False, f"SendGrid library import failed: {e}"
+
+    mail = Mail(
+        from_email=Email(from_email, from_name),
+        to_emails=To(to_email),
+        subject=subject,
+        plain_text_content=Content("text/plain", body_text),
+    )
+
+    if attachments:
+        for filename, data in attachments:
+            encoded = base64.b64encode(data).decode("utf-8")
+            att = Attachment(
+                FileContent(encoded),
+                FileName(filename),
+                FileType("application/octet-stream"),
+                Disposition("attachment"),
+            )
+            mail.add_attachment(att)
 
     try:
-        group_num = metadata.get("group_number", "Unknown")
-        team_members = ", ".join(metadata.get("team_members", []))
-        project_title = metadata.get("project_title", "Untitled")
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-        factors_txt = "\n".join(
-            [f"  - {f.get('name','?')}: {', '.join(f.get('levels') or [])}" for f in metadata.get("factors", [])]
-        ) or "  - N/A"
-        scales_txt = "\n".join(
-            [
-                f"  - {s.get('name','?')}: {s.get('num_items','?')} items, {s.get('scale_points','?')}-point scale"
-                for s in metadata.get("scales", [])
-            ]
-        ) or "  - N/A"
-
-        email_body = f"""BDS5010 Simulation Submission
-
-Group Number: {group_num}
-Team Members: {team_members}
-Project Title: {project_title}
-Submission Time: {timestamp}
-
-Project Description:
-{metadata.get('project_description', 'N/A')}
-
-Experimental Design:
-- Design Type: {metadata.get('design_type', 'N/A')}
-- Sample Size: {metadata.get('sample_size', 'N/A')}
-- Target Population: {metadata.get('target_population', 'N/A')}
-- Number of Conditions: {len(metadata.get('conditions', []))}
-
-Factors:
-{factors_txt}
-
-Measurement Scales:
-{scales_txt}
-
-File Integrity:
-- QSF Hash: {metadata.get('file_hashes', {}).get('qsf', 'N/A')}
-"""
-
-        message = Mail(
-            from_email=st.secrets.get("SENDGRID_FROM_EMAIL", "noreply@bds5010.streamlit.app"),
-            to_emails=INSTRUCTOR_EMAIL,
-            subject=f"BDS5010 Simulation - Group {group_num} - {project_title}",
-            plain_text_content=email_body,
-        )
-
-        encoded_file = base64.b64encode(zip_buffer.getvalue()).decode("utf-8")
-        attachment = Attachment(
-            FileContent(encoded_file),
-            FileName(f"Group{group_num}_Simulation_{datetime.now().strftime('%Y%m%d')}.zip"),
-            FileType("application/zip"),
-            Disposition("attachment"),
-        )
-        message.attachment = attachment
-
-        resp = SendGridAPIClient(sendgrid_api_key).send(message)
-        return resp.status_code in (200, 202)
+        sg = SendGridAPIClient(api_key)
+        resp = sg.send(mail)
+        if 200 <= int(getattr(resp, "status_code", 0)) < 300:
+            return True, f"Sent (status {resp.status_code})."
+        return False, f"SendGrid error (status {resp.status_code})."
     except Exception as e:
-        st.error(f"Failed to send email: {e}")
-        return False
+        return False, f"SendGrid send failed: {e}"
 
 
-# -----------------------------------------------------------------------------
-# CSS
-# -----------------------------------------------------------------------------
-st.markdown(
+def _infer_factors_from_conditions(conditions: List[str]) -> List[Dict[str, Any]]:
     """
-<style>
-.main-header { font-size: 2.5rem; font-weight: bold; color: #1f4e79; text-align: center; margin-bottom: 0.5rem; }
-.sub-header { font-size: 1.2rem; color: #666; text-align: center; margin-bottom: 2rem; }
-.mode-pilot { background: linear-gradient(90deg, #e3f2fd 0%, #bbdefb 100%); padding: 1rem; border-radius: 10px; border-left: 5px solid #2196F3; margin: 1rem 0; }
-.mode-final { background: linear-gradient(90deg, #fff3e0 0%, #ffe0b2 100%); padding: 1rem; border-radius: 10px; border-left: 5px solid #ff9800; margin: 1rem 0; }
-.success-box { padding: 1rem; background-color: #e8f5e9; border-radius: 5px; border-left: 4px solid #4caf50; margin: 1rem 0; }
-.warning-box { padding: 1rem; background-color: #fff3e0; border-radius: 5px; border-left: 4px solid #ff9800; margin: 1rem 0; }
-.info-box { padding: 1rem; background-color: #e3f2fd; border-radius: 5px; border-left: 4px solid #2196F3; margin: 1rem 0; }
-.error-box { padding: 1rem; background-color: #ffebee; border-radius: 5px; border-left: 4px solid #f44336; margin: 1rem 0; }
-.step-header { font-size: 1.3rem; font-weight: bold; color: #1f4e79; margin-top: 1.5rem; margin-bottom: 0.5rem; }
-</style>
-""",
-    unsafe_allow_html=True,
-)
+    Heuristic inference:
+    - If condition names look like 'A x B' (or 'A | B'), split into multiple factors.
+    - Otherwise represent as single factor called 'Condition'.
+    """
+    if not conditions:
+        return [{"name": "Condition", "levels": ["Condition A"]}]
 
-# -----------------------------------------------------------------------------
-# Session state
-# -----------------------------------------------------------------------------
-def init_session_state() -> None:
-    defaults = {
-        "mode": None,  # None, "pilot", "final"
-        "group_number": None,
-        "team_members": [],
-        "project_title": "",
-        "project_description": "",
-        "target_population": "US adults 18-65",
-        "sample_size": 300,
-        "qsf_preview_result": None,
-        "conditions": [],
-        "factors": [],
-        "scales": [],
-        "additional_vars": [],
-        "effect_sizes": [],
-        "checklist": {
-            "team_info": False,
-            "project_info": False,
-            "qsf_uploaded": False,
-            "qsf_validated": False,
-            "conditions_defined": False,
-            "variables_confirmed": False,
-            "effect_sizes_set": False,
-            "simulation_params": False,
-        },
-    }
-    for k, v in defaults.items():
-        if k not in st.session_state:
-            st.session_state[k] = v
+    seps = [" x ", " X ", " | ", " + ", " * "]
 
+    chosen_sep = None
+    for sep in seps:
+        if any(sep in c for c in conditions):
+            chosen_sep = sep
+            break
 
-init_session_state()
+    if not chosen_sep:
+        return [{"name": "Condition", "levels": conditions}]
 
+    split_rows = [c.split(chosen_sep) for c in conditions]
+    max_parts = max(len(r) for r in split_rows)
 
-def render_mode_selector() -> None:
-    st.markdown("### Select Simulation Mode")
-    col1, col2 = st.columns(2)
-
-    with col1:
-        st.markdown(
-            """
-        <div class="mode-pilot">
-        <h4>🧪 Piloting Mode</h4>
-        <p><strong>Unlimited use</strong></p>
-        </div>
-        """,
-            unsafe_allow_html=True,
-        )
-        if st.button("Select Piloting Mode", use_container_width=True):
-            st.session_state.mode = "pilot"
-            st.rerun()
-
-    with col2:
-        api_manager = get_api_manager()
-        group_manager = get_group_manager()
-        final_enabled = bool(getattr(api_manager, "is_final_mode_enabled", lambda: False)())
-        registered = {}
-        try:
-            registered = group_manager.get_all_groups()
-        except Exception:
-            registered = {}
-
-        st.markdown(
-            f"""
-        <div class="mode-final">
-        <h4>🎯 Final Data Collection Mode</h4>
-        <p><strong>One-time use per group</strong></p>
-        <p>Status: {'✅ Enabled' if final_enabled else '❌ Not enabled'}</p>
-        </div>
-        """,
-            unsafe_allow_html=True,
-        )
-
-        if final_enabled and registered:
-            if st.button("Select Final Mode", use_container_width=True):
-                st.session_state.mode = "final"
-                st.rerun()
-        elif not final_enabled:
-            st.warning("Final mode not enabled.")
-        else:
-            st.warning("No groups registered yet.")
-
-    if st.session_state.mode:
-        st.info("Mode: **Piloting**" if st.session_state.mode == "pilot" else "Mode: **Final**")
-
-
-def render_sidebar() -> None:
-    st.sidebar.markdown("## 🔬 BDS5010 Simulation")
-
-    if st.session_state.mode:
-        st.sidebar.markdown("**Mode:** 🧪 Piloting" if st.session_state.mode == "pilot" else "**Mode:** 🎯 Final")
-    else:
-        st.sidebar.markdown("**Mode:** not selected")
-
-    st.sidebar.markdown("---")
-    st.sidebar.markdown("### 📋 Checklist")
-    labels = [
-        ("team_info", "Team Information"),
-        ("project_info", "Project Details"),
-        ("qsf_uploaded", "QSF File Uploaded"),
-        ("qsf_validated", "QSF Validated"),
-        ("conditions_defined", "Conditions Defined"),
-        ("variables_confirmed", "Variables Confirmed"),
-        ("effect_sizes_set", "Effect Sizes Set"),
-        ("simulation_params", "Parameters Set"),
-    ]
-    for k, lab in labels:
-        st.sidebar.markdown(f"✅ {lab}" if st.session_state.checklist.get(k) else f"⬜ {lab}")
-
-    done = sum(bool(v) for v in st.session_state.checklist.values())
-    total = len(st.session_state.checklist)
-    st.sidebar.progress(done / total if total else 0.0)
-
-    st.sidebar.markdown("---")
-    if st.sidebar.button("🔄 Reset Form", use_container_width=True):
-        preserved_mode = st.session_state.get("mode")
-        for k in list(st.session_state.keys()):
-            del st.session_state[k]
-        init_session_state()
-        st.session_state.mode = preserved_mode
-        st.rerun()
-
-
-def step_team_info() -> None:
-    st.markdown('<p class="step-header">Step 1: Team Information</p>', unsafe_allow_html=True)
-
-    mode = st.session_state.mode
-    group_manager = get_group_manager()
-
-    if mode == "final":
-        try:
-            registered = group_manager.get_all_groups()
-        except Exception:
-            registered = {}
-
-        if not registered:
-            st.error("No groups registered.")
-            st.session_state.checklist["team_info"] = False
-            return
-
-        available = {n: g for n, g in registered.items() if not getattr(g, "final_mode_used", False)}
-        if not available:
-            st.error("All groups already used Final Mode.")
-            st.session_state.checklist["team_info"] = False
-            return
-
-        options = {f"Group {n} - {getattr(g, 'project_title', '') or 'No title'}": n for n, g in available.items()}
-        selected = st.selectbox("Select Your Group *", options=list(options.keys()))
-        if selected:
-            num = int(options[selected])
-            grp = available[num]
-            st.session_state.group_number = num
-            members = getattr(grp, "members", [])
-            st.session_state.team_members = [getattr(m, "name", str(m)) for m in members]
-            st.session_state.checklist["team_info"] = True
-            st.markdown('<div class="success-box">✅ Team verified!</div>', unsafe_allow_html=True)
-    else:
-        col1, col2 = st.columns(2)
-        with col1:
-            st.session_state.group_number = int(
-                st.number_input("Group Number *", min_value=1, max_value=50, value=int(st.session_state.get("group_number") or 1))
-            )
-        with col2:
-            num_members = int(st.number_input("Number of Team Members *", min_value=1, max_value=6, value=max(1, len(st.session_state.team_members) or 3)))
-
-        st.markdown("**Team Members:**")
-        team: List[str] = []
-        cols = st.columns(min(num_members, 3))
-        for i in range(num_members):
-            with cols[i % 3]:
-                existing = st.session_state.team_members[i] if i < len(st.session_state.team_members) else ""
-                name = st.text_input(f"Member {i+1} *", value=existing, key=f"member_{i}").strip()
-                if name:
-                    team.append(name)
-
-        st.session_state.team_members = team
-
-        ok = bool(st.session_state.group_number) and len(team) == num_members and all(team)
-        st.session_state.checklist["team_info"] = ok
-        if ok:
-            try:
-                group_manager.record_pilot_run(st.session_state.group_number)
-            except Exception:
-                pass
-            st.markdown('<div class="success-box">✅ Team information complete!</div>', unsafe_allow_html=True)
-        else:
-            st.markdown('<div class="warning-box">⚠️ Fill all team member names</div>', unsafe_allow_html=True)
-
-
-def step_project_info() -> None:
-    st.markdown('<p class="step-header">Step 2: Project Details</p>', unsafe_allow_html=True)
-
-    st.session_state.project_title = st.text_input("Project Title *", value=st.session_state.project_title)
-    st.session_state.project_description = st.text_area("Project Description *", value=st.session_state.project_description, height=120)
-
-    if st.session_state.project_description and "PersonaLibrary" in globals():
-        try:
-            domains = PersonaLibrary().detect_domains(st.session_state.project_description, st.session_state.project_title)  # type: ignore[name-defined]
-            if domains:
-                st.info(f"Detected domains: {', '.join(domains[:5])}")
-        except Exception:
-            pass
-
-    c1, c2 = st.columns(2)
-    with c1:
-        st.session_state.target_population = st.text_input("Target Population *", value=st.session_state.target_population)
-    with c2:
-        st.session_state.sample_size = int(st.number_input("Sample Size *", min_value=50, max_value=1000, value=int(st.session_state.sample_size), step=50))
-
-    ok = bool(st.session_state.project_title.strip()) and bool(st.session_state.project_description.strip()) and st.session_state.sample_size >= 50
-    st.session_state.checklist["project_info"] = ok
-    if ok:
-        st.markdown('<div class="success-box">✅ Project details complete!</div>', unsafe_allow_html=True)
-
-
-def step_upload_qsf() -> None:
-    st.markdown('<p class="step-header">Step 3: Upload Survey Files</p>', unsafe_allow_html=True)
-
-    qsf = st.file_uploader("QSF File *", type=["qsf"])
-    if qsf:
-        content = qsf.read()
-        st.session_state.qsf_content = content
-        st.session_state.qsf_hash = compute_file_hash(content)
-        st.session_state.checklist["qsf_uploaded"] = True
-
-        if "QSFPreviewParser" in globals():
-            try:
-                parser = QSFPreviewParser()  # type: ignore[name-defined]
-                st.session_state.qsf_preview_result = parser.parse(content)
-            except Exception as e:
-                st.session_state.qsf_preview_result = None
-                st.warning(f"QSF preview failed: {e}")
-
-        st.success(f"Uploaded: {qsf.name}")
-        st.caption(f"Hash: {st.session_state.qsf_hash[:16]}...")
-
-    res = st.session_state.get("qsf_preview_result")
-    if res:
-        st.markdown("### Survey Preview")
-        st.write(res)
-
-    if st.button("Confirm QSF Validation"):
-        log = ""
-        try:
-            log = getattr(parser, "generate_log_report", lambda: "")()
-        except Exception:
-            log = ""
-        if st.session_state.get("group_number"):
-            save_qsf_log(log, int(st.session_state.group_number))
-        st.session_state.checklist["qsf_validated"] = True
-        st.success("QSF validated.")
-
-
-def step_define_conditions() -> None:
-    st.markdown('<p class="step-header">Step 4: Experimental Conditions</p>', unsafe_allow_html=True)
-
-    st.session_state.design_type = st.selectbox("Experimental Design *", ["Between-subjects", "Within-subjects", "Mixed design"], index=0)
-    num_factors = int(st.number_input("Number of Factors *", min_value=1, max_value=4, value=2))
+    if any(len(r) != max_parts for r in split_rows):
+        return [{"name": "Condition", "levels": conditions}]
 
     factors: List[Dict[str, Any]] = []
-    for i in range(num_factors):
-        st.markdown(f"**Factor {i+1}:**")
-        c1, c2 = st.columns(2)
-        with c1:
-            name = st.text_input(f"Factor {i+1} Name *", key=f"factor_name_{i}").strip()
-        with c2:
-            levels_txt = st.text_input(f"Factor {i+1} Levels (comma-separated) *", key=f"factor_levels_{i}").strip()
-
-        if name and levels_txt:
-            levels = [x.strip() for x in levels_txt.split(",") if x.strip()]
-            if len(levels) >= 2:
-                factors.append({"name": name, "levels": levels})
-
-    st.session_state.factors = factors
-
-    if factors:
-        from itertools import product
-        combos = list(product(*[f["levels"] for f in factors]))
-        st.session_state.conditions = [" x ".join(c) for c in combos]
-        st.session_state.checklist["conditions_defined"] = True
-        st.markdown('<div class="success-box">✅ Conditions defined!</div>', unsafe_allow_html=True)
-        for cond in st.session_state.conditions:
-            st.markdown(f"- {cond}")
-    else:
-        st.session_state.conditions = []
-        st.session_state.checklist["conditions_defined"] = False
+    for j in range(max_parts):
+        levels = sorted(list({r[j].strip() for r in split_rows}))
+        factors.append({"name": f"Factor_{j+1}", "levels": levels})
+    return factors
 
 
-def step_define_variables() -> None:
-    st.markdown('<p class="step-header">Step 5: Variables & Scales</p>', unsafe_allow_html=True)
+def _preview_to_engine_inputs(preview: QSFPreviewResult) -> Dict[str, Any]:
+    """
+    Convert QSFPreviewResult to engine-ready inputs with minimal assumptions.
+    """
+    conditions = (preview.detected_conditions or [])[:]
+    if not conditions:
+        conditions = ["Condition A"]
 
-    num_scales = int(st.number_input("Number of Multi-Item Scales *", min_value=1, max_value=10, value=2))
+    factors = _infer_factors_from_conditions(conditions)
+
     scales: List[Dict[str, Any]] = []
+    for s in (preview.detected_scales or []):
+        name = str(s.get("name", "Scale")).strip() or "Scale"
+        num_items = int(s.get("items", 5) or 5)
+        scale_points = int(s.get("scale_points", 7) or 7)
+        scales.append(
+            {
+                "name": name,
+                "num_items": max(1, num_items),
+                "scale_points": max(2, scale_points),
+                "reverse_items": [],
+            }
+        )
 
-    for i in range(num_scales):
-        st.markdown(f"**Scale {i+1}:**")
-        c1, c2, c3 = st.columns(3)
-        with c1:
-            name = st.text_input("Name *", key=f"scale_name_{i}").strip()
-        with c2:
-            items = int(st.number_input("Items *", min_value=1, max_value=20, value=5, key=f"scale_items_{i}"))
-        with c3:
-            points = int(st.selectbox("Points *", [5, 6, 7, 9, 10, 11], index=1, key=f"scale_points_{i}"))
+    if not scales:
+        scales = [{"name": "Main_DV", "num_items": 5, "scale_points": 7, "reverse_items": []}]
 
-        reverse = st.text_input("Reverse-coded items (comma-separated, optional)", key=f"scale_reverse_{i}").strip()
-        rev_items = [int(x.strip()) for x in reverse.split(",") if x.strip().isdigit()]
+    open_ended = getattr(preview, "open_ended_questions", None) or []
 
-        if name:
-            scales.append({"name": name, "num_items": items, "scale_points": points, "reverse_items": rev_items})
-
-    st.session_state.scales = scales
-
-    add_vars_text = st.text_area("Additional single-item measures (name, min, max per line)", value="WTP, 0, 10")
-    additional_vars: List[Dict[str, Any]] = []
-    for line in add_vars_text.strip().split("\n"):
-        parts = [p.strip() for p in line.split(",")]
-        if len(parts) >= 3 and parts[0]:
-            try:
-                additional_vars.append({"name": parts[0], "min": int(parts[1]), "max": int(parts[2])})
-            except Exception:
-                pass
-    st.session_state.additional_vars = additional_vars
-
-    ok = bool(scales) and all(s["name"] for s in scales)
-    st.session_state.checklist["variables_confirmed"] = ok
-    if ok:
-        st.markdown('<div class="success-box">✅ Variables defined!</div>', unsafe_allow_html=True)
+    return {
+        "conditions": conditions,
+        "factors": factors,
+        "scales": scales,
+        "open_ended_questions": open_ended,
+    }
 
 
-def step_effect_sizes() -> None:
-    st.markdown('<p class="step-header">Step 6: Expected Effect Sizes</p>', unsafe_allow_html=True)
-
-    if not st.session_state.conditions or not st.session_state.scales:
-        st.warning("Define conditions and scales first.")
-        st.session_state.checklist["effect_sizes_set"] = False
-        return
-
-    num_effects = int(st.number_input("Number of expected effects", min_value=0, max_value=10, value=1))
-    effects: List[Any] = []
-
-    if "EffectSizeSpec" not in globals():
-        st.info("Effect size UI requires utils.enhanced_simulation_engine. After you apply the utils patch below, this will work.")
-        st.session_state.effect_sizes = []
-        st.session_state.checklist["effect_sizes_set"] = True
-        return
-
-    scale_names = [s["name"] for s in st.session_state.scales]
-    factor_names = [f["name"] for f in st.session_state.factors]
-
-    for i in range(num_effects):
-        c1, c2 = st.columns(2)
-        with c1:
-            dv = st.selectbox("Dependent Variable", scale_names, key=f"dv_{i}")
-            fac = st.selectbox("Factor", factor_names, key=f"fac_{i}")
-        with c2:
-            factor_data = next((f for f in st.session_state.factors if f["name"] == fac), None)
-            levels = (factor_data or {}).get("levels", [])
-            hi = st.selectbox("Higher level", levels, key=f"hi_{i}") if levels else ""
-            lo = st.selectbox("Lower level", [x for x in levels if x != hi], key=f"lo_{i}") if levels else ""
-            d = float(st.slider("Cohen's d", 0.0, 1.5, 0.5, 0.1, key=f"d_{i}"))
-
-        if dv and fac and hi and lo:
-            effects.append(EffectSizeSpec(variable=dv, factor=fac, level_high=hi, level_low=lo, cohens_d=d))  # type: ignore[name-defined]
-
-    st.session_state.effect_sizes = effects
-    st.session_state.checklist["effect_sizes_set"] = True
-    st.markdown('<div class="success-box">✅ Effect sizes set!</div>', unsafe_allow_html=True)
+@st.cache_resource
+def _get_group_manager() -> GroupManager:
+    return GroupManager()
 
 
-def step_simulation_params() -> None:
-    st.markdown('<p class="step-header">Step 7: Simulation Parameters</p>', unsafe_allow_html=True)
-
-    c1, c2 = st.columns(2)
-    with c1:
-        st.session_state.gender_quota = int(st.slider("Male %", 0, 100, 50))
-        st.session_state.age_mean = int(st.number_input("Mean Age", 18, 65, 35))
-        st.session_state.age_sd = int(st.number_input("Age SD", 5, 20, 12))
-    with c2:
-        st.session_state.attention_rate = int(st.slider("Attention Check Pass %", 70, 100, 95))
-        st.session_state.min_completion_time = int(st.number_input("Min completion (sec)", 30, 300, 60))
-        st.session_state.max_completion_time = int(st.number_input("Max completion (sec)", 300, 3600, 1800))
-
-    st.session_state.checklist["simulation_params"] = True
-    st.markdown('<div class="success-box">✅ Parameters set!</div>', unsafe_allow_html=True)
+@st.cache_resource
+def _get_api_key_manager() -> APIKeyManager:
+    return APIKeyManager()
 
 
-def generate_simulation() -> None:
-    st.markdown('<p class="step-header">Generate Simulation</p>', unsafe_allow_html=True)
-
-    missing = [k for k, v in st.session_state.checklist.items() if not v]
-    if missing:
-        st.error("Complete checklist items: " + ", ".join(missing))
-        return
-
-    if CUSTOM_IMPORT_ERROR:
-        st.error("Custom modules failed to import. Apply the utils patch below, then redeploy.")
-        st.code(CUSTOM_IMPORT_ERROR)
-        return
-
-    if st.button("🚀 Generate & Submit Simulation", type="primary", use_container_width=True):
-        try:
-            exclusion = ExclusionCriteria(  # type: ignore[name-defined]
-                completion_time_min_seconds=int(st.session_state.min_completion_time),
-                completion_time_max_seconds=int(st.session_state.max_completion_time),
-                attention_check_threshold=0.5,
-                straight_line_threshold=10,
-            )
-
-            engine = EnhancedSimulationEngine(  # type: ignore[name-defined]
-                study_title=st.session_state.project_title,
-                study_description=st.session_state.project_description,
-                sample_size=int(st.session_state.sample_size),
-                conditions=st.session_state.conditions,
-                factors=st.session_state.factors,
-                scales=st.session_state.scales,
-                additional_vars=st.session_state.additional_vars,
-                demographics={
-                    "gender_quota": int(st.session_state.gender_quota),
-                    "age_mean": int(st.session_state.age_mean),
-                    "age_sd": int(st.session_state.age_sd),
-                },
-                attention_rate=float(st.session_state.attention_rate) / 100.0,
-                effect_sizes=st.session_state.effect_sizes,
-                exclusion_criteria=exclusion,
-                mode=st.session_state.mode,
-            )
-
-            df, metadata = engine.generate()
-
-            metadata.update(
-                {
-                    "group_number": st.session_state.group_number,
-                    "team_members": st.session_state.team_members,
-                    "project_title": st.session_state.project_title,
-                    "project_description": st.session_state.project_description,
-                    "design_type": st.session_state.design_type,
-                    "target_population": st.session_state.target_population,
-                    "sample_size": st.session_state.sample_size,
-                    "conditions": st.session_state.conditions,
-                    "factors": st.session_state.factors,
-                    "scales": st.session_state.scales,
-                    "file_hashes": {"qsf": st.session_state.get("qsf_hash", "")},
-                }
-            )
-
-            explainer = engine.generate_explainer()
-            r_script = engine.generate_r_export(df)
-            pdf_buffer = generate_audit_log_pdf(metadata, df)  # type: ignore[name-defined]
-
-            zip_buffer = io.BytesIO()
-            with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
-                zf.writestr("Simulated.csv", df.to_csv(index=False))
-                zf.writestr("Column_Explainer.txt", explainer)
-                zf.writestr("Audit_Log.pdf", pdf_buffer.getvalue())
-                zf.writestr("metadata.json", json.dumps(metadata, indent=2, default=str))
-                zf.writestr("R_Data_Prep.R", r_script)
-
-            zip_buffer.seek(0)
-
-            st.success("Simulation generated.")
-            email_sent = send_instructor_email(zip_buffer, metadata)
-            zip_buffer.seek(0)
-
-            st.dataframe(df.head(10), use_container_width=True)
-
-            mode_label = "FINAL" if st.session_state.mode == "final" else "PILOT"
-            filename = f"{mode_label}_Group{st.session_state.group_number}_{datetime.now().strftime('%Y%m%d')}.zip"
-            st.download_button("📥 Download ZIP", data=zip_buffer.getvalue(), file_name=filename, mime="application/zip", use_container_width=True)
-
-            if email_sent:
-                st.info(f"Sent to {INSTRUCTOR_EMAIL}.")
-            else:
-                st.warning("Email not sent. Download ZIP and email manually.")
-
-        except Exception as e:
-            st.error(f"Generation failed: {e}")
-            st.exception(e)
+@st.cache_resource
+def _get_qsf_preview_parser() -> QSFPreviewParser:
+    return QSFPreviewParser()
 
 
-def main() -> None:
-    st.markdown('<p class="main-header">🔬 BDS5010 Simulation Tool</p>', unsafe_allow_html=True)
-    st.markdown('<p class="sub-header">Behavioral Experiment Data Simulation | Spring 2026</p>', unsafe_allow_html=True)
+# -----------------------------
+# Streamlit UI
+# -----------------------------
+st.set_page_config(page_title=APP_TITLE, layout="wide")
 
-    render_sidebar()
+st.title(APP_TITLE)
+st.caption(APP_SUBTITLE)
 
-    if not st.session_state.mode:
-        render_mode_selector()
-        return
+with st.sidebar:
+    st.subheader("Mode")
 
-    tabs = st.tabs(["1️⃣ Team", "2️⃣ Project", "3️⃣ QSF Upload", "4️⃣ Conditions", "5️⃣ Variables", "6️⃣ Effects", "7️⃣ Parameters", "🚀 Generate"])
-    with tabs[0]:
-        step_team_info()
-    with tabs[1]:
-        step_project_info()
-    with tabs[2]:
-        step_upload_qsf()
-    with tabs[3]:
-        step_define_conditions()
-    with tabs[4]:
-        step_define_variables()
-    with tabs[5]:
-        step_effect_sizes()
-    with tabs[6]:
-        step_simulation_params()
-    with tabs[7]:
-        generate_simulation()
+    advanced_mode = st.toggle("Advanced mode", value=st.session_state.get("advanced_mode", False))
+    st.session_state["advanced_mode"] = advanced_mode
 
-    st.markdown("---")
-    st.markdown(
-        """
-<div style="text-align: center; color: #666; font-size: 0.9rem;">
-BDS5010 Behavioral Data Science | Prof. Dr. Eugen Dimant | Spring 2026<br>
-Email submission works when SendGrid is configured
-</div>
-""",
-        unsafe_allow_html=True,
+    st.divider()
+    st.subheader("Standardization (Simple mode)")
+    st.write(
+        "When Advanced mode is off, the app uses standardized defaults so results are comparable across teams."
+    )
+
+    st.divider()
+    st.subheader("Email (optional)")
+    st.write("Automatic email delivery is available if SendGrid secrets are configured.")
+    st.write("This app will not collect or store emails beyond the current session.")
+
+
+tabs = st.tabs(["1) Quick setup", "2) Upload QSF", "3) Review", "4) Generate"])
+
+
+# -----------------------------
+# Tab 1: Quick setup (minimal, aspredicted-like)
+# -----------------------------
+with tabs[0]:
+    colA, colB = st.columns([1, 1], gap="large")
+
+    with colA:
+        st.subheader("Team")
+        gm = _get_group_manager()
+
+        team_name = st.text_input("Team name", value=st.session_state.get("team_name", ""))
+        members = st.text_area(
+            "Team members (one per line)",
+            value=st.session_state.get("team_members_raw", ""),
+            height=120,
+            help="Optional but recommended so the instructor can identify teams.",
+        )
+        st.session_state["team_name"] = team_name
+        st.session_state["team_members_raw"] = members
+
+    with colB:
+        st.subheader("Study (aspredicted-style minimum)")
+        study_title = st.text_input("Study title", value=st.session_state.get("study_title", ""))
+        study_description = st.text_area(
+            "One-paragraph study description",
+            value=st.session_state.get("study_description", ""),
+            height=140,
+            help="Purpose, manipulation, main outcomes. The app uses this for domain detection and persona selection.",
+        )
+
+        sample_size = st.number_input(
+            "Target sample size (N)",
+            min_value=10,
+            max_value=5000,
+            value=int(st.session_state.get("sample_size", 200)),
+            step=10,
+            help="Balanced across detected conditions.",
+        )
+
+        st.session_state["study_title"] = study_title
+        st.session_state["study_description"] = study_description
+        st.session_state["sample_size"] = int(sample_size)
+
+    st.info(
+        "Next: Upload your Qualtrics QSF. The app will infer conditions, factors, and scales automatically."
     )
 
 
-if __name__ == "__main__":
-    main()
+# -----------------------------
+# Tab 2: Upload QSF and optional prereg info
+# -----------------------------
+with tabs[1]:
+    st.subheader("Upload your Qualtrics QSF")
+    parser = _get_qsf_preview_parser()
+
+    qsf_file = st.file_uploader("QSF file", type=["qsf", "zip", "json"])
+    prereg_text = st.text_area(
+        "Optional: paste key preregistration notes (aspredicted excerpt)",
+        value=st.session_state.get("prereg_text", ""),
+        height=140,
+        help="Optional. Used only to improve labels and instructor-facing summaries. It does not change simulation defaults in Simple mode.",
+    )
+    st.session_state["prereg_text"] = prereg_text
+
+    if qsf_file is not None:
+        try:
+            content = qsf_file.read()
+            preview = parser.parse(content)
+            st.session_state["qsf_preview"] = preview
+            st.success("QSF parsed successfully.")
+        except Exception as e:
+            st.session_state["qsf_preview"] = None
+            st.error(f"QSF parsing failed: {e}")
+
+    preview: Optional[QSFPreviewResult] = st.session_state.get("qsf_preview", None)
+
+    if preview:
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Questions", int(preview.total_questions))
+        c2.metric("Scales detected", int(len(preview.detected_scales or [])))
+        c3.metric("Conditions detected", int(len(preview.detected_conditions or [])))
+        c4.metric("Warnings", int(len(preview.warnings or [])))
+
+        if preview.warnings:
+            with st.expander("Show QSF warnings"):
+                for w in preview.warnings:
+                    st.warning(w)
+
+        st.caption("Next: Review the auto-detected design and run your simulation.")
+
+
+# -----------------------------
+# Tab 3: Review (simple confirmation; advanced editing optional)
+# -----------------------------
+with tabs[2]:
+    preview: Optional[QSFPreviewResult] = st.session_state.get("qsf_preview", None)
+
+    if not preview:
+        st.warning("Upload a QSF first.")
+    else:
+        inferred = _preview_to_engine_inputs(preview)
+        st.session_state["inferred_design"] = inferred
+
+        st.subheader("Auto-detected design")
+
+        col1, col2 = st.columns([1.1, 0.9], gap="large")
+
+        with col1:
+            st.markdown("**Conditions**")
+            st.write(inferred["conditions"])
+
+            st.markdown("**Factors (inferred)**")
+            st.write(inferred["factors"])
+
+            st.markdown("**Scales (inferred)**")
+            st.write(inferred["scales"])
+
+        with col2:
+            st.markdown("**What the app inferred (and why)**")
+            st.write(
+                "- Conditions: derived from the Qualtrics survey flow if present.\n"
+                "- Factors: inferred from condition naming patterns (e.g., 'A x B').\n"
+                "- Scales: inferred from question blocks that look like repeated Likert items.\n"
+                "\nIf anything is wrong, switch on Advanced mode in the sidebar and edit below."
+            )
+
+        if st.session_state.get("advanced_mode", False):
+            st.divider()
+            st.subheader("Advanced: edit design")
+
+            cond_text = st.text_area(
+                "Conditions (one per line)",
+                value="\n".join(inferred["conditions"]),
+                height=140,
+            )
+            conditions = [c.strip() for c in cond_text.splitlines() if c.strip()]
+            if not conditions:
+                conditions = ["Condition A"]
+
+            st.caption("Factors are optional. If you leave this empty, the engine will treat CONDITION as the only factor.")
+            factors_json = st.text_area(
+                "Factors (JSON list) - optional",
+                value=_safe_json(_infer_factors_from_conditions(conditions)),
+                height=180,
+                help='Example: [{"name":"AI","levels":["AI","No AI"]},{"name":"Product","levels":["Hedonic","Utilitarian"]}]',
+            )
+            try:
+                factors = json.loads(factors_json)
+                if not isinstance(factors, list):
+                    raise ValueError("Factors JSON must be a list.")
+            except Exception as e:
+                st.error(f"Factors JSON invalid: {e}")
+                factors = _infer_factors_from_conditions(conditions)
+
+            st.caption("Scales drive most analyses. Keep this short: 1-3 scales is typical for class pilots.")
+            scales_df = pd.DataFrame(inferred["scales"])
+            edited_scales = st.data_editor(
+                scales_df,
+                num_rows="dynamic",
+                use_container_width=True,
+            )
+            scales: List[Dict[str, Any]] = []
+            for _, row in edited_scales.iterrows():
+                name = str(row.get("name", "")).strip()
+                if not name:
+                    continue
+                scales.append(
+                    {
+                        "name": name,
+                        "num_items": int(row.get("num_items", 5) or 5),
+                        "scale_points": int(row.get("scale_points", 7) or 7),
+                        "reverse_items": row.get("reverse_items", []) or [],
+                    }
+                )
+            if not scales:
+                scales = [{"name": "Main_DV", "num_items": 5, "scale_points": 7, "reverse_items": []}]
+
+            st.session_state["inferred_design"] = {
+                "conditions": conditions,
+                "factors": factors,
+                "scales": scales,
+                "open_ended_questions": inferred.get("open_ended_questions", []),
+            }
+
+        st.success("Design locked for generation (based on the settings above).")
+
+
+# -----------------------------
+# Tab 4: Generate (standard defaults; advanced controls optional)
+# -----------------------------
+with tabs[3]:
+    inferred = st.session_state.get("inferred_design", None)
+    if not inferred:
+        st.warning("Complete the previous steps first (upload QSF, then review).")
+    else:
+        st.subheader("Generate simulation")
+
+        if not st.session_state.get("advanced_mode", False):
+            demographics = STANDARD_DEFAULTS["demographics"].copy()
+            attention_rate = STANDARD_DEFAULTS["attention_rate"]
+            random_responder_rate = STANDARD_DEFAULTS["random_responder_rate"]
+            exclusion = ExclusionCriteria(**STANDARD_DEFAULTS["exclusion_criteria"])
+            effect_sizes: List[EffectSizeSpec] = []
+            custom_persona_weights = None
+
+            with st.expander("Standardized settings (locked)"):
+                st.json(
+                    {
+                        "demographics": demographics,
+                        "attention_rate": attention_rate,
+                        "random_responder_rate": random_responder_rate,
+                        "exclusion_criteria": asdict(exclusion),
+                        "effect_sizes": [],
+                    }
+                )
+        else:
+            st.markdown("### Advanced settings")
+
+            c1, c2, c3 = st.columns(3)
+            with c1:
+                male_pct = st.slider("Male %", 0, 100, int(ADVANCED_DEFAULTS["demographics"]["gender_quota"]))
+                age_mean = st.number_input("Mean age", 18, 70, int(ADVANCED_DEFAULTS["demographics"]["age_mean"]))
+                age_sd = st.number_input("Age SD", 1, 30, int(ADVANCED_DEFAULTS["demographics"]["age_sd"]))
+                demographics = {"gender_quota": int(male_pct), "age_mean": float(age_mean), "age_sd": float(age_sd)}
+
+            with c2:
+                attention_rate = st.slider("Attention check pass rate", 0.50, 1.00, float(ADVANCED_DEFAULTS["attention_rate"]), 0.01)
+                random_responder_rate = st.slider("Random responder rate", 0.00, 0.30, float(ADVANCED_DEFAULTS["random_responder_rate"]), 0.01)
+
+            with c3:
+                min_sec = st.number_input("Min completion time (sec)", 10, 600, 60)
+                max_sec = st.number_input("Max completion time (sec)", 300, 7200, 1800)
+                straight = st.number_input("Straight-line threshold", 3, 40, 10)
+                exclusion = ExclusionCriteria(
+                    attention_check_threshold=0.0,
+                    completion_time_min_seconds=int(min_sec),
+                    completion_time_max_seconds=int(max_sec),
+                    straight_line_threshold=int(straight),
+                    duplicate_ip_check=True,
+                    exclude_careless_responders=False,
+                )
+
+            st.markdown("### Optional: expected effect sizes")
+            st.caption("Only add this if you want the simulated data to reflect a directional hypothesis.")
+            effects_json = st.text_area(
+                "Effect sizes (JSON list) - optional",
+                value="[]",
+                height=140,
+                help='Example: [{"variable":"Main_DV","factor":"Condition","level_high":"AI","level_low":"No AI","cohens_d":0.3,"direction":"positive"}]',
+            )
+            effect_sizes = []
+            try:
+                raw = json.loads(effects_json)
+                if isinstance(raw, list):
+                    for e in raw:
+                        effect_sizes.append(
+                            EffectSizeSpec(
+                                variable=str(e.get("variable", "")),
+                                factor=str(e.get("factor", "")),
+                                level_high=str(e.get("level_high", "")),
+                                level_low=str(e.get("level_low", "")),
+                                cohens_d=float(e.get("cohens_d", 0.0)),
+                                direction=str(e.get("direction", "positive")),
+                            )
+                        )
+            except Exception as e:
+                st.warning(f"Effect sizes JSON invalid; ignoring. ({e})")
+                effect_sizes = []
+
+            custom_persona_weights = None
+
+        if st.button("Generate simulated dataset", type="primary"):
+            title = st.session_state.get("study_title", "") or "Untitled Study"
+            desc = st.session_state.get("study_description", "") or ""
+            N = int(st.session_state.get("sample_size", 200))
+
+            engine = EnhancedSimulationEngine(
+                study_title=title,
+                study_description=desc,
+                sample_size=N,
+                conditions=inferred["conditions"],
+                factors=inferred["factors"],
+                scales=inferred["scales"],
+                additional_vars=[],
+                demographics=demographics,
+                attention_rate=attention_rate,
+                random_responder_rate=random_responder_rate,
+                effect_sizes=effect_sizes,
+                exclusion_criteria=exclusion,
+                custom_persona_weights=custom_persona_weights,
+                open_ended_questions=inferred.get("open_ended_questions", []),
+                seed=None,
+                mode="pilot" if not st.session_state.get("advanced_mode", False) else "final",
+            )
+
+            try:
+                df, metadata = engine.generate()
+                explainer = engine.generate_explainer()
+                r_script = engine.generate_r_export(df)
+
+                schema_results = validate_schema(
+                    df=df,
+                    expected_conditions=inferred["conditions"],
+                    expected_scales=inferred["scales"],
+                    expected_n=N,
+                )
+
+                csv_bytes = df.to_csv(index=False).encode("utf-8")
+                meta_bytes = _safe_json(metadata).encode("utf-8")
+                explainer_bytes = explainer.encode("utf-8")
+                r_bytes = r_script.encode("utf-8")
+
+                files = {
+                    "Simulated.csv": csv_bytes,
+                    "Metadata.json": meta_bytes,
+                    "Column_Explainer.txt": explainer_bytes,
+                    "R_Prepare_Data.R": r_bytes,
+                    "Schema_Validation.json": _safe_json(schema_results).encode("utf-8"),
+                }
+                zip_bytes = _bytes_to_zip(files)
+
+                st.session_state["last_df"] = df
+                st.session_state["last_zip"] = zip_bytes
+                st.session_state["last_metadata"] = metadata
+
+                st.success("Simulation generated.")
+
+                if not schema_results.get("valid", True):
+                    st.error("Schema validation failed. Review Schema_Validation.json in the download.")
+                elif schema_results.get("warnings"):
+                    st.warning("Schema validation warnings found. Review Schema_Validation.json in the download.")
+                else:
+                    st.info("Schema validation passed.")
+
+            except Exception as e:
+                st.error(f"Simulation failed: {e}")
+
+        zip_bytes = st.session_state.get("last_zip", None)
+        df = st.session_state.get("last_df", None)
+        if zip_bytes and df is not None:
+            st.divider()
+            st.subheader("Download")
+
+            st.download_button(
+                "Download ZIP (CSV + metadata + R script)",
+                data=zip_bytes,
+                file_name=f"bds5010_simulation_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip",
+                mime="application/zip",
+            )
+
+            with st.expander("Preview (first 20 rows)"):
+                st.dataframe(df.head(20), use_container_width=True)
+
+            st.divider()
+            st.subheader("Email (optional)")
+
+            to_email = st.text_input("Send to email", value=st.session_state.get("send_to_email", ""))
+            st.session_state["send_to_email"] = to_email
+
+            colE1, colE2 = st.columns([1, 1])
+            with colE1:
+                if st.button("Send ZIP via email"):
+                    if not to_email or "@" not in to_email:
+                        st.error("Please enter a valid email address.")
+                    else:
+                        subject = f"[BDS5010] Simulation output: {st.session_state.get('study_title','Untitled Study')}"
+                        body = (
+                            "Attached is the simulation output ZIP (Simulated.csv, metadata, R prep script).\n\n"
+                            f"Generated: {datetime.now().isoformat(timespec='seconds')}\n"
+                        )
+                        ok, msg = _send_email_with_sendgrid(
+                            to_email=to_email,
+                            subject=subject,
+                            body_text=body,
+                            attachments=[("simulation_output.zip", zip_bytes)],
+                        )
+                        if ok:
+                            st.success(msg)
+                        else:
+                            st.error(msg)
+
+            with colE2:
+                instructor_email = st.secrets.get("INSTRUCTOR_NOTIFICATION_EMAIL", "")
+                if instructor_email:
+                    if st.button("Send to instructor too"):
+                        subject = f"[BDS5010] Simulation output (team: {st.session_state.get('team_name','') or 'N/A'})"
+                        body = (
+                            f"Team: {st.session_state.get('team_name','')}\n"
+                            f"Members:\n{st.session_state.get('team_members_raw','')}\n\n"
+                            f"Study: {st.session_state.get('study_title','')}\n"
+                            f"Generated: {datetime.now().isoformat(timespec='seconds')}\n"
+                        )
+                        ok, msg = _send_email_with_sendgrid(
+                            to_email=instructor_email,
+                            subject=subject,
+                            body_text=body,
+                            attachments=[("simulation_output.zip", zip_bytes)],
+                        )
+                        if ok:
+                            st.success(msg)
+                        else:
+                            st.error(msg)
+                else:
+                    st.caption("Instructor email not configured in secrets (INSTRUCTOR_NOTIFICATION_EMAIL).")
