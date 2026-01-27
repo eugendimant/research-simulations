@@ -35,3 +35,8 @@ reportlab>=4.0.0
 # - threading
 # - dataclasses
 # - enum
+
+streamlit
+pandas
+numpy
+sendgrid
