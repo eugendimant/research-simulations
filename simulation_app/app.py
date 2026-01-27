@@ -2,7 +2,7 @@
 BDS5010 Behavioral Experiment Simulation Tool
 ==============================================
 A Streamlit application for generating synthetic behavioral experiment data
-following the methodology from "Simulating Behavioral Experiments with ChatGPT-5"
+following the methodology from "Simulating Behavioral Experiments with LLMs"
 
 Prof. Dr. Eugen Dimant - Spring 2026
 """
@@ -25,6 +25,10 @@ from utils.qsf_parser import parse_qsf_file, extract_survey_structure
 from utils.simulation_engine import SimulationEngine
 from utils.pdf_generator import generate_audit_log_pdf
 from utils.schema_validator import validate_schema, generate_schema_summary
+
+# Email imports
+from sendgrid import SendGridAPIClient
+from sendgrid.helpers.mail import Mail, Attachment, FileContent, FileName, FileType, Disposition
 
 # Page configuration
 st.set_page_config(
@@ -116,26 +120,97 @@ if 'survey_data' not in st.session_state:
 if 'simulation_result' not in st.session_state:
     st.session_state.simulation_result = None
 
-# Instructor storage path
-INSTRUCTOR_STORAGE = Path("/home/user/research-simulations/simulation_app/instructor_copies")
-INSTRUCTOR_STORAGE.mkdir(exist_ok=True)
+# Instructor email configuration
+INSTRUCTOR_EMAIL = "edimant@sas.upenn.edu"
 
-def save_instructor_copy(zip_buffer, metadata):
-    """Save a copy of the generated ZIP for instructor access"""
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    group_num = metadata.get('group_number', 'unknown')
-    filename = f"Group{group_num}_{timestamp}.zip"
-    filepath = INSTRUCTOR_STORAGE / filename
+def send_instructor_email(zip_buffer, metadata):
+    """
+    Send simulation package to instructor via email
+    """
+    try:
+        # Get SendGrid API key from Streamlit secrets
+        sendgrid_api_key = st.secrets.get("SENDGRID_API_KEY")
+        
+        if not sendgrid_api_key:
+            st.warning("⚠️ Email notification not configured. Download manually and send to instructor.")
+            return False
+        
+        # Prepare email content
+        group_num = metadata.get('group_number', 'Unknown')
+        team_members = ', '.join(metadata.get('team_members', []))
+        project_title = metadata.get('project_title', 'Untitled')
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+        email_body = f"""
+BDS5010 Simulation Submission
+================================
 
-    with open(filepath, 'wb') as f:
-        f.write(zip_buffer.getvalue())
+Group Number: {group_num}
+Team Members: {team_members}
+Project Title: {project_title}
+Submission Time: {timestamp}
 
-    # Also save metadata
-    meta_filepath = INSTRUCTOR_STORAGE / f"Group{group_num}_{timestamp}_metadata.json"
-    with open(meta_filepath, 'w') as f:
-        json.dump(metadata, f, indent=2, default=str)
+Project Description:
+{metadata.get('project_description', 'N/A')}
 
-    return filepath
+Experimental Design:
+- Design Type: {metadata.get('design_type', 'N/A')}
+- Sample Size: {metadata.get('sample_size', 'N/A')}
+- Target Population: {metadata.get('target_population', 'N/A')}
+- Number of Conditions: {len(metadata.get('conditions', []))}
+
+Factors:
+{chr(10).join([f"  - {f['name']}: {', '.join(f['levels'])}" for f in metadata.get('factors', [])])}
+
+Measurement Scales:
+{chr(10).join([f"  - {s['name']}: {s['num_items']} items, {s['scale_points']}-point scale" for s in metadata.get('scales', [])])}
+
+File Integrity:
+- QSF Hash: {metadata.get('file_hashes', {}).get('qsf', 'N/A')}
+
+================================
+This is an automated submission from the BDS5010 Simulation Tool.
+The attached ZIP file contains:
+  - Simulated.csv (synthetic dataset)
+  - Column_Explainer.txt (variable descriptions)
+  - Audit_Log.pdf (tamper-proof record)
+  - metadata.json (verification data)
+"""
+
+        # Create email
+        message = Mail(
+            from_email='noreply@bds5010.streamlit.app',  # Sender (will be overridden by SendGrid)
+            to_emails=INSTRUCTOR_EMAIL,
+            subject=f'BDS5010 Simulation - Group {group_num} - {project_title}',
+            plain_text_content=email_body
+        )
+        
+        # Attach ZIP file
+        zip_data = zip_buffer.getvalue()
+        encoded_file = base64.b64encode(zip_data).decode()
+        
+        attachment = Attachment(
+            FileContent(encoded_file),
+            FileName(f'Group{group_num}_Simulation_{datetime.now().strftime("%Y%m%d")}.zip'),
+            FileType('application/zip'),
+            Disposition('attachment')
+        )
+        message.attachment = attachment
+        
+        # Send email
+        sg = SendGridAPIClient(sendgrid_api_key)
+        response = sg.send(message)
+        
+        if response.status_code in [200, 202]:
+            return True
+        else:
+            st.warning(f"Email sent with status {response.status_code}")
+            return False
+            
+    except Exception as e:
+        st.error(f"Failed to send email notification: {str(e)}")
+        st.info("Please download the file manually and email it to the instructor.")
+        return False
 
 def compute_file_hash(file_content):
     """Compute SHA-256 hash for file integrity verification"""
@@ -662,17 +737,18 @@ def generate_simulation():
 
     st.markdown("""
     <div class="info-box">
-    Ready to generate your simulation! This will create:
+    Ready to generate your simulation! This will:
     <ul>
-        <li>📊 <strong>Simulated.csv</strong> - Your synthetic dataset</li>
-        <li>📖 <strong>Column_Explainer.txt</strong> - Description of all variables</li>
-        <li>📋 <strong>Audit_Log.pdf</strong> - Tamper-proof record of your inputs</li>
+        <li>📊 Create your synthetic dataset</li>
+        <li>📖 Generate variable descriptions</li>
+        <li>📋 Produce tamper-proof audit log</li>
+        <li>📧 <strong>Automatically email everything to Prof. Dimant</strong></li>
     </ul>
-    All files will be packaged in a ZIP file for submission.
+    You'll also get a download link for your records.
     </div>
     """, unsafe_allow_html=True)
 
-    if st.button("🚀 Generate Simulation", type="primary", use_container_width=True):
+    if st.button("🚀 Generate & Submit Simulation", type="primary", use_container_width=True):
         with st.spinner("Generating simulation... This may take a moment."):
             try:
                 # Create simulation engine
@@ -749,11 +825,17 @@ def generate_simulation():
 
                 zip_buffer.seek(0)
 
-                # Save instructor copy
-                instructor_path = save_instructor_copy(zip_buffer, metadata)
-                zip_buffer.seek(0)
-
                 st.success("✅ Simulation generated successfully!")
+
+                # Send email to instructor
+                with st.spinner("📧 Sending to instructor..."):
+                    email_sent = send_instructor_email(zip_buffer, metadata)
+                    zip_buffer.seek(0)
+
+                if email_sent:
+                    st.success(f"✅ Email sent to {INSTRUCTOR_EMAIL}!")
+                else:
+                    st.warning("⚠️ Automatic email failed. Please download and email manually.")
 
                 # Display preview
                 st.markdown("### 📊 Data Preview")
@@ -763,22 +845,30 @@ def generate_simulation():
 
                 # Download button
                 st.download_button(
-                    label="📥 Download Simulation Package (ZIP)",
+                    label="📥 Download Your Copy (ZIP)",
                     data=zip_buffer.getvalue(),
                     file_name=f"Group{st.session_state.group_number}_Simulation_{datetime.now().strftime('%Y%m%d')}.zip",
                     mime="application/zip",
                     use_container_width=True
                 )
 
-                st.markdown("""
-                <div class="success-box">
-                <strong>Next Steps:</strong><br>
-                1. Download the ZIP file<br>
-                2. Review the Audit_Log.pdf to verify all inputs<br>
-                3. Submit the complete ZIP file to the instructor<br>
-                4. Do NOT modify any files in the ZIP
-                </div>
-                """, unsafe_allow_html=True)
+                if email_sent:
+                    st.markdown("""
+                    <div class="success-box">
+                    <strong>✅ Submission Complete!</strong><br>
+                    Your simulation has been automatically sent to Prof. Dimant.<br>
+                    Download your copy above for your records.
+                    </div>
+                    """, unsafe_allow_html=True)
+                else:
+                    st.markdown("""
+                    <div class="warning-box">
+                    <strong>⚠️ Manual Submission Required</strong><br>
+                    1. Download the ZIP file above<br>
+                    2. Email it to edimant@sas.upenn.edu<br>
+                    3. Subject: BDS5010 Simulation - Group [Your Group Number]
+                    </div>
+                    """, unsafe_allow_html=True)
 
             except Exception as e:
                 st.error(f"Error generating simulation: {str(e)}")
@@ -833,7 +923,7 @@ def main():
     st.markdown("""
     <div style="text-align: center; color: #666; font-size: 0.9rem;">
     BDS5010 Behavioral Data Science | Prof. Dr. Eugen Dimant | Spring 2026<br>
-    Based on "Simulating Behavioral Experiments with ChatGPT-5" methodology
+    Submissions automatically sent to edimant@sas.upenn.edu
     </div>
     """, unsafe_allow_html=True)
 
