@@ -1,6 +1,6 @@
 # simulation_app/app.py
 """
-BDS5010 Behavioral Experiment Simulation Tool (Streamlit App)
+Behavioral Experiment Simulation Tool (Streamlit App)
 ============================================================
 
 Design goal: students should be able to run a simulation quickly with minimal
@@ -49,7 +49,7 @@ from utils.enhanced_simulation_engine import (
 # -----------------------------
 # App constants
 # -----------------------------
-APP_TITLE = "BDS5010 Behavioral Experiment Simulation Tool"
+APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF"
 
 BASE_STORAGE = Path("data")
@@ -160,7 +160,7 @@ def _send_email_with_sendgrid(
     """
     api_key = st.secrets.get("SENDGRID_API_KEY", "")
     from_email = st.secrets.get("SENDGRID_FROM_EMAIL", "")
-    from_name = st.secrets.get("SENDGRID_FROM_NAME", "BDS5010 Simulation Tool")
+    from_name = st.secrets.get("SENDGRID_FROM_NAME", "Behavioral Experiment Simulation Tool")
 
     if not api_key or not from_email:
         return False, "Missing SENDGRID_API_KEY or SENDGRID_FROM_EMAIL in Streamlit secrets."
@@ -301,6 +301,29 @@ st.set_page_config(page_title=APP_TITLE, layout="wide")
 
 st.title(APP_TITLE)
 st.caption(APP_SUBTITLE)
+st.markdown(
+    "Originator: [Edimant](https://github.com/edimant) · "
+    "This tool is designed to make behavioral experiment simulation fast, comparable, and reproducible."
+)
+
+with st.expander("What this tool does (and the research behind it)", expanded=True):
+    st.markdown(
+        "- **Rapid, standardized simulation**: automatically infers conditions, factors, and scales from a QSF, "
+        "then generates a realistic dataset with consistent defaults so student groups are comparable.\n"
+        "- **Behaviorally realistic responses**: includes attention checks, response-style personas, and "
+        "open-ended responses that align with numeric patterns for more human-like data.\n"
+        "- **Instructor-ready outputs**: produces a full data package (CSV, metadata, schema checks, and "
+        "an instructor report) to support grading and replication.\n\n"
+        "Methodology summary based on *Simulating_Behavioral_Experiments_with_ChatGPT_5.pdf*."
+    )
+    pdf_path = Path(__file__).resolve().parents[1] / "Simulating_Behavioral_Experiments_with_ChatGPT_5.pdf"
+    if pdf_path.exists():
+        st.download_button(
+            "Download methodology PDF",
+            data=pdf_path.read_bytes(),
+            file_name=pdf_path.name,
+            mime="application/pdf",
+        )
 
 with st.sidebar:
     st.subheader("Mode")
@@ -830,7 +853,7 @@ with tabs[3]:
                     if not to_email or "@" not in to_email:
                         st.error("Please enter a valid email address.")
                     else:
-                        subject = f"[BDS5010] Simulation output: {st.session_state.get('study_title','Untitled Study')}"
+                        subject = f"[Behavioral Simulation] Output: {st.session_state.get('study_title','Untitled Study')}"
                         body = (
                             "Attached is the simulation output ZIP (Simulated.csv, metadata, R prep script).\n\n"
                             f"Generated: {datetime.now().isoformat(timespec='seconds')}\n"
@@ -850,7 +873,7 @@ with tabs[3]:
                 instructor_email = st.secrets.get("INSTRUCTOR_NOTIFICATION_EMAIL", "")
                 if instructor_email:
                     if st.button("Send to instructor too"):
-                        subject = f"[BDS5010] Simulation output (team: {st.session_state.get('team_name','') or 'N/A'})"
+                        subject = f"[Behavioral Simulation] Output (team: {st.session_state.get('team_name','') or 'N/A'})"
                         body = (
                             f"Team: {st.session_state.get('team_name','')}\n"
                             f"Members:\n{st.session_state.get('team_members_raw','')}\n\n"
