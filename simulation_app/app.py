@@ -230,12 +230,12 @@ def _render_email_setup_diagnostics() -> None:
             )
         )
         if api_key and not from_email:
-            st.error(
+            st.warning(
                 "SendGrid API key is set, but the sender email is missing. "
                 "Add SENDGRID_FROM_EMAIL in Streamlit secrets using a verified sender address."
             )
         elif not api_key:
-            st.error("SendGrid API key is missing. Add SENDGRID_API_KEY in Streamlit secrets.")
+            st.warning("SendGrid API key is missing. Add SENDGRID_API_KEY in Streamlit secrets.")
         else:
             st.success("SendGrid basics look configured.")
 
@@ -850,7 +850,6 @@ with tabs[3]:
             custom_persona_weights = None
 
         is_generating = st.session_state.get("is_generating", False)
-        generation_requested = st.session_state.get("generation_requested", False)
         progress_placeholder = st.empty()
         status_placeholder = st.empty()
         if is_generating:
@@ -858,11 +857,6 @@ with tabs[3]:
         can_generate = completed == total_required and not is_generating
         if st.button("Generate simulated dataset", type="primary", disabled=not can_generate):
             st.session_state["is_generating"] = True
-            st.session_state["generation_requested"] = True
-            st.rerun()
-
-        if generation_requested and is_generating:
-            st.session_state["generation_requested"] = False
             progress_bar = progress_placeholder.progress(5, text="Preparing simulation inputs...")
             status_placeholder.info("Preparing simulation inputs...")
             title = st.session_state.get("study_title", "") or "Untitled Study"
