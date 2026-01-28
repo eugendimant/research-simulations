@@ -302,9 +302,10 @@ st.set_page_config(page_title=APP_TITLE, layout="wide")
 st.title(APP_TITLE)
 st.caption(APP_SUBTITLE)
 st.markdown(
-    "Originator: [Edimant](https://github.com/edimant) · "
+    "Created by Dr. [Eugen Dimant](https://github.com/edimant) · "
     "This tool is designed to make behavioral experiment simulation fast, comparable, and reproducible."
 )
+st.caption(f"App build: {APP_BUILD_TIMESTAMP}")
 
 with st.expander("What this tool does (and the research behind it)", expanded=True):
     st.markdown(
@@ -312,17 +313,30 @@ with st.expander("What this tool does (and the research behind it)", expanded=Tr
         "then generates a realistic dataset with consistent defaults so student groups are comparable.\n"
         "- **Behaviorally realistic responses**: includes attention checks, response-style personas, and "
         "open-ended responses that align with numeric patterns for more human-like data.\n"
+        "- **Persona modeling is automatic**: the simulator infers response styles internally, so students do not "
+        "need to provide any persona-related inputs.\n"
+        "- **Optional survey PDF**: uploading a Qualtrics survey PDF improves detection of relevant sections and "
+        "domain inference.\n"
         "- **Instructor-ready outputs**: produces a full data package (CSV, metadata, schema checks, and "
         "an instructor report) to support grading and replication.\n\n"
-        "Methodology summary based on *Simulating_Behavioral_Experiments_with_ChatGPT_5.pdf*."
+        "Method summary and research pointers are available in the downloadable methods file."
     )
-    pdf_path = Path(__file__).resolve().parents[1] / "Simulating_Behavioral_Experiments_with_ChatGPT_5.pdf"
-    if pdf_path.exists():
+    st.markdown(
+        "**Research highlights**\n"
+        "- Manning & Horton (2025): https://arxiv.org/abs/2301.07543\n"
+        "- Horton (2023): https://psyarxiv.com/9kqcg\n"
+        "- Santurkar et al. (2023): https://arxiv.org/abs/2303.17548\n"
+        "- Method notes: https://benjaminmanning.io/les/optimize.pdf"
+    )
+    methods_path = Path(__file__).resolve().parent / "docs" / "methods_summary.md"
+    if methods_path.exists():
+        methods_updated = datetime.utcfromtimestamp(methods_path.stat().st_mtime).strftime("%Y-%m-%d %H:%M UTC")
+        st.caption(f"Methods summary updated: {methods_updated}")
         st.download_button(
-            "Download methodology PDF",
-            data=pdf_path.read_bytes(),
-            file_name=pdf_path.name,
-            mime="application/pdf",
+            "Download methods summary (Markdown)",
+            data=methods_path.read_bytes(),
+            file_name=methods_path.name,
+            mime="text/markdown",
         )
 
 with st.sidebar:
