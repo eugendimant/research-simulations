@@ -211,6 +211,35 @@ def _send_email_with_sendgrid(
         return False, f"SendGrid send failed: {e}"
 
 
+def _render_email_setup_diagnostics() -> None:
+    api_key = st.secrets.get("SENDGRID_API_KEY", "")
+    from_email = st.secrets.get("SENDGRID_FROM_EMAIL", "")
+    from_name = st.secrets.get("SENDGRID_FROM_NAME", "")
+    instructor_email = st.secrets.get("INSTRUCTOR_NOTIFICATION_EMAIL", "")
+
+    with st.expander("Email setup diagnostics"):
+        st.markdown("**SendGrid configuration**")
+        st.markdown(
+            "\n".join(
+                [
+                    f"- API key: {'✅ configured' if api_key else '❌ missing'}",
+                    f"- From email: {'✅ configured' if from_email else '❌ missing'}",
+                    f"- From name: {'✅ configured' if from_name else 'ℹ️ optional'}",
+                    f"- Instructor notification email: {'✅ configured' if instructor_email else 'ℹ️ optional'}",
+                ]
+            )
+        )
+        if api_key and not from_email:
+            st.warning(
+                "SendGrid API key is set, but the sender email is missing. "
+                "Add SENDGRID_FROM_EMAIL in Streamlit secrets using a verified sender address."
+            )
+        elif not api_key:
+            st.warning("SendGrid API key is missing. Add SENDGRID_API_KEY in Streamlit secrets.")
+        else:
+            st.success("SendGrid basics look configured.")
+
+
 def _infer_factors_from_conditions(conditions: List[str]) -> List[Dict[str, Any]]:
     """
     Heuristic inference:
@@ -791,9 +820,21 @@ with tabs[3]:
             custom_persona_weights = None
 
         is_generating = st.session_state.get("is_generating", False)
+        generation_requested = st.session_state.get("generation_requested", False)
+        progress_placeholder = st.empty()
+        status_placeholder = st.empty()
+        if is_generating:
+            status_placeholder.info("Simulation is running. Please wait for the download section to appear.")
         can_generate = completed == total_required and not is_generating
         if st.button("Generate simulated dataset", type="primary", disabled=not can_generate):
             st.session_state["is_generating"] = True
+            st.session_state["generation_requested"] = True
+            st.rerun()
+
+        if generation_requested and is_generating:
+            st.session_state["generation_requested"] = False
+            progress_bar = progress_placeholder.progress(5, text="Preparing simulation inputs...")
+            status_placeholder.info("Preparing simulation inputs...")
             title = st.session_state.get("study_title", "") or "Untitled Study"
             desc = st.session_state.get("study_description", "") or ""
             requested_n = int(st.session_state.get("sample_size", 200))
@@ -824,7 +865,11 @@ with tabs[3]:
             )
 
             try:
+                progress_bar.progress(30, text="Generating simulated responses...")
+                status_placeholder.info("Generating simulated responses...")
                 df, metadata = engine.generate()
+                progress_bar.progress(60, text="Packaging downloads...")
+                status_placeholder.info("Packaging downloads and reports...")
                 explainer = engine.generate_explainer()
                 r_script = engine.generate_r_export(df)
 
@@ -873,13 +918,15 @@ with tabs[3]:
                 st.session_state["last_zip"] = zip_bytes
                 st.session_state["last_metadata"] = metadata
 
+                progress_bar.progress(85, text="Finalizing notifications...")
+                status_placeholder.info("Finalizing notifications...")
                 st.success("Simulation generated.")
                 st.markdown("[Jump to download](#download)")
 
                 if not schema_results.get("valid", True):
                     st.error("Schema validation failed. Review Schema_Validation.json in the download.")
                 elif schema_results.get("warnings"):
-                    st.warning("Schema validation warnings found. Review Schema_Validation.json in the download.")
+                    st.info("Schema validation warnings found. Review Schema_Validation.json in the download.")
                 else:
                     st.info("Schema validation passed.")
 
@@ -907,10 +954,16 @@ with tabs[3]:
                 else:
                     st.warning(f"Instructor auto-email failed: {msg}")
 
+                progress_bar.progress(100, text="Simulation ready.")
+                status_placeholder.success("Simulation complete.")
             except Exception as e:
+                progress_bar.progress(100, text="Simulation failed.")
+                status_placeholder.error("Simulation failed.")
                 st.error(f"Simulation failed: {e}")
             finally:
                 st.session_state["is_generating"] = False
+                time.sleep(0.2)
+                progress_placeholder.empty()
 
         zip_bytes = st.session_state.get("last_zip", None)
         df = st.session_state.get("last_df", None)
@@ -931,6 +984,7 @@ with tabs[3]:
 
             st.divider()
             st.subheader("Email (optional)")
+            _render_email_setup_diagnostics()
 
             to_email = st.text_input("Send to email", value=st.session_state.get("send_to_email", ""))
             st.session_state["send_to_email"] = to_email
