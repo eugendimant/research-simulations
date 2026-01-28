@@ -1008,44 +1008,107 @@ class TextResponseGenerator:
     """
     Generates realistic open-ended text responses based on persona and study context.
 
-    Uses template-based generation with persona-specific variation to create
-    plausible qualitative data without requiring an LLM.
+    Uses template-based generation with extensive persona-specific variation to create
+    plausible qualitative data that resembles real human survey responses. Templates
+    are designed to capture natural language patterns including:
+    - Varied sentence structures and lengths
+    - Appropriate hedging and qualifiers
+    - Personal voice and perspective
+    - Response style consistent with numeric patterns
     """
 
     def __init__(self):
         self.templates = self._build_templates()
+        self.sentence_starters = self._build_sentence_starters()
+        self.hedges = self._build_hedges()
+        self.intensifiers = self._build_intensifiers()
+
+    def _build_sentence_starters(self) -> Dict[str, List[str]]:
+        """Build varied sentence starters for natural language generation."""
+        return {
+            'positive': [
+                "I really liked", "I was impressed by", "I appreciated",
+                "What stood out to me was", "The best part was",
+                "I found myself enjoying", "I was pleasantly surprised by",
+                "I thought it was great that", "I loved how",
+            ],
+            'negative': [
+                "I wasn't convinced by", "I had concerns about",
+                "I didn't really connect with", "I found it disappointing that",
+                "I was skeptical of", "I struggled with",
+                "I didn't see the appeal of", "I was put off by",
+            ],
+            'neutral': [
+                "I noticed that", "I observed", "From what I saw",
+                "Looking at this", "Considering the", "Based on what was shown",
+                "It seemed like", "I would say that",
+            ],
+            'engaged': [
+                "After careful consideration,", "Thinking about this carefully,",
+                "From my perspective,", "In my honest opinion,",
+                "Reflecting on this,", "After reviewing everything,",
+            ],
+            'brief': [
+                "Basically,", "Overall,", "In short,", "Simply put,", "",
+            ]
+        }
+
+    def _build_hedges(self) -> List[str]:
+        """Build hedging phrases for natural uncertainty."""
+        return [
+            "I think", "I feel like", "In my opinion", "I believe",
+            "It seems to me", "From what I can tell", "I'd say",
+            "Personally", "To me", "I suppose", "I guess",
+        ]
+
+    def _build_intensifiers(self) -> Dict[str, List[str]]:
+        """Build intensifiers for sentiment strength."""
+        return {
+            'strong_positive': ["really", "definitely", "absolutely", "totally", "very"],
+            'mild_positive': ["somewhat", "fairly", "pretty", "kind of", "reasonably"],
+            'strong_negative': ["really", "definitely", "absolutely", "totally", "quite"],
+            'mild_negative': ["somewhat", "a bit", "slightly", "kind of", "a little"],
+        }
 
     def _build_templates(self) -> Dict[str, Dict[str, List[str]]]:
-        """Build template library for different response types and personas."""
+        """Build extensive template library for different response types and personas."""
         return {
             'task_summary': {
                 'engaged': [
-                    "I carefully reviewed the {stimulus} and thought about my honest reactions to it.",
-                    "The study asked me to evaluate {topic} and I considered multiple aspects before responding.",
-                    "I looked at the {stimulus} presented and reflected on how it made me feel and what I thought.",
-                    "This survey was about {topic}. I tried to give thoughtful answers based on my genuine opinions.",
-                    "I examined the {stimulus} closely and answered questions about my impressions and preferences.",
-                    "I paid close attention to the {stimulus} and tried to respond as accurately as I could.",
-                    "I focused on the {topic} and gave responses that matched my impressions of the {stimulus}.",
-                    "I took my time to evaluate the {stimulus} and share my perspective on {topic}.",
-                    "I reviewed the {stimulus} and answered in line with my own preferences and reactions.",
+                    "I carefully reviewed the {stimulus} and thought about my honest reactions. The questions seemed relevant to {topic} and I tried to give thoughtful responses that reflect my true opinions.",
+                    "The study asked me to evaluate {topic} and I considered multiple aspects before responding. I found myself thinking about how this relates to my own experiences and preferences.",
+                    "I looked at the {stimulus} presented and reflected on how it made me feel. I tried to be honest in my answers even when I wasn't entirely sure.",
+                    "This survey was about {topic}. I gave thoughtful answers based on my genuine opinions, though some questions were harder to answer than others.",
+                    "I examined the {stimulus} closely and answered questions about my impressions. Some parts resonated with me more than others, and I tried to capture that in my responses.",
+                    "I paid close attention to the {stimulus} and responded as accurately as I could. The topic of {topic} is something I have some experience with.",
+                    "I focused on the {topic} and gave responses that matched my actual impressions. I tried not to overthink but also wanted to be accurate.",
+                    "I took my time to evaluate the {stimulus} and share my perspective. Some of my answers might have been influenced by my past experiences with similar things.",
+                    "After reviewing the {stimulus}, I answered based on my initial reactions and then reconsidered a few responses to make sure they were accurate.",
+                    "The study covered {topic} which I found interesting. I gave honest ratings based on my genuine impressions of the {stimulus}.",
+                    "I went through the survey carefully, considering each question about {topic}. My responses reflect what I actually think, not what I thought I should say.",
+                    "I evaluated the {stimulus} based on my personal preferences and experiences. The {topic} is relevant to my interests so I felt I could give informed responses.",
                 ],
                 'satisficer': [
                     "Looked at {topic} and answered questions.",
                     "Survey about {stimulus}.",
                     "Rated some things about {topic}.",
-                    "Answered questions.",
+                    "Answered questions about {stimulus}.",
                     "{topic} evaluation.",
                     "Quick survey about {topic}.",
-                    "Just gave quick ratings on {stimulus}.",
-                    "Looked at {stimulus} and clicked through.",
+                    "Gave ratings on {stimulus}.",
+                    "Looked at {stimulus} and gave my opinions.",
+                    "Survey on {topic}. Answered the questions.",
+                    "Evaluated {stimulus}.",
+                    "Questions about {topic}.",
+                    "Responded to questions about {stimulus}.",
                 ],
                 'extreme': [
-                    "This was a really interesting study about {topic}! I had strong feelings about the {stimulus}.",
-                    "I absolutely loved/hated the {stimulus}. Very clear opinions on {topic}.",
-                    "Strong reactions to {topic}. The {stimulus} definitely affected me.",
-                    "I had a very strong reaction to the {stimulus} and my answers show that.",
-                    "I felt strongly about the {stimulus} and didn't stay neutral on {topic}.",
+                    "This was a really interesting study about {topic}! I had very strong feelings about the {stimulus} and I think my answers clearly show that.",
+                    "I absolutely had strong opinions about the {stimulus}. When it comes to {topic}, I know what I like and don't like.",
+                    "Very clear reactions to the {topic}. The {stimulus} definitely made an impression on me, one way or the other.",
+                    "I had extremely strong reactions to the {stimulus} and my answers definitely reflect that. No middle ground for me on {topic}.",
+                    "Strong feelings about {topic}! The {stimulus} was either great or not great - my ratings make that clear.",
+                    "I felt very strongly about the {stimulus} and didn't hold back in my responses about {topic}.",
                 ],
                 'careless': [
                     "idk",
@@ -1056,75 +1119,194 @@ class TextResponseGenerator:
                     "done",
                     "meh",
                     "no idea",
+                    "whatever",
+                    "sure",
+                    "na",
+                    "next",
+                    "yes",
+                    "k",
+                    "finish",
                 ],
                 'default': [
-                    "I viewed a {stimulus} and answered questions about {topic}.",
-                    "The study involved evaluating {topic}.",
-                    "I gave my opinions on the {stimulus} shown.",
-                    "I considered the {stimulus} and responded to questions about {topic}.",
+                    "I viewed a {stimulus} and answered questions about {topic}. I tried to give honest responses.",
+                    "The study involved evaluating {topic}. I shared my opinions on the {stimulus}.",
+                    "I gave my opinions on the {stimulus} shown. Answered questions about {topic}.",
+                    "I considered the {stimulus} and responded to questions about {topic}. Seemed straightforward.",
                     "I reviewed {topic} and shared my impressions of the {stimulus}.",
+                    "Looked at the {stimulus} and answered questions. The study was about {topic}.",
+                    "I evaluated {topic} as asked. The {stimulus} was interesting.",
+                    "Answered survey questions about {topic} based on the {stimulus} presented.",
                 ]
             },
             'product_evaluation': {
                 'positive': [
-                    "This {product} looks really appealing to me. I like the {feature} and would consider buying it.",
-                    "Great {product}! The {feature} caught my attention immediately.",
-                    "I'm impressed with this {product}. It seems high quality.",
-                    "Very nice {product}. I can see myself using this.",
-                    "I had a good impression of this {product}; the {feature} stood out to me.",
-                    "This {product} feels like a strong option, especially because of the {feature}.",
+                    "This {product} looks really appealing to me. I like the {feature} and would seriously consider buying it. It seems like good quality.",
+                    "Great {product}! The {feature} caught my attention immediately. I can see myself using this regularly.",
+                    "I'm impressed with this {product}. It seems high quality and the {feature} is exactly what I look for.",
+                    "Very nice {product}. I can see myself using this. The {feature} is a nice touch.",
+                    "I had a good impression of this {product}. The {feature} stood out to me and I think it would work well for my needs.",
+                    "This {product} feels like a strong option. The {feature} is appealing and it seems well-designed overall.",
+                    "Really like this {product}. The {feature} is well done and I'd recommend it to friends.",
+                    "Excellent {product}! The {feature} makes it stand out from similar options I've seen.",
+                    "I'm genuinely interested in this {product}. The {feature} addresses something I've been looking for.",
+                    "This {product} exceeded my expectations. The {feature} is thoughtfully designed.",
                 ],
                 'negative': [
-                    "Not interested in this {product}. The {feature} doesn't appeal to me.",
-                    "This {product} doesn't meet my expectations.",
-                    "I wouldn't purchase this {product}. Not convinced about the {feature}.",
-                    "Disappointing {product}. There are better options available.",
-                    "This {product} doesn't do much for me, and the {feature} isn't convincing.",
-                    "I'm not impressed with this {product}. The {feature} feels weak.",
+                    "Not interested in this {product}. The {feature} doesn't appeal to me and I wouldn't consider buying it.",
+                    "This {product} doesn't meet my expectations. I've seen better options elsewhere.",
+                    "I wouldn't purchase this {product}. Not convinced about the {feature} or the overall quality.",
+                    "Disappointing {product}. There are better options available for what I need.",
+                    "This {product} doesn't do much for me. The {feature} isn't convincing.",
+                    "I'm not impressed with this {product}. The {feature} feels weak compared to competitors.",
+                    "Wouldn't recommend this {product}. The {feature} doesn't justify the likely price.",
+                    "This {product} seems underwhelming. The {feature} doesn't stand out.",
+                    "I'd pass on this {product}. The {feature} isn't enough to make it worthwhile.",
+                    "Not for me. This {product} and its {feature} don't match what I'm looking for.",
                 ],
                 'neutral': [
-                    "This {product} is okay. Nothing special about the {feature}.",
+                    "This {product} is okay. Nothing special about the {feature} but it's not bad either.",
                     "Average {product}. Might consider it if the price is right.",
-                    "The {product} is decent. {feature} is standard.",
+                    "The {product} is decent. The {feature} is standard for this type of thing.",
                     "It's a fine {product}, but the {feature} doesn't make it stand out.",
-                    "The {product} seems acceptable, though I don't feel strongly about the {feature}.",
+                    "The {product} seems acceptable. I don't feel strongly about the {feature} either way.",
+                    "Middle of the road {product}. The {feature} is fine but nothing special.",
+                    "Could take it or leave it. The {product} and {feature} are just okay.",
+                    "The {product} is adequate. The {feature} works but isn't remarkable.",
+                    "Neither impressed nor disappointed by this {product}. The {feature} is average.",
+                    "It's alright. The {product} does what it's supposed to and the {feature} is fine.",
                 ]
             },
             'ai_reaction': {
                 'positive': [
-                    "I think AI recommendations are helpful. They save time and often find good options.",
-                    "I trust AI to give relevant suggestions based on my preferences.",
-                    "AI assistance makes shopping easier and more personalized.",
-                    "AI recommendations feel efficient and generally point me to good choices.",
+                    "I think AI recommendations are helpful. They save time and often find good options that I wouldn't have discovered on my own.",
+                    "I trust AI to give relevant suggestions based on my preferences. It's usually pretty accurate.",
+                    "AI assistance makes shopping easier and more personalized. I appreciate when technology helps me find what I need.",
+                    "AI recommendations feel efficient and generally point me to good choices. I'm comfortable with this kind of assistance.",
+                    "I like that AI can analyze patterns to suggest things I might like. It's saved me time many times.",
+                    "AI recommendations have introduced me to things I ended up loving. I think the technology is useful.",
+                    "I'm generally positive about AI assistance. When it works well, it really enhances the experience.",
+                    "AI suggestions often align with my tastes. I think the technology has gotten quite good.",
                 ],
                 'negative': [
-                    "I don't really trust AI recommendations. I prefer to decide on my own.",
-                    "AI suggestions feel impersonal. I'd rather get advice from real people.",
-                    "I'm concerned about how AI uses my data to make recommendations.",
-                    "AI guidance feels hit-or-miss, so I don't rely on it much.",
+                    "I don't really trust AI recommendations. I prefer to decide on my own without algorithmic influence.",
+                    "AI suggestions feel impersonal. I'd rather get advice from real people who understand context.",
+                    "I'm concerned about how AI uses my data to make recommendations. Privacy is important to me.",
+                    "AI guidance feels hit-or-miss. I've had enough bad recommendations that I don't rely on it.",
+                    "I'm skeptical of AI recommendations. They often miss what I'm actually looking for.",
+                    "AI assistance feels like it's pushing me toward certain choices. I prefer to explore on my own.",
+                    "I don't like the idea of algorithms deciding what I should see or buy. It feels manipulative.",
+                    "AI recommendations rarely match my actual preferences. Human judgment is more nuanced.",
                 ],
                 'neutral': [
                     "AI recommendations can be useful sometimes, but I still like to research on my own.",
-                    "I take AI suggestions as one input among many.",
-                    "AI helps but isn't always accurate for my specific needs.",
-                    "AI is fine as a starting point, but I still double-check on my own.",
+                    "I take AI suggestions as one input among many. They're not always right.",
+                    "AI helps but isn't always accurate for my specific needs. I use it as a starting point.",
+                    "AI is fine as a starting point, but I still double-check on my own before deciding.",
+                    "Mixed feelings about AI recommendations. Sometimes helpful, sometimes not relevant.",
+                    "I use AI suggestions selectively. They work better for some things than others.",
+                    "AI assistance is okay but I wouldn't rely on it completely. Human judgment still matters.",
+                    "I'm neutral on AI recommendations. They have their place but aren't a replacement for my own research.",
                 ]
             },
             'experience_description': {
                 'hedonic': [
-                    "It was an enjoyable experience. I felt {emotion} while using the {product}.",
-                    "Using this {product} was fun and pleasurable.",
-                    "I really enjoyed the experience. It was entertaining and satisfying.",
-                    "The experience felt enjoyable and light, especially with the {product}.",
+                    "It was an enjoyable experience. I felt {emotion} while interacting with the {product}. Overall quite pleasant.",
+                    "Using this {product} was fun and pleasurable. I found myself genuinely enjoying the experience.",
+                    "I really enjoyed the experience. It was entertaining and satisfying in a way I didn't expect.",
+                    "The experience felt enjoyable and engaging. The {product} made the interaction pleasant.",
+                    "I had a good time with this {product}. It was more enjoyable than I anticipated.",
+                    "The experience was genuinely pleasurable. I felt {emotion} throughout.",
+                    "Really enjoyed this. The {product} made it a fun experience.",
+                    "The interaction was delightful. I felt positive emotions while using the {product}.",
                 ],
                 'utilitarian': [
                     "The {product} functioned as expected and helped me accomplish my goal efficiently.",
-                    "It was practical and got the job done.",
-                    "The {product} served its purpose well. Good functionality.",
+                    "It was practical and got the job done. That's what matters most to me.",
+                    "The {product} served its purpose well. Good functionality and easy to use.",
                     "The {product} was straightforward and effective for what I needed.",
+                    "Functional and efficient. The {product} did exactly what it was supposed to do.",
+                    "I appreciate that the {product} helped me complete my task without complications.",
+                    "The practical aspects of the {product} worked well. It was useful.",
+                    "Good functional experience. The {product} met my utilitarian needs.",
                 ]
+            },
+            'general_feedback': {
+                'engaged': [
+                    "Overall, I found this to be a well-designed study. The questions were clear and I felt I could give meaningful responses.",
+                    "I appreciated the opportunity to share my thoughts on this topic. My responses reflect my genuine opinions.",
+                    "This was an interesting survey. I tried to answer thoughtfully and accurately throughout.",
+                    "I engaged with this survey seriously and gave honest answers. The topic is something I care about.",
+                    "Good survey overall. I provided careful responses based on my actual opinions and experiences.",
+                ],
+                'brief': [
+                    "Good survey.",
+                    "Thanks for asking.",
+                    "Done.",
+                    "Completed the survey.",
+                    "Finished.",
+                ],
+                'critical': [
+                    "Some questions were a bit unclear, but I did my best to answer based on my interpretation.",
+                    "I wasn't sure about a few questions but answered as best I could.",
+                    "The survey was okay though some parts were confusing.",
+                    "Had some trouble with certain questions but finished it.",
+                ]
+            },
+            'reasoning': {
+                'engaged': [
+                    "My reasoning was based on {topic}. I considered how this would work in practice and answered accordingly.",
+                    "I thought about my past experiences with similar {product} when answering. Those experiences shaped my responses.",
+                    "My answers reflect my values and priorities when it comes to {topic}. I tried to be consistent.",
+                    "I based my responses on what I know about {topic} and my personal preferences.",
+                    "I considered multiple factors when evaluating the {stimulus}. My responses reflect that balanced view.",
+                ],
+                'intuitive': [
+                    "I went with my gut feeling on most answers. My initial reactions usually reflect my true opinions.",
+                    "Answered based on instinct mostly. Didn't overthink it.",
+                    "My responses are based on immediate reactions to the {stimulus}.",
+                    "I trusted my first impressions when answering these questions.",
+                ],
             }
         }
+
+    def _add_natural_variation(self, response: str, traits: Dict[str, float], rng: random.Random) -> str:
+        """Add natural language variations based on persona traits."""
+        # Sometimes add a hedge
+        if traits.get('response_consistency', 0.5) < 0.6 and rng.random() < 0.25:
+            hedge = rng.choice(self.hedges)
+            response = f"{hedge}, {response[0].lower()}{response[1:]}"
+
+        # Typos for low attention
+        if traits.get('attention_level', 0.5) < 0.5 and rng.random() < 0.2:
+            response = response.lower()
+
+        # Add filler phrases for engaged responders
+        fillers = [
+            " To be honest,", " I have to say,", " Looking back,", " On reflection,",
+        ]
+        if traits.get('attention_level', 0.5) > 0.8 and rng.random() < 0.15:
+            filler = rng.choice(fillers)
+            sentences = response.split('. ')
+            if len(sentences) > 1:
+                insert_pos = rng.randint(1, len(sentences) - 1)
+                sentences[insert_pos] = filler + sentences[insert_pos][0].lower() + sentences[insert_pos][1:]
+                response = '. '.join(sentences)
+
+        return response
+
+    def _combine_templates(self, templates: List[str], context: Dict[str, str], traits: Dict[str, float], rng: random.Random) -> str:
+        """Combine multiple templates for more varied responses."""
+        # Select primary template
+        primary = rng.choice(templates)
+
+        try:
+            response = primary.format(**context)
+        except KeyError:
+            response = primary
+            for key, value in context.items():
+                response = response.replace(f"{{{key}}}", str(value))
+
+        return response
 
     def generate_response(
         self,
@@ -1145,7 +1327,7 @@ class TextResponseGenerator:
             seed: Random seed for reproducibility
 
         Returns:
-            Generated text response
+            Generated text response with natural variation
         """
         rng = random.Random(seed)
 
@@ -1160,51 +1342,49 @@ class TextResponseGenerator:
             style_templates = type_templates.get('default', [])
 
         if not style_templates:
-            style_templates = type_templates.get('default', ["Response about {topic}."])
+            style_templates = ["Response about {topic}."]
 
-        # Select template
-        template = rng.choice(style_templates)
+        # Generate main response
+        response = self._combine_templates(style_templates, context, traits, rng)
 
-        # Fill in context
-        try:
-            response = template.format(**context)
-        except KeyError:
-            # If context is missing keys, use partial formatting
-            response = template
-            for key, value in context.items():
-                response = response.replace(f"{{{key}}}", value)
+        # Add natural variation
+        response = self._add_natural_variation(response, traits, rng)
 
-        # Add persona-based variation
-        if traits.get('attention_level', 0.5) < 0.5:
-            # Lower attention = potential typos, shorter responses
-            if rng.random() < 0.3:
-                response = response.lower()
+        # Sometimes add follow-up thoughts for engaged respondents
+        followups = {
+            'positive': [
+                " Overall I came away with a positive impression.",
+                " I'd be interested in learning more about this.",
+                " This seems like something I could see myself using.",
+            ],
+            'negative': [
+                " Overall I wasn't that impressed.",
+                " It didn't really resonate with me.",
+                " I'd probably look at other options.",
+            ],
+            'neutral': [
+                " It was okay overall.",
+                " I don't have particularly strong feelings about it.",
+                " Could go either way on this.",
+            ]
+        }
 
-        followups = [
-            "Overall, it felt {emotion} to go through.",
-            "I tried to stay consistent with my earlier answers.",
-            "My responses reflect my general impression of the {stimulus}.",
-            "I focused on the main points and answered accordingly.",
-            "I kept my answers aligned with my opinions about {topic}.",
-        ]
-        if traits.get('attention_level', 0.5) > 0.8 and rng.random() < 0.45:
-            followup = rng.choice(followups)
-            try:
-                followup = followup.format(**context)
-            except KeyError:
-                pass
-            response = f"{response} {followup}"
+        sentiment = context.get("sentiment", "neutral")
+        if traits.get('attention_level', 0.5) > 0.75 and rng.random() < 0.35:
+            if sentiment in followups:
+                response += rng.choice(followups[sentiment])
 
-        sentiment = context.get("sentiment")
-        if sentiment in {"positive", "negative"} and rng.random() < 0.35:
-            sentiment_clause = (
-                "Overall I felt positive about it."
-                if sentiment == "positive"
-                else "Overall I felt skeptical about it."
-            )
-            response = f"{response} {sentiment_clause}"
+        # Add reasoning for some engaged respondents
+        if persona_style == 'engaged' and rng.random() < 0.25 and 'reasoning' in self.templates:
+            reasoning_templates = self.templates['reasoning'].get('engaged', [])
+            if reasoning_templates:
+                try:
+                    reasoning = rng.choice(reasoning_templates).format(**context)
+                    response += f" {reasoning}"
+                except KeyError:
+                    pass
 
-        return response
+        return response.strip()
 
 
 # ================================================================
