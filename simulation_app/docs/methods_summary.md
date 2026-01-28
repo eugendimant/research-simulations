@@ -145,9 +145,15 @@ The PDF provides:
    - **DOI:** [10.1016/j.tics.2023.04.008](https://doi.org/10.1016/j.tics.2023.04.008)
    - Found 0.95 correlation between GPT-3.5 and human moral judgments; reviews when LLMs can substitute for human participants.
 
+### On LLM Detection & Survey Validity
+
+7. **Westwood, S. J. (2025)**. The potential existential threat of large language models to online survey research. *Proceedings of the National Academy of Sciences (PNAS)*, 122(47).
+   - **DOI:** [10.1073/pnas.2518075122](https://doi.org/10.1073/pnas.2518075122)
+   - Demonstrates that LLM-generated responses can evade 99.8% of attention checks; underscores the importance of rigorous simulation standards.
+
 ### Additional Resources
 
-7. **Brand, J., Israeli, A., & Ngwe, D. (2023)**. Using GPT for Market Research. *Harvard Business School Working Paper* 23-062.
+8. **Brand, J., Israeli, A., & Ngwe, D. (2023)**. Using GPT for Market Research. *Harvard Business School Working Paper* 23-062.
    - **Paper:** [hbs.edu/ris/download.aspx?name=23-062.pdf](https://www.hbs.edu/ris/download.aspx?name=23-062.pdf)
    - Demonstrates LLMs can generate realistic willingness-to-pay estimates and consumer preference data for under $100.
 

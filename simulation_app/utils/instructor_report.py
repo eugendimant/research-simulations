@@ -14,6 +14,24 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import pandas as pd
 
+# Check if tabulate is available for markdown tables
+try:
+    import tabulate
+    TABULATE_AVAILABLE = True
+except ImportError:
+    TABULATE_AVAILABLE = False
+
+
+def _safe_to_markdown(df: pd.DataFrame, **kwargs) -> str:
+    """
+    Safely convert DataFrame to markdown, falling back to string representation
+    if tabulate is not available.
+    """
+    if TABULATE_AVAILABLE:
+        return df.to_markdown(**kwargs)
+    else:
+        return df.to_string(**kwargs)
+
 
 @dataclass
 class InstructorReportConfig:
@@ -106,7 +124,7 @@ class InstructorReportGenerator:
                 vc = df["CONDITION"].value_counts(dropna=False)
                 lines.append("### Condition counts")
                 lines.append("")
-                lines.append(vc.to_frame("n").to_markdown())
+                lines.append(_safe_to_markdown(vc.to_frame("n")))
                 lines.append("")
 
         if self.config.include_attention_checks:
@@ -114,11 +132,11 @@ class InstructorReportGenerator:
             lines.append("")
             if "AI_Mentioned_Check" in df.columns:
                 lines.append("- **AI_Mentioned_Check** distribution:")
-                lines.append(df["AI_Mentioned_Check"].value_counts(dropna=False).to_frame("n").to_markdown())
+                lines.append(_safe_to_markdown(df["AI_Mentioned_Check"].value_counts(dropna=False).to_frame("n")))
                 lines.append("")
             if "Attention_Pass_Rate" in df.columns:
                 lines.append("- **Attention_Pass_Rate** summary:")
-                lines.append(df["Attention_Pass_Rate"].describe().to_frame().to_markdown())
+                lines.append(_safe_to_markdown(df["Attention_Pass_Rate"].describe().to_frame()))
                 lines.append("")
 
         if self.config.include_exclusions:
@@ -126,13 +144,13 @@ class InstructorReportGenerator:
             lines.append("")
             if "Exclude_Recommended" in df.columns:
                 excl = df["Exclude_Recommended"].value_counts(dropna=False).to_frame("n")
-                lines.append(excl.to_markdown())
+                lines.append(_safe_to_markdown(excl))
                 lines.append("")
             for col in ["Completion_Time_Seconds", "Max_Straight_Line"]:
                 if col in df.columns:
                     lines.append(f"### {col} summary")
                     lines.append("")
-                    lines.append(df[col].describe().to_frame().to_markdown())
+                    lines.append(_safe_to_markdown(df[col].describe().to_frame()))
                     lines.append("")
 
         if self.config.include_persona_summary:
@@ -143,7 +161,7 @@ class InstructorReportGenerator:
                 dist_df = pd.DataFrame(
                     [{"persona": k, "share": float(v)} for k, v in dist.items()]
                 ).sort_values("share", ascending=False)
-                lines.append(dist_df.to_markdown(index=False))
+                lines.append(_safe_to_markdown(dist_df, index=False))
             else:
                 lines.append("_No persona distribution in metadata._")
             lines.append("")
@@ -163,7 +181,7 @@ class InstructorReportGenerator:
                             "reverse_items": s.get("reverse_items", []),
                         }
                     )
-                lines.append(pd.DataFrame(rows).to_markdown(index=False))
+                lines.append(_safe_to_markdown(pd.DataFrame(rows), index=False))
                 lines.append("")
             else:
                 lines.append("_No scales listed in metadata._")
