@@ -24,6 +24,7 @@ from __future__ import annotations
 import base64
 import io
 import json
+import re
 import time
 import zipfile
 from concurrent.futures import ThreadPoolExecutor
@@ -116,6 +117,101 @@ def _sanitize_prereg_text(raw_text: str) -> Tuple[str, List[str]]:
         else:
             kept.append(line)
     return "\n".join(kept).strip(), removed
+
+
+def _normalize_condition_label(label: str) -> str:
+    if not label:
+        return ""
+    cleaned = re.sub(r"<[^>]+>", "", str(label))
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    cleaned = re.sub(
+        r"^(condition|treatment|group|arm|variant|scenario|manipulation)\s*[:\-]\s*",
+        "",
+        cleaned,
+        flags=re.IGNORECASE,
+    )
+    return cleaned.strip(" -:")
+
+
+def _extract_conditions_from_text(text: str) -> List[str]:
+    if not text:
+        return []
+
+    conditions: List[str] = []
+    keywords = ("condition", "conditions", "treatment", "group", "arm", "variant", "manipulation", "scenario")
+    vs_pattern = r"\b(?:vs\.?|versus|v\.|compared to|compared with)\b"
+
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+
+        if re.search(vs_pattern, line, flags=re.IGNORECASE):
+            parts = re.split(vs_pattern, line, flags=re.IGNORECASE)
+            for part in parts:
+                normalized = _normalize_condition_label(part)
+                if normalized:
+                    conditions.append(normalized)
+            continue
+
+        if any(keyword in line.lower() for keyword in keywords):
+            _, tail = line.split(":", 1) if ":" in line else ("", line)
+            tail = re.sub(
+                r"\b(?:conditions?|treatments?|groups?|arms?|variants?|manipulations?|scenarios?)\b",
+                "",
+                tail,
+                flags=re.IGNORECASE,
+            )
+            for part in re.split(r"[;/|,]", tail):
+                normalized = _normalize_condition_label(part)
+                if normalized:
+                    conditions.append(normalized)
+
+    return conditions
+
+
+def _extract_conditions_from_prereg(prereg_iv: str, prereg_notes: str, prereg_pdf_text: str) -> List[str]:
+    conditions: List[str] = []
+
+    conditions.extend(_extract_conditions_from_text(prereg_iv))
+    conditions.extend(_extract_conditions_from_text(prereg_notes))
+
+    if prereg_pdf_text:
+        for line in prereg_pdf_text.splitlines():
+            if re.search(r"\b(condition|treatment|group|arm|variant|manipulation|scenario)\b", line, flags=re.IGNORECASE):
+                conditions.extend(_extract_conditions_from_text(line))
+
+    return conditions
+
+
+def _merge_condition_sources(qsf_conditions: List[str], prereg_conditions: List[str]) -> Tuple[List[str], List[Dict[str, str]]]:
+    sources_by_key: Dict[str, List[str]] = {}
+    display_by_key: Dict[str, str] = {}
+    order: List[str] = []
+
+    def register(cond: str, source: str) -> None:
+        normalized = _normalize_condition_label(cond)
+        if not normalized:
+            return
+        key = normalized.lower()
+        if key not in display_by_key:
+            display_by_key[key] = normalized
+            sources_by_key[key] = []
+            order.append(key)
+        if source not in sources_by_key[key]:
+            sources_by_key[key].append(source)
+
+    for cond in qsf_conditions:
+        register(cond, "QSF/Survey flow")
+    for cond in prereg_conditions:
+        register(cond, "Preregistration")
+
+    merged_conditions = [display_by_key[key] for key in order]
+    source_rows = [
+        {"Condition": display_by_key[key], "Source": ", ".join(sources_by_key[key])}
+        for key in order
+    ]
+    return merged_conditions, source_rows
 
 
 def _extract_qsf_payload(uploaded_bytes: bytes) -> Tuple[bytes, str]:
@@ -598,6 +694,27 @@ This is optional but recommended for better simulation quality.
     preview: Optional[QSFPreviewResult] = st.session_state.get("qsf_preview", None)
 
     if preview:
+        prereg_conditions = _extract_conditions_from_prereg(
+            st.session_state.get("prereg_iv", ""),
+            st.session_state.get("prereg_text_sanitized", ""),
+            st.session_state.get("prereg_pdf_text", ""),
+        )
+        merged_conditions, condition_sources = _merge_condition_sources(
+            preview.detected_conditions or [],
+            prereg_conditions,
+        )
+        if merged_conditions:
+            preview.detected_conditions = merged_conditions
+            preview.validation_errors = [
+                err for err in (preview.validation_errors or [])
+                if "No experimental conditions detected" not in err
+            ]
+            preview.validation_warnings = [
+                warn for warn in (preview.validation_warnings or [])
+                if "No experimental conditions automatically detected" not in warn
+            ]
+        st.session_state["condition_sources"] = condition_sources
+
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("Questions", int(preview.total_questions))
         c2.metric("Scales detected", int(len(preview.detected_scales or [])))
@@ -647,11 +764,19 @@ with tabs[2]:
         with col1:
             st.markdown("**Conditions**")
             if inferred["conditions"]:
-                st.dataframe(
-                    pd.DataFrame({"Condition": inferred["conditions"]}),
-                    hide_index=True,
-                    use_container_width=True,
-                )
+                condition_sources = st.session_state.get("condition_sources") or []
+                if condition_sources:
+                    st.dataframe(
+                        pd.DataFrame(condition_sources),
+                        hide_index=True,
+                        use_container_width=True,
+                    )
+                else:
+                    st.dataframe(
+                        pd.DataFrame({"Condition": inferred["conditions"]}),
+                        hide_index=True,
+                        use_container_width=True,
+                    )
             else:
                 st.info("No conditions detected. Advanced mode can be used to define them manually.")
 
@@ -678,7 +803,7 @@ with tabs[2]:
 
             st.markdown("**Why these were inferred**")
             st.markdown(
-                "- **Conditions** come from the Qualtrics survey flow if present.\n"
+                "- **Conditions** come from the Qualtrics survey flow and preregistration text (if provided).\n"
                 "- **Factors** are inferred from condition naming patterns (e.g., `A x B`).\n"
                 "- **Scales** are inferred from question blocks that look like Likert items.\n"
                 "\nIf anything looks off, enable **Advanced mode** in the sidebar to edit."
@@ -849,13 +974,23 @@ with tabs[3]:
 
             custom_persona_weights = None
 
+        if "generation_requested" not in st.session_state:
+            st.session_state["generation_requested"] = False
+
         is_generating = st.session_state.get("is_generating", False)
+        has_generated = st.session_state.get("has_generated", False)
         progress_placeholder = st.empty()
         status_placeholder = st.empty()
         if is_generating:
             status_placeholder.info("Simulation is running. Please wait for the download section to appear.")
-        can_generate = completed == total_required and not is_generating
+        elif has_generated:
+            status_placeholder.info("Simulation already generated for this session. Downloads are ready below.")
+        can_generate = completed == total_required and not is_generating and not has_generated
         if st.button("Generate simulated dataset", type="primary", disabled=not can_generate):
+            st.session_state["generation_requested"] = True
+
+        if st.session_state.get("generation_requested") and not is_generating:
+            st.session_state["generation_requested"] = False
             st.session_state["is_generating"] = True
             progress_bar = progress_placeholder.progress(5, text="Preparing simulation inputs...")
             status_placeholder.info("Preparing simulation inputs...")
@@ -980,6 +1115,7 @@ with tabs[3]:
 
                 progress_bar.progress(100, text="Simulation ready.")
                 status_placeholder.success("Simulation complete.")
+                st.session_state["has_generated"] = True
             except Exception as e:
                 progress_bar.progress(100, text="Simulation failed.")
                 status_placeholder.error("Simulation failed.")
