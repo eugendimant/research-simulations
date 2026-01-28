@@ -1025,6 +1025,10 @@ class TextResponseGenerator:
                     "I looked at the {stimulus} presented and reflected on how it made me feel and what I thought.",
                     "This survey was about {topic}. I tried to give thoughtful answers based on my genuine opinions.",
                     "I examined the {stimulus} closely and answered questions about my impressions and preferences.",
+                    "I paid close attention to the {stimulus} and tried to respond as accurately as I could.",
+                    "I focused on the {topic} and gave responses that matched my impressions of the {stimulus}.",
+                    "I took my time to evaluate the {stimulus} and share my perspective on {topic}.",
+                    "I reviewed the {stimulus} and answered in line with my own preferences and reactions.",
                 ],
                 'satisficer': [
                     "Looked at {topic} and answered questions.",
@@ -1032,11 +1036,16 @@ class TextResponseGenerator:
                     "Rated some things about {topic}.",
                     "Answered questions.",
                     "{topic} evaluation.",
+                    "Quick survey about {topic}.",
+                    "Just gave quick ratings on {stimulus}.",
+                    "Looked at {stimulus} and clicked through.",
                 ],
                 'extreme': [
                     "This was a really interesting study about {topic}! I had strong feelings about the {stimulus}.",
                     "I absolutely loved/hated the {stimulus}. Very clear opinions on {topic}.",
                     "Strong reactions to {topic}. The {stimulus} definitely affected me.",
+                    "I had a very strong reaction to the {stimulus} and my answers show that.",
+                    "I felt strongly about the {stimulus} and didn't stay neutral on {topic}.",
                 ],
                 'careless': [
                     "idk",
@@ -1045,11 +1054,15 @@ class TextResponseGenerator:
                     "survey",
                     "asdfgh",
                     "done",
+                    "meh",
+                    "no idea",
                 ],
                 'default': [
                     "I viewed a {stimulus} and answered questions about {topic}.",
                     "The study involved evaluating {topic}.",
                     "I gave my opinions on the {stimulus} shown.",
+                    "I considered the {stimulus} and responded to questions about {topic}.",
+                    "I reviewed {topic} and shared my impressions of the {stimulus}.",
                 ]
             },
             'product_evaluation': {
@@ -1058,17 +1071,23 @@ class TextResponseGenerator:
                     "Great {product}! The {feature} caught my attention immediately.",
                     "I'm impressed with this {product}. It seems high quality.",
                     "Very nice {product}. I can see myself using this.",
+                    "I had a good impression of this {product}; the {feature} stood out to me.",
+                    "This {product} feels like a strong option, especially because of the {feature}.",
                 ],
                 'negative': [
                     "Not interested in this {product}. The {feature} doesn't appeal to me.",
                     "This {product} doesn't meet my expectations.",
                     "I wouldn't purchase this {product}. Not convinced about the {feature}.",
                     "Disappointing {product}. There are better options available.",
+                    "This {product} doesn't do much for me, and the {feature} isn't convincing.",
+                    "I'm not impressed with this {product}. The {feature} feels weak.",
                 ],
                 'neutral': [
                     "This {product} is okay. Nothing special about the {feature}.",
                     "Average {product}. Might consider it if the price is right.",
                     "The {product} is decent. {feature} is standard.",
+                    "It's a fine {product}, but the {feature} doesn't make it stand out.",
+                    "The {product} seems acceptable, though I don't feel strongly about the {feature}.",
                 ]
             },
             'ai_reaction': {
@@ -1076,16 +1095,19 @@ class TextResponseGenerator:
                     "I think AI recommendations are helpful. They save time and often find good options.",
                     "I trust AI to give relevant suggestions based on my preferences.",
                     "AI assistance makes shopping easier and more personalized.",
+                    "AI recommendations feel efficient and generally point me to good choices.",
                 ],
                 'negative': [
                     "I don't really trust AI recommendations. I prefer to decide on my own.",
                     "AI suggestions feel impersonal. I'd rather get advice from real people.",
                     "I'm concerned about how AI uses my data to make recommendations.",
+                    "AI guidance feels hit-or-miss, so I don't rely on it much.",
                 ],
                 'neutral': [
                     "AI recommendations can be useful sometimes, but I still like to research on my own.",
                     "I take AI suggestions as one input among many.",
                     "AI helps but isn't always accurate for my specific needs.",
+                    "AI is fine as a starting point, but I still double-check on my own.",
                 ]
             },
             'experience_description': {
@@ -1093,11 +1115,13 @@ class TextResponseGenerator:
                     "It was an enjoyable experience. I felt {emotion} while using the {product}.",
                     "Using this {product} was fun and pleasurable.",
                     "I really enjoyed the experience. It was entertaining and satisfying.",
+                    "The experience felt enjoyable and light, especially with the {product}.",
                 ],
                 'utilitarian': [
                     "The {product} functioned as expected and helped me accomplish my goal efficiently.",
                     "It was practical and got the job done.",
                     "The {product} served its purpose well. Good functionality.",
+                    "The {product} was straightforward and effective for what I needed.",
                 ]
             }
         }
@@ -1128,8 +1152,12 @@ class TextResponseGenerator:
         # Get templates for this response type
         type_templates = self.templates.get(response_type, self.templates['task_summary'])
 
-        # Get style-specific templates or default
-        style_templates = type_templates.get(persona_style, type_templates.get('default', []))
+        # Get style-specific templates or fall back to sentiment or default
+        style_templates = type_templates.get(persona_style, [])
+        if not style_templates and "sentiment" in context:
+            style_templates = type_templates.get(context["sentiment"], [])
+        if not style_templates:
+            style_templates = type_templates.get('default', [])
 
         if not style_templates:
             style_templates = type_templates.get('default', ["Response about {topic}."])
@@ -1151,6 +1179,30 @@ class TextResponseGenerator:
             # Lower attention = potential typos, shorter responses
             if rng.random() < 0.3:
                 response = response.lower()
+
+        followups = [
+            "Overall, it felt {emotion} to go through.",
+            "I tried to stay consistent with my earlier answers.",
+            "My responses reflect my general impression of the {stimulus}.",
+            "I focused on the main points and answered accordingly.",
+            "I kept my answers aligned with my opinions about {topic}.",
+        ]
+        if traits.get('attention_level', 0.5) > 0.8 and rng.random() < 0.45:
+            followup = rng.choice(followups)
+            try:
+                followup = followup.format(**context)
+            except KeyError:
+                pass
+            response = f"{response} {followup}"
+
+        sentiment = context.get("sentiment")
+        if sentiment in {"positive", "negative"} and rng.random() < 0.35:
+            sentiment_clause = (
+                "Overall I felt positive about it."
+                if sentiment == "positive"
+                else "Overall I felt skeptical about it."
+            )
+            response = f"{response} {sentiment_clause}"
 
         return response
 
