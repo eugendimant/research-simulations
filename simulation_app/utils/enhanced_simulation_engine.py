@@ -1,6 +1,6 @@
 # simulation_app/utils/enhanced_simulation_engine.py
 """
-Enhanced Simulation Engine for BDS5010 Behavioral Experiment Simulation Tool
+Enhanced Simulation Engine for Behavioral Experiment Simulation Tool
 =============================================================================
 Advanced simulation engine with:
 - Theory-grounded persona library integration
@@ -657,7 +657,7 @@ class EnhancedSimulationEngine:
     def generate_explainer(self) -> str:
         lines = [
             "=" * 70,
-            "COLUMN EXPLAINER - BDS5010 Simulated Behavioral Experiment Data",
+            "COLUMN EXPLAINER - Simulated Behavioral Experiment Data",
             "=" * 70,
             "",
             f"Study: {self.study_title}",

@@ -1,5 +1,5 @@
 """
-PDF Generator for BDS5010 Behavioral Experiment Simulation Tool
+PDF Generator for Behavioral Experiment Simulation Tool
 ================================================================
 Generates tamper-proof audit log PDFs documenting all simulation inputs
 and parameters for verification purposes.
@@ -105,7 +105,7 @@ def generate_audit_log_pdf(metadata: Dict[str, Any], df: pd.DataFrame) -> io.Byt
     story = []
 
     # Title
-    story.append(Paragraph("BDS5010 Simulation Audit Log", title_style))
+    story.append(Paragraph("Simulation Audit Log", title_style))
     story.append(Paragraph("Behavioral Experiment Data Simulation", styles['Normal']))
     story.append(Spacer(1, 0.3*inch))
 
@@ -303,7 +303,7 @@ def generate_audit_log_pdf(metadata: Dict[str, Any], df: pd.DataFrame) -> io.Byt
 
     story.append(Paragraph("VERIFICATION STATEMENT", heading_style))
     story.append(Paragraph(
-        "This document certifies that the simulation was generated using the BDS5010 "
+        "This document certifies that the simulation was generated using the "
         "Behavioral Experiment Simulation Tool. All parameters, inputs, and outputs "
         "are recorded above. The document hash can be used to verify that this PDF "
         "has not been modified after generation.",
@@ -316,7 +316,7 @@ def generate_audit_log_pdf(metadata: Dict[str, Any], df: pd.DataFrame) -> io.Byt
         small_style
     ))
     story.append(Paragraph(
-        f"BDS5010 Simulation Tool | Prof. Dr. Eugen Dimant | Spring 2026",
+        f"Behavioral Experiment Simulation Tool | Prof. Dr. Eugen Dimant",
         small_style
     ))
 
@@ -345,7 +345,7 @@ def _generate_simple_audit_log(metadata: Dict[str, Any], df: pd.DataFrame) -> io
 
     lines = [
         "=" * 70,
-        "BDS5010 SIMULATION AUDIT LOG",
+        "SIMULATION AUDIT LOG",
         "Behavioral Experiment Data Simulation",
         "=" * 70,
         "",
@@ -438,13 +438,13 @@ def _generate_simple_audit_log(metadata: Dict[str, Any], df: pd.DataFrame) -> io
         "-" * 70,
         "VERIFICATION STATEMENT",
         "-" * 70,
-        "This document certifies that the simulation was generated using the BDS5010",
+        "This document certifies that the simulation was generated using the",
         "Behavioral Experiment Simulation Tool. The document hash can be used to",
         "verify that this file has not been modified after generation.",
         "",
         f"Full Content Hash: {content_hash}",
         "",
-        "BDS5010 Simulation Tool | Prof. Dr. Eugen Dimant | Spring 2026",
+        "Behavioral Experiment Simulation Tool | Prof. Dr. Eugen Dimant",
         "=" * 70,
     ])
 

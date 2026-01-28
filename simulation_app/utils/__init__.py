@@ -1,6 +1,6 @@
-# Utils package for BDS5010 Simulation Tool
+# Utils package for Behavioral Experiment Simulation Tool
 """
-Utility modules for the BDS5010 Behavioral Experiment Simulation Tool.
+Utility modules for the Behavioral Experiment Simulation Tool.
 
 Modules:
     - qsf_parser: Parse Qualtrics Survey Format (.qsf) files

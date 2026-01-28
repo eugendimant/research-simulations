@@ -26,11 +26,6 @@ This tool builds on methodological guidance for:
 - standardized experimental simulation,
 - and AI-assisted qualitative response generation.
 
-If you want deeper background, see these PNAS resources:
-- https://www.pnas.org/ (PNAS home)
-- https://www.pnas.org/search/response%20styles (response-style research)
-- https://www.pnas.org/search/attention%20checks (attention checks and data quality)
-
 ## Recommended uploads
 - **Qualtrics QSF** (required): primary source for detecting conditions, factors, and scales.
 - **Exported Qualtrics survey PDF** (optional): improves detection of relevant sections and domain inference.

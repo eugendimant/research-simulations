@@ -1,5 +1,5 @@
 """
-Schema Validator for BDS5010 Behavioral Experiment Simulation Tool
+Schema Validator for Behavioral Experiment Simulation Tool
 ===================================================================
 Validates generated data schemas and provides summary reports
 following the "FILE READ OK" and "SCHEMA LOCKED" format from the
