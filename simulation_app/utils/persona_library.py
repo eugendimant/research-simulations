@@ -11,6 +11,7 @@ Based on recent LLM simulation research:
 - Aher, Arriaga & Kalai (2023) - LLM human subject replication, ICML
 - Binz & Schulz (2023) - LLM cognitive patterns, PNAS
 - Park et al. (2023) - Generative Agents, Stanford/Google
+- Westwood (2025) - "Existential threat of LLMs to survey research" PNAS
 """
 
 import numpy as np

@@ -101,6 +101,7 @@ This tool implements simulation approaches from recent LLM research:
 - **Binz & Schulz (2023)** - *PNAS* — [DOI: 10.1073/pnas.2218523120](https://doi.org/10.1073/pnas.2218523120)
 - **Park et al. (2023)** - "Generative Agents" *ACM UIST* — [DOI: 10.1145/3586183.3606763](https://doi.org/10.1145/3586183.3606763)
 - **Dillion et al. (2023)** - *Trends in Cognitive Sciences* — [DOI: 10.1016/j.tics.2023.04.008](https://doi.org/10.1016/j.tics.2023.04.008)
+- **Westwood (2025)** - "Existential threat of LLMs to survey research" *PNAS* — [DOI: 10.1073/pnas.2518075122](https://doi.org/10.1073/pnas.2518075122)
 
 See `docs/methods_summary.md` for complete methodology documentation with full citations.
 

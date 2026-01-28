@@ -346,6 +346,9 @@ This tool implements simulation approaches validated in recent computational soc
 - **Binz & Schulz (2023)** - "Using cognitive psychology to understand GPT-3" *PNAS*, 120(6). [DOI: 10.1073/pnas.2218523120](https://doi.org/10.1073/pnas.2218523120)
 - **Dillion et al. (2023)** - "Can AI language models replace human participants?" *Trends in Cognitive Sciences*, 27, 597-600. [DOI: 10.1016/j.tics.2023.04.008](https://doi.org/10.1016/j.tics.2023.04.008)
 
+**On LLM Detection & Survey Validity:**
+- **Westwood (2025)** - "The potential existential threat of large language models to online survey research" *PNAS*, 122(47). [DOI: 10.1073/pnas.2518075122](https://doi.org/10.1073/pnas.2518075122) — Demonstrates why rigorous simulation standards matter for distinguishing human from AI responses.
+
 **Additional Resources:**
 - **Brand, Israeli & Ngwe (2023)** - "Using GPT for Market Research" *Harvard Business School Working Paper* 23-062. [Paper](https://www.hbs.edu/ris/download.aspx?name=23-062.pdf)
 
@@ -353,14 +356,26 @@ This tool implements simulation approaches validated in recent computational soc
 
 The simulator automatically assigns behavioral personas to simulated participants based on the study domain. Each persona has trait parameters calibrated from computational social science research on LLM response patterns. This creates realistic individual differences without requiring manual configuration.
 """)
-    methods_path = Path(__file__).resolve().parent / "docs" / "methods_summary.md"
-    if methods_path.exists():
-        methods_updated = datetime.utcfromtimestamp(methods_path.stat().st_mtime).strftime("%Y-%m-%d %H:%M UTC")
+    # Prefer PDF over markdown for methods summary
+    methods_pdf_path = Path(__file__).resolve().parent / "docs" / "Behavioral Experiment Simulation Tool - Methods Summary.pdf"
+    methods_md_path = Path(__file__).resolve().parent / "docs" / "methods_summary.md"
+
+    if methods_pdf_path.exists():
+        methods_updated = datetime.utcfromtimestamp(methods_pdf_path.stat().st_mtime).strftime("%Y-%m-%d")
+        st.caption(f"Methods summary (PDF) · Last updated: {methods_updated}")
+        st.download_button(
+            "📄 Download Methods Summary (PDF)",
+            data=methods_pdf_path.read_bytes(),
+            file_name=methods_pdf_path.name,
+            mime="application/pdf",
+        )
+    elif methods_md_path.exists():
+        methods_updated = datetime.utcfromtimestamp(methods_md_path.stat().st_mtime).strftime("%Y-%m-%d %H:%M UTC")
         st.caption(f"Methods summary updated: {methods_updated}")
         st.download_button(
             "Download full methods summary (Markdown)",
-            data=methods_path.read_bytes(),
-            file_name=methods_path.name,
+            data=methods_md_path.read_bytes(),
+            file_name=methods_md_path.name,
             mime="text/markdown",
         )
 
