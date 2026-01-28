@@ -26,15 +26,10 @@ This tool builds on methodological guidance for:
 - standardized experimental simulation,
 - and AI-assisted qualitative response generation.
 
-### Research highlights (direct links)
-- **LLM-based simulation personas** informed the persona library that powers heterogeneous response styles in
-  the simulator and anchors open-ended response variation.
-  - Manning & Horton (2025): https://arxiv.org/abs/2301.07543
-  - Horton (2023): https://psyarxiv.com/9kqcg
-- **Optimization and calibration of simulated responses** motivated the use of standardized defaults and
-  consistent schema validation.
-  - Santurkar et al. (2023): https://arxiv.org/abs/2303.17548
-  - Method notes: https://benjaminmanning.io/les/optimize.pdf
+If you want deeper background, see these PNAS resources:
+- https://www.pnas.org/ (PNAS home)
+- https://www.pnas.org/search/response%20styles (response-style research)
+- https://www.pnas.org/search/attention%20checks (attention checks and data quality)
 
 ## Recommended uploads
 - **Qualtrics QSF** (required): primary source for detecting conditions, factors, and scales.
