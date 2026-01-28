@@ -517,7 +517,7 @@ This is optional but recommended for better simulation quality.
             st.session_state["survey_pdf_text"] = survey_pdf_text
             st.success("Survey PDF uploaded successfully. Text extracted for domain detection.")
         else:
-            st.warning("Could not extract text from survey PDF.")
+            st.info("Could not extract text from survey PDF.")
 
     st.markdown("### Aspredicted-style checklist (used only for labeling, not for simulation logic)")
     st.write(
@@ -579,7 +579,7 @@ This is optional but recommended for better simulation quality.
             with st.expander("Extracted preregistration text"):
                 st.text(pdf_text[:4000] + ("..." if len(pdf_text) > 4000 else ""))
         else:
-            st.warning("Could not extract text from the PDF. You can still use the checklist above.")
+            st.info("Could not extract text from the PDF. You can still use the checklist above.")
 
     if qsf_file is not None:
         try:
@@ -615,7 +615,7 @@ This is optional but recommended for better simulation quality.
         if warnings:
             with st.expander("Show QSF warnings"):
                 for w in warnings:
-                    st.warning(w)
+                    st.info(w)
 
         st.caption("Next: Review the auto-detected design and run your simulation.")
 
@@ -627,37 +627,67 @@ with tabs[2]:
     preview: Optional[QSFPreviewResult] = st.session_state.get("qsf_preview", None)
 
     if not preview:
-        st.warning("Upload a QSF first.")
+        st.info("Upload a QSF first to populate the review summary.")
     else:
         inferred = _preview_to_engine_inputs(preview)
         st.session_state["inferred_design"] = inferred
 
-        st.subheader("Auto-detected design")
+        st.subheader("Review summary")
+        st.caption("Confirm the auto-detected design before running the simulation.")
 
+        summary_cols = st.columns(4)
+        summary_cols[0].metric("Conditions", len(inferred["conditions"]))
+        summary_cols[1].metric("Factors", len(inferred["factors"]))
+        summary_cols[2].metric("Scales", len(inferred["scales"]))
+        summary_cols[3].metric("Open-ended Qs", len(inferred.get("open_ended_questions", [])))
+
+        st.divider()
         col1, col2 = st.columns([1.1, 0.9], gap="large")
 
         with col1:
             st.markdown("**Conditions**")
-            st.write(inferred["conditions"])
-
-            st.markdown("**Factors (inferred)**")
-            st.write(inferred["factors"])
+            if inferred["conditions"]:
+                st.dataframe(
+                    pd.DataFrame({"Condition": inferred["conditions"]}),
+                    hide_index=True,
+                    use_container_width=True,
+                )
+            else:
+                st.info("No conditions detected. Advanced mode can be used to define them manually.")
 
             st.markdown("**Scales (inferred)**")
-            st.write(inferred["scales"])
+            if inferred["scales"]:
+                st.dataframe(
+                    pd.DataFrame(inferred["scales"]),
+                    hide_index=True,
+                    use_container_width=True,
+                )
+            else:
+                st.info("No scales detected. Advanced mode can be used to add them manually.")
 
         with col2:
-            st.markdown("**What the app inferred (and why)**")
-            st.write(
-                "- Conditions: derived from the Qualtrics survey flow if present.\n"
-                "- Factors: inferred from condition naming patterns (e.g., 'A x B').\n"
-                "- Scales: inferred from question blocks that look like repeated Likert items.\n"
-                "\nIf anything is wrong, switch on Advanced mode in the sidebar and edit below."
+            st.markdown("**Factors (inferred)**")
+            if inferred["factors"]:
+                st.dataframe(
+                    pd.DataFrame(inferred["factors"]),
+                    hide_index=True,
+                    use_container_width=True,
+                )
+            else:
+                st.info("No factors inferred yet. Conditions will be treated as a single factor.")
+
+            st.markdown("**Why these were inferred**")
+            st.markdown(
+                "- **Conditions** come from the Qualtrics survey flow if present.\n"
+                "- **Factors** are inferred from condition naming patterns (e.g., `A x B`).\n"
+                "- **Scales** are inferred from question blocks that look like Likert items.\n"
+                "\nIf anything looks off, enable **Advanced mode** in the sidebar to edit."
             )
 
         if st.session_state.get("advanced_mode", False):
             st.divider()
             st.subheader("Advanced: edit design")
+            st.caption("Changes here override the auto-detected design for the simulation.")
 
             cond_text = st.text_area(
                 "Conditions (one per line)",
@@ -722,7 +752,7 @@ with tabs[2]:
 with tabs[3]:
     inferred = st.session_state.get("inferred_design", None)
     if not inferred:
-        st.warning("Complete the previous steps first (upload QSF, then review).")
+        st.info("Complete the previous steps first (upload QSF, then review).")
     else:
         st.subheader("Generate simulation")
         preview: Optional[QSFPreviewResult] = st.session_state.get("qsf_preview", None)
@@ -743,7 +773,7 @@ with tabs[3]:
         )
         missing = [label for label, ok in required_fields.items() if not ok]
         if missing:
-            st.warning("Missing required fields: " + ", ".join(missing))
+            st.info("Missing required fields: " + ", ".join(missing))
 
         if not st.session_state.get("advanced_mode", False):
             demographics = STANDARD_DEFAULTS["demographics"].copy()
@@ -814,7 +844,7 @@ with tabs[3]:
                             )
                         )
             except Exception as e:
-                st.warning(f"Effect sizes JSON invalid; ignoring. ({e})")
+                st.error(f"Effect sizes JSON invalid; ignoring. ({e})")
                 effect_sizes = []
 
             custom_persona_weights = None
@@ -833,7 +863,7 @@ with tabs[3]:
             desc = st.session_state.get("study_description", "") or ""
             requested_n = int(st.session_state.get("sample_size", 200))
             if requested_n > MAX_SIMULATED_N:
-                st.warning(
+                st.info(
                     f"Requested N ({requested_n}) exceeds the cap ({MAX_SIMULATED_N}). "
                     "Using the capped value for standardization."
                 )
@@ -920,7 +950,7 @@ with tabs[3]:
                 if not schema_results.get("valid", True):
                     st.error("Schema validation failed. Review Schema_Validation.json in the download.")
                 elif schema_results.get("warnings"):
-                    st.warning("Schema validation warnings found. Review Schema_Validation.json in the download.")
+                    st.info("Schema validation warnings found. Review Schema_Validation.json in the download.")
                 else:
                     st.info("Schema validation passed.")
 
@@ -946,7 +976,7 @@ with tabs[3]:
                 if ok:
                     st.info(f"Instructor auto-email sent to {instructor_email}.")
                 else:
-                    st.warning(f"Instructor auto-email failed: {msg}")
+                    st.error(f"Instructor auto-email failed: {msg}")
 
                 progress_bar.progress(100, text="Simulation ready.")
                 status_placeholder.success("Simulation complete.")
