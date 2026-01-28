@@ -1,6 +1,6 @@
 # Behavioral Experiment Simulation Tool — Methods Summary
 
-**Version 2.0** | Created by Dr. [Eugen Dimant](https://github.com/edimant)
+**Version 2.0** | Created by Dr. [Eugen Dimant](https://eugendimant.github.io/)
 
 ---
 
@@ -215,12 +215,12 @@ These flags allow students to practice applying pre-registered exclusion criteri
 
 If you use this tool in your research or teaching, please cite:
 
-> Dimant, E. (2025). Behavioral Experiment Simulation Tool (Version 2.0). https://github.com/edimant/research-simulations
+> Dimant, E. (2025). Behavioral Experiment Simulation Tool (Version 2.0).
 
 ---
 
 ## Contact
 
 For questions, issues, or feature requests:
-- GitHub: [github.com/edimant](https://github.com/edimant)
+- Website: [https://eugendimant.github.io/](https://eugendimant.github.io/)
 - Email: edimant@sas.upenn.edu
