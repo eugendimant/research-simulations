@@ -1,6 +1,6 @@
 # simulation_app/utils/enhanced_simulation_engine.py
 """
-Enhanced Simulation Engine for BDS5010 Behavioral Experiment Simulation Tool
+Enhanced Simulation Engine for Behavioral Experiment Simulation Tool
 =============================================================================
 Advanced simulation engine with:
 - Theory-grounded persona library integration
@@ -290,6 +290,7 @@ class EnhancedSimulationEngine:
         traits: Dict[str, float],
         condition: str,
         participant_seed: int,
+        response_mean: Optional[float] = None,
     ) -> str:
         response_type = str(question_spec.get("type", "task_summary"))
 
@@ -312,6 +313,7 @@ class EnhancedSimulationEngine:
             "product": question_spec.get("product", "product"),
             "feature": question_spec.get("feature", "features"),
             "emotion": str(rng.choice(["pleased", "interested", "satisfied", "engaged"])),
+            "sentiment": "neutral",
         }
 
         cond = str(condition).lower()
@@ -321,6 +323,14 @@ class EnhancedSimulationEngine:
             context["product"] = "hedonic " + str(context["product"])
         elif "utilitarian" in cond:
             context["product"] = "functional " + str(context["product"])
+
+        if response_mean is not None:
+            if response_mean >= 4.5:
+                context["sentiment"] = "positive"
+            elif response_mean <= 3.5:
+                context["sentiment"] = "negative"
+            else:
+                context["sentiment"] = "neutral"
 
         return self.text_generator.generate_response(
             response_type, style, context, traits, participant_seed
@@ -567,7 +577,16 @@ class EnhancedSimulationEngine:
                 p_seed = (self.seed + i * 100 + col_hash) % (2**31)
                 persona_name = assigned_personas[i]
                 persona = self.available_personas[persona_name]
-                text = self._generate_open_response(q, persona, all_traits[i], conditions.iloc[i], p_seed)
+                response_vals = participant_item_responses[i]
+                response_mean = float(np.mean(response_vals)) if response_vals else None
+                text = self._generate_open_response(
+                    q,
+                    persona,
+                    all_traits[i],
+                    conditions.iloc[i],
+                    p_seed,
+                    response_mean=response_mean,
+                )
                 responses.append(str(text))
 
             data[col_name] = responses
@@ -638,7 +657,7 @@ class EnhancedSimulationEngine:
     def generate_explainer(self) -> str:
         lines = [
             "=" * 70,
-            "COLUMN EXPLAINER - BDS5010 Simulated Behavioral Experiment Data",
+            "COLUMN EXPLAINER - Simulated Behavioral Experiment Data",
             "=" * 70,
             "",
             f"Study: {self.study_title}",

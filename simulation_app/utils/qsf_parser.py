@@ -1,5 +1,5 @@
 """
-QSF Parser for BDS5010 Behavioral Experiment Simulation Tool
+QSF Parser for Behavioral Experiment Simulation Tool
 =============================================================
 Parses Qualtrics Survey Format (.qsf) files to extract survey structure,
 questions, blocks, and embedded data for simulation.

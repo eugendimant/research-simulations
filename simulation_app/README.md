@@ -1,6 +1,6 @@
-# BDS5010 Behavioral Experiment Simulation Tool
+# Behavioral Experiment Simulation Tool
 
-A Streamlit application for generating synthetic behavioral experiment data following the methodology from "Simulating Behavioral Experiments with ChatGPT-5" (BDS5010, Spring 2026).
+A Streamlit application for generating synthetic behavioral experiment data using a standardized, persona-driven simulation workflow.
 
 ## Features
 
@@ -84,11 +84,9 @@ This tool implements the simulation methodology from "Simulating Behavioral Expe
 
 ## Credits
 
-- **Course**: BDS5010 Behavioral Data Science
 - **Instructor**: Prof. Dr. Eugen Dimant
-- **Semester**: Spring 2026
 - **Based on**: "Simulating Behavioral Experiments with ChatGPT-5" methodology
 
 ## License
 
-For academic use within BDS5010 course.
+For academic use.
