@@ -1,92 +1,150 @@
 # Behavioral Experiment Simulation Tool
 
-A Streamlit application for generating synthetic behavioral experiment data using a standardized, persona-driven simulation workflow.
+A Streamlit application for generating realistic synthetic behavioral experiment data using theory-grounded persona-driven simulation.
+
+## What This Tool Does
+
+**Generate realistic pilot datasets from your Qualtrics survey** — Upload your QSF file and receive a complete data package with:
+- Simulated participant responses that reflect actual human survey behavior
+- Automatic detection of conditions, factors, and scales
+- Open-ended text responses that align with numeric ratings
+- Attention check failures and exclusion flags
+- R script ready for analysis
+
+### Why Use Simulated Pilot Data?
+
+- **Test your analysis pipeline** before collecting real data
+- **Practice data cleaning** with realistic quality issues
+- **Verify survey logic** and variable coding
+- **Develop R/Python scripts** on properly structured data
 
 ## Features
 
-- **Intuitive Interface**: Step-by-step workflow with progress tracking
-- **QSF Support**: Upload and parse Qualtrics Survey Format files
-- **Theory-Grounded Simulation**: Uses behavioral personas for realistic data variance
-- **Tamper-Proof Audit Log**: PDF documentation of all simulation parameters
-- **ZIP Package Output**: Complete deliverable package (CSV, explainer, audit log)
-- **Instructor Backend**: Automatic storage of generated files for verification
+- **Automatic Survey Parsing**: Extracts conditions, factors, and scales from Qualtrics QSF
+- **Theory-Grounded Personas**: Response styles based on survey methodology literature (Krosnick 1991, Greenleaf 1992)
+- **Behavioral Realism**: Attention check patterns, satisficing, extreme responding
+- **Variable Text Responses**: Open-ended answers that match numeric response sentiment
+- **Standardized Defaults**: Consistent parameters for comparable datasets across teams
+- **Complete Output Package**: CSV, R script, metadata, schema validation, instructor report
 
 ## Quick Start
 
 ### Local Development
 
-1. Install dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
+```bash
+# Install dependencies
+pip install -r requirements.txt
 
-2. Run the app:
-   ```bash
-   streamlit run app.py
-   ```
+# Run the app
+streamlit run app.py
 
-3. Open your browser to `http://localhost:8501`
+# Open browser to http://localhost:8501
+```
 
-### Streamlit Community Cloud Deployment
+### Streamlit Community Cloud
 
-1. Fork this repository to your GitHub account
-2. Go to [Streamlit Community Cloud](https://share.streamlit.io)
+1. Fork this repository
+2. Go to [share.streamlit.io](https://share.streamlit.io)
 3. Click "New app" and select this repository
-4. Set the main file path to `simulation_app/app.py`
-5. Deploy!
+4. Set main file path to `simulation_app/app.py`
+5. Deploy
 
 ## Usage
 
-### For Students
+### Step 1: Quick Setup
+- Enter team name and members
+- Provide study title and description
+- Set target sample size (N)
 
-1. **Team Info**: Enter your group number and team member names
-2. **Project Details**: Describe your experiment
-3. **Upload Files**: Upload your Qualtrics QSF file and survey screenshots
-4. **Define Conditions**: Specify your experimental factors and levels
-5. **Configure Variables**: Set up your measurement scales
-6. **Set Parameters**: Adjust simulation settings (demographics, attention rates)
-7. **Generate**: Create your simulation package
+### Step 2: Upload QSF
+- Upload your Qualtrics QSF file (required)
+- Optionally upload survey PDF for better domain detection
+- Fill in pre-registration style checklist
 
-### For Instructors
+### Step 3: Review
+- Verify auto-detected conditions, factors, and scales
+- Edit in Advanced mode if needed
 
-Generated files are automatically saved to `instructor_copies/` for verification.
-Each ZIP includes:
-- `Simulated.csv`: The generated dataset
-- `Column_Explainer.txt`: Description of all variables
-- `Audit_Log.pdf`: Tamper-proof record of all inputs
-- `metadata.json`: Machine-readable simulation parameters
+### Step 4: Generate
+- Click Generate to create your simulation package
+- Download ZIP with all outputs
+- Optional: Send via email
+
+## Uploading Qualtrics Files
+
+### QSF File (Required)
+**Export from Qualtrics**: Survey → Tools → Import/Export → Export Survey
+
+### Survey PDF (Optional but Recommended)
+**Export from Qualtrics**: Survey → Tools → Import/Export → Print Survey → Save as PDF
+
+The PDF improves domain detection and persona selection by providing question wording context.
+
+## Output Package Contents
+
+| File | Description |
+|------|-------------|
+| `Simulated.csv` | Generated dataset |
+| `Metadata.json` | All simulation parameters |
+| `Schema_Validation.json` | Data quality checks |
+| `R_Prepare_Data.R` | Ready-to-use R script |
+| `Column_Explainer.txt` | Variable descriptions |
+| `Instructor_Report.md` | Documentation for verification |
+
+## Research Foundations
+
+This tool implements simulation approaches from:
+
+- **Argyle et al. (2023)** - "Out of One, Many: Using Language Models to Simulate Human Samples" — *Political Analysis*
+- **Horton (2023)** - "Large Language Models as Simulated Economic Agents"
+- **Krosnick (1991)** - Satisficing theory in survey responses
+- **Greenleaf (1992)** - Extreme response styles
+
+See `docs/methods_summary.md` for complete methodology documentation.
 
 ## Directory Structure
 
 ```
 simulation_app/
-├── app.py                 # Main Streamlit application
-├── requirements.txt       # Python dependencies
-├── README.md             # This file
-├── utils/
-│   ├── __init__.py       # Package exports
-│   ├── qsf_parser.py     # QSF file parsing
-│   ├── simulation_engine.py  # Core simulation logic
-│   ├── pdf_generator.py  # Audit log PDF generation
-│   └── schema_validator.py   # Data validation
-└── instructor_copies/    # Backend storage (created at runtime)
+├── app.py                      # Main Streamlit application
+├── requirements.txt            # Python dependencies
+├── README.md                   # This file
+├── docs/
+│   └── methods_summary.md      # Detailed methodology
+└── utils/
+    ├── __init__.py
+    ├── enhanced_simulation_engine.py  # Core simulation logic
+    ├── persona_library.py      # Behavioral personas
+    ├── qsf_preview.py          # QSF parsing
+    ├── qsf_parser.py           # QSF utilities
+    ├── schema_validator.py     # Data validation
+    ├── pdf_generator.py        # Audit log generation
+    ├── group_management.py     # Team/API management
+    └── instructor_report.py    # Report generation
 ```
 
-## Methodology
+## Configuration
 
-This tool implements the simulation methodology from "Simulating Behavioral Experiments with ChatGPT-5":
+### Email Delivery (Optional)
 
-1. **FILE READ OK**: Parse and validate survey structure from QSF
-2. **SCHEMA LOCKED**: Define variable schema based on survey elements
-3. **PERSONA LIBRARY**: Theory-grounded participant heterogeneity
-4. **RESPONSE GENERATION**: Realistic scale responses with appropriate variance
-5. **QUALITY ASSURANCE**: Validation checks on generated data
+Set these Streamlit secrets for email functionality:
+- `SENDGRID_API_KEY`
+- `SENDGRID_FROM_EMAIL`
+- `SENDGRID_FROM_NAME` (optional)
+- `INSTRUCTOR_NOTIFICATION_EMAIL` (optional)
 
 ## Credits
 
-- **Instructor**: Prof. Dr. Eugen Dimant
-- **Based on**: "Simulating Behavioral Experiments with ChatGPT-5" methodology
+- **Created by**: Dr. Eugen Dimant
+- **Institution**: University of Pennsylvania
 
 ## License
 
-For academic use.
+For academic and educational use.
+
+## Citation
+
+```
+Dimant, E. (2025). Behavioral Experiment Simulation Tool (Version 2.0).
+https://github.com/edimant/research-simulations
+```
