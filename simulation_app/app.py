@@ -1,6 +1,6 @@
 # simulation_app/app.py
 """
-BDS5010 Behavioral Experiment Simulation Tool (Streamlit App)
+Behavioral Experiment Simulation Tool (Streamlit App)
 ============================================================
 
 Design goal: students should be able to run a simulation quickly with minimal
@@ -24,7 +24,9 @@ from __future__ import annotations
 import base64
 import io
 import json
+import time
 import zipfile
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
@@ -36,6 +38,7 @@ import streamlit as st
 from utils.group_management import GroupManager, APIKeyManager
 from utils.qsf_preview import QSFPreviewParser, QSFPreviewResult
 from utils.schema_validator import validate_schema
+from utils.instructor_report import InstructorReportGenerator
 from utils.enhanced_simulation_engine import (
     EnhancedSimulationEngine,
     EffectSizeSpec,
@@ -46,11 +49,13 @@ from utils.enhanced_simulation_engine import (
 # -----------------------------
 # App constants
 # -----------------------------
-APP_TITLE = "BDS5010 Behavioral Experiment Simulation Tool"
+APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF"
 
 BASE_STORAGE = Path("data")
 BASE_STORAGE.mkdir(parents=True, exist_ok=True)
+
+MAX_SIMULATED_N = 2000
 
 STANDARD_DEFAULTS = {
     "demographics": {"gender_quota": 50, "age_mean": 35, "age_sd": 12},
@@ -88,6 +93,60 @@ def _bytes_to_zip(files: Dict[str, bytes]) -> bytes:
     return buf.getvalue()
 
 
+def _sanitize_prereg_text(raw_text: str) -> Tuple[str, List[str]]:
+    """
+    Remove hypothesis-like language to avoid biasing simulation settings.
+
+    Returns sanitized text and list of removed lines.
+    """
+    if not raw_text:
+        return "", []
+
+    removed: List[str] = []
+    kept: List[str] = []
+    flagged_tokens = ("hypothesis", "hypotheses", "predict", "prediction", "expect", "expectation", "h1", "h2", "h3")
+    for line in raw_text.splitlines():
+        normalized = line.strip()
+        if not normalized:
+            continue
+        if any(token in normalized.lower() for token in flagged_tokens):
+            removed.append(line)
+        else:
+            kept.append(line)
+    return "\n".join(kept).strip(), removed
+
+
+def _extract_qsf_payload(uploaded_bytes: bytes) -> Tuple[bytes, str]:
+    """
+    Return JSON bytes from a QSF upload (supports raw JSON or ZIP wrappers).
+    """
+    if zipfile.is_zipfile(io.BytesIO(uploaded_bytes)):
+        with zipfile.ZipFile(io.BytesIO(uploaded_bytes)) as zf:
+            candidates = [n for n in zf.namelist() if n.lower().endswith((".qsf", ".json"))]
+            if not candidates:
+                raise ValueError("ZIP did not contain a .qsf or .json file.")
+            selected = candidates[0]
+            return zf.read(selected), selected
+    return uploaded_bytes, "uploaded.qsf"
+
+
+def _extract_pdf_text(uploaded_bytes: bytes) -> str:
+    """
+    Extract text from a PDF using pypdf if available.
+    """
+    try:
+        from pypdf import PdfReader
+    except Exception:
+        return ""
+
+    try:
+        reader = PdfReader(io.BytesIO(uploaded_bytes))
+        pages_text = [page.extract_text() or "" for page in reader.pages]
+        return "\n".join(pages_text).strip()
+    except Exception:
+        return ""
+
+
 def _send_email_with_sendgrid(
     to_email: str,
     subject: str,
@@ -101,7 +160,7 @@ def _send_email_with_sendgrid(
     """
     api_key = st.secrets.get("SENDGRID_API_KEY", "")
     from_email = st.secrets.get("SENDGRID_FROM_EMAIL", "")
-    from_name = st.secrets.get("SENDGRID_FROM_NAME", "BDS5010 Simulation Tool")
+    from_name = st.secrets.get("SENDGRID_FROM_NAME", "Behavioral Experiment Simulation Tool")
 
     if not api_key or not from_email:
         return False, "Missing SENDGRID_API_KEY or SENDGRID_FROM_EMAIL in Streamlit secrets."
@@ -242,6 +301,29 @@ st.set_page_config(page_title=APP_TITLE, layout="wide")
 
 st.title(APP_TITLE)
 st.caption(APP_SUBTITLE)
+st.markdown(
+    "Originator: [Edimant](https://github.com/edimant) · "
+    "This tool is designed to make behavioral experiment simulation fast, comparable, and reproducible."
+)
+
+with st.expander("What this tool does (and the research behind it)", expanded=True):
+    st.markdown(
+        "- **Rapid, standardized simulation**: automatically infers conditions, factors, and scales from a QSF, "
+        "then generates a realistic dataset with consistent defaults so student groups are comparable.\n"
+        "- **Behaviorally realistic responses**: includes attention checks, response-style personas, and "
+        "open-ended responses that align with numeric patterns for more human-like data.\n"
+        "- **Instructor-ready outputs**: produces a full data package (CSV, metadata, schema checks, and "
+        "an instructor report) to support grading and replication.\n\n"
+        "Methodology summary based on *Simulating_Behavioral_Experiments_with_ChatGPT_5.pdf*."
+    )
+    pdf_path = Path(__file__).resolve().parents[1] / "Simulating_Behavioral_Experiments_with_ChatGPT_5.pdf"
+    if pdf_path.exists():
+        st.download_button(
+            "Download methodology PDF",
+            data=pdf_path.read_bytes(),
+            file_name=pdf_path.name,
+            mime="application/pdf",
+        )
 
 with st.sidebar:
     st.subheader("Mode")
@@ -295,12 +377,12 @@ with tabs[0]:
         )
 
         sample_size = st.number_input(
-            "Target sample size (N)",
+            "Pre-registered target sample size (N)",
             min_value=10,
-            max_value=5000,
+            max_value=MAX_SIMULATED_N,
             value=int(st.session_state.get("sample_size", 200)),
             step=10,
-            help="Balanced across detected conditions.",
+            help="Use the pre-registered N from your power calculation (capped for standardization).",
         )
 
         st.session_state["study_title"] = study_title
@@ -320,20 +402,78 @@ with tabs[1]:
     parser = _get_qsf_preview_parser()
 
     qsf_file = st.file_uploader("QSF file", type=["qsf", "zip", "json"])
-    prereg_text = st.text_area(
-        "Optional: paste key preregistration notes (aspredicted excerpt)",
-        value=st.session_state.get("prereg_text", ""),
-        height=140,
-        help="Optional. Used only to improve labels and instructor-facing summaries. It does not change simulation defaults in Simple mode.",
+    st.markdown("### Aspredicted-style checklist (used only for labeling, not for simulation logic)")
+    st.write(
+        "To avoid bias, **do not include hypotheses**. We only record design facts needed for comparability."
     )
-    st.session_state["prereg_text"] = prereg_text
+
+    prereg_outcomes = st.text_area(
+        "Primary outcome variable(s)",
+        value=st.session_state.get("prereg_outcomes", ""),
+        height=80,
+        help="Example: Purchase intention (7-point scale).",
+    )
+    prereg_iv = st.text_area(
+        "Independent variable(s) / conditions",
+        value=st.session_state.get("prereg_iv", ""),
+        height=80,
+        help="Example: AI-generated ad vs. human-written ad.",
+    )
+    prereg_exclusions = st.text_area(
+        "Exclusion criteria",
+        value=st.session_state.get("prereg_exclusions", ""),
+        height=80,
+        help="Example: failed attention checks, unrealistically fast completion.",
+    )
+    prereg_analysis = st.text_area(
+        "Planned analysis (high-level)",
+        value=st.session_state.get("prereg_analysis", ""),
+        height=80,
+        help="Example: independent-samples t-test on the main DV.",
+    )
+
+    st.session_state["prereg_outcomes"] = prereg_outcomes
+    st.session_state["prereg_iv"] = prereg_iv
+    st.session_state["prereg_exclusions"] = prereg_exclusions
+    st.session_state["prereg_analysis"] = prereg_analysis
+
+    st.markdown("### Optional: paste preregistration notes (hypotheses will be removed)")
+    prereg_text = st.text_area(
+        "Preregistration notes (optional)",
+        value=st.session_state.get("prereg_text_raw", ""),
+        height=140,
+        help="If pasted, any lines that look like hypotheses or predictions are removed.",
+    )
+    sanitized_text, removed_lines = _sanitize_prereg_text(prereg_text)
+    st.session_state["prereg_text_raw"] = prereg_text
+    st.session_state["prereg_text_sanitized"] = sanitized_text
+
+    if prereg_text and removed_lines:
+        with st.expander("Removed hypothesis-like lines (not used)"):
+            for line in removed_lines:
+                st.write(f"- {line}")
+
+    prereg_pdf = st.file_uploader("Optional: upload aspredicted PDF", type=["pdf"])
+    if prereg_pdf is not None:
+        pdf_text = _extract_pdf_text(prereg_pdf.read())
+        st.session_state["prereg_pdf_text"] = pdf_text
+        if pdf_text:
+            st.caption("Extracted text (read-only). Hypotheses are ignored by the app.")
+            with st.expander("Extracted preregistration text"):
+                st.text(pdf_text[:4000] + ("..." if len(pdf_text) > 4000 else ""))
+        else:
+            st.warning("Could not extract text from the PDF. You can still use the checklist above.")
 
     if qsf_file is not None:
         try:
             content = qsf_file.read()
-            preview = parser.parse(content)
+            payload, payload_name = _extract_qsf_payload(content)
+            preview = parser.parse(payload)
             st.session_state["qsf_preview"] = preview
-            st.success("QSF parsed successfully.")
+            if preview.success:
+                st.success(f"QSF parsed successfully ({payload_name}).")
+            else:
+                st.error("QSF parsed but validation failed. See warnings below.")
         except Exception as e:
             st.session_state["qsf_preview"] = None
             st.error(f"QSF parsing failed: {e}")
@@ -345,11 +485,19 @@ with tabs[1]:
         c1.metric("Questions", int(preview.total_questions))
         c2.metric("Scales detected", int(len(preview.detected_scales or [])))
         c3.metric("Conditions detected", int(len(preview.detected_conditions or [])))
-        c4.metric("Warnings", int(len(preview.warnings or [])))
+        warnings = getattr(preview, "validation_warnings", []) or []
+        c4.metric("Warnings", int(len(warnings)))
 
-        if preview.warnings:
+        errors = getattr(preview, "validation_errors", []) or []
+
+        if errors:
+            with st.expander("Show QSF errors"):
+                for err in errors:
+                    st.error(err)
+
+        if warnings:
             with st.expander("Show QSF warnings"):
-                for w in preview.warnings:
+                for w in warnings:
                     st.warning(w)
 
         st.caption("Next: Review the auto-detected design and run your simulation.")
@@ -460,6 +608,25 @@ with tabs[3]:
         st.warning("Complete the previous steps first (upload QSF, then review).")
     else:
         st.subheader("Generate simulation")
+        preview: Optional[QSFPreviewResult] = st.session_state.get("qsf_preview", None)
+
+        required_fields = {
+            "Study title": bool(st.session_state.get("study_title", "").strip()),
+            "Study description": bool(st.session_state.get("study_description", "").strip()),
+            "Pre-registered sample size": int(st.session_state.get("sample_size", 0)) >= 10,
+            "Primary outcome variable(s)": bool(st.session_state.get("prereg_outcomes", "").strip()),
+            "Independent variable(s)": bool(st.session_state.get("prereg_iv", "").strip()),
+            "QSF uploaded": bool(preview and preview.success),
+        }
+        completed = sum(required_fields.values())
+        total_required = len(required_fields)
+        st.progress(
+            completed / total_required,
+            text=f"Setup completion: {completed}/{total_required} required fields filled",
+        )
+        missing = [label for label, ok in required_fields.items() if not ok]
+        if missing:
+            st.warning("Missing required fields: " + ", ".join(missing))
 
         if not st.session_state.get("advanced_mode", False):
             demographics = STANDARD_DEFAULTS["demographics"].copy()
@@ -535,10 +702,19 @@ with tabs[3]:
 
             custom_persona_weights = None
 
-        if st.button("Generate simulated dataset", type="primary"):
+        is_generating = st.session_state.get("is_generating", False)
+        can_generate = completed == total_required and not is_generating
+        if st.button("Generate simulated dataset", type="primary", disabled=not can_generate):
+            st.session_state["is_generating"] = True
             title = st.session_state.get("study_title", "") or "Untitled Study"
             desc = st.session_state.get("study_description", "") or ""
-            N = int(st.session_state.get("sample_size", 200))
+            requested_n = int(st.session_state.get("sample_size", 200))
+            if requested_n > MAX_SIMULATED_N:
+                st.warning(
+                    f"Requested N ({requested_n}) exceeds the cap ({MAX_SIMULATED_N}). "
+                    "Using the capped value for standardization."
+                )
+            N = min(requested_n, MAX_SIMULATED_N)
 
             engine = EnhancedSimulationEngine(
                 study_title=title,
@@ -560,21 +736,68 @@ with tabs[3]:
             )
 
             try:
-                df, metadata = engine.generate()
-                explainer = engine.generate_explainer()
-                r_script = engine.generate_r_export(df)
+                status = st.status("Running simulation...", expanded=True)
+                progress = st.progress(0)
+                timer_placeholder = st.empty()
+                start_time = time.monotonic()
 
-                schema_results = validate_schema(
-                    df=df,
-                    expected_conditions=inferred["conditions"],
-                    expected_scales=inferred["scales"],
-                    expected_n=N,
-                )
+                def _generate_payload():
+                    df_local, metadata_local = engine.generate()
+                    explainer_local = engine.generate_explainer()
+                    r_script_local = engine.generate_r_export(df_local)
+                    schema_local = validate_schema(
+                        df=df_local,
+                        expected_conditions=inferred["conditions"],
+                        expected_scales=inferred["scales"],
+                        expected_n=N,
+                    )
+                    return df_local, metadata_local, explainer_local, r_script_local, schema_local
+
+                with ThreadPoolExecutor(max_workers=1) as executor:
+                    future = executor.submit(_generate_payload)
+                    while not future.done():
+                        elapsed = time.monotonic() - start_time
+                        timer_placeholder.info(f"Simulation running... {elapsed:.1f}s elapsed.")
+                        progress.progress(min(0.95, elapsed / 45.0))
+                        time.sleep(0.5)
+
+                df, metadata, explainer, r_script, schema_results = future.result()
+                progress.progress(1.0)
+                elapsed_total = time.monotonic() - start_time
+                status.update(label=f"Simulation complete in {elapsed_total:.1f}s.", state="complete")
+
+                metadata["preregistration_summary"] = {
+                    "outcomes": st.session_state.get("prereg_outcomes", ""),
+                    "independent_variables": st.session_state.get("prereg_iv", ""),
+                    "exclusion_criteria": st.session_state.get("prereg_exclusions", ""),
+                    "analysis_plan": st.session_state.get("prereg_analysis", ""),
+                    "notes_sanitized": st.session_state.get("prereg_text_sanitized", ""),
+                }
+                prereg_notes = [
+                    f"Primary outcomes: {st.session_state.get('prereg_outcomes', '').strip()}",
+                    f"Independent variables: {st.session_state.get('prereg_iv', '').strip()}",
+                    f"Exclusion criteria: {st.session_state.get('prereg_exclusions', '').strip()}",
+                    f"Analysis plan: {st.session_state.get('prereg_analysis', '').strip()}",
+                ]
+                prereg_text = "\n".join([line for line in prereg_notes if line.split(": ", 1)[-1]])
+                if st.session_state.get("prereg_text_sanitized"):
+                    prereg_text += "\n\nAdditional notes:\n" + st.session_state.get("prereg_text_sanitized", "")
 
                 csv_bytes = df.to_csv(index=False).encode("utf-8")
                 meta_bytes = _safe_json(metadata).encode("utf-8")
                 explainer_bytes = explainer.encode("utf-8")
                 r_bytes = r_script.encode("utf-8")
+                instructor_report = InstructorReportGenerator().generate_markdown_report(
+                    df=df,
+                    metadata=metadata,
+                    schema_validation=schema_results,
+                    prereg_text=prereg_text,
+                    team_info={
+                        "team_name": st.session_state.get("team_name", ""),
+                        "team_members": st.session_state.get("team_members_raw", ""),
+                    },
+                )
+                instructor_bytes = instructor_report.encode("utf-8")
 
                 files = {
                     "Simulated.csv": csv_bytes,
@@ -582,6 +805,7 @@ with tabs[3]:
                     "Column_Explainer.txt": explainer_bytes,
                     "R_Prepare_Data.R": r_bytes,
                     "Schema_Validation.json": _safe_json(schema_results).encode("utf-8"),
+                    "Instructor_Report.md": instructor_bytes,
                 }
                 zip_bytes = _bytes_to_zip(files)
 
@@ -590,6 +814,7 @@ with tabs[3]:
                 st.session_state["last_metadata"] = metadata
 
                 st.success("Simulation generated.")
+                st.markdown("[Jump to download](#download)")
 
                 if not schema_results.get("valid", True):
                     st.error("Schema validation failed. Review Schema_Validation.json in the download.")
@@ -598,13 +823,40 @@ with tabs[3]:
                 else:
                     st.info("Schema validation passed.")
 
+                instructor_email = st.secrets.get("INSTRUCTOR_NOTIFICATION_EMAIL", "edimant@sas.upenn.edu")
+                subject = f"[Behavioral Simulation] Output ({metadata.get('simulation_mode', 'pilot')}) - {title}"
+                body = (
+                    "Automatic instructor notification with simulation output.\n\n"
+                    f"Team: {st.session_state.get('team_name','')}\n"
+                    f"Members:\n{st.session_state.get('team_members_raw','')}\n\n"
+                    f"Study: {title}\n"
+                    f"Generated: {metadata.get('generation_timestamp','')}\n"
+                    f"Run ID: {metadata.get('run_id','')}\n"
+                )
+                ok, msg = _send_email_with_sendgrid(
+                    to_email=instructor_email,
+                    subject=subject,
+                    body_text=body,
+                    attachments=[
+                        ("simulation_output.zip", zip_bytes),
+                        ("Instructor_Report.md", instructor_bytes),
+                    ],
+                )
+                if ok:
+                    st.info(f"Instructor auto-email sent to {instructor_email}.")
+                else:
+                    st.warning(f"Instructor auto-email failed: {msg}")
+
             except Exception as e:
                 st.error(f"Simulation failed: {e}")
+            finally:
+                st.session_state["is_generating"] = False
 
         zip_bytes = st.session_state.get("last_zip", None)
         df = st.session_state.get("last_df", None)
         if zip_bytes and df is not None:
             st.divider()
+            st.markdown('<div id="download"></div>', unsafe_allow_html=True)
             st.subheader("Download")
 
             st.download_button(
@@ -629,7 +881,7 @@ with tabs[3]:
                     if not to_email or "@" not in to_email:
                         st.error("Please enter a valid email address.")
                     else:
-                        subject = f"[BDS5010] Simulation output: {st.session_state.get('study_title','Untitled Study')}"
+                        subject = f"[Behavioral Simulation] Output: {st.session_state.get('study_title','Untitled Study')}"
                         body = (
                             "Attached is the simulation output ZIP (Simulated.csv, metadata, R prep script).\n\n"
                             f"Generated: {datetime.now().isoformat(timespec='seconds')}\n"
@@ -649,7 +901,7 @@ with tabs[3]:
                 instructor_email = st.secrets.get("INSTRUCTOR_NOTIFICATION_EMAIL", "")
                 if instructor_email:
                     if st.button("Send to instructor too"):
-                        subject = f"[BDS5010] Simulation output (team: {st.session_state.get('team_name','') or 'N/A'})"
+                        subject = f"[Behavioral Simulation] Output (team: {st.session_state.get('team_name','') or 'N/A'})"
                         body = (
                             f"Team: {st.session_state.get('team_name','')}\n"
                             f"Members:\n{st.session_state.get('team_members_raw','')}\n\n"
