@@ -304,7 +304,7 @@ st.set_page_config(page_title=APP_TITLE, layout="wide")
 st.title(APP_TITLE)
 st.caption(APP_SUBTITLE)
 st.markdown(
-    "Created by Dr. [Eugen Dimant](https://github.com/edimant) · "
+    "Created by Dr. [Eugen Dimant](https://eugendimant.github.io/) · "
     "This tool is designed to make behavioral experiment simulation fast, comparable, and reproducible."
 )
 st.caption(f"Version {APP_VERSION} · Build {APP_BUILD_TIMESTAMP}")
