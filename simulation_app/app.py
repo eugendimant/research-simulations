@@ -302,7 +302,7 @@ st.set_page_config(page_title=APP_TITLE, layout="wide")
 st.title(APP_TITLE)
 st.caption(APP_SUBTITLE)
 st.markdown(
-    "Created by Dr. [Eugen Dimant](https://github.com/edimant) · "
+    "Originator: [Edimant](https://github.com/edimant) · "
     "This tool is designed to make behavioral experiment simulation fast, comparable, and reproducible."
 )
 
@@ -312,19 +312,17 @@ with st.expander("What this tool does (and the research behind it)", expanded=Tr
         "then generates a realistic dataset with consistent defaults so student groups are comparable.\n"
         "- **Behaviorally realistic responses**: includes attention checks, response-style personas, and "
         "open-ended responses that align with numeric patterns for more human-like data.\n"
-        "- **Persona modeling is automatic**: the simulator infers response styles internally, so students do not "
-        "need to provide any persona-related inputs.\n"
         "- **Instructor-ready outputs**: produces a full data package (CSV, metadata, schema checks, and "
         "an instructor report) to support grading and replication.\n\n"
-        "Method summary and research pointers are available below."
+        "Methodology summary based on *Simulating_Behavioral_Experiments_with_ChatGPT_5.pdf*."
     )
-    methods_path = Path(__file__).resolve().parent / "docs" / "methods_summary.md"
-    if methods_path.exists():
+    pdf_path = Path(__file__).resolve().parents[1] / "Simulating_Behavioral_Experiments_with_ChatGPT_5.pdf"
+    if pdf_path.exists():
         st.download_button(
-            "Download methods summary (Markdown)",
-            data=methods_path.read_bytes(),
-            file_name=methods_path.name,
-            mime="text/markdown",
+            "Download methodology PDF",
+            data=pdf_path.read_bytes(),
+            file_name=pdf_path.name,
+            mime="application/pdf",
         )
 
 with st.sidebar:
@@ -465,21 +463,6 @@ with tabs[1]:
                 st.text(pdf_text[:4000] + ("..." if len(pdf_text) > 4000 else ""))
         else:
             st.warning("Could not extract text from the PDF. You can still use the checklist above.")
-
-    survey_pdf = st.file_uploader(
-        "Optional: upload exported Qualtrics survey (PDF)",
-        type=["pdf"],
-        help="This helps the simulator detect relevant sections and improves domain inference.",
-    )
-    if survey_pdf is not None:
-        survey_text = _extract_pdf_text(survey_pdf.read())
-        st.session_state["survey_pdf_text"] = survey_text
-        if survey_text:
-            st.caption("Survey PDF ingested. The engine will use this to refine domain detection.")
-            with st.expander("Extracted survey text (read-only)"):
-                st.text(survey_text[:4000] + ("..." if len(survey_text) > 4000 else ""))
-        else:
-            st.warning("Could not extract text from the survey PDF.")
 
     if qsf_file is not None:
         try:
@@ -725,9 +708,6 @@ with tabs[3]:
             st.session_state["is_generating"] = True
             title = st.session_state.get("study_title", "") or "Untitled Study"
             desc = st.session_state.get("study_description", "") or ""
-            survey_excerpt = st.session_state.get("survey_pdf_text", "")
-            if survey_excerpt:
-                desc = f"{desc}\n\nSurvey export excerpt:\n{survey_excerpt[:2000]}"
             requested_n = int(st.session_state.get("sample_size", 200))
             if requested_n > MAX_SIMULATED_N:
                 st.warning(
@@ -756,35 +736,9 @@ with tabs[3]:
             )
 
             try:
-                status = st.status("Running simulation...", expanded=True)
-                progress = st.progress(0)
-                timer_placeholder = st.empty()
-                start_time = time.monotonic()
-
-                def _generate_payload():
-                    df_local, metadata_local = engine.generate()
-                    explainer_local = engine.generate_explainer()
-                    r_script_local = engine.generate_r_export(df_local)
-                    schema_local = validate_schema(
-                        df=df_local,
-                        expected_conditions=inferred["conditions"],
-                        expected_scales=inferred["scales"],
-                        expected_n=N,
-                    )
-                    return df_local, metadata_local, explainer_local, r_script_local, schema_local
-
-                with ThreadPoolExecutor(max_workers=1) as executor:
-                    future = executor.submit(_generate_payload)
-                    while not future.done():
-                        elapsed = time.monotonic() - start_time
-                        timer_placeholder.info(f"Simulation running... {elapsed:.1f}s elapsed.")
-                        progress.progress(min(0.95, elapsed / 45.0))
-                        time.sleep(0.5)
-
-                df, metadata, explainer, r_script, schema_results = future.result()
-                progress.progress(1.0)
-                elapsed_total = time.monotonic() - start_time
-                status.update(label=f"Simulation complete in {elapsed_total:.1f}s.", state="complete")
+                df, metadata = engine.generate()
+                explainer = engine.generate_explainer()
+                r_script = engine.generate_r_export(df)
 
                 metadata["preregistration_summary"] = {
                     "outcomes": st.session_state.get("prereg_outcomes", ""),
@@ -792,17 +746,14 @@ with tabs[3]:
                     "exclusion_criteria": st.session_state.get("prereg_exclusions", ""),
                     "analysis_plan": st.session_state.get("prereg_analysis", ""),
                     "notes_sanitized": st.session_state.get("prereg_text_sanitized", ""),
-                    "survey_export_excerpt": st.session_state.get("survey_pdf_text", "")[:2000],
                 }
-                prereg_notes = [
-                    f"Primary outcomes: {st.session_state.get('prereg_outcomes', '').strip()}",
-                    f"Independent variables: {st.session_state.get('prereg_iv', '').strip()}",
-                    f"Exclusion criteria: {st.session_state.get('prereg_exclusions', '').strip()}",
-                    f"Analysis plan: {st.session_state.get('prereg_analysis', '').strip()}",
-                ]
-                prereg_text = "\n".join([line for line in prereg_notes if line.split(": ", 1)[-1]])
-                if st.session_state.get("prereg_text_sanitized"):
-                    prereg_text += "\n\nAdditional notes:\n" + st.session_state.get("prereg_text_sanitized", "")
+
+                schema_results = validate_schema(
+                    df=df,
+                    expected_conditions=inferred["conditions"],
+                    expected_scales=inferred["scales"],
+                    expected_n=N,
+                )
 
                 csv_bytes = df.to_csv(index=False).encode("utf-8")
                 meta_bytes = _safe_json(metadata).encode("utf-8")
@@ -845,7 +796,7 @@ with tabs[3]:
                     st.info("Schema validation passed.")
 
                 instructor_email = st.secrets.get("INSTRUCTOR_NOTIFICATION_EMAIL", "edimant@sas.upenn.edu")
-                subject = f"[Behavioral Simulation] Output ({metadata.get('simulation_mode', 'pilot')}) - {title}"
+                subject = f"[BDS5010] Simulation output ({metadata.get('simulation_mode', 'pilot')}) - {title}"
                 body = (
                     "Automatic instructor notification with simulation output.\n\n"
                     f"Team: {st.session_state.get('team_name','')}\n"
