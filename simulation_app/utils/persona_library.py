@@ -5,12 +5,12 @@ A theory-grounded library of behavioral personas for generating realistic
 synthetic data across marketing, management, consumer behavior, AI,
 behavioral economics, and psychology research domains.
 
-Based on established literature:
-- Manning & Horton (2025) - LLM simulation personas
-- Krosnick (1991) - Satisficing in survey responses
-- Greenleaf (1992) - Extreme response styles
-- Paulhus (1991) - Socially desirable responding
-- John & Robins (1994) - Individual differences in self-report
+Based on recent LLM simulation research:
+- Argyle et al. (2023) - "Out of One, Many" Political Analysis
+- Horton (2023) - "Homo Silicus" NBER Working Paper
+- Aher, Arriaga & Kalai (2023) - LLM human subject replication, ICML
+- Binz & Schulz (2023) - LLM cognitive patterns, PNAS
+- Park et al. (2023) - Generative Agents, Stanford/Google
 """
 
 import numpy as np
