@@ -2,8 +2,6 @@
 
 Created by Dr. [Eugen Dimant](https://github.com/edimant).
 
-Last updated: 2025-01-27.
-
 ## What this tool does
 - **Standardized simulation**: Generates consistent, comparable pilot datasets from Qualtrics QSF exports by
   inferring conditions, factors, and scales automatically.
@@ -27,16 +25,6 @@ This tool builds on methodological guidance for:
 - survey response styles and attention checks,
 - standardized experimental simulation,
 - and AI-assisted qualitative response generation.
-
-### Research highlights (direct links)
-- **LLM-based simulation personas** informed the persona library that powers heterogeneous response styles in
-  the simulator and anchors open-ended response variation.
-  - Manning & Horton (2025): https://arxiv.org/abs/2301.07543
-  - Horton (2023): https://psyarxiv.com/9kqcg
-- **Optimization and calibration of simulated responses** motivated the use of standardized defaults and
-  consistent schema validation.
-  - Santurkar et al. (2023): https://arxiv.org/abs/2303.17548
-  - Method notes: https://benjaminmanning.io/les/optimize.pdf
 
 ## Recommended uploads
 - **Qualtrics QSF** (required): primary source for detecting conditions, factors, and scales.
