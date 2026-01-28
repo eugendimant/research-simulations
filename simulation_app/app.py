@@ -337,18 +337,17 @@ with st.expander("Research foundations and citations", expanded=False):
 This tool implements simulation approaches validated in recent computational social science research:
 
 **Core LLM Simulation Research:**
-- **Argyle et al. (2023)** - "Out of One, Many: Using Language Models to Simulate Human Samples" *Political Analysis* — Demonstrates LLMs can replicate human response distributions across demographic subgroups
-- **Horton (2023)** - "Large Language Models as Simulated Economic Agents: What Can We Learn from Homo Silicus?" *NBER Working Paper* — Shows LLMs exhibit human-like economic behaviors in experimental settings
-- **Aher, Arriaga & Kalai (2023)** - "Using Large Language Models to Simulate Multiple Humans and Replicate Human Subject Studies" *ICML* — Validates LLM-based replication of classic behavioral experiments
+- **Argyle et al. (2023)** - "Out of One, Many: Using Language Models to Simulate Human Samples" *Political Analysis*, 31(3), 337-351. [DOI: 10.1017/pan.2023.2](https://doi.org/10.1017/pan.2023.2)
+- **Horton (2023)** - "Large Language Models as Simulated Economic Agents: What Can We Learn from Homo Silicus?" *NBER Working Paper* No. 31122. [DOI: 10.3386/w31122](https://doi.org/10.3386/w31122)
+- **Aher, Arriaga & Kalai (2023)** - "Using Large Language Models to Simulate Multiple Humans and Replicate Human Subject Studies" *ICML*, PMLR 202:337-371. [Paper](https://proceedings.mlr.press/v202/aher23a.html)
 
 **High-Impact Validation Studies:**
-- **Park et al. (2023)** - "Generative Agents: Interactive Simulacra of Human Behavior" — Stanford/Google research on believable agent behavior
-- **Binz & Schulz (2023)** - "Using cognitive psychology to understand GPT-3" *PNAS* — Systematic comparison of LLM and human cognitive patterns
-- **Dillion et al. (2023)** - "Can AI language models replace human participants?" *Trends in Cognitive Sciences*
+- **Park et al. (2023)** - "Generative Agents: Interactive Simulacra of Human Behavior" *ACM UIST*. [DOI: 10.1145/3586183.3606763](https://doi.org/10.1145/3586183.3606763)
+- **Binz & Schulz (2023)** - "Using cognitive psychology to understand GPT-3" *PNAS*, 120(6). [DOI: 10.1073/pnas.2218523120](https://doi.org/10.1073/pnas.2218523120)
+- **Dillion et al. (2023)** - "Can AI language models replace human participants?" *Trends in Cognitive Sciences*, 27, 597-600. [DOI: 10.1016/j.tics.2023.04.008](https://doi.org/10.1016/j.tics.2023.04.008)
 
 **Additional Resources:**
-- **Brand et al. (2023)** - "Using GPT for Market Research" *Harvard Business School Working Paper*
-- **Santurkar et al. (2023)** - "Whose opinions do language models reflect?" [arXiv:2303.17548](https://arxiv.org/abs/2303.17548)
+- **Brand, Israeli & Ngwe (2023)** - "Using GPT for Market Research" *Harvard Business School Working Paper* 23-062. [Paper](https://www.hbs.edu/ris/download.aspx?name=23-062.pdf)
 
 ### How personas work
 

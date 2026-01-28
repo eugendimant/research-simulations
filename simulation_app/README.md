@@ -95,13 +95,14 @@ The PDF improves domain detection and persona selection by providing question wo
 
 This tool implements simulation approaches from recent LLM research:
 
-- **Argyle et al. (2023)** - "Out of One, Many: Using Language Models to Simulate Human Samples" — *Political Analysis*
-- **Horton (2023)** - "Large Language Models as Simulated Economic Agents" — *NBER Working Paper*
-- **Aher, Arriaga & Kalai (2023)** - "Using LLMs to Simulate Multiple Humans" — *ICML*
-- **Binz & Schulz (2023)** - "Using cognitive psychology to understand GPT-3" — *PNAS*
-- **Park et al. (2023)** - "Generative Agents: Interactive Simulacra of Human Behavior"
+- **Argyle et al. (2023)** - "Out of One, Many" *Political Analysis* — [DOI: 10.1017/pan.2023.2](https://doi.org/10.1017/pan.2023.2)
+- **Horton (2023)** - "Homo Silicus" *NBER Working Paper* — [DOI: 10.3386/w31122](https://doi.org/10.3386/w31122)
+- **Aher, Arriaga & Kalai (2023)** - *ICML* — [Paper](https://proceedings.mlr.press/v202/aher23a.html)
+- **Binz & Schulz (2023)** - *PNAS* — [DOI: 10.1073/pnas.2218523120](https://doi.org/10.1073/pnas.2218523120)
+- **Park et al. (2023)** - "Generative Agents" *ACM UIST* — [DOI: 10.1145/3586183.3606763](https://doi.org/10.1145/3586183.3606763)
+- **Dillion et al. (2023)** - *Trends in Cognitive Sciences* — [DOI: 10.1016/j.tics.2023.04.008](https://doi.org/10.1016/j.tics.2023.04.008)
 
-See `docs/methods_summary.md` for complete methodology documentation.
+See `docs/methods_summary.md` for complete methodology documentation with full citations.
 
 ## Directory Structure
 

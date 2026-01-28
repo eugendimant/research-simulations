@@ -118,25 +118,38 @@ The PDF provides:
 ### Core LLM Simulation Research
 
 **Foundational Papers:**
-- Argyle, L. P., et al. (2023). Out of one, many: Using language models to simulate human samples. *Political Analysis*, 31(3), 337-351. — Demonstrates LLMs can replicate human response distributions across demographic subgroups.
 
-- Horton, J. J. (2023). Large language models as simulated economic agents: What can we learn from Homo Silicus? *NBER Working Paper*. — Shows LLMs exhibit human-like economic behaviors in experimental settings.
+1. **Argyle, L. P., Busby, E. C., Fulda, N., Gubler, J. R., Rytting, C., & Wingate, D. (2023)**. Out of one, many: Using language models to simulate human samples. *Political Analysis*, 31(3), 337-351.
+   - **DOI:** [10.1017/pan.2023.2](https://doi.org/10.1017/pan.2023.2)
+   - Demonstrates LLMs can replicate human response distributions across demographic subgroups with "algorithmic fidelity."
 
-- Aher, G., Arriaga, R. I., & Kalai, A. T. (2023). Using large language models to simulate multiple humans and replicate human subject studies. *ICML*. — Validates LLM-based replication of classic behavioral experiments.
+2. **Horton, J. J. (2023)**. Large language models as simulated economic agents: What can we learn from Homo Silicus? *NBER Working Paper* No. 31122.
+   - **DOI:** [10.3386/w31122](https://doi.org/10.3386/w31122)
+   - Shows LLMs exhibit human-like economic behaviors including downward-sloping demand and status quo bias.
+
+3. **Aher, G. V., Arriaga, R. I., & Kalai, A. T. (2023)**. Using large language models to simulate multiple humans and replicate human subject studies. *Proceedings of the 40th International Conference on Machine Learning (ICML)*, PMLR 202:337-371.
+   - **Paper:** [proceedings.mlr.press/v202/aher23a.html](https://proceedings.mlr.press/v202/aher23a.html)
+   - Introduces "Turing Experiments" for validating LLM simulation of human behavior across classic studies.
 
 ### High-Impact Validation Studies
 
-- **Park et al. (2023)** - "Generative Agents: Interactive Simulacra of Human Behavior" — Stanford/Google research demonstrating believable autonomous agent behavior in simulated environments.
+4. **Park, J. S., O'Brien, J., Cai, C. J., Morris, M. R., Liang, P., & Bernstein, M. S. (2023)**. Generative Agents: Interactive Simulacra of Human Behavior. *ACM Symposium on User Interface Software and Technology (UIST)*.
+   - **DOI:** [10.1145/3586183.3606763](https://doi.org/10.1145/3586183.3606763)
+   - Stanford/Google research demonstrating believable autonomous agent behavior in simulated environments.
 
-- **Binz, M. & Schulz, E. (2023)**. Using cognitive psychology to understand GPT-3. *PNAS*, 120(6). — Systematic comparison showing LLMs exhibit human-like cognitive patterns across reasoning tasks.
+5. **Binz, M. & Schulz, E. (2023)**. Using cognitive psychology to understand GPT-3. *Proceedings of the National Academy of Sciences (PNAS)*, 120(6), e2218523120.
+   - **DOI:** [10.1073/pnas.2218523120](https://doi.org/10.1073/pnas.2218523120)
+   - Systematic comparison showing LLMs exhibit human-like cognitive patterns across decision-making and reasoning tasks.
 
-- **Dillion, D., et al. (2023)**. Can AI language models replace human participants? *Trends in Cognitive Sciences*. — Comprehensive review of when and how LLMs can substitute for human subjects.
+6. **Dillion, D., Tandon, N., Gu, Y., & Gray, K. (2023)**. Can AI language models replace human participants? *Trends in Cognitive Sciences*, 27, 597-600.
+   - **DOI:** [10.1016/j.tics.2023.04.008](https://doi.org/10.1016/j.tics.2023.04.008)
+   - Found 0.95 correlation between GPT-3.5 and human moral judgments; reviews when LLMs can substitute for human participants.
 
 ### Additional Resources
 
-- **Brand, J., et al. (2023)**. Using GPT for market research. *Harvard Business School Working Paper*. — Practical applications of LLM simulation in consumer research.
-
-- **Santurkar, S., et al. (2023)**. Whose opinions do language models reflect? [arXiv:2303.17548](https://arxiv.org/abs/2303.17548) — Analysis of LLM opinion distributions and demographic alignment.
+7. **Brand, J., Israeli, A., & Ngwe, D. (2023)**. Using GPT for Market Research. *Harvard Business School Working Paper* 23-062.
+   - **Paper:** [hbs.edu/ris/download.aspx?name=23-062.pdf](https://www.hbs.edu/ris/download.aspx?name=23-062.pdf)
+   - Demonstrates LLMs can generate realistic willingness-to-pay estimates and consumer preference data for under $100.
 
 ---
 
