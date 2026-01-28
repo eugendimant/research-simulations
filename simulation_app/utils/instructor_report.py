@@ -219,8 +219,11 @@ class InstructorReportGenerator:
             name = str(s.get("name", "Scale")).replace(" ", "_")
             num_items = int(s.get("num_items", 5) or 5)
             items = [f"{name}_{i}" for i in range(1, num_items + 1)]
+            items_quoted = ", ".join([f"\"{x}\"" for x in items])
             r_lines.append(f"# Composite for {name}")
-            r_lines.append(f"data${name}_composite <- rowMeans(data[, c({', '.join([f'\"{x}\"' for x in items])})], na.rm = TRUE)")
+            r_lines.append(
+                f"data${name}_composite <- rowMeans(data[, c({items_quoted})], na.rm = TRUE)"
+            )
             r_lines.append("")
 
         r_lines.append("# Optional: remove recommended exclusions")
