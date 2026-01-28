@@ -336,22 +336,23 @@ with st.expander("Research foundations and citations", expanded=False):
 
 This tool implements simulation approaches validated in recent computational social science research:
 
-**Core methodology:**
-- **Argyle et al. (2023)** - "Out of One, Many: Using Language Models to Simulate Human Samples" *Political Analysis* - Demonstrates LLMs can replicate human response distributions across demographic subgroups
-- **Horton (2023)** - "Large Language Models as Simulated Economic Agents" - Shows LLMs exhibit human-like economic behaviors in experimental settings
+**Core LLM Simulation Research:**
+- **Argyle et al. (2023)** - "Out of One, Many: Using Language Models to Simulate Human Samples" *Political Analysis* — Demonstrates LLMs can replicate human response distributions across demographic subgroups
+- **Horton (2023)** - "Large Language Models as Simulated Economic Agents: What Can We Learn from Homo Silicus?" *NBER Working Paper* — Shows LLMs exhibit human-like economic behaviors in experimental settings
+- **Aher, Arriaga & Kalai (2023)** - "Using Large Language Models to Simulate Multiple Humans and Replicate Human Subject Studies" *ICML* — Validates LLM-based replication of classic behavioral experiments
 
-**Response style modeling:**
-- **Krosnick (1991)** - Satisficing theory in survey responses
-- **Greenleaf (1992)** - Extreme response styles
-- **Paulhus (1991)** - Socially desirable responding patterns
+**High-Impact Validation Studies:**
+- **Park et al. (2023)** - "Generative Agents: Interactive Simulacra of Human Behavior" — Stanford/Google research on believable agent behavior
+- **Binz & Schulz (2023)** - "Using cognitive psychology to understand GPT-3" *PNAS* — Systematic comparison of LLM and human cognitive patterns
+- **Dillion et al. (2023)** - "Can AI language models replace human participants?" *Trends in Cognitive Sciences*
 
-**Validation research:**
-- **Manning & Horton (2025)** - LLM-based experiment simulation [arXiv:2301.07543](https://arxiv.org/abs/2301.07543)
-- **Santurkar et al. (2023)** - LLM opinion distributions [arXiv:2303.17548](https://arxiv.org/abs/2303.17548)
+**Additional Resources:**
+- **Brand et al. (2023)** - "Using GPT for Market Research" *Harvard Business School Working Paper*
+- **Santurkar et al. (2023)** - "Whose opinions do language models reflect?" [arXiv:2303.17548](https://arxiv.org/abs/2303.17548)
 
 ### How personas work
 
-The simulator automatically assigns behavioral personas to simulated participants based on the study domain. Each persona has trait parameters (attention level, response consistency, scale use breadth, etc.) calibrated from survey methodology literature. This creates realistic individual differences without requiring manual configuration.
+The simulator automatically assigns behavioral personas to simulated participants based on the study domain. Each persona has trait parameters calibrated from computational social science research on LLM response patterns. This creates realistic individual differences without requiring manual configuration.
 """)
     methods_path = Path(__file__).resolve().parent / "docs" / "methods_summary.md"
     if methods_path.exists():

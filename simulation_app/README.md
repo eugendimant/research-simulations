@@ -93,12 +93,13 @@ The PDF improves domain detection and persona selection by providing question wo
 
 ## Research Foundations
 
-This tool implements simulation approaches from:
+This tool implements simulation approaches from recent LLM research:
 
 - **Argyle et al. (2023)** - "Out of One, Many: Using Language Models to Simulate Human Samples" — *Political Analysis*
-- **Horton (2023)** - "Large Language Models as Simulated Economic Agents"
-- **Krosnick (1991)** - Satisficing theory in survey responses
-- **Greenleaf (1992)** - Extreme response styles
+- **Horton (2023)** - "Large Language Models as Simulated Economic Agents" — *NBER Working Paper*
+- **Aher, Arriaga & Kalai (2023)** - "Using LLMs to Simulate Multiple Humans" — *ICML*
+- **Binz & Schulz (2023)** - "Using cognitive psychology to understand GPT-3" — *PNAS*
+- **Park et al. (2023)** - "Generative Agents: Interactive Simulacra of Human Behavior"
 
 See `docs/methods_summary.md` for complete methodology documentation.
 

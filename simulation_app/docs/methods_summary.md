@@ -115,25 +115,28 @@ The PDF provides:
 
 ## Research Foundations
 
-### Core Methodological Papers
+### Core LLM Simulation Research
 
-**LLM Simulation Methodology:**
+**Foundational Papers:**
 - Argyle, L. P., et al. (2023). Out of one, many: Using language models to simulate human samples. *Political Analysis*, 31(3), 337-351. — Demonstrates LLMs can replicate human response distributions across demographic subgroups.
 
 - Horton, J. J. (2023). Large language models as simulated economic agents: What can we learn from Homo Silicus? *NBER Working Paper*. — Shows LLMs exhibit human-like economic behaviors in experimental settings.
 
-**Validation Research:**
-- Manning, B. L., & Horton, J. J. (2025). Behavioral experiments with LLM-simulated participants. [arXiv:2301.07543](https://arxiv.org/abs/2301.07543)
+- Aher, G., Arriaga, R. I., & Kalai, A. T. (2023). Using large language models to simulate multiple humans and replicate human subject studies. *ICML*. — Validates LLM-based replication of classic behavioral experiments.
 
-- Santurkar, S., et al. (2023). Whose opinions do language models reflect? [arXiv:2303.17548](https://arxiv.org/abs/2303.17548)
+### High-Impact Validation Studies
 
-### Response Style Literature
+- **Park et al. (2023)** - "Generative Agents: Interactive Simulacra of Human Behavior" — Stanford/Google research demonstrating believable autonomous agent behavior in simulated environments.
 
-- **Krosnick, J. A. (1991)**. Response strategies for coping with the cognitive demands of attitude measures in surveys. *Applied Cognitive Psychology*, 5(3), 213-236.
+- **Binz, M. & Schulz, E. (2023)**. Using cognitive psychology to understand GPT-3. *PNAS*, 120(6). — Systematic comparison showing LLMs exhibit human-like cognitive patterns across reasoning tasks.
 
-- **Greenleaf, E. A. (1992)**. Measuring extreme response style. *Public Opinion Quarterly*, 56(3), 328-351.
+- **Dillion, D., et al. (2023)**. Can AI language models replace human participants? *Trends in Cognitive Sciences*. — Comprehensive review of when and how LLMs can substitute for human subjects.
 
-- **Paulhus, D. L. (1991)**. Measurement and control of response bias. In *Measures of Personality and Social Psychological Attitudes* (pp. 17-59).
+### Additional Resources
+
+- **Brand, J., et al. (2023)**. Using GPT for market research. *Harvard Business School Working Paper*. — Practical applications of LLM simulation in consumer research.
+
+- **Santurkar, S., et al. (2023)**. Whose opinions do language models reflect? [arXiv:2303.17548](https://arxiv.org/abs/2303.17548) — Analysis of LLM opinion distributions and demographic alignment.
 
 ---
 
