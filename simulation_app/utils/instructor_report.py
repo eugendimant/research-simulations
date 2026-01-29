@@ -68,48 +68,107 @@ class InstructorReportGenerator:
 
         lines.append(f"# Instructor Report: {metadata.get('study_title', 'Untitled Study')}")
         lines.append("")
-        lines.append(f"**Generated:** {metadata.get('generation_timestamp', datetime.now().isoformat())}")
-        lines.append(f"**Run ID:** {metadata.get('run_id', 'N/A')}")
-        lines.append(f"**Mode:** {metadata.get('simulation_mode', 'N/A')}")
+        lines.append("## Generation Information")
+        lines.append("")
+        lines.append(f"| Field | Value |")
+        lines.append(f"|-------|-------|")
+        lines.append(f"| **Generated** | {metadata.get('generation_timestamp', datetime.now().isoformat())} |")
+        lines.append(f"| **Run ID** | `{metadata.get('run_id', 'N/A')}` |")
+        lines.append(f"| **Mode** | {metadata.get('simulation_mode', 'pilot').title()} |")
+        lines.append(f"| **Tool Version** | {metadata.get('app_version', 'N/A')} |")
+        lines.append(f"| **Random Seed** | {metadata.get('random_seed', 'Auto')} |")
         lines.append("")
 
         if team_info:
-            lines.append("## Team")
+            lines.append("## Team Information")
             lines.append("")
-            for k, v in team_info.items():
-                if v is None:
-                    continue
-                lines.append(f"- **{k}**: {v}")
+            team_name = team_info.get("team_name", "")
+            team_members = team_info.get("team_members", "")
+            if team_name:
+                lines.append(f"- **Team Name:** {team_name}")
+            if team_members:
+                lines.append(f"- **Members:**")
+                for member in team_members.strip().split('\n'):
+                    if member.strip():
+                        lines.append(f"  - {member.strip()}")
+            lines.append("")
+
+        # SIMULATION SETTINGS TRANSPARENCY SECTION
+        lines.append("## Simulation Settings (Transparency)")
+        lines.append("")
+        lines.append("These settings were used to generate the simulated data:")
+        lines.append("")
+
+        # Demographics settings
+        demo = metadata.get("demographics", {})
+        lines.append("### Demographics Configuration")
+        lines.append("")
+        lines.append(f"| Setting | Value |")
+        lines.append(f"|---------|-------|")
+        lines.append(f"| Gender quota (% male) | {demo.get('gender_quota', 50)}% |")
+        lines.append(f"| Age mean | {demo.get('age_mean', 35)} |")
+        lines.append(f"| Age standard deviation | {demo.get('age_sd', 12)} |")
+        lines.append("")
+
+        # Response quality settings
+        lines.append("### Response Quality Settings")
+        lines.append("")
+        lines.append(f"| Setting | Value |")
+        lines.append(f"|---------|-------|")
+        lines.append(f"| Attention check pass rate | {metadata.get('attention_rate', 0.85):.0%} |")
+        lines.append(f"| Random responder rate | {metadata.get('random_responder_rate', 0.05):.0%} |")
+        lines.append("")
+
+        # Exclusion criteria
+        exclusion = metadata.get("exclusion_criteria", {})
+        if exclusion:
+            lines.append("### Exclusion Criteria")
+            lines.append("")
+            lines.append(f"| Criterion | Threshold |")
+            lines.append(f"|-----------|-----------|")
+            lines.append(f"| Min completion time | {exclusion.get('completion_time_min_seconds', 60)} seconds |")
+            lines.append(f"| Max completion time | {exclusion.get('completion_time_max_seconds', 1800)} seconds |")
+            lines.append(f"| Straight-line threshold | {exclusion.get('straight_line_threshold', 10)} items |")
+            lines.append(f"| Duplicate IP check | {'Yes' if exclusion.get('duplicate_ip_check', True) else 'No'} |")
             lines.append("")
 
         if prereg_text:
-            lines.append("## Preregistration notes (as provided)")
+            lines.append("## Preregistration Notes (as provided)")
             lines.append("")
             lines.append("```")
-            lines.append(prereg_text.strip())
+            lines.append(prereg_text.strip()[:2000])
+            if len(prereg_text) > 2000:
+                lines.append("... [truncated]")
             lines.append("```")
             lines.append("")
 
         if self.config.include_design_summary:
-            lines.append("## Design summary")
+            lines.append("## Experimental Design Summary")
             lines.append("")
-            lines.append(f"- Sample size (N): {metadata.get('sample_size', 'N/A')}")
+            lines.append(f"| Element | Details |")
+            lines.append(f"|---------|---------|")
+            lines.append(f"| **Sample Size (N)** | {metadata.get('sample_size', 'N/A')} |")
+
             conditions = metadata.get("conditions", []) or []
-            lines.append(f"- Conditions ({len(conditions)}): {', '.join(conditions) if conditions else 'N/A'}")
+            lines.append(f"| **Conditions** | {len(conditions)}: {', '.join(conditions) if conditions else 'N/A'} |")
 
             factors = metadata.get("factors", []) or []
             if factors:
-                lines.append("- Factors:")
-                for f in factors:
+                for i, f in enumerate(factors):
                     fname = f.get("name", "Factor")
                     levels = f.get("levels", [])
-                    lines.append(f"  - {fname}: {', '.join(levels)}")
+                    lines.append(f"| **Factor {i+1}** | {fname}: {', '.join(levels)} |")
             else:
-                lines.append("- Factors: (none provided; using CONDITION as the only factor)")
+                lines.append(f"| **Factors** | Single factor (Condition) |")
+
+            # Randomization level
+            design_review = metadata.get("design_review", {})
+            rand_level = design_review.get("randomization_level", "Participant-level")
+            lines.append(f"| **Randomization** | {rand_level} |")
 
             domains = metadata.get("detected_domains", []) or []
             if domains:
-                lines.append(f"- Detected topical domains: {', '.join(domains[:8])}")
+                lines.append(f"| **Detected Domains** | {', '.join(domains[:5])} |")
             lines.append("")
 
         if self.config.include_preview_stats:
@@ -154,17 +213,50 @@ class InstructorReportGenerator:
                     lines.append("")
 
         if self.config.include_persona_summary:
-            lines.append("## Persona summary (metadata)")
+            lines.append("## Persona Distribution (Simulated Response Styles)")
             lines.append("")
+            lines.append("Personas model different response patterns observed in survey research.")
+            lines.append("Each simulated participant was assigned a persona that influenced their response style.")
+            lines.append("")
+
             dist = metadata.get("persona_distribution", {}) or {}
             if dist:
-                dist_df = pd.DataFrame(
-                    [{"persona": k, "share": float(v)} for k, v in dist.items()]
-                ).sort_values("share", ascending=False)
-                lines.append(_safe_to_markdown(dist_df, index=False))
+                lines.append("### Persona Breakdown")
+                lines.append("")
+                lines.append("| Persona Type | Description | Share |")
+                lines.append("|--------------|-------------|-------|")
+
+                # Add descriptions for known personas
+                persona_descriptions = {
+                    "engaged": "Thoughtful, consistent responses with moderate variance",
+                    "satisficer": "Tends toward middle options, lower effort",
+                    "extreme": "Uses scale endpoints more frequently",
+                    "acquiescent": "Agreement bias, tends toward positive responses",
+                    "skeptic": "Disagreement bias, tends toward negative responses",
+                    "random": "Inconsistent, possibly inattentive responses",
+                    "careless": "Fast, pattern-based responses",
+                }
+
+                for persona, share in sorted(dist.items(), key=lambda x: -float(x[1])):
+                    desc = persona_descriptions.get(persona.lower(), "Standard response pattern")
+                    pct = float(share) * 100 if float(share) <= 1 else float(share)
+                    lines.append(f"| **{persona.title()}** | {desc} | {pct:.1f}% |")
+                lines.append("")
+
+                # Show total participants by persona
+                lines.append("### Persona Counts (N)")
+                lines.append("")
+                n_total = metadata.get("sample_size", len(df))
+                lines.append("| Persona | Count |")
+                lines.append("|---------|-------|")
+                for persona, share in sorted(dist.items(), key=lambda x: -float(x[1])):
+                    share_val = float(share) if float(share) <= 1 else float(share) / 100
+                    count = int(round(n_total * share_val))
+                    lines.append(f"| {persona.title()} | ~{count} |")
+                lines.append("")
             else:
-                lines.append("_No persona distribution in metadata._")
-            lines.append("")
+                lines.append("_Persona distribution data not available in metadata._")
+                lines.append("")
 
         if self.config.include_variables:
             lines.append("## Variables")

@@ -934,160 +934,220 @@ with st.sidebar:
     )
 
 
-tabs = st.tabs(["1) Quick setup", "2) Upload QSF", "3) Review", "4) Generate"])
+tabs = st.tabs(["1. Study Info", "2. Upload Files", "3. Design Setup", "4. Generate"])
+
+# Helper function for step completion
+def _get_step_completion() -> Dict[str, bool]:
+    """Get completion status for each step."""
+    preview = st.session_state.get("qsf_preview", None)
+    return {
+        "study_title": bool(st.session_state.get("study_title", "").strip()),
+        "study_description": bool(st.session_state.get("study_description", "").strip()),
+        "sample_size": int(st.session_state.get("sample_size", 0)) >= 10,
+        "qsf_uploaded": bool(preview and preview.success),
+        "conditions_set": bool(st.session_state.get("selected_conditions") or st.session_state.get("custom_conditions")),
+        "design_ready": bool(st.session_state.get("inferred_design")),
+    }
 
 
 # -----------------------------
-# Tab 1: Quick setup (minimal, aspredicted-like)
+# Tab 1: Study Info (required basics)
 # -----------------------------
 with tabs[0]:
-    colA, colB = st.columns([1, 1], gap="large")
+    st.subheader("Step 1: Study Information")
+    st.caption("Enter basic study details. Fields marked with * are required.")
 
-    with colA:
-        st.subheader("Team")
-        gm = _get_group_manager()
+    # Progress indicator for this tab
+    completion = _get_step_completion()
+    step1_done = completion["study_title"] and completion["study_description"] and completion["sample_size"]
 
-        team_name = st.text_input("Team name", value=st.session_state.get("team_name", ""))
-        members = st.text_area(
-            "Team members (one per line)",
-            value=st.session_state.get("team_members_raw", ""),
-            height=120,
-            help="Optional but recommended so the instructor can identify teams.",
+    if step1_done:
+        st.success("Step 1 complete! Proceed to **Upload Files** tab.")
+    else:
+        missing = []
+        if not completion["study_title"]:
+            missing.append("Study title")
+        if not completion["study_description"]:
+            missing.append("Study description")
+        if not completion["sample_size"]:
+            missing.append("Sample size")
+        st.warning(f"Required fields missing: {', '.join(missing)}")
+
+    st.markdown("---")
+
+    # Required section
+    st.markdown("### Required Information")
+
+    col1, col2 = st.columns([1, 1], gap="large")
+
+    with col1:
+        st.markdown("**Study Details** *")
+        study_title = st.text_input(
+            "Study title *",
+            value=st.session_state.get("study_title", ""),
+            placeholder="e.g., Effect of AI Labels on Consumer Trust",
         )
-        st.session_state["team_name"] = team_name
-        st.session_state["team_members_raw"] = members
-
-    with colB:
-        st.subheader("Study (aspredicted-style minimum)")
-        study_title = st.text_input("Study title", value=st.session_state.get("study_title", ""))
         study_description = st.text_area(
-            "One-paragraph study description",
+            "Study description (1-2 paragraphs) *",
             value=st.session_state.get("study_description", ""),
-            height=140,
-            help="Purpose, manipulation, main outcomes. The app uses this for domain detection and persona selection.",
+            height=150,
+            placeholder="Describe your study's purpose, manipulation, and main outcomes. This helps with domain detection and persona selection.",
         )
-
         sample_size = st.number_input(
-            "Pre-registered target sample size (N)",
+            "Target sample size (N) *",
             min_value=10,
             max_value=MAX_SIMULATED_N,
             value=int(st.session_state.get("sample_size", 200)),
             step=10,
-            help="Use the pre-registered N from your power calculation (capped for standardization).",
+            help=f"Your pre-registered sample size (max {MAX_SIMULATED_N} for standardization).",
         )
 
         st.session_state["study_title"] = study_title
         st.session_state["study_description"] = study_description
         st.session_state["sample_size"] = int(sample_size)
 
-    st.info(
-        "Next: Upload your Qualtrics QSF. The app will infer conditions, factors, and scales automatically."
-    )
+    with col2:
+        st.markdown("**Team Information** (optional)")
+        gm = _get_group_manager()
+        team_name = st.text_input(
+            "Team name",
+            value=st.session_state.get("team_name", ""),
+            placeholder="e.g., Team Alpha",
+        )
+        members = st.text_area(
+            "Team members (one per line)",
+            value=st.session_state.get("team_members_raw", ""),
+            height=100,
+            placeholder="John Doe\nJane Smith",
+            help="Optional but helps instructors identify teams.",
+        )
+        st.session_state["team_name"] = team_name
+        st.session_state["team_members_raw"] = members
+
+    # Next step button
+    st.markdown("---")
+    col_next1, col_next2, col_next3 = st.columns([1, 2, 1])
+    with col_next2:
+        if step1_done:
+            st.info("**Next:** Go to the **Upload Files** tab to upload your Qualtrics QSF file.")
+        else:
+            st.warning("Complete all required fields (*) above to proceed.")
 
 
 # -----------------------------
-# Tab 2: Upload QSF and optional prereg info
+# Tab 2: Upload Files (QSF required, others optional)
 # -----------------------------
 with tabs[1]:
-    st.subheader("Upload your Qualtrics QSF")
+    st.subheader("Step 2: Upload Files")
+
+    # Check completion status
+    completion = _get_step_completion()
+    step1_done = completion["study_title"] and completion["study_description"] and completion["sample_size"]
+    step2_done = completion["qsf_uploaded"]
+
+    if not step1_done:
+        st.error("Please complete **Step 1: Study Info** first before uploading files.")
+        st.stop()
+
+    if step2_done:
+        st.success("QSF uploaded and parsed successfully! Proceed to **Design Setup** tab.")
+    else:
+        st.warning("Upload your QSF file below to continue.")
+
+    st.markdown("---")
+
+    # REQUIRED SECTION
+    st.markdown("### Required: Qualtrics Survey File")
     parser = _get_qsf_preview_parser()
 
-    col_qsf, col_pdf = st.columns([1, 1])
+    col_qsf, col_help = st.columns([2, 1])
 
     with col_qsf:
-        st.markdown("**Required: QSF file**")
-        qsf_file = st.file_uploader("QSF file", type=["qsf", "zip", "json"])
-        st.caption("Export from Qualtrics: Survey → Tools → Import/Export → Export Survey")
+        qsf_file = st.file_uploader(
+            "Upload QSF file *",
+            type=["qsf", "zip", "json"],
+            help="Your Qualtrics survey export file",
+        )
 
-    with col_pdf:
-        st.markdown("**Optional: Survey PDF export**")
-        survey_pdf = st.file_uploader("Survey PDF (for better domain detection)", type=["pdf"])
-        with st.expander("Why upload the PDF? How to export it"):
-            st.markdown("""
-**Why it helps:**
-- Improves detection of question wording and context
-- Enables better domain inference for persona selection
-- Captures visual elements and formatting not in QSF
-
-**How to export from Qualtrics:**
-1. Open your survey in Qualtrics
-2. Go to **Tools** → **Import/Export** → **Print Survey**
-3. Select "Print to PDF" or save as PDF
-4. Upload the PDF here
-
-This is optional but recommended for better simulation quality.
+    with col_help:
+        st.markdown("**How to export from Qualtrics:**")
+        st.markdown("""
+1. Open your survey
+2. Go to **Tools** → **Import/Export**
+3. Select **Export Survey**
+4. Download the .qsf file
 """)
+
+    st.markdown("---")
+
+    # OPTIONAL SECTION - All optional files and prereg info
+    with st.expander("Optional: Additional Files & Preregistration Info", expanded=False):
+        st.caption("These are optional but can improve report quality and documentation.")
+
+        opt_col1, opt_col2 = st.columns(2)
+
+        with opt_col1:
+            st.markdown("**Survey PDF Export**")
+            survey_pdf = st.file_uploader("Survey PDF", type=["pdf"], key="survey_pdf_uploader")
+            st.caption("Helps with question wording detection.")
+
+            st.markdown("**AsPredicted PDF**")
+            prereg_pdf = st.file_uploader("Preregistration PDF", type=["pdf"], key="prereg_pdf_uploader")
+            st.caption("Optional preregistration document.")
+
+        with opt_col2:
+            st.markdown("**Study Design Notes** (for report labeling)")
+            prereg_outcomes = st.text_input(
+                "Primary outcome variable(s)",
+                value=st.session_state.get("prereg_outcomes", ""),
+                placeholder="e.g., Purchase intention",
+            )
+            prereg_iv = st.text_input(
+                "Independent variable(s)",
+                value=st.session_state.get("prereg_iv", ""),
+                placeholder="e.g., AI vs. Human label",
+            )
+            prereg_exclusions = st.text_input(
+                "Exclusion criteria",
+                value=st.session_state.get("prereg_exclusions", ""),
+                placeholder="e.g., Failed attention checks",
+            )
+            prereg_analysis = st.text_input(
+                "Planned analysis",
+                value=st.session_state.get("prereg_analysis", ""),
+                placeholder="e.g., t-test, ANOVA",
+            )
+
+        st.session_state["prereg_outcomes"] = prereg_outcomes
+        st.session_state["prereg_iv"] = prereg_iv
+        st.session_state["prereg_exclusions"] = prereg_exclusions
+        st.session_state["prereg_analysis"] = prereg_analysis
+
+        # Preregistration notes
+        prereg_text = st.text_area(
+            "Additional preregistration notes",
+            value=st.session_state.get("prereg_text_raw", ""),
+            height=100,
+            help="Hypotheses will be automatically removed.",
+        )
+        sanitized_text, removed_lines = _sanitize_prereg_text(prereg_text)
+        st.session_state["prereg_text_raw"] = prereg_text
+        st.session_state["prereg_text_sanitized"] = sanitized_text
+
+        if removed_lines:
+            st.caption(f"Note: {len(removed_lines)} hypothesis-like lines were filtered out.")
 
     # Process survey PDF if provided
     if survey_pdf is not None:
         survey_pdf_text = _extract_pdf_text(survey_pdf.read())
         if survey_pdf_text:
             st.session_state["survey_pdf_text"] = survey_pdf_text
-            st.success("Survey PDF uploaded successfully. Text extracted for domain detection.")
-        else:
-            st.info("Could not extract text from survey PDF.")
 
-    st.markdown("### Aspredicted-style checklist (used only for labeling, not for simulation logic)")
-    st.write(
-        "To avoid bias, **do not include hypotheses**. We only record design facts needed for comparability."
-    )
-
-    prereg_outcomes = st.text_area(
-        "Primary outcome variable(s)",
-        value=st.session_state.get("prereg_outcomes", ""),
-        height=80,
-        help="Example: Purchase intention (7-point scale).",
-    )
-    prereg_iv = st.text_area(
-        "Independent variable(s) / conditions",
-        value=st.session_state.get("prereg_iv", ""),
-        height=80,
-        help="Example: AI-generated ad vs. human-written ad.",
-    )
-    prereg_exclusions = st.text_area(
-        "Exclusion criteria",
-        value=st.session_state.get("prereg_exclusions", ""),
-        height=80,
-        help="Example: failed attention checks, unrealistically fast completion.",
-    )
-    prereg_analysis = st.text_area(
-        "Planned analysis (high-level)",
-        value=st.session_state.get("prereg_analysis", ""),
-        height=80,
-        help="Example: independent-samples t-test on the main DV.",
-    )
-
-    st.session_state["prereg_outcomes"] = prereg_outcomes
-    st.session_state["prereg_iv"] = prereg_iv
-    st.session_state["prereg_exclusions"] = prereg_exclusions
-    st.session_state["prereg_analysis"] = prereg_analysis
-
-    st.markdown("### Optional: paste preregistration notes (hypotheses will be removed)")
-    prereg_text = st.text_area(
-        "Preregistration notes (optional)",
-        value=st.session_state.get("prereg_text_raw", ""),
-        height=140,
-        help="If pasted, any lines that look like hypotheses or predictions are removed.",
-    )
-    sanitized_text, removed_lines = _sanitize_prereg_text(prereg_text)
-    st.session_state["prereg_text_raw"] = prereg_text
-    st.session_state["prereg_text_sanitized"] = sanitized_text
-
-    if prereg_text and removed_lines:
-        with st.expander("Removed hypothesis-like lines (not used)"):
-            for line in removed_lines:
-                st.write(f"- {line}")
-
-    prereg_pdf = st.file_uploader("Optional: upload aspredicted PDF", type=["pdf"])
+    # Process prereg PDF if provided
     if prereg_pdf is not None:
         pdf_text = _extract_pdf_text(prereg_pdf.read())
-        st.session_state["prereg_pdf_text"] = pdf_text
         if pdf_text:
-            st.caption("Extracted text (read-only). Hypotheses are ignored by the app.")
-            with st.expander("Extracted preregistration text"):
-                st.text(pdf_text[:4000] + ("..." if len(pdf_text) > 4000 else ""))
-        else:
-            st.info("Could not extract text from the PDF. You can still use the checklist above.")
+            st.session_state["prereg_pdf_text"] = pdf_text
 
     if qsf_file is not None:
         try:
@@ -1204,7 +1264,9 @@ This is optional but recommended for better simulation quality.
                     if w.get("fix_suggestion"):
                         st.caption(f"Suggested fix: {w['fix_suggestion']}")
 
-        st.caption("Next: Review the auto-detected design and run your simulation.")
+        # Navigation to next step
+        st.markdown("---")
+        st.success("**QSF parsed successfully!** Proceed to the **Design Setup** tab to configure your experimental conditions.")
 
 
 # -----------------------------

@@ -94,26 +94,54 @@ def parse_qsf_file(file_content: bytes) -> Dict[str, Any]:
 
 
 def _parse_blocks(element: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """Parse block elements from QSF."""
+    """Parse block elements from QSF.
+
+    Handles both QSF formats:
+    - Dict format: {"BL_123": {"Description": "Block 1", ...}}
+    - List format: [{"ID": "BL_123", "Description": "Block 1", ...}]
+    """
     blocks = []
     payload = element.get('Payload', {})
 
-    for block_id, block_data in payload.items():
-        if isinstance(block_data, dict):
-            block_info = {
-                'id': block_id,
-                'description': block_data.get('Description', 'Unnamed Block'),
-                'type': block_data.get('Type', 'Standard'),
-                'elements': []
-            }
+    # Handle list format (newer QSF exports)
+    if isinstance(payload, list):
+        for block_data in payload:
+            if isinstance(block_data, dict):
+                block_id = block_data.get('ID', '')
+                if not block_id:
+                    continue
+                block_info = {
+                    'id': block_id,
+                    'description': block_data.get('Description', 'Unnamed Block'),
+                    'type': block_data.get('Type', 'Standard'),
+                    'elements': []
+                }
 
-            # Extract block elements (question references)
-            block_elements = block_data.get('BlockElements', [])
-            for elem in block_elements:
-                if elem.get('Type') == 'Question':
-                    block_info['elements'].append(elem.get('QuestionID', ''))
+                # Extract block elements (question references)
+                block_elements = block_data.get('BlockElements', [])
+                for elem in block_elements:
+                    if elem.get('Type') == 'Question':
+                        block_info['elements'].append(elem.get('QuestionID', ''))
 
-            blocks.append(block_info)
+                blocks.append(block_info)
+    # Handle dict format (older QSF exports)
+    elif isinstance(payload, dict):
+        for block_id, block_data in payload.items():
+            if isinstance(block_data, dict):
+                block_info = {
+                    'id': block_id,
+                    'description': block_data.get('Description', 'Unnamed Block'),
+                    'type': block_data.get('Type', 'Standard'),
+                    'elements': []
+                }
+
+                # Extract block elements (question references)
+                block_elements = block_data.get('BlockElements', [])
+                for elem in block_elements:
+                    if elem.get('Type') == 'Question':
+                        block_info['elements'].append(elem.get('QuestionID', ''))
+
+                blocks.append(block_info)
 
     return blocks
 
