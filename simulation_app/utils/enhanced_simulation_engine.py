@@ -111,7 +111,8 @@ class EnhancedSimulationEngine:
         self.sample_size = int(sample_size)
         self.conditions = [str(c).strip() for c in (conditions or []) if str(c).strip()]
         self.factors = factors or []
-        self.scales = scales or []
+        # Normalize scales to ensure they're all dicts
+        self.scales = self._normalize_scales(scales or [])
         self.additional_vars = additional_vars or []
         self.demographics = demographics or {}
         self.attention_rate = float(attention_rate)
@@ -171,6 +172,76 @@ class EnhancedSimulationEngine:
 
         self.column_info: List[Tuple[str, str]] = []
         self.validation_log: List[str] = []
+
+    def _normalize_scales(self, scales: List[Any]) -> List[Dict[str, Any]]:
+        """Normalize scales to ensure they're all properly formatted dicts.
+
+        Handles edge cases where scales might be strings, have missing keys,
+        or have incorrect types from DataFrame conversions (including NaN).
+        """
+        def safe_int(val, default: int) -> int:
+            """Convert value to int, handling NaN and other edge cases."""
+            if val is None:
+                return default
+            if isinstance(val, float) and np.isnan(val):
+                return default
+            try:
+                return int(val)
+            except (ValueError, TypeError):
+                return default
+
+        def safe_str(val, default: str) -> str:
+            """Convert value to string, handling NaN and None."""
+            if val is None:
+                return default
+            if isinstance(val, float) and np.isnan(val):
+                return default
+            result = str(val).strip()
+            return result if result else default
+
+        normalized = []
+        for scale in scales:
+            if isinstance(scale, str):
+                # Scale is just a name string
+                name = scale.strip() or "Scale"
+                normalized.append({
+                    "name": name,
+                    "variable_name": name.replace(" ", "_"),
+                    "num_items": 5,
+                    "scale_points": 7,
+                    "reverse_items": [],
+                })
+            elif isinstance(scale, dict):
+                # Ensure all required keys exist with correct types
+                name = safe_str(scale.get("name"), "Scale")
+                normalized.append({
+                    "name": name,
+                    "variable_name": safe_str(scale.get("variable_name"), name.replace(" ", "_")),
+                    "num_items": safe_int(scale.get("num_items"), 5),
+                    "scale_points": safe_int(scale.get("scale_points"), 7),
+                    "reverse_items": list(scale.get("reverse_items") or []),
+                })
+            else:
+                # Unknown type, create default
+                normalized.append({
+                    "name": "Scale",
+                    "variable_name": "Scale",
+                    "num_items": 5,
+                    "scale_points": 7,
+                    "reverse_items": [],
+                })
+
+        # Ensure at least one scale
+        if not normalized:
+            normalized.append({
+                "name": "Main_DV",
+                "variable_name": "Main_DV",
+                "num_items": 5,
+                "scale_points": 7,
+                "reverse_items": [],
+            })
+
+        return normalized
 
     def _assign_persona(self, participant_id: int) -> Tuple[str, Persona]:
         persona_names = list(self.available_personas.keys())
