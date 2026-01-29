@@ -45,6 +45,19 @@ from utils.enhanced_simulation_engine import (
     EffectSizeSpec,
     ExclusionCriteria,
 )
+from utils.condition_identifier import (
+    EnhancedConditionIdentifier,
+    DesignAnalysisResult,
+    IdentifiedVariable,
+    VariableRole,
+    RandomizationLevel,
+    analyze_qsf_design,
+)
+from utils.text_generator import (
+    OpenEndedTextGenerator,
+    PersonaTextTraits,
+    create_text_generator,
+)
 
 
 # -----------------------------
@@ -243,6 +256,196 @@ def _extract_pdf_text(uploaded_bytes: bytes) -> str:
         return "\n".join(pages_text).strip()
     except Exception:
         return ""
+
+
+def _build_variable_review_rows(
+    inferred: Dict[str, Any],
+    prereg_outcomes: str,
+    prereg_iv: str,
+    design_analysis: Optional[DesignAnalysisResult] = None,
+) -> List[Dict[str, Any]]:
+    """
+    Build variable review rows from inferred design and preregistration info.
+
+    This creates a comprehensive list of variables for user review and correction.
+    Each row includes:
+    - Variable: The Qualtrics variable name
+    - Display Name: Human-readable name
+    - Role: The assigned role (editable)
+    - Source: Where the variable was detected
+    - Confidence: How confident the system is in the role assignment
+    """
+    rows: List[Dict[str, Any]] = []
+    seen_vars: set = set()
+
+    # If we have enhanced design analysis, use it
+    if design_analysis and design_analysis.variables:
+        for var in design_analysis.variables:
+            if var.variable_id in seen_vars:
+                continue
+            seen_vars.add(var.variable_id)
+
+            # Map VariableRole enum to display string
+            role_map = {
+                VariableRole.CONDITION: "Condition",
+                VariableRole.INDEPENDENT_VARIABLE: "Independent variable",
+                VariableRole.PRIMARY_OUTCOME: "Primary outcome",
+                VariableRole.SECONDARY_OUTCOME: "Secondary outcome",
+                VariableRole.MEDIATOR: "Secondary outcome",  # Map to available option
+                VariableRole.MODERATOR: "Secondary outcome",
+                VariableRole.COVARIATE: "Other",
+                VariableRole.DEMOGRAPHICS: "Other",
+                VariableRole.ATTENTION_CHECK: "Other",
+                VariableRole.MANIPULATION_CHECK: "Other",
+                VariableRole.OPEN_ENDED: "Open-ended",
+                VariableRole.FILLER: "Other",
+                VariableRole.OTHER: "Other",
+            }
+
+            rows.append({
+                "Variable": var.variable_id,
+                "Display Name": var.display_name,
+                "Role": role_map.get(var.role, "Other"),
+                "Source": var.source,
+                "Question Text": var.question_text[:80] + "..." if len(var.question_text) > 80 else var.question_text,
+            })
+        return rows
+
+    # Fallback: Build from inferred design
+    # Add conditions
+    for cond in inferred.get("conditions", []):
+        if cond and cond not in seen_vars:
+            seen_vars.add(cond)
+            rows.append({
+                "Variable": cond,
+                "Display Name": cond,
+                "Role": "Condition",
+                "Source": "QSF/Preregistration",
+                "Question Text": "",
+            })
+
+    # Add scales
+    for scale in inferred.get("scales", []):
+        name = scale.get("name", "")
+        if name and name not in seen_vars:
+            seen_vars.add(name)
+            # Check if this matches preregistration outcomes
+            role = "Other"
+            if prereg_outcomes:
+                name_lower = name.lower()
+                outcomes_lower = prereg_outcomes.lower()
+                if name_lower in outcomes_lower or any(
+                    word in outcomes_lower for word in name_lower.split() if len(word) > 3
+                ):
+                    role = "Primary outcome"
+
+            rows.append({
+                "Variable": name,
+                "Display Name": name.replace("_", " ").title(),
+                "Role": role,
+                "Source": "QSF Scale Detection",
+                "Question Text": f"{scale.get('num_items', 0)} items, {scale.get('scale_points', 7)}-point scale",
+            })
+
+    # Add open-ended questions
+    for q in inferred.get("open_ended_questions", []):
+        if q and q not in seen_vars:
+            seen_vars.add(q)
+            rows.append({
+                "Variable": q,
+                "Display Name": q.replace("_", " ").title(),
+                "Role": "Open-ended",
+                "Source": "QSF Question Type",
+                "Question Text": "",
+            })
+
+    # If no rows, add a placeholder
+    if not rows:
+        rows.append({
+            "Variable": "Main_DV",
+            "Display Name": "Main DV",
+            "Role": "Primary outcome",
+            "Source": "Default",
+            "Question Text": "",
+        })
+
+    return rows
+
+
+def _perform_enhanced_analysis(
+    qsf_content: bytes,
+    prereg_outcomes: str = "",
+    prereg_iv: str = "",
+    prereg_text: str = "",
+    prereg_pdf_text: str = "",
+) -> Optional[DesignAnalysisResult]:
+    """
+    Perform enhanced design analysis using the condition identifier.
+
+    This provides deep analysis of:
+    - Randomization structure
+    - Condition identification
+    - Variable role classification
+    - Scale detection
+    """
+    try:
+        return analyze_qsf_design(
+            qsf_content=qsf_content,
+            prereg_outcomes=prereg_outcomes,
+            prereg_iv=prereg_iv,
+            prereg_text=prereg_text,
+            prereg_pdf_text=prereg_pdf_text,
+        )
+    except Exception as e:
+        # Log error but don't crash
+        return None
+
+
+def _design_analysis_to_inferred(
+    analysis: DesignAnalysisResult,
+    fallback: Dict[str, Any],
+) -> Dict[str, Any]:
+    """
+    Convert DesignAnalysisResult to the inferred design format.
+    """
+    if not analysis:
+        return fallback
+
+    # Extract conditions
+    conditions = [c.name for c in analysis.conditions] if analysis.conditions else fallback.get("conditions", [])
+    if not conditions:
+        conditions = ["Condition A"]
+
+    # Extract factors
+    factors = [
+        {"name": f.name, "levels": f.levels}
+        for f in analysis.factors
+    ] if analysis.factors else fallback.get("factors", [])
+
+    # Extract scales
+    scales = [
+        {
+            "name": s.name,
+            "variable_name": s.variable_name,
+            "num_items": s.num_items,
+            "scale_points": s.scale_points,
+            "reverse_items": s.reverse_items,
+        }
+        for s in analysis.scales
+    ] if analysis.scales else fallback.get("scales", [])
+
+    # Extract open-ended questions
+    open_ended = analysis.open_ended_questions if analysis.open_ended_questions else fallback.get("open_ended_questions", [])
+
+    return {
+        "conditions": conditions,
+        "factors": factors,
+        "scales": scales,
+        "open_ended_questions": open_ended,
+        "attention_checks": analysis.attention_checks if analysis else [],
+        "manipulation_checks": analysis.manipulation_checks if analysis else [],
+        "randomization_level": analysis.randomization.level.value if analysis and analysis.randomization else "Participant-level",
+    }
 
 
 def _send_email_with_sendgrid(
@@ -681,12 +884,34 @@ This is optional but recommended for better simulation quality.
             payload, payload_name = _extract_qsf_payload(content)
             preview = parser.parse(payload)
             st.session_state["qsf_preview"] = preview
+            st.session_state["qsf_raw_content"] = payload  # Store for enhanced analysis
+
             if preview.success:
                 st.success(f"QSF parsed successfully ({payload_name}).")
+
+                # Perform enhanced design analysis
+                with st.spinner("Analyzing experimental design..."):
+                    enhanced_analysis = _perform_enhanced_analysis(
+                        qsf_content=payload,
+                        prereg_outcomes=st.session_state.get("prereg_outcomes", ""),
+                        prereg_iv=st.session_state.get("prereg_iv", ""),
+                        prereg_text=st.session_state.get("prereg_text_sanitized", ""),
+                        prereg_pdf_text=st.session_state.get("prereg_pdf_text", ""),
+                    )
+                    if enhanced_analysis:
+                        st.session_state["enhanced_analysis"] = enhanced_analysis
+                        if enhanced_analysis.warnings:
+                            for warn in enhanced_analysis.warnings[:3]:
+                                st.warning(warn)
+                        if enhanced_analysis.suggestions:
+                            with st.expander("Analysis suggestions"):
+                                for sug in enhanced_analysis.suggestions:
+                                    st.info(sug)
             else:
                 st.error("QSF parsed but validation failed. See warnings below.")
         except Exception as e:
             st.session_state["qsf_preview"] = None
+            st.session_state["enhanced_analysis"] = None
             st.error(f"QSF parsing failed: {e}")
 
     preview: Optional[QSFPreviewResult] = st.session_state.get("qsf_preview", None)
@@ -736,86 +961,260 @@ This is optional but recommended for better simulation quality.
 
 
 # -----------------------------
-# Tab 3: Review (simple confirmation; advanced editing optional)
+# Tab 3: Review (enhanced variable editing and design confirmation)
 # -----------------------------
 with tabs[2]:
     preview: Optional[QSFPreviewResult] = st.session_state.get("qsf_preview", None)
+    enhanced_analysis: Optional[DesignAnalysisResult] = st.session_state.get("enhanced_analysis", None)
 
     if not preview:
         st.info("Upload a QSF first to populate the review summary.")
     else:
-        inferred = _preview_to_engine_inputs(preview)
+        # Use enhanced analysis if available, otherwise fall back to basic inference
+        basic_inferred = _preview_to_engine_inputs(preview)
+        if enhanced_analysis:
+            inferred = _design_analysis_to_inferred(enhanced_analysis, basic_inferred)
+        else:
+            inferred = basic_inferred
         st.session_state["inferred_design"] = inferred
 
-        st.subheader("Review summary")
-        st.caption("Confirm the auto-detected design before running the simulation.")
+        st.subheader("Review & Edit Detected Design")
+        st.caption("Review the auto-detected design elements. **Edit any misidentified items** before running the simulation.")
 
-        summary_cols = st.columns(4)
+        # Summary metrics row
+        summary_cols = st.columns(5)
         summary_cols[0].metric("Conditions", len(inferred["conditions"]))
         summary_cols[1].metric("Factors", len(inferred["factors"]))
         summary_cols[2].metric("Scales", len(inferred["scales"]))
-        summary_cols[3].metric("Open-ended Qs", len(inferred.get("open_ended_questions", [])))
+        summary_cols[3].metric("Open-ended", len(inferred.get("open_ended_questions", [])))
+
+        # Show randomization level if detected
+        rand_level = inferred.get("randomization_level", "Participant-level")
+        summary_cols[4].metric("Randomization", rand_level.split("-")[0] if "-" in rand_level else rand_level)
+
+        # Show detection confidence if available
+        if enhanced_analysis and enhanced_analysis.conditions:
+            avg_confidence = sum(c.confidence for c in enhanced_analysis.conditions) / len(enhanced_analysis.conditions)
+            if avg_confidence < 0.5:
+                st.warning(
+                    "Low detection confidence. Please review and correct the conditions below. "
+                    "The system may have misidentified some elements."
+                )
+            elif avg_confidence < 0.7:
+                st.info(
+                    "Moderate detection confidence. Please verify the detected design is correct."
+                )
 
         st.divider()
+
+        # Two-column layout for conditions and factors
         col1, col2 = st.columns([1.1, 0.9], gap="large")
 
         with col1:
-            st.markdown("**Conditions**")
-            if inferred["conditions"]:
-                condition_sources = st.session_state.get("condition_sources") or []
-                if condition_sources:
-                    st.dataframe(
-                        pd.DataFrame(condition_sources),
-                        hide_index=True,
-                        use_container_width=True,
-                    )
-                else:
-                    st.dataframe(
-                        pd.DataFrame({"Condition": inferred["conditions"]}),
-                        hide_index=True,
-                        use_container_width=True,
-                    )
-            else:
-                st.info("No conditions detected. Advanced mode can be used to define them manually.")
+            st.markdown("### Conditions")
+            st.caption("Edit conditions directly in the table. Use the dropdown to change roles.")
 
-            st.markdown("**Scales (inferred)**")
-            if inferred["scales"]:
-                st.dataframe(
-                    pd.DataFrame(inferred["scales"]),
-                    hide_index=True,
+            # Build conditions table with editable roles
+            condition_rows = []
+            condition_sources = st.session_state.get("condition_sources") or []
+
+            if enhanced_analysis and enhanced_analysis.conditions:
+                for cond in enhanced_analysis.conditions:
+                    condition_rows.append({
+                        "Condition": cond.name,
+                        "Factor": cond.factor,
+                        "Source": cond.source,
+                        "Confidence": f"{cond.confidence:.0%}",
+                    })
+            elif condition_sources:
+                for cs in condition_sources:
+                    condition_rows.append({
+                        "Condition": cs.get("Condition", ""),
+                        "Factor": "Treatment",
+                        "Source": cs.get("Source", "Unknown"),
+                        "Confidence": "N/A",
+                    })
+            elif inferred["conditions"]:
+                for cond in inferred["conditions"]:
+                    condition_rows.append({
+                        "Condition": cond,
+                        "Factor": "Treatment",
+                        "Source": "Detected",
+                        "Confidence": "N/A",
+                    })
+
+            if condition_rows:
+                edited_conditions = st.data_editor(
+                    pd.DataFrame(condition_rows),
+                    num_rows="dynamic",
                     use_container_width=True,
+                    column_config={
+                        "Condition": st.column_config.TextColumn("Condition Name", help="Edit the condition name"),
+                        "Factor": st.column_config.TextColumn("Factor", help="Which factor this belongs to"),
+                        "Source": st.column_config.TextColumn("Source", disabled=True),
+                        "Confidence": st.column_config.TextColumn("Confidence", disabled=True),
+                    },
+                    key="conditions_editor",
                 )
+                st.session_state["edited_conditions"] = edited_conditions.to_dict(orient="records")
             else:
-                st.info("No scales detected. Advanced mode can be used to add them manually.")
+                st.info("No conditions detected. Add conditions manually below.")
+                st.session_state["edited_conditions"] = []
+
+            st.markdown("### Scales (Dependent Variables)")
+            st.caption("Scales are groups of related Likert-type items. Edit names or add/remove items.")
+
+            # Build scales table with variable names
+            scale_rows = []
+            if enhanced_analysis and enhanced_analysis.scales:
+                for scale in enhanced_analysis.scales:
+                    scale_rows.append({
+                        "Scale Name": scale.name,
+                        "Qualtrics Variable": scale.variable_name,
+                        "Items": scale.num_items,
+                        "Points": scale.scale_points,
+                        "Role": "Primary outcome" if scale.role == VariableRole.PRIMARY_OUTCOME else "Secondary outcome",
+                    })
+            elif inferred["scales"]:
+                for scale in inferred["scales"]:
+                    scale_rows.append({
+                        "Scale Name": scale.get("name", ""),
+                        "Qualtrics Variable": scale.get("variable_name", scale.get("name", "")),
+                        "Items": scale.get("num_items", 5),
+                        "Points": scale.get("scale_points", 7),
+                        "Role": "Primary outcome",
+                    })
+
+            if scale_rows:
+                edited_scales_df = st.data_editor(
+                    pd.DataFrame(scale_rows),
+                    num_rows="dynamic",
+                    use_container_width=True,
+                    column_config={
+                        "Scale Name": st.column_config.TextColumn("Display Name", help="Human-readable scale name"),
+                        "Qualtrics Variable": st.column_config.TextColumn("Variable Name", help="Qualtrics variable prefix"),
+                        "Items": st.column_config.NumberColumn("# Items", min_value=1, max_value=50),
+                        "Points": st.column_config.NumberColumn("Scale Points", min_value=2, max_value=11),
+                        "Role": st.column_config.SelectboxColumn(
+                            "Role",
+                            options=["Primary outcome", "Secondary outcome", "Mediator", "Moderator", "Other"],
+                            help="Variable role in your study"
+                        ),
+                    },
+                    key="scales_editor",
+                )
+                st.session_state["edited_scales"] = edited_scales_df.to_dict(orient="records")
+            else:
+                st.info("No scales detected. Add scales manually using the + button.")
+                st.session_state["edited_scales"] = []
 
         with col2:
-            st.markdown("**Factors (inferred)**")
-            if inferred["factors"]:
-                st.dataframe(
-                    pd.DataFrame(inferred["factors"]),
-                    hide_index=True,
-                    use_container_width=True,
-                )
-            else:
-                st.info("No factors inferred yet. Conditions will be treated as a single factor.")
+            st.markdown("### Factors (Independent Variables)")
+            st.caption("Factors define your experimental design structure.")
 
-            st.markdown("**Why these were inferred**")
+            # Build factors table
+            factor_rows = []
+            if enhanced_analysis and enhanced_analysis.factors:
+                for factor in enhanced_analysis.factors:
+                    factor_rows.append({
+                        "Factor": factor.name,
+                        "Levels": ", ".join(factor.levels),
+                        "Type": "Between-subjects" if factor.is_between_subjects else "Within-subjects",
+                        "Confidence": f"{factor.confidence:.0%}",
+                    })
+            elif inferred["factors"]:
+                for factor in inferred["factors"]:
+                    factor_rows.append({
+                        "Factor": factor.get("name", "Condition"),
+                        "Levels": ", ".join(factor.get("levels", [])),
+                        "Type": "Between-subjects",
+                        "Confidence": "N/A",
+                    })
+
+            if factor_rows:
+                edited_factors = st.data_editor(
+                    pd.DataFrame(factor_rows),
+                    num_rows="dynamic",
+                    use_container_width=True,
+                    column_config={
+                        "Factor": st.column_config.TextColumn("Factor Name"),
+                        "Levels": st.column_config.TextColumn("Levels (comma-separated)"),
+                        "Type": st.column_config.SelectboxColumn(
+                            "Design Type",
+                            options=["Between-subjects", "Within-subjects", "Mixed"],
+                        ),
+                        "Confidence": st.column_config.TextColumn("Confidence", disabled=True),
+                    },
+                    key="factors_editor",
+                )
+                st.session_state["edited_factors"] = edited_factors.to_dict(orient="records")
+            else:
+                st.info("No factors detected. Conditions will be treated as a single factor.")
+
+            st.markdown("### Randomization")
+            st.caption("How participants are assigned to conditions.")
+
+            rand_options = [
+                "Participant-level",
+                "Group/Cluster-level",
+                "Within-subject (repeated measures)",
+                "Multiple stages",
+                "Not randomized / observational",
+            ]
+            detected_rand = inferred.get("randomization_level", "Participant-level")
+            default_idx = 0
+            for i, opt in enumerate(rand_options):
+                if detected_rand.lower().startswith(opt.split("-")[0].lower()) or detected_rand.lower().startswith(opt.split("/")[0].lower()):
+                    default_idx = i
+                    break
+
+            randomization_level = st.selectbox(
+                "Randomization level",
+                rand_options,
+                index=default_idx,
+                help="Where does randomization occur in your study?",
+                key="randomization_selector",
+            )
+            st.session_state["randomization_level"] = randomization_level
+
+            # Show attention and manipulation checks if detected
+            if enhanced_analysis:
+                if enhanced_analysis.attention_checks:
+                    with st.expander(f"Attention Checks ({len(enhanced_analysis.attention_checks)} detected)"):
+                        for ac in enhanced_analysis.attention_checks:
+                            st.text(f"- {ac}")
+
+                if enhanced_analysis.manipulation_checks:
+                    with st.expander(f"Manipulation Checks ({len(enhanced_analysis.manipulation_checks)} detected)"):
+                        for mc in enhanced_analysis.manipulation_checks:
+                            st.text(f"- {mc}")
+
+            st.markdown("### Detection Info")
             st.markdown(
-                "- **Conditions** come from the Qualtrics survey flow and preregistration text (if provided).\n"
-                "- **Factors** are inferred from condition naming patterns (e.g., `A x B`).\n"
-                "- **Scales** are inferred from question blocks that look like Likert items.\n"
-                "\nIf anything looks off, enable **Advanced mode** in the sidebar to edit."
+                "**How detection works:**\n"
+                "- **Conditions** are identified from Qualtrics randomizer blocks and preregistration text\n"
+                "- **Factors** are inferred from condition naming patterns (e.g., `A x B`)\n"
+                "- **Scales** are detected from matrix questions and numbered item patterns\n"
+                "- **Randomization** is determined from the survey flow structure\n\n"
+                "If anything is incorrect, edit it directly in the tables above."
             )
 
-        if st.session_state.get("advanced_mode", False):
-            st.divider()
-            st.subheader("Advanced: edit design")
-            st.caption("Changes here override the auto-detected design for the simulation.")
+        st.divider()
+
+        # Variable Review Section - Shows ALL variables with ability to reassign roles
+        st.subheader("All Survey Variables")
+        st.caption(
+            "Review all detected variables and their assigned roles. "
+            "Use the **Role** dropdown to correct any misidentified variables. "
+            "The **Variable** column shows the exact Qualtrics variable name."
+        )
 
         prereg_outcomes = st.session_state.get("prereg_outcomes", "")
         prereg_iv = st.session_state.get("prereg_iv", "")
-        default_rows = _build_variable_review_rows(inferred, prereg_outcomes, prereg_iv)
-        current_rows = st.session_state.get("variable_review_rows", default_rows)
+        default_rows = _build_variable_review_rows(inferred, prereg_outcomes, prereg_iv, enhanced_analysis)
+        current_rows = st.session_state.get("variable_review_rows")
+
+        # Reset to defaults if empty or user requests
         if not current_rows:
             current_rows = default_rows
 
@@ -824,6 +1223,15 @@ with tabs[2]:
             num_rows="dynamic",
             use_container_width=True,
             column_config={
+                "Variable": st.column_config.TextColumn(
+                    "Qualtrics Variable",
+                    help="The exact variable name from Qualtrics",
+                    disabled=False,
+                ),
+                "Display Name": st.column_config.TextColumn(
+                    "Display Name",
+                    help="Human-readable name",
+                ),
                 "Role": st.column_config.SelectboxColumn(
                     "Role",
                     options=[
@@ -831,17 +1239,53 @@ with tabs[2]:
                         "Independent variable",
                         "Primary outcome",
                         "Secondary outcome",
+                        "Mediator",
+                        "Moderator",
+                        "Covariate",
+                        "Demographics",
+                        "Attention check",
+                        "Manipulation check",
                         "Open-ended",
+                        "Filler",
                         "Other",
                     ],
-                )
+                    help="Select the role this variable plays in your study",
+                    required=True,
+                ),
+                "Source": st.column_config.TextColumn(
+                    "Detection Source",
+                    help="How this variable was detected",
+                    disabled=True,
+                ),
+                "Question Text": st.column_config.TextColumn(
+                    "Question Text",
+                    help="Preview of the question text",
+                    disabled=True,
+                ),
             },
+            key="variable_review_editor",
+            height=400,
         )
         st.session_state["variable_review_rows"] = variable_df.to_dict(orient="records")
 
+        # Buttons for variable table actions
+        col_btn1, col_btn2, col_btn3 = st.columns(3)
+        with col_btn1:
+            if st.button("Reset to Detected", help="Reset variable assignments to auto-detected values"):
+                st.session_state["variable_review_rows"] = default_rows
+                st.rerun()
+        with col_btn2:
+            if st.button("Mark All Unknown as Other"):
+                rows = st.session_state.get("variable_review_rows", [])
+                for row in rows:
+                    if row.get("Role") == "Other" or not row.get("Role"):
+                        row["Role"] = "Other"
+                st.session_state["variable_review_rows"] = rows
+                st.rerun()
+
         st.divider()
-        st.subheader("Design overrides")
-        st.caption("Update the key pieces of the design before simulation if the auto-detection missed anything.")
+        st.subheader("Design Overrides (Advanced)")
+        st.caption("Manually override the design if the auto-detection missed anything.")
 
         cond_text = st.text_area(
             "Treatment conditions (one per line)",
