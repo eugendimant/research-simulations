@@ -211,6 +211,66 @@ def _send_email_with_sendgrid(
         return False, f"SendGrid send failed: {e}"
 
 
+def _parse_list_field(text: str) -> List[str]:
+    if not text:
+        return []
+    raw = [part.strip() for part in text.replace(";", "\n").replace(",", "\n").splitlines()]
+    return [item for item in raw if item]
+
+
+def _build_variable_review_rows(
+    inferred: Dict[str, Any],
+    prereg_outcomes: str,
+    prereg_iv: str,
+) -> List[Dict[str, str]]:
+    rows: List[Dict[str, str]] = []
+    seen: set[str] = set()
+
+    def add_rows(items: List[str], role: str) -> None:
+        for item in items:
+            if item and item not in seen:
+                rows.append({"Variable": item, "Role": role, "Notes": ""})
+                seen.add(item)
+
+    add_rows(inferred.get("conditions", []), "Condition")
+    add_rows([f.get("name", "") for f in inferred.get("factors", [])], "Independent variable")
+    add_rows([s.get("name", "") for s in inferred.get("scales", [])], "Primary outcome")
+    add_rows(inferred.get("open_ended_questions", []), "Open-ended")
+    add_rows(_parse_list_field(prereg_outcomes), "Primary outcome")
+    add_rows(_parse_list_field(prereg_iv), "Independent variable")
+
+    return rows
+
+
+def _render_email_setup_diagnostics() -> None:
+    api_key = st.secrets.get("SENDGRID_API_KEY", "")
+    from_email = st.secrets.get("SENDGRID_FROM_EMAIL", "")
+    from_name = st.secrets.get("SENDGRID_FROM_NAME", "")
+    instructor_email = st.secrets.get("INSTRUCTOR_NOTIFICATION_EMAIL", "")
+
+    with st.expander("Email setup diagnostics"):
+        st.markdown("**SendGrid configuration**")
+        st.markdown(
+            "\n".join(
+                [
+                    f"- API key: {'✅ configured' if api_key else '❌ missing'}",
+                    f"- From email: {'✅ configured' if from_email else '❌ missing'}",
+                    f"- From name: {'✅ configured' if from_name else 'ℹ️ optional'}",
+                    f"- Instructor notification email: {'✅ configured' if instructor_email else 'ℹ️ optional'}",
+                ]
+            )
+        )
+        if api_key and not from_email:
+            st.error(
+                "SendGrid API key is set, but the sender email is missing. "
+                "Add SENDGRID_FROM_EMAIL in Streamlit secrets using a verified sender address."
+            )
+        elif not api_key:
+            st.error("SendGrid API key is missing. Add SENDGRID_API_KEY in Streamlit secrets.")
+        else:
+            st.success("SendGrid basics look configured.")
+
+
 def _infer_factors_from_conditions(conditions: List[str]) -> List[Dict[str, Any]]:
     """
     Heuristic inference:
@@ -386,15 +446,13 @@ with st.sidebar:
     st.session_state["advanced_mode"] = advanced_mode
 
     st.divider()
-    st.subheader("Standardization (Simple mode)")
+    st.subheader("Simple vs. Advanced")
     st.write(
-        "When Advanced mode is off, the app uses standardized defaults so results are comparable across teams."
+        "- **Simple mode** uses standardized defaults for demographics, attention checks, and exclusions "
+        "so outputs are comparable across teams.\n"
+        "- **Advanced mode** unlocks controls for demographics, exclusions, and effect sizes when you need "
+        "a custom setup."
     )
-
-    st.divider()
-    st.subheader("Email (optional)")
-    st.write("Automatic email delivery is available if SendGrid secrets are configured.")
-    st.write("This app will not collect or store emails beyond the current session.")
 
 
 tabs = st.tabs(["1) Quick setup", "2) Upload QSF", "3) Review", "4) Generate"])
@@ -488,7 +546,7 @@ This is optional but recommended for better simulation quality.
             st.session_state["survey_pdf_text"] = survey_pdf_text
             st.success("Survey PDF uploaded successfully. Text extracted for domain detection.")
         else:
-            st.warning("Could not extract text from survey PDF.")
+            st.info("Could not extract text from survey PDF.")
 
     st.markdown("### Aspredicted-style checklist (used only for labeling, not for simulation logic)")
     st.write(
@@ -550,7 +608,7 @@ This is optional but recommended for better simulation quality.
             with st.expander("Extracted preregistration text"):
                 st.text(pdf_text[:4000] + ("..." if len(pdf_text) > 4000 else ""))
         else:
-            st.warning("Could not extract text from the PDF. You can still use the checklist above.")
+            st.info("Could not extract text from the PDF. You can still use the checklist above.")
 
     if qsf_file is not None:
         try:
@@ -586,7 +644,7 @@ This is optional but recommended for better simulation quality.
         if warnings:
             with st.expander("Show QSF warnings"):
                 for w in warnings:
-                    st.warning(w)
+                    st.info(w)
 
         st.caption("Next: Review the auto-detected design and run your simulation.")
 
@@ -598,91 +656,169 @@ with tabs[2]:
     preview: Optional[QSFPreviewResult] = st.session_state.get("qsf_preview", None)
 
     if not preview:
-        st.warning("Upload a QSF first.")
+        st.info("Upload a QSF first to populate the review summary.")
     else:
         inferred = _preview_to_engine_inputs(preview)
         st.session_state["inferred_design"] = inferred
 
-        st.subheader("Auto-detected design")
+        st.subheader("Review summary")
+        st.caption("Confirm the auto-detected design before running the simulation.")
 
+        summary_cols = st.columns(4)
+        summary_cols[0].metric("Conditions", len(inferred["conditions"]))
+        summary_cols[1].metric("Factors", len(inferred["factors"]))
+        summary_cols[2].metric("Scales", len(inferred["scales"]))
+        summary_cols[3].metric("Open-ended Qs", len(inferred.get("open_ended_questions", [])))
+
+        st.divider()
         col1, col2 = st.columns([1.1, 0.9], gap="large")
 
         with col1:
             st.markdown("**Conditions**")
-            st.write(inferred["conditions"])
-
-            st.markdown("**Factors (inferred)**")
-            st.write(inferred["factors"])
+            if inferred["conditions"]:
+                st.dataframe(
+                    pd.DataFrame({"Condition": inferred["conditions"]}),
+                    hide_index=True,
+                    use_container_width=True,
+                )
+            else:
+                st.info("No conditions detected. Advanced mode can be used to define them manually.")
 
             st.markdown("**Scales (inferred)**")
-            st.write(inferred["scales"])
+            if inferred["scales"]:
+                st.dataframe(
+                    pd.DataFrame(inferred["scales"]),
+                    hide_index=True,
+                    use_container_width=True,
+                )
+            else:
+                st.info("No scales detected. Advanced mode can be used to add them manually.")
 
         with col2:
-            st.markdown("**What the app inferred (and why)**")
-            st.write(
-                "- Conditions: derived from the Qualtrics survey flow if present.\n"
-                "- Factors: inferred from condition naming patterns (e.g., 'A x B').\n"
-                "- Scales: inferred from question blocks that look like repeated Likert items.\n"
-                "\nIf anything is wrong, switch on Advanced mode in the sidebar and edit below."
-            )
-
-        if st.session_state.get("advanced_mode", False):
-            st.divider()
-            st.subheader("Advanced: edit design")
-
-            cond_text = st.text_area(
-                "Conditions (one per line)",
-                value="\n".join(inferred["conditions"]),
-                height=140,
-            )
-            conditions = [c.strip() for c in cond_text.splitlines() if c.strip()]
-            if not conditions:
-                conditions = ["Condition A"]
-
-            st.caption("Factors are optional. If you leave this empty, the engine will treat CONDITION as the only factor.")
-            factors_json = st.text_area(
-                "Factors (JSON list) - optional",
-                value=_safe_json(_infer_factors_from_conditions(conditions)),
-                height=180,
-                help='Example: [{"name":"AI","levels":["AI","No AI"]},{"name":"Product","levels":["Hedonic","Utilitarian"]}]',
-            )
-            try:
-                factors = json.loads(factors_json)
-                if not isinstance(factors, list):
-                    raise ValueError("Factors JSON must be a list.")
-            except Exception as e:
-                st.error(f"Factors JSON invalid: {e}")
-                factors = _infer_factors_from_conditions(conditions)
-
-            st.caption("Scales drive most analyses. Keep this short: 1-3 scales is typical for class pilots.")
-            scales_df = pd.DataFrame(inferred["scales"])
-            edited_scales = st.data_editor(
-                scales_df,
-                num_rows="dynamic",
-                use_container_width=True,
-            )
-            scales: List[Dict[str, Any]] = []
-            for _, row in edited_scales.iterrows():
-                name = str(row.get("name", "")).strip()
-                if not name:
-                    continue
-                scales.append(
-                    {
-                        "name": name,
-                        "num_items": int(row.get("num_items", 5) or 5),
-                        "scale_points": int(row.get("scale_points", 7) or 7),
-                        "reverse_items": row.get("reverse_items", []) or [],
-                    }
+            st.markdown("**Factors (inferred)**")
+            if inferred["factors"]:
+                st.dataframe(
+                    pd.DataFrame(inferred["factors"]),
+                    hide_index=True,
+                    use_container_width=True,
                 )
-            if not scales:
-                scales = [{"name": "Main_DV", "num_items": 5, "scale_points": 7, "reverse_items": []}]
+            else:
+                st.info("No factors inferred yet. Conditions will be treated as a single factor.")
 
-            st.session_state["inferred_design"] = {
-                "conditions": conditions,
-                "factors": factors,
-                "scales": scales,
-                "open_ended_questions": inferred.get("open_ended_questions", []),
-            }
+            st.markdown("**Why these were inferred**")
+            st.markdown(
+                "- **Conditions** come from the Qualtrics survey flow if present.\n"
+                "- **Factors** are inferred from condition naming patterns (e.g., `A x B`).\n"
+                "- **Scales** are inferred from question blocks that look like Likert items.\n"
+                "\nIf anything looks off, edit the roles or override the design below."
+            )
+
+        st.divider()
+        st.subheader("Variable roles & corrections")
+        st.caption(
+            "We merge signals from the QSF, any uploaded PDF, and preregistration notes. "
+            "Review these inferred roles and adjust anything that looks off."
+        )
+
+        prereg_outcomes = st.session_state.get("prereg_outcomes", "")
+        prereg_iv = st.session_state.get("prereg_iv", "")
+        default_rows = _build_variable_review_rows(inferred, prereg_outcomes, prereg_iv)
+        current_rows = st.session_state.get("variable_review_rows", default_rows)
+        if not current_rows:
+            current_rows = default_rows
+
+        variable_df = st.data_editor(
+            pd.DataFrame(current_rows),
+            num_rows="dynamic",
+            use_container_width=True,
+            column_config={
+                "Role": st.column_config.SelectboxColumn(
+                    "Role",
+                    options=[
+                        "Condition",
+                        "Independent variable",
+                        "Primary outcome",
+                        "Secondary outcome",
+                        "Open-ended",
+                        "Other",
+                    ],
+                )
+            },
+        )
+        st.session_state["variable_review_rows"] = variable_df.to_dict(orient="records")
+
+        st.divider()
+        st.subheader("Design overrides")
+        st.caption("Update the key pieces of the design before simulation if the auto-detection missed anything.")
+
+        cond_text = st.text_area(
+            "Treatment conditions (one per line)",
+            value="\n".join(inferred["conditions"]),
+            height=140,
+            help="These are the randomized conditions used to simulate between-group differences.",
+        )
+        conditions = [c.strip() for c in cond_text.splitlines() if c.strip()]
+        if not conditions:
+            conditions = ["Condition A"]
+
+        factors_json = st.text_area(
+            "Factors & levels (JSON list) - optional",
+            value=_safe_json(_infer_factors_from_conditions(conditions)),
+            height=180,
+            help='Example: [{"name":"AI","levels":["AI","No AI"]},{"name":"Product","levels":["Hedonic","Utilitarian"]}]',
+        )
+        try:
+            factors = json.loads(factors_json)
+            if not isinstance(factors, list):
+                raise ValueError("Factors JSON must be a list.")
+        except Exception as e:
+            st.error(f"Factors JSON invalid: {e}")
+            factors = _infer_factors_from_conditions(conditions)
+
+        st.caption("Scales drive most analyses. Keep this short: 1-3 scales is typical for class pilots.")
+        scales_df = pd.DataFrame(inferred["scales"])
+        edited_scales = st.data_editor(
+            scales_df,
+            num_rows="dynamic",
+            use_container_width=True,
+        )
+        scales: List[Dict[str, Any]] = []
+        for _, row in edited_scales.iterrows():
+            name = str(row.get("name", "")).strip()
+            if not name:
+                continue
+            scales.append(
+                {
+                    "name": name,
+                    "num_items": int(row.get("num_items", 5) or 5),
+                    "scale_points": int(row.get("scale_points", 7) or 7),
+                    "reverse_items": row.get("reverse_items", []) or [],
+                }
+            )
+        if not scales:
+            scales = [{"name": "Main_DV", "num_items": 5, "scale_points": 7, "reverse_items": []}]
+
+        open_ended_text = st.text_area(
+            "Open-ended questions (optional, one per line)",
+            value="\n".join(inferred.get("open_ended_questions", [])),
+            height=120,
+        )
+        open_ended_questions = [q.strip() for q in open_ended_text.splitlines() if q.strip()]
+
+        randomization_level = st.selectbox(
+            "Randomization level",
+            ["Participant", "Group/Cluster", "Multiple stages", "Not randomized / observational"],
+            index=0,
+            help="Used in reporting and metadata to capture where randomization occurs.",
+        )
+        st.session_state["randomization_level"] = randomization_level
+
+        st.session_state["inferred_design"] = {
+            "conditions": conditions,
+            "factors": factors,
+            "scales": scales,
+            "open_ended_questions": open_ended_questions,
+        }
 
         st.success("Design locked for generation (based on the settings above).")
 
@@ -693,7 +829,7 @@ with tabs[2]:
 with tabs[3]:
     inferred = st.session_state.get("inferred_design", None)
     if not inferred:
-        st.warning("Complete the previous steps first (upload QSF, then review).")
+        st.info("Complete the previous steps first (upload QSF, then review).")
     else:
         st.subheader("Generate simulation")
         preview: Optional[QSFPreviewResult] = st.session_state.get("qsf_preview", None)
@@ -714,7 +850,7 @@ with tabs[3]:
         )
         missing = [label for label, ok in required_fields.items() if not ok]
         if missing:
-            st.warning("Missing required fields: " + ", ".join(missing))
+            st.info("Missing required fields: " + ", ".join(missing))
 
         if not st.session_state.get("advanced_mode", False):
             demographics = STANDARD_DEFAULTS["demographics"].copy()
@@ -785,20 +921,32 @@ with tabs[3]:
                             )
                         )
             except Exception as e:
-                st.warning(f"Effect sizes JSON invalid; ignoring. ({e})")
+                st.error(f"Effect sizes JSON invalid; ignoring. ({e})")
                 effect_sizes = []
 
             custom_persona_weights = None
 
         is_generating = st.session_state.get("is_generating", False)
+        generation_requested = st.session_state.get("generation_requested", False)
+        progress_placeholder = st.empty()
+        status_placeholder = st.empty()
+        if is_generating:
+            status_placeholder.info("Simulation is running. Please wait for the download section to appear.")
         can_generate = completed == total_required and not is_generating
         if st.button("Generate simulated dataset", type="primary", disabled=not can_generate):
             st.session_state["is_generating"] = True
+            st.session_state["generation_requested"] = True
+            st.rerun()
+
+        if generation_requested and is_generating:
+            st.session_state["generation_requested"] = False
+            progress_bar = progress_placeholder.progress(5, text="Preparing simulation inputs...")
+            status_placeholder.info("Preparing simulation inputs...")
             title = st.session_state.get("study_title", "") or "Untitled Study"
             desc = st.session_state.get("study_description", "") or ""
             requested_n = int(st.session_state.get("sample_size", 200))
             if requested_n > MAX_SIMULATED_N:
-                st.warning(
+                st.info(
                     f"Requested N ({requested_n}) exceeds the cap ({MAX_SIMULATED_N}). "
                     "Using the capped value for standardization."
                 )
@@ -824,7 +972,11 @@ with tabs[3]:
             )
 
             try:
+                progress_bar.progress(30, text="Generating simulated responses...")
+                status_placeholder.info("Generating simulated responses...")
                 df, metadata = engine.generate()
+                progress_bar.progress(60, text="Packaging downloads...")
+                status_placeholder.info("Packaging downloads and reports...")
                 explainer = engine.generate_explainer()
                 r_script = engine.generate_r_export(df)
 
@@ -834,6 +986,10 @@ with tabs[3]:
                     "exclusion_criteria": st.session_state.get("prereg_exclusions", ""),
                     "analysis_plan": st.session_state.get("prereg_analysis", ""),
                     "notes_sanitized": st.session_state.get("prereg_text_sanitized", ""),
+                }
+                metadata["design_review"] = {
+                    "variable_roles": st.session_state.get("variable_review_rows", []),
+                    "randomization_level": st.session_state.get("randomization_level", ""),
                 }
 
                 schema_results = validate_schema(
@@ -873,13 +1029,15 @@ with tabs[3]:
                 st.session_state["last_zip"] = zip_bytes
                 st.session_state["last_metadata"] = metadata
 
+                progress_bar.progress(85, text="Finalizing notifications...")
+                status_placeholder.info("Finalizing notifications...")
                 st.success("Simulation generated.")
                 st.markdown("[Jump to download](#download)")
 
                 if not schema_results.get("valid", True):
                     st.error("Schema validation failed. Review Schema_Validation.json in the download.")
                 elif schema_results.get("warnings"):
-                    st.warning("Schema validation warnings found. Review Schema_Validation.json in the download.")
+                    st.info("Schema validation warnings found. Review Schema_Validation.json in the download.")
                 else:
                     st.info("Schema validation passed.")
 
@@ -905,12 +1063,18 @@ with tabs[3]:
                 if ok:
                     st.info(f"Instructor auto-email sent to {instructor_email}.")
                 else:
-                    st.warning(f"Instructor auto-email failed: {msg}")
+                    st.error(f"Instructor auto-email failed: {msg}")
 
+                progress_bar.progress(100, text="Simulation ready.")
+                status_placeholder.success("Simulation complete.")
             except Exception as e:
+                progress_bar.progress(100, text="Simulation failed.")
+                status_placeholder.error("Simulation failed.")
                 st.error(f"Simulation failed: {e}")
             finally:
                 st.session_state["is_generating"] = False
+                time.sleep(0.2)
+                progress_placeholder.empty()
 
         zip_bytes = st.session_state.get("last_zip", None)
         df = st.session_state.get("last_df", None)
@@ -930,7 +1094,12 @@ with tabs[3]:
                 st.dataframe(df.head(20), use_container_width=True)
 
             st.divider()
-            st.subheader("Email (optional)")
+            st.subheader("Email delivery")
+            st.caption(
+                "Use **automatic instructor email** when SendGrid is configured, or send a one-off ZIP manually "
+                "to a recipient below. Email settings live in Streamlit secrets, not in Simple/Advanced mode."
+            )
+            _render_email_setup_diagnostics()
 
             to_email = st.text_input("Send to email", value=st.session_state.get("send_to_email", ""))
             st.session_state["send_to_email"] = to_email
