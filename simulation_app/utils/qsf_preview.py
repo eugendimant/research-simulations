@@ -275,7 +275,7 @@ class QSFPreviewParser:
                 )
 
     def _parse_question(self, element: Dict, questions_map: Dict):
-        """Parse a survey question."""
+        """Parse a survey question with robust scale point detection."""
         payload = element.get('Payload', {})
         q_id = payload.get('QuestionID', element.get('PrimaryAttribute', ''))
 
@@ -285,15 +285,18 @@ class QSFPreviewParser:
 
         question_type = payload.get('QuestionType', 'Unknown')
         selector = payload.get('Selector', '')
+        sub_selector = payload.get('SubSelector', '')
 
         # Determine question category
         category = self._categorize_question(question_type, selector)
 
-        # Extract choices
+        # Extract choices (for MC questions, these are the response options)
         choices = []
         choices_data = payload.get('Choices', {})
         if isinstance(choices_data, dict):
-            for choice_id, choice_data in choices_data.items():
+            # Sort by choice ID to maintain order
+            sorted_choices = sorted(choices_data.items(), key=lambda x: self._safe_int_key(x[0]))
+            for choice_id, choice_data in sorted_choices:
                 if isinstance(choice_data, dict):
                     choice_text = choice_data.get('Display', str(choice_data))
                     choices.append(choice_text)
@@ -301,18 +304,35 @@ class QSFPreviewParser:
                     choices.append(str(choice_data))
 
         # Check for matrix (scale) questions
-        is_matrix = question_type in ['Matrix', 'MC'] and selector in ['Likert', 'Bipolar']
+        is_matrix = question_type == 'Matrix' or (question_type == 'MC' and selector in ['Likert', 'Bipolar'])
 
-        # Extract sub-questions for matrix
+        # Extract sub-questions for matrix (these are the rows/items)
         sub_questions = []
-        answers_data = payload.get('Answers', {})
-        if isinstance(answers_data, dict) and is_matrix:
-            for ans_id, ans_data in answers_data.items():
-                if isinstance(ans_data, dict):
-                    sub_questions.append(ans_data.get('Display', ''))
 
-        # Determine scale points
-        scale_points = len(choices) if choices else None
+        # For Matrix questions, Choices are the items (rows) and Answers are the scale (columns)
+        if question_type == 'Matrix':
+            # The "Choices" in Matrix are actually the items/statements
+            # The "Answers" are the response scale options
+            answers_data = payload.get('Answers', {})
+            if isinstance(answers_data, dict):
+                sorted_answers = sorted(answers_data.items(), key=lambda x: self._safe_int_key(x[0]))
+                for ans_id, ans_data in sorted_answers:
+                    if isinstance(ans_data, dict):
+                        sub_questions.append(ans_data.get('Display', ''))
+        else:
+            # For non-matrix questions with sub-questions
+            answers_data = payload.get('Answers', {})
+            if isinstance(answers_data, dict):
+                sorted_answers = sorted(answers_data.items(), key=lambda x: self._safe_int_key(x[0]))
+                for ans_id, ans_data in sorted_answers:
+                    if isinstance(ans_data, dict):
+                        sub_questions.append(ans_data.get('Display', ''))
+
+        # ROBUST SCALE POINT DETECTION
+        scale_points = self._detect_scale_points(payload, question_type, selector, choices, sub_questions)
+
+        # Get the data export tag (actual variable name in exported data)
+        data_export_tag = payload.get('DataExportTag', q_id)
 
         questions_map[q_id] = QuestionInfo(
             question_id=q_id,
@@ -327,9 +347,127 @@ class QSFPreviewParser:
 
         self._log(
             LogLevel.INFO, "QUESTION",
-            f"Parsed question {q_id}: {category}",
-            {'text_preview': question_text[:100]}
+            f"Parsed question {q_id}: {category} (scale_points={scale_points})",
+            {'text_preview': question_text[:100], 'data_export_tag': data_export_tag}
         )
+
+    def _safe_int_key(self, key: Any) -> int:
+        """Convert key to int for sorting, handling non-numeric keys."""
+        try:
+            return int(key)
+        except (ValueError, TypeError):
+            return 0
+
+    def _detect_scale_points(
+        self,
+        payload: Dict,
+        question_type: str,
+        selector: str,
+        choices: List[str],
+        sub_questions: List[str]
+    ) -> Optional[int]:
+        """
+        Robustly detect scale points from multiple QSF sources.
+
+        Priority order:
+        1. For Matrix: Answers dict (response scale)
+        2. ColumnLabels (explicit scale definition)
+        3. RecodeValues (numeric mapping implies scale)
+        4. Choices length (fallback for MC)
+        5. Common patterns in choice text (1-7, strongly disagree, etc.)
+        """
+        # Source 1: For Matrix questions, Answers contains the response scale
+        if question_type == 'Matrix':
+            answers_data = payload.get('Answers', {})
+            if isinstance(answers_data, dict) and len(answers_data) >= 2:
+                return len(answers_data)
+
+        # Source 2: ColumnLabels (some matrix formats use this)
+        column_labels = payload.get('ColumnLabels', {})
+        if isinstance(column_labels, dict) and len(column_labels) >= 2:
+            return len(column_labels)
+
+        # Source 3: RecodeValues can indicate scale structure
+        recode_values = payload.get('RecodeValues', {})
+        if isinstance(recode_values, dict) and len(recode_values) >= 2:
+            # Check if it's a numeric scale
+            try:
+                values = [int(v) for v in recode_values.values() if str(v).isdigit()]
+                if values:
+                    return max(values) - min(values) + 1 if max(values) != min(values) else len(recode_values)
+            except (ValueError, TypeError):
+                pass
+            return len(recode_values)
+
+        # Source 4: Choices for MC/single choice questions
+        if choices and len(choices) >= 2:
+            # Check if these look like scale labels
+            if self._looks_like_scale_choices(choices):
+                return len(choices)
+
+        # Source 5: Check SubSelector for scale type hints
+        sub_selector = payload.get('SubSelector', '')
+        if sub_selector:
+            # Common Qualtrics scale patterns
+            scale_hints = {
+                'SingleAnswer': 7,  # Default assumption
+                'MultipleAnswer': None,  # Not a scale
+                'DL': 7,  # Dropdown default
+                'TX': None,  # Text
+            }
+            if sub_selector in scale_hints:
+                return scale_hints[sub_selector]
+
+        # Source 6: Look for scale hints in Configuration
+        config = payload.get('Configuration', {})
+        if isinstance(config, dict):
+            # Some surveys specify NumChoices
+            num_choices = config.get('NumChoices')
+            if num_choices and isinstance(num_choices, int):
+                return num_choices
+
+        # Fallback: Use choices length if it looks reasonable for a scale
+        if choices and 2 <= len(choices) <= 11:
+            return len(choices)
+
+        return None
+
+    def _looks_like_scale_choices(self, choices: List[str]) -> bool:
+        """
+        Check if choices look like a Likert-type scale.
+        """
+        if len(choices) < 2:
+            return False
+
+        # Check for numeric patterns (1, 2, 3... or 1-Strongly Disagree)
+        numeric_count = 0
+        for choice in choices:
+            choice_clean = choice.strip().lower()
+            # Check if starts with number
+            if choice_clean and (choice_clean[0].isdigit() or
+                                 choice_clean.startswith('-') or
+                                 choice_clean.startswith('(')):
+                numeric_count += 1
+
+        if numeric_count >= len(choices) * 0.5:
+            return True
+
+        # Check for common scale anchors
+        scale_keywords = [
+            'strongly', 'agree', 'disagree', 'likely', 'unlikely',
+            'satisfied', 'dissatisfied', 'good', 'bad', 'poor', 'excellent',
+            'never', 'always', 'sometimes', 'often', 'rarely',
+            'not at all', 'extremely', 'very', 'somewhat', 'slightly',
+            'important', 'unimportant', 'confident', 'certain', 'uncertain'
+        ]
+
+        anchor_count = 0
+        for choice in choices:
+            choice_lower = choice.lower()
+            if any(kw in choice_lower for kw in scale_keywords):
+                anchor_count += 1
+
+        return anchor_count >= 2
 
     def _categorize_question(self, q_type: str, selector: str) -> str:
         """Categorize question type."""
