@@ -12,6 +12,8 @@ Modules:
     - qsf_preview: Interactive QSF preview with error logging
     - instructor_report: Generate instructor-only analysis reports
     - group_management: Student group registration and usage tracking
+    - condition_identifier: Enhanced condition and variable identification
+    - text_generator: Free open-ended text response generation
 """
 
 from .qsf_parser import parse_qsf_file, extract_survey_structure, generate_qsf_summary
@@ -43,6 +45,26 @@ from .group_management import (
     RegisteredGroup,
     create_sample_groups_file
 )
+from .condition_identifier import (
+    EnhancedConditionIdentifier,
+    DesignAnalysisResult,
+    IdentifiedCondition,
+    IdentifiedFactor,
+    IdentifiedScale,
+    IdentifiedVariable,
+    VariableRole,
+    RandomizationLevel,
+    RandomizationInfo,
+    analyze_qsf_design,
+)
+from .text_generator import (
+    OpenEndedTextGenerator,
+    PersonaTextTraits,
+    ResponseSentiment,
+    ResponseStyle,
+    MarkovChainGenerator,
+    create_text_generator,
+)
 
 __all__ = [
     # Original exports
@@ -73,5 +95,23 @@ __all__ = [
     'GroupManager',
     'APIKeyManager',
     'RegisteredGroup',
-    'create_sample_groups_file'
+    'create_sample_groups_file',
+    # Condition identifier
+    'EnhancedConditionIdentifier',
+    'DesignAnalysisResult',
+    'IdentifiedCondition',
+    'IdentifiedFactor',
+    'IdentifiedScale',
+    'IdentifiedVariable',
+    'VariableRole',
+    'RandomizationLevel',
+    'RandomizationInfo',
+    'analyze_qsf_design',
+    # Text generator
+    'OpenEndedTextGenerator',
+    'PersonaTextTraits',
+    'ResponseSentiment',
+    'ResponseStyle',
+    'MarkovChainGenerator',
+    'create_text_generator',
 ]

@@ -80,6 +80,9 @@ class QSFPreviewResult:
     validation_warnings: List[str]
     log_entries: List[LogEntry]
     raw_structure: Dict[str, Any]
+    open_ended_questions: List[str] = field(default_factory=list)
+    attention_checks: List[str] = field(default_factory=list)
+    randomizer_info: Dict[str, Any] = field(default_factory=dict)
 
 
 class QSFPreviewParser:
@@ -210,6 +213,15 @@ class QSFPreviewParser:
         # Parse flow elements
         flow_elements = self._parse_flow(flow_data)
 
+        # Detect open-ended questions
+        open_ended = self._detect_open_ended(questions_map)
+
+        # Detect attention checks
+        attention_checks = self._detect_attention_checks(questions_map)
+
+        # Analyze randomizer structure
+        randomizer_info = self._analyze_randomizers(flow_data)
+
         # Validate structure
         self._validate_structure(blocks, questions_map, detected_conditions)
 
@@ -236,7 +248,10 @@ class QSFPreviewParser:
                 'element_count': len(elements),
                 'block_count': len(blocks_map),
                 'question_count': len(questions_map)
-            }
+            },
+            open_ended_questions=open_ended,
+            attention_checks=attention_checks,
+            randomizer_info=randomizer_info,
         )
 
     def _parse_blocks(self, element: Dict, blocks_map: Dict):
@@ -554,6 +569,109 @@ class QSFPreviewParser:
                 )
 
         return scales
+
+    def _detect_open_ended(self, questions_map: Dict) -> List[str]:
+        """Detect open-ended text entry questions."""
+        open_ended = []
+        for q_id, q_info in questions_map.items():
+            if q_info.question_type == 'Text Entry':
+                open_ended.append(q_id)
+                self._log(
+                    LogLevel.INFO, "OPEN_ENDED",
+                    f"Detected open-ended question: {q_id}"
+                )
+        return open_ended
+
+    def _detect_attention_checks(self, questions_map: Dict) -> List[str]:
+        """Detect attention check questions."""
+        attention_checks = []
+        attention_keywords = [
+            'attention', 'check', 'please select', 'instructed',
+            'carefully read', 'quality', 'verify', 'bot'
+        ]
+
+        for q_id, q_info in questions_map.items():
+            text = q_info.question_text.lower()
+            if any(kw in text for kw in attention_keywords):
+                attention_checks.append(q_id)
+                self._log(
+                    LogLevel.INFO, "ATTENTION_CHECK",
+                    f"Detected attention check: {q_id}"
+                )
+
+        return attention_checks
+
+    def _analyze_randomizers(self, flow_data: Optional[Dict]) -> Dict[str, Any]:
+        """Analyze randomizer structure in detail."""
+        if not flow_data:
+            return {'has_randomization': False, 'randomizers': []}
+
+        randomizers = []
+        payload = flow_data.get('Payload', {})
+        flow = payload.get('Flow', [])
+
+        self._find_all_randomizers(flow, randomizers, depth=0)
+
+        return {
+            'has_randomization': len(randomizers) > 0,
+            'num_randomizers': len(randomizers),
+            'randomizers': randomizers,
+            'is_factorial': len(randomizers) > 1,
+            'randomization_level': self._infer_randomization_level(randomizers),
+        }
+
+    def _find_all_randomizers(
+        self,
+        flow: List,
+        randomizers: List[Dict],
+        depth: int = 0
+    ):
+        """Recursively find all randomizer elements."""
+        for item in flow:
+            if not isinstance(item, dict):
+                continue
+
+            flow_type = item.get('Type', '')
+
+            if flow_type == 'Randomizer':
+                rand_info = {
+                    'flow_id': item.get('FlowID', ''),
+                    'description': item.get('Description', ''),
+                    'evenly_present': item.get('EvenPresentation', True),
+                    'randomize_count': item.get('RandomizeCount'),
+                    'depth': depth,
+                    'num_branches': len(item.get('Flow', [])),
+                }
+                randomizers.append(rand_info)
+
+                self._log(
+                    LogLevel.INFO, "RANDOMIZER",
+                    f"Found randomizer: {rand_info['description']} ({rand_info['num_branches']} branches)"
+                )
+
+            # Recurse into nested flows
+            if 'Flow' in item:
+                self._find_all_randomizers(item['Flow'], randomizers, depth + 1)
+
+    def _infer_randomization_level(self, randomizers: List[Dict]) -> str:
+        """Infer the level of randomization from randomizer structure."""
+        if not randomizers:
+            return "none"
+
+        # Check for group-level randomization markers
+        for rand in randomizers:
+            desc = rand.get('description', '').lower()
+            if 'group' in desc or 'cluster' in desc:
+                return "group"
+
+        # Check for within-subject design
+        for rand in randomizers:
+            count = rand.get('randomize_count')
+            if count and str(count).lower() == 'all':
+                return "within_subject"
+
+        # Default to between-subjects participant-level
+        return "participant"
 
     def _parse_flow(self, flow_data: Optional[Dict]) -> List[str]:
         """Parse survey flow into readable list."""
