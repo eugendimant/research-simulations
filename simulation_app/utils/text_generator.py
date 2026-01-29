@@ -384,11 +384,15 @@ class OpenEndedTextGenerator:
     - Markov chains
     - Persona-based modifications
     - Sentiment alignment
+    - Study context awareness
     """
 
-    def __init__(self, seed: Optional[int] = None):
+    def __init__(self, seed: Optional[int] = None, study_context: str = ""):
         if seed is not None:
             random.seed(seed)
+
+        self.study_context = study_context
+        self._context_keywords = self._extract_context_keywords(study_context)
 
         # Initialize Markov chains
         self.product_chain = MarkovChainGenerator(n_gram=2)
@@ -396,6 +400,50 @@ class OpenEndedTextGenerator:
 
         self.experience_chain = MarkovChainGenerator(n_gram=2)
         self.experience_chain.train(_EXPERIENCE_CORPUS)
+
+        # Build context-specific chain if study context is provided
+        if study_context:
+            self.context_chain = self._build_context_chain(study_context)
+        else:
+            self.context_chain = None
+
+    def _extract_context_keywords(self, study_context: str) -> List[str]:
+        """Extract important keywords from study context for response generation."""
+        if not study_context:
+            return []
+
+        # Common stop words to exclude
+        stop_words = {
+            'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for',
+            'of', 'with', 'by', 'from', 'as', 'is', 'was', 'are', 'were', 'been',
+            'be', 'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would',
+            'could', 'should', 'may', 'might', 'must', 'shall', 'this', 'that',
+            'these', 'those', 'it', 'its', 'they', 'them', 'their', 'we', 'our',
+            'you', 'your', 'i', 'me', 'my', 'he', 'him', 'his', 'she', 'her',
+        }
+
+        words = re.findall(r'\b[a-zA-Z]{3,}\b', study_context.lower())
+        keywords = [w for w in words if w not in stop_words]
+
+        # Get unique keywords, prioritizing longer ones
+        unique_keywords = list(set(keywords))
+        unique_keywords.sort(key=len, reverse=True)
+
+        return unique_keywords[:20]  # Top 20 keywords
+
+    def _build_context_chain(self, study_context: str) -> MarkovChainGenerator:
+        """Build a Markov chain from study context for contextual generation."""
+        chain = MarkovChainGenerator(n_gram=2)
+
+        # Create training text from context
+        training_texts = [
+            f"In this study about {study_context[:100]}, I found it interesting.",
+            f"My experience with {study_context[:50]} was informative.",
+            f"The {study_context[:30]} aspect was notable.",
+        ]
+        chain.train(training_texts)
+
+        return chain
 
     def generate_response(
         self,
@@ -810,9 +858,21 @@ class OpenEndedTextGenerator:
         return responses
 
 
-def create_text_generator(seed: Optional[int] = None) -> OpenEndedTextGenerator:
-    """Create a configured text generator instance."""
-    return OpenEndedTextGenerator(seed=seed)
+def create_text_generator(
+    seed: Optional[int] = None,
+    study_context: str = ""
+) -> OpenEndedTextGenerator:
+    """
+    Create a configured text generator instance.
+
+    Args:
+        seed: Random seed for reproducibility
+        study_context: Study description for context-aware generation
+
+    Returns:
+        Configured OpenEndedTextGenerator instance
+    """
+    return OpenEndedTextGenerator(seed=seed, study_context=study_context)
 
 
 # Export

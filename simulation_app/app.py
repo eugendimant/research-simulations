@@ -258,6 +258,152 @@ def _extract_pdf_text(uploaded_bytes: bytes) -> str:
         return ""
 
 
+def _extract_scale_info_from_pdf(pdf_text: str) -> Dict[str, Dict[str, Any]]:
+    """
+    Extract scale information from survey PDF text.
+
+    Looks for patterns like:
+    - "1 = Strongly Disagree ... 7 = Strongly Agree" (indicates 7-point scale)
+    - "Scale: 1-5" or "(1-7)" (explicit range)
+    - Numbered response options
+    """
+    scale_info: Dict[str, Dict[str, Any]] = {}
+
+    if not pdf_text:
+        return scale_info
+
+    # Pattern 1: Explicit scale ranges like "1-7", "(1-5)", "scale: 1 to 7"
+    range_pattern = r'(?:scale[:\s]*)?[(\[]?\s*(\d)\s*[-–to]+\s*(\d)\s*[)\]]?'
+    for match in re.finditer(range_pattern, pdf_text, re.IGNORECASE):
+        try:
+            low = int(match.group(1))
+            high = int(match.group(2))
+            if 1 <= low < high <= 11:
+                # This is likely a scale definition
+                context = pdf_text[max(0, match.start() - 100):match.end() + 50]
+                scale_info[f"scale_range_{match.start()}"] = {
+                    "points": high - low + 1,
+                    "range": f"{low}-{high}",
+                    "context": context.strip()
+                }
+        except (ValueError, IndexError):
+            pass
+
+    # Pattern 2: Likert anchor patterns
+    likert_patterns = [
+        (r'strongly\s+disagree.*?strongly\s+agree', 7),
+        (r'not\s+at\s+all.*?extremely', 7),
+        (r'very\s+unlikely.*?very\s+likely', 7),
+        (r'never.*?always', 5),
+        (r'poor.*?excellent', 5),
+    ]
+
+    for pattern, default_points in likert_patterns:
+        if re.search(pattern, pdf_text, re.IGNORECASE | re.DOTALL):
+            scale_info[f"likert_{pattern[:20]}"] = {
+                "points": default_points,
+                "type": "likert",
+                "pattern": pattern[:30]
+            }
+
+    # Pattern 3: Numbered response sequences like "1 2 3 4 5 6 7" or "1. Strongly..."
+    numbered_pattern = r'(?:^|\s)(\d)\s+(\d)\s+(\d)\s+(\d)(?:\s+(\d))?(?:\s+(\d))?(?:\s+(\d))?'
+    for match in re.finditer(numbered_pattern, pdf_text):
+        nums = [int(g) for g in match.groups() if g]
+        if len(nums) >= 4 and nums == list(range(nums[0], nums[-1] + 1)):
+            scale_info[f"numbered_{match.start()}"] = {
+                "points": len(nums),
+                "type": "numbered_sequence"
+            }
+
+    return scale_info
+
+
+def _infer_default_scale_points(survey_pdf_text: str, prereg_text: str) -> int:
+    """
+    Infer the most likely default scale points from available text.
+
+    Returns the most common scale point value found, or 7 as default.
+    """
+    scale_info = _extract_scale_info_from_pdf(survey_pdf_text)
+
+    if scale_info:
+        # Count occurrences of each scale point value
+        point_counts: Dict[int, int] = {}
+        for info in scale_info.values():
+            points = info.get("points", 7)
+            point_counts[points] = point_counts.get(points, 0) + 1
+
+        # Return most common, defaulting to 7
+        if point_counts:
+            return max(point_counts, key=point_counts.get)
+
+    # Check preregistration text for scale hints
+    prereg_combined = f"{prereg_text}"
+    if "5-point" in prereg_combined.lower() or "5 point" in prereg_combined.lower():
+        return 5
+    if "7-point" in prereg_combined.lower() or "7 point" in prereg_combined.lower():
+        return 7
+
+    return 7  # Default
+
+
+def _parse_warnings_for_display(warnings: List[str]) -> List[Dict[str, Any]]:
+    """
+    Parse warning messages to extract actionable information.
+
+    Returns structured data with fix suggestions.
+    """
+    parsed = []
+
+    for warning in warnings:
+        parsed_warning = {
+            "message": warning,
+            "type": "general",
+            "fix_suggestion": None,
+            "fix_action": None,
+        }
+
+        # Scale point warnings
+        if "unclear scale points" in warning.lower():
+            # Extract question ID
+            q_id_match = re.search(r'Question\s+(\S+)', warning)
+            q_id = q_id_match.group(1) if q_id_match else None
+
+            parsed_warning["type"] = "scale_points"
+            parsed_warning["question_id"] = q_id
+            parsed_warning["fix_suggestion"] = "Set scale points to common values (5 or 7)"
+            parsed_warning["fix_options"] = [5, 7, 9, 11]
+
+        # Condition warnings
+        elif "no experimental conditions" in warning.lower():
+            parsed_warning["type"] = "no_conditions"
+            parsed_warning["fix_suggestion"] = "Add conditions manually in the Review tab"
+
+        # Attention check warnings
+        elif "no attention check" in warning.lower():
+            parsed_warning["type"] = "no_attention_check"
+            parsed_warning["fix_suggestion"] = "Consider adding attention checks to your survey"
+
+        parsed.append(parsed_warning)
+
+    return parsed
+
+
+def _create_scale_point_fixes(warnings: List[str], default_points: int = 7) -> Dict[str, int]:
+    """
+    Create a dictionary of suggested scale point fixes.
+    """
+    fixes = {}
+    for warning in warnings:
+        if "unclear scale points" in warning.lower():
+            q_id_match = re.search(r'Question\s+(\S+)', warning)
+            if q_id_match:
+                q_id = q_id_match.group(1)
+                fixes[q_id] = default_points
+    return fixes
+
+
 def _build_variable_review_rows(
     inferred: Dict[str, Any],
     prereg_outcomes: str,
@@ -953,9 +1099,52 @@ This is optional but recommended for better simulation quality.
                     st.error(err)
 
         if warnings:
-            with st.expander("Show QSF warnings"):
-                for w in warnings:
-                    st.info(w)
+            with st.expander("Show QSF warnings", expanded=True):
+                # Parse warnings for actionable display
+                parsed_warnings = _parse_warnings_for_display(warnings)
+
+                # Check if there are scale point warnings
+                scale_warnings = [w for w in parsed_warnings if w["type"] == "scale_points"]
+
+                if scale_warnings:
+                    st.markdown("**Scale Point Issues** - These questions need scale points defined:")
+
+                    # Infer default from PDF if available
+                    survey_pdf_text = st.session_state.get("survey_pdf_text", "")
+                    prereg_text = st.session_state.get("prereg_text_sanitized", "")
+                    inferred_points = _infer_default_scale_points(survey_pdf_text, prereg_text)
+
+                    st.info(f"Based on your documents, the most likely scale is **{inferred_points}-point**. Click below to apply.")
+
+                    col_fix1, col_fix2, col_fix3 = st.columns(3)
+
+                    with col_fix1:
+                        if st.button(f"Set all to {inferred_points}-point (recommended)", type="primary"):
+                            st.session_state["default_scale_points"] = inferred_points
+                            st.success(f"Default scale points set to {inferred_points}. Proceed to Review tab to confirm.")
+
+                    with col_fix2:
+                        if st.button("Set all to 5-point"):
+                            st.session_state["default_scale_points"] = 5
+                            st.success("Default scale points set to 5. Proceed to Review tab to confirm.")
+
+                    with col_fix3:
+                        if st.button("Set all to 7-point"):
+                            st.session_state["default_scale_points"] = 7
+                            st.success("Default scale points set to 7. Proceed to Review tab to confirm.")
+
+                    # Show the specific questions for reference
+                    with st.expander("Questions with unclear scale points"):
+                        for sw in scale_warnings:
+                            q_id = sw.get("question_id", "Unknown")
+                            st.text(f"- {q_id}")
+
+                # Show other warnings
+                other_warnings = [w for w in parsed_warnings if w["type"] not in ["scale_points"]]
+                for w in other_warnings:
+                    st.warning(w["message"])
+                    if w.get("fix_suggestion"):
+                        st.caption(f"Suggested fix: {w['fix_suggestion']}")
 
         st.caption("Next: Review the auto-detected design and run your simulation.")
 
