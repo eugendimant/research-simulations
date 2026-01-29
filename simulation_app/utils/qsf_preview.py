@@ -255,24 +255,51 @@ class QSFPreviewParser:
         )
 
     def _parse_blocks(self, element: Dict, blocks_map: Dict):
-        """Parse block definitions."""
+        """Parse block definitions.
+
+        Handles both QSF formats:
+        - Dict format: {"BL_123": {"Description": "Block 1", ...}}
+        - List format: [{"ID": "BL_123", "Description": "Block 1", ...}]
+        """
         payload = element.get('Payload', {})
 
-        for block_id, block_data in payload.items():
-            if isinstance(block_data, dict):
-                block_name = block_data.get('Description', f'Block {block_id}')
-                block_type = block_data.get('Type', 'Standard')
+        # Handle list format (newer QSF exports)
+        if isinstance(payload, list):
+            for block_data in payload:
+                if isinstance(block_data, dict):
+                    block_id = block_data.get('ID', '')
+                    if not block_id:
+                        continue
+                    block_name = block_data.get('Description', f'Block {block_id}')
+                    block_type = block_data.get('Type', 'Standard')
 
-                blocks_map[block_id] = {
-                    'name': block_name,
-                    'type': block_type,
-                    'elements': block_data.get('BlockElements', [])
-                }
+                    blocks_map[block_id] = {
+                        'name': block_name,
+                        'type': block_type,
+                        'elements': block_data.get('BlockElements', [])
+                    }
 
-                self._log(
-                    LogLevel.INFO, "BLOCK",
-                    f"Found block: {block_name} (Type: {block_type})"
-                )
+                    self._log(
+                        LogLevel.INFO, "BLOCK",
+                        f"Found block: {block_name} (Type: {block_type})"
+                    )
+        # Handle dict format (older QSF exports)
+        elif isinstance(payload, dict):
+            for block_id, block_data in payload.items():
+                if isinstance(block_data, dict):
+                    block_name = block_data.get('Description', f'Block {block_id}')
+                    block_type = block_data.get('Type', 'Standard')
+
+                    blocks_map[block_id] = {
+                        'name': block_name,
+                        'type': block_type,
+                        'elements': block_data.get('BlockElements', [])
+                    }
+
+                    self._log(
+                        LogLevel.INFO, "BLOCK",
+                        f"Found block: {block_name} (Type: {block_type})"
+                    )
 
     def _parse_question(self, element: Dict, questions_map: Dict):
         """Parse a survey question with robust scale point detection."""

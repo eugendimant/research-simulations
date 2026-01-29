@@ -211,19 +211,40 @@ class EnhancedConditionIdentifier:
         )
 
     def _extract_blocks(self, elements: List[Dict]) -> Dict[str, Dict]:
-        """Extract block definitions from QSF elements."""
+        """Extract block definitions from QSF elements.
+
+        Handles both QSF formats:
+        - Dict format: {"BL_123": {"Description": "Block 1", ...}}
+        - List format: [{"ID": "BL_123", "Description": "Block 1", ...}]
+        """
         blocks = {}
         for element in elements:
             if element.get('Element') == 'BL':
                 payload = element.get('Payload', {})
-                for block_id, block_data in payload.items():
-                    if isinstance(block_data, dict):
-                        blocks[block_id] = {
-                            'name': block_data.get('Description', f'Block {block_id}'),
-                            'type': block_data.get('Type', 'Standard'),
-                            'elements': block_data.get('BlockElements', []),
-                            'options': block_data.get('Options', {}),
-                        }
+
+                # Handle list format (newer QSF exports)
+                if isinstance(payload, list):
+                    for block_data in payload:
+                        if isinstance(block_data, dict):
+                            block_id = block_data.get('ID', '')
+                            if not block_id:
+                                continue
+                            blocks[block_id] = {
+                                'name': block_data.get('Description', f'Block {block_id}'),
+                                'type': block_data.get('Type', 'Standard'),
+                                'elements': block_data.get('BlockElements', []),
+                                'options': block_data.get('Options', {}),
+                            }
+                # Handle dict format (older QSF exports)
+                elif isinstance(payload, dict):
+                    for block_id, block_data in payload.items():
+                        if isinstance(block_data, dict):
+                            blocks[block_id] = {
+                                'name': block_data.get('Description', f'Block {block_id}'),
+                                'type': block_data.get('Type', 'Standard'),
+                                'elements': block_data.get('BlockElements', []),
+                                'options': block_data.get('Options', {}),
+                            }
         return blocks
 
     def _extract_questions(self, elements: List[Dict]) -> Dict[str, Dict]:
