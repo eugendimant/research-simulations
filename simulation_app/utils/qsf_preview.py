@@ -394,22 +394,23 @@ class QSFPreviewParser:
         blocks: List[BlockInfo]
     ) -> List[str]:
         """Detect experimental conditions from randomizers and flow."""
-        conditions = []
+        conditions: List[str] = []
+        blocks_by_id = {block.block_id: block.block_name for block in blocks}
 
-        # Look for randomizer blocks
-        for block in blocks:
-            if block.is_randomizer or 'condition' in block.block_name.lower():
-                conditions.append(block.block_name)
-                self._log(
-                    LogLevel.INFO, "CONDITION",
-                    f"Detected potential condition: {block.block_name}"
-                )
-
-        # Parse flow for branch/randomizer elements
+        # Parse flow for randomizer/branch elements with block IDs.
         if flow_data:
             payload = flow_data.get('Payload', {})
             flow = payload.get('Flow', [])
-            self._find_conditions_in_flow(flow, conditions)
+            self._find_conditions_in_flow(flow, conditions, blocks_by_id)
+
+        # Fallback: use block names that look like conditions.
+        if not conditions:
+            for block in blocks:
+                desc = block.block_name.strip()
+                if self._looks_like_condition(desc):
+                    self._add_condition(desc, conditions)
+
+        conditions = self._dedupe_conditions(conditions)
 
         if not conditions:
             self._log(
@@ -420,27 +421,94 @@ class QSFPreviewParser:
 
         return conditions
 
-    def _find_conditions_in_flow(self, flow: List, conditions: List[str]):
+    def _find_conditions_in_flow(self, flow: List, conditions: List[str], blocks_by_id: Dict[str, str]):
         """Recursively find conditions in flow structure."""
         for item in flow:
             if isinstance(item, dict):
                 flow_type = item.get('Type', '')
 
                 if flow_type == 'Randomizer':
-                    # Randomizer found
                     sub_flow = item.get('Flow', [])
                     for sub_item in sub_flow:
                         if isinstance(sub_item, dict):
-                            block_id = sub_item.get('ID', '')
-                            conditions.append(f"Randomizer Branch: {block_id}")
+                            block_id = self._extract_block_id(sub_item)
+                            if block_id:
+                                block_name = blocks_by_id.get(block_id, block_id)
+                                self._add_condition(block_name, conditions)
+
+                    description = item.get('Description', '')
+                    for inferred in self._extract_conditions_from_description(description):
+                        self._add_condition(inferred, conditions)
 
                 elif flow_type == 'Branch':
-                    # Branch logic
-                    conditions.append(f"Branch: {item.get('Description', 'Unnamed')}")
+                    description = item.get('Description', '')
+                    for inferred in self._extract_conditions_from_description(description):
+                        self._add_condition(inferred, conditions)
 
                 # Recurse
                 if 'Flow' in item:
-                    self._find_conditions_in_flow(item['Flow'], conditions)
+                    self._find_conditions_in_flow(item['Flow'], conditions, blocks_by_id)
+
+    def _extract_block_id(self, item: Dict[str, Any]) -> str:
+        """Extract block ID from a flow item."""
+        if item.get('Type') == 'Block':
+            return item.get('ID', '') or item.get('BlockID', '')
+        return item.get('ID', '') if item.get('ID') and item.get('Type') in {'Block', 'BlockRandomizer'} else ''
+
+    def _extract_conditions_from_description(self, description: str) -> List[str]:
+        """Extract condition labels from flow descriptions."""
+        if not description:
+            return []
+
+        desc = self._normalize_condition_label(description)
+        if not desc:
+            return []
+
+        tokens = re.split(r"\b(?:vs\.?|versus|v\.|compared to|compared with)\b", desc, flags=re.IGNORECASE)
+        if len(tokens) > 1:
+            return [t.strip() for t in tokens if t.strip()]
+
+        if self._looks_like_condition(desc):
+            return [desc]
+
+        return []
+
+    def _looks_like_condition(self, label: str) -> bool:
+        if not label:
+            return False
+        lowered = label.lower()
+        keywords = ("condition", "treatment", "group", "arm", "variant", "manipulation", "scenario")
+        return any(keyword in lowered for keyword in keywords)
+
+    def _normalize_condition_label(self, label: str) -> str:
+        if not label:
+            return ""
+        cleaned = re.sub(r"<[^>]+>", "", str(label))
+        cleaned = re.sub(r"\s+", " ", cleaned).strip()
+        cleaned = re.sub(
+            r"^(condition|treatment|group|arm|variant|scenario|manipulation)\s*[:\-]\s*",
+            "",
+            cleaned,
+            flags=re.IGNORECASE,
+        )
+        return cleaned.strip(" -:")
+
+    def _add_condition(self, label: str, conditions: List[str]) -> None:
+        normalized = self._normalize_condition_label(label)
+        if not normalized:
+            return
+        conditions.append(normalized)
+        self._log(LogLevel.INFO, "CONDITION", f"Detected potential condition: {normalized}")
+
+    def _dedupe_conditions(self, conditions: List[str]) -> List[str]:
+        seen = set()
+        unique: List[str] = []
+        for cond in conditions:
+            key = cond.lower().strip()
+            if key and key not in seen:
+                seen.add(key)
+                unique.append(cond)
+        return unique
 
     def _detect_scales(self, questions_map: Dict) -> List[Dict[str, Any]]:
         """Detect multi-item scales from question patterns."""
