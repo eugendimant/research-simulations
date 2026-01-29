@@ -546,56 +546,44 @@ class EnhancedConditionIdentifier:
         prereg_pdf_text: str,
     ) -> List[IdentifiedCondition]:
         """
-        Identify experimental conditions with confidence scores.
+        Identify experimental conditions from QSF structure ONLY.
 
-        Combines information from:
-        1. Randomizer structure (highest confidence)
-        2. Block names (medium confidence)
-        3. Preregistration text (variable confidence)
+        We ONLY use:
+        1. Randomizer structure from QSF flow (highest reliability)
+        2. Block names that are part of randomizers
+        3. Embedded data fields that indicate conditions
+
+        We do NOT parse preregistration text for conditions as this produces
+        garbage fragments. The user can manually add conditions if needed.
         """
         conditions = []
         seen_names = set()
 
-        # Process raw conditions from randomizer analysis
+        # Process raw conditions from randomizer analysis (QSF structure only)
         for rc in raw_conditions:
             name = self._normalize_condition_name(rc.get('name', ''))
             if name and name.lower() not in seen_names:
-                seen_names.add(name.lower())
-                conditions.append(IdentifiedCondition(
-                    name=name,
-                    factor='Treatment',  # Will be refined by factor inference
-                    source=rc.get('source', 'QSF'),
-                    confidence=rc.get('confidence', 0.7),
-                    block_ids=[rc.get('block_id')] if rc.get('block_id') else [],
-                    randomizer_id=rc.get('randomizer_id'),
-                ))
-
-        # Extract conditions from preregistration
-        prereg_conditions = self._extract_conditions_from_prereg(
-            prereg_iv, prereg_text, prereg_pdf_text
-        )
-
-        for pc in prereg_conditions:
-            name = self._normalize_condition_name(pc)
-            if name and name.lower() not in seen_names:
+                # Skip generic/default block names
+                if name.lower() in ('default question block', 'block', 'standard'):
+                    continue
                 seen_names.add(name.lower())
                 conditions.append(IdentifiedCondition(
                     name=name,
                     factor='Treatment',
-                    source='Preregistration',
-                    confidence=0.75,
+                    source='QSF Randomizer',
+                    confidence=0.9,  # High confidence for QSF-detected
+                    block_ids=[rc.get('block_id')] if rc.get('block_id') else [],
+                    randomizer_id=rc.get('randomizer_id'),
                 ))
-            elif name:
-                # Boost confidence if found in both sources
-                for c in conditions:
-                    if c.name.lower() == name.lower():
-                        c.confidence = min(1.0, c.confidence + 0.15)
-                        c.source = 'QSF + Preregistration'
 
         # Fallback: look at block names that suggest conditions
+        # Only if no conditions found from randomizer
         if not conditions:
             for block_id, block_data in blocks_map.items():
                 block_name = block_data.get('name', '')
+                # Skip generic blocks
+                if block_name.lower() in ('default question block', 'block', 'standard', 'trash / unused questions'):
+                    continue
                 if self._looks_like_condition(block_name):
                     name = self._normalize_condition_name(block_name)
                     if name and name.lower() not in seen_names:
@@ -603,29 +591,16 @@ class EnhancedConditionIdentifier:
                         conditions.append(IdentifiedCondition(
                             name=name,
                             factor='Treatment',
-                            source='Block Name',
-                            confidence=0.5,
+                            source='QSF Block Name',
+                            confidence=0.7,
                             block_ids=[block_id],
                         ))
-                        self.warnings.append(
-                            f"Condition '{name}' inferred from block name (lower confidence)"
-                        )
-
-        # Sort by confidence
-        conditions.sort(key=lambda c: -c.confidence)
 
         if not conditions:
-            self.warnings.append(
-                "No experimental conditions detected. "
-                "Please define conditions manually in the Review tab."
+            self.suggestions.append(
+                "No experimental conditions auto-detected from QSF. "
+                "Please add your conditions manually below."
             )
-            # Add a default placeholder
-            conditions.append(IdentifiedCondition(
-                name='Condition A',
-                factor='Treatment',
-                source='Default',
-                confidence=0.0,
-            ))
 
         return conditions
 

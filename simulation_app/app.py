@@ -404,6 +404,41 @@ def _create_scale_point_fixes(warnings: List[str], default_points: int = 7) -> D
     return fixes
 
 
+def _categorize_variable_by_name(var_name: str) -> str:
+    """
+    Categorize a variable based on its name patterns.
+    Returns: Timing, Demographics, Scale, Attention, or Other
+    """
+    var_lower = var_name.lower()
+
+    # Timing variables
+    timing_patterns = [
+        'duration', 'startdate', 'enddate', 'recordeddate', 'timing',
+        'time', 'q_totaltime', 'q_recaptchascore', 'progress', 'finished',
+        'responseid', 'ipaddress', 'locationlatitude', 'locationlongitude',
+        'userlanguage', 'distributionchannel', 'externalreference',
+        'status', 'recipientlastname', 'recipientfirstname', 'recipientemail',
+        'gc', '_first_click', '_last_click', '_page_submit', '_click_count',
+    ]
+    for pattern in timing_patterns:
+        if pattern in var_lower or var_lower.startswith('q_'):
+            return "Timing/Meta"
+
+    # Demographics
+    demo_patterns = ['age', 'gender', 'sex', 'income', 'education', 'race', 'ethnicity', 'occupation', 'demo']
+    for pattern in demo_patterns:
+        if pattern in var_lower:
+            return "Demographics"
+
+    # Attention checks
+    attention_patterns = ['attention', 'check', 'attn', 'ac_', 'attention_']
+    for pattern in attention_patterns:
+        if pattern in var_lower:
+            return "Attention check"
+
+    return "Survey Question"
+
+
 def _build_variable_review_rows(
     inferred: Dict[str, Any],
     prereg_outcomes: str,
@@ -414,12 +449,7 @@ def _build_variable_review_rows(
     Build variable review rows from inferred design and preregistration info.
 
     This creates a comprehensive list of variables for user review and correction.
-    Each row includes:
-    - Variable: The Qualtrics variable name
-    - Display Name: Human-readable name
-    - Role: The assigned role (editable)
-    - Source: Where the variable was detected
-    - Confidence: How confident the system is in the role assignment
+    Variables are categorized by type for easier filtering and organization.
     """
     rows: List[Dict[str, Any]] = []
     seen_vars: set = set()
@@ -431,30 +461,51 @@ def _build_variable_review_rows(
                 continue
             seen_vars.add(var.variable_id)
 
-            # Map VariableRole enum to display string
+            # Map VariableRole enum to display string with better categorization
             role_map = {
                 VariableRole.CONDITION: "Condition",
                 VariableRole.INDEPENDENT_VARIABLE: "Independent variable",
                 VariableRole.PRIMARY_OUTCOME: "Primary outcome",
                 VariableRole.SECONDARY_OUTCOME: "Secondary outcome",
-                VariableRole.MEDIATOR: "Secondary outcome",  # Map to available option
-                VariableRole.MODERATOR: "Secondary outcome",
-                VariableRole.COVARIATE: "Other",
-                VariableRole.DEMOGRAPHICS: "Other",
-                VariableRole.ATTENTION_CHECK: "Other",
-                VariableRole.MANIPULATION_CHECK: "Other",
+                VariableRole.MEDIATOR: "Mediator",
+                VariableRole.MODERATOR: "Moderator",
+                VariableRole.COVARIATE: "Covariate",
+                VariableRole.DEMOGRAPHICS: "Demographics",
+                VariableRole.ATTENTION_CHECK: "Attention check",
+                VariableRole.MANIPULATION_CHECK: "Manipulation check",
                 VariableRole.OPEN_ENDED: "Open-ended",
-                VariableRole.FILLER: "Other",
+                VariableRole.FILLER: "Filler",
                 VariableRole.OTHER: "Other",
             }
+
+            # Determine category based on variable name patterns
+            category = _categorize_variable_by_name(var.variable_id)
+            role = role_map.get(var.role, "Other")
+
+            # Override role for timing/meta variables
+            if category == "Timing/Meta":
+                role = "Timing/Meta"
+            elif category == "Demographics" and role == "Other":
+                role = "Demographics"
 
             rows.append({
                 "Variable": var.variable_id,
                 "Display Name": var.display_name,
-                "Role": role_map.get(var.role, "Other"),
-                "Source": var.source,
-                "Question Text": var.question_text[:80] + "..." if len(var.question_text) > 80 else var.question_text,
+                "Type": category,
+                "Role": role,
+                "Question Text": var.question_text[:60] + "..." if len(var.question_text) > 60 else var.question_text,
             })
+
+        # Sort: Survey Questions first, then by role importance
+        role_order = {
+            "Primary outcome": 0, "Secondary outcome": 1, "Condition": 2,
+            "Independent variable": 3, "Mediator": 4, "Moderator": 5,
+            "Manipulation check": 6, "Attention check": 7, "Open-ended": 8,
+            "Demographics": 9, "Covariate": 10, "Timing/Meta": 11,
+            "Filler": 12, "Other": 13,
+        }
+        type_order = {"Survey Question": 0, "Demographics": 1, "Attention check": 2, "Timing/Meta": 3}
+        rows.sort(key=lambda r: (type_order.get(r["Type"], 99), role_order.get(r["Role"], 99)))
         return rows
 
     # Fallback: Build from inferred design
@@ -465,8 +516,8 @@ def _build_variable_review_rows(
             rows.append({
                 "Variable": cond,
                 "Display Name": cond,
+                "Type": "Survey Question",
                 "Role": "Condition",
-                "Source": "QSF/Preregistration",
                 "Question Text": "",
             })
 
@@ -476,21 +527,19 @@ def _build_variable_review_rows(
         if name and name not in seen_vars:
             seen_vars.add(name)
             # Check if this matches preregistration outcomes
-            role = "Other"
+            role = "Primary outcome"
             if prereg_outcomes:
                 name_lower = name.lower()
                 outcomes_lower = prereg_outcomes.lower()
-                if name_lower in outcomes_lower or any(
-                    word in outcomes_lower for word in name_lower.split() if len(word) > 3
-                ):
-                    role = "Primary outcome"
+                if name_lower not in outcomes_lower:
+                    role = "Secondary outcome"
 
             rows.append({
                 "Variable": name,
                 "Display Name": name.replace("_", " ").title(),
+                "Type": "Survey Question",
                 "Role": role,
-                "Source": "QSF Scale Detection",
-                "Question Text": f"{scale.get('num_items', 0)} items, {scale.get('scale_points', 7)}-point scale",
+                "Question Text": f"{scale.get('num_items', 0)} items, {scale.get('scale_points', 7)}-pt",
             })
 
     # Add open-ended questions
@@ -500,8 +549,8 @@ def _build_variable_review_rows(
             rows.append({
                 "Variable": q,
                 "Display Name": q.replace("_", " ").title(),
+                "Type": "Survey Question",
                 "Role": "Open-ended",
-                "Source": "QSF Question Type",
                 "Question Text": "",
             })
 
@@ -510,8 +559,8 @@ def _build_variable_review_rows(
         rows.append({
             "Variable": "Main_DV",
             "Display Name": "Main DV",
+            "Type": "Survey Question",
             "Role": "Primary outcome",
-            "Source": "Default",
             "Question Text": "",
         })
 
@@ -1107,37 +1156,30 @@ This is optional but recommended for better simulation quality.
                 scale_warnings = [w for w in parsed_warnings if w["type"] == "scale_points"]
 
                 if scale_warnings:
-                    st.markdown("**Scale Point Issues** - These questions need scale points defined:")
+                    st.markdown("**Scale Point Clarification** - Please confirm scale points for these questions:")
+                    st.caption("The QSF file should contain this information. If these are showing, the question format may be unusual.")
 
-                    # Infer default from PDF if available
-                    survey_pdf_text = st.session_state.get("survey_pdf_text", "")
-                    prereg_text = st.session_state.get("prereg_text_sanitized", "")
-                    inferred_points = _infer_default_scale_points(survey_pdf_text, prereg_text)
+                    # Initialize scale_point_overrides in session state if not exists
+                    if "scale_point_overrides" not in st.session_state:
+                        st.session_state["scale_point_overrides"] = {}
 
-                    st.info(f"Based on your documents, the most likely scale is **{inferred_points}-point**. Click below to apply.")
-
-                    col_fix1, col_fix2, col_fix3 = st.columns(3)
-
-                    with col_fix1:
-                        if st.button(f"Set all to {inferred_points}-point (recommended)", type="primary"):
-                            st.session_state["default_scale_points"] = inferred_points
-                            st.success(f"Default scale points set to {inferred_points}. Proceed to Review tab to confirm.")
-
-                    with col_fix2:
-                        if st.button("Set all to 5-point"):
-                            st.session_state["default_scale_points"] = 5
-                            st.success("Default scale points set to 5. Proceed to Review tab to confirm.")
-
-                    with col_fix3:
-                        if st.button("Set all to 7-point"):
-                            st.session_state["default_scale_points"] = 7
-                            st.success("Default scale points set to 7. Proceed to Review tab to confirm.")
-
-                    # Show the specific questions for reference
-                    with st.expander("Questions with unclear scale points"):
-                        for sw in scale_warnings:
-                            q_id = sw.get("question_id", "Unknown")
-                            st.text(f"- {q_id}")
+                    # Show each question with individual scale point setting
+                    for sw in scale_warnings:
+                        q_id = sw.get("question_id", "Unknown")
+                        if q_id and q_id != "Unknown":
+                            col_q, col_scale = st.columns([3, 1])
+                            with col_q:
+                                st.text(f"{q_id}")
+                            with col_scale:
+                                current_val = st.session_state["scale_point_overrides"].get(q_id, 7)
+                                new_val = st.selectbox(
+                                    "Points",
+                                    options=[2, 3, 4, 5, 6, 7, 9, 10, 11],
+                                    index=[2, 3, 4, 5, 6, 7, 9, 10, 11].index(current_val) if current_val in [2, 3, 4, 5, 6, 7, 9, 10, 11] else 3,
+                                    key=f"scale_{q_id}",
+                                    label_visibility="collapsed",
+                                )
+                                st.session_state["scale_point_overrides"][q_id] = new_val
 
                 # Show other warnings
                 other_warnings = [w for w in parsed_warnings if w["type"] not in ["scale_points"]]
@@ -1181,18 +1223,12 @@ with tabs[2]:
         rand_level = inferred.get("randomization_level", "Participant-level")
         summary_cols[4].metric("Randomization", rand_level.split("-")[0] if "-" in rand_level else rand_level)
 
-        # Show detection confidence if available
-        if enhanced_analysis and enhanced_analysis.conditions:
-            avg_confidence = sum(c.confidence for c in enhanced_analysis.conditions) / len(enhanced_analysis.conditions)
-            if avg_confidence < 0.5:
-                st.warning(
-                    "Low detection confidence. Please review and correct the conditions below. "
-                    "The system may have misidentified some elements."
-                )
-            elif avg_confidence < 0.7:
-                st.info(
-                    "Moderate detection confidence. Please verify the detected design is correct."
-                )
+        # Show helpful message if no conditions detected
+        if not inferred.get("conditions") or (len(inferred.get("conditions", [])) == 0):
+            st.info(
+                "No conditions automatically detected from the QSF. "
+                "Please add your experimental conditions below."
+            )
 
         st.divider()
 
@@ -1201,9 +1237,9 @@ with tabs[2]:
 
         with col1:
             st.markdown("### Conditions")
-            st.caption("Edit conditions directly in the table. Use the dropdown to change roles.")
+            st.caption("Edit conditions directly. Add or remove rows as needed.")
 
-            # Build conditions table with editable roles
+            # Build conditions table (no confidence column - user decides what's correct)
             condition_rows = []
             condition_sources = st.session_state.get("condition_sources") or []
 
@@ -1213,7 +1249,6 @@ with tabs[2]:
                         "Condition": cond.name,
                         "Factor": cond.factor,
                         "Source": cond.source,
-                        "Confidence": f"{cond.confidence:.0%}",
                     })
             elif condition_sources:
                 for cs in condition_sources:
@@ -1221,7 +1256,6 @@ with tabs[2]:
                         "Condition": cs.get("Condition", ""),
                         "Factor": "Treatment",
                         "Source": cs.get("Source", "Unknown"),
-                        "Confidence": "N/A",
                     })
             elif inferred["conditions"]:
                 for cond in inferred["conditions"]:
@@ -1229,7 +1263,6 @@ with tabs[2]:
                         "Condition": cond,
                         "Factor": "Treatment",
                         "Source": "Detected",
-                        "Confidence": "N/A",
                     })
 
             if condition_rows:
@@ -1240,8 +1273,7 @@ with tabs[2]:
                     column_config={
                         "Condition": st.column_config.TextColumn("Condition Name", help="Edit the condition name"),
                         "Factor": st.column_config.TextColumn("Factor", help="Which factor this belongs to"),
-                        "Source": st.column_config.TextColumn("Source", disabled=True),
-                        "Confidence": st.column_config.TextColumn("Confidence", disabled=True),
+                        "Source": st.column_config.TextColumn("Source", disabled=True, width="small"),
                     },
                     key="conditions_editor",
                 )
@@ -1301,7 +1333,7 @@ with tabs[2]:
             st.markdown("### Factors (Independent Variables)")
             st.caption("Factors define your experimental design structure.")
 
-            # Build factors table
+            # Build factors table (no confidence - user decides what's correct)
             factor_rows = []
             if enhanced_analysis and enhanced_analysis.factors:
                 for factor in enhanced_analysis.factors:
@@ -1309,7 +1341,6 @@ with tabs[2]:
                         "Factor": factor.name,
                         "Levels": ", ".join(factor.levels),
                         "Type": "Between-subjects" if factor.is_between_subjects else "Within-subjects",
-                        "Confidence": f"{factor.confidence:.0%}",
                     })
             elif inferred["factors"]:
                 for factor in inferred["factors"]:
@@ -1317,7 +1348,6 @@ with tabs[2]:
                         "Factor": factor.get("name", "Condition"),
                         "Levels": ", ".join(factor.get("levels", [])),
                         "Type": "Between-subjects",
-                        "Confidence": "N/A",
                     })
 
             if factor_rows:
@@ -1332,7 +1362,6 @@ with tabs[2]:
                             "Design Type",
                             options=["Between-subjects", "Within-subjects", "Mixed"],
                         ),
-                        "Confidence": st.column_config.TextColumn("Confidence", disabled=True),
                     },
                     key="factors_editor",
                 )
@@ -1392,85 +1421,138 @@ with tabs[2]:
 
         # Variable Review Section - Shows ALL variables with ability to reassign roles
         st.subheader("All Survey Variables")
-        st.caption(
-            "Review all detected variables and their assigned roles. "
-            "Use the **Role** dropdown to correct any misidentified variables. "
-            "The **Variable** column shows the exact Qualtrics variable name."
-        )
-
         prereg_outcomes = st.session_state.get("prereg_outcomes", "")
         prereg_iv = st.session_state.get("prereg_iv", "")
         default_rows = _build_variable_review_rows(inferred, prereg_outcomes, prereg_iv, enhanced_analysis)
         current_rows = st.session_state.get("variable_review_rows")
 
-        # Reset to defaults if empty or user requests
+        # Reset to defaults if empty
         if not current_rows:
             current_rows = default_rows
 
-        variable_df = st.data_editor(
-            pd.DataFrame(current_rows),
-            num_rows="dynamic",
-            use_container_width=True,
-            column_config={
-                "Variable": st.column_config.TextColumn(
-                    "Qualtrics Variable",
-                    help="The exact variable name from Qualtrics",
-                    disabled=False,
-                ),
-                "Display Name": st.column_config.TextColumn(
-                    "Display Name",
-                    help="Human-readable name",
-                ),
-                "Role": st.column_config.SelectboxColumn(
-                    "Role",
-                    options=[
-                        "Condition",
-                        "Independent variable",
-                        "Primary outcome",
-                        "Secondary outcome",
-                        "Mediator",
-                        "Moderator",
-                        "Covariate",
-                        "Demographics",
-                        "Attention check",
-                        "Manipulation check",
-                        "Open-ended",
-                        "Filler",
-                        "Other",
-                    ],
-                    help="Select the role this variable plays in your study",
-                    required=True,
-                ),
-                "Source": st.column_config.TextColumn(
-                    "Detection Source",
-                    help="How this variable was detected",
-                    disabled=True,
-                ),
-                "Question Text": st.column_config.TextColumn(
-                    "Question Text",
-                    help="Preview of the question text",
-                    disabled=True,
-                ),
-            },
-            key="variable_review_editor",
-            height=400,
-        )
-        st.session_state["variable_review_rows"] = variable_df.to_dict(orient="records")
+        # Type filter buttons
+        st.caption("Filter by type to focus on specific variable categories:")
+        filter_cols = st.columns(5)
+        with filter_cols[0]:
+            show_survey = st.checkbox("Survey Questions", value=True, key="filter_survey")
+        with filter_cols[1]:
+            show_demo = st.checkbox("Demographics", value=True, key="filter_demo")
+        with filter_cols[2]:
+            show_attention = st.checkbox("Attention Checks", value=True, key="filter_attention")
+        with filter_cols[3]:
+            show_timing = st.checkbox("Timing/Meta", value=False, key="filter_timing")
+        with filter_cols[4]:
+            show_all = st.checkbox("Show All", value=False, key="filter_all")
 
-        # Buttons for variable table actions
+        # Filter rows based on selection
+        if show_all:
+            filtered_rows = current_rows
+        else:
+            filtered_rows = []
+            for row in current_rows:
+                var_type = row.get("Type", "Survey Question")
+                if show_survey and var_type == "Survey Question":
+                    filtered_rows.append(row)
+                elif show_demo and var_type == "Demographics":
+                    filtered_rows.append(row)
+                elif show_attention and var_type == "Attention check":
+                    filtered_rows.append(row)
+                elif show_timing and var_type == "Timing/Meta":
+                    filtered_rows.append(row)
+
+        # Show count summary
+        type_counts = {}
+        for row in current_rows:
+            var_type = row.get("Type", "Survey Question")
+            type_counts[var_type] = type_counts.get(var_type, 0) + 1
+
+        count_parts = []
+        for t, c in sorted(type_counts.items()):
+            count_parts.append(f"{t}: {c}")
+        st.caption(f"Total: {len(current_rows)} variables ({', '.join(count_parts)})")
+
+        if filtered_rows:
+            variable_df = st.data_editor(
+                pd.DataFrame(filtered_rows),
+                num_rows="dynamic",
+                use_container_width=True,
+                column_config={
+                    "Variable": st.column_config.TextColumn(
+                        "Qualtrics Variable",
+                        help="The exact variable name from Qualtrics",
+                        width="medium",
+                    ),
+                    "Display Name": st.column_config.TextColumn(
+                        "Display Name",
+                        help="Human-readable name",
+                        width="medium",
+                    ),
+                    "Type": st.column_config.TextColumn(
+                        "Type",
+                        help="Variable category (auto-detected)",
+                        disabled=True,
+                        width="small",
+                    ),
+                    "Role": st.column_config.SelectboxColumn(
+                        "Role",
+                        options=[
+                            "Primary outcome",
+                            "Secondary outcome",
+                            "Condition",
+                            "Independent variable",
+                            "Mediator",
+                            "Moderator",
+                            "Manipulation check",
+                            "Attention check",
+                            "Open-ended",
+                            "Demographics",
+                            "Covariate",
+                            "Timing/Meta",
+                            "Filler",
+                            "Other",
+                        ],
+                        help="Select the role this variable plays in your study",
+                        required=True,
+                        width="medium",
+                    ),
+                    "Question Text": st.column_config.TextColumn(
+                        "Question Preview",
+                        help="Preview of the question text",
+                        disabled=True,
+                        width="large",
+                    ),
+                },
+                key="variable_review_editor",
+                height=350,
+            )
+
+            # Update session state with edited values
+            edited_records = variable_df.to_dict(orient="records")
+            # Merge back edits into full list
+            edited_by_var = {r["Variable"]: r for r in edited_records}
+            for i, row in enumerate(current_rows):
+                if row["Variable"] in edited_by_var:
+                    current_rows[i] = edited_by_var[row["Variable"]]
+            st.session_state["variable_review_rows"] = current_rows
+        else:
+            st.info("No variables match the current filter. Adjust filters above.")
+
+        # Action buttons
         col_btn1, col_btn2, col_btn3 = st.columns(3)
         with col_btn1:
-            if st.button("Reset to Detected", help="Reset variable assignments to auto-detected values"):
+            if st.button("Reset to Auto-Detected", help="Reset all variable assignments"):
                 st.session_state["variable_review_rows"] = default_rows
                 st.rerun()
         with col_btn2:
-            if st.button("Mark All Unknown as Other"):
+            if st.button("Hide Timing Variables", help="Mark all timing/meta variables as hidden"):
                 rows = st.session_state.get("variable_review_rows", [])
                 for row in rows:
-                    if row.get("Role") == "Other" or not row.get("Role"):
-                        row["Role"] = "Other"
+                    if row.get("Type") == "Timing/Meta":
+                        row["Role"] = "Timing/Meta"
                 st.session_state["variable_review_rows"] = rows
                 st.rerun()
+        with col_btn3:
+            pass  # Reserved for future action
 
         st.divider()
         st.subheader("Design Overrides (Advanced)")

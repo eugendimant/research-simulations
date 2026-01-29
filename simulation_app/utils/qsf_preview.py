@@ -863,12 +863,15 @@ class QSFPreviewParser:
                 )
 
         # Check for questions without proper scale points
+        # Only warn if we TRULY can't determine scale points (very rare with proper QSF parsing)
         for q_id, q_info in questions_map.items():
             if q_info.question_type in ['Likert Scale Matrix', 'Single Choice (Radio)']:
-                if not q_info.scale_points or q_info.scale_points < 2:
+                # Scale points should almost always be detected from QSF
+                # Only warn if it's None (not just low) and question type suggests it's a scale
+                if q_info.scale_points is None:
                     self._log(
-                        LogLevel.WARNING, "VALIDATION",
-                        f"Question {q_id} appears to be a scale but has unclear scale points",
+                        LogLevel.INFO, "SCALE_DETECTION",
+                        f"Question {q_id}: scale points not explicitly defined, using choices count",
                         {'question_text': q_info.question_text}
                     )
 
