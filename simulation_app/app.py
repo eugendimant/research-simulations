@@ -511,15 +511,13 @@ with st.sidebar:
     st.session_state["advanced_mode"] = advanced_mode
 
     st.divider()
-    st.subheader("Standardization (Simple mode)")
+    st.subheader("Simple vs. Advanced")
     st.write(
-        "When Advanced mode is off, the app uses standardized defaults so results are comparable across teams."
+        "- **Simple mode** uses standardized defaults for demographics, attention checks, and exclusions "
+        "so outputs are comparable across teams.\n"
+        "- **Advanced mode** unlocks controls for demographics, exclusions, and effect sizes when you need "
+        "a custom setup."
     )
-
-    st.divider()
-    st.subheader("Email (optional)")
-    st.write("Automatic email delivery is available if SendGrid secrets are configured.")
-    st.write("This app will not collect or store emails beyond the current session.")
 
 
 tabs = st.tabs(["1) Quick setup", "2) Upload QSF", "3) Review", "4) Generate"])
@@ -814,59 +812,105 @@ with tabs[2]:
             st.subheader("Advanced: edit design")
             st.caption("Changes here override the auto-detected design for the simulation.")
 
-            cond_text = st.text_area(
-                "Conditions (one per line)",
-                value="\n".join(inferred["conditions"]),
-                height=140,
-            )
-            conditions = [c.strip() for c in cond_text.splitlines() if c.strip()]
-            if not conditions:
-                conditions = ["Condition A"]
+        prereg_outcomes = st.session_state.get("prereg_outcomes", "")
+        prereg_iv = st.session_state.get("prereg_iv", "")
+        default_rows = _build_variable_review_rows(inferred, prereg_outcomes, prereg_iv)
+        current_rows = st.session_state.get("variable_review_rows", default_rows)
+        if not current_rows:
+            current_rows = default_rows
 
-            st.caption("Factors are optional. If you leave this empty, the engine will treat CONDITION as the only factor.")
-            factors_json = st.text_area(
-                "Factors (JSON list) - optional",
-                value=_safe_json(_infer_factors_from_conditions(conditions)),
-                height=180,
-                help='Example: [{"name":"AI","levels":["AI","No AI"]},{"name":"Product","levels":["Hedonic","Utilitarian"]}]',
-            )
-            try:
-                factors = json.loads(factors_json)
-                if not isinstance(factors, list):
-                    raise ValueError("Factors JSON must be a list.")
-            except Exception as e:
-                st.error(f"Factors JSON invalid: {e}")
-                factors = _infer_factors_from_conditions(conditions)
-
-            st.caption("Scales drive most analyses. Keep this short: 1-3 scales is typical for class pilots.")
-            scales_df = pd.DataFrame(inferred["scales"])
-            edited_scales = st.data_editor(
-                scales_df,
-                num_rows="dynamic",
-                use_container_width=True,
-            )
-            scales: List[Dict[str, Any]] = []
-            for _, row in edited_scales.iterrows():
-                name = str(row.get("name", "")).strip()
-                if not name:
-                    continue
-                scales.append(
-                    {
-                        "name": name,
-                        "num_items": int(row.get("num_items", 5) or 5),
-                        "scale_points": int(row.get("scale_points", 7) or 7),
-                        "reverse_items": row.get("reverse_items", []) or [],
-                    }
+        variable_df = st.data_editor(
+            pd.DataFrame(current_rows),
+            num_rows="dynamic",
+            use_container_width=True,
+            column_config={
+                "Role": st.column_config.SelectboxColumn(
+                    "Role",
+                    options=[
+                        "Condition",
+                        "Independent variable",
+                        "Primary outcome",
+                        "Secondary outcome",
+                        "Open-ended",
+                        "Other",
+                    ],
                 )
-            if not scales:
-                scales = [{"name": "Main_DV", "num_items": 5, "scale_points": 7, "reverse_items": []}]
+            },
+        )
+        st.session_state["variable_review_rows"] = variable_df.to_dict(orient="records")
 
-            st.session_state["inferred_design"] = {
-                "conditions": conditions,
-                "factors": factors,
-                "scales": scales,
-                "open_ended_questions": inferred.get("open_ended_questions", []),
-            }
+        st.divider()
+        st.subheader("Design overrides")
+        st.caption("Update the key pieces of the design before simulation if the auto-detection missed anything.")
+
+        cond_text = st.text_area(
+            "Treatment conditions (one per line)",
+            value="\n".join(inferred["conditions"]),
+            height=140,
+            help="These are the randomized conditions used to simulate between-group differences.",
+        )
+        conditions = [c.strip() for c in cond_text.splitlines() if c.strip()]
+        if not conditions:
+            conditions = ["Condition A"]
+
+        factors_json = st.text_area(
+            "Factors & levels (JSON list) - optional",
+            value=_safe_json(_infer_factors_from_conditions(conditions)),
+            height=180,
+            help='Example: [{"name":"AI","levels":["AI","No AI"]},{"name":"Product","levels":["Hedonic","Utilitarian"]}]',
+        )
+        try:
+            factors = json.loads(factors_json)
+            if not isinstance(factors, list):
+                raise ValueError("Factors JSON must be a list.")
+        except Exception as e:
+            st.error(f"Factors JSON invalid: {e}")
+            factors = _infer_factors_from_conditions(conditions)
+
+        st.caption("Scales drive most analyses. Keep this short: 1-3 scales is typical for class pilots.")
+        scales_df = pd.DataFrame(inferred["scales"])
+        edited_scales = st.data_editor(
+            scales_df,
+            num_rows="dynamic",
+            use_container_width=True,
+        )
+        scales: List[Dict[str, Any]] = []
+        for _, row in edited_scales.iterrows():
+            name = str(row.get("name", "")).strip()
+            if not name:
+                continue
+            scales.append(
+                {
+                    "name": name,
+                    "num_items": int(row.get("num_items", 5) or 5),
+                    "scale_points": int(row.get("scale_points", 7) or 7),
+                    "reverse_items": row.get("reverse_items", []) or [],
+                }
+            )
+        if not scales:
+            scales = [{"name": "Main_DV", "num_items": 5, "scale_points": 7, "reverse_items": []}]
+
+        open_ended_text = st.text_area(
+            "Open-ended questions (optional, one per line)",
+            value="\n".join(inferred.get("open_ended_questions", [])),
+            height=120,
+        )
+        open_ended_questions = [q.strip() for q in open_ended_text.splitlines() if q.strip()]
+
+        randomization_level = st.selectbox(
+            "Randomization level",
+            ["Participant", "Group/Cluster", "Multiple stages", "Not randomized / observational"],
+            index=0,
+            help="Used in reporting and metadata to capture where randomization occurs.",
+        )
+        st.session_state["randomization_level"] = randomization_level
+
+        st.session_state["inferred_design"] = {
+            "conditions": conditions,
+            "factors": factors,
+            "scales": scales,
+            "open_ended_questions": open_ended_questions,
+        }
 
         st.success("Design locked for generation (based on the settings above).")
 
@@ -1038,6 +1082,10 @@ with tabs[3]:
                     "exclusion_criteria": st.session_state.get("prereg_exclusions", ""),
                     "analysis_plan": st.session_state.get("prereg_analysis", ""),
                     "notes_sanitized": st.session_state.get("prereg_text_sanitized", ""),
+                }
+                metadata["design_review"] = {
+                    "variable_roles": st.session_state.get("variable_review_rows", []),
+                    "randomization_level": st.session_state.get("randomization_level", ""),
                 }
 
                 schema_results = validate_schema(
