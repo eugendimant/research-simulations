@@ -1357,35 +1357,37 @@ if active_step == 1:
     # Initialize preview variable for QSF processing
     preview: Optional[QSFPreviewResult] = st.session_state.get("qsf_preview", None)
 
-    if qsf_file is not None:
+    # Check if this is a new file upload (different from what's already stored)
+    stored_preview = st.session_state.get("qsf_preview", None)
+    is_new_upload = qsf_file is not None and (
+        not stored_preview or
+        st.session_state.get("qsf_file_name") != qsf_file.name
+    )
+
+    if qsf_file is not None and is_new_upload:
         try:
             content = qsf_file.read()
             payload, payload_name = _extract_qsf_payload(content)
             preview = parser.parse(payload)
             st.session_state["qsf_preview"] = preview
             st.session_state["qsf_raw_content"] = payload  # Store for enhanced analysis
+            st.session_state["qsf_file_name"] = qsf_file.name  # Track file name
 
             if preview.success:
-                st.success(f"QSF parsed successfully ({payload_name}).")
-
                 # Perform enhanced design analysis
                 with st.spinner("Analyzing experimental design..."):
                     enhanced_analysis = _perform_enhanced_analysis(
                         qsf_content=payload,
-                        prereg_outcomes="",
-                        prereg_iv="",
-                        prereg_text="",
-                        prereg_pdf_text="",
+                        prereg_outcomes=st.session_state.get("prereg_outcomes", ""),
+                        prereg_iv=st.session_state.get("prereg_iv", ""),
+                        prereg_text=st.session_state.get("prereg_text_sanitized", ""),
+                        prereg_pdf_text=st.session_state.get("prereg_pdf_text", ""),
                     )
                     if enhanced_analysis:
                         st.session_state["enhanced_analysis"] = enhanced_analysis
-                        if enhanced_analysis.warnings:
-                            for warn in enhanced_analysis.warnings[:3]:
-                                st.warning(warn)
-                        if enhanced_analysis.suggestions:
-                            with st.expander("Analysis suggestions"):
-                                for sug in enhanced_analysis.suggestions:
-                                    st.info(sug)
+
+                # Rerun to update navigation buttons with new completion status
+                st.rerun()
             else:
                 st.error("QSF parsed but validation failed. See warnings below.")
         except Exception as e:
@@ -1394,6 +1396,68 @@ if active_step == 1:
             st.error(f"QSF parsing failed: {e}")
 
     preview: Optional[QSFPreviewResult] = st.session_state.get("qsf_preview", None)
+
+    # ========================================
+    # OPTIONAL: Preregistration / AsPredicted
+    # ========================================
+    st.markdown("---")
+    st.markdown("### 2. Preregistration Details (Optional)")
+    st.caption("Upload your AsPredicted or preregistration PDF to improve simulation quality. The tool uses this to better understand your hypotheses and variables.")
+
+    with st.expander("Add preregistration for better simulations", expanded=False):
+        col_prereg1, col_prereg2 = st.columns(2)
+
+        with col_prereg1:
+            prereg_file = st.file_uploader(
+                "AsPredicted / Preregistration PDF",
+                type=["pdf"],
+                help="Upload your preregistration document (PDF format)",
+                key="prereg_pdf_uploader",
+            )
+
+            if prereg_file is not None:
+                try:
+                    # Store the PDF content for later analysis
+                    pdf_content = prereg_file.read()
+                    st.session_state["prereg_pdf_content"] = pdf_content
+                    st.session_state["prereg_pdf_name"] = prereg_file.name
+                    st.success(f"Preregistration uploaded: {prereg_file.name}")
+
+                    # Try to extract text from PDF if possible
+                    try:
+                        import fitz  # PyMuPDF
+                        pdf_doc = fitz.open(stream=pdf_content, filetype="pdf")
+                        pdf_text = ""
+                        for page in pdf_doc:
+                            pdf_text += page.get_text()
+                        st.session_state["prereg_pdf_text"] = pdf_text
+                        if pdf_text.strip():
+                            st.info("PDF text extracted successfully for analysis.")
+                    except ImportError:
+                        st.info("PDF uploaded but text extraction unavailable. The file will still be included in metadata.")
+                    except Exception:
+                        st.info("Could not extract text from PDF. The file will still be included in metadata.")
+                except Exception as e:
+                    st.error(f"Failed to process preregistration PDF: {e}")
+
+        with col_prereg2:
+            prereg_outcomes = st.text_area(
+                "Primary outcome variables",
+                value=st.session_state.get("prereg_outcomes", ""),
+                placeholder="e.g., purchase_intention, brand_attitude",
+                help="List your main dependent variables (comma-separated)",
+                key="prereg_outcomes_input",
+            )
+            st.session_state["prereg_outcomes"] = prereg_outcomes
+
+            prereg_iv = st.text_area(
+                "Independent variables / Manipulations",
+                value=st.session_state.get("prereg_iv", ""),
+                placeholder="e.g., AI_recommendation (yes/no), product_type (utilitarian/hedonic)",
+                help="List your manipulated variables and levels",
+                key="prereg_iv_input",
+            )
+            st.session_state["prereg_iv"] = prereg_iv
 
     if preview:
         condition_candidates = _get_condition_candidates(
@@ -1808,7 +1872,8 @@ if active_step == 2:
             )
             st.session_state["variable_review_rows"] = variable_df.to_dict(orient="records")
 
-        _render_step_navigation(2, design_valid, "Generate")
+    # Navigation at bottom of Step 3 (outside expander)
+    _render_step_navigation(2, design_valid, "Generate")
 
 
 # -----------------------------
@@ -1972,13 +2037,30 @@ if active_step == 3:
     # Button: disabled if not ready, generating, or already generated
     can_generate = all_required_complete and not is_generating and not has_generated
 
-    if is_generating:
-        st.button("Generating simulated dataset...", type="primary", disabled=True)
-    elif has_generated:
-        st.button("Simulation generated", type="primary", disabled=True)
-    else:
-        if st.button("Generate simulated dataset", type="primary", disabled=not can_generate):
-            st.session_state["generation_requested"] = True
+    # Create button row
+    btn_col1, btn_col2 = st.columns([2, 1])
+
+    with btn_col1:
+        if is_generating:
+            st.button("Generating simulated dataset...", type="primary", disabled=True, use_container_width=True)
+        elif has_generated:
+            st.button("Simulation generated", type="primary", disabled=True, use_container_width=True)
+        else:
+            if st.button("Generate simulated dataset", type="primary", disabled=not can_generate, use_container_width=True):
+                st.session_state["generation_requested"] = True
+                st.rerun()
+
+    with btn_col2:
+        # Reset button - allows user to restart if stuck
+        if has_generated or is_generating:
+            if st.button("Reset & Generate New", use_container_width=True):
+                st.session_state["is_generating"] = False
+                st.session_state["has_generated"] = False
+                st.session_state["generation_requested"] = False
+                st.session_state["last_df"] = None
+                st.session_state["last_zip"] = None
+                st.session_state["last_metadata"] = None
+                st.rerun()
 
     if st.session_state.get("generation_requested") and not is_generating:
         st.session_state["generation_requested"] = False
@@ -2122,14 +2204,15 @@ if active_step == 3:
             progress_bar.progress(100, text="Simulation ready.")
             status_placeholder.success("Simulation complete.")
             st.session_state["has_generated"] = True
+            st.session_state["is_generating"] = False
+            st.rerun()  # Refresh to show download section
         except Exception as e:
             progress_bar.progress(100, text="Simulation failed.")
             status_placeholder.error("Simulation failed.")
             st.error(f"Simulation failed: {e}")
-        finally:
             st.session_state["is_generating"] = False
-            time.sleep(0.2)
-            progress_placeholder.empty()
+            st.session_state["generation_requested"] = False
+            # Don't rerun on error - show error message to user
 
     zip_bytes = st.session_state.get("last_zip", None)
     df = st.session_state.get("last_df", None)
