@@ -591,12 +591,22 @@ class QSFPreviewParser:
         """Map questions to their containing blocks."""
         blocks = []
 
+        # Safety check - ensure blocks_map is a dict
+        if not isinstance(blocks_map, dict):
+            self._log(LogLevel.WARNING, "BLOCKS", f"blocks_map is {type(blocks_map).__name__}, expected dict")
+            return blocks
+
         for block_id, block_data in blocks_map.items():
+            if not isinstance(block_data, dict):
+                continue
+
             block_questions = []
 
             block_elements = block_data.get('elements', [])
             if isinstance(block_elements, dict):
                 block_elements = list(block_elements.values())
+            elif not isinstance(block_elements, list):
+                block_elements = []
 
             for elem in block_elements:
                 q_id = ''
@@ -607,14 +617,15 @@ class QSFPreviewParser:
 
                 if q_id and q_id in questions_map:
                     q_info = questions_map[q_id]
-                    q_info.block_name = block_data['name']
+                    q_info.block_name = block_data.get('name', '')
                     block_questions.append(q_info)
 
-            is_randomizer = 'random' in block_data['name'].lower()
+            block_name = block_data.get('name', f'Block {block_id}')
+            is_randomizer = 'random' in block_name.lower()
 
             blocks.append(BlockInfo(
                 block_id=block_id,
-                block_name=block_data['name'],
+                block_name=block_name,
                 questions=block_questions,
                 is_randomizer=is_randomizer
             ))
