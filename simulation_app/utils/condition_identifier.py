@@ -626,6 +626,9 @@ class EnhancedConditionIdentifier:
         depth: int,
     ) -> Dict:
         """Parse a BlockRandomizer element."""
+        # Extract flow ID
+        flow_id = item.get('FlowID', item.get('ID', ''))
+
         # BlockRandomizer randomizes the order of blocks
         block_ids = item.get('BlockIDs', [])
         if isinstance(block_ids, dict):
@@ -638,6 +641,21 @@ class EnhancedConditionIdentifier:
                 for sub in self._normalize_flow(item.get('Flow', []))
                 if sub.get('Type') == 'Block'
             ]
+
+        # Build branches from block IDs
+        branches = []
+        for block_id in block_ids:
+            block_name = blocks_map.get(block_id, {}).get('name', block_id)
+            branches.append({
+                'type': 'block',
+                'block_id': block_id,
+                'name': block_name,
+            })
+
+        # Block randomizers typically show all blocks in random order
+        rand_type = 'randomize_order'
+        sub_set = len(block_ids)  # All blocks are shown
+
         return {
             'flow_id': flow_id,
             'type': 'block_randomizer',
