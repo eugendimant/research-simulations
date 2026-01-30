@@ -190,14 +190,28 @@ def _parse_question(element: Dict[str, Any]) -> Dict[str, Any]:
         'is_mandatory': payload.get('Validation', {}).get('Settings', {}).get('ForceResponse', 'OFF') == 'ON'
     }
 
-    # Parse choices
+    # Parse choices - handle both dict and list formats
     choices = payload.get('Choices', {})
     choice_order = payload.get('ChoiceOrder', [])
 
-    for choice_id in choice_order:
-        choice_id_str = str(choice_id)
-        if choice_id_str in choices:
-            choice_data = choices[choice_id_str]
+    if isinstance(choices, dict):
+        for choice_id in choice_order:
+            choice_id_str = str(choice_id)
+            if choice_id_str in choices:
+                choice_data = choices[choice_id_str]
+                if isinstance(choice_data, dict):
+                    question['choices'][choice_id_str] = {
+                        'text': _clean_html(choice_data.get('Display', '')),
+                        'recode': choice_data.get('RecodeValue', choice_id_str)
+                    }
+                else:
+                    question['choices'][choice_id_str] = {
+                        'text': str(choice_data),
+                        'recode': choice_id_str
+                    }
+    elif isinstance(choices, list):
+        for idx, choice_data in enumerate(choices):
+            choice_id_str = str(idx + 1)
             if isinstance(choice_data, dict):
                 question['choices'][choice_id_str] = {
                     'text': _clean_html(choice_data.get('Display', '')),
@@ -209,17 +223,24 @@ def _parse_question(element: Dict[str, Any]) -> Dict[str, Any]:
                     'recode': choice_id_str
                 }
 
-    question['choice_order'] = [str(c) for c in choice_order]
+    question['choice_order'] = [str(c) for c in choice_order] if choice_order else list(question['choices'].keys())
 
     # Parse answers (for matrix questions)
     answers = payload.get('Answers', {})
     if answers:
         question['answers'] = {}
-        for ans_id, ans_data in answers.items():
-            if isinstance(ans_data, dict):
-                question['answers'][ans_id] = _clean_html(ans_data.get('Display', ''))
-            else:
-                question['answers'][ans_id] = str(ans_data)
+        if isinstance(answers, dict):
+            for ans_id, ans_data in answers.items():
+                if isinstance(ans_data, dict):
+                    question['answers'][ans_id] = _clean_html(ans_data.get('Display', ''))
+                else:
+                    question['answers'][ans_id] = str(ans_data)
+        elif isinstance(answers, list):
+            for idx, ans_data in enumerate(answers):
+                if isinstance(ans_data, dict):
+                    question['answers'][str(idx)] = _clean_html(ans_data.get('Display', ''))
+                else:
+                    question['answers'][str(idx)] = str(ans_data)
 
     return question
 
