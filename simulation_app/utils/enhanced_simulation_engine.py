@@ -47,6 +47,66 @@ def _stable_int_hash(s: str) -> int:
     return int(hashlib.md5(s.encode("utf-8")).hexdigest()[:8], 16)
 
 
+def _normalize_scales(scales: Optional[List[Any]]) -> List[Dict[str, Any]]:
+    normalized: List[Dict[str, Any]] = []
+    for scale in scales or []:
+        if isinstance(scale, str):
+            name = scale.strip()
+            if name:
+                normalized.append(
+                    {"name": name, "num_items": 5, "scale_points": 7, "reverse_items": []}
+                )
+            continue
+        if isinstance(scale, dict):
+            name = str(scale.get("name", "")).strip()
+            if not name:
+                continue
+            normalized.append(
+                {
+                    "name": name,
+                    "variable_name": str(scale.get("variable_name", name)),
+                    "num_items": int(scale.get("num_items", 5)),
+                    "scale_points": int(scale.get("scale_points", 7)),
+                    "reverse_items": scale.get("reverse_items", []) or [],
+                }
+            )
+    return normalized
+
+
+def _normalize_factors(factors: Optional[List[Any]], fallback_conditions: List[str]) -> List[Dict[str, Any]]:
+    normalized: List[Dict[str, Any]] = []
+    for factor in factors or []:
+        if isinstance(factor, str):
+            name = factor.strip()
+            if name:
+                normalized.append({"name": name, "levels": fallback_conditions})
+            continue
+        if isinstance(factor, dict):
+            name = str(factor.get("name", "")).strip() or "Condition"
+            levels = factor.get("levels", fallback_conditions)
+            if isinstance(levels, str):
+                levels_list = [lvl.strip() for lvl in levels.split(",") if lvl.strip()]
+            else:
+                levels_list = [str(lvl).strip() for lvl in (levels or []) if str(lvl).strip()]
+            normalized.append({"name": name, "levels": levels_list or fallback_conditions})
+    return normalized or [{"name": "Condition", "levels": fallback_conditions}]
+
+
+def _normalize_open_ended(open_ended: Optional[List[Any]]) -> List[Dict[str, Any]]:
+    normalized: List[Dict[str, Any]] = []
+    for item in open_ended or []:
+        if isinstance(item, str):
+            name = item.strip()
+            if name:
+                normalized.append({"name": name, "type": "text"})
+            continue
+        if isinstance(item, dict):
+            name = str(item.get("name", "")).strip()
+            if name:
+                normalized.append(item)
+    return normalized
+
+
 @dataclass
 class EffectSizeSpec:
     """Specification for an expected effect in the study."""
@@ -110,22 +170,21 @@ class EnhancedSimulationEngine:
         self.study_description = str(study_description or "").strip()
         self.sample_size = int(sample_size)
         self.conditions = [str(c).strip() for c in (conditions or []) if str(c).strip()]
-        self.factors = factors or []
-        self.scales = scales or []
+        if not self.conditions:
+            self.conditions = ["Condition A"]
+        self.factors = _normalize_factors(factors, self.conditions)
+        self.scales = _normalize_scales(scales)
         self.additional_vars = additional_vars or []
         self.demographics = demographics or {}
         self.attention_rate = float(attention_rate)
         self.random_responder_rate = float(random_responder_rate)
         self.effect_sizes = effect_sizes or []
         self.exclusion_criteria = exclusion_criteria or ExclusionCriteria()
-        self.open_ended_questions = open_ended_questions or []
+        self.open_ended_questions = _normalize_open_ended(open_ended_questions)
         self.stimulus_evaluations = stimulus_evaluations or []
         self.mode = (mode or "pilot").strip().lower()
         if self.mode not in ("pilot", "final"):
             self.mode = "pilot"
-
-        if not self.conditions:
-            self.conditions = ["Condition A"]
 
         if self.sample_size <= 0:
             raise ValueError("sample_size must be a positive integer")
