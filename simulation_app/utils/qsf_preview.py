@@ -142,7 +142,27 @@ class QSFPreviewParser:
                 flow = list(flow.values())
         if not isinstance(flow, list):
             return []
-        return [item for item in flow if isinstance(item, dict)]
+        normalized: List[Dict[str, Any]] = []
+        for item in flow:
+            if isinstance(item, dict):
+                normalized.append(item)
+            elif isinstance(item, list):
+                for sub_item in item:
+                    if isinstance(sub_item, dict):
+                        normalized.append(sub_item)
+        return normalized
+
+    def _extract_flow_payload(self, flow_data: Any) -> List[Dict[str, Any]]:
+        """Extract a normalized flow list from any flow payload variant."""
+        if flow_data is None:
+            return []
+        if isinstance(flow_data, dict):
+            payload = flow_data.get('Payload', flow_data)
+        else:
+            payload = flow_data
+        if isinstance(payload, dict) and 'Flow' in payload:
+            payload = payload.get('Flow', [])
+        return self._normalize_flow(payload)
 
     def parse(self, qsf_content: bytes) -> QSFPreviewResult:
         """
@@ -664,7 +684,7 @@ class QSFPreviewParser:
 
     def _detect_conditions(
         self,
-        flow_data: Optional[Dict],
+        flow_data: Optional[Any],
         blocks: List[BlockInfo]
     ) -> List[str]:
         """Detect experimental conditions from randomizers and flow."""
@@ -673,8 +693,7 @@ class QSFPreviewParser:
 
         # Parse flow for randomizer/branch elements with block IDs.
         if flow_data:
-            payload = flow_data.get('Payload', {})
-            flow = self._normalize_flow(payload.get('Flow', payload))
+            flow = self._extract_flow_payload(flow_data)
             self._find_conditions_in_flow(flow, conditions, blocks_by_id)
 
         # Fallback: use block names that look like conditions.
@@ -901,14 +920,13 @@ class QSFPreviewParser:
 
         return attention_checks
 
-    def _analyze_randomizers(self, flow_data: Optional[Dict]) -> Dict[str, Any]:
+    def _analyze_randomizers(self, flow_data: Optional[Any]) -> Dict[str, Any]:
         """Analyze randomizer structure in detail."""
         if not flow_data:
             return {'has_randomization': False, 'randomizers': []}
 
         randomizers = []
-        payload = flow_data.get('Payload', {})
-        flow = self._normalize_flow(payload.get('Flow', payload))
+        flow = self._extract_flow_payload(flow_data)
 
         self._find_all_randomizers(flow, randomizers, depth=0)
 
@@ -974,14 +992,13 @@ class QSFPreviewParser:
         # Default to between-subjects participant-level
         return "participant"
 
-    def _parse_flow(self, flow_data: Optional[Dict]) -> List[str]:
+    def _parse_flow(self, flow_data: Optional[Any]) -> List[str]:
         """Parse survey flow into readable list."""
         if not flow_data:
             return []
 
         elements = []
-        payload = flow_data.get('Payload', {})
-        flow = self._normalize_flow(payload.get('Flow', payload))
+        flow = self._extract_flow_payload(flow_data)
 
         self._parse_flow_recursive(flow, elements, 0)
 
