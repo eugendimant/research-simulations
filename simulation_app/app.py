@@ -841,12 +841,20 @@ STEP_DESCRIPTIONS = [
 def _get_step_completion() -> Dict[str, bool]:
     """Get completion status for each step."""
     preview = st.session_state.get("qsf_preview", None)
+
+    # Check variable roles for primary outcome and independent variable
+    variable_rows = st.session_state.get("variable_review_rows", [])
+    has_primary_outcome = any(r.get("Role") == "Primary outcome" for r in variable_rows)
+    has_independent_var = any(r.get("Role") == "Condition" for r in variable_rows)
+
     return {
         "study_title": bool(st.session_state.get("study_title", "").strip()),
         "study_description": bool(st.session_state.get("study_description", "").strip()),
         "sample_size": int(st.session_state.get("sample_size", 0)) >= 10,
         "qsf_uploaded": bool(preview and preview.success),
         "conditions_set": bool(st.session_state.get("selected_conditions") or st.session_state.get("custom_conditions")),
+        "primary_outcome": has_primary_outcome,
+        "independent_var": has_independent_var,
         "design_ready": bool(st.session_state.get("inferred_design")),
     }
 
@@ -991,7 +999,7 @@ completion = _get_step_completion()
 step_complete = [
     completion["study_title"] and completion["study_description"] and completion["sample_size"],
     completion["qsf_uploaded"],
-    completion["conditions_set"] and completion["outcomes_set"] and completion["iv_set"],
+    completion["conditions_set"] and completion["primary_outcome"] and completion["independent_var"],
     completion["design_ready"],
 ]
 
@@ -1739,6 +1747,14 @@ if active_step == 2:
             "randomization_level": final_rand_level,
         }
         st.session_state["randomization_level"] = final_rand_level
+
+        # Initialize variable review rows if not already set
+        if not st.session_state.get("variable_review_rows"):
+            prereg_outcomes = st.session_state.get("prereg_outcomes", "")
+            prereg_iv = st.session_state.get("prereg_iv", "")
+            st.session_state["variable_review_rows"] = _build_variable_review_rows(
+                st.session_state["inferred_design"], prereg_outcomes, prereg_iv, enhanced_analysis
+            )
 
         st.success("Design configuration complete. Proceed to the **Generate** step to run the simulation.")
     else:
