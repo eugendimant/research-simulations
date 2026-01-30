@@ -1358,37 +1358,164 @@ if active_step == 1:
     st.markdown("### 2. Study Design Information *")
     st.caption("These fields are required for the simulation to generate meaningful data.")
 
+    # Check if QSF is already uploaded - if so, provide dropdown options
+    preview: Optional[QSFPreviewResult] = st.session_state.get("qsf_preview", None)
+
+    # Extract variable options from QSF if available
+    outcome_options: List[str] = []
+    iv_options: List[str] = []
+    all_variable_options: List[str] = []
+
+    if preview and preview.success:
+        # Extract scale names as outcome variable options
+        for scale in preview.detected_scales:
+            scale_name = scale.get("name", "") if isinstance(scale, dict) else str(scale)
+            if scale_name and scale_name not in outcome_options:
+                outcome_options.append(scale_name)
+
+        # Extract question IDs and block names
+        for block in preview.blocks:
+            if block.block_name and block.block_name not in all_variable_options:
+                all_variable_options.append(block.block_name)
+            for q in block.questions:
+                if q.question_id and q.question_id not in all_variable_options:
+                    all_variable_options.append(q.question_id)
+
+        # Add detected conditions as IV options
+        for cond in preview.detected_conditions:
+            if cond and cond not in iv_options:
+                iv_options.append(cond)
+
+        # Add embedded data fields
+        for ed in preview.embedded_data:
+            if ed and ed not in all_variable_options:
+                all_variable_options.append(ed)
+
+        # Sort options for easier selection
+        outcome_options = sorted(set(outcome_options))
+        iv_options = sorted(set(iv_options))
+        all_variable_options = sorted(set(all_variable_options))
+
     design_col1, design_col2 = st.columns(2)
 
     with design_col1:
-        prereg_outcomes = st.text_input(
-            "Primary outcome variable(s) *",
-            value=st.session_state.get("prereg_outcomes", ""),
-            placeholder="e.g., Purchase intention, Trust rating",
-            help="What are you measuring? Enter the name(s) of your main dependent variable(s). This should match how they appear in your survey.",
-        )
+        # Primary outcome variable(s)
+        if outcome_options or all_variable_options:
+            available_outcomes = outcome_options if outcome_options else all_variable_options
+            existing_outcomes = _split_comma_list(st.session_state.get("prereg_outcomes", ""))
+            selected_outcomes = st.multiselect(
+                "Primary outcome variable(s) *",
+                options=available_outcomes,
+                default=[o for o in existing_outcomes if o in available_outcomes],
+                help="Select from variables detected in your QSF file.",
+                key="prereg_outcomes_select",
+            )
+            custom_outcomes = st.text_input(
+                "Or enter custom outcome variable(s)",
+                value=", ".join([o for o in existing_outcomes if o not in available_outcomes]),
+                placeholder="e.g., Purchase intention, Trust rating",
+                help="Add variables not in the dropdown above (comma-separated).",
+                key="prereg_outcomes_custom",
+            )
+            prereg_outcomes = ", ".join(selected_outcomes + _split_comma_list(custom_outcomes))
+        else:
+            prereg_outcomes = st.text_input(
+                "Primary outcome variable(s) *",
+                value=st.session_state.get("prereg_outcomes", ""),
+                placeholder="e.g., Purchase intention, Trust rating",
+                help="What are you measuring? Upload a QSF file first to see variable options.",
+            )
 
-        prereg_iv = st.text_input(
-            "Independent variable(s) / Manipulation *",
-            value=st.session_state.get("prereg_iv", ""),
-            placeholder="e.g., AI label (present vs. absent)",
-            help="What are you manipulating? Describe your experimental manipulation or independent variable(s).",
-        )
+        # Independent variable(s)
+        if iv_options or all_variable_options:
+            available_ivs = iv_options if iv_options else all_variable_options
+            existing_ivs = _split_comma_list(st.session_state.get("prereg_iv", ""))
+            selected_ivs = st.multiselect(
+                "Independent variable(s) / Manipulation *",
+                options=available_ivs,
+                default=[iv for iv in existing_ivs if iv in available_ivs],
+                help="Select from conditions/variables detected in your QSF file.",
+                key="prereg_iv_select",
+            )
+            custom_ivs = st.text_input(
+                "Or enter custom independent variable(s)",
+                value=", ".join([iv for iv in existing_ivs if iv not in available_ivs]),
+                placeholder="e.g., AI label (present vs. absent)",
+                help="Add variables not in the dropdown above (comma-separated).",
+                key="prereg_iv_custom",
+            )
+            prereg_iv = ", ".join(selected_ivs + _split_comma_list(custom_ivs))
+        else:
+            prereg_iv = st.text_input(
+                "Independent variable(s) / Manipulation *",
+                value=st.session_state.get("prereg_iv", ""),
+                placeholder="e.g., AI label (present vs. absent)",
+                help="What are you manipulating? Upload a QSF file first to see variable options.",
+            )
 
     with design_col2:
-        prereg_exclusions = st.text_input(
-            "Exclusion criteria (optional)",
-            value=st.session_state.get("prereg_exclusions", ""),
-            placeholder="e.g., Failed attention check, Incomplete responses",
-            help="What criteria will you use to exclude participants? Leave blank if none.",
-        )
+        # Exclusion criteria - show dropdown with attention checks if available
+        exclusion_options = []
+        if preview and preview.success:
+            exclusion_options = ["Failed attention check", "Incomplete responses", "Duplicate IP"]
+            for ac in preview.attention_checks:
+                if ac and ac not in exclusion_options:
+                    exclusion_options.append(f"Failed {ac}")
 
-        prereg_analysis = st.text_input(
+        if exclusion_options:
+            existing_exclusions = _split_comma_list(st.session_state.get("prereg_exclusions", ""))
+            selected_exclusions = st.multiselect(
+                "Exclusion criteria (optional)",
+                options=exclusion_options,
+                default=[e for e in existing_exclusions if e in exclusion_options],
+                help="Select common exclusion criteria.",
+                key="prereg_exclusions_select",
+            )
+            custom_exclusions = st.text_input(
+                "Or enter custom exclusion criteria",
+                value=", ".join([e for e in existing_exclusions if e not in exclusion_options]),
+                placeholder="e.g., Response time < 2 min",
+                help="Add criteria not in the dropdown above (comma-separated).",
+                key="prereg_exclusions_custom",
+            )
+            prereg_exclusions = ", ".join(selected_exclusions + _split_comma_list(custom_exclusions))
+        else:
+            prereg_exclusions = st.text_input(
+                "Exclusion criteria (optional)",
+                value=st.session_state.get("prereg_exclusions", ""),
+                placeholder="e.g., Failed attention check, Incomplete responses",
+                help="What criteria will you use to exclude participants? Leave blank if none.",
+            )
+
+        # Planned analysis - always show dropdown with common options
+        analysis_options = [
+            "Independent samples t-test",
+            "Paired samples t-test",
+            "One-way ANOVA",
+            "2x2 ANOVA",
+            "Factorial ANOVA",
+            "Chi-square test",
+            "Correlation analysis",
+            "Regression analysis",
+            "MANOVA",
+            "Mixed ANOVA",
+        ]
+        existing_analysis = _split_comma_list(st.session_state.get("prereg_analysis", ""))
+        selected_analysis = st.multiselect(
             "Planned analysis (optional)",
-            value=st.session_state.get("prereg_analysis", ""),
-            placeholder="e.g., Independent samples t-test, 2x2 ANOVA",
-            help="What statistical test(s) will you use to analyze the data?",
+            options=analysis_options,
+            default=[a for a in existing_analysis if a in analysis_options],
+            help="Select the statistical test(s) you plan to use.",
+            key="prereg_analysis_select",
         )
+        custom_analysis = st.text_input(
+            "Or enter custom analysis plan",
+            value=", ".join([a for a in existing_analysis if a not in analysis_options]),
+            placeholder="e.g., Mediation analysis",
+            help="Add analyses not in the dropdown above (comma-separated).",
+            key="prereg_analysis_custom",
+        )
+        prereg_analysis = ", ".join(selected_analysis + _split_comma_list(custom_analysis))
 
     st.session_state["prereg_outcomes"] = prereg_outcomes
     st.session_state["prereg_iv"] = prereg_iv
@@ -1425,22 +1552,10 @@ if active_step == 1:
             st.caption("Optional preregistration document.")
 
         with opt_col2:
-            st.markdown("**Study Design Notes** (for report labeling)")
-            prereg_exclusions = st.text_input(
-                "Exclusion criteria",
-                value=st.session_state.get("prereg_exclusions", ""),
-                placeholder="e.g., Failed attention checks",
-                help="Optional notes about exclusions; this does not affect simulation settings.",
-            )
-            prereg_analysis = st.text_input(
-                "Planned analysis",
-                value=st.session_state.get("prereg_analysis", ""),
-                placeholder="e.g., t-test, ANOVA",
-                help="Optional notes about how you plan to analyze the data.",
-            )
-
-        st.session_state["prereg_exclusions"] = prereg_exclusions
-        st.session_state["prereg_analysis"] = prereg_analysis
+            st.markdown("**Current Design Settings**")
+            st.caption(f"Exclusion criteria: {st.session_state.get('prereg_exclusions', '—') or '—'}")
+            st.caption(f"Planned analysis: {st.session_state.get('prereg_analysis', '—') or '—'}")
+            st.caption("(Edit these in the Study Design Information section above)")
 
         # Preregistration notes
         prereg_text = st.text_area(
@@ -1715,7 +1830,9 @@ if active_step == 2:
                     with col_cc:
                         st.text(f"• {cc}")
                     with col_rm:
-                        if st.button("✕", key=f"rm_custom_{i}"):
+                        # Use condition name in key for stability when list changes
+                        safe_key = cc.replace(" ", "_").replace(".", "_")[:20]
+                        if st.button("✕", key=f"rm_custom_{safe_key}_{i}"):
                             custom_conditions.remove(cc)
                             st.session_state["custom_conditions"] = custom_conditions
                             st.rerun()
@@ -1803,131 +1920,130 @@ if active_step == 2:
             )
             if factor_levels:
                 factors.append({"name": factor_name, "levels": factor_levels})
-
-        # Get scales from inferred design
-        scales = inferred.get("scales", []) if inferred else []
-
-        # Filter out empty scales
-        scales = [s for s in scales if s.get("name", "").strip()]
-        if not scales:
-            scales = [{"name": "Main_DV", "num_items": 5, "scale_points": 7}]
-
-        # ========================================
-        # STEP 4: PRIMARY OUTCOMES & INDEPENDENT VARIABLES
-        # ========================================
-        st.markdown("---")
-        st.markdown("### Step 4: Confirm Primary Outcomes & Independent Variables")
-        st.caption(
-            "Choose the exact names you want to appear in the report. "
-            "If you want alignment with Qualtrics, use the same names as your QSF blocks or scale labels."
-        )
-
-        outcome_options = sorted({s.get("name", "").strip() for s in scales if s.get("name")})
-        existing_outcomes = _split_comma_list(st.session_state.get("prereg_outcomes", ""))
-        selected_outcomes = st.multiselect(
-            "Primary outcome variable(s) *",
-            options=outcome_options,
-            default=[o for o in existing_outcomes if o in outcome_options],
-            help="Select from detected scales to avoid typos (recommended).",
-        )
-        custom_outcomes = st.text_input(
-            "Add custom outcome names (comma-separated)",
-            value=", ".join([o for o in existing_outcomes if o not in outcome_options]),
-            help="Use this only if your outcome is not in the detected scale list.",
-        )
-        outcome_values = selected_outcomes + _split_comma_list(custom_outcomes)
-        st.session_state["prereg_outcomes"] = ", ".join(outcome_values)
-
-        iv_options = list(dict.fromkeys([f.get("name", "") for f in factors if f.get("name")]))
-        if "Condition" not in iv_options:
-            iv_options.append("Condition")
-        existing_iv = _split_comma_list(st.session_state.get("prereg_iv", ""))
-        selected_iv = st.multiselect(
-            "Independent variable(s) *",
-            options=iv_options,
-            default=[iv for iv in existing_iv if iv in iv_options],
-            help="Select from detected factors; add custom entries only if needed.",
-        )
-        custom_iv = st.text_input(
-            "Add custom independent variables (comma-separated)",
-            value=", ".join([iv for iv in existing_iv if iv not in iv_options]),
-            help="Use this only if your IV is not in the detected list.",
-        )
-        iv_values = selected_iv + _split_comma_list(custom_iv)
-        st.session_state["prereg_iv"] = ", ".join(iv_values)
-
-        # Open-ended questions (optional)
-        with st.expander("Open-ended Questions (optional)"):
-            open_ended = inferred.get("open_ended_questions", [])
-            if open_ended:
-                st.caption(f"{len(open_ended)} open-ended questions detected:")
-                for q in open_ended[:10]:  # Show max 10
-                    st.text(f"• {q}")
-            else:
-                st.caption("No open-ended questions detected.")
-
-        # ========================================
-        # FINAL SUMMARY & LOCK DESIGN
-        # ========================================
-        st.markdown("---")
-        st.markdown("### Design Summary")
-
-        summary_cols = st.columns(4)
-        summary_cols[0].metric("Conditions", len(all_conditions))
-        summary_cols[1].metric("Factors", len(factors))
-        summary_cols[2].metric("Scales", len(scales))
-        summary_cols[3].metric("Design", design_type.split("(")[0].strip())
-
-        # Show condition list
-        st.markdown(f"**Conditions:** {', '.join(all_conditions)}")
-        st.markdown(f"**Primary outcomes:** {st.session_state.get('prereg_outcomes', '—') or '—'}")
-        st.markdown(f"**Independent variables:** {st.session_state.get('prereg_iv', '—') or '—'}")
-
-        # Validate and lock design
-        outcomes_valid = bool(st.session_state.get("prereg_outcomes", "").strip())
-        iv_valid = bool(st.session_state.get("prereg_iv", "").strip())
-        design_valid = len(all_conditions) >= 1 and len(scales) >= 1 and outcomes_valid and iv_valid
-
-        if design_valid:
-            # Save to session state
-            final_conditions = all_conditions
-            final_factors = _normalize_factor_specs(factors, all_conditions)
-            final_scales = _normalize_scale_specs(scales)
-            final_open_ended = inferred.get("open_ended_questions", [])
-
-            # Determine randomization level string
-            rand_mapping = {
-                "Participant-level (standard)": "Participant-level",
-                "Group/Cluster-level": "Group/Cluster-level",
-                "Not randomized / observational": "Not randomized",
-            }
-            final_rand_level = rand_mapping.get(rand_level, "Participant-level")
-
-            st.session_state["inferred_design"] = {
-                "conditions": final_conditions,
-                "factors": final_factors,
-                "scales": final_scales,
-                "open_ended_questions": final_open_ended,
-                "randomization_level": final_rand_level,
-            }
-            st.session_state["randomization_level"] = final_rand_level
-
-            st.success("Design configuration complete. Proceed to the **Generate** step to run the simulation.")
-        else:
-            missing_bits = []
-            if not outcomes_valid:
-                missing_bits.append("primary outcome variable(s)")
-            if not iv_valid:
-                missing_bits.append("independent variable(s)")
-            if not all_conditions:
-                missing_bits.append("conditions")
-            if not scales:
-                missing_bits.append("scales")
-            st.error("Please complete all required fields before proceeding: " + ", ".join(missing_bits))
-
-        st.success("Design configuration complete. Proceed to the **Generate** tab to run the simulation.")
     else:
-        st.error("Please complete all required fields before proceeding.")
+        # num_factors >= 2 but not enough conditions for multi-factor design
+        factors = [{"name": "Condition", "levels": all_conditions}]
+
+    # Get scales from inferred design
+    scales = inferred.get("scales", []) if inferred else []
+
+    # Filter out empty scales
+    scales = [s for s in scales if s.get("name", "").strip()]
+    if not scales:
+        scales = [{"name": "Main_DV", "num_items": 5, "scale_points": 7}]
+
+    # ========================================
+    # STEP 4: PRIMARY OUTCOMES & INDEPENDENT VARIABLES
+    # ========================================
+    st.markdown("---")
+    st.markdown("### Step 4: Confirm Primary Outcomes & Independent Variables")
+    st.caption(
+        "Choose the exact names you want to appear in the report. "
+        "If you want alignment with Qualtrics, use the same names as your QSF blocks or scale labels."
+    )
+
+    outcome_options = sorted({s.get("name", "").strip() for s in scales if s.get("name")})
+    existing_outcomes = _split_comma_list(st.session_state.get("prereg_outcomes", ""))
+    selected_outcomes = st.multiselect(
+        "Primary outcome variable(s) *",
+        options=outcome_options,
+        default=[o for o in existing_outcomes if o in outcome_options],
+        help="Select from detected scales to avoid typos (recommended).",
+    )
+    custom_outcomes = st.text_input(
+        "Add custom outcome names (comma-separated)",
+        value=", ".join([o for o in existing_outcomes if o not in outcome_options]),
+        help="Use this only if your outcome is not in the detected scale list.",
+    )
+    outcome_values = selected_outcomes + _split_comma_list(custom_outcomes)
+    st.session_state["prereg_outcomes"] = ", ".join(outcome_values)
+
+    iv_options = list(dict.fromkeys([f.get("name", "") for f in factors if f.get("name")]))
+    if "Condition" not in iv_options:
+        iv_options.append("Condition")
+    existing_iv = _split_comma_list(st.session_state.get("prereg_iv", ""))
+    selected_iv = st.multiselect(
+        "Independent variable(s) *",
+        options=iv_options,
+        default=[iv for iv in existing_iv if iv in iv_options],
+        help="Select from detected factors; add custom entries only if needed.",
+    )
+    custom_iv = st.text_input(
+        "Add custom independent variables (comma-separated)",
+        value=", ".join([iv for iv in existing_iv if iv not in iv_options]),
+        help="Use this only if your IV is not in the detected list.",
+    )
+    iv_values = selected_iv + _split_comma_list(custom_iv)
+    st.session_state["prereg_iv"] = ", ".join(iv_values)
+
+    # Open-ended questions (optional)
+    with st.expander("Open-ended Questions (optional)"):
+        open_ended = inferred.get("open_ended_questions", [])
+        if open_ended:
+            st.caption(f"{len(open_ended)} open-ended questions detected:")
+            for q in open_ended[:10]:  # Show max 10
+                st.text(f"• {q}")
+        else:
+            st.caption("No open-ended questions detected.")
+
+    # ========================================
+    # FINAL SUMMARY & LOCK DESIGN
+    # ========================================
+    st.markdown("---")
+    st.markdown("### Design Summary")
+
+    summary_cols = st.columns(4)
+    summary_cols[0].metric("Conditions", len(all_conditions))
+    summary_cols[1].metric("Factors", len(factors))
+    summary_cols[2].metric("Scales", len(scales))
+    summary_cols[3].metric("Design", design_type.split("(")[0].strip())
+
+    # Show condition list
+    st.markdown(f"**Conditions:** {', '.join(all_conditions)}")
+    st.markdown(f"**Primary outcomes:** {st.session_state.get('prereg_outcomes', '—') or '—'}")
+    st.markdown(f"**Independent variables:** {st.session_state.get('prereg_iv', '—') or '—'}")
+
+    # Validate and lock design
+    outcomes_valid = bool(st.session_state.get("prereg_outcomes", "").strip())
+    iv_valid = bool(st.session_state.get("prereg_iv", "").strip())
+    design_valid = len(all_conditions) >= 1 and len(scales) >= 1 and outcomes_valid and iv_valid
+
+    if design_valid:
+        # Save to session state
+        final_conditions = all_conditions
+        final_factors = _normalize_factor_specs(factors, all_conditions)
+        final_scales = _normalize_scale_specs(scales)
+        final_open_ended = inferred.get("open_ended_questions", [])
+
+        # Determine randomization level string
+        rand_mapping = {
+            "Participant-level (standard)": "Participant-level",
+            "Group/Cluster-level": "Group/Cluster-level",
+            "Not randomized / observational": "Not randomized",
+        }
+        final_rand_level = rand_mapping.get(rand_level, "Participant-level")
+
+        st.session_state["inferred_design"] = {
+            "conditions": final_conditions,
+            "factors": final_factors,
+            "scales": final_scales,
+            "open_ended_questions": final_open_ended,
+            "randomization_level": final_rand_level,
+        }
+        st.session_state["randomization_level"] = final_rand_level
+
+        st.success("Design configuration complete. Proceed to the **Generate** step to run the simulation.")
+    else:
+        missing_bits = []
+        if not outcomes_valid:
+            missing_bits.append("primary outcome variable(s)")
+        if not iv_valid:
+            missing_bits.append("independent variable(s)")
+        if not all_conditions:
+            missing_bits.append("conditions")
+        if not scales:
+            missing_bits.append("scales")
+        st.error("Please complete all required fields before proceeding: " + ", ".join(missing_bits))
 
     # ========================================
     # ADVANCED: Variable Review (collapsed)
@@ -2000,76 +2116,33 @@ if active_step == 3:
         st.error("Please complete the previous steps first to configure your design.")
         if st.button("← Go to Step 3: Design Setup", key="go_step3_from_step4", type="primary"):
             _go_to_step(2)
+        st.stop()  # Don't render rest of Step 4 if design not configured
+
+    # If we reach here, inferred exists
+    preview: Optional[QSFPreviewResult] = st.session_state.get("qsf_preview", None)
+
+    # Check for missing fields
+    required_fields = {
+        "Study title": bool(st.session_state.get("study_title", "").strip()),
+        "Study description": bool(st.session_state.get("study_description", "").strip()),
+        "Pre-registered sample size": int(st.session_state.get("sample_size", 0)) >= 10,
+        "Primary outcome variable(s)": bool(st.session_state.get("prereg_outcomes", "").strip()),
+        "Independent variable(s)": bool(st.session_state.get("prereg_iv", "").strip()),
+        "QSF uploaded": bool(preview and preview.success),
+        "Design configured": bool(st.session_state.get("inferred_design")),
+    }
+    completed = sum(required_fields.values())
+    total_required = len(required_fields)
+
+    missing_fields = [label for label, ok in required_fields.items() if not ok]
+    if missing_fields:
+        st.warning(f"**Missing required fields:** {', '.join(missing_fields)}")
+        col1, col2 = st.columns([1, 1])
+        with col1:
+            if st.button("← Go to Step 3: Design Setup", key="fix_missing_from_generate", use_container_width=True):
+                _go_to_step(2)
     else:
-        preview: Optional[QSFPreviewResult] = st.session_state.get("qsf_preview", None)
-
-        # Check for missing fields
-        required_fields = {
-            "Study title": bool(st.session_state.get("study_title", "").strip()),
-            "Study description": bool(st.session_state.get("study_description", "").strip()),
-            "Pre-registered sample size": int(st.session_state.get("sample_size", 0)) >= 10,
-            "Primary outcome variable(s)": bool(st.session_state.get("prereg_outcomes", "").strip()),
-            "Independent variable(s)": bool(st.session_state.get("prereg_iv", "").strip()),
-            "QSF uploaded": bool(preview and preview.success),
-            "Design configured": bool(st.session_state.get("inferred_design")),
-        }
-        completed = sum(required_fields.values())
-        total_required = len(required_fields)
-
-        missing = [label for label, ok in required_fields.items() if not ok]
-        if missing:
-            st.warning(f"**Missing required fields:** {', '.join(missing)}")
-            col1, col2 = st.columns([1, 1])
-            with col1:
-                if st.button("← Go to Step 3: Design Setup", key="fix_missing_from_generate", use_container_width=True):
-                    _go_to_step(2)
-        else:
-            st.success("All required fields are complete. You can generate your simulation.")
-
-        if not st.session_state.get("advanced_mode", False):
-            demographics = STANDARD_DEFAULTS["demographics"].copy()
-            attention_rate = STANDARD_DEFAULTS["attention_rate"]
-            random_responder_rate = STANDARD_DEFAULTS["random_responder_rate"]
-            exclusion = ExclusionCriteria(**STANDARD_DEFAULTS["exclusion_criteria"])
-            effect_sizes: List[EffectSizeSpec] = []
-            custom_persona_weights = None
-
-            with st.expander("Standardized settings (locked)"):
-                st.json(
-                    {
-                        "demographics": demographics,
-                        "attention_rate": attention_rate,
-                        "random_responder_rate": random_responder_rate,
-                        "exclusion_criteria": asdict(exclusion),
-                        "effect_sizes": [],
-                    }
-                )
-        else:
-            st.markdown("### Advanced settings")
-
-            c1, c2, c3 = st.columns(3)
-            with c1:
-                male_pct = st.slider("Male %", 0, 100, int(ADVANCED_DEFAULTS["demographics"]["gender_quota"]))
-                age_mean = st.number_input("Mean age", 18, 70, int(ADVANCED_DEFAULTS["demographics"]["age_mean"]))
-                age_sd = st.number_input("Age SD", 1, 30, int(ADVANCED_DEFAULTS["demographics"]["age_sd"]))
-                demographics = {"gender_quota": int(male_pct), "age_mean": float(age_mean), "age_sd": float(age_sd)}
-
-            with c2:
-                attention_rate = st.slider("Attention check pass rate", 0.50, 1.00, float(ADVANCED_DEFAULTS["attention_rate"]), 0.01)
-                random_responder_rate = st.slider("Random responder rate", 0.00, 0.30, float(ADVANCED_DEFAULTS["random_responder_rate"]), 0.01)
-
-            with c3:
-                min_sec = st.number_input("Min completion time (sec)", 10, 600, 60)
-                max_sec = st.number_input("Max completion time (sec)", 300, 7200, 1800)
-                straight = st.number_input("Straight-line threshold", 3, 40, 10)
-                exclusion = ExclusionCriteria(
-                    attention_check_threshold=0.0,
-                    completion_time_min_seconds=int(min_sec),
-                    completion_time_max_seconds=int(max_sec),
-                    straight_line_threshold=int(straight),
-                    duplicate_ip_check=True,
-                    exclude_careless_responders=False,
-                )
+        st.success("All required fields are complete. You can generate your simulation.")
 
     config_col1, config_col2 = st.columns(2)
     with config_col1:
@@ -2081,26 +2154,6 @@ if active_step == 3:
     with config_col2:
         st.markdown(f"**Primary Outcome:** {st.session_state.get('prereg_outcomes', 'Not specified')}")
         st.markdown(f"**Independent Variable:** {st.session_state.get('prereg_iv', 'Not specified')}")
-
-    # Missing fields warning with step references
-    if not all_required_complete:
-        missing = []
-        if not completion["study_title"]:
-            missing.append("Study title (Step 1)")
-        if not completion["study_description"]:
-            missing.append("Study description (Step 1)")
-        if not completion["sample_size"]:
-            missing.append("Sample size (Step 1)")
-        if not completion["qsf_uploaded"]:
-            missing.append("QSF file (Step 2)")
-        if not completion["primary_outcome"]:
-            missing.append("Primary outcome (Step 2)")
-        if not completion["independent_var"]:
-            missing.append("Independent variable (Step 2)")
-        if not completion["conditions_set"]:
-            missing.append("Experimental conditions (Step 3)")
-
-        st.error(f"Cannot generate: Missing required fields - {', '.join(missing)}")
 
     st.markdown("---")
 
