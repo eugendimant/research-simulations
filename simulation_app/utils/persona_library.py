@@ -14,12 +14,11 @@ Based on recent LLM simulation research:
 - Westwood (2025) - "Existential threat of LLMs to survey research" PNAS
 """
 
-import numpy as np
 import random
-from typing import Dict, List, Any, Optional, Tuple
-from dataclasses import dataclass, field
-import hashlib
-import re
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional
+
+import numpy as np
 
 
 @dataclass

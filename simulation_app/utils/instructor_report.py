@@ -9,27 +9,18 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 import json
-from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 import pandas as pd
-
-# Check if tabulate is available for markdown tables
-try:
-    import tabulate
-    TABULATE_AVAILABLE = True
-except ImportError:
-    TABULATE_AVAILABLE = False
-
 
 def _safe_to_markdown(df: pd.DataFrame, **kwargs) -> str:
     """
     Safely convert DataFrame to markdown, falling back to string representation
-    if tabulate is not available.
+    if tabulate is not available (required by pandas.to_markdown).
     """
-    if TABULATE_AVAILABLE:
+    try:
         return df.to_markdown(**kwargs)
-    else:
+    except ImportError:
         return df.to_string(**kwargs)
 
 
@@ -70,8 +61,8 @@ class InstructorReportGenerator:
         lines.append("")
         lines.append("## Generation Information")
         lines.append("")
-        lines.append(f"| Field | Value |")
-        lines.append(f"|-------|-------|")
+        lines.append("| Field | Value |")
+        lines.append("|-------|-------|")
         lines.append(f"| **Generated** | {metadata.get('generation_timestamp', datetime.now().isoformat())} |")
         lines.append(f"| **Run ID** | `{metadata.get('run_id', 'N/A')}` |")
         lines.append(f"| **Mode** | {metadata.get('simulation_mode', 'pilot').title()} |")
@@ -87,7 +78,7 @@ class InstructorReportGenerator:
             if team_name:
                 lines.append(f"- **Team Name:** {team_name}")
             if team_members:
-                lines.append(f"- **Members:**")
+                lines.append("- **Members:**")
                 for member in team_members.strip().split('\n'):
                     if member.strip():
                         lines.append(f"  - {member.strip()}")
@@ -136,8 +127,8 @@ class InstructorReportGenerator:
         demo = metadata.get("demographics", {})
         lines.append("### Demographics Configuration")
         lines.append("")
-        lines.append(f"| Setting | Value |")
-        lines.append(f"|---------|-------|")
+        lines.append("| Setting | Value |")
+        lines.append("|---------|-------|")
         lines.append(f"| Gender quota (% male) | {demo.get('gender_quota', 50)}% |")
         lines.append(f"| Age mean | {demo.get('age_mean', 35)} |")
         lines.append(f"| Age standard deviation | {demo.get('age_sd', 12)} |")
@@ -146,8 +137,8 @@ class InstructorReportGenerator:
         # Response quality settings
         lines.append("### Response Quality Settings")
         lines.append("")
-        lines.append(f"| Setting | Value |")
-        lines.append(f"|---------|-------|")
+        lines.append("| Setting | Value |")
+        lines.append("|---------|-------|")
         lines.append(f"| Attention check pass rate | {metadata.get('attention_rate', 0.85):.0%} |")
         lines.append(f"| Random responder rate | {metadata.get('random_responder_rate', 0.05):.0%} |")
         lines.append("")
@@ -157,8 +148,8 @@ class InstructorReportGenerator:
         if exclusion:
             lines.append("### Exclusion Criteria")
             lines.append("")
-            lines.append(f"| Criterion | Threshold |")
-            lines.append(f"|-----------|-----------|")
+            lines.append("| Criterion | Threshold |")
+            lines.append("|-----------|-----------|")
             lines.append(f"| Min completion time | {exclusion.get('completion_time_min_seconds', 60)} seconds |")
             lines.append(f"| Max completion time | {exclusion.get('completion_time_max_seconds', 1800)} seconds |")
             lines.append(f"| Straight-line threshold | {exclusion.get('straight_line_threshold', 10)} items |")
@@ -178,8 +169,8 @@ class InstructorReportGenerator:
         if self.config.include_design_summary:
             lines.append("## Experimental Design Summary")
             lines.append("")
-            lines.append(f"| Element | Details |")
-            lines.append(f"|---------|---------|")
+            lines.append("| Element | Details |")
+            lines.append("|---------|---------|")
             lines.append(f"| **Sample Size (N)** | {metadata.get('sample_size', 'N/A')} |")
 
             conditions = metadata.get("conditions", []) or []
@@ -192,7 +183,7 @@ class InstructorReportGenerator:
                     levels = f.get("levels", [])
                     lines.append(f"| **Factor {i+1}** | {fname}: {', '.join(levels)} |")
             else:
-                lines.append(f"| **Factors** | Single factor (Condition) |")
+                lines.append("| **Factors** | Single factor (Condition) |")
 
             # Randomization level
             design_review = metadata.get("design_review", {})
