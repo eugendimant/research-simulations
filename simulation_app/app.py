@@ -2159,6 +2159,25 @@ if active_step == 3:
                 "Schema_Validation.json": _safe_json(schema_results).encode("utf-8"),
                 "Instructor_Report.md": instructor_bytes,
             }
+
+            # Include uploaded source files in "Source_Files" subfolder
+            qsf_content = st.session_state.get("qsf_raw_content")
+            if qsf_content:
+                qsf_name = st.session_state.get("qsf_file_name", "survey.qsf")
+                files[f"Source_Files/{qsf_name}"] = qsf_content if isinstance(qsf_content, bytes) else qsf_content.encode("utf-8")
+
+            prereg_pdf = st.session_state.get("prereg_pdf_content")
+            if prereg_pdf:
+                prereg_name = st.session_state.get("prereg_pdf_name", "preregistration.pdf")
+                files[f"Source_Files/{prereg_name}"] = prereg_pdf
+
+            # Include preregistration text if provided
+            prereg_outcomes = st.session_state.get("prereg_outcomes", "")
+            prereg_iv = st.session_state.get("prereg_iv", "")
+            if prereg_outcomes or prereg_iv:
+                prereg_summary = f"# Preregistration Summary\n\n## Primary Outcomes\n{prereg_outcomes}\n\n## Independent Variables\n{prereg_iv}"
+                files["Source_Files/Preregistration_Summary.txt"] = prereg_summary.encode("utf-8")
+
             zip_bytes = _bytes_to_zip(files)
 
             st.session_state["last_df"] = df
