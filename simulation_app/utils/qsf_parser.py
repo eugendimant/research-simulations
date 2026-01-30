@@ -143,9 +143,10 @@ def _parse_blocks(element: Dict[str, Any]) -> List[Dict[str, Any]]:
 
                 # Extract block elements (question references)
                 block_elements = block_data.get('BlockElements', [])
-                for elem in block_elements:
-                    if elem.get('Type') == 'Question':
-                        block_info['elements'].append(elem.get('QuestionID', ''))
+                if isinstance(block_elements, list):
+                    for elem in block_elements:
+                        if isinstance(elem, dict) and elem.get('Type') == 'Question':
+                            block_info['elements'].append(elem.get('QuestionID', ''))
 
                 blocks.append(block_info)
     # Handle dict format (older QSF exports)
@@ -163,9 +164,10 @@ def _parse_blocks(element: Dict[str, Any]) -> List[Dict[str, Any]]:
 
                 # Extract block elements (question references)
                 block_elements = block_data.get('BlockElements', [])
-                for elem in block_elements:
-                    if elem.get('Type') == 'Question':
-                        block_info['elements'].append(elem.get('QuestionID', ''))
+                if isinstance(block_elements, list):
+                    for elem in block_elements:
+                        if isinstance(elem, dict) and elem.get('Type') == 'Question':
+                            block_info['elements'].append(elem.get('QuestionID', ''))
 
                 blocks.append(block_info)
 
