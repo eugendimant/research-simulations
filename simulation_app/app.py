@@ -1995,7 +1995,7 @@ if active_step == 3:
             )
         N = min(requested_n, MAX_SIMULATED_N)
 
-        if missing:
+        if missing_fields:
             st.error("Generation blocked until all required fields are completed.")
             st.session_state["is_generating"] = False
             progress_placeholder.empty()
@@ -2010,7 +2010,7 @@ if active_step == 3:
             study_title=title,
             study_description=desc,
             sample_size=N,
-            conditions=inferred["conditions"],
+            conditions=inferred.get("conditions", []),
             factors=clean_factors,
             scales=clean_scales,
             additional_vars=[],
@@ -2048,7 +2048,7 @@ if active_step == 3:
 
             schema_results = validate_schema(
                 df=df,
-                expected_conditions=inferred["conditions"],
+                expected_conditions=inferred.get("conditions", []),
                 expected_scales=clean_scales,
                 expected_n=N,
             )
