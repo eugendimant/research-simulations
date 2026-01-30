@@ -1206,7 +1206,10 @@ def analyze_qsf_design(
     """
     try:
         qsf_data = json.loads(qsf_content.decode('utf-8'))
-    except (json.JSONDecodeError, UnicodeDecodeError) as e:
+        # Validate top-level structure is a dict
+        if not isinstance(qsf_data, dict):
+            raise ValueError(f"QSF top-level structure is {type(qsf_data).__name__}, expected dict")
+    except (json.JSONDecodeError, UnicodeDecodeError, ValueError) as e:
         # Return empty result on parse failure
         return DesignAnalysisResult(
             conditions=[],
