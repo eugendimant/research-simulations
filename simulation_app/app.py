@@ -1594,68 +1594,69 @@ if active_step == 2:
 - Condition names should match what's in your QSF (they appear in the dropdown below)
 """)
 
-        condition_candidates = st.session_state.get("condition_candidates")
-        if not condition_candidates:
-            condition_candidates = _get_condition_candidates(preview, enhanced_analysis)
-            st.session_state["condition_candidates"] = condition_candidates
+    # Condition selection (OUTSIDE the help expander)
+    condition_candidates = st.session_state.get("condition_candidates")
+    if not condition_candidates:
+        condition_candidates = _get_condition_candidates(preview, enhanced_analysis)
+        st.session_state["condition_candidates"] = condition_candidates
 
-        all_possible_conditions = condition_candidates or []
+    all_possible_conditions = condition_candidates or []
 
-        # Initialize selected conditions in session state
-        if "selected_conditions" not in st.session_state:
-            # Default to QSF-detected conditions if any
-            st.session_state["selected_conditions"] = condition_candidates[:] if condition_candidates else []
+    # Initialize selected conditions in session state
+    if "selected_conditions" not in st.session_state:
+        # Default to QSF-detected conditions if any
+        st.session_state["selected_conditions"] = condition_candidates[:] if condition_candidates else []
 
-        # Check if we have any possible conditions to select from
-        if all_possible_conditions:
-            st.markdown("**Select which blocks/groups represent your experimental conditions:**")
-            st.caption(
-                "These were detected from your QSF file's randomizer and block structure. "
-                "Select the exact block names if you want them to match your survey flow."
+    # Check if we have any possible conditions to select from
+    if all_possible_conditions:
+        st.markdown("**Select which blocks/groups represent your experimental conditions:**")
+        st.caption(
+            "These were detected from your QSF file's randomizer and block structure. "
+            "Select the exact block names if you want them to match your survey flow."
+        )
+
+        # Multi-select from available options
+        selected = st.multiselect(
+            "Select conditions from QSF",
+            options=all_possible_conditions,
+            default=st.session_state.get("selected_conditions", []),
+            help="Pick the block names that correspond to experimental conditions (matches the QSF flow).",
+            key="condition_multiselect",
+        )
+        st.session_state["selected_conditions"] = selected
+
+        if not selected:
+            st.warning("Please select at least one condition, or add custom conditions below.")
+    else:
+        st.info("No condition blocks detected in the QSF file.")
+        selected = []
+        st.session_state["selected_conditions"] = []
+
+    # Option to add custom conditions (but using a controlled interface)
+    with st.expander("Add custom conditions (if not in QSF)", expanded=not bool(all_possible_conditions)):
+        st.caption(
+            "If your conditions aren't detected above, add them here. Use names that match your survey flow "
+            "if you want alignment, but any descriptive labels will still work for simulation."
+        )
+
+        # Get current custom conditions
+        custom_conditions = st.session_state.get("custom_conditions", [])
+
+        col_add1, col_add2 = st.columns([3, 1])
+        with col_add1:
+            new_condition = st.text_input(
+                "New condition name",
+                key="new_condition_input",
+                placeholder="e.g., Control, Treatment, High, Low",
+                help="Use the same spelling as your QSF block names if you want exact alignment.",
             )
-
-            # Multi-select from available options
-            selected = st.multiselect(
-                "Select conditions from QSF",
-                options=all_possible_conditions,
-                default=st.session_state.get("selected_conditions", []),
-                help="Pick the block names that correspond to experimental conditions (matches the QSF flow).",
-                key="condition_multiselect",
-            )
-            st.session_state["selected_conditions"] = selected
-
-            if not selected:
-                st.warning("Please select at least one condition, or add custom conditions below.")
-        else:
-            st.info("No condition blocks detected in the QSF file.")
-            selected = []
-            st.session_state["selected_conditions"] = []
-
-        # Option to add custom conditions (but using a controlled interface)
-        with st.expander("Add custom conditions (if not in QSF)", expanded=not bool(all_possible_conditions)):
-            st.caption(
-                "If your conditions aren't detected above, add them here. Use names that match your survey flow "
-                "if you want alignment, but any descriptive labels will still work for simulation."
-            )
-
-            # Get current custom conditions
-            custom_conditions = st.session_state.get("custom_conditions", [])
-
-            col_add1, col_add2 = st.columns([3, 1])
-            with col_add1:
-                new_condition = st.text_input(
-                    "New condition name",
-                    key="new_condition_input",
-                    placeholder="e.g., Control, Treatment, High, Low",
-                    help="Use the same spelling as your QSF block names if you want exact alignment.",
-                )
-            with col_add2:
-                st.write("")  # Spacer
-                if st.button("Add", key="add_condition_btn", disabled=not new_condition.strip()):
-                    if new_condition.strip() and new_condition.strip() not in custom_conditions:
-                        custom_conditions.append(new_condition.strip())
-                        st.session_state["custom_conditions"] = custom_conditions
-                        st.rerun()
+        with col_add2:
+            st.write("")  # Spacer
+            if st.button("Add", key="add_condition_btn", disabled=not new_condition.strip()):
+                if new_condition.strip() and new_condition.strip() not in custom_conditions:
+                    custom_conditions.append(new_condition.strip())
+                    st.session_state["custom_conditions"] = custom_conditions
+                    st.rerun()
 
             # Show custom conditions with remove buttons
             if custom_conditions:
