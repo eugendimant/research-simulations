@@ -284,136 +284,163 @@ class QSFPreviewParser:
         - Dict format: {"BL_123": {"Description": "Block 1", ...}}
         - List format: [{"ID": "BL_123", "Description": "Block 1", ...}]
         """
-        payload = element.get('Payload', {})
+        try:
+            payload = element.get('Payload', {})
+            if payload is None:
+                payload = {}
 
-        # Handle list format (newer QSF exports)
-        if isinstance(payload, dict) and isinstance(payload.get('Blocks'), (list, dict)):
-            payload = payload.get('Blocks', payload)
+            # Handle list format (newer QSF exports)
+            if isinstance(payload, dict) and isinstance(payload.get('Blocks'), (list, dict)):
+                payload = payload.get('Blocks', payload)
 
-        if isinstance(payload, list):
-            for block_data in payload:
-                if isinstance(block_data, dict):
-                    block_id = block_data.get('ID', '')
-                    if not block_id:
-                        continue
-                    block_name = block_data.get('Description', f'Block {block_id}')
-                    block_type = block_data.get('Type', 'Standard')
+            if isinstance(payload, list):
+                for block_data in payload:
+                    if isinstance(block_data, dict):
+                        block_id = block_data.get('ID', '')
+                        if not block_id:
+                            continue
+                        block_name = block_data.get('Description', f'Block {block_id}')
+                        block_type = block_data.get('Type', 'Standard')
 
-                    blocks_map[block_id] = {
-                        'name': block_name,
-                        'type': block_type,
-                        'elements': block_data.get('BlockElements', [])
-                    }
+                        blocks_map[block_id] = {
+                            'name': block_name,
+                            'type': block_type,
+                            'elements': block_data.get('BlockElements', [])
+                        }
 
-                    self._log(
-                        LogLevel.INFO, "BLOCK",
-                        f"Found block: {block_name} (Type: {block_type})"
-                    )
-        # Handle dict format (older QSF exports)
-        elif isinstance(payload, dict):
-            for dict_key, block_data in payload.items():
-                if isinstance(block_data, dict):
-                    # Use the ID field if available, otherwise use the dict key
-                    # This is important because flow elements reference blocks by ID field
-                    block_id = block_data.get('ID', dict_key)
-                    block_name = block_data.get('Description', f'Block {block_id}')
-                    block_type = block_data.get('Type', 'Standard')
+                        self._log(
+                            LogLevel.INFO, "BLOCK",
+                            f"Found block: {block_name} (Type: {block_type})"
+                        )
+            # Handle dict format (older QSF exports)
+            elif isinstance(payload, dict):
+                for dict_key, block_data in payload.items():
+                    if isinstance(block_data, dict):
+                        # Use the ID field if available, otherwise use the dict key
+                        # This is important because flow elements reference blocks by ID field
+                        block_id = block_data.get('ID', dict_key)
+                        block_name = block_data.get('Description', f'Block {block_id}')
+                        block_type = block_data.get('Type', 'Standard')
 
-                    blocks_map[block_id] = {
-                        'name': block_name,
-                        'type': block_type,
-                        'elements': block_data.get('BlockElements', [])
-                    }
-                    # Also store with dict key for compatibility
-                    if dict_key != block_id:
-                        blocks_map[dict_key] = blocks_map[block_id]
+                        blocks_map[block_id] = {
+                            'name': block_name,
+                            'type': block_type,
+                            'elements': block_data.get('BlockElements', [])
+                        }
+                        # Also store with dict key for compatibility
+                        if dict_key != block_id:
+                            blocks_map[dict_key] = blocks_map[block_id]
 
-                    self._log(
-                        LogLevel.INFO, "BLOCK",
-                        f"Found block: {block_name} (ID: {block_id}, Type: {block_type})"
-                    )
+                        self._log(
+                            LogLevel.INFO, "BLOCK",
+                            f"Found block: {block_name} (ID: {block_id}, Type: {block_type})"
+                        )
+        except Exception as e:
+            self._log(LogLevel.WARNING, "BLOCK_PARSE", f"Error parsing blocks: {e}")
 
     def _parse_question(self, element: Dict, questions_map: Dict):
         """Parse a survey question with robust scale point detection."""
-        payload = element.get('Payload', {})
-        q_id = payload.get('QuestionID', element.get('PrimaryAttribute', ''))
+        try:
+            payload = element.get('Payload', {})
+            if payload is None:
+                payload = {}
+            q_id = payload.get('QuestionID', element.get('PrimaryAttribute', ''))
+            if not q_id:
+                return  # Skip questions without ID
 
-        question_text = payload.get('QuestionText', '')
-        # Clean HTML
-        question_text = re.sub(r'<[^>]+>', '', question_text)
+            question_text = payload.get('QuestionText', '') or ''
+            # Clean HTML
+            question_text = re.sub(r'<[^>]+>', '', str(question_text))
 
-        question_type = payload.get('QuestionType', 'Unknown')
-        selector = payload.get('Selector', '')
+            question_type = payload.get('QuestionType', 'Unknown') or 'Unknown'
+            selector = payload.get('Selector', '') or ''
 
-        # Determine question category
-        category = self._categorize_question(question_type, selector)
+            # Determine question category
+            category = self._categorize_question(question_type, selector)
 
-        # Extract choices (for MC questions, these are the response options)
-        choices = []
-        choices_data = payload.get('Choices', {})
-        if isinstance(choices_data, dict):
-            # Sort by choice ID to maintain order
-            sorted_choices = sorted(choices_data.items(), key=lambda x: self._safe_int_key(x[0]))
-            for _, choice_data in sorted_choices:
-                if isinstance(choice_data, dict):
-                    choice_text = choice_data.get('Display', str(choice_data))
-                    choices.append(choice_text)
-                else:
-                    choices.append(str(choice_data))
-        elif isinstance(choices_data, list):
-            for choice_data in choices_data:
-                if isinstance(choice_data, dict):
-                    choices.append(choice_data.get('Display', str(choice_data)))
-                else:
-                    choices.append(str(choice_data))
+            # Extract choices (for MC questions, these are the response options)
+            choices = []
+            choices_data = payload.get('Choices', {})
+            if choices_data is None:
+                choices_data = {}
+            if isinstance(choices_data, dict):
+                # Sort by choice ID to maintain order
+                try:
+                    sorted_choices = sorted(choices_data.items(), key=lambda x: self._safe_int_key(x[0]))
+                    for _, choice_data in sorted_choices:
+                        if isinstance(choice_data, dict):
+                            choice_text = choice_data.get('Display', str(choice_data))
+                            choices.append(choice_text)
+                        else:
+                            choices.append(str(choice_data))
+                except Exception:
+                    pass  # If sorting fails, skip choices
+            elif isinstance(choices_data, list):
+                for choice_data in choices_data:
+                    if isinstance(choice_data, dict):
+                        choices.append(choice_data.get('Display', str(choice_data)))
+                    else:
+                        choices.append(str(choice_data))
 
-        # Check for matrix (scale) questions
-        is_matrix = question_type == 'Matrix' or (question_type == 'MC' and selector in ['Likert', 'Bipolar'])
+            # Check for matrix (scale) questions
+            is_matrix = question_type == 'Matrix' or (question_type == 'MC' and selector in ['Likert', 'Bipolar'])
 
-        # Extract sub-questions for matrix (these are the rows/items)
-        sub_questions = []
+            # Extract sub-questions for matrix (these are the rows/items)
+            sub_questions = []
 
-        # For Matrix questions, Choices are the items (rows) and Answers are the scale (columns)
-        if question_type == 'Matrix':
-            # The "Choices" in Matrix are actually the items/statements
-            # The "Answers" are the response scale options
-            answers_data = payload.get('Answers', {})
-            if isinstance(answers_data, dict):
-                sorted_answers = sorted(answers_data.items(), key=lambda x: self._safe_int_key(x[0]))
-                for ans_id, ans_data in sorted_answers:
-                    if isinstance(ans_data, dict):
-                        sub_questions.append(ans_data.get('Display', ''))
-        else:
-            # For non-matrix questions with sub-questions
-            answers_data = payload.get('Answers', {})
-            if isinstance(answers_data, dict):
-                sorted_answers = sorted(answers_data.items(), key=lambda x: self._safe_int_key(x[0]))
-                for ans_id, ans_data in sorted_answers:
-                    if isinstance(ans_data, dict):
-                        sub_questions.append(ans_data.get('Display', ''))
+            # For Matrix questions, Choices are the items (rows) and Answers are the scale (columns)
+            if question_type == 'Matrix':
+                # The "Choices" in Matrix are actually the items/statements
+                # The "Answers" are the response scale options
+                answers_data = payload.get('Answers', {})
+                if answers_data is None:
+                    answers_data = {}
+                if isinstance(answers_data, dict):
+                    try:
+                        sorted_answers = sorted(answers_data.items(), key=lambda x: self._safe_int_key(x[0]))
+                        for ans_id, ans_data in sorted_answers:
+                            if isinstance(ans_data, dict):
+                                sub_questions.append(ans_data.get('Display', ''))
+                    except Exception:
+                        pass  # If sorting fails, skip sub-questions
+            else:
+                # For non-matrix questions with sub-questions
+                answers_data = payload.get('Answers', {})
+                if answers_data is None:
+                    answers_data = {}
+                if isinstance(answers_data, dict):
+                    try:
+                        sorted_answers = sorted(answers_data.items(), key=lambda x: self._safe_int_key(x[0]))
+                        for ans_id, ans_data in sorted_answers:
+                            if isinstance(ans_data, dict):
+                                sub_questions.append(ans_data.get('Display', ''))
+                    except Exception:
+                        pass  # If sorting fails, skip sub-questions
 
-        # ROBUST SCALE POINT DETECTION
-        scale_points = self._detect_scale_points(payload, question_type, selector, choices, sub_questions)
+            # ROBUST SCALE POINT DETECTION
+            scale_points = self._detect_scale_points(payload, question_type, selector, choices, sub_questions)
 
-        # Get the data export tag (actual variable name in exported data)
-        data_export_tag = payload.get('DataExportTag', q_id)
+            # Get the data export tag (actual variable name in exported data)
+            data_export_tag = payload.get('DataExportTag', q_id)
 
-        questions_map[q_id] = QuestionInfo(
-            question_id=q_id,
-            question_text=question_text[:200] + ('...' if len(question_text) > 200 else ''),
-            question_type=category,
-            block_name='',  # Will be filled when mapping
-            choices=choices,
-            scale_points=scale_points,
-            is_matrix=is_matrix,
-            sub_questions=sub_questions
-        )
+            questions_map[q_id] = QuestionInfo(
+                question_id=q_id,
+                question_text=question_text[:200] + ('...' if len(question_text) > 200 else ''),
+                question_type=category,
+                block_name='',  # Will be filled when mapping
+                choices=choices,
+                scale_points=scale_points,
+                is_matrix=is_matrix,
+                sub_questions=sub_questions
+            )
 
-        self._log(
-            LogLevel.INFO, "QUESTION",
-            f"Parsed question {q_id}: {category} (scale_points={scale_points})",
-            {'text_preview': question_text[:100], 'data_export_tag': data_export_tag}
-        )
+            self._log(
+                LogLevel.INFO, "QUESTION",
+                f"Parsed question {q_id}: {category} (scale_points={scale_points})",
+                {'text_preview': question_text[:100], 'data_export_tag': data_export_tag}
+            )
+        except Exception as e:
+            self._log(LogLevel.WARNING, "QUESTION_PARSE", f"Error parsing question: {e}")
 
     def _safe_int_key(self, key: Any) -> int:
         """Convert key to int for sorting, handling non-numeric keys."""

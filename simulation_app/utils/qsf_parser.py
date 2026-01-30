@@ -123,128 +123,160 @@ def _parse_blocks(element: Dict[str, Any]) -> List[Dict[str, Any]]:
     - List format: [{"ID": "BL_123", "Description": "Block 1", ...}]
     """
     blocks = []
-    payload = element.get('Payload', {})
-    if isinstance(payload, dict) and isinstance(payload.get('Blocks'), (list, dict)):
-        payload = payload.get('Blocks', payload)
+    try:
+        payload = element.get('Payload', {})
+        if payload is None:
+            payload = {}
+        if isinstance(payload, dict) and isinstance(payload.get('Blocks'), (list, dict)):
+            payload = payload.get('Blocks', payload)
 
-    # Handle list format (newer QSF exports)
-    if isinstance(payload, list):
-        for block_data in payload:
-            if isinstance(block_data, dict):
-                block_id = block_data.get('ID', '')
-                if not block_id:
-                    continue
-                block_info = {
-                    'id': block_id,
-                    'description': block_data.get('Description', 'Unnamed Block'),
-                    'type': block_data.get('Type', 'Standard'),
-                    'elements': []
-                }
+        # Handle list format (newer QSF exports)
+        if isinstance(payload, list):
+            for block_data in payload:
+                if isinstance(block_data, dict):
+                    block_id = block_data.get('ID', '')
+                    if not block_id:
+                        continue
+                    block_info = {
+                        'id': block_id,
+                        'description': block_data.get('Description', 'Unnamed Block'),
+                        'type': block_data.get('Type', 'Standard'),
+                        'elements': []
+                    }
 
-                # Extract block elements (question references)
-                block_elements = block_data.get('BlockElements', [])
-                if isinstance(block_elements, list):
-                    for elem in block_elements:
-                        if isinstance(elem, dict) and elem.get('Type') == 'Question':
-                            block_info['elements'].append(elem.get('QuestionID', ''))
+                    # Extract block elements (question references)
+                    block_elements = block_data.get('BlockElements', [])
+                    if isinstance(block_elements, list):
+                        for elem in block_elements:
+                            if isinstance(elem, dict) and elem.get('Type') == 'Question':
+                                block_info['elements'].append(elem.get('QuestionID', ''))
 
-                blocks.append(block_info)
-    # Handle dict format (older QSF exports)
-    elif isinstance(payload, dict):
-        for dict_key, block_data in payload.items():
-            if isinstance(block_data, dict):
-                # Use ID field if available, otherwise use dict key
-                block_id = block_data.get('ID', dict_key)
-                block_info = {
-                    'id': block_id,
-                    'description': block_data.get('Description', 'Unnamed Block'),
-                    'type': block_data.get('Type', 'Standard'),
-                    'elements': []
-                }
+                    blocks.append(block_info)
+        # Handle dict format (older QSF exports)
+        elif isinstance(payload, dict):
+            for dict_key, block_data in payload.items():
+                if isinstance(block_data, dict):
+                    # Use ID field if available, otherwise use dict key
+                    block_id = block_data.get('ID', dict_key)
+                    block_info = {
+                        'id': block_id,
+                        'description': block_data.get('Description', 'Unnamed Block'),
+                        'type': block_data.get('Type', 'Standard'),
+                        'elements': []
+                    }
 
-                # Extract block elements (question references)
-                block_elements = block_data.get('BlockElements', [])
-                if isinstance(block_elements, list):
-                    for elem in block_elements:
-                        if isinstance(elem, dict) and elem.get('Type') == 'Question':
-                            block_info['elements'].append(elem.get('QuestionID', ''))
+                    # Extract block elements (question references)
+                    block_elements = block_data.get('BlockElements', [])
+                    if isinstance(block_elements, list):
+                        for elem in block_elements:
+                            if isinstance(elem, dict) and elem.get('Type') == 'Question':
+                                block_info['elements'].append(elem.get('QuestionID', ''))
 
-                blocks.append(block_info)
+                    blocks.append(block_info)
+    except Exception:
+        pass  # Return empty list on error
 
     return blocks
 
 
 def _parse_question(element: Dict[str, Any]) -> Dict[str, Any]:
     """Parse a survey question element."""
-    payload = element.get('Payload', {})
+    try:
+        payload = element.get('Payload', {})
+        if payload is None:
+            payload = {}
 
-    question = {
-        'id': payload.get('QuestionID', element.get('PrimaryAttribute', '')),
-        'data_export_tag': payload.get('DataExportTag', ''),
-        'text': _clean_html(payload.get('QuestionText', '')),
-        'type': payload.get('QuestionType', 'Unknown'),
-        'selector': payload.get('Selector', ''),
-        'sub_selector': payload.get('SubSelector', ''),
-        'choices': {},
-        'choice_order': [],
-        'validation': payload.get('Validation', {}),
-        'display_logic': payload.get('DisplayLogic', None),
-        'is_mandatory': payload.get('Validation', {}).get('Settings', {}).get('ForceResponse', 'OFF') == 'ON'
-    }
+        question = {
+            'id': payload.get('QuestionID', element.get('PrimaryAttribute', '')),
+            'data_export_tag': payload.get('DataExportTag', ''),
+            'text': _clean_html(payload.get('QuestionText', '')),
+            'type': payload.get('QuestionType', 'Unknown'),
+            'selector': payload.get('Selector', ''),
+            'sub_selector': payload.get('SubSelector', ''),
+            'choices': {},
+            'choice_order': [],
+            'validation': payload.get('Validation', {}) or {},
+            'display_logic': payload.get('DisplayLogic', None),
+            'is_mandatory': (payload.get('Validation', {}) or {}).get('Settings', {}).get('ForceResponse', 'OFF') == 'ON'
+        }
 
-    # Parse choices - handle both dict and list formats
-    choices = payload.get('Choices', {})
-    choice_order = payload.get('ChoiceOrder', [])
+        # Parse choices - handle both dict and list formats
+        choices = payload.get('Choices', {})
+        if choices is None:
+            choices = {}
+        choice_order = payload.get('ChoiceOrder', [])
+        if choice_order is None:
+            choice_order = []
 
-    if isinstance(choices, dict):
-        for choice_id in choice_order:
-            choice_id_str = str(choice_id)
-            if choice_id_str in choices:
-                choice_data = choices[choice_id_str]
+        if isinstance(choices, dict):
+            for choice_id in choice_order:
+                choice_id_str = str(choice_id)
+                if choice_id_str in choices:
+                    choice_data = choices[choice_id_str]
+                    if isinstance(choice_data, dict):
+                        question['choices'][choice_id_str] = {
+                            'text': _clean_html(choice_data.get('Display', '')),
+                            'recode': choice_data.get('RecodeValue', choice_id_str)
+                        }
+                    elif choice_data is not None:
+                        question['choices'][choice_id_str] = {
+                            'text': str(choice_data),
+                            'recode': choice_id_str
+                        }
+        elif isinstance(choices, list):
+            for idx, choice_data in enumerate(choices):
+                choice_id_str = str(idx + 1)
                 if isinstance(choice_data, dict):
                     question['choices'][choice_id_str] = {
                         'text': _clean_html(choice_data.get('Display', '')),
                         'recode': choice_data.get('RecodeValue', choice_id_str)
                     }
-                else:
+                elif choice_data is not None:
                     question['choices'][choice_id_str] = {
                         'text': str(choice_data),
                         'recode': choice_id_str
                     }
-    elif isinstance(choices, list):
-        for idx, choice_data in enumerate(choices):
-            choice_id_str = str(idx + 1)
-            if isinstance(choice_data, dict):
-                question['choices'][choice_id_str] = {
-                    'text': _clean_html(choice_data.get('Display', '')),
-                    'recode': choice_data.get('RecodeValue', choice_id_str)
-                }
-            else:
-                question['choices'][choice_id_str] = {
-                    'text': str(choice_data),
-                    'recode': choice_id_str
-                }
 
-    question['choice_order'] = [str(c) for c in choice_order] if choice_order else list(question['choices'].keys())
+        question['choice_order'] = [str(c) for c in choice_order] if choice_order else list(question['choices'].keys())
 
-    # Parse answers (for matrix questions)
-    answers = payload.get('Answers', {})
-    if answers:
-        question['answers'] = {}
-        if isinstance(answers, dict):
-            for ans_id, ans_data in answers.items():
-                if isinstance(ans_data, dict):
-                    question['answers'][ans_id] = _clean_html(ans_data.get('Display', ''))
-                else:
-                    question['answers'][ans_id] = str(ans_data)
-        elif isinstance(answers, list):
-            for idx, ans_data in enumerate(answers):
-                if isinstance(ans_data, dict):
-                    question['answers'][str(idx)] = _clean_html(ans_data.get('Display', ''))
-                else:
-                    question['answers'][str(idx)] = str(ans_data)
+        # Parse answers (for matrix questions)
+        answers = payload.get('Answers', {})
+        if answers is None:
+            answers = {}
+        if answers:
+            question['answers'] = {}
+            if isinstance(answers, dict):
+                try:
+                    for ans_id, ans_data in answers.items():
+                        if isinstance(ans_data, dict):
+                            question['answers'][ans_id] = _clean_html(ans_data.get('Display', ''))
+                        elif ans_data is not None:
+                            question['answers'][ans_id] = str(ans_data)
+                except Exception:
+                    pass  # If iteration fails, skip answers
+            elif isinstance(answers, list):
+                for idx, ans_data in enumerate(answers):
+                    if isinstance(ans_data, dict):
+                        question['answers'][str(idx)] = _clean_html(ans_data.get('Display', ''))
+                    elif ans_data is not None:
+                        question['answers'][str(idx)] = str(ans_data)
 
-    return question
+        return question
+    except Exception:
+        # Return minimal question object on error
+        return {
+            'id': '',
+            'data_export_tag': '',
+            'text': '',
+            'type': 'Unknown',
+            'selector': '',
+            'sub_selector': '',
+            'choices': {},
+            'choice_order': [],
+            'validation': {},
+            'display_logic': None,
+            'is_mandatory': False
+        }
 
 
 def _parse_flow(element: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -292,27 +324,35 @@ def _parse_flow(element: Dict[str, Any]) -> List[Dict[str, Any]]:
 def _parse_embedded_data(element: Dict[str, Any]) -> List[Dict[str, str]]:
     """Parse embedded data fields."""
     embedded = []
-    payload = element.get('Payload', {})
+    try:
+        payload = element.get('Payload', {})
+        if payload is None:
+            payload = {}
 
-    flow_payload = payload.get('Flow', payload if isinstance(payload, list) else None)
-    if flow_payload is not None:
-        for item in _normalize_flow(flow_payload):
-            ed_list = item.get('EmbeddedData', [])
-            if isinstance(ed_list, list):
-                for ed in ed_list:
-                    if isinstance(ed, dict):
-                        embedded.append({
-                            'field': ed.get('Field', ''),
-                            'type': ed.get('Type', 'Custom'),
-                            'value': ed.get('Value', '')
-                        })
-    elif isinstance(payload, dict):
-        for field, value in payload.items():
-            embedded.append({
-                'field': field,
-                'type': 'Custom',
-                'value': str(value) if not isinstance(value, dict) else ''
-            })
+        flow_payload = payload.get('Flow', payload if isinstance(payload, list) else None)
+        if flow_payload is not None:
+            for item in _normalize_flow(flow_payload):
+                ed_list = item.get('EmbeddedData', [])
+                if isinstance(ed_list, list):
+                    for ed in ed_list:
+                        if isinstance(ed, dict):
+                            embedded.append({
+                                'field': ed.get('Field', ''),
+                                'type': ed.get('Type', 'Custom'),
+                                'value': ed.get('Value', '')
+                            })
+        elif isinstance(payload, dict):
+            try:
+                for field, value in payload.items():
+                    embedded.append({
+                        'field': field,
+                        'type': 'Custom',
+                        'value': str(value) if not isinstance(value, dict) else ''
+                    })
+            except Exception:
+                pass  # If iteration fails, skip
+    except Exception:
+        pass  # Return empty list on error
 
     return embedded
 
