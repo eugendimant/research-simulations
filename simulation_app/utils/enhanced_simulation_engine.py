@@ -318,17 +318,30 @@ class EnhancedSimulationEngine:
             persona, participant_id, self.seed
         )
 
-    def _get_effect_for_condition(self, condition: str, variable: str) -> float:
+    def _get_effect_for_condition(self, condition: str, variable: str, scale_range: int = 6) -> float:
+        """
+        Convert Cohen's d effect size to a normalized (0-1) effect shift.
+
+        Cohen's d represents the standardized mean difference. For Likert scales:
+        - Typical SD ≈ scale_range / 4 (empirical approximation)
+        - Effect in raw units = d * SD = d * (scale_range / 4)
+        - Normalized effect = raw_effect / scale_range = d * 0.25
+
+        This means a Cohen's d of 0.5 (medium effect) shifts responses by ~12.5%
+        of the scale range, which is appropriate for behavioral data.
+        """
+        COHENS_D_TO_NORMALIZED = 0.25  # Based on typical Likert scale SD ≈ range/4
+
         for effect in self.effect_sizes:
             if effect.variable == variable or str(variable).startswith(effect.variable):
                 condition_lower = str(condition).lower()
 
                 if str(effect.level_high).lower() in condition_lower:
                     d = effect.cohens_d if effect.direction == "positive" else -effect.cohens_d
-                    return float(d) * 0.15
+                    return float(d) * COHENS_D_TO_NORMALIZED
                 if str(effect.level_low).lower() in condition_lower:
                     d = -effect.cohens_d if effect.direction == "positive" else effect.cohens_d
-                    return float(d) * 0.15
+                    return float(d) * COHENS_D_TO_NORMALIZED
         return 0.0
 
     def _generate_scale_response(
@@ -528,16 +541,32 @@ class EnhancedSimulationEngine:
         passed_checks = int(sum(bool(x) for x in attention_checks_passed))
         pass_rate = (passed_checks / total_checks) if total_checks > 0 else 1.0
 
+        # Detect careless response patterns
         max_straight_line = 0
+        max_alternating = 0
         current_streak = 1
+        alternating_streak = 1
         vals = [int(v) for v in (participant_item_responses or [])]
+
         if len(vals) >= 2:
             for i in range(1, len(vals)):
+                # Consecutive identical (straight-line)
                 if vals[i] == vals[i - 1]:
                     current_streak += 1
                     max_straight_line = max(max_straight_line, current_streak)
                 else:
                     current_streak = 1
+
+                # Alternating pattern detection (e.g., 1,7,1,7 or high-low-high-low)
+                if i >= 2:
+                    if vals[i] == vals[i - 2] and vals[i] != vals[i - 1]:
+                        alternating_streak += 1
+                        max_alternating = max(max_alternating, alternating_streak)
+                    else:
+                        alternating_streak = 1
+
+        # Use the worse of straight-line or alternating patterns
+        max_straight_line = max(max_straight_line, max_alternating)
 
         exclude_time = (
             completion_time < int(self.exclusion_criteria.completion_time_min_seconds)
