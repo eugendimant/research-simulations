@@ -137,6 +137,26 @@ class EnhancedConditionIdentifier:
         self.warnings: List[str] = []
         self.suggestions: List[str] = []
 
+    def _normalize_survey_elements(self, qsf_data: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Normalize SurveyElements into a list of dicts across QSF variants."""
+        elements = qsf_data.get('SurveyElements', [])
+        if isinstance(elements, dict):
+            elements = list(elements.values())
+        if not isinstance(elements, list):
+            return []
+        return [element for element in elements if isinstance(element, dict)]
+
+    def _normalize_flow(self, flow: Any) -> List[Dict[str, Any]]:
+        """Normalize flow structures into a list of dicts across QSF variants."""
+        if isinstance(flow, dict):
+            if 'Flow' in flow:
+                flow = flow.get('Flow', [])
+            else:
+                flow = list(flow.values())
+        if not isinstance(flow, list):
+            return []
+        return [item for item in flow if isinstance(item, dict)]
+
     def analyze(
         self,
         qsf_data: Dict[str, Any],
@@ -162,7 +182,7 @@ class EnhancedConditionIdentifier:
         self.suggestions = []
 
         # Parse QSF structure
-        elements = qsf_data.get('SurveyElements', [])
+        elements = self._normalize_survey_elements(qsf_data)
         blocks_map = self._extract_blocks(elements)
         questions_map = self._extract_questions(elements)
         flow_data = self._extract_flow(elements)
@@ -221,6 +241,8 @@ class EnhancedConditionIdentifier:
         for element in elements:
             if element.get('Element') == 'BL':
                 payload = element.get('Payload', {})
+                if isinstance(payload, dict) and isinstance(payload.get('Blocks'), (list, dict)):
+                    payload = payload.get('Blocks', payload)
 
                 # Handle list format (newer QSF exports)
                 if isinstance(payload, list):
@@ -274,7 +296,17 @@ class EnhancedConditionIdentifier:
                 choices = []
                 choices_data = payload.get('Choices', {})
                 if isinstance(choices_data, dict):
-                    for choice_id, choice_data in sorted(choices_data.items(), key=lambda x: str(x[0])):
+                    choice_order = payload.get('ChoiceOrder', list(choices_data.keys()))
+                    sorted_choices = sorted(choice_order, key=lambda x: self._safe_int_key(x))
+                    for choice_id in sorted_choices:
+                        choice_key = str(choice_id)
+                        choice_data = choices_data.get(choice_key, choices_data.get(choice_id))
+                        if isinstance(choice_data, dict):
+                            choices.append(choice_data.get('Display', str(choice_data)))
+                        else:
+                            choices.append(str(choice_data))
+                elif isinstance(choices_data, list):
+                    for choice_data in choices_data:
                         if isinstance(choice_data, dict):
                             choices.append(choice_data.get('Display', str(choice_data)))
                         else:
@@ -316,13 +348,47 @@ class EnhancedConditionIdentifier:
                     'selector': selector,
                     'sub_selector': sub_selector,
                     'choices': choices,
-                    'scale_points': len(choices) if choices else None,
+                    'scale_points': self._detect_scale_points(payload, q_type, choices),
                     'is_matrix': is_matrix,
                     'sub_questions': sub_questions,
                     'validation': payload.get('Validation', {}),
                     'recoded_values': payload.get('RecodeValues', {}),
                 }
         return questions
+
+    def _safe_int_key(self, key: Any) -> int:
+        try:
+            return int(key)
+        except (TypeError, ValueError):
+            return 0
+
+    def _detect_scale_points(self, payload: Dict[str, Any], q_type: str, choices: List[str]) -> Optional[int]:
+        if q_type == 'Matrix':
+            answers_data = payload.get('Answers', {})
+            if isinstance(answers_data, dict) and len(answers_data) >= 2:
+                return len(answers_data)
+
+        config = payload.get('Configuration', {})
+        if isinstance(config, dict):
+            slider_min = config.get('CSSliderMin')
+            slider_max = config.get('CSSliderMax')
+            if slider_min is not None and slider_max is not None:
+                try:
+                    slider_min = int(slider_min)
+                    slider_max = int(slider_max)
+                    if slider_max >= slider_min:
+                        return slider_max - slider_min + 1
+                except (TypeError, ValueError):
+                    pass
+
+            num_choices = config.get('NumChoices')
+            if isinstance(num_choices, int):
+                return num_choices
+
+        if choices and 2 <= len(choices) <= 11:
+            return len(choices)
+
+        return None
 
     def _extract_flow(self, elements: List[Dict]) -> Optional[Dict]:
         """Extract survey flow structure."""
@@ -337,14 +403,13 @@ class EnhancedConditionIdentifier:
         for element in elements:
             if element.get('Element') == 'ED':
                 payload = element.get('Payload', {})
-                flow = payload.get('Flow', [])
-                for item in flow:
-                    if isinstance(item, dict):
-                        ed_list = item.get('EmbeddedData', [])
-                        if isinstance(ed_list, list):
-                            for ed in ed_list:
-                                if isinstance(ed, dict):
-                                    fields.append(ed.get('Field', ''))
+                flow = payload.get('Flow', payload)
+                for item in self._normalize_flow(flow):
+                    ed_list = item.get('EmbeddedData', [])
+                    if isinstance(ed_list, list):
+                        for ed in ed_list:
+                            if isinstance(ed, dict):
+                                fields.append(ed.get('Field', ''))
         return [f for f in fields if f]
 
     def _analyze_randomization(
@@ -374,7 +439,7 @@ class EnhancedConditionIdentifier:
             ), []
 
         payload = flow_data.get('Payload', {})
-        flow = payload.get('Flow', [])
+        flow = self._normalize_flow(payload.get('Flow', payload))
 
         # Recursively find all randomizers
         self._find_randomizers(flow, randomizers, blocks_map, raw_conditions, depth=0)
@@ -446,13 +511,22 @@ class EnhancedConditionIdentifier:
                     })
 
                 # Recurse into randomizer's flow
-                sub_flow = item.get('Flow', [])
+                sub_flow = self._normalize_flow(item.get('Flow', []))
                 self._find_randomizers(sub_flow, randomizers, blocks_map, raw_conditions, depth + 1)
 
             elif flow_type == 'BlockRandomizer':
                 # BlockRandomizer is another randomization type
                 rand_info = self._parse_block_randomizer(item, blocks_map, depth)
                 randomizers.append(rand_info)
+                for block_id in rand_info.get('block_ids', []):
+                    block_name = blocks_map.get(block_id, {}).get('name', block_id)
+                    if self._looks_like_condition(block_name):
+                        raw_conditions.append({
+                            'name': block_name,
+                            'block_id': block_id,
+                            'source': 'Block Randomizer',
+                            'confidence': 0.6,
+                        })
 
                 # Extract conditions if SubSet=1 (between-subjects assignment)
                 # Also check sub_set value directly to handle string "1" case
@@ -483,7 +557,7 @@ class EnhancedConditionIdentifier:
 
             # Recurse into nested flows
             if 'Flow' in item and flow_type != 'Randomizer':
-                self._find_randomizers(item['Flow'], randomizers, blocks_map, raw_conditions, depth)
+                self._find_randomizers(self._normalize_flow(item['Flow']), randomizers, blocks_map, raw_conditions, depth)
 
     def _parse_randomizer(
         self,
@@ -509,31 +583,30 @@ class EnhancedConditionIdentifier:
 
         # Extract branches (what gets randomized)
         branches = []
-        sub_flow = item.get('Flow', [])
+        sub_flow = self._normalize_flow(item.get('Flow', []))
         for sub_item in sub_flow:
-            if isinstance(sub_item, dict):
-                sub_type = sub_item.get('Type', '')
-                if sub_type == 'Block':
-                    block_id = sub_item.get('ID', '')
-                    block_name = blocks_map.get(block_id, {}).get('name', block_id)
-                    branches.append({
-                        'type': 'block',
-                        'block_id': block_id,
-                        'name': block_name,
-                    })
-                elif sub_type == 'Group':
-                    group_desc = sub_item.get('Description', 'Group')
-                    # Groups can contain multiple blocks
-                    group_blocks = []
-                    group_flow = sub_item.get('Flow', [])
-                    for gf_item in group_flow:
-                        if isinstance(gf_item, dict) and gf_item.get('Type') == 'Block':
-                            group_blocks.append(gf_item.get('ID', ''))
-                    branches.append({
-                        'type': 'group',
-                        'name': group_desc,
-                        'blocks': group_blocks,
-                    })
+            sub_type = sub_item.get('Type', '')
+            if sub_type == 'Block':
+                block_id = sub_item.get('ID', '')
+                block_name = blocks_map.get(block_id, {}).get('name', block_id)
+                branches.append({
+                    'type': 'block',
+                    'block_id': block_id,
+                    'name': block_name,
+                })
+            elif sub_type == 'Group':
+                group_desc = sub_item.get('Description', 'Group')
+                # Groups can contain multiple blocks
+                group_blocks = []
+                group_flow = self._normalize_flow(sub_item.get('Flow', []))
+                for gf_item in group_flow:
+                    if gf_item.get('Type') == 'Block':
+                        group_blocks.append(gf_item.get('ID', ''))
+                branches.append({
+                    'type': 'group',
+                    'name': group_desc,
+                    'blocks': group_blocks,
+                })
 
         return {
             'flow_id': flow_id,
@@ -552,45 +625,19 @@ class EnhancedConditionIdentifier:
         blocks_map: Dict[str, Dict],
         depth: int,
     ) -> Dict:
-        """Parse a BlockRandomizer element.
-
-        BlockRandomizer with SubSet=1 randomly assigns participants to one of the blocks,
-        making each block a condition. This is a common way to implement between-subjects
-        designs in Qualtrics.
-        """
-        flow_id = item.get('FlowID', item.get('ID', ''))
-        sub_set = item.get('SubSet', None)
-        randomize_all = item.get('RandomizeAll', False)
-
-        # Get the blocks being randomized
-        branches = []
-        sub_flow = item.get('Flow', [])
-        for sub_item in sub_flow:
-            if isinstance(sub_item, dict):
-                sub_type = sub_item.get('Type', '')
-                if sub_type in ('Standard', 'Block'):
-                    block_id = sub_item.get('ID', '')
-                    block_name = blocks_map.get(block_id, {}).get('name', block_id)
-                    branches.append({
-                        'type': 'block',
-                        'block_id': block_id,
-                        'name': block_name,
-                    })
-
-        # Determine randomization type based on SubSet
-        # SubSet=1 means one block per participant (between-subjects conditions)
-        # SubSet=N>1 or "All" means multiple blocks per participant (within-subjects)
-        # Note: SubSet can be int or string depending on QSF version
-        rand_type = 'present_one'
-        if sub_set is not None:
-            sub_set_str = str(sub_set).lower()
-            if sub_set_str == '1':
-                rand_type = 'present_one'  # Between-subjects: each participant sees one
-            elif sub_set_str == 'all' or randomize_all:
-                rand_type = 'present_all'  # All blocks shown (order randomized)
-            elif sub_set_str.isdigit() and int(sub_set_str) > 1:
-                rand_type = 'present_multiple'
-
+        """Parse a BlockRandomizer element."""
+        # BlockRandomizer randomizes the order of blocks
+        block_ids = item.get('BlockIDs', [])
+        if isinstance(block_ids, dict):
+            block_ids = list(block_ids.values())
+        if not isinstance(block_ids, list):
+            block_ids = []
+        if not block_ids and 'Flow' in item:
+            block_ids = [
+                sub.get('ID', '')
+                for sub in self._normalize_flow(item.get('Flow', []))
+                if sub.get('Type') == 'Block'
+            ]
         return {
             'flow_id': flow_id,
             'type': 'block_randomizer',
