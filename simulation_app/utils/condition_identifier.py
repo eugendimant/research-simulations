@@ -726,8 +726,10 @@ class EnhancedConditionIdentifier:
 
         # Fallback: look at block names that suggest conditions
         # Only if no conditions found from randomizer
-        if not conditions:
+        if not conditions and isinstance(blocks_map, dict):
             for block_id, block_data in blocks_map.items():
+                if not isinstance(block_data, dict):
+                    continue
                 block_name = block_data.get('name', '')
                 # Skip generic blocks
                 if block_name.lower() in ('default question block', 'block', 'standard', 'trash / unused questions'):
@@ -927,7 +929,13 @@ class EnhancedConditionIdentifier:
         scales = []
         scale_patterns: Dict[str, List[Dict]] = {}
 
+        # Safety check - ensure questions_map is a dict
+        if not isinstance(questions_map, dict):
+            return scales
+
         for q_id, q_info in questions_map.items():
+            if not isinstance(q_info, dict):
+                continue
             # Matrix questions are explicit scales
             if q_info.get('is_matrix'):
                 sub_qs = q_info.get('sub_questions', [])
@@ -1021,7 +1029,13 @@ class EnhancedConditionIdentifier:
             for item in scale.items:
                 scale_items.add(item)
 
+        # Safety check - ensure questions_map is a dict
+        if not isinstance(questions_map, dict):
+            return variables
+
         for q_id, q_info in questions_map.items():
+            if not isinstance(q_info, dict):
+                continue
             export_tag = q_info.get('export_tag', q_id)
             question_text = q_info.get('question_text', '')
 
@@ -1118,7 +1132,11 @@ class EnhancedConditionIdentifier:
     def _find_open_ended(self, questions_map: Dict[str, Dict]) -> List[str]:
         """Find open-ended text entry questions."""
         open_ended = []
+        if not isinstance(questions_map, dict):
+            return open_ended
         for q_id, q_info in questions_map.items():
+            if not isinstance(q_info, dict):
+                continue
             if q_info.get('type') == 'TE':
                 export_tag = q_info.get('export_tag', q_id)
                 open_ended.append(export_tag)
@@ -1127,9 +1145,13 @@ class EnhancedConditionIdentifier:
     def _find_attention_checks(self, questions_map: Dict[str, Dict]) -> List[str]:
         """Find attention check questions."""
         attention_checks = []
+        if not isinstance(questions_map, dict):
+            return attention_checks
         keywords = ['attention', 'check', 'please select', 'instruct', 'carefully']
 
         for q_id, q_info in questions_map.items():
+            if not isinstance(q_info, dict):
+                continue
             text = q_info.get('question_text', '').lower()
             if any(kw in text for kw in keywords):
                 attention_checks.append(q_info.get('export_tag', q_id))
@@ -1143,12 +1165,16 @@ class EnhancedConditionIdentifier:
     ) -> List[str]:
         """Find manipulation check questions."""
         manip_checks = []
+        if not isinstance(questions_map, dict):
+            return manip_checks
         keywords = ['manipulation', 'perceived', 'felt', 'seemed', 'appeared']
 
         # Also look for questions that reference condition names
         condition_names = [c.name.lower() for c in conditions]
 
         for q_id, q_info in questions_map.items():
+            if not isinstance(q_info, dict):
+                continue
             text = q_info.get('question_text', '').lower()
             if any(kw in text for kw in keywords):
                 manip_checks.append(q_info.get('export_tag', q_id))
