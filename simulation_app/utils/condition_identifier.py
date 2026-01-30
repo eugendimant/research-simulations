@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import re
 import json
-from typing import Dict, List, Any, Optional, Tuple, Set
+from typing import Any, Dict, List, Optional, Tuple
 from dataclasses import dataclass, field
 from enum import Enum
 
@@ -186,7 +186,7 @@ class EnhancedConditionIdentifier:
         blocks_map = self._extract_blocks(elements)
         questions_map = self._extract_questions(elements)
         flow_data = self._extract_flow(elements)
-        embedded_data = self._extract_embedded_data(elements)
+        # Note: embedded_data extraction available via _extract_embedded_data if needed
 
         # Analyze randomization structure (this is the key improvement)
         randomization, raw_conditions = self._analyze_randomization(

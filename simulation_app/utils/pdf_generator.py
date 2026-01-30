@@ -14,15 +14,14 @@ import hashlib
 import json
 
 try:
-    from reportlab.lib.pagesizes import letter, A4
     from reportlab.lib import colors
-    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.enums import TA_CENTER
+    from reportlab.lib.pagesizes import letter
+    from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
     from reportlab.lib.units import inch
     from reportlab.platypus import (
-        SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
-        PageBreak, HRFlowable
+        HRFlowable, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
     )
-    from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
     REPORTLAB_AVAILABLE = True
 except ImportError:
     REPORTLAB_AVAILABLE = False
@@ -316,7 +315,7 @@ def generate_audit_log_pdf(metadata: Dict[str, Any], df: pd.DataFrame) -> io.Byt
         small_style
     ))
     story.append(Paragraph(
-        f"Behavioral Experiment Simulation Tool | Prof. Dr. Eugen Dimant",
+        "Behavioral Experiment Simulation Tool | Prof. Dr. Eugen Dimant",
         small_style
     ))
 

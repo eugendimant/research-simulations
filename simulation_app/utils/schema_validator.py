@@ -6,9 +6,10 @@ following the "FILE READ OK" and "SCHEMA LOCKED" format from the
 simulation methodology.
 """
 
-import pandas as pd
-from typing import Dict, Any, List, Tuple, Optional
 from datetime import datetime
+from typing import Any, Dict, List
+
+import pandas as pd
 
 
 def validate_schema(

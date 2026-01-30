@@ -5,14 +5,13 @@ Manages student groups, tracks simulation usage, and controls access to
 Final Data Collection Mode (one-time use per group).
 """
 
-import json
-import os
-from pathlib import Path
-from datetime import datetime
-from typing import Dict, List, Any, Optional, Tuple
-from dataclasses import dataclass, asdict
 import hashlib
+import json
 import threading
+from dataclasses import asdict, dataclass
+from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
 
 
 @dataclass
