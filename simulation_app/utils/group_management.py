@@ -115,8 +115,9 @@ class GroupManager:
         """
         with self._lock:
             member_objects = [
-                GroupMember(name=m['name'], email=m.get('email'))
+                GroupMember(name=m.get('name', 'Unknown'), email=m.get('email'))
                 for m in members
+                if isinstance(m, dict)  # Skip non-dict entries
             ]
 
             if group_number in self._groups:

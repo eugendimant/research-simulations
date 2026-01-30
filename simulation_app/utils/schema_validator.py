@@ -100,7 +100,7 @@ def validate_schema(
 
     # Check scale columns
     for scale in expected_scales:
-        scale_name = scale['name'].replace(' ', '_')
+        scale_name = scale.get('name', 'Scale').replace(' ', '_')
         num_items = scale.get('num_items', 5)
         scale_points = scale.get('scale_points', 6)
 
@@ -252,9 +252,14 @@ def generate_schema_summary(
             # Simple average inter-item correlation as alpha proxy
             corr_matrix = scale_data.corr()
             n = len(existing_cols)
-            mean_r = (corr_matrix.sum().sum() - n) / (n * (n - 1))
-            alpha = (n * mean_r) / (1 + (n - 1) * mean_r)
-            lines.append(f"  Est. Cronbach's Alpha: {alpha:.3f}")
+            # Guard against division by zero
+            denominator = n * (n - 1)
+            if denominator > 0:
+                mean_r = (corr_matrix.sum().sum() - n) / denominator
+                alpha_denom = 1 + (n - 1) * mean_r
+                if abs(alpha_denom) > 1e-10:  # Avoid division by zero
+                    alpha = (n * mean_r) / alpha_denom
+                    lines.append(f"  Est. Cronbach's Alpha: {alpha:.3f}")
 
             # Item means
             lines.append(f"  Item Means: {', '.join([f'{scale_data[c].mean():.2f}' for c in existing_cols])}")
