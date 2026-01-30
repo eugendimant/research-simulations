@@ -1387,9 +1387,13 @@ if active_step == 1:
             else:
                 st.error("QSF parsed but validation failed. See warnings below.")
         except Exception as e:
+            import traceback
             st.session_state["qsf_preview"] = None
             st.session_state["enhanced_analysis"] = None
+            error_details = traceback.format_exc()
             st.error(f"QSF parsing failed: {e}")
+            with st.expander("Error details (for debugging)"):
+                st.code(error_details)
 
     preview: Optional[QSFPreviewResult] = st.session_state.get("qsf_preview", None)
 
