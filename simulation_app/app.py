@@ -1630,18 +1630,19 @@ if active_step == 2:
     # ========================================
     st.markdown("### 1. Define Your Experimental Conditions")
 
-    with st.expander("What are conditions?", expanded=False):
+    # Help text in expander (separate from selection)
+    with st.expander("ℹ️ What are conditions? (click for help)", expanded=False):
         st.markdown("""
 **Conditions** are the different groups/treatments in your experiment.
 
-Examples:
+**Examples:**
 - A simple A/B test has 2 conditions: Control vs. Treatment
 - A 2x2 design has 4 conditions: Control-Low, Control-High, Treatment-Low, Treatment-High
 
 **Where do conditions come from?**
-- The simulator detects conditions from your QSF file's **Randomizer** blocks
-- If your QSF doesn't use Randomizer, select the block names that represent your conditions
-- You can also add custom conditions below
+- The simulator detects conditions from your QSF file's **Randomizer** or **BlockRandomizer** elements
+- If your QSF doesn't use randomization, select the block names that represent your conditions
+- Condition names should match what's in your QSF (they appear in the dropdown below)
 """)
 
         condition_candidates = st.session_state.get("condition_candidates")
@@ -1707,29 +1708,12 @@ Examples:
                         st.session_state["custom_conditions"] = custom_conditions
                         st.rerun()
 
-            # Show custom conditions with remove buttons
-            if custom_conditions:
-                st.markdown("**Custom conditions:**")
-                for i, cc in enumerate(custom_conditions):
-                    col_cc, col_rm = st.columns([4, 1])
-                    with col_cc:
-                        st.text(f"• {cc}")
-                    with col_rm:
-                        if st.button("Remove", key=f"rm_custom_{i}"):
-                            custom_conditions.remove(cc)
-                            st.session_state["custom_conditions"] = custom_conditions
-                            st.rerun()
+    # Option to add custom conditions (but using a controlled interface)
+    with st.expander("➕ Add custom conditions (if not in list above)", expanded=not bool(all_possible_conditions)):
+        st.caption("Use this only if your conditions aren't detected above.")
 
-        # Combine selected and custom conditions
+        # Get current custom conditions
         custom_conditions = st.session_state.get("custom_conditions", [])
-        all_conditions = list(dict.fromkeys(selected + custom_conditions))
-
-        # Show final conditions summary
-        if all_conditions:
-            st.success(f"**{len(all_conditions)} condition(s) selected:** {', '.join(all_conditions)}")
-        else:
-            st.error("No conditions defined. Please select or add at least one condition.")
-            all_conditions = ["Condition A"]  # Fallback
 
         st.session_state["current_conditions"] = all_conditions
 
@@ -1755,127 +1739,107 @@ Examples:
                 key="design_type_select",
                 help="How are conditions assigned to participants?",
             )
+        with col_add2:
+            st.write("")  # Spacer
+            if st.button("Add", key="add_condition_btn", disabled=not new_condition.strip()):
+                if new_condition.strip() and new_condition.strip() not in custom_conditions:
+                    custom_conditions.append(new_condition.strip())
+                    st.session_state["custom_conditions"] = custom_conditions
+                    st.rerun()
 
-            # Number of factors
-            num_factors = st.selectbox(
-                "Number of factors (independent variables)",
-                options=[1, 2, 3],
-                index=0,
-                key="num_factors_select",
-                help="Most studies have 1-2 factors. A 2x2 design has 2 factors.",
+        # Show custom conditions with remove buttons
+        if custom_conditions:
+            st.markdown("**Custom conditions added:**")
+            for i, cc in enumerate(custom_conditions):
+                col_cc, col_rm = st.columns([4, 1])
+                with col_cc:
+                    st.text(f"• {cc}")
+                with col_rm:
+                    if st.button("✕", key=f"rm_custom_{i}"):
+                        custom_conditions.remove(cc)
+                        st.session_state["custom_conditions"] = custom_conditions
+                        st.rerun()
+
+    # Combine selected and custom conditions
+    custom_conditions = st.session_state.get("custom_conditions", [])
+    all_conditions = list(dict.fromkeys(selected + custom_conditions))
+
+    # Show final conditions summary
+    st.markdown("---")
+    if all_conditions:
+        st.success(f"**{len(all_conditions)} condition(s) configured:** {', '.join(all_conditions)}")
+    else:
+        st.error("❌ No conditions defined. Please select or add at least one condition.")
+        all_conditions = ["Condition A"]  # Fallback
+
+    # ========================================
+    # STEP 2: DESIGN STRUCTURE
+    # ========================================
+    st.markdown("---")
+    st.markdown("### 2. Configure Design Structure")
+
+    col_design1, col_design2 = st.columns(2)
+
+    with col_design1:
+        # Design type selection
+        design_type = st.selectbox(
+            "Experimental design type",
+            options=[
+                "Between-subjects (each participant sees one condition)",
+                "Within-subjects (each participant sees all conditions)",
+                "Mixed design",
+                "Simple comparison (2 groups)",
+            ],
+            index=0,
+            key="design_type_select",
+            help="How are conditions assigned to participants? Most experiments use between-subjects designs.",
+        )
+
+        # Number of factors
+        num_factors = st.selectbox(
+            "Number of factors (independent variables)",
+            options=[1, 2, 3],
+            index=0,
+            key="num_factors_select",
+            help="Most studies have 1-2 factors. A 2x2 design has 2 factors.",
+        )
+
+    with col_design2:
+        # Randomization level
+        rand_level = st.selectbox(
+            "Randomization level",
+            options=[
+                "Participant-level (standard)",
+                "Group/Cluster-level",
+                "Not randomized / observational",
+            ],
+            index=0,
+            key="rand_level_select",
+            help="How participants are assigned to conditions.",
+        )
+
+        # Sample size info
+        sample_size = st.session_state.get("sample_size", 100)
+        st.metric("Pre-registered sample size", sample_size)
+
+    # Build factors automatically from conditions
+    factors = []
+    if num_factors == 1:
+        factors = [{"name": "Condition", "levels": all_conditions}]
+    elif num_factors >= 2 and len(all_conditions) >= 4:
+        # Try to split conditions into factors
+        st.info("With multiple factors, organize your conditions into groups:")
+        for f_idx in range(num_factors):
+            factor_name = st.text_input(
+                f"Factor {f_idx + 1} name",
+                value=f"Factor {f_idx + 1}",
+                key=f"factor_name_{f_idx}",
             )
-
-        with col_design2:
-            # Randomization level
-            rand_level = st.selectbox(
-                "Randomization level",
-                options=[
-                    "Participant-level (standard)",
-                    "Group/Cluster-level",
-                    "Not randomized / observational",
-                ],
-                index=0,
-                key="rand_level_select",
-            )
-
-            # Sample size info
-            sample_size = st.session_state.get("sample_size", 100)
-            st.metric("Pre-registered sample size", sample_size)
-
-        # Build factors automatically from conditions
-        factors = []
-        if num_factors == 1:
-            factors = [{"name": "Condition", "levels": all_conditions}]
-        elif num_factors >= 2 and len(all_conditions) >= 4:
-            # Try to split conditions into factors
-            st.info("With multiple factors, organize your conditions into groups:")
-            for f_idx in range(num_factors):
-                factor_name = st.text_input(
-                    f"Factor {f_idx + 1} name",
-                    value=f"Factor {f_idx + 1}",
-                    key=f"factor_name_{f_idx}",
-                )
-                factor_levels = st.multiselect(
-                    f"Levels for {factor_name}",
-                    options=all_conditions,
-                    key=f"factor_levels_{f_idx}",
-                    help=f"Select which conditions belong to {factor_name}",
-                )
-                if factor_levels:
-                    factors.append({"name": factor_name, "levels": factor_levels})
-        else:
-            factors = [{"name": "Condition", "levels": all_conditions}]
-
-        # ========================================
-        # STEP 3: SCALES AND OUTCOMES
-        # ========================================
-        st.markdown("---")
-        st.markdown("### Step 3: Define Outcome Variables (Scales)")
-
-        # Get detected scales
-        detected_scales = []
-        if enhanced_analysis and enhanced_analysis.scales:
-            for scale in enhanced_analysis.scales:
-                detected_scales.append({
-                    "name": scale.name,
-                    "variable_name": scale.variable_name,
-                    "num_items": scale.num_items,
-                    "scale_points": scale.scale_points,
-                    "role": "Primary outcome" if scale.role == VariableRole.PRIMARY_OUTCOME else "Secondary outcome",
-                })
-        elif inferred.get("scales"):
-            for scale in inferred["scales"]:
-                detected_scales.append({
-                    "name": scale.get("name", ""),
-                    "variable_name": scale.get("variable_name", scale.get("name", "")),
-                    "num_items": scale.get("num_items", 5),
-                    "scale_points": scale.get("scale_points", 7),
-                    "role": "Primary outcome",
-                })
-
-        if detected_scales:
-            st.caption(f"**{len(detected_scales)} scale(s) detected from QSF.** Edit as needed:")
-
-            scale_df = pd.DataFrame(detected_scales)
-            edited_scales_df = st.data_editor(
-                scale_df,
-                num_rows="dynamic",
-                use_container_width=True,
-                column_config={
-                    "name": st.column_config.TextColumn("Scale Name", width="medium"),
-                    "variable_name": st.column_config.TextColumn("Qualtrics Variable", width="medium"),
-                    "num_items": st.column_config.NumberColumn("# Items", min_value=1, max_value=50, width="small"),
-                    "scale_points": st.column_config.SelectboxColumn(
-                        "Points",
-                        options=[2, 3, 4, 5, 6, 7, 9, 10, 11],
-                        width="small",
-                    ),
-                    "role": st.column_config.SelectboxColumn(
-                        "Role",
-                        options=["Primary outcome", "Secondary outcome", "Mediator", "Moderator", "Other"],
-                        width="medium",
-                    ),
-                },
-                key="scales_step3_editor",
-                height=250,
-            )
-            scales = edited_scales_df.to_dict(orient="records")
-        else:
-            st.info("No scales auto-detected. Add your dependent variables below.")
-            scales = [{"name": "Main_DV", "variable_name": "DV", "num_items": 5, "scale_points": 7, "role": "Primary outcome"}]
-            scale_df = pd.DataFrame(scales)
-            edited_scales_df = st.data_editor(
-                scale_df,
-                num_rows="dynamic",
-                use_container_width=True,
-                column_config={
-                    "name": st.column_config.TextColumn("Scale Name"),
-                    "variable_name": st.column_config.TextColumn("Qualtrics Variable"),
-                    "num_items": st.column_config.NumberColumn("# Items", min_value=1, max_value=50),
-                    "scale_points": st.column_config.SelectboxColumn("Points", options=[2, 3, 4, 5, 6, 7, 9, 10, 11]),
-                    "role": st.column_config.SelectboxColumn("Role", options=["Primary outcome", "Secondary outcome", "Mediator", "Moderator", "Other"]),
-                },
-                key="scales_step3_editor_fallback",
+            factor_levels = st.multiselect(
+                f"Levels for {factor_name}",
+                options=all_conditions,
+                key=f"factor_levels_{f_idx}",
+                help=f"Select which conditions belong to {factor_name}",
             )
             scales = edited_scales_df.to_dict(orient="records")
 
@@ -1997,48 +1961,52 @@ Examples:
                 missing_bits.append("scales")
             st.error("Please complete all required fields before proceeding: " + ", ".join(missing_bits))
 
-        # ========================================
-        # ADVANCED: Variable Review (collapsed)
-        # ========================================
-        with st.expander("Advanced: Review All Variables"):
-            st.caption("View and edit all detected survey variables and their roles.")
+        st.success("Design configuration complete. Proceed to the **Generate** tab to run the simulation.")
+    else:
+        st.error("Please complete all required fields before proceeding.")
 
-            prereg_outcomes = st.session_state.get("prereg_outcomes", "")
-            prereg_iv = st.session_state.get("prereg_iv", "")
-            default_rows = _build_variable_review_rows(inferred, prereg_outcomes, prereg_iv, enhanced_analysis)
-            current_rows = st.session_state.get("variable_review_rows")
+    # ========================================
+    # ADVANCED: Variable Review (collapsed)
+    # ========================================
+    with st.expander("Advanced: Review All Variables"):
+        st.caption("View and edit all detected survey variables and their roles.")
 
-            if not current_rows:
-                current_rows = default_rows
+        prereg_outcomes = st.session_state.get("prereg_outcomes", "")
+        prereg_iv = st.session_state.get("prereg_iv", "")
+        default_rows = _build_variable_review_rows(inferred, prereg_outcomes, prereg_iv, enhanced_analysis)
+        current_rows = st.session_state.get("variable_review_rows")
 
-            # Simple filter
-            show_timing = st.checkbox("Include timing/meta variables", value=False, key="adv_filter_timing")
+        if not current_rows:
+            current_rows = default_rows
 
-            if not show_timing:
-                filtered_rows = [r for r in current_rows if r.get("Type") != "Timing/Meta"]
-            else:
-                filtered_rows = current_rows
+        # Simple filter
+        show_timing = st.checkbox("Include timing/meta variables", value=False, key="adv_filter_timing")
 
-            if filtered_rows:
-                variable_df = st.data_editor(
-                    pd.DataFrame(filtered_rows),
-                    num_rows="fixed",
-                    use_container_width=True,
-                    column_config={
-                        "Variable": st.column_config.TextColumn("Variable", disabled=True),
-                        "Display Name": st.column_config.TextColumn("Name", disabled=True),
-                        "Type": st.column_config.TextColumn("Type", disabled=True),
-                        "Role": st.column_config.SelectboxColumn(
-                            "Role",
-                            options=["Primary outcome", "Secondary outcome", "Condition", "Mediator",
-                                     "Moderator", "Attention check", "Demographics", "Timing/Meta", "Other"],
-                        ),
-                        "Question Text": st.column_config.TextColumn("Question", disabled=True),
-                    },
-                    key="adv_variable_editor",
-                    height=300,
-                )
-                st.session_state["variable_review_rows"] = variable_df.to_dict(orient="records")
+        if not show_timing:
+            filtered_rows = [r for r in current_rows if r.get("Type") != "Timing/Meta"]
+        else:
+            filtered_rows = current_rows
+
+        if filtered_rows:
+            variable_df = st.data_editor(
+                pd.DataFrame(filtered_rows),
+                num_rows="fixed",
+                use_container_width=True,
+                column_config={
+                    "Variable": st.column_config.TextColumn("Variable", disabled=True),
+                    "Display Name": st.column_config.TextColumn("Name", disabled=True),
+                    "Type": st.column_config.TextColumn("Type", disabled=True),
+                    "Role": st.column_config.SelectboxColumn(
+                        "Role",
+                        options=["Primary outcome", "Secondary outcome", "Condition", "Mediator",
+                                 "Moderator", "Attention check", "Demographics", "Timing/Meta", "Other"],
+                    ),
+                    "Question Text": st.column_config.TextColumn("Question", disabled=True),
+                },
+                key="adv_variable_editor",
+                height=300,
+            )
+            st.session_state["variable_review_rows"] = variable_df.to_dict(orient="records")
 
         _render_step_navigation(2, design_valid, "Generate")
 
