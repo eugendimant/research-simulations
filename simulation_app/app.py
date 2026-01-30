@@ -25,9 +25,7 @@ import base64
 import io
 import json
 import re
-import time
 import zipfile
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
@@ -46,17 +44,9 @@ from utils.enhanced_simulation_engine import (
     ExclusionCriteria,
 )
 from utils.condition_identifier import (
-    EnhancedConditionIdentifier,
     DesignAnalysisResult,
-    IdentifiedVariable,
     VariableRole,
-    RandomizationLevel,
     analyze_qsf_design,
-)
-from utils.text_generator import (
-    OpenEndedTextGenerator,
-    PersonaTextTraits,
-    create_text_generator,
 )
 
 
@@ -588,7 +578,7 @@ def _perform_enhanced_analysis(
             prereg_text=prereg_text,
             prereg_pdf_text=prereg_pdf_text,
         )
-    except Exception as e:
+    except Exception:
         # Log error but don't crash
         return None
 
