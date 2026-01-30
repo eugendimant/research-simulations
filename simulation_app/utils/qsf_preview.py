@@ -124,6 +124,26 @@ class QSFPreviewParser:
         elif level == LogLevel.WARNING:
             self.warnings.append(f"[{category}] {message}")
 
+    def _normalize_survey_elements(self, qsf_data: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Normalize SurveyElements to a list of dicts across QSF variants."""
+        elements = qsf_data.get('SurveyElements', [])
+        if isinstance(elements, dict):
+            elements = list(elements.values())
+        if not isinstance(elements, list):
+            return []
+        return [element for element in elements if isinstance(element, dict)]
+
+    def _normalize_flow(self, flow: Any) -> List[Dict[str, Any]]:
+        """Normalize Flow payloads to a list of dicts across QSF variants."""
+        if isinstance(flow, dict):
+            if 'Flow' in flow:
+                flow = flow.get('Flow', [])
+            else:
+                flow = list(flow.values())
+        if not isinstance(flow, list):
+            return []
+        return [item for item in flow if isinstance(item, dict)]
+
     def parse(self, qsf_content: bytes) -> QSFPreviewResult:
         """
         Parse QSF file content and return structured preview.
@@ -172,7 +192,7 @@ class QSFPreviewParser:
         self._log(LogLevel.INFO, "SURVEY_INFO", f"Survey name: {survey_name}")
 
         # Parse survey elements
-        elements = qsf_data.get('SurveyElements', [])
+        elements = self._normalize_survey_elements(qsf_data)
         self._log(LogLevel.INFO, "ELEMENTS", f"Found {len(elements)} survey elements")
 
         # Organize elements by type
@@ -264,6 +284,9 @@ class QSFPreviewParser:
         payload = element.get('Payload', {})
 
         # Handle list format (newer QSF exports)
+        if isinstance(payload, dict) and isinstance(payload.get('Blocks'), (list, dict)):
+            payload = payload.get('Blocks', payload)
+
         if isinstance(payload, list):
             for block_data in payload:
                 if isinstance(block_data, dict):
@@ -329,10 +352,16 @@ class QSFPreviewParser:
         if isinstance(choices_data, dict):
             # Sort by choice ID to maintain order
             sorted_choices = sorted(choices_data.items(), key=lambda x: self._safe_int_key(x[0]))
-            for choice_id, choice_data in sorted_choices:
+            for _, choice_data in sorted_choices:
                 if isinstance(choice_data, dict):
                     choice_text = choice_data.get('Display', str(choice_data))
                     choices.append(choice_text)
+                else:
+                    choices.append(str(choice_data))
+        elif isinstance(choices_data, list):
+            for choice_data in choices_data:
+                if isinstance(choice_data, dict):
+                    choices.append(choice_data.get('Display', str(choice_data)))
                 else:
                     choices.append(str(choice_data))
 
@@ -454,6 +483,17 @@ class QSFPreviewParser:
         # Source 6: Look for scale hints in Configuration
         config = payload.get('Configuration', {})
         if isinstance(config, dict):
+            slider_min = config.get('CSSliderMin')
+            slider_max = config.get('CSSliderMax')
+            if slider_min is not None and slider_max is not None:
+                try:
+                    slider_min = int(slider_min)
+                    slider_max = int(slider_max)
+                    if slider_max >= slider_min:
+                        return slider_max - slider_min + 1
+                except (TypeError, ValueError):
+                    pass
+
             # Some surveys specify NumChoices
             num_choices = config.get('NumChoices')
             if num_choices and isinstance(num_choices, int):
@@ -525,17 +565,17 @@ class QSFPreviewParser:
     def _parse_embedded_data(self, element: Dict, fields: List[str]):
         """Parse embedded data fields."""
         payload = element.get('Payload', {})
-        flow = payload.get('Flow', [])
+        flow = payload.get('Flow', payload if isinstance(payload, list) else [])
+        flow = self._normalize_flow(flow)
 
         for item in flow:
-            if isinstance(item, dict):
-                field_name = item.get('EmbeddedData', [])
-                if isinstance(field_name, list):
-                    for fd in field_name:
-                        if isinstance(fd, dict):
-                            fields.append(fd.get('Field', 'Unknown'))
-                elif isinstance(field_name, str):
-                    fields.append(field_name)
+            field_name = item.get('EmbeddedData', [])
+            if isinstance(field_name, list):
+                for fd in field_name:
+                    if isinstance(fd, dict):
+                        fields.append(fd.get('Field', 'Unknown'))
+            elif isinstance(field_name, str):
+                fields.append(field_name)
 
         if fields:
             self._log(
@@ -555,13 +595,21 @@ class QSFPreviewParser:
         for block_id, block_data in blocks_map.items():
             block_questions = []
 
-            for elem in block_data.get('elements', []):
+            block_elements = block_data.get('elements', [])
+            if isinstance(block_elements, dict):
+                block_elements = list(block_elements.values())
+
+            for elem in block_elements:
+                q_id = ''
                 if isinstance(elem, dict) and elem.get('Type') == 'Question':
-                    q_id = elem.get('QuestionID', '')
-                    if q_id in questions_map:
-                        q_info = questions_map[q_id]
-                        q_info.block_name = block_data['name']
-                        block_questions.append(q_info)
+                    q_id = elem.get('QuestionID', '') or elem.get('ID', '')
+                elif isinstance(elem, str):
+                    q_id = elem
+
+                if q_id and q_id in questions_map:
+                    q_info = questions_map[q_id]
+                    q_info.block_name = block_data['name']
+                    block_questions.append(q_info)
 
             is_randomizer = 'random' in block_data['name'].lower()
 
@@ -586,7 +634,7 @@ class QSFPreviewParser:
         # Parse flow for randomizer/branch elements with block IDs.
         if flow_data:
             payload = flow_data.get('Payload', {})
-            flow = payload.get('Flow', [])
+            flow = self._normalize_flow(payload.get('Flow', payload))
             self._find_conditions_in_flow(flow, conditions, blocks_by_id)
 
         # Fallback: use block names that look like conditions.
@@ -613,14 +661,18 @@ class QSFPreviewParser:
             if isinstance(item, dict):
                 flow_type = item.get('Type', '')
 
-                if flow_type == 'Randomizer':
+                if flow_type in {'Randomizer', 'BlockRandomizer'}:
                     sub_flow = item.get('Flow', [])
+                    sub_flow = self._normalize_flow(sub_flow)
                     for sub_item in sub_flow:
-                        if isinstance(sub_item, dict):
-                            block_id = self._extract_block_id(sub_item)
-                            if block_id:
-                                block_name = blocks_by_id.get(block_id, block_id)
-                                self._add_condition(block_name, conditions)
+                        block_id = self._extract_block_id(sub_item)
+                        if block_id:
+                            block_name = blocks_by_id.get(block_id, block_id)
+                            self._add_condition(block_name, conditions)
+                        if sub_item.get('Type') == 'Group':
+                            group_name = sub_item.get('Description', '')
+                            if group_name:
+                                self._add_condition(group_name, conditions)
 
                     description = item.get('Description', '')
                     for inferred in self._extract_conditions_from_description(description):
@@ -654,12 +706,16 @@ class QSFPreviewParser:
 
                 # Recurse
                 if 'Flow' in item:
-                    self._find_conditions_in_flow(item['Flow'], conditions, blocks_by_id)
+                    self._find_conditions_in_flow(self._normalize_flow(item['Flow']), conditions, blocks_by_id)
 
     def _extract_block_id(self, item: Dict[str, Any]) -> str:
         """Extract block ID from a flow item."""
         if item.get('Type') == 'Block':
             return item.get('ID', '') or item.get('BlockID', '')
+        if item.get('Type') == 'Group':
+            return ''
+        if item.get('Type') == 'BlockRandomizer':
+            return item.get('BlockID', '') or item.get('ID', '')
         return item.get('ID', '') if item.get('ID') and item.get('Type') in {'Block', 'BlockRandomizer'} else ''
 
     def _extract_conditions_from_description(self, description: str) -> List[str]:
@@ -800,7 +856,7 @@ class QSFPreviewParser:
 
         randomizers = []
         payload = flow_data.get('Payload', {})
-        flow = payload.get('Flow', [])
+        flow = self._normalize_flow(payload.get('Flow', payload))
 
         self._find_all_randomizers(flow, randomizers, depth=0)
 
@@ -825,10 +881,11 @@ class QSFPreviewParser:
 
             flow_type = item.get('Type', '')
 
-            if flow_type == 'Randomizer':
+            if flow_type in {'Randomizer', 'BlockRandomizer'}:
                 rand_info = {
                     'flow_id': item.get('FlowID', ''),
                     'description': item.get('Description', ''),
+                    'type': flow_type.lower(),
                     'evenly_present': item.get('EvenPresentation', True),
                     'randomize_count': item.get('RandomizeCount'),
                     'depth': depth,
@@ -843,7 +900,7 @@ class QSFPreviewParser:
 
             # Recurse into nested flows
             if 'Flow' in item:
-                self._find_all_randomizers(item['Flow'], randomizers, depth + 1)
+                self._find_all_randomizers(self._normalize_flow(item['Flow']), randomizers, depth + 1)
 
     def _infer_randomization_level(self, randomizers: List[Dict]) -> str:
         """Infer the level of randomization from randomizer structure."""
@@ -872,7 +929,7 @@ class QSFPreviewParser:
 
         elements = []
         payload = flow_data.get('Payload', {})
-        flow = payload.get('Flow', [])
+        flow = self._normalize_flow(payload.get('Flow', payload))
 
         self._parse_flow_recursive(flow, elements, 0)
 
@@ -888,17 +945,25 @@ class QSFPreviewParser:
 
                 if flow_type == 'Block':
                     elements.append(f"{indent}[Block] {flow_id}")
-                elif flow_type == 'Randomizer':
+                elif flow_type in {'Randomizer', 'BlockRandomizer'}:
                     elements.append(f"{indent}[Randomizer] {item.get('Description', '')}")
+                elif flow_type == 'Group':
+                    elements.append(f"{indent}[Group] {item.get('Description', '')}")
                 elif flow_type == 'Branch':
                     elements.append(f"{indent}[Branch] {item.get('Description', '')}")
                 elif flow_type == 'EmbeddedData':
                     elements.append(f"{indent}[Embedded Data]")
                 elif flow_type == 'EndSurvey':
                     elements.append(f"{indent}[End Survey]")
+                elif flow_type == 'Quota':
+                    elements.append(f"{indent}[Quota]")
+                elif flow_type == 'WebService':
+                    elements.append(f"{indent}[Web Service]")
+                elif flow_type == 'Authenticator':
+                    elements.append(f"{indent}[Authenticator]")
 
                 if 'Flow' in item:
-                    self._parse_flow_recursive(item['Flow'], elements, depth + 1)
+                    self._parse_flow_recursive(self._normalize_flow(item['Flow']), elements, depth + 1)
 
     def _validate_structure(
         self,

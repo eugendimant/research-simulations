@@ -12,6 +12,28 @@ from typing import Dict, Any, List, Optional, Tuple
 import re
 
 
+def _normalize_survey_elements(qsf_data: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Normalize SurveyElements into a list of dicts across QSF variants."""
+    elements = qsf_data.get('SurveyElements', [])
+    if isinstance(elements, dict):
+        elements = list(elements.values())
+    if not isinstance(elements, list):
+        return []
+    return [element for element in elements if isinstance(element, dict)]
+
+
+def _normalize_flow(flow: Any) -> List[Dict[str, Any]]:
+    """Normalize flow structures into a list of dicts across QSF variants."""
+    if isinstance(flow, dict):
+        if 'Flow' in flow:
+            flow = flow.get('Flow', [])
+        else:
+            flow = list(flow.values())
+    if not isinstance(flow, list):
+        return []
+    return [item for item in flow if isinstance(item, dict)]
+
+
 def parse_qsf_file(file_content: bytes) -> Dict[str, Any]:
     """
     Parse a QSF file and extract its structure.
@@ -29,7 +51,7 @@ def parse_qsf_file(file_content: bytes) -> Dict[str, Any]:
 
         # Extract key components
         survey_entry = qsf_data.get('SurveyEntry', {})
-        survey_elements = qsf_data.get('SurveyElements', [])
+        survey_elements = _normalize_survey_elements(qsf_data)
 
         parsed = {
             'survey_name': survey_entry.get('SurveyName', 'Unknown Survey'),
@@ -102,6 +124,8 @@ def _parse_blocks(element: Dict[str, Any]) -> List[Dict[str, Any]]:
     """
     blocks = []
     payload = element.get('Payload', {})
+    if isinstance(payload, dict) and isinstance(payload.get('Blocks'), (list, dict)):
+        payload = payload.get('Blocks', payload)
 
     # Handle list format (newer QSF exports)
     if isinstance(payload, list):
@@ -203,7 +227,7 @@ def _parse_question(element: Dict[str, Any]) -> Dict[str, Any]:
 def _parse_flow(element: Dict[str, Any]) -> List[Dict[str, Any]]:
     """Parse survey flow elements."""
     payload = element.get('Payload', {})
-    flow = payload.get('Flow', [])
+    flow = _normalize_flow(payload.get('Flow', payload))
 
     parsed_flow = []
     for item in flow:
@@ -214,10 +238,10 @@ def _parse_flow(element: Dict[str, Any]) -> List[Dict[str, Any]]:
         }
 
         # Handle randomizers
-        if item.get('Type') == 'BlockRandomizer':
+        if item.get('Type') in {'BlockRandomizer', 'Randomizer'}:
             flow_item['randomize_count'] = item.get('RandomizeCount', 1)
             flow_item['sub_flow'] = []
-            for sub in item.get('Flow', []):
+            for sub in _normalize_flow(item.get('Flow', [])):
                 flow_item['sub_flow'].append({
                     'id': sub.get('ID', ''),
                     'type': sub.get('Type', '')
@@ -231,6 +255,12 @@ def _parse_flow(element: Dict[str, Any]) -> List[Dict[str, Any]]:
         elif item.get('Type') == 'EmbeddedData':
             flow_item['embedded_data'] = item.get('EmbeddedData', [])
 
+        elif item.get('Type') == 'Group':
+            flow_item['sub_flow'] = [
+                {'id': sub.get('ID', ''), 'type': sub.get('Type', '')}
+                for sub in _normalize_flow(item.get('Flow', []))
+            ]
+
         parsed_flow.append(flow_item)
 
     return parsed_flow
@@ -241,14 +271,18 @@ def _parse_embedded_data(element: Dict[str, Any]) -> List[Dict[str, str]]:
     embedded = []
     payload = element.get('Payload', {})
 
-    if isinstance(payload, list):
-        for item in payload:
-            if isinstance(item, dict):
-                embedded.append({
-                    'field': item.get('Field', ''),
-                    'type': item.get('Type', 'Custom'),
-                    'value': item.get('Value', '')
-                })
+    flow_payload = payload.get('Flow', payload if isinstance(payload, list) else None)
+    if flow_payload is not None:
+        for item in _normalize_flow(flow_payload):
+            ed_list = item.get('EmbeddedData', [])
+            if isinstance(ed_list, list):
+                for ed in ed_list:
+                    if isinstance(ed, dict):
+                        embedded.append({
+                            'field': ed.get('Field', ''),
+                            'type': ed.get('Type', 'Custom'),
+                            'value': ed.get('Value', '')
+                        })
     elif isinstance(payload, dict):
         for field, value in payload.items():
             embedded.append({
