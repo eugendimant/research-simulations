@@ -93,6 +93,39 @@ class InstructorReportGenerator:
                         lines.append(f"  - {member.strip()}")
             lines.append("")
 
+        # DATA QUALITY SUMMARY (Executive Overview)
+        lines.append("## Data Quality Summary")
+        lines.append("")
+        lines.append("### Quick Assessment")
+        lines.append("")
+
+        n_total = len(df)
+        n_excluded = int(df["Exclude_Recommended"].sum()) if "Exclude_Recommended" in df.columns else 0
+        exclusion_rate = (n_excluded / n_total * 100) if n_total > 0 else 0
+
+        # Calculate balance (coefficient of variation of condition sizes)
+        balance_status = "N/A"
+        if "CONDITION" in df.columns:
+            cond_counts = df["CONDITION"].value_counts()
+            if len(cond_counts) > 1:
+                cv = cond_counts.std() / cond_counts.mean() * 100 if cond_counts.mean() > 0 else 0
+                balance_status = "Balanced" if cv < 10 else ("Slightly unbalanced" if cv < 20 else "Unbalanced")
+
+        lines.append("| Metric | Value | Status |")
+        lines.append("|--------|-------|--------|")
+        lines.append(f"| Sample Size | N = {n_total} | {'Adequate' if n_total >= 30 else 'Small'} |")
+        lines.append(f"| Exclusion Rate | {exclusion_rate:.1f}% ({n_excluded}/{n_total}) | {'Normal' if exclusion_rate < 20 else 'High'} |")
+        lines.append(f"| Condition Balance | {balance_status} | - |")
+        lines.append(f"| Missing Data | {int(df.isna().sum().sum())} cells | {'Clean' if df.isna().sum().sum() == 0 else 'Some missing'} |")
+        lines.append("")
+
+        lines.append("### Interpretation Guide")
+        lines.append("")
+        lines.append("- **Exclusion Rate**: Simulated exclusion rates typically range 5-15%. Higher rates may indicate stricter criteria or more careless responders.")
+        lines.append("- **Condition Balance**: Slight imbalances (<10%) are normal and won't affect most analyses.")
+        lines.append("- **This is simulated data**: Results demonstrate what your analysis pipeline will produce with realistic-looking data structures.")
+        lines.append("")
+
         # SIMULATION SETTINGS TRANSPARENCY SECTION
         lines.append("## Simulation Settings (Transparency)")
         lines.append("")

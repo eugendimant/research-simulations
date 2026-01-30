@@ -195,43 +195,6 @@ def _normalize_condition_label(label: str) -> str:
     return cleaned.strip(" -:")
 
 
-def _extract_conditions_from_text(text: str) -> List[str]:
-    if not text:
-        return []
-
-    conditions: List[str] = []
-    keywords = ("condition", "conditions", "treatment", "group", "arm", "variant", "manipulation", "scenario")
-    vs_pattern = r"\b(?:vs\.?|versus|v\.|compared to|compared with)\b"
-
-    for raw_line in text.splitlines():
-        line = raw_line.strip()
-        if not line:
-            continue
-
-        if re.search(vs_pattern, line, flags=re.IGNORECASE):
-            parts = re.split(vs_pattern, line, flags=re.IGNORECASE)
-            for part in parts:
-                normalized = _normalize_condition_label(part)
-                if normalized:
-                    conditions.append(normalized)
-            continue
-
-        if any(keyword in line.lower() for keyword in keywords):
-            _, tail = line.split(":", 1) if ":" in line else ("", line)
-            tail = re.sub(
-                r"\b(?:conditions?|treatments?|groups?|arms?|variants?|manipulations?|scenarios?)\b",
-                "",
-                tail,
-                flags=re.IGNORECASE,
-            )
-            for part in re.split(r"[;/|,]", tail):
-                normalized = _normalize_condition_label(part)
-                if normalized:
-                    conditions.append(normalized)
-
-    return conditions
-
-
 def _extract_conditions_from_prereg(prereg_iv: str, prereg_notes: str, prereg_pdf_text: str) -> List[str]:
     """
     DEPRECATED: This function is no longer used for condition extraction.
@@ -259,37 +222,6 @@ def _merge_condition_sources(qsf_conditions: List[str], prereg_conditions: List[
             sources.append({"Condition": cond.strip(), "Source": "QSF"})
 
     return conditions, sources
-
-
-def _merge_condition_sources_old(qsf_conditions: List[str], prereg_conditions: List[str]) -> Tuple[List[str], List[Dict[str, str]]]:
-    """OLD implementation - kept for reference only"""
-    sources_by_key: Dict[str, List[str]] = {}
-    display_by_key: Dict[str, str] = {}
-    order: List[str] = []
-
-    def register(cond: str, source: str) -> None:
-        normalized = _normalize_condition_label(cond)
-        if not normalized:
-            return
-        key = normalized.lower()
-        if key not in display_by_key:
-            display_by_key[key] = normalized
-            sources_by_key[key] = []
-            order.append(key)
-        if source not in sources_by_key[key]:
-            sources_by_key[key].append(source)
-
-    for cond in qsf_conditions:
-        register(cond, "QSF/Survey flow")
-    for cond in prereg_conditions:
-        register(cond, "Preregistration")
-
-    merged_conditions = [display_by_key[key] for key in order]
-    source_rows = [
-        {"Condition": display_by_key[key], "Source": ", ".join(sources_by_key[key])}
-        for key in order
-    ]
-    return merged_conditions, source_rows
 
 
 def _extract_qsf_payload(uploaded_bytes: bytes) -> Tuple[bytes, str]:
@@ -1617,11 +1549,15 @@ if active_step == 2:
     enhanced_analysis: Optional[DesignAnalysisResult] = st.session_state.get("enhanced_analysis", None)
 
     if not preview:
-        st.info("Upload a QSF first to populate the review summary.")
+        st.warning("⚠️ Please upload a QSF file first to configure your design.")
+        st.info("Upload a QSF file in the 'Upload Files' step to populate the design configuration.")
         if st.button("Go to Upload Files", key="go_step2_from_step3"):
             _go_to_step(1)
-    else:
-        inferred = basic_inferred
+        _render_step_navigation(2, False, "Generate")
+        st.stop()  # Don't continue rendering Tab 3 if no preview
+
+    # If we reach here, preview exists
+    inferred = basic_inferred
 
     st.markdown("---")
 
@@ -1841,7 +1777,11 @@ if active_step == 2:
                 key=f"factor_levels_{f_idx}",
                 help=f"Select which conditions belong to {factor_name}",
             )
-            scales = edited_scales_df.to_dict(orient="records")
+            if factor_levels:
+                factors.append({"name": factor_name, "levels": factor_levels})
+
+        # Get scales from inferred design
+        scales = inferred.get("scales", []) if inferred else []
 
         # Filter out empty scales
         scales = [s for s in scales if s.get("name", "").strip()]
@@ -2234,256 +2174,247 @@ if active_step == 3:
     # Button: disabled if not ready, generating, or already generated
     can_generate = all_required_complete and not is_generating and not has_generated
 
-        is_generating = st.session_state.get("is_generating", False)
-        has_generated = st.session_state.get("has_generated", False)
-        progress_placeholder = st.empty()
-        status_placeholder = st.empty()
-        if is_generating:
-            status_placeholder.info("Simulation is running. Please wait for the download section to appear.")
-        elif has_generated:
-            status_placeholder.info("Simulation already generated for this session. Downloads are ready below.")
-        can_generate = completed == total_required and not is_generating and not has_generated
-        if is_generating:
-            st.button("Generating simulated dataset...", type="primary", disabled=True)
-        elif has_generated:
-            st.button("Simulation generated", type="primary", disabled=True)
-        else:
-            if st.button("Generate simulated dataset", type="primary", disabled=not can_generate):
-                st.session_state["generation_requested"] = True
+    if is_generating:
+        st.button("Generating simulated dataset...", type="primary", disabled=True)
+    elif has_generated:
+        st.button("Simulation generated", type="primary", disabled=True)
+    else:
+        if st.button("Generate simulated dataset", type="primary", disabled=not can_generate):
+            st.session_state["generation_requested"] = True
 
-        if st.session_state.get("generation_requested") and not is_generating:
-            st.session_state["generation_requested"] = False
-            st.session_state["is_generating"] = True
-            progress_bar = progress_placeholder.progress(5, text="Preparing simulation inputs...")
-            status_placeholder.info("Preparing simulation inputs...")
-            title = st.session_state.get("study_title", "") or "Untitled Study"
-            desc = st.session_state.get("study_description", "") or ""
-            requested_n = int(st.session_state.get("sample_size", 200))
-            if requested_n > MAX_SIMULATED_N:
-                st.info(
-                    f"Requested N ({requested_n}) exceeds the cap ({MAX_SIMULATED_N}). "
-                    "Using the capped value for standardization."
-                )
-            N = min(requested_n, MAX_SIMULATED_N)
+    if st.session_state.get("generation_requested") and not is_generating:
+        st.session_state["generation_requested"] = False
+        st.session_state["is_generating"] = True
+        progress_bar = progress_placeholder.progress(5, text="Preparing simulation inputs...")
+        status_placeholder.info("Preparing simulation inputs...")
+        title = st.session_state.get("study_title", "") or "Untitled Study"
+        desc = st.session_state.get("study_description", "") or ""
+        requested_n = int(st.session_state.get("sample_size", 200))
+        if requested_n > MAX_SIMULATED_N:
+            st.info(
+                f"Requested N ({requested_n}) exceeds the cap ({MAX_SIMULATED_N}). "
+                "Using the capped value for standardization."
+            )
+        N = min(requested_n, MAX_SIMULATED_N)
 
-            if missing:
-                st.error("Generation blocked until all required fields are completed.")
-                st.session_state["is_generating"] = False
-                progress_placeholder.empty()
-                st.stop()
+        if missing:
+            st.error("Generation blocked until all required fields are completed.")
+            st.session_state["is_generating"] = False
+            progress_placeholder.empty()
+            st.stop()
 
-            prereg_text = st.session_state.get("prereg_text_sanitized", "")
+        prereg_text = st.session_state.get("prereg_text_sanitized", "")
 
-            clean_scales = _normalize_scale_specs(inferred.get("scales", []))
-            clean_factors = _normalize_factor_specs(inferred.get("factors", []), inferred.get("conditions", []))
+        clean_scales = _normalize_scale_specs(inferred.get("scales", []))
+        clean_factors = _normalize_factor_specs(inferred.get("factors", []), inferred.get("conditions", []))
 
-            engine = EnhancedSimulationEngine(
-                study_title=title,
-                study_description=desc,
-                sample_size=N,
-                conditions=inferred["conditions"],
-                factors=clean_factors,
-                scales=clean_scales,
-                additional_vars=[],
-                demographics=demographics,
-                attention_rate=attention_rate,
-                random_responder_rate=random_responder_rate,
-                effect_sizes=effect_sizes,
-                exclusion_criteria=exclusion,
-                custom_persona_weights=custom_persona_weights,
-                open_ended_questions=inferred.get("open_ended_questions", []),
-                seed=None,
-                mode="pilot" if not st.session_state.get("advanced_mode", False) else "final",
+        engine = EnhancedSimulationEngine(
+            study_title=title,
+            study_description=desc,
+            sample_size=N,
+            conditions=inferred["conditions"],
+            factors=clean_factors,
+            scales=clean_scales,
+            additional_vars=[],
+            demographics=demographics,
+            attention_rate=attention_rate,
+            random_responder_rate=random_responder_rate,
+            effect_sizes=effect_sizes,
+            exclusion_criteria=exclusion,
+            custom_persona_weights=custom_persona_weights,
+            open_ended_questions=inferred.get("open_ended_questions", []),
+            seed=None,
+            mode="pilot" if not st.session_state.get("advanced_mode", False) else "final",
+        )
+
+        try:
+            progress_bar.progress(30, text="Generating simulated responses...")
+            status_placeholder.info("Generating simulated responses...")
+            df, metadata = engine.generate()
+            progress_bar.progress(60, text="Packaging downloads...")
+            status_placeholder.info("Packaging downloads and reports...")
+            explainer = engine.generate_explainer()
+            r_script = engine.generate_r_export(df)
+
+            metadata["preregistration_summary"] = {
+                "outcomes": st.session_state.get("prereg_outcomes", ""),
+                "independent_variables": st.session_state.get("prereg_iv", ""),
+                "exclusion_criteria": st.session_state.get("prereg_exclusions", ""),
+                "analysis_plan": st.session_state.get("prereg_analysis", ""),
+                "notes_sanitized": st.session_state.get("prereg_text_sanitized", ""),
+            }
+            metadata["design_review"] = {
+                "variable_roles": st.session_state.get("variable_review_rows", []),
+                "randomization_level": st.session_state.get("randomization_level", ""),
+            }
+
+            schema_results = validate_schema(
+                df=df,
+                expected_conditions=inferred["conditions"],
+                expected_scales=clean_scales,
+                expected_n=N,
             )
 
-            try:
-                progress_bar.progress(30, text="Generating simulated responses...")
-                status_placeholder.info("Generating simulated responses...")
-                df, metadata = engine.generate()
-                progress_bar.progress(60, text="Packaging downloads...")
-                status_placeholder.info("Packaging downloads and reports...")
-                explainer = engine.generate_explainer()
-                r_script = engine.generate_r_export(df)
-
-                metadata["preregistration_summary"] = {
-                    "outcomes": st.session_state.get("prereg_outcomes", ""),
-                    "independent_variables": st.session_state.get("prereg_iv", ""),
-                    "exclusion_criteria": st.session_state.get("prereg_exclusions", ""),
-                    "analysis_plan": st.session_state.get("prereg_analysis", ""),
-                    "notes_sanitized": st.session_state.get("prereg_text_sanitized", ""),
-                }
-                metadata["design_review"] = {
-                    "variable_roles": st.session_state.get("variable_review_rows", []),
-                    "randomization_level": st.session_state.get("randomization_level", ""),
-                }
-
-                schema_results = validate_schema(
-                    df=df,
-                    expected_conditions=inferred["conditions"],
-                    expected_scales=clean_scales,
-                    expected_n=N,
-                )
-
-                csv_bytes = df.to_csv(index=False).encode("utf-8")
-                meta_bytes = _safe_json(metadata).encode("utf-8")
-                explainer_bytes = explainer.encode("utf-8")
-                r_bytes = r_script.encode("utf-8")
-                instructor_report = InstructorReportGenerator().generate_markdown_report(
-                    df=df,
-                    metadata=metadata,
-                    schema_validation=schema_results,
-                    prereg_text=st.session_state.get("prereg_text_sanitized", ""),
-                    team_info={
-                        "team_name": st.session_state.get("team_name", ""),
-                        "team_members": st.session_state.get("team_members_raw", ""),
-                    },
-                )
-                instructor_bytes = instructor_report.encode("utf-8")
-                learning_plan_md = None
-                if st.session_state.get("include_learning_plan", False):
-                    learning_profile = {
-                        "comfort_topics": st.session_state.get("learning_comfort_topics", ""),
-                        "target_domains": st.session_state.get("learning_target_domains", []),
-                        "grammar_focus": st.session_state.get("learning_grammar_focus", []),
-                        "output_modes": st.session_state.get("learning_output_modes", []),
-                        "intensity": st.session_state.get("learning_intensity", "Standard"),
-                        "learner_notes": st.session_state.get("learning_notes", ""),
-                    }
-                    learning_plan_md = build_spanish_learning_plan(learning_profile)
-                    metadata["learning_plan_profile"] = learning_profile
-
-                files = {
-                    "Simulated.csv": csv_bytes,
-                    "Metadata.json": meta_bytes,
-                    "Column_Explainer.txt": explainer_bytes,
-                    "R_Prepare_Data.R": r_bytes,
-                    "Schema_Validation.json": _safe_json(schema_results).encode("utf-8"),
-                    "Instructor_Report.md": instructor_bytes,
-                }
-                if learning_plan_md:
-                    files["Spanish_Learning_Plan.md"] = learning_plan_md.encode("utf-8")
-                zip_bytes = _bytes_to_zip(files)
-
-                st.session_state["last_df"] = df
-                st.session_state["last_zip"] = zip_bytes
-                st.session_state["last_metadata"] = metadata
-
-                progress_bar.progress(85, text="Finalizing notifications...")
-                status_placeholder.info("Finalizing notifications...")
-                st.success("Simulation generated.")
-                st.markdown("[Jump to download](#download)")
-
-                if not schema_results.get("valid", True):
-                    st.error("Schema validation failed. Review Schema_Validation.json in the download.")
-                elif schema_results.get("warnings"):
-                    st.info("Schema validation warnings found. Review Schema_Validation.json in the download.")
-                else:
-                    st.info("Schema validation passed.")
-
-                instructor_email = st.secrets.get("INSTRUCTOR_NOTIFICATION_EMAIL", "edimant@sas.upenn.edu")
-                subject = f"[Behavioral Simulation] Output ({metadata.get('simulation_mode', 'pilot')}) - {title}"
-                body = (
-                    "Automatic instructor notification with simulation output.\n\n"
-                    f"Team: {st.session_state.get('team_name','')}\n"
-                    f"Members:\n{st.session_state.get('team_members_raw','')}\n\n"
-                    f"Study: {title}\n"
-                    f"Generated: {metadata.get('generation_timestamp','')}\n"
-                    f"Run ID: {metadata.get('run_id','')}\n"
-                )
-                ok, msg = _send_email_with_sendgrid(
-                    to_email=instructor_email,
-                    subject=subject,
-                    body_text=body,
-                    attachments=[
-                        ("simulation_output.zip", zip_bytes),
-                        ("Instructor_Report.md", instructor_bytes),
-                    ],
-                )
-                if ok:
-                    st.info(f"Instructor auto-email sent to {instructor_email}.")
-                else:
-                    st.error(f"Instructor auto-email failed: {msg}")
-
-                progress_bar.progress(100, text="Simulation ready.")
-                status_placeholder.success("Simulation complete.")
-                st.session_state["has_generated"] = True
-            except Exception as e:
-                progress_bar.progress(100, text="Simulation failed.")
-                status_placeholder.error("Simulation failed.")
-                st.error(f"Simulation failed: {e}")
-            finally:
-                st.session_state["is_generating"] = False
-                time.sleep(0.2)
-                progress_placeholder.empty()
-
-        zip_bytes = st.session_state.get("last_zip", None)
-        df = st.session_state.get("last_df", None)
-        if zip_bytes and df is not None:
-            st.divider()
-            st.markdown('<div id="download"></div>', unsafe_allow_html=True)
-            st.subheader("Download")
-
-            st.download_button(
-                "Download ZIP (CSV + metadata + R script)",
-                data=zip_bytes,
-                file_name=f"behavioral_simulation_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip",
-                mime="application/zip",
+            csv_bytes = df.to_csv(index=False).encode("utf-8")
+            meta_bytes = _safe_json(metadata).encode("utf-8")
+            explainer_bytes = explainer.encode("utf-8")
+            r_bytes = r_script.encode("utf-8")
+            instructor_report = InstructorReportGenerator().generate_markdown_report(
+                df=df,
+                metadata=metadata,
+                schema_validation=schema_results,
+                prereg_text=st.session_state.get("prereg_text_sanitized", ""),
+                team_info={
+                    "team_name": st.session_state.get("team_name", ""),
+                    "team_members": st.session_state.get("team_members_raw", ""),
+                },
             )
+            instructor_bytes = instructor_report.encode("utf-8")
+            learning_plan_md = None
+            if st.session_state.get("include_learning_plan", False):
+                learning_profile = {
+                    "comfort_topics": st.session_state.get("learning_comfort_topics", ""),
+                    "target_domains": st.session_state.get("learning_target_domains", []),
+                    "grammar_focus": st.session_state.get("learning_grammar_focus", []),
+                    "output_modes": st.session_state.get("learning_output_modes", []),
+                    "intensity": st.session_state.get("learning_intensity", "Standard"),
+                    "learner_notes": st.session_state.get("learning_notes", ""),
+                }
+                learning_plan_md = build_spanish_learning_plan(learning_profile)
+                metadata["learning_plan_profile"] = learning_profile
 
-            with st.expander("Preview (first 20 rows)"):
-                st.dataframe(df.head(20), use_container_width=True)
+            files = {
+                "Simulated.csv": csv_bytes,
+                "Metadata.json": meta_bytes,
+                "Column_Explainer.txt": explainer_bytes,
+                "R_Prepare_Data.R": r_bytes,
+                "Schema_Validation.json": _safe_json(schema_results).encode("utf-8"),
+                "Instructor_Report.md": instructor_bytes,
+            }
+            if learning_plan_md:
+                files["Spanish_Learning_Plan.md"] = learning_plan_md.encode("utf-8")
+            zip_bytes = _bytes_to_zip(files)
 
-            st.divider()
-            st.subheader("Email (optional)")
-            _render_email_setup_diagnostics()
+            st.session_state["last_df"] = df
+            st.session_state["last_zip"] = zip_bytes
+            st.session_state["last_metadata"] = metadata
 
-            to_email = st.text_input("Send to email", value=st.session_state.get("send_to_email", ""))
-            st.session_state["send_to_email"] = to_email
+            progress_bar.progress(85, text="Finalizing notifications...")
+            status_placeholder.info("Finalizing notifications...")
+            st.success("Simulation generated.")
+            st.markdown("[Jump to download](#download)")
 
-            colE1, colE2 = st.columns([1, 1])
-            with colE1:
-                if st.button("Send ZIP via email"):
-                    if not to_email or "@" not in to_email:
-                        st.error("Please enter a valid email address.")
+            if not schema_results.get("valid", True):
+                st.error("Schema validation failed. Review Schema_Validation.json in the download.")
+            elif schema_results.get("warnings"):
+                st.info("Schema validation warnings found. Review Schema_Validation.json in the download.")
+            else:
+                st.info("Schema validation passed.")
+
+            instructor_email = st.secrets.get("INSTRUCTOR_NOTIFICATION_EMAIL", "edimant@sas.upenn.edu")
+            subject = f"[Behavioral Simulation] Output ({metadata.get('simulation_mode', 'pilot')}) - {title}"
+            body = (
+                "Automatic instructor notification with simulation output.\n\n"
+                f"Team: {st.session_state.get('team_name','')}\n"
+                f"Members:\n{st.session_state.get('team_members_raw','')}\n\n"
+                f"Study: {title}\n"
+                f"Generated: {metadata.get('generation_timestamp','')}\n"
+                f"Run ID: {metadata.get('run_id','')}\n"
+            )
+            ok, msg = _send_email_with_sendgrid(
+                to_email=instructor_email,
+                subject=subject,
+                body_text=body,
+                attachments=[
+                    ("simulation_output.zip", zip_bytes),
+                    ("Instructor_Report.md", instructor_bytes),
+                ],
+            )
+            if ok:
+                st.info(f"Instructor auto-email sent to {instructor_email}.")
+            else:
+                st.error(f"Instructor auto-email failed: {msg}")
+
+            progress_bar.progress(100, text="Simulation ready.")
+            status_placeholder.success("Simulation complete.")
+            st.session_state["has_generated"] = True
+        except Exception as e:
+            progress_bar.progress(100, text="Simulation failed.")
+            status_placeholder.error("Simulation failed.")
+            st.error(f"Simulation failed: {e}")
+        finally:
+            st.session_state["is_generating"] = False
+            time.sleep(0.2)
+            progress_placeholder.empty()
+
+    zip_bytes = st.session_state.get("last_zip", None)
+    df = st.session_state.get("last_df", None)
+    if zip_bytes and df is not None:
+        st.divider()
+        st.markdown('<div id="download"></div>', unsafe_allow_html=True)
+        st.subheader("Download")
+
+        st.download_button(
+            "Download ZIP (CSV + metadata + R script)",
+            data=zip_bytes,
+            file_name=f"behavioral_simulation_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip",
+            mime="application/zip",
+        )
+
+        with st.expander("Preview (first 20 rows)"):
+            st.dataframe(df.head(20), use_container_width=True)
+
+        st.divider()
+        st.subheader("Email (optional)")
+        _render_email_setup_diagnostics()
+
+        to_email = st.text_input("Send to email", value=st.session_state.get("send_to_email", ""))
+        st.session_state["send_to_email"] = to_email
+
+        colE1, colE2 = st.columns([1, 1])
+        with colE1:
+            if st.button("Send ZIP via email"):
+                if not to_email or "@" not in to_email:
+                    st.error("Please enter a valid email address.")
+                else:
+                    subject = f"[Behavioral Simulation] Output: {st.session_state.get('study_title','Untitled Study')}"
+                    body = (
+                        "Attached is the simulation output ZIP (Simulated.csv, metadata, R prep script).\n\n"
+                        f"Generated: {datetime.now().isoformat(timespec='seconds')}\n"
+                    )
+                    ok, msg = _send_email_with_sendgrid(
+                        to_email=to_email,
+                        subject=subject,
+                        body_text=body,
+                        attachments=[("simulation_output.zip", zip_bytes)],
+                    )
+                    if ok:
+                        st.success(msg)
                     else:
-                        subject = f"[Behavioral Simulation] Output: {st.session_state.get('study_title','Untitled Study')}"
-                        body = (
-                            "Attached is the simulation output ZIP (Simulated.csv, metadata, R prep script).\n\n"
-                            f"Generated: {datetime.now().isoformat(timespec='seconds')}\n"
-                        )
-                        ok, msg = _send_email_with_sendgrid(
-                            to_email=to_email,
-                            subject=subject,
-                            body_text=body,
-                            attachments=[("simulation_output.zip", zip_bytes)],
-                        )
-                        if ok:
-                            st.success(msg)
-                        else:
-                            st.error(msg)
+                        st.error(msg)
 
-            with colE2:
-                instructor_email = st.secrets.get("INSTRUCTOR_NOTIFICATION_EMAIL", "")
-                if instructor_email:
-                    if st.button("Send to instructor too"):
-                        subject = f"[Behavioral Simulation] Output (team: {st.session_state.get('team_name','') or 'N/A'})"
-                        body = (
-                            f"Team: {st.session_state.get('team_name','')}\n"
-                            f"Members:\n{st.session_state.get('team_members_raw','')}\n\n"
-                            f"Study: {st.session_state.get('study_title','')}\n"
-                            f"Generated: {datetime.now().isoformat(timespec='seconds')}\n"
-                        )
-                        ok, msg = _send_email_with_sendgrid(
-                            to_email=instructor_email,
-                            subject=subject,
-                            body_text=body,
-                            attachments=[("simulation_output.zip", zip_bytes)],
-                        )
-                        if ok:
-                            st.success(msg)
-                        else:
-                            st.error(msg)
-                else:
-                    st.caption("Instructor email not configured in secrets (INSTRUCTOR_NOTIFICATION_EMAIL).")
+        with colE2:
+            instructor_email = st.secrets.get("INSTRUCTOR_NOTIFICATION_EMAIL", "")
+            if instructor_email:
+                if st.button("Send to instructor too"):
+                    subject = f"[Behavioral Simulation] Output (team: {st.session_state.get('team_name','') or 'N/A'})"
+                    body = (
+                        f"Team: {st.session_state.get('team_name','')}\n"
+                        f"Members:\n{st.session_state.get('team_members_raw','')}\n\n"
+                        f"Study: {st.session_state.get('study_title','')}\n"
+                        f"Generated: {datetime.now().isoformat(timespec='seconds')}\n"
+                    )
+                    ok, msg = _send_email_with_sendgrid(
+                        to_email=instructor_email,
+                        subject=subject,
+                        body_text=body,
+                        attachments=[("simulation_output.zip", zip_bytes)],
+                    )
+                    if ok:
+                        st.success(msg)
+                    else:
+                        st.error(msg)
+            else:
+                st.caption("Instructor email not configured in secrets (INSTRUCTOR_NOTIFICATION_EMAIL).")
 
-        _render_step_navigation(3, True, "Finish")
+    _render_step_navigation(3, True, "Finish")
