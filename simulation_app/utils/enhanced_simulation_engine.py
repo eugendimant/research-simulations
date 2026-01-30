@@ -593,6 +593,9 @@ class EnhancedSimulationEngine:
         n = self.sample_size
         data: Dict[str, Any] = {}
 
+        # Reset text generator's used responses for fresh dataset
+        self.text_generator.reset_used_responses()
+
         data["PARTICIPANT_ID"] = list(range(1, n + 1))
         data["RUN_ID"] = [self.run_id] * n
         data["SIMULATION_MODE"] = [self.mode.upper()] * n

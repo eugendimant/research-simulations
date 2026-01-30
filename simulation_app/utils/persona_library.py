@@ -1016,6 +1016,8 @@ class TextResponseGenerator:
     - Appropriate hedging and qualifiers
     - Personal voice and perspective
     - Response style consistent with numeric patterns
+
+    Ensures no duplicate responses within a dataset by tracking used responses.
     """
 
     def __init__(self):
@@ -1023,6 +1025,37 @@ class TextResponseGenerator:
         self.sentence_starters = self._build_sentence_starters()
         self.hedges = self._build_hedges()
         self.intensifiers = self._build_intensifiers()
+        self._used_responses: set = set()  # Track used responses for uniqueness
+        self._variation_phrases = self._build_variation_phrases()
+
+    def reset_used_responses(self):
+        """Reset the set of used responses for a new dataset."""
+        self._used_responses = set()
+
+    def _build_variation_phrases(self) -> Dict[str, List[str]]:
+        """Build phrases that can be prepended/appended to make responses unique."""
+        return {
+            'time_phrases': [
+                "At first,", "Initially,", "After thinking about it,", "Upon reflection,",
+                "Looking at it now,", "Considering everything,", "In retrospect,",
+                "After some thought,", "Thinking it over,", "On second thought,",
+            ],
+            'personal_phrases': [
+                "Personally,", "For me,", "In my experience,", "From my perspective,",
+                "Speaking for myself,", "In my view,", "To me,", "As I see it,",
+                "From where I stand,", "In my opinion,",
+            ],
+            'certainty_phrases': [
+                "I'm fairly sure that", "I believe that", "I think", "I feel like",
+                "It seems to me that", "My impression is that", "I'd say that",
+                "I'm pretty confident that", "I'm inclined to think", "I would argue that",
+            ],
+            'ending_phrases': [
+                " That's my take on it.", " That's how I see it.", " Those are my thoughts.",
+                " That's my perspective.", " That sums up my view.", " That's where I stand.",
+                "", "", "",  # Some empty to vary whether ending is added
+            ]
+        }
 
     def _build_sentence_starters(self) -> Dict[str, List[str]]:
         """Build varied sentence starters for natural language generation."""
@@ -1088,6 +1121,16 @@ class TextResponseGenerator:
                     "The study covered {topic} which I found interesting. I gave honest ratings based on my genuine impressions of the {stimulus}.",
                     "I went through the survey carefully, considering each question about {topic}. My responses reflect what I actually think, not what I thought I should say.",
                     "I evaluated the {stimulus} based on my personal preferences and experiences. The {topic} is relevant to my interests so I felt I could give informed responses.",
+                    "Engaging with this study about {topic} was interesting. I tried to provide meaningful responses to each question about the {stimulus}.",
+                    "I approached this survey about {topic} with genuine interest. My evaluation of the {stimulus} reflects my actual opinions.",
+                    "The {stimulus} caught my attention and I gave careful consideration to each question about {topic}. I believe my responses are accurate.",
+                    "I found the study on {topic} to be well-designed. Looking at the {stimulus}, I tried to articulate my genuine reactions.",
+                    "My responses to questions about {topic} came from careful reflection on the {stimulus}. I aimed for honesty throughout.",
+                    "I engaged seriously with this survey on {topic}. The {stimulus} prompted me to think about my actual preferences and opinions.",
+                    "Reviewing the {stimulus} for this study about {topic} was a thoughtful process. My answers represent my true perspective.",
+                    "I gave this study about {topic} my full attention. The {stimulus} was evaluated based on my genuine impressions.",
+                    "This survey on {topic} asked meaningful questions. I considered the {stimulus} carefully before responding.",
+                    "I appreciated the opportunity to share my views on {topic}. My evaluation of the {stimulus} is based on genuine reflection.",
                 ],
                 'satisficer': [
                     "Looked at {topic} and answered questions.",
@@ -1137,6 +1180,22 @@ class TextResponseGenerator:
                     "Looked at the {stimulus} and answered questions. The study was about {topic}.",
                     "I evaluated {topic} as asked. The {stimulus} was interesting.",
                     "Answered survey questions about {topic} based on the {stimulus} presented.",
+                    "I participated in a study about {topic} where I evaluated the {stimulus} and gave my feedback.",
+                    "This was a survey focused on {topic}. I reviewed the {stimulus} and answered accordingly.",
+                    "I took part in evaluating {topic}. The {stimulus} was what I based my responses on.",
+                    "I completed the survey about {topic} by sharing my thoughts on the {stimulus}.",
+                    "Looking at the {stimulus}, I formed opinions about {topic} and responded to the questions.",
+                    "I assessed the {stimulus} related to {topic} and provided my perspective.",
+                    "My task was to evaluate {topic} through the {stimulus}. I answered based on my impressions.",
+                    "I engaged with the {stimulus} and gave feedback about {topic} as requested.",
+                    "The survey presented me with a {stimulus} about {topic} and I shared my reactions.",
+                    "I reviewed materials about {topic} and answered questions based on the {stimulus}.",
+                    "I went through the study about {topic}, looking at the {stimulus} and giving ratings.",
+                    "This study asked about {topic}. I examined the {stimulus} and responded thoughtfully.",
+                    "I observed the {stimulus} and answered questions regarding {topic}.",
+                    "Based on the {stimulus}, I provided responses about {topic} to the best of my ability.",
+                    "I participated by viewing the {stimulus} and sharing opinions on {topic}.",
+                    "The {stimulus} about {topic} prompted my responses in this survey.",
                 ]
             },
             'product_evaluation': {
@@ -1309,6 +1368,51 @@ class TextResponseGenerator:
 
         return response
 
+    def _make_response_unique(self, response: str, rng: random.Random, max_attempts: int = 10) -> str:
+        """Ensure response is unique by adding variation if needed."""
+        original_response = response
+        attempt = 0
+
+        while response in self._used_responses and attempt < max_attempts:
+            attempt += 1
+            # Try different variation strategies
+            strategy = attempt % 4
+
+            if strategy == 0:
+                # Add a time phrase at the beginning
+                time_phrase = rng.choice(self._variation_phrases['time_phrases'])
+                response = f"{time_phrase} {original_response[0].lower()}{original_response[1:]}"
+            elif strategy == 1:
+                # Add a personal phrase at the beginning
+                personal_phrase = rng.choice(self._variation_phrases['personal_phrases'])
+                response = f"{personal_phrase} {original_response[0].lower()}{original_response[1:]}"
+            elif strategy == 2:
+                # Add an ending phrase
+                ending = rng.choice([e for e in self._variation_phrases['ending_phrases'] if e])
+                response = f"{original_response}{ending}"
+            else:
+                # Combine certainty phrase with slight rewording
+                certainty = rng.choice(self._variation_phrases['certainty_phrases'])
+                # Find a natural break point
+                if ". " in original_response:
+                    parts = original_response.split(". ", 1)
+                    response = f"{certainty} {parts[0].lower()}. {parts[1]}"
+                else:
+                    response = f"{certainty} {original_response[0].lower()}{original_response[1:]}"
+
+        # If still not unique after max attempts, add a unique identifier phrase
+        if response in self._used_responses:
+            unique_modifiers = [
+                "To add my perspective,", "In my case,", "What I noticed was that",
+                "From what I observed,", "Speaking honestly,", "Being straightforward,",
+                "Candidly speaking,", "Truth be told,", "Honestly speaking,", "Frankly,"
+            ]
+            modifier = rng.choice(unique_modifiers)
+            response = f"{modifier} {original_response[0].lower()}{original_response[1:]}"
+
+        self._used_responses.add(response)
+        return response
+
     def generate_response(
         self,
         response_type: str,
@@ -1328,7 +1432,7 @@ class TextResponseGenerator:
             seed: Random seed for reproducibility
 
         Returns:
-            Generated text response with natural variation
+            Generated text response with natural variation, guaranteed unique within dataset
         """
         rng = random.Random(seed)
 
@@ -1345,8 +1449,12 @@ class TextResponseGenerator:
         if not style_templates:
             style_templates = ["Response about {topic}."]
 
+        # Shuffle templates to increase variety across participants
+        shuffled_templates = style_templates.copy()
+        rng.shuffle(shuffled_templates)
+
         # Generate main response
-        response = self._combine_templates(style_templates, context, traits, rng)
+        response = self._combine_templates(shuffled_templates, context, traits, rng)
 
         # Add natural variation
         response = self._add_natural_variation(response, traits, rng)
@@ -1357,16 +1465,25 @@ class TextResponseGenerator:
                 " Overall I came away with a positive impression.",
                 " I'd be interested in learning more about this.",
                 " This seems like something I could see myself using.",
+                " I'd recommend others check this out.",
+                " This left me feeling good about it.",
+                " It exceeded what I was expecting.",
             ],
             'negative': [
                 " Overall I wasn't that impressed.",
                 " It didn't really resonate with me.",
                 " I'd probably look at other options.",
+                " I was hoping for something better.",
+                " This wasn't what I was looking for.",
+                " I'd suggest looking elsewhere.",
             ],
             'neutral': [
                 " It was okay overall.",
                 " I don't have particularly strong feelings about it.",
                 " Could go either way on this.",
+                " It was neither great nor terrible.",
+                " I'd say it was acceptable.",
+                " My feelings are mixed.",
             ]
         }
 
@@ -1385,7 +1502,10 @@ class TextResponseGenerator:
                 except KeyError:
                     pass
 
-        return response.strip()
+        # Ensure response is unique within this dataset
+        response = self._make_response_unique(response.strip(), rng)
+
+        return response
 
 
 # ================================================================
