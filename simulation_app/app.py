@@ -58,7 +58,6 @@ from utils.text_generator import (
     PersonaTextTraits,
     create_text_generator,
 )
-from utils.spanish_learning_plan import build_spanish_learning_plan
 
 
 # -----------------------------
