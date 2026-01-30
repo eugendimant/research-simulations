@@ -1426,9 +1426,12 @@ if active_step == 1:
                     try:
                         import fitz
                         pdf_doc = fitz.open(stream=pdf_content, filetype="pdf")
-                        for page in pdf_doc:
-                            pdf_text += page.get_text()
-                        extraction_method = "PyMuPDF"
+                        try:
+                            for page in pdf_doc:
+                                pdf_text += page.get_text()
+                            extraction_method = "PyMuPDF"
+                        finally:
+                            pdf_doc.close()
                     except ImportError:
                         pass
                     except Exception:
@@ -1485,6 +1488,11 @@ if active_step == 1:
             )
             st.session_state["prereg_iv"] = prereg_iv
 
+            # Sanitize preregistration text to remove hypothesis-biasing language
+            combined_prereg = f"{prereg_outcomes}\n{prereg_iv}".strip()
+            sanitized_text, removed_lines = _sanitize_prereg_text(combined_prereg)
+            st.session_state["prereg_text_sanitized"] = sanitized_text
+
     if preview:
         condition_candidates = _get_condition_candidates(
             preview=preview,
@@ -1512,8 +1520,8 @@ if active_step == 1:
 
         current_conditions = st.session_state.get("current_conditions") or []
         c1, c2, c3, c4, c5 = st.columns(5)
-        c1.metric("Questions", int(preview.total_questions))
-        c2.metric("Scales detected", int(len(preview.detected_scales or [])))
+        c1.metric("Questions", int(getattr(preview, "total_questions", 0) or 0))
+        c2.metric("Scales detected", int(len(getattr(preview, "detected_scales", []) or [])))
         c3.metric("Condition candidates", int(len(st.session_state.get("condition_candidates", []) or [])))
         c4.metric("Conditions selected", int(len(current_conditions)))
         warnings = getattr(preview, "validation_warnings", []) or []
