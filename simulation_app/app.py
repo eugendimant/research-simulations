@@ -1002,73 +1002,69 @@ step_complete = [
 
 def _render_workflow_stepper():
     """Render a visual workflow stepper with progress indicators."""
+    # Inject CSS for step styling
     st.markdown("""
     <style>
-    .stepper-container {
-        display: flex;
-        justify-content: space-between;
-        align-items: flex-start;
-        margin: 1rem 0 1.5rem 0;
-        padding: 0 1rem;
-    }
-    .step-item {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        flex: 1;
-        position: relative;
-        cursor: pointer;
-    }
-    .step-circle {
-        width: 48px;
-        height: 48px;
+    .step-circle-completed {
+        width: 44px;
+        height: 44px;
         border-radius: 50%;
-        display: flex;
+        background: #10b981;
+        color: white;
+        display: inline-flex;
         align-items: center;
         justify-content: center;
         font-weight: 600;
         font-size: 1.1rem;
-        margin-bottom: 0.5rem;
-        transition: all 0.2s;
+        margin: 0 auto 0.5rem auto;
     }
-    .step-circle.completed {
-        background: #10b981;
-        color: white;
-    }
-    .step-circle.current {
+    .step-circle-current {
+        width: 44px;
+        height: 44px;
+        border-radius: 50%;
         background: #3b82f6;
         color: white;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 600;
+        font-size: 1.1rem;
+        margin: 0 auto 0.5rem auto;
         box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.3);
     }
-    .step-circle.pending {
-        background: #e5e7eb;
-        color: #6b7280;
+    .step-circle-pending {
+        width: 44px;
+        height: 44px;
+        border-radius: 50%;
+        background: #9ca3af;
+        color: white;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 600;
+        font-size: 1.1rem;
+        margin: 0 auto 0.5rem auto;
     }
-    .step-label {
+    .step-container {
+        text-align: center;
+        padding: 0.5rem 0;
+    }
+    .step-label-current {
+        font-weight: 600;
+        font-size: 0.9rem;
+        color: #1f2937;
+        text-align: center;
+    }
+    .step-label-default {
         font-weight: 500;
         font-size: 0.9rem;
-        text-align: center;
         color: #374151;
+        text-align: center;
     }
-    .step-description {
+    .step-desc {
         font-size: 0.75rem;
         color: #6b7280;
         text-align: center;
-    }
-    .step-connector {
-        position: absolute;
-        top: 24px;
-        left: 50%;
-        width: 100%;
-        height: 3px;
-        background: #e5e7eb;
-        z-index: -1;
-    }
-    .step-connector.completed {
-        background: #10b981;
-    }
-    .step-item:last-child .step-connector {
-        display: none;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -1085,46 +1081,30 @@ def _render_workflow_stepper():
             # Step indicator and status
             if is_completed:
                 status_icon = "✓"
-                status_color = "#10b981"  # green
+                circle_class = "step-circle-completed"
             elif is_current:
                 status_icon = str(i + 1)
-                status_color = "#3b82f6"  # blue
+                circle_class = "step-circle-current"
             else:
                 status_icon = str(i + 1)
-                status_color = "#9ca3af"  # gray
+                circle_class = "step-circle-pending"
 
-            # Create clickable step
-            col_content = f"""
-            <div style="text-align: center; padding: 0.5rem;">
-                <div style="
-                    width: 44px;
-                    height: 44px;
-                    border-radius: 50%;
-                    background: {status_color};
-                    color: white;
-                    display: inline-flex;
-                    align-items: center;
-                    justify-content: center;
-                    font-weight: 600;
-                    font-size: 1.1rem;
-                    margin-bottom: 0.5rem;
-                    {'box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.3);' if is_current else ''}
-                ">{status_icon}</div>
-                <div style="font-weight: {'600' if is_current else '500'}; font-size: 0.9rem; color: {'#1f2937' if is_current else '#374151'};">
-                    {label}
-                </div>
-                <div style="font-size: 0.75rem; color: #6b7280;">{desc}</div>
-            </div>
-            """
-            st.markdown(col_content, unsafe_allow_html=True)
+            label_class = "step-label-current" if is_current else "step-label-default"
+
+            # Create step display using clean HTML with CSS classes
+            step_html = f'''<div class="step-container">
+<div class="{circle_class}">{status_icon}</div>
+<div class="{label_class}">{label}</div>
+<div class="step-desc">{desc}</div>
+</div>'''
+            st.markdown(step_html, unsafe_allow_html=True)
 
             # Navigation button under each step
-            btn_label = "Current" if is_current else ("Go" if is_completed or i <= active_step + 1 else "")
-            if btn_label and not is_current:
+            if is_current:
+                st.caption("You are here")
+            elif is_completed or i <= active_step + 1:
                 if st.button(f"Go to Step {i + 1}", key=f"stepper_nav_{i}", use_container_width=True):
                     _go_to_step(i)
-            elif is_current:
-                st.caption("You are here")
 
 
 # Render the workflow stepper
@@ -1727,57 +1707,18 @@ if active_step == 2:
                         st.session_state["custom_conditions"] = custom_conditions
                         st.rerun()
 
-    # Option to add custom conditions (but using a controlled interface)
-    with st.expander("➕ Add custom conditions (if not in list above)", expanded=not bool(all_possible_conditions)):
-        st.caption("Use this only if your conditions aren't detected above.")
-
-        # Get current custom conditions
-        custom_conditions = st.session_state.get("custom_conditions", [])
-
-        st.session_state["current_conditions"] = all_conditions
-
-        # ========================================
-        # STEP 2: DESIGN STRUCTURE
-        # ========================================
-        st.markdown("---")
-        st.markdown("### Step 2: Configure Design Structure")
-
-        col_design1, col_design2 = st.columns(2)
-
-        with col_design1:
-            # Design type selection
-            design_type = st.selectbox(
-                "Experimental design type",
-                options=[
-                    "Between-subjects (each participant sees one condition)",
-                    "Within-subjects (each participant sees all conditions)",
-                    "Mixed design",
-                    "Simple comparison (2 groups)",
-                ],
-                index=0,
-                key="design_type_select",
-                help="How are conditions assigned to participants?",
-            )
-        with col_add2:
-            st.write("")  # Spacer
-            if st.button("Add", key="add_condition_btn", disabled=not new_condition.strip()):
-                if new_condition.strip() and new_condition.strip() not in custom_conditions:
-                    custom_conditions.append(new_condition.strip())
-                    st.session_state["custom_conditions"] = custom_conditions
-                    st.rerun()
-
-        # Show custom conditions with remove buttons
-        if custom_conditions:
-            st.markdown("**Custom conditions added:**")
-            for i, cc in enumerate(custom_conditions):
-                col_cc, col_rm = st.columns([4, 1])
-                with col_cc:
-                    st.text(f"• {cc}")
-                with col_rm:
-                    if st.button("✕", key=f"rm_custom_{i}"):
-                        custom_conditions.remove(cc)
-                        st.session_state["custom_conditions"] = custom_conditions
-                        st.rerun()
+            # Show custom conditions with remove buttons
+            if custom_conditions:
+                st.markdown("**Custom conditions added:**")
+                for i, cc in enumerate(custom_conditions):
+                    col_cc, col_rm = st.columns([4, 1])
+                    with col_cc:
+                        st.text(f"• {cc}")
+                    with col_rm:
+                        if st.button("✕", key=f"rm_custom_{i}"):
+                            custom_conditions.remove(cc)
+                            st.session_state["custom_conditions"] = custom_conditions
+                            st.rerun()
 
     # Combine selected and custom conditions
     custom_conditions = st.session_state.get("custom_conditions", [])
