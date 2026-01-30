@@ -61,7 +61,7 @@ APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d")
 BASE_STORAGE = Path("data")
 BASE_STORAGE.mkdir(parents=True, exist_ok=True)
 
-MAX_SIMULATED_N = 2000
+MAX_SIMULATED_N = 10000
 
 STANDARD_DEFAULTS = {
     "demographics": {"gender_quota": 50, "age_mean": 35, "age_sd": 12},
@@ -1258,13 +1258,18 @@ if active_step == 0:
             help="Include your manipulation, population, and intended outcomes (helps domain detection).",
         )
         sample_size = st.number_input(
-            "Target sample size (N) *",
+            "Target sample size (N) * — based on power analysis",
             min_value=10,
             max_value=MAX_SIMULATED_N,
             value=int(st.session_state.get("sample_size", 200)),
             step=10,
-            help=f"Your pre-registered sample size. Maximum is {MAX_SIMULATED_N} for standardization.",
+            help=(
+                "Enter the sample size from your power analysis (a priori power calculation). "
+                "This should be the N required to detect your expected effect size with adequate power (typically 80%). "
+                f"Maximum: {MAX_SIMULATED_N:,}."
+            ),
         )
+        st.caption("💡 Use your power analysis result (e.g., from G*Power) to determine the appropriate N.")
 
         st.session_state["study_title"] = study_title
         st.session_state["study_description"] = study_description
@@ -1413,20 +1418,51 @@ if active_step == 1:
                     st.session_state["prereg_pdf_name"] = prereg_file.name
                     st.success(f"Preregistration uploaded: {prereg_file.name}")
 
-                    # Try to extract text from PDF if possible
+                    # Try to extract text from PDF using multiple methods
+                    pdf_text = ""
+                    extraction_method = None
+
+                    # Method 1: Try PyMuPDF (fitz) - best quality
                     try:
-                        import fitz  # PyMuPDF
+                        import fitz
                         pdf_doc = fitz.open(stream=pdf_content, filetype="pdf")
-                        pdf_text = ""
                         for page in pdf_doc:
                             pdf_text += page.get_text()
-                        st.session_state["prereg_pdf_text"] = pdf_text
-                        if pdf_text.strip():
-                            st.info("PDF text extracted successfully for analysis.")
+                        extraction_method = "PyMuPDF"
                     except ImportError:
-                        st.info("PDF uploaded but text extraction unavailable. The file will still be included in metadata.")
+                        pass
                     except Exception:
-                        st.info("Could not extract text from PDF. The file will still be included in metadata.")
+                        pass
+
+                    # Method 2: Try pypdf as fallback
+                    if not pdf_text.strip():
+                        try:
+                            pdf_text = _extract_pdf_text(pdf_content)
+                            if pdf_text.strip():
+                                extraction_method = "pypdf"
+                        except Exception:
+                            pass
+
+                    # Method 3: Try pdfplumber as last resort
+                    if not pdf_text.strip():
+                        try:
+                            import pdfplumber
+                            with pdfplumber.open(io.BytesIO(pdf_content)) as pdf:
+                                for page in pdf.pages:
+                                    page_text = page.extract_text()
+                                    if page_text:
+                                        pdf_text += page_text + "\n"
+                            extraction_method = "pdfplumber"
+                        except ImportError:
+                            pass
+                        except Exception:
+                            pass
+
+                    st.session_state["prereg_pdf_text"] = pdf_text
+                    if pdf_text.strip():
+                        st.info(f"PDF text extracted successfully ({extraction_method}).")
+                    else:
+                        st.warning("PDF uploaded but text extraction failed. The file will still be included in metadata.")
                 except Exception as e:
                     st.error(f"Failed to process preregistration PDF: {e}")
 
