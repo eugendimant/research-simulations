@@ -132,6 +132,55 @@ def _sanitize_prereg_text(raw_text: str) -> Tuple[str, List[str]]:
     return "\n".join(kept).strip(), removed
 
 
+def _split_comma_list(value: str) -> List[str]:
+    if not value:
+        return []
+    return [item.strip() for item in value.split(",") if item.strip()]
+
+
+def _normalize_scale_specs(scales: List[Any]) -> List[Dict[str, Any]]:
+    normalized: List[Dict[str, Any]] = []
+    for scale in scales or []:
+        if isinstance(scale, str):
+            name = scale.strip()
+            if name:
+                normalized.append({"name": name, "num_items": 5, "scale_points": 7, "reverse_items": []})
+            continue
+        if isinstance(scale, dict):
+            name = str(scale.get("name", "")).strip()
+            if not name:
+                continue
+            normalized.append(
+                {
+                    "name": name,
+                    "variable_name": str(scale.get("variable_name", name)),
+                    "num_items": int(scale.get("num_items", 5)),
+                    "scale_points": int(scale.get("scale_points", 7)),
+                    "reverse_items": scale.get("reverse_items", []) or [],
+                }
+            )
+    return normalized
+
+
+def _normalize_factor_specs(factors: List[Any], fallback_conditions: List[str]) -> List[Dict[str, Any]]:
+    normalized: List[Dict[str, Any]] = []
+    for factor in factors or []:
+        if isinstance(factor, str):
+            name = factor.strip()
+            if name:
+                normalized.append({"name": name, "levels": fallback_conditions})
+            continue
+        if isinstance(factor, dict):
+            name = str(factor.get("name", "")).strip() or "Condition"
+            levels = factor.get("levels", fallback_conditions)
+            if isinstance(levels, str):
+                levels_list = [lvl.strip() for lvl in levels.split(",") if lvl.strip()]
+            else:
+                levels_list = [str(lvl).strip() for lvl in (levels or []) if str(lvl).strip()]
+            normalized.append({"name": name, "levels": levels_list or fallback_conditions})
+    return normalized or [{"name": "Condition", "levels": fallback_conditions}]
+
+
 def _normalize_condition_label(label: str) -> str:
     if not label:
         return ""
@@ -394,7 +443,7 @@ def _parse_warnings_for_display(warnings: List[str]) -> List[Dict[str, Any]]:
         # Condition warnings
         elif "no experimental conditions" in warning.lower():
             parsed_warning["type"] = "no_conditions"
-            parsed_warning["fix_suggestion"] = "Add conditions manually in the Review tab"
+            parsed_warning["fix_suggestion"] = "Add conditions manually in the Design Setup step"
 
         # Attention check warnings
         elif "no attention check" in warning.lower():
@@ -933,8 +982,62 @@ with st.sidebar:
         "a custom setup."
     )
 
+    st.divider()
+    st.subheader("Study Snapshot")
+    snapshot_conditions = st.session_state.get("current_conditions") or st.session_state.get("selected_conditions") or []
+    snapshot_conditions = snapshot_conditions + st.session_state.get("custom_conditions", [])
+    snapshot_conditions = list(dict.fromkeys([c for c in snapshot_conditions if str(c).strip()]))
+    snapshot_scales = st.session_state.get("inferred_design", {}).get("scales", [])
+    st.caption(f"Study title: {st.session_state.get('study_title', '—') or '—'}")
+    st.caption(f"Sample size: {st.session_state.get('sample_size', '—')}")
+    st.caption(f"Conditions: {len(snapshot_conditions)}")
+    if snapshot_conditions:
+        st.caption(", ".join(snapshot_conditions[:6]) + ("..." if len(snapshot_conditions) > 6 else ""))
+    st.caption(f"Scales: {len(snapshot_scales) if snapshot_scales else 0}")
+    st.caption(f"Primary outcomes: {st.session_state.get('prereg_outcomes', '—') or '—'}")
+    st.caption(f"Independent variables: {st.session_state.get('prereg_iv', '—') or '—'}")
 
-tabs = st.tabs(["1. Study Info", "2. Upload Files", "3. Design Setup", "4. Generate"])
+    st.divider()
+    st.subheader("Workflow Checklist")
+    completion = _get_step_completion()
+    step1_ready = completion["study_title"] and completion["study_description"] and completion["sample_size"]
+    step2_ready = completion["qsf_uploaded"]
+    step3_ready = completion["conditions_set"] and completion["outcomes_set"] and completion["iv_set"]
+    step4_ready = completion["design_ready"]
+
+    st.caption(f"Step 1: {'✅' if step1_ready else '⚠️'}")
+    st.caption(f"Step 2: {'✅' if step2_ready else '⚠️'}")
+    st.caption(f"Step 3: {'✅' if step3_ready else '⚠️'}")
+    st.caption(f"Step 4: {'✅' if step4_ready else '⚠️'}")
+
+    if not step1_ready and st.button("Go to Step 1", key="jump_step1"):
+        _go_to_step(0)
+    if step1_ready and not step2_ready and st.button("Go to Step 2", key="jump_step2"):
+        _go_to_step(1)
+    if step2_ready and not step3_ready and st.button("Go to Step 3", key="jump_step3"):
+        _go_to_step(2)
+    if step3_ready and not step4_ready and st.button("Go to Step 4", key="jump_step4"):
+        _go_to_step(3)
+
+
+STEP_LABELS = ["1. Study Info", "2. Upload Files", "3. Design Setup", "4. Generate"]
+
+if "active_step" not in st.session_state:
+    st.session_state["active_step"] = 0
+
+def _go_to_step(step_index: int) -> None:
+    st.session_state["active_step"] = max(0, min(step_index, len(STEP_LABELS) - 1))
+    st.rerun()
+
+selected_step = st.radio(
+    "Workflow",
+    STEP_LABELS,
+    index=st.session_state.get("active_step", 0),
+    horizontal=True,
+    key="workflow_step",
+)
+st.session_state["active_step"] = STEP_LABELS.index(selected_step)
+active_step = st.session_state["active_step"]
 
 # Helper function for step completion
 def _get_step_completion() -> Dict[str, bool]:
@@ -946,23 +1049,63 @@ def _get_step_completion() -> Dict[str, bool]:
         "sample_size": int(st.session_state.get("sample_size", 0)) >= 10,
         "qsf_uploaded": bool(preview and preview.success),
         "conditions_set": bool(st.session_state.get("selected_conditions") or st.session_state.get("custom_conditions")),
+        "outcomes_set": bool(st.session_state.get("prereg_outcomes", "").strip()),
+        "iv_set": bool(st.session_state.get("prereg_iv", "").strip()),
         "design_ready": bool(st.session_state.get("inferred_design")),
     }
+
+
+def _get_condition_candidates(
+    preview: Optional[QSFPreviewResult],
+    enhanced_analysis: Optional[DesignAnalysisResult],
+) -> List[str]:
+    candidates: List[str] = []
+    if enhanced_analysis and enhanced_analysis.conditions:
+        for cond in enhanced_analysis.conditions:
+            if cond.source in ("QSF Randomizer", "QSF Block Name"):
+                candidates.append(cond.name)
+
+    if preview and preview.blocks:
+        for block in preview.blocks:
+            block_name = block.block_name.strip()
+            if block_name and block_name.lower() not in (
+                "default question block",
+                "trash / unused questions",
+                "block",
+            ):
+                candidates.append(block_name)
+
+    return list(dict.fromkeys([c for c in candidates if c.strip()]))
+
+
+def _render_step_navigation(step_index: int, can_next: bool, next_label: str) -> None:
+    st.markdown("---")
+    col_back, col_middle, col_next = st.columns([1, 2, 1])
+    with col_back:
+        if step_index > 0 and st.button("← Back", key=f"nav_back_{step_index}"):
+            _go_to_step(step_index - 1)
+    with col_middle:
+        if not can_next:
+            st.caption("Complete required fields to unlock the next step.")
+    with col_next:
+        if step_index < len(STEP_LABELS) - 1:
+            if st.button(f"{next_label} →", key=f"nav_next_{step_index}", disabled=not can_next):
+                _go_to_step(step_index + 1)
 
 
 # -----------------------------
 # Tab 1: Study Info (required basics)
 # -----------------------------
-with tabs[0]:
+if active_step == 0:
     st.subheader("Step 1: Study Information")
     st.caption("Enter basic study details. Fields marked with * are required.")
 
-    # Progress indicator for this tab
+    # Progress indicator for this step
     completion = _get_step_completion()
     step1_done = completion["study_title"] and completion["study_description"] and completion["sample_size"]
 
     if step1_done:
-        st.success("Step 1 complete! Proceed to **Upload Files** tab.")
+        st.success("Step 1 complete! Proceed to **Upload Files**.")
     else:
         missing = []
         if not completion["study_title"]:
@@ -986,12 +1129,14 @@ with tabs[0]:
             "Study title *",
             value=st.session_state.get("study_title", ""),
             placeholder="e.g., Effect of AI Labels on Consumer Trust",
+            help="Appears in the report and simulated data outputs.",
         )
         study_description = st.text_area(
             "Study description (1-2 paragraphs) *",
             value=st.session_state.get("study_description", ""),
             height=150,
             placeholder="Describe your study's purpose, manipulation, and main outcomes. This helps with domain detection and persona selection.",
+            help="Include your manipulation, population, and intended outcomes (helps domain detection).",
         )
         sample_size = st.number_input(
             "Target sample size (N) *",
@@ -1097,20 +1242,13 @@ with tabs[0]:
                 help="Add any additional preferences or recurring errors to emphasize.",
             )
 
-    # Next step button
-    st.markdown("---")
-    col_next1, col_next2, col_next3 = st.columns([1, 2, 1])
-    with col_next2:
-        if step1_done:
-            st.info("**Next:** Go to the **Upload Files** tab to upload your Qualtrics QSF file.")
-        else:
-            st.warning("Complete all required fields (*) above to proceed.")
+    _render_step_navigation(0, step1_done, "Upload Files")
 
 
 # -----------------------------
 # Tab 2: Upload Files (QSF required, others optional)
 # -----------------------------
-with tabs[1]:
+if active_step == 1:
     st.subheader("Step 2: Upload Files")
 
     # Check completion status
@@ -1120,10 +1258,12 @@ with tabs[1]:
 
     if not step1_done:
         st.error("Please complete **Step 1: Study Info** first before uploading files.")
+        if st.button("Go to Study Info", key="go_step1_from_step2"):
+            _go_to_step(0)
         st.stop()
 
     if step2_done:
-        st.success("QSF uploaded and parsed successfully! Proceed to **Design Setup** tab.")
+        st.success("QSF uploaded and parsed successfully! Proceed to **Design Setup**.")
     else:
         st.warning("Upload your QSF file below to continue.")
 
@@ -1139,7 +1279,10 @@ with tabs[1]:
         qsf_file = st.file_uploader(
             "Upload QSF file *",
             type=["qsf", "zip", "json"],
-            help="Your Qualtrics survey export file",
+            help=(
+                "Export from Qualtrics via Tools → Import/Export → Export Survey. "
+                "Upload the .qsf (or .zip) here."
+            ),
         )
 
     with col_help:
@@ -1161,38 +1304,38 @@ with tabs[1]:
 
         with opt_col1:
             st.markdown("**Survey PDF Export**")
-            survey_pdf = st.file_uploader("Survey PDF", type=["pdf"], key="survey_pdf_uploader")
+            survey_pdf = st.file_uploader(
+                "Survey PDF",
+                type=["pdf"],
+                key="survey_pdf_uploader",
+                help="Export from Qualtrics → Tools → Import/Export → Export Survey (PDF).",
+            )
             st.caption("Helps with question wording detection.")
 
             st.markdown("**AsPredicted PDF**")
-            prereg_pdf = st.file_uploader("Preregistration PDF", type=["pdf"], key="prereg_pdf_uploader")
+            prereg_pdf = st.file_uploader(
+                "Preregistration PDF",
+                type=["pdf"],
+                key="prereg_pdf_uploader",
+                help="Upload your AsPredicted or OSF preregistration PDF (optional).",
+            )
             st.caption("Optional preregistration document.")
 
         with opt_col2:
             st.markdown("**Study Design Notes** (for report labeling)")
-            prereg_outcomes = st.text_input(
-                "Primary outcome variable(s)",
-                value=st.session_state.get("prereg_outcomes", ""),
-                placeholder="e.g., Purchase intention",
-            )
-            prereg_iv = st.text_input(
-                "Independent variable(s)",
-                value=st.session_state.get("prereg_iv", ""),
-                placeholder="e.g., AI vs. Human label",
-            )
             prereg_exclusions = st.text_input(
                 "Exclusion criteria",
                 value=st.session_state.get("prereg_exclusions", ""),
                 placeholder="e.g., Failed attention checks",
+                help="Optional notes about exclusions; this does not affect simulation settings.",
             )
             prereg_analysis = st.text_input(
                 "Planned analysis",
                 value=st.session_state.get("prereg_analysis", ""),
                 placeholder="e.g., t-test, ANOVA",
+                help="Optional notes about how you plan to analyze the data.",
             )
 
-        st.session_state["prereg_outcomes"] = prereg_outcomes
-        st.session_state["prereg_iv"] = prereg_iv
         st.session_state["prereg_exclusions"] = prereg_exclusions
         st.session_state["prereg_analysis"] = prereg_analysis
 
@@ -1201,7 +1344,7 @@ with tabs[1]:
             "Additional preregistration notes",
             value=st.session_state.get("prereg_text_raw", ""),
             height=100,
-            help="Hypotheses will be automatically removed.",
+            help="Optional background notes (hypothesis-like lines are automatically removed).",
         )
         sanitized_text, removed_lines = _sanitize_prereg_text(prereg_text)
         st.session_state["prereg_text_raw"] = prereg_text
@@ -1261,6 +1404,12 @@ with tabs[1]:
     preview: Optional[QSFPreviewResult] = st.session_state.get("qsf_preview", None)
 
     if preview:
+        condition_candidates = _get_condition_candidates(
+            preview=preview,
+            enhanced_analysis=st.session_state.get("enhanced_analysis"),
+        )
+        st.session_state["condition_candidates"] = condition_candidates
+
         prereg_conditions = _extract_conditions_from_prereg(
             st.session_state.get("prereg_iv", ""),
             st.session_state.get("prereg_text_sanitized", ""),
@@ -1282,12 +1431,14 @@ with tabs[1]:
             ]
         st.session_state["condition_sources"] = condition_sources
 
-        c1, c2, c3, c4 = st.columns(4)
+        current_conditions = st.session_state.get("current_conditions") or []
+        c1, c2, c3, c4, c5 = st.columns(5)
         c1.metric("Questions", int(preview.total_questions))
         c2.metric("Scales detected", int(len(preview.detected_scales or [])))
-        c3.metric("Conditions detected", int(len(preview.detected_conditions or [])))
+        c3.metric("Condition candidates", int(len(st.session_state.get("condition_candidates", []) or [])))
+        c4.metric("Conditions selected", int(len(current_conditions)))
         warnings = getattr(preview, "validation_warnings", []) or []
-        c4.metric("Warnings", int(len(warnings)))
+        c5.metric("Warnings", int(len(warnings)))
 
         errors = getattr(preview, "validation_errors", []) or []
 
@@ -1337,20 +1488,29 @@ with tabs[1]:
                     if w.get("fix_suggestion"):
                         st.caption(f"Suggested fix: {w['fix_suggestion']}")
 
+        if current_conditions:
+            st.success(f"Current conditions saved: {', '.join(current_conditions)}")
+        else:
+            st.info("No conditions selected yet. Configure them in **Design Setup**.")
+
         # Navigation to next step
         st.markdown("---")
-        st.success("**QSF parsed successfully!** Proceed to the **Design Setup** tab to configure your experimental conditions.")
+        st.success("**QSF parsed successfully!** Proceed to the **Design Setup** step to configure your experimental conditions.")
+
+    _render_step_navigation(1, step2_done, "Design Setup")
 
 
 # -----------------------------
 # Tab 3: Review (redesigned with guided setup and dropdown-based editing)
 # -----------------------------
-with tabs[2]:
+if active_step == 2:
     preview: Optional[QSFPreviewResult] = st.session_state.get("qsf_preview", None)
     enhanced_analysis: Optional[DesignAnalysisResult] = st.session_state.get("enhanced_analysis", None)
 
     if not preview:
         st.info("Upload a QSF first to populate the review summary.")
+        if st.button("Go to Upload Files", key="go_step2_from_step3"):
+            _go_to_step(1)
     else:
         # Use enhanced analysis if available, otherwise fall back to basic inference
         basic_inferred = _preview_to_engine_inputs(preview)
@@ -1368,41 +1528,32 @@ with tabs[2]:
         st.markdown("---")
         st.markdown("### Step 1: Define Your Experimental Conditions")
 
-        # Get all QSF blocks that could be conditions
-        qsf_blocks = []
-        if preview and preview.blocks:
-            for block in preview.blocks:
-                # Skip generic/system blocks
-                block_name = block.block_name.strip()
-                if block_name.lower() not in ('default question block', 'trash / unused questions', 'block'):
-                    qsf_blocks.append(block_name)
+        condition_candidates = st.session_state.get("condition_candidates")
+        if not condition_candidates:
+            condition_candidates = _get_condition_candidates(preview, enhanced_analysis)
+            st.session_state["condition_candidates"] = condition_candidates
 
-        # Also add any conditions detected from randomizer
-        qsf_detected_conditions = []
-        if enhanced_analysis and enhanced_analysis.conditions:
-            for cond in enhanced_analysis.conditions:
-                if cond.source in ('QSF Randomizer', 'QSF Block Name') and cond.name not in qsf_detected_conditions:
-                    qsf_detected_conditions.append(cond.name)
-
-        # Combine and dedupe
-        all_possible_conditions = list(dict.fromkeys(qsf_detected_conditions + qsf_blocks))
+        all_possible_conditions = condition_candidates or []
 
         # Initialize selected conditions in session state
         if "selected_conditions" not in st.session_state:
             # Default to QSF-detected conditions if any
-            st.session_state["selected_conditions"] = qsf_detected_conditions[:] if qsf_detected_conditions else []
+            st.session_state["selected_conditions"] = condition_candidates[:] if condition_candidates else []
 
         # Check if we have any possible conditions to select from
         if all_possible_conditions:
             st.markdown("**Select which blocks/groups represent your experimental conditions:**")
-            st.caption("These were detected from your QSF file's randomizer and block structure.")
+            st.caption(
+                "These were detected from your QSF file's randomizer and block structure. "
+                "Select the exact block names if you want them to match your survey flow."
+            )
 
             # Multi-select from available options
             selected = st.multiselect(
                 "Select conditions from QSF",
                 options=all_possible_conditions,
                 default=st.session_state.get("selected_conditions", []),
-                help="Select the blocks that represent different experimental conditions",
+                help="Pick the block names that correspond to experimental conditions (matches the QSF flow).",
                 key="condition_multiselect",
             )
             st.session_state["selected_conditions"] = selected
@@ -1416,7 +1567,10 @@ with tabs[2]:
 
         # Option to add custom conditions (but using a controlled interface)
         with st.expander("Add custom conditions (if not in QSF)", expanded=not bool(all_possible_conditions)):
-            st.caption("If your conditions aren't detected above, add them here.")
+            st.caption(
+                "If your conditions aren't detected above, add them here. Use names that match your survey flow "
+                "if you want alignment, but any descriptive labels will still work for simulation."
+            )
 
             # Get current custom conditions
             custom_conditions = st.session_state.get("custom_conditions", [])
@@ -1427,6 +1581,7 @@ with tabs[2]:
                     "New condition name",
                     key="new_condition_input",
                     placeholder="e.g., Control, Treatment, High, Low",
+                    help="Use the same spelling as your QSF block names if you want exact alignment.",
                 )
             with col_add2:
                 st.write("")  # Spacer
@@ -1459,6 +1614,8 @@ with tabs[2]:
         else:
             st.error("No conditions defined. Please select or add at least one condition.")
             all_conditions = ["Condition A"]  # Fallback
+
+        st.session_state["current_conditions"] = all_conditions
 
         # ========================================
         # STEP 2: DESIGN STRUCTURE
@@ -1611,6 +1768,50 @@ with tabs[2]:
         if not scales:
             scales = [{"name": "Main_DV", "num_items": 5, "scale_points": 7}]
 
+        # ========================================
+        # STEP 4: PRIMARY OUTCOMES & INDEPENDENT VARIABLES
+        # ========================================
+        st.markdown("---")
+        st.markdown("### Step 4: Confirm Primary Outcomes & Independent Variables")
+        st.caption(
+            "Choose the exact names you want to appear in the report. "
+            "If you want alignment with Qualtrics, use the same names as your QSF blocks or scale labels."
+        )
+
+        outcome_options = sorted({s.get("name", "").strip() for s in scales if s.get("name")})
+        existing_outcomes = _split_comma_list(st.session_state.get("prereg_outcomes", ""))
+        selected_outcomes = st.multiselect(
+            "Primary outcome variable(s) *",
+            options=outcome_options,
+            default=[o for o in existing_outcomes if o in outcome_options],
+            help="Select from detected scales to avoid typos (recommended).",
+        )
+        custom_outcomes = st.text_input(
+            "Add custom outcome names (comma-separated)",
+            value=", ".join([o for o in existing_outcomes if o not in outcome_options]),
+            help="Use this only if your outcome is not in the detected scale list.",
+        )
+        outcome_values = selected_outcomes + _split_comma_list(custom_outcomes)
+        st.session_state["prereg_outcomes"] = ", ".join(outcome_values)
+
+        iv_options = list(dict.fromkeys([f.get("name", "") for f in factors if f.get("name")]))
+        if "Condition" not in iv_options:
+            iv_options.append("Condition")
+        existing_iv = _split_comma_list(st.session_state.get("prereg_iv", ""))
+        selected_iv = st.multiselect(
+            "Independent variable(s) *",
+            options=iv_options,
+            default=[iv for iv in existing_iv if iv in iv_options],
+            help="Select from detected factors; add custom entries only if needed.",
+        )
+        custom_iv = st.text_input(
+            "Add custom independent variables (comma-separated)",
+            value=", ".join([iv for iv in existing_iv if iv not in iv_options]),
+            help="Use this only if your IV is not in the detected list.",
+        )
+        iv_values = selected_iv + _split_comma_list(custom_iv)
+        st.session_state["prereg_iv"] = ", ".join(iv_values)
+
         # Open-ended questions (optional)
         with st.expander("Open-ended Questions (optional)"):
             open_ended = inferred.get("open_ended_questions", [])
@@ -1635,15 +1836,19 @@ with tabs[2]:
 
         # Show condition list
         st.markdown(f"**Conditions:** {', '.join(all_conditions)}")
+        st.markdown(f"**Primary outcomes:** {st.session_state.get('prereg_outcomes', '—') or '—'}")
+        st.markdown(f"**Independent variables:** {st.session_state.get('prereg_iv', '—') or '—'}")
 
         # Validate and lock design
-        design_valid = len(all_conditions) >= 1 and len(scales) >= 1
+        outcomes_valid = bool(st.session_state.get("prereg_outcomes", "").strip())
+        iv_valid = bool(st.session_state.get("prereg_iv", "").strip())
+        design_valid = len(all_conditions) >= 1 and len(scales) >= 1 and outcomes_valid and iv_valid
 
         if design_valid:
             # Save to session state
             final_conditions = all_conditions
-            final_factors = factors if factors else [{"name": "Condition", "levels": all_conditions}]
-            final_scales = scales
+            final_factors = _normalize_factor_specs(factors, all_conditions)
+            final_scales = _normalize_scale_specs(scales)
             final_open_ended = inferred.get("open_ended_questions", [])
 
             # Determine randomization level string
@@ -1663,9 +1868,18 @@ with tabs[2]:
             }
             st.session_state["randomization_level"] = final_rand_level
 
-            st.success("Design configuration complete. Proceed to the **Generate** tab to run the simulation.")
+            st.success("Design configuration complete. Proceed to the **Generate** step to run the simulation.")
         else:
-            st.error("Please complete all required fields before proceeding.")
+            missing_bits = []
+            if not outcomes_valid:
+                missing_bits.append("primary outcome variable(s)")
+            if not iv_valid:
+                missing_bits.append("independent variable(s)")
+            if not all_conditions:
+                missing_bits.append("conditions")
+            if not scales:
+                missing_bits.append("scales")
+            st.error("Please complete all required fields before proceeding: " + ", ".join(missing_bits))
 
         # ========================================
         # ADVANCED: Variable Review (collapsed)
@@ -1710,14 +1924,18 @@ with tabs[2]:
                 )
                 st.session_state["variable_review_rows"] = variable_df.to_dict(orient="records")
 
+        _render_step_navigation(2, design_valid, "Generate")
+
 
 # -----------------------------
 # Tab 4: Generate (standard defaults; advanced controls optional)
 # -----------------------------
-with tabs[3]:
+if active_step == 3:
     inferred = st.session_state.get("inferred_design", None)
     if not inferred:
         st.info("Complete the previous steps first (upload QSF, then review).")
+        if st.button("Go to Design Setup", key="go_step3_from_step4"):
+            _go_to_step(2)
     else:
         st.subheader("Generate simulation")
         preview: Optional[QSFPreviewResult] = st.session_state.get("qsf_preview", None)
@@ -1729,6 +1947,7 @@ with tabs[3]:
             "Primary outcome variable(s)": bool(st.session_state.get("prereg_outcomes", "").strip()),
             "Independent variable(s)": bool(st.session_state.get("prereg_iv", "").strip()),
             "QSF uploaded": bool(preview and preview.success),
+            "Design configured": bool(st.session_state.get("inferred_design")),
         }
         completed = sum(required_fields.values())
         total_required = len(required_fields)
@@ -1739,6 +1958,8 @@ with tabs[3]:
         missing = [label for label, ok in required_fields.items() if not ok]
         if missing:
             st.info("Missing required fields: " + ", ".join(missing))
+            if st.button("Go to Design Setup to fix missing items", key="fix_missing_from_generate"):
+                _go_to_step(2)
 
         if not st.session_state.get("advanced_mode", False):
             demographics = STANDARD_DEFAULTS["demographics"].copy()
@@ -1826,8 +2047,13 @@ with tabs[3]:
         elif has_generated:
             status_placeholder.info("Simulation already generated for this session. Downloads are ready below.")
         can_generate = completed == total_required and not is_generating and not has_generated
-        if st.button("Generate simulated dataset", type="primary", disabled=not can_generate):
-            st.session_state["generation_requested"] = True
+        if is_generating:
+            st.button("Generating simulated dataset...", type="primary", disabled=True)
+        elif has_generated:
+            st.button("Simulation generated", type="primary", disabled=True)
+        else:
+            if st.button("Generate simulated dataset", type="primary", disabled=not can_generate):
+                st.session_state["generation_requested"] = True
 
         if st.session_state.get("generation_requested") and not is_generating:
             st.session_state["generation_requested"] = False
@@ -1844,13 +2070,24 @@ with tabs[3]:
                 )
             N = min(requested_n, MAX_SIMULATED_N)
 
+            if missing:
+                st.error("Generation blocked until all required fields are completed.")
+                st.session_state["is_generating"] = False
+                progress_placeholder.empty()
+                st.stop()
+
+            prereg_text = st.session_state.get("prereg_text_sanitized", "")
+
+            clean_scales = _normalize_scale_specs(inferred.get("scales", []))
+            clean_factors = _normalize_factor_specs(inferred.get("factors", []), inferred.get("conditions", []))
+
             engine = EnhancedSimulationEngine(
                 study_title=title,
                 study_description=desc,
                 sample_size=N,
                 conditions=inferred["conditions"],
-                factors=inferred["factors"],
-                scales=inferred["scales"],
+                factors=clean_factors,
+                scales=clean_scales,
                 additional_vars=[],
                 demographics=demographics,
                 attention_rate=attention_rate,
@@ -1887,7 +2124,7 @@ with tabs[3]:
                 schema_results = validate_schema(
                     df=df,
                     expected_conditions=inferred["conditions"],
-                    expected_scales=inferred["scales"],
+                    expected_scales=clean_scales,
                     expected_n=N,
                 )
 
@@ -2052,3 +2289,5 @@ with tabs[3]:
                             st.error(msg)
                 else:
                     st.caption("Instructor email not configured in secrets (INSTRUCTOR_NOTIFICATION_EMAIL).")
+
+        _render_step_navigation(3, True, "Finish")
