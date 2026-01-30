@@ -12,6 +12,9 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
+# Version identifier to help track deployed code
+__version__ = "2.1.0"  # Updated: 2026-01-30 - Fixed list/dict payload handling
+
 
 class LogLevel(Enum):
     """Log severity levels."""
@@ -178,7 +181,7 @@ class QSFPreviewParser:
         self.errors = []
         self.warnings = []
 
-        self._log(LogLevel.INFO, "PARSE_START", "Beginning QSF file parsing")
+        self._log(LogLevel.INFO, "PARSE_START", f"Beginning QSF file parsing (parser v{__version__})")
 
         # Attempt to parse JSON
         try:
@@ -300,20 +303,26 @@ class QSFPreviewParser:
     def _parse_blocks(self, element: Dict, blocks_map: Dict):
         """Parse block definitions.
 
-        Handles both QSF formats:
-        - Dict format: {"BL_123": {"Description": "Block 1", ...}}
-        - List format: [{"ID": "BL_123", "Description": "Block 1", ...}]
+        Handles all QSF block payload formats:
+        - List format (newer exports): [{"ID": "BL_123", "Description": "Block 1", ...}]
+        - Dict with Blocks key: {"Blocks": [...]}
+        - Dict format (older exports): {"0": {"ID": "BL_123", ...}, "1": {...}}
+        - Dict keyed by block ID: {"BL_123": {"Description": "Block 1", ...}}
         """
         try:
             payload = element.get('Payload', {})
             if payload is None:
                 payload = {}
+                self._log(LogLevel.INFO, "BLOCK", "Block payload is null, using empty dict")
 
-            # Handle list format (newer QSF exports)
+            # Handle nested Blocks key (some QSF exports wrap blocks in a dict)
             if isinstance(payload, dict) and isinstance(payload.get('Blocks'), (list, dict)):
                 payload = payload.get('Blocks', payload)
+                self._log(LogLevel.INFO, "BLOCK", "Extracted blocks from nested 'Blocks' key")
 
+            # Handle list format (newer QSF exports - most common)
             if isinstance(payload, list):
+                self._log(LogLevel.INFO, "BLOCK", f"Processing {len(payload)} blocks in list format")
                 for block_data in payload:
                     if isinstance(block_data, dict):
                         block_id = block_data.get('ID', '')
@@ -322,18 +331,29 @@ class QSFPreviewParser:
                         block_name = block_data.get('Description', f'Block {block_id}')
                         block_type = block_data.get('Type', 'Standard')
 
+                        # Handle BlockElements that could be None, list, or dict
+                        block_elements = block_data.get('BlockElements')
+                        if block_elements is None:
+                            block_elements = []
+                        elif isinstance(block_elements, dict):
+                            block_elements = list(block_elements.values())
+                        elif not isinstance(block_elements, list):
+                            block_elements = []
+
                         blocks_map[block_id] = {
                             'name': block_name,
                             'type': block_type,
-                            'elements': block_data.get('BlockElements', [])
+                            'elements': block_elements
                         }
 
                         self._log(
                             LogLevel.INFO, "BLOCK",
                             f"Found block: {block_name} (Type: {block_type})"
                         )
+
             # Handle dict format (older QSF exports)
             elif isinstance(payload, dict):
+                self._log(LogLevel.INFO, "BLOCK", f"Processing {len(payload)} blocks in dict format")
                 for dict_key, block_data in payload.items():
                     if isinstance(block_data, dict):
                         # Use the ID field if available, otherwise use the dict key
@@ -342,10 +362,19 @@ class QSFPreviewParser:
                         block_name = block_data.get('Description', f'Block {block_id}')
                         block_type = block_data.get('Type', 'Standard')
 
+                        # Handle BlockElements that could be None, list, or dict
+                        block_elements = block_data.get('BlockElements')
+                        if block_elements is None:
+                            block_elements = []
+                        elif isinstance(block_elements, dict):
+                            block_elements = list(block_elements.values())
+                        elif not isinstance(block_elements, list):
+                            block_elements = []
+
                         blocks_map[block_id] = {
                             'name': block_name,
                             'type': block_type,
-                            'elements': block_data.get('BlockElements', [])
+                            'elements': block_elements
                         }
                         # Also store with dict key for compatibility
                         if dict_key != block_id:
@@ -355,6 +384,11 @@ class QSFPreviewParser:
                             LogLevel.INFO, "BLOCK",
                             f"Found block: {block_name} (ID: {block_id}, Type: {block_type})"
                         )
+            else:
+                self._log(
+                    LogLevel.WARNING, "BLOCK_PARSE",
+                    f"Unexpected payload type: {type(payload).__name__}, expected list or dict"
+                )
         except Exception as e:
             self._log(LogLevel.WARNING, "BLOCK_PARSE", f"Error parsing blocks: {e}")
 
@@ -1238,6 +1272,7 @@ class QSFCorrections:
 
 # Export
 __all__ = [
+    '__version__',
     'QSFPreviewParser',
     'QSFPreviewResult',
     'QSFCorrections',
