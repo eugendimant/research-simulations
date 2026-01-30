@@ -6,11 +6,11 @@ with comprehensive error detection and logging for instructor review.
 """
 
 import json
-from typing import Dict, List, Any, Optional, Tuple
+import re
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-import re
+from typing import Any, Dict, List, Optional
 
 
 class LogLevel(Enum):
@@ -341,7 +341,6 @@ class QSFPreviewParser:
 
         question_type = payload.get('QuestionType', 'Unknown')
         selector = payload.get('Selector', '')
-        sub_selector = payload.get('SubSelector', '')
 
         # Determine question category
         category = self._categorize_question(question_type, selector)

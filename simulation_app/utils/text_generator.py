@@ -16,9 +16,9 @@ from __future__ import annotations
 
 import random
 import re
-from typing import Dict, List, Optional, Tuple, Any
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
+from typing import Dict, List, Optional, Tuple
 
 
 class ResponseSentiment(Enum):

@@ -8,8 +8,8 @@ QSF files are JSON-based exports from Qualtrics survey platform.
 """
 
 import json
-from typing import Dict, Any, List, Optional, Tuple
 import re
+from typing import Any, Dict, List
 
 
 def _normalize_survey_elements(qsf_data: Dict[str, Any]) -> List[Dict[str, Any]]:
