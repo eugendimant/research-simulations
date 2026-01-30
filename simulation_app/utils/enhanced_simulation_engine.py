@@ -818,7 +818,7 @@ class EnhancedSimulationEngine:
             "personas_used": sorted(list(set(assigned_personas))),
             "persona_distribution": {
                 p: assigned_personas.count(p) / len(assigned_personas) for p in set(assigned_personas)
-            },
+            } if assigned_personas else {},
             "exclusion_summary": {
                 "flagged_speed": int(sum(data["Flag_Speed"])),
                 "flagged_attention": int(sum(data["Flag_Attention"])),

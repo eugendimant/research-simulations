@@ -685,9 +685,10 @@ def _send_email_with_sendgrid(
     try:
         sg = SendGridAPIClient(api_key)
         resp = sg.send(mail)
-        if 200 <= int(getattr(resp, "status_code", 0)) < 300:
-            return True, f"Sent (status {resp.status_code})."
-        return False, f"SendGrid error (status {resp.status_code})."
+        status_code = getattr(resp, "status_code", 0)
+        if 200 <= int(status_code) < 300:
+            return True, f"Sent (status {status_code})."
+        return False, f"SendGrid error (status {status_code})."
     except Exception as e:
         return False, f"SendGrid send failed: {e}"
 
@@ -2033,6 +2034,8 @@ if active_step == 3:
             raw = json.loads(effects_json)
             if isinstance(raw, list):
                 for e in raw:
+                    if not isinstance(e, dict):
+                        continue  # Skip non-dict entries
                     effect_sizes.append(
                         EffectSizeSpec(
                             variable=str(e.get("variable", "")),
