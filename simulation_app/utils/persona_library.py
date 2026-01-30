@@ -14,11 +14,17 @@ Based on recent LLM simulation research:
 - Westwood (2025) - "Existential threat of LLMs to survey research" PNAS
 """
 
+import hashlib
 import random
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
 import numpy as np
+
+
+def _stable_int_hash(s: str) -> int:
+    """Generate a stable integer hash that is reproducible across Python sessions."""
+    return int(hashlib.md5(s.encode("utf-8")).hexdigest()[:8], 16)
 
 
 @dataclass
@@ -986,8 +992,8 @@ class PersonaLibrary:
         Returns:
             Dict of trait_name -> trait_value (0-1 scale)
         """
-        # Create unique seed for this participant
-        unique_seed = hash(f"{study_seed}_{participant_id}_{persona.name}") % (2**32)
+        # Create unique seed for this participant using stable hash for reproducibility
+        unique_seed = _stable_int_hash(f"{study_seed}_{participant_id}_{persona.name}") % (2**31)
         rng = np.random.RandomState(unique_seed)
 
         traits = {}

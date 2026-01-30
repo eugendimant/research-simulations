@@ -424,7 +424,10 @@ def _generate_simple_audit_log(metadata: Dict[str, Any], df: pd.DataFrame) -> io
     lines.append(f"QSF File Hash: {file_hashes.get('qsf', 'N/A')}")
 
     for sh in file_hashes.get('screenshots', []):
-        lines.append(f"  - {sh.get('name', 'Unknown')}: {sh.get('hash', 'N/A')}")
+        if isinstance(sh, dict):
+            lines.append(f"  - {sh.get('name', 'Unknown')}: {sh.get('hash', 'N/A')}")
+        elif isinstance(sh, str):
+            lines.append(f"  - Screenshot: {sh}")
 
     lines.extend([
         "",

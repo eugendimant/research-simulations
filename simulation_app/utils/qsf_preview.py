@@ -514,7 +514,7 @@ class QSFPreviewParser:
         # Check for numeric patterns (1, 2, 3... or 1-Strongly Disagree)
         numeric_count = 0
         for choice in choices:
-            choice_clean = choice.strip().lower()
+            choice_clean = str(choice).strip().lower()
             # Check if starts with number
             if choice_clean and (choice_clean[0].isdigit() or
                                  choice_clean.startswith('-') or

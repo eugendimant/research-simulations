@@ -508,6 +508,10 @@ class OpenEndedTextGenerator:
                 return ResponseSentiment.NEGATIVE
             return ResponseSentiment.NEUTRAL
 
+        # Guard against division by zero for single-point scales
+        if scale_max <= 1:
+            return ResponseSentiment.NEUTRAL
+
         # Normalize to 0-1 scale
         normalized = (numeric_response - 1) / (scale_max - 1)
 

@@ -653,7 +653,14 @@ class EnhancedSimulationEngine:
             scale_name = scale_name_raw.replace(" ", "_")
             scale_points = int(scale.get("scale_points", 7))
             num_items = int(scale.get("num_items", 5))
-            reverse_items = set(int(x) for x in (scale.get("reverse_items", []) or []))
+            # Safely parse reverse_items - skip invalid values
+            reverse_items_raw = scale.get("reverse_items", []) or []
+            reverse_items = set()
+            for x in reverse_items_raw:
+                try:
+                    reverse_items.add(int(x))
+                except (ValueError, TypeError):
+                    pass  # Skip invalid reverse item values
 
             for item_num in range(1, num_items + 1):
                 col_name = f"{scale_name}_{item_num}"
@@ -701,10 +708,17 @@ class EnhancedSimulationEngine:
             data[var_name] = values
             self.column_info.append((var_name, f"{var_name_raw} ({var_min}-{var_max})"))
 
-        has_product_factor = any(
-            ("hedonic" in str(f.get("levels", [])).lower()) or ("utilitarian" in str(f.get("levels", [])).lower())
-            for f in (self.factors or [])
-        )
+        # Check if any factor has hedonic/utilitarian levels
+        has_product_factor = False
+        for f in (self.factors or []):
+            levels = f.get("levels", []) or []
+            for level in levels:
+                level_lower = str(level).lower()
+                if "hedonic" in level_lower or "utilitarian" in level_lower:
+                    has_product_factor = True
+                    break
+            if has_product_factor:
+                break
         if has_product_factor:
             hedonic_values: List[int] = []
             for i in range(n):
