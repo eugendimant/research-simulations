@@ -897,6 +897,29 @@ st.markdown(
 )
 st.caption(f"Version {APP_VERSION} · Build {APP_BUILD_TIMESTAMP}")
 
+STEP_LABELS = ["1. Study Info", "2. Upload Files", "3. Design Setup", "4. Generate"]
+
+
+def _get_step_completion() -> Dict[str, bool]:
+    """Get completion status for each step."""
+    preview = st.session_state.get("qsf_preview", None)
+    return {
+        "study_title": bool(st.session_state.get("study_title", "").strip()),
+        "study_description": bool(st.session_state.get("study_description", "").strip()),
+        "sample_size": int(st.session_state.get("sample_size", 0)) >= 10,
+        "qsf_uploaded": bool(preview and preview.success),
+        "conditions_set": bool(st.session_state.get("selected_conditions") or st.session_state.get("custom_conditions")),
+        "outcomes_set": bool(st.session_state.get("prereg_outcomes", "").strip()),
+        "iv_set": bool(st.session_state.get("prereg_iv", "").strip()),
+        "design_ready": bool(st.session_state.get("inferred_design")),
+    }
+
+
+def _go_to_step(step_index: int) -> None:
+    st.session_state["active_step"] = max(0, min(step_index, len(STEP_LABELS) - 1))
+    st.rerun()
+
+
 with st.expander("What this tool delivers", expanded=True):
     st.markdown("""
 ### Overview
@@ -1020,14 +1043,8 @@ with st.sidebar:
         _go_to_step(3)
 
 
-STEP_LABELS = ["1. Study Info", "2. Upload Files", "3. Design Setup", "4. Generate"]
-
 if "active_step" not in st.session_state:
     st.session_state["active_step"] = 0
-
-def _go_to_step(step_index: int) -> None:
-    st.session_state["active_step"] = max(0, min(step_index, len(STEP_LABELS) - 1))
-    st.rerun()
 
 selected_step = st.radio(
     "Workflow",
@@ -1038,21 +1055,6 @@ selected_step = st.radio(
 )
 st.session_state["active_step"] = STEP_LABELS.index(selected_step)
 active_step = st.session_state["active_step"]
-
-# Helper function for step completion
-def _get_step_completion() -> Dict[str, bool]:
-    """Get completion status for each step."""
-    preview = st.session_state.get("qsf_preview", None)
-    return {
-        "study_title": bool(st.session_state.get("study_title", "").strip()),
-        "study_description": bool(st.session_state.get("study_description", "").strip()),
-        "sample_size": int(st.session_state.get("sample_size", 0)) >= 10,
-        "qsf_uploaded": bool(preview and preview.success),
-        "conditions_set": bool(st.session_state.get("selected_conditions") or st.session_state.get("custom_conditions")),
-        "outcomes_set": bool(st.session_state.get("prereg_outcomes", "").strip()),
-        "iv_set": bool(st.session_state.get("prereg_iv", "").strip()),
-        "design_ready": bool(st.session_state.get("inferred_design")),
-    }
 
 
 def _get_condition_candidates(
