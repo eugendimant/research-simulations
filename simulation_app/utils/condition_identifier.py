@@ -237,14 +237,20 @@ class EnhancedConditionIdentifier:
                             }
                 # Handle dict format (older QSF exports)
                 elif isinstance(payload, dict):
-                    for block_id, block_data in payload.items():
+                    for dict_key, block_data in payload.items():
                         if isinstance(block_data, dict):
+                            # Use the ID field if available, otherwise use the dict key
+                            # Flow elements reference blocks by ID field
+                            block_id = block_data.get('ID', dict_key)
                             blocks[block_id] = {
                                 'name': block_data.get('Description', f'Block {block_id}'),
                                 'type': block_data.get('Type', 'Standard'),
                                 'elements': block_data.get('BlockElements', []),
                                 'options': block_data.get('Options', {}),
                             }
+                            # Also store with dict key for compatibility
+                            if dict_key != block_id:
+                                blocks[dict_key] = blocks[block_id]
         return blocks
 
     def _extract_questions(self, elements: List[Dict]) -> Dict[str, Dict]:
@@ -448,6 +454,23 @@ class EnhancedConditionIdentifier:
                 rand_info = self._parse_block_randomizer(item, blocks_map, depth)
                 randomizers.append(rand_info)
 
+                # Extract conditions if SubSet=1 (between-subjects assignment)
+                # Also check sub_set value directly to handle string "1" case
+                is_between_subjects = (
+                    rand_info.get('randomization_type') == 'present_one' or
+                    rand_info.get('sub_set') == 1 or
+                    str(rand_info.get('sub_set', '')) == '1'
+                )
+                if is_between_subjects:
+                    for branch in rand_info.get('branches', []):
+                        raw_conditions.append({
+                            'name': branch.get('name', ''),
+                            'block_id': branch.get('block_id', ''),
+                            'source': 'BlockRandomizer',
+                            'randomizer_id': rand_info.get('flow_id', ''),
+                            'confidence': 0.85,  # High confidence for BlockRandomizer-based detection
+                        })
+
             elif flow_type == 'Branch':
                 # Branches can also indicate conditions
                 branch_info = self._parse_branch(item, blocks_map)
@@ -529,13 +552,52 @@ class EnhancedConditionIdentifier:
         blocks_map: Dict[str, Dict],
         depth: int,
     ) -> Dict:
-        """Parse a BlockRandomizer element."""
-        # BlockRandomizer randomizes the order of blocks
-        block_ids = item.get('BlockIDs', [])
+        """Parse a BlockRandomizer element.
+
+        BlockRandomizer with SubSet=1 randomly assigns participants to one of the blocks,
+        making each block a condition. This is a common way to implement between-subjects
+        designs in Qualtrics.
+        """
+        flow_id = item.get('FlowID', item.get('ID', ''))
+        sub_set = item.get('SubSet', None)
+        randomize_all = item.get('RandomizeAll', False)
+
+        # Get the blocks being randomized
+        branches = []
+        sub_flow = item.get('Flow', [])
+        for sub_item in sub_flow:
+            if isinstance(sub_item, dict):
+                sub_type = sub_item.get('Type', '')
+                if sub_type in ('Standard', 'Block'):
+                    block_id = sub_item.get('ID', '')
+                    block_name = blocks_map.get(block_id, {}).get('name', block_id)
+                    branches.append({
+                        'type': 'block',
+                        'block_id': block_id,
+                        'name': block_name,
+                    })
+
+        # Determine randomization type based on SubSet
+        # SubSet=1 means one block per participant (between-subjects conditions)
+        # SubSet=N>1 or "All" means multiple blocks per participant (within-subjects)
+        # Note: SubSet can be int or string depending on QSF version
+        rand_type = 'present_one'
+        if sub_set is not None:
+            sub_set_str = str(sub_set).lower()
+            if sub_set_str == '1':
+                rand_type = 'present_one'  # Between-subjects: each participant sees one
+            elif sub_set_str == 'all' or randomize_all:
+                rand_type = 'present_all'  # All blocks shown (order randomized)
+            elif sub_set_str.isdigit() and int(sub_set_str) > 1:
+                rand_type = 'present_multiple'
+
         return {
-            'flow_id': item.get('FlowID', ''),
-            'type': 'block_order_randomizer',
-            'block_ids': block_ids,
+            'flow_id': flow_id,
+            'type': 'block_randomizer',
+            'randomization_type': rand_type,
+            'sub_set': sub_set,
+            'num_branches': len(branches),
+            'branches': branches,
             'depth': depth,
         }
 
