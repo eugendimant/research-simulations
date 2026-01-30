@@ -58,7 +58,6 @@ from utils.text_generator import (
     PersonaTextTraits,
     create_text_generator,
 )
-from utils.spanish_learning_plan import build_spanish_learning_plan
 
 
 # -----------------------------
@@ -1025,79 +1024,6 @@ with tabs[0]:
         st.session_state["team_name"] = team_name
         st.session_state["team_members_raw"] = members
 
-    st.markdown("---")
-    with st.expander("Optional: Spanish Learning Optimization", expanded=False):
-        st.caption(
-            "Generate a tailored Spanish learning plan focused on advanced vocabulary, grammar reinforcement, "
-            "and output practice. The plan will be included in the download package."
-        )
-        include_learning_plan = st.checkbox(
-            "Include Spanish Learning Plan",
-            value=st.session_state.get("include_learning_plan", False),
-        )
-        st.session_state["include_learning_plan"] = include_learning_plan
-
-        if include_learning_plan:
-            st.text_area(
-                "Current comfort-zone topics",
-                value=st.session_state.get("learning_comfort_topics", "news, podcasts"),
-                help="List the content types you already consume regularly.",
-                key="learning_comfort_topics",
-                height=80,
-            )
-            st.multiselect(
-                "New vocabulary domains to prioritize",
-                options=[
-                    "Cultura y sociedad",
-                    "Salud y bienestar",
-                    "Trabajo y carrera",
-                    "Vida cotidiana avanzada",
-                    "Tecnología aplicada",
-                    "Creatividad y arte",
-                    "Economía personal",
-                ],
-                default=st.session_state.get(
-                    "learning_target_domains",
-                    ["Trabajo y carrera", "Vida cotidiana avanzada", "Cultura y sociedad"],
-                ),
-                key="learning_target_domains",
-            )
-            st.multiselect(
-                "Grammar focus areas",
-                options=[
-                    "Género y concordancia",
-                    "Tiempos verbales",
-                    "Conectores avanzados",
-                    "Pronombres y clíticos",
-                ],
-                default=st.session_state.get(
-                    "learning_grammar_focus",
-                    ["Género y concordancia", "Tiempos verbales"],
-                ),
-                key="learning_grammar_focus",
-            )
-            st.multiselect(
-                "Output practice modes",
-                options=["Escritura", "Habla", "Diálogo"],
-                default=st.session_state.get("learning_output_modes", ["Escritura", "Habla"]),
-                key="learning_output_modes",
-            )
-            st.selectbox(
-                "Practice intensity",
-                options=["Light", "Standard", "Intensive"],
-                index=["Light", "Standard", "Intensive"].index(
-                    st.session_state.get("learning_intensity", "Standard")
-                ),
-                key="learning_intensity",
-            )
-            st.text_area(
-                "Learner notes (optional)",
-                value=st.session_state.get("learning_notes", ""),
-                key="learning_notes",
-                height=80,
-                help="Add any additional preferences or recurring errors to emphasize.",
-            )
-
     # Next step button
     st.markdown("---")
     col_next1, col_next2, col_next3 = st.columns([1, 2, 1])
@@ -1907,18 +1833,6 @@ with tabs[3]:
                     },
                 )
                 instructor_bytes = instructor_report.encode("utf-8")
-                learning_plan_md = None
-                if st.session_state.get("include_learning_plan", False):
-                    learning_profile = {
-                        "comfort_topics": st.session_state.get("learning_comfort_topics", ""),
-                        "target_domains": st.session_state.get("learning_target_domains", []),
-                        "grammar_focus": st.session_state.get("learning_grammar_focus", []),
-                        "output_modes": st.session_state.get("learning_output_modes", []),
-                        "intensity": st.session_state.get("learning_intensity", "Standard"),
-                        "learner_notes": st.session_state.get("learning_notes", ""),
-                    }
-                    learning_plan_md = build_spanish_learning_plan(learning_profile)
-                    metadata["learning_plan_profile"] = learning_profile
 
                 files = {
                     "Simulated.csv": csv_bytes,
@@ -1928,8 +1842,6 @@ with tabs[3]:
                     "Schema_Validation.json": _safe_json(schema_results).encode("utf-8"),
                     "Instructor_Report.md": instructor_bytes,
                 }
-                if learning_plan_md:
-                    files["Spanish_Learning_Plan.md"] = learning_plan_md.encode("utf-8")
                 zip_bytes = _bytes_to_zip(files)
 
                 st.session_state["last_df"] = df

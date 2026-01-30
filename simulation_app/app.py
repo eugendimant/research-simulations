@@ -829,7 +829,13 @@ st.markdown(
 )
 st.caption(f"Version {APP_VERSION} · Build {APP_BUILD_TIMESTAMP}")
 
-STEP_LABELS = ["1. Study Info", "2. Upload Files", "3. Design Setup", "4. Generate"]
+STEP_LABELS = ["Study Info", "Upload Files", "Design Setup", "Generate"]
+STEP_DESCRIPTIONS = [
+    "Basic study details",
+    "Upload your QSF",
+    "Configure design",
+    "Run simulation"
+]
 
 
 def _get_step_completion() -> Dict[str, bool]:
@@ -953,40 +959,179 @@ with st.sidebar:
     st.caption(f"Independent variables: {st.session_state.get('prereg_iv', '—') or '—'}")
 
     st.divider()
-    st.subheader("Workflow Checklist")
+    st.subheader("Progress")
     completion = _get_step_completion()
     step1_ready = completion["study_title"] and completion["study_description"] and completion["sample_size"]
     step2_ready = completion["qsf_uploaded"]
     step3_ready = completion["conditions_set"] and completion["outcomes_set"] and completion["iv_set"]
     step4_ready = completion["design_ready"]
 
-    st.caption(f"Step 1: {'✅' if step1_ready else '⚠️'}")
-    st.caption(f"Step 2: {'✅' if step2_ready else '⚠️'}")
-    st.caption(f"Step 3: {'✅' if step3_ready else '⚠️'}")
-    st.caption(f"Step 4: {'✅' if step4_ready else '⚠️'}")
+    # Calculate overall progress
+    steps_complete = sum([step1_ready, step2_ready, step3_ready, step4_ready])
+    st.progress(steps_complete / 4, text=f"{steps_complete}/4 steps complete")
 
-    if not step1_ready and st.button("Go to Step 1", key="jump_step1"):
-        _go_to_step(0)
-    if step1_ready and not step2_ready and st.button("Go to Step 2", key="jump_step2"):
-        _go_to_step(1)
-    if step2_ready and not step3_ready and st.button("Go to Step 3", key="jump_step3"):
-        _go_to_step(2)
-    if step3_ready and not step4_ready and st.button("Go to Step 4", key="jump_step4"):
-        _go_to_step(3)
+    # Quick jump buttons for incomplete steps
+    if not step1_ready:
+        if st.button("Complete Step 1", key="jump_step1", use_container_width=True):
+            _go_to_step(0)
+    elif not step2_ready:
+        if st.button("Complete Step 2", key="jump_step2", use_container_width=True):
+            _go_to_step(1)
+    elif not step3_ready:
+        if st.button("Complete Step 3", key="jump_step3", use_container_width=True):
+            _go_to_step(2)
+    elif not step4_ready:
+        if st.button("Go to Generate", key="jump_step4", use_container_width=True):
+            _go_to_step(3)
 
 
 if "active_step" not in st.session_state:
     st.session_state["active_step"] = 0
 
-selected_step = st.radio(
-    "Workflow",
-    STEP_LABELS,
-    index=st.session_state.get("active_step", 0),
-    horizontal=True,
-    key="workflow_step",
-)
-st.session_state["active_step"] = STEP_LABELS.index(selected_step)
 active_step = st.session_state["active_step"]
+
+# Get step completion status
+completion = _get_step_completion()
+step_complete = [
+    completion["study_title"] and completion["study_description"] and completion["sample_size"],
+    completion["qsf_uploaded"],
+    completion["conditions_set"] and completion["outcomes_set"] and completion["iv_set"],
+    completion["design_ready"],
+]
+
+
+def _render_workflow_stepper():
+    """Render a visual workflow stepper with progress indicators."""
+    st.markdown("""
+    <style>
+    .stepper-container {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        margin: 1rem 0 1.5rem 0;
+        padding: 0 1rem;
+    }
+    .step-item {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        flex: 1;
+        position: relative;
+        cursor: pointer;
+    }
+    .step-circle {
+        width: 48px;
+        height: 48px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 600;
+        font-size: 1.1rem;
+        margin-bottom: 0.5rem;
+        transition: all 0.2s;
+    }
+    .step-circle.completed {
+        background: #10b981;
+        color: white;
+    }
+    .step-circle.current {
+        background: #3b82f6;
+        color: white;
+        box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.3);
+    }
+    .step-circle.pending {
+        background: #e5e7eb;
+        color: #6b7280;
+    }
+    .step-label {
+        font-weight: 500;
+        font-size: 0.9rem;
+        text-align: center;
+        color: #374151;
+    }
+    .step-description {
+        font-size: 0.75rem;
+        color: #6b7280;
+        text-align: center;
+    }
+    .step-connector {
+        position: absolute;
+        top: 24px;
+        left: 50%;
+        width: 100%;
+        height: 3px;
+        background: #e5e7eb;
+        z-index: -1;
+    }
+    .step-connector.completed {
+        background: #10b981;
+    }
+    .step-item:last-child .step-connector {
+        display: none;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+    # Render stepper using Streamlit columns for interactivity
+    cols = st.columns(len(STEP_LABELS))
+
+    for i, (label, desc) in enumerate(zip(STEP_LABELS, STEP_DESCRIPTIONS)):
+        with cols[i]:
+            # Determine step status
+            is_completed = step_complete[i]
+            is_current = i == active_step
+
+            # Step indicator and status
+            if is_completed:
+                status_icon = "✓"
+                status_color = "#10b981"  # green
+            elif is_current:
+                status_icon = str(i + 1)
+                status_color = "#3b82f6"  # blue
+            else:
+                status_icon = str(i + 1)
+                status_color = "#9ca3af"  # gray
+
+            # Create clickable step
+            col_content = f"""
+            <div style="text-align: center; padding: 0.5rem;">
+                <div style="
+                    width: 44px;
+                    height: 44px;
+                    border-radius: 50%;
+                    background: {status_color};
+                    color: white;
+                    display: inline-flex;
+                    align-items: center;
+                    justify-content: center;
+                    font-weight: 600;
+                    font-size: 1.1rem;
+                    margin-bottom: 0.5rem;
+                    {'box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.3);' if is_current else ''}
+                ">{status_icon}</div>
+                <div style="font-weight: {'600' if is_current else '500'}; font-size: 0.9rem; color: {'#1f2937' if is_current else '#374151'};">
+                    {label}
+                </div>
+                <div style="font-size: 0.75rem; color: #6b7280;">{desc}</div>
+            </div>
+            """
+            st.markdown(col_content, unsafe_allow_html=True)
+
+            # Navigation button under each step
+            btn_label = "Current" if is_current else ("Go" if is_completed or i <= active_step + 1 else "")
+            if btn_label and not is_current:
+                if st.button(f"Go to Step {i + 1}", key=f"stepper_nav_{i}", use_container_width=True):
+                    _go_to_step(i)
+            elif is_current:
+                st.caption("You are here")
+
+
+# Render the workflow stepper
+_render_workflow_stepper()
+
+# Show what's missing for current step
+st.markdown("---")
 
 
 def _get_condition_candidates(
@@ -1013,18 +1158,30 @@ def _get_condition_candidates(
 
 
 def _render_step_navigation(step_index: int, can_next: bool, next_label: str) -> None:
+    """Render navigation buttons at the bottom of each step."""
     st.markdown("---")
-    col_back, col_middle, col_next = st.columns([1, 2, 1])
-    with col_back:
-        if step_index > 0 and st.button("← Back", key=f"nav_back_{step_index}"):
-            _go_to_step(step_index - 1)
-    with col_middle:
-        if not can_next:
-            st.caption("Complete required fields to unlock the next step.")
-    with col_next:
-        if step_index < len(STEP_LABELS) - 1:
-            if st.button(f"{next_label} →", key=f"nav_next_{step_index}", disabled=not can_next):
-                _go_to_step(step_index + 1)
+
+    # Create a prominent navigation section
+    if step_index < len(STEP_LABELS) - 1:
+        # Not on final step
+        col_back, col_spacer, col_next = st.columns([1, 1, 2])
+        with col_back:
+            if step_index > 0:
+                if st.button("← Previous Step", key=f"nav_back_{step_index}", use_container_width=True):
+                    _go_to_step(step_index - 1)
+        with col_next:
+            if can_next:
+                if st.button(f"Continue to {next_label} →", key=f"nav_next_{step_index}", type="primary", use_container_width=True):
+                    _go_to_step(step_index + 1)
+            else:
+                st.button(f"Continue to {next_label} →", key=f"nav_next_disabled_{step_index}", disabled=True, use_container_width=True)
+                st.caption("Complete required fields above to continue")
+    else:
+        # On final step - just show back button
+        col_back, col_spacer = st.columns([1, 3])
+        with col_back:
+            if st.button("← Previous Step", key=f"nav_back_{step_index}", use_container_width=True):
+                _go_to_step(step_index - 1)
 
 
 def _get_total_conditions() -> int:
@@ -1035,7 +1192,7 @@ def _get_total_conditions() -> int:
 
 
 # ========================================
-# UNIFIED STATUS PANEL - Shows progress across all tabs
+# UNIFIED STATUS PANEL - Shows progress across all steps
 # ========================================
 def _render_status_panel():
     """Render a unified status panel showing all required fields."""
@@ -1054,19 +1211,19 @@ def _render_status_panel():
     # Missing fields with clickable guidance
     missing = []
     if not completion["study_title"]:
-        missing.append(("Study title", "Tab 1"))
+        missing.append(("Study title", "Step 1"))
     if not completion["study_description"]:
-        missing.append(("Study description", "Tab 1"))
+        missing.append(("Study description", "Step 1"))
     if not completion["sample_size"]:
-        missing.append(("Sample size (≥10)", "Tab 1"))
+        missing.append(("Sample size (minimum 10)", "Step 1"))
     if not completion["qsf_uploaded"]:
-        missing.append(("QSF file upload", "Tab 2"))
+        missing.append(("QSF file upload", "Step 2"))
     if not completion["primary_outcome"]:
-        missing.append(("Primary outcome variable", "Tab 2"))
+        missing.append(("Primary outcome variable", "Step 2"))
     if not completion["independent_var"]:
-        missing.append(("Independent variable", "Tab 2"))
+        missing.append(("Independent variable", "Step 2"))
     if not completion["conditions_set"]:
-        missing.append(("Experimental conditions", "Tab 3"))
+        missing.append(("Experimental conditions", "Step 3"))
 
     if missing:
         missing_text = " · ".join([f"**{name}** ({loc})" for name, loc in missing])
@@ -1085,21 +1242,18 @@ def _render_status_panel():
     col4.metric("QSF Status", "✓ Uploaded" if preview and preview.success else "Not uploaded")
 
 
-tabs = st.tabs(["1. Study Info", "2. Upload Files", "3. Design Setup", "4. Generate"])
-
-
 # -----------------------------
-# Tab 1: Study Info (required basics)
+# Step 1: Study Info (required basics)
 # -----------------------------
 if active_step == 0:
-    st.subheader("Step 1: Study Information")
-
-    # Progress indicator for this step
+    # Step header with status
     completion = _get_step_completion()
     step1_done = completion["study_title"] and completion["study_description"] and completion["sample_size"]
 
+    st.markdown("### Step 1: Study Information")
+
     if step1_done:
-        st.success("Step 1 complete! Proceed to **Upload Files**.")
+        st.success("All required fields complete. Click **Continue to Upload Files** below to proceed.")
     else:
         missing = []
         if not completion["study_title"]:
@@ -1107,8 +1261,8 @@ if active_step == 0:
         if not completion["study_description"]:
             missing.append("Study description")
         if not completion["sample_size"]:
-            missing.append("Sample size")
-        st.warning(f"Required fields missing: {', '.join(missing)}")
+            missing.append("Sample size (minimum 10)")
+        st.info(f"**Complete these fields to continue:** {', '.join(missing)}")
 
     st.markdown("---")
 
@@ -1160,102 +1314,30 @@ if active_step == 0:
         st.session_state["team_name"] = team_name
         st.session_state["team_members_raw"] = members
 
-    st.markdown("---")
-    with st.expander("Optional: Spanish Learning Optimization", expanded=False):
-        st.caption(
-            "Generate a tailored Spanish learning plan focused on advanced vocabulary, grammar reinforcement, "
-            "and output practice. The plan will be included in the download package."
-        )
-        include_learning_plan = st.checkbox(
-            "Include Spanish Learning Plan",
-            value=st.session_state.get("include_learning_plan", False),
-        )
-        st.session_state["include_learning_plan"] = include_learning_plan
-
-        if include_learning_plan:
-            st.text_area(
-                "Current comfort-zone topics",
-                value=st.session_state.get("learning_comfort_topics", "news, podcasts"),
-                help="List the content types you already consume regularly.",
-                key="learning_comfort_topics",
-                height=80,
-            )
-            st.multiselect(
-                "New vocabulary domains to prioritize",
-                options=[
-                    "Cultura y sociedad",
-                    "Salud y bienestar",
-                    "Trabajo y carrera",
-                    "Vida cotidiana avanzada",
-                    "Tecnología aplicada",
-                    "Creatividad y arte",
-                    "Economía personal",
-                ],
-                default=st.session_state.get(
-                    "learning_target_domains",
-                    ["Trabajo y carrera", "Vida cotidiana avanzada", "Cultura y sociedad"],
-                ),
-                key="learning_target_domains",
-            )
-            st.multiselect(
-                "Grammar focus areas",
-                options=[
-                    "Género y concordancia",
-                    "Tiempos verbales",
-                    "Conectores avanzados",
-                    "Pronombres y clíticos",
-                ],
-                default=st.session_state.get(
-                    "learning_grammar_focus",
-                    ["Género y concordancia", "Tiempos verbales"],
-                ),
-                key="learning_grammar_focus",
-            )
-            st.multiselect(
-                "Output practice modes",
-                options=["Escritura", "Habla", "Diálogo"],
-                default=st.session_state.get("learning_output_modes", ["Escritura", "Habla"]),
-                key="learning_output_modes",
-            )
-            st.selectbox(
-                "Practice intensity",
-                options=["Light", "Standard", "Intensive"],
-                index=["Light", "Standard", "Intensive"].index(
-                    st.session_state.get("learning_intensity", "Standard")
-                ),
-                key="learning_intensity",
-            )
-            st.text_area(
-                "Learner notes (optional)",
-                value=st.session_state.get("learning_notes", ""),
-                key="learning_notes",
-                height=80,
-                help="Add any additional preferences or recurring errors to emphasize.",
-            )
-
     _render_step_navigation(0, step1_done, "Upload Files")
 
 
 # -----------------------------
-# Tab 2: Upload Files (QSF + Study Design Info)
+# Step 2: Upload Files (QSF + Study Design Info)
 # -----------------------------
 if active_step == 1:
-    st.subheader("Step 2: Upload Files")
-
     # Check if Step 1 is complete
     completion = _get_step_completion()
     step1_done = completion["study_title"] and completion["study_description"] and completion["sample_size"]
+    step2_done = completion["qsf_uploaded"]
+
+    st.markdown("### Step 2: Upload Files")
 
     if not step1_done:
         st.error("Please complete **Step 1: Study Info** first before uploading files.")
-        if st.button("Go to Study Info", key="go_step1_from_step2"):
+        if st.button("← Go to Step 1: Study Info", key="go_step1_from_step2", type="primary"):
             _go_to_step(0)
         st.stop()
 
     if step2_done:
-        st.success("QSF uploaded and parsed successfully! Proceed to **Design Setup**.")
+        st.success("QSF file uploaded successfully. Click **Continue to Design Setup** below to proceed.")
     else:
-        st.warning("Upload your QSF file below to continue.")
+        st.info("**Upload your Qualtrics QSF file below to continue.**")
 
     st.markdown("---")
 
@@ -1542,22 +1624,23 @@ if active_step == 1:
 
 
 # -----------------------------
-# Tab 3: Design Setup (conditions, factors, scales)
+# Step 3: Design Setup (conditions, factors, scales)
 # -----------------------------
 if active_step == 2:
     preview: Optional[QSFPreviewResult] = st.session_state.get("qsf_preview", None)
     enhanced_analysis: Optional[DesignAnalysisResult] = st.session_state.get("enhanced_analysis", None)
 
+    st.markdown("### Step 3: Design Setup")
+
     if not preview:
-        st.warning("⚠️ Please upload a QSF file first to configure your design.")
-        st.info("Upload a QSF file in the 'Upload Files' step to populate the design configuration.")
-        if st.button("Go to Upload Files", key="go_step2_from_step3"):
+        st.error("Please upload a QSF file first before configuring your design.")
+        if st.button("← Go to Step 2: Upload Files", key="go_step2_from_step3", type="primary"):
             _go_to_step(1)
         _render_step_navigation(2, False, "Generate")
-        st.stop()  # Don't continue rendering Tab 3 if no preview
+        st.stop()  # Don't continue rendering Step 3 if no preview
 
     # If we reach here, preview exists
-    inferred = basic_inferred
+    inferred = st.session_state.get("inferred_design", {})
 
     st.markdown("---")
 
@@ -1952,11 +2035,13 @@ if active_step == 2:
 
 
 # -----------------------------
-# Tab 4: Generate (standard defaults; advanced controls optional)
+# Step 4: Generate (standard defaults; advanced controls optional)
 # -----------------------------
 if active_step == 3:
     inferred = st.session_state.get("inferred_design", None)
     preview: Optional[QSFPreviewResult] = st.session_state.get("qsf_preview", None)
+
+    st.markdown("### Step 4: Generate Simulation")
 
     # Comprehensive pre-validation
     completion = _get_step_completion()
@@ -1971,13 +2056,13 @@ if active_step == 3:
     )
 
     if not inferred:
-        st.info("Complete the previous steps first (upload QSF, then review).")
-        if st.button("Go to Design Setup", key="go_step3_from_step4"):
+        st.error("Please complete the previous steps first to configure your design.")
+        if st.button("← Go to Step 3: Design Setup", key="go_step3_from_step4", type="primary"):
             _go_to_step(2)
     else:
-        st.subheader("Generate simulation")
         preview: Optional[QSFPreviewResult] = st.session_state.get("qsf_preview", None)
 
+        # Check for missing fields
         required_fields = {
             "Study title": bool(st.session_state.get("study_title", "").strip()),
             "Study description": bool(st.session_state.get("study_description", "").strip()),
@@ -1989,15 +2074,16 @@ if active_step == 3:
         }
         completed = sum(required_fields.values())
         total_required = len(required_fields)
-        st.progress(
-            completed / total_required,
-            text=f"Setup completion: {completed}/{total_required} required fields filled",
-        )
+
         missing = [label for label, ok in required_fields.items() if not ok]
         if missing:
-            st.info("Missing required fields: " + ", ".join(missing))
-            if st.button("Go to Design Setup to fix missing items", key="fix_missing_from_generate"):
-                _go_to_step(2)
+            st.warning(f"**Missing required fields:** {', '.join(missing)}")
+            col1, col2 = st.columns([1, 1])
+            with col1:
+                if st.button("← Go to Step 3: Design Setup", key="fix_missing_from_generate", use_container_width=True):
+                    _go_to_step(2)
+        else:
+            st.success("All required fields are complete. You can generate your simulation.")
 
         if not st.session_state.get("advanced_mode", False):
             demographics = STANDARD_DEFAULTS["demographics"].copy()
@@ -2055,23 +2141,23 @@ if active_step == 3:
         st.markdown(f"**Primary Outcome:** {st.session_state.get('prereg_outcomes', 'Not specified')}")
         st.markdown(f"**Independent Variable:** {st.session_state.get('prereg_iv', 'Not specified')}")
 
-    # Missing fields warning with links
+    # Missing fields warning with step references
     if not all_required_complete:
         missing = []
         if not completion["study_title"]:
-            missing.append("Study title (Tab 1)")
+            missing.append("Study title (Step 1)")
         if not completion["study_description"]:
-            missing.append("Study description (Tab 1)")
+            missing.append("Study description (Step 1)")
         if not completion["sample_size"]:
-            missing.append("Sample size (Tab 1)")
+            missing.append("Sample size (Step 1)")
         if not completion["qsf_uploaded"]:
-            missing.append("QSF file (Tab 2)")
+            missing.append("QSF file (Step 2)")
         if not completion["primary_outcome"]:
-            missing.append("Primary outcome (Tab 2)")
+            missing.append("Primary outcome (Step 2)")
         if not completion["independent_var"]:
-            missing.append("Independent variable (Tab 2)")
+            missing.append("Independent variable (Step 2)")
         if not completion["conditions_set"]:
-            missing.append("Experimental conditions (Tab 3)")
+            missing.append("Experimental conditions (Step 3)")
 
         st.error(f"Cannot generate: Missing required fields - {', '.join(missing)}")
 
@@ -2270,18 +2356,6 @@ if active_step == 3:
                 },
             )
             instructor_bytes = instructor_report.encode("utf-8")
-            learning_plan_md = None
-            if st.session_state.get("include_learning_plan", False):
-                learning_profile = {
-                    "comfort_topics": st.session_state.get("learning_comfort_topics", ""),
-                    "target_domains": st.session_state.get("learning_target_domains", []),
-                    "grammar_focus": st.session_state.get("learning_grammar_focus", []),
-                    "output_modes": st.session_state.get("learning_output_modes", []),
-                    "intensity": st.session_state.get("learning_intensity", "Standard"),
-                    "learner_notes": st.session_state.get("learning_notes", ""),
-                }
-                learning_plan_md = build_spanish_learning_plan(learning_profile)
-                metadata["learning_plan_profile"] = learning_profile
 
             files = {
                 "Simulated.csv": csv_bytes,
@@ -2291,8 +2365,6 @@ if active_step == 3:
                 "Schema_Validation.json": _safe_json(schema_results).encode("utf-8"),
                 "Instructor_Report.md": instructor_bytes,
             }
-            if learning_plan_md:
-                files["Spanish_Learning_Plan.md"] = learning_plan_md.encode("utf-8")
             zip_bytes = _bytes_to_zip(files)
 
             st.session_state["last_df"] = df
