@@ -788,6 +788,11 @@ class QSFPreviewParser:
         scales = []
         scale_patterns = {}
 
+        # Safety check - ensure questions_map is a dict
+        if not isinstance(questions_map, dict):
+            self._log(LogLevel.WARNING, "SCALES", f"questions_map is {type(questions_map).__name__}, expected dict")
+            return scales
+
         # Look for numbered items (e.g., "Ownership_1", "Ownership_2")
         for q_id, q_info in questions_map.items():
             if q_info.is_matrix or q_info.question_type == 'Likert Scale Matrix':
@@ -831,6 +836,9 @@ class QSFPreviewParser:
     def _detect_open_ended(self, questions_map: Dict) -> List[str]:
         """Detect open-ended text entry questions."""
         open_ended = []
+        # Safety check - ensure questions_map is a dict
+        if not isinstance(questions_map, dict):
+            return open_ended
         for q_id, q_info in questions_map.items():
             if q_info.question_type == 'Text Entry':
                 open_ended.append(q_id)
@@ -847,6 +855,10 @@ class QSFPreviewParser:
             'attention', 'check', 'please select', 'instructed',
             'carefully read', 'quality', 'verify', 'bot'
         ]
+
+        # Safety check - ensure questions_map is a dict
+        if not isinstance(questions_map, dict):
+            return attention_checks
 
         for q_id, q_info in questions_map.items():
             text = q_info.question_text.lower()
@@ -983,8 +995,19 @@ class QSFPreviewParser:
     ):
         """Validate survey structure and log issues."""
 
+        # Safety check - ensure questions_map is a dict
+        if not isinstance(questions_map, dict):
+            self._log(LogLevel.WARNING, "VALIDATION", f"questions_map is {type(questions_map).__name__}, expected dict")
+            questions_map = {}  # Use empty dict to continue validation
+
+        # Safety check - ensure blocks is a list
+        if not isinstance(blocks, list):
+            blocks = []
+
         # Check for empty blocks
         for block in blocks:
+            if not hasattr(block, 'questions') or not hasattr(block, 'is_randomizer'):
+                continue
             if len(block.questions) == 0 and not block.is_randomizer:
                 self._log(
                     LogLevel.WARNING, "VALIDATION",
