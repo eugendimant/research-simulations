@@ -308,8 +308,11 @@ class QSFPreviewParser:
                     )
         # Handle dict format (older QSF exports)
         elif isinstance(payload, dict):
-            for block_id, block_data in payload.items():
+            for dict_key, block_data in payload.items():
                 if isinstance(block_data, dict):
+                    # Use the ID field if available, otherwise use the dict key
+                    # This is important because flow elements reference blocks by ID field
+                    block_id = block_data.get('ID', dict_key)
                     block_name = block_data.get('Description', f'Block {block_id}')
                     block_type = block_data.get('Type', 'Standard')
 
@@ -318,10 +321,13 @@ class QSFPreviewParser:
                         'type': block_type,
                         'elements': block_data.get('BlockElements', [])
                     }
+                    # Also store with dict key for compatibility
+                    if dict_key != block_id:
+                        blocks_map[dict_key] = blocks_map[block_id]
 
                     self._log(
                         LogLevel.INFO, "BLOCK",
-                        f"Found block: {block_name} (Type: {block_type})"
+                        f"Found block: {block_name} (ID: {block_id}, Type: {block_type})"
                     )
 
     def _parse_question(self, element: Dict, questions_map: Dict):
@@ -671,6 +677,27 @@ class QSFPreviewParser:
                     description = item.get('Description', '')
                     for inferred in self._extract_conditions_from_description(description):
                         self._add_condition(inferred, conditions)
+
+                elif flow_type == 'BlockRandomizer':
+                    # BlockRandomizer with SubSet=1 means between-subjects assignment
+                    # Each block in the randomizer is a condition
+                    sub_set = item.get('SubSet', None)
+                    # Handle both string and int types for SubSet
+                    is_between_subjects = (
+                        sub_set is None or
+                        sub_set == 1 or
+                        str(sub_set) == '1'
+                    )
+                    if is_between_subjects:
+                        sub_flow = item.get('Flow', [])
+                        for sub_item in sub_flow:
+                            if isinstance(sub_item, dict):
+                                sub_type = sub_item.get('Type', '')
+                                if sub_type in ('Standard', 'Block'):
+                                    block_id = sub_item.get('ID', '')
+                                    if block_id:
+                                        block_name = blocks_by_id.get(block_id, block_id)
+                                        self._add_condition(block_name, conditions)
 
                 elif flow_type == 'Branch':
                     description = item.get('Description', '')

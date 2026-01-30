@@ -1095,12 +1095,72 @@ def _render_step_navigation(step_index: int, can_next: bool, next_label: str) ->
                 _go_to_step(step_index + 1)
 
 
+def _get_total_conditions() -> int:
+    """Get total number of conditions from all sources."""
+    selected = st.session_state.get("selected_conditions", [])
+    custom = st.session_state.get("custom_conditions", [])
+    return len(set(selected + custom))
+
+
+# ========================================
+# UNIFIED STATUS PANEL - Shows progress across all tabs
+# ========================================
+def _render_status_panel():
+    """Render a unified status panel showing all required fields."""
+    completion = _get_step_completion()
+
+    # Calculate overall progress
+    required_items = ["study_title", "study_description", "sample_size", "qsf_uploaded",
+                      "primary_outcome", "independent_var", "conditions_set"]
+    completed_count = sum(1 for k in required_items if completion.get(k, False))
+    total_count = len(required_items)
+
+    # Progress bar
+    progress = completed_count / total_count
+    st.progress(progress, text=f"Setup progress: {completed_count}/{total_count} required fields")
+
+    # Missing fields with clickable guidance
+    missing = []
+    if not completion["study_title"]:
+        missing.append(("Study title", "Tab 1"))
+    if not completion["study_description"]:
+        missing.append(("Study description", "Tab 1"))
+    if not completion["sample_size"]:
+        missing.append(("Sample size (≥10)", "Tab 1"))
+    if not completion["qsf_uploaded"]:
+        missing.append(("QSF file upload", "Tab 2"))
+    if not completion["primary_outcome"]:
+        missing.append(("Primary outcome variable", "Tab 2"))
+    if not completion["independent_var"]:
+        missing.append(("Independent variable", "Tab 2"))
+    if not completion["conditions_set"]:
+        missing.append(("Experimental conditions", "Tab 3"))
+
+    if missing:
+        missing_text = " · ".join([f"**{name}** ({loc})" for name, loc in missing])
+        st.warning(f"Missing: {missing_text}")
+
+    # Current status summary
+    preview = st.session_state.get("qsf_preview", None)
+    total_conditions = _get_total_conditions()
+    inferred = st.session_state.get("inferred_design", None)
+    num_scales = len(inferred.get("scales", [])) if inferred else 0
+
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("Sample Size", st.session_state.get("sample_size", 0))
+    col2.metric("Conditions", total_conditions)
+    col3.metric("Scales", num_scales)
+    col4.metric("QSF Status", "✓ Uploaded" if preview and preview.success else "Not uploaded")
+
+
+tabs = st.tabs(["1. Study Info", "2. Upload Files", "3. Design Setup", "4. Generate"])
+
+
 # -----------------------------
 # Tab 1: Study Info (required basics)
 # -----------------------------
 if active_step == 0:
     st.subheader("Step 1: Study Information")
-    st.caption("Enter basic study details. Fields marked with * are required.")
 
     # Progress indicator for this step
     completion = _get_step_completion()
@@ -1120,13 +1180,10 @@ if active_step == 0:
 
     st.markdown("---")
 
-    # Required section
-    st.markdown("### Required Information")
-
     col1, col2 = st.columns([1, 1], gap="large")
 
     with col1:
-        st.markdown("**Study Details** *")
+        st.markdown("### Study Details")
         study_title = st.text_input(
             "Study title *",
             value=st.session_state.get("study_title", ""),
@@ -1134,7 +1191,7 @@ if active_step == 0:
             help="Appears in the report and simulated data outputs.",
         )
         study_description = st.text_area(
-            "Study description (1-2 paragraphs) *",
+            "Study description *",
             value=st.session_state.get("study_description", ""),
             height=150,
             placeholder="Describe your study's purpose, manipulation, and main outcomes. This helps with domain detection and persona selection.",
@@ -1146,7 +1203,7 @@ if active_step == 0:
             max_value=MAX_SIMULATED_N,
             value=int(st.session_state.get("sample_size", 200)),
             step=10,
-            help=f"Your pre-registered sample size (max {MAX_SIMULATED_N} for standardization).",
+            help=f"Your pre-registered sample size. Maximum is {MAX_SIMULATED_N} for standardization.",
         )
 
         st.session_state["study_title"] = study_title
@@ -1154,19 +1211,19 @@ if active_step == 0:
         st.session_state["sample_size"] = int(sample_size)
 
     with col2:
-        st.markdown("**Team Information** (optional)")
-        gm = _get_group_manager()
+        st.markdown("### Team Information (optional)")
         team_name = st.text_input(
             "Team name",
             value=st.session_state.get("team_name", ""),
             placeholder="e.g., Team Alpha",
+            help="Optional. Helps instructors identify your team.",
         )
         members = st.text_area(
             "Team members (one per line)",
             value=st.session_state.get("team_members_raw", ""),
             height=100,
             placeholder="John Doe\nJane Smith",
-            help="Optional but helps instructors identify teams.",
+            help="Optional. List team members for the report.",
         )
         st.session_state["team_name"] = team_name
         st.session_state["team_members_raw"] = members
@@ -1248,15 +1305,14 @@ if active_step == 0:
 
 
 # -----------------------------
-# Tab 2: Upload Files (QSF required, others optional)
+# Tab 2: Upload Files (QSF + Study Design Info)
 # -----------------------------
 if active_step == 1:
     st.subheader("Step 2: Upload Files")
 
-    # Check completion status
+    # Check if Step 1 is complete
     completion = _get_step_completion()
     step1_done = completion["study_title"] and completion["study_description"] and completion["sample_size"]
-    step2_done = completion["qsf_uploaded"]
 
     if not step1_done:
         st.error("Please complete **Step 1: Study Info** first before uploading files.")
@@ -1271,15 +1327,16 @@ if active_step == 1:
 
     st.markdown("---")
 
-    # REQUIRED SECTION
-    st.markdown("### Required: Qualtrics Survey File")
-    parser = _get_qsf_preview_parser()
+    # ========================================
+    # REQUIRED: QSF FILE
+    # ========================================
+    st.markdown("### 1. Upload Qualtrics Survey File *")
 
     col_qsf, col_help = st.columns([2, 1])
 
     with col_qsf:
         qsf_file = st.file_uploader(
-            "Upload QSF file *",
+            "QSF file",
             type=["qsf", "zip", "json"],
             help=(
                 "Export from Qualtrics via Tools → Import/Export → Export Survey. "
@@ -1288,19 +1345,69 @@ if active_step == 1:
         )
 
     with col_help:
-        st.markdown("**How to export from Qualtrics:**")
-        st.markdown("""
-1. Open your survey
-2. Go to **Tools** → **Import/Export**
+        with st.expander("How to export from Qualtrics", expanded=False):
+            st.markdown("""
+1. Open your survey in Qualtrics
+2. Click **Tools** → **Import/Export**
 3. Select **Export Survey**
 4. Download the .qsf file
+5. Upload it here
 """)
+
+    parser = _get_qsf_preview_parser()
 
     st.markdown("---")
 
-    # OPTIONAL SECTION - All optional files and prereg info
-    with st.expander("Optional: Additional Files & Preregistration Info", expanded=False):
-        st.caption("These are optional but can improve report quality and documentation.")
+    # ========================================
+    # REQUIRED: STUDY DESIGN INFO
+    # ========================================
+    st.markdown("### 2. Study Design Information *")
+    st.caption("These fields are required for the simulation to generate meaningful data.")
+
+    design_col1, design_col2 = st.columns(2)
+
+    with design_col1:
+        prereg_outcomes = st.text_input(
+            "Primary outcome variable(s) *",
+            value=st.session_state.get("prereg_outcomes", ""),
+            placeholder="e.g., Purchase intention, Trust rating",
+            help="What are you measuring? Enter the name(s) of your main dependent variable(s). This should match how they appear in your survey.",
+        )
+
+        prereg_iv = st.text_input(
+            "Independent variable(s) / Manipulation *",
+            value=st.session_state.get("prereg_iv", ""),
+            placeholder="e.g., AI label (present vs. absent)",
+            help="What are you manipulating? Describe your experimental manipulation or independent variable(s).",
+        )
+
+    with design_col2:
+        prereg_exclusions = st.text_input(
+            "Exclusion criteria (optional)",
+            value=st.session_state.get("prereg_exclusions", ""),
+            placeholder="e.g., Failed attention check, Incomplete responses",
+            help="What criteria will you use to exclude participants? Leave blank if none.",
+        )
+
+        prereg_analysis = st.text_input(
+            "Planned analysis (optional)",
+            value=st.session_state.get("prereg_analysis", ""),
+            placeholder="e.g., Independent samples t-test, 2x2 ANOVA",
+            help="What statistical test(s) will you use to analyze the data?",
+        )
+
+    st.session_state["prereg_outcomes"] = prereg_outcomes
+    st.session_state["prereg_iv"] = prereg_iv
+    st.session_state["prereg_exclusions"] = prereg_exclusions
+    st.session_state["prereg_analysis"] = prereg_analysis
+
+    st.markdown("---")
+
+    # ========================================
+    # OPTIONAL: Additional Files
+    # ========================================
+    with st.expander("Optional: Additional Files", expanded=False):
+        st.caption("Upload these for enhanced report quality. Not required for simulation.")
 
         opt_col1, opt_col2 = st.columns(2)
 
@@ -1343,7 +1450,7 @@ if active_step == 1:
 
         # Preregistration notes
         prereg_text = st.text_area(
-            "Additional preregistration notes",
+            "Additional notes (optional)",
             value=st.session_state.get("prereg_text_raw", ""),
             height=100,
             help="Optional background notes (hypothesis-like lines are automatically removed).",
@@ -1353,7 +1460,7 @@ if active_step == 1:
         st.session_state["prereg_text_sanitized"] = sanitized_text
 
         if removed_lines:
-            st.caption(f"Note: {len(removed_lines)} hypothesis-like lines were filtered out.")
+            st.caption(f"Note: {len(removed_lines)} hypothesis-like lines were filtered.")
 
     # Process survey PDF if provided
     if survey_pdf is not None:
@@ -1503,7 +1610,7 @@ if active_step == 1:
 
 
 # -----------------------------
-# Tab 3: Review (redesigned with guided setup and dropdown-based editing)
+# Tab 3: Design Setup (conditions, factors, scales)
 # -----------------------------
 if active_step == 2:
     preview: Optional[QSFPreviewResult] = st.session_state.get("qsf_preview", None)
@@ -1514,21 +1621,28 @@ if active_step == 2:
         if st.button("Go to Upload Files", key="go_step2_from_step3"):
             _go_to_step(1)
     else:
-        # Use enhanced analysis if available, otherwise fall back to basic inference
-        basic_inferred = _preview_to_engine_inputs(preview)
-        if enhanced_analysis:
-            inferred = _design_analysis_to_inferred(enhanced_analysis, basic_inferred)
-        else:
-            inferred = basic_inferred
+        inferred = basic_inferred
 
-        st.subheader("Study Design Setup")
-        st.caption("Configure your experimental design in 3 simple steps. All selections use dropdowns to prevent errors.")
+    st.markdown("---")
 
-        # ========================================
-        # STEP 1: CONDITION SETUP
-        # ========================================
-        st.markdown("---")
-        st.markdown("### Step 1: Define Your Experimental Conditions")
+    # ========================================
+    # STEP 1: CONDITION SETUP
+    # ========================================
+    st.markdown("### 1. Define Your Experimental Conditions")
+
+    with st.expander("What are conditions?", expanded=False):
+        st.markdown("""
+**Conditions** are the different groups/treatments in your experiment.
+
+Examples:
+- A simple A/B test has 2 conditions: Control vs. Treatment
+- A 2x2 design has 4 conditions: Control-Low, Control-High, Treatment-Low, Treatment-High
+
+**Where do conditions come from?**
+- The simulator detects conditions from your QSF file's **Randomizer** blocks
+- If your QSF doesn't use Randomizer, select the block names that represent your conditions
+- You can also add custom conditions below
+""")
 
         condition_candidates = st.session_state.get("condition_candidates")
         if not condition_candidates:
@@ -1934,6 +2048,20 @@ if active_step == 2:
 # -----------------------------
 if active_step == 3:
     inferred = st.session_state.get("inferred_design", None)
+    preview: Optional[QSFPreviewResult] = st.session_state.get("qsf_preview", None)
+
+    # Comprehensive pre-validation
+    completion = _get_step_completion()
+    all_required_complete = (
+        completion["study_title"] and
+        completion["study_description"] and
+        completion["sample_size"] and
+        completion["qsf_uploaded"] and
+        completion["primary_outcome"] and
+        completion["independent_var"] and
+        completion["conditions_set"]
+    )
+
     if not inferred:
         st.info("Complete the previous steps first (upload QSF, then review).")
         if st.button("Go to Design Setup", key="go_step3_from_step4"):
@@ -2008,37 +2136,135 @@ if active_step == 3:
                     exclude_careless_responders=False,
                 )
 
-            st.markdown("### Optional: expected effect sizes")
-            st.caption("Only add this if you want the simulated data to reflect a directional hypothesis.")
-            effects_json = st.text_area(
-                "Effect sizes (JSON list) - optional",
-                value="[]",
-                height=140,
-                help='Example: [{"variable":"Main_DV","factor":"Condition","level_high":"AI","level_low":"No AI","cohens_d":0.3,"direction":"positive"}]',
+    config_col1, config_col2 = st.columns(2)
+    with config_col1:
+        st.markdown(f"**Study:** {st.session_state.get('study_title', 'Untitled')}")
+        st.markdown(f"**Sample Size:** {st.session_state.get('sample_size', 0)} participants")
+        st.markdown(f"**Conditions:** {len(inferred.get('conditions', []))}")
+        st.markdown(f"**Scales:** {len(inferred.get('scales', []))}")
+
+    with config_col2:
+        st.markdown(f"**Primary Outcome:** {st.session_state.get('prereg_outcomes', 'Not specified')}")
+        st.markdown(f"**Independent Variable:** {st.session_state.get('prereg_iv', 'Not specified')}")
+
+    # Missing fields warning with links
+    if not all_required_complete:
+        missing = []
+        if not completion["study_title"]:
+            missing.append("Study title (Tab 1)")
+        if not completion["study_description"]:
+            missing.append("Study description (Tab 1)")
+        if not completion["sample_size"]:
+            missing.append("Sample size (Tab 1)")
+        if not completion["qsf_uploaded"]:
+            missing.append("QSF file (Tab 2)")
+        if not completion["primary_outcome"]:
+            missing.append("Primary outcome (Tab 2)")
+        if not completion["independent_var"]:
+            missing.append("Independent variable (Tab 2)")
+        if not completion["conditions_set"]:
+            missing.append("Experimental conditions (Tab 3)")
+
+        st.error(f"Cannot generate: Missing required fields - {', '.join(missing)}")
+
+    st.markdown("---")
+
+    if not st.session_state.get("advanced_mode", False):
+        demographics = STANDARD_DEFAULTS["demographics"].copy()
+        attention_rate = STANDARD_DEFAULTS["attention_rate"]
+        random_responder_rate = STANDARD_DEFAULTS["random_responder_rate"]
+        exclusion = ExclusionCriteria(**STANDARD_DEFAULTS["exclusion_criteria"])
+        effect_sizes: List[EffectSizeSpec] = []
+        custom_persona_weights = None
+
+        with st.expander("Standardized settings (locked)"):
+            st.json(
+                {
+                    "demographics": demographics,
+                    "attention_rate": attention_rate,
+                    "random_responder_rate": random_responder_rate,
+                    "exclusion_criteria": asdict(exclusion),
+                    "effect_sizes": [],
+                }
             )
-            effect_sizes = []
-            try:
-                raw = json.loads(effects_json)
-                if isinstance(raw, list):
-                    for e in raw:
-                        effect_sizes.append(
-                            EffectSizeSpec(
-                                variable=str(e.get("variable", "")),
-                                factor=str(e.get("factor", "")),
-                                level_high=str(e.get("level_high", "")),
-                                level_low=str(e.get("level_low", "")),
-                                cohens_d=float(e.get("cohens_d", 0.0)),
-                                direction=str(e.get("direction", "positive")),
-                            )
+    else:
+        st.markdown("### Advanced settings")
+
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            male_pct = st.slider("Male %", 0, 100, int(ADVANCED_DEFAULTS["demographics"]["gender_quota"]))
+            age_mean = st.number_input("Mean age", 18, 70, int(ADVANCED_DEFAULTS["demographics"]["age_mean"]))
+            age_sd = st.number_input("Age SD", 1, 30, int(ADVANCED_DEFAULTS["demographics"]["age_sd"]))
+            demographics = {"gender_quota": int(male_pct), "age_mean": float(age_mean), "age_sd": float(age_sd)}
+
+        with c2:
+            attention_rate = st.slider("Attention check pass rate", 0.50, 1.00, float(ADVANCED_DEFAULTS["attention_rate"]), 0.01)
+            random_responder_rate = st.slider("Random responder rate", 0.00, 0.30, float(ADVANCED_DEFAULTS["random_responder_rate"]), 0.01)
+
+        with c3:
+            min_sec = st.number_input("Min completion time (sec)", 10, 600, 60)
+            max_sec = st.number_input("Max completion time (sec)", 300, 7200, 1800)
+            straight = st.number_input("Straight-line threshold", 3, 40, 10)
+            exclusion = ExclusionCriteria(
+                attention_check_threshold=0.0,
+                completion_time_min_seconds=int(min_sec),
+                completion_time_max_seconds=int(max_sec),
+                straight_line_threshold=int(straight),
+                duplicate_ip_check=True,
+                exclude_careless_responders=False,
+            )
+
+        st.markdown("### Optional: expected effect sizes")
+        st.caption("Only add this if you want the simulated data to reflect a directional hypothesis.")
+        effects_json = st.text_area(
+            "Effect sizes (JSON list) - optional",
+            value="[]",
+            height=140,
+            help='Example: [{"variable":"Main_DV","factor":"Condition","level_high":"AI","level_low":"No AI","cohens_d":0.3,"direction":"positive"}]',
+        )
+        effect_sizes = []
+        try:
+            raw = json.loads(effects_json)
+            if isinstance(raw, list):
+                for e in raw:
+                    effect_sizes.append(
+                        EffectSizeSpec(
+                            variable=str(e.get("variable", "")),
+                            factor=str(e.get("factor", "")),
+                            level_high=str(e.get("level_high", "")),
+                            level_low=str(e.get("level_low", "")),
+                            cohens_d=float(e.get("cohens_d", 0.0)),
+                            direction=str(e.get("direction", "positive")),
                         )
-            except Exception as e:
-                st.error(f"Effect sizes JSON invalid; ignoring. ({e})")
-                effect_sizes = []
+                    )
+        except Exception as e:
+            st.error(f"Effect sizes JSON invalid; ignoring. ({e})")
+            effect_sizes = []
 
-            custom_persona_weights = None
+        custom_persona_weights = None
 
-        if "generation_requested" not in st.session_state:
-            st.session_state["generation_requested"] = False
+    # ========================================
+    # GENERATE BUTTON - with proper state management
+    # ========================================
+    st.markdown("---")
+
+    if "generation_requested" not in st.session_state:
+        st.session_state["generation_requested"] = False
+
+    is_generating = st.session_state.get("is_generating", False)
+    has_generated = st.session_state.get("has_generated", False)
+
+    progress_placeholder = st.empty()
+    status_placeholder = st.empty()
+
+    if is_generating:
+        status_placeholder.info("Simulation is running. Please wait...")
+
+    if has_generated:
+        st.success("Simulation complete! Download your files below.")
+
+    # Button: disabled if not ready, generating, or already generated
+    can_generate = all_required_complete and not is_generating and not has_generated
 
         is_generating = st.session_state.get("is_generating", False)
         has_generated = st.session_state.get("has_generated", False)
@@ -2138,7 +2364,7 @@ if active_step == 3:
                     df=df,
                     metadata=metadata,
                     schema_validation=schema_results,
-                    prereg_text=prereg_text,
+                    prereg_text=st.session_state.get("prereg_text_sanitized", ""),
                     team_info={
                         "team_name": st.session_state.get("team_name", ""),
                         "team_members": st.session_state.get("team_members_raw", ""),

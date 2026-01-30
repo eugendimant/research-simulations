@@ -259,14 +259,20 @@ class EnhancedConditionIdentifier:
                             }
                 # Handle dict format (older QSF exports)
                 elif isinstance(payload, dict):
-                    for block_id, block_data in payload.items():
+                    for dict_key, block_data in payload.items():
                         if isinstance(block_data, dict):
+                            # Use the ID field if available, otherwise use the dict key
+                            # Flow elements reference blocks by ID field
+                            block_id = block_data.get('ID', dict_key)
                             blocks[block_id] = {
                                 'name': block_data.get('Description', f'Block {block_id}'),
                                 'type': block_data.get('Type', 'Standard'),
                                 'elements': block_data.get('BlockElements', []),
                                 'options': block_data.get('Options', {}),
                             }
+                            # Also store with dict key for compatibility
+                            if dict_key != block_id:
+                                blocks[dict_key] = blocks[block_id]
         return blocks
 
     def _extract_questions(self, elements: List[Dict]) -> Dict[str, Dict]:
@@ -522,6 +528,23 @@ class EnhancedConditionIdentifier:
                             'confidence': 0.6,
                         })
 
+                # Extract conditions if SubSet=1 (between-subjects assignment)
+                # Also check sub_set value directly to handle string "1" case
+                is_between_subjects = (
+                    rand_info.get('randomization_type') == 'present_one' or
+                    rand_info.get('sub_set') == 1 or
+                    str(rand_info.get('sub_set', '')) == '1'
+                )
+                if is_between_subjects:
+                    for branch in rand_info.get('branches', []):
+                        raw_conditions.append({
+                            'name': branch.get('name', ''),
+                            'block_id': branch.get('block_id', ''),
+                            'source': 'BlockRandomizer',
+                            'randomizer_id': rand_info.get('flow_id', ''),
+                            'confidence': 0.85,  # High confidence for BlockRandomizer-based detection
+                        })
+
             elif flow_type == 'Branch':
                 # Branches can also indicate conditions
                 branch_info = self._parse_branch(item, blocks_map)
@@ -616,9 +639,12 @@ class EnhancedConditionIdentifier:
                 if sub.get('Type') == 'Block'
             ]
         return {
-            'flow_id': item.get('FlowID', ''),
-            'type': 'block_order_randomizer',
-            'block_ids': block_ids,
+            'flow_id': flow_id,
+            'type': 'block_randomizer',
+            'randomization_type': rand_type,
+            'sub_set': sub_set,
+            'num_branches': len(branches),
+            'branches': branches,
             'depth': depth,
         }
 

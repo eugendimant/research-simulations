@@ -150,8 +150,10 @@ def _parse_blocks(element: Dict[str, Any]) -> List[Dict[str, Any]]:
                 blocks.append(block_info)
     # Handle dict format (older QSF exports)
     elif isinstance(payload, dict):
-        for block_id, block_data in payload.items():
+        for dict_key, block_data in payload.items():
             if isinstance(block_data, dict):
+                # Use ID field if available, otherwise use dict key
+                block_id = block_data.get('ID', dict_key)
                 block_info = {
                     'id': block_id,
                     'description': block_data.get('Description', 'Unnamed Block'),
