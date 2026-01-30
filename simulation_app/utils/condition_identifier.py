@@ -239,121 +239,150 @@ class EnhancedConditionIdentifier:
         """
         blocks = {}
         for element in elements:
-            if element.get('Element') == 'BL':
-                payload = element.get('Payload', {})
-                if isinstance(payload, dict) and isinstance(payload.get('Blocks'), (list, dict)):
-                    payload = payload.get('Blocks', payload)
+            try:
+                if element.get('Element') == 'BL':
+                    payload = element.get('Payload', {})
+                    if payload is None:
+                        payload = {}
+                    if isinstance(payload, dict) and isinstance(payload.get('Blocks'), (list, dict)):
+                        payload = payload.get('Blocks', payload)
 
-                # Handle list format (newer QSF exports)
-                if isinstance(payload, list):
-                    for block_data in payload:
-                        if isinstance(block_data, dict):
-                            block_id = block_data.get('ID', '')
-                            if not block_id:
-                                continue
-                            blocks[block_id] = {
-                                'name': block_data.get('Description', f'Block {block_id}'),
-                                'type': block_data.get('Type', 'Standard'),
-                                'elements': block_data.get('BlockElements', []),
-                                'options': block_data.get('Options', {}),
-                            }
-                # Handle dict format (older QSF exports)
-                elif isinstance(payload, dict):
-                    for dict_key, block_data in payload.items():
-                        if isinstance(block_data, dict):
-                            # Use the ID field if available, otherwise use the dict key
-                            # Flow elements reference blocks by ID field
-                            block_id = block_data.get('ID', dict_key)
-                            blocks[block_id] = {
-                                'name': block_data.get('Description', f'Block {block_id}'),
-                                'type': block_data.get('Type', 'Standard'),
-                                'elements': block_data.get('BlockElements', []),
-                                'options': block_data.get('Options', {}),
-                            }
-                            # Also store with dict key for compatibility
-                            if dict_key != block_id:
-                                blocks[dict_key] = blocks[block_id]
+                    # Handle list format (newer QSF exports)
+                    if isinstance(payload, list):
+                        for block_data in payload:
+                            if isinstance(block_data, dict):
+                                block_id = block_data.get('ID', '')
+                                if not block_id:
+                                    continue
+                                blocks[block_id] = {
+                                    'name': block_data.get('Description', f'Block {block_id}'),
+                                    'type': block_data.get('Type', 'Standard'),
+                                    'elements': block_data.get('BlockElements', []),
+                                    'options': block_data.get('Options', {}),
+                                }
+                    # Handle dict format (older QSF exports)
+                    elif isinstance(payload, dict):
+                        for dict_key, block_data in payload.items():
+                            if isinstance(block_data, dict):
+                                # Use the ID field if available, otherwise use the dict key
+                                # Flow elements reference blocks by ID field
+                                block_id = block_data.get('ID', dict_key)
+                                blocks[block_id] = {
+                                    'name': block_data.get('Description', f'Block {block_id}'),
+                                    'type': block_data.get('Type', 'Standard'),
+                                    'elements': block_data.get('BlockElements', []),
+                                    'options': block_data.get('Options', {}),
+                                }
+                                # Also store with dict key for compatibility
+                                if dict_key != block_id:
+                                    blocks[dict_key] = blocks[block_id]
+            except Exception:
+                continue  # Skip problematic elements
         return blocks
 
     def _extract_questions(self, elements: List[Dict]) -> Dict[str, Dict]:
         """Extract question definitions with full metadata."""
         questions = {}
         for element in elements:
-            if element.get('Element') == 'SQ':
-                payload = element.get('Payload', {})
-                q_id = payload.get('QuestionID', element.get('PrimaryAttribute', ''))
+            try:
+                if element.get('Element') == 'SQ':
+                    payload = element.get('Payload', {})
+                    if payload is None:
+                        payload = {}
+                    q_id = payload.get('QuestionID', element.get('PrimaryAttribute', ''))
+                    if not q_id:
+                        continue  # Skip questions without ID
 
-                # Get question text and clean HTML
-                question_text = payload.get('QuestionText', '')
-                question_text_clean = re.sub(r'<[^>]+>', '', question_text).strip()
+                    # Get question text and clean HTML
+                    question_text = payload.get('QuestionText', '') or ''
+                    question_text_clean = re.sub(r'<[^>]+>', '', str(question_text)).strip()
 
-                # Get question type info
-                q_type = payload.get('QuestionType', '')
-                selector = payload.get('Selector', '')
-                sub_selector = payload.get('SubSelector', '')
+                    # Get question type info
+                    q_type = payload.get('QuestionType', '') or ''
+                    selector = payload.get('Selector', '') or ''
+                    sub_selector = payload.get('SubSelector', '') or ''
 
-                # Extract choices
-                choices = []
-                choices_data = payload.get('Choices', {})
-                if isinstance(choices_data, dict):
-                    choice_order = payload.get('ChoiceOrder', list(choices_data.keys()))
-                    sorted_choices = sorted(choice_order, key=lambda x: self._safe_int_key(x))
-                    for choice_id in sorted_choices:
-                        choice_key = str(choice_id)
-                        choice_data = choices_data.get(choice_key, choices_data.get(choice_id))
-                        if isinstance(choice_data, dict):
-                            choices.append(choice_data.get('Display', str(choice_data)))
-                        else:
-                            choices.append(str(choice_data))
-                elif isinstance(choices_data, list):
-                    for choice_data in choices_data:
-                        if isinstance(choice_data, dict):
-                            choices.append(choice_data.get('Display', str(choice_data)))
-                        else:
-                            choices.append(str(choice_data))
+                    # Extract choices
+                    choices = []
+                    choices_data = payload.get('Choices', {})
+                    if choices_data is None:
+                        choices_data = {}
+                    if isinstance(choices_data, dict):
+                        try:
+                            choice_order = payload.get('ChoiceOrder', list(choices_data.keys()))
+                            if choice_order is None:
+                                choice_order = list(choices_data.keys())
+                            sorted_choices = sorted(choice_order, key=lambda x: self._safe_int_key(x))
+                            for choice_id in sorted_choices:
+                                choice_key = str(choice_id)
+                                choice_data = choices_data.get(choice_key, choices_data.get(choice_id))
+                                if isinstance(choice_data, dict):
+                                    choices.append(choice_data.get('Display', str(choice_data)))
+                                elif choice_data is not None:
+                                    choices.append(str(choice_data))
+                        except Exception:
+                            pass  # If sorting fails, skip choices
+                    elif isinstance(choices_data, list):
+                        for choice_data in choices_data:
+                            if isinstance(choice_data, dict):
+                                choices.append(choice_data.get('Display', str(choice_data)))
+                            elif choice_data is not None:
+                                choices.append(str(choice_data))
 
-                # Extract sub-questions (for matrix questions)
-                sub_questions = []
-                answers_data = payload.get('Answers', {})
-                if isinstance(answers_data, dict):
-                    for ans_id, ans_data in sorted(answers_data.items(), key=lambda x: str(x[0])):
-                        if isinstance(ans_data, dict):
-                            sub_questions.append({
-                                'id': ans_id,
-                                'text': ans_data.get('Display', ''),
-                            })
+                    # Extract sub-questions (for matrix questions)
+                    sub_questions = []
+                    answers_data = payload.get('Answers', {})
+                    if answers_data is None:
+                        answers_data = {}
+                    if isinstance(answers_data, dict):
+                        try:
+                            for ans_id, ans_data in sorted(answers_data.items(), key=lambda x: str(x[0])):
+                                if isinstance(ans_data, dict):
+                                    sub_questions.append({
+                                        'id': ans_id,
+                                        'text': ans_data.get('Display', ''),
+                                    })
+                        except Exception:
+                            pass  # If sorting fails, skip sub-questions
 
-                # Also check Subquestions for some matrix types
-                subq_data = payload.get('Subquestions', {})
-                if isinstance(subq_data, dict) and not sub_questions:
-                    for sq_id, sq_data in sorted(subq_data.items(), key=lambda x: str(x[0])):
-                        if isinstance(sq_data, dict):
-                            sub_questions.append({
-                                'id': sq_id,
-                                'text': sq_data.get('Display', ''),
-                            })
+                    # Also check Subquestions for some matrix types
+                    subq_data = payload.get('Subquestions', {})
+                    if subq_data is None:
+                        subq_data = {}
+                    if isinstance(subq_data, dict) and not sub_questions:
+                        try:
+                            for sq_id, sq_data in sorted(subq_data.items(), key=lambda x: str(x[0])):
+                                if isinstance(sq_data, dict):
+                                    sub_questions.append({
+                                        'id': sq_id,
+                                        'text': sq_data.get('Display', ''),
+                                    })
+                        except Exception:
+                            pass  # If sorting fails, skip sub-questions
 
-                # Get data export tag (actual variable name)
-                data_export_tag = payload.get('DataExportTag', q_id)
+                    # Get data export tag (actual variable name)
+                    data_export_tag = payload.get('DataExportTag', q_id)
 
-                # Determine if it's a matrix/scale
-                is_matrix = q_type == 'Matrix' or (q_type == 'MC' and selector in ['Likert', 'Bipolar'])
+                    # Determine if it's a matrix/scale
+                    is_matrix = q_type == 'Matrix' or (q_type == 'MC' and selector in ['Likert', 'Bipolar'])
 
-                questions[q_id] = {
-                    'question_id': q_id,
-                    'export_tag': data_export_tag,
-                    'question_text': question_text_clean,
-                    'question_text_raw': question_text,
-                    'type': q_type,
-                    'selector': selector,
-                    'sub_selector': sub_selector,
-                    'choices': choices,
-                    'scale_points': self._detect_scale_points(payload, q_type, choices),
-                    'is_matrix': is_matrix,
-                    'sub_questions': sub_questions,
-                    'validation': payload.get('Validation', {}),
-                    'recoded_values': payload.get('RecodeValues', {}),
-                }
+                    questions[q_id] = {
+                        'question_id': q_id,
+                        'export_tag': data_export_tag,
+                        'question_text': question_text_clean,
+                        'question_text_raw': question_text,
+                        'type': q_type,
+                        'selector': selector,
+                        'sub_selector': sub_selector,
+                        'choices': choices,
+                        'scale_points': self._detect_scale_points(payload, q_type, choices),
+                        'is_matrix': is_matrix,
+                        'sub_questions': sub_questions,
+                        'validation': payload.get('Validation', {}),
+                        'recoded_values': payload.get('RecodeValues', {}),
+                    }
+            except Exception:
+                continue  # Skip problematic elements
         return questions
 
     def _safe_int_key(self, key: Any) -> int:
@@ -1206,7 +1235,10 @@ def analyze_qsf_design(
     """
     try:
         qsf_data = json.loads(qsf_content.decode('utf-8'))
-    except (json.JSONDecodeError, UnicodeDecodeError) as e:
+        # Validate top-level structure is a dict
+        if not isinstance(qsf_data, dict):
+            raise ValueError(f"QSF top-level structure is {type(qsf_data).__name__}, expected dict")
+    except (json.JSONDecodeError, UnicodeDecodeError, ValueError) as e:
         # Return empty result on parse failure
         return DesignAnalysisResult(
             conditions=[],
