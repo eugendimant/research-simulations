@@ -13,7 +13,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional
 
 # Version identifier to help track deployed code
-__version__ = "2.1.0"  # Updated: 2026-01-30 - Fixed list/dict payload handling
+__version__ = "2.1.1"  # Updated: 2026-01-31 - Synced with app version, added Survey PDF support
 
 
 class LogLevel(Enum):

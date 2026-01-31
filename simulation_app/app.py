@@ -55,7 +55,7 @@ from utils.condition_identifier import (
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF"
-APP_VERSION = "2.0.0"
+APP_VERSION = "2.1.1"  # Sync with qsf_preview.py version + fix for Survey PDF upload
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d")
 
 BASE_STORAGE = Path("data")
@@ -1398,10 +1398,95 @@ if active_step == 1:
     preview: Optional[QSFPreviewResult] = st.session_state.get("qsf_preview", None)
 
     # ========================================
+    # OPTIONAL: Survey PDF Export
+    # ========================================
+    st.markdown("---")
+    st.markdown("### 2. Survey PDF Export (Optional)")
+    st.caption("Upload a PDF export of your survey for better question identification and simulation output quality.")
+
+    with st.expander("How to create a Survey PDF export from Qualtrics", expanded=False):
+        st.markdown("""
+**Steps to export your survey as PDF:**
+
+1. Open your survey in Qualtrics
+2. Click **Tools** in the top menu
+3. Select **Import/Export** → **Print Survey**
+4. In the print preview, click **Save as PDF** (or use your browser's print-to-PDF feature)
+5. Upload the saved PDF file here
+
+**Why this helps:**
+- Provides exact question wording for better simulation accuracy
+- Helps identify response scale labels and anchors
+- Improves the quality of simulated open-ended responses
+""")
+
+    survey_pdf = st.file_uploader(
+        "Survey PDF",
+        type=["pdf"],
+        help="PDF export of your Qualtrics survey (optional but recommended)",
+        key="survey_pdf_uploader",
+    )
+
+    if survey_pdf is not None:
+        try:
+            survey_pdf_content = survey_pdf.read()
+            st.session_state["survey_pdf_content"] = survey_pdf_content
+            st.session_state["survey_pdf_name"] = survey_pdf.name
+
+            # Try to extract text from PDF
+            survey_pdf_text = ""
+            extraction_method = None
+
+            # Method 1: Try PyMuPDF (fitz)
+            try:
+                import fitz
+                pdf_doc = fitz.open(stream=survey_pdf_content, filetype="pdf")
+                try:
+                    for page in pdf_doc:
+                        survey_pdf_text += page.get_text()
+                    extraction_method = "PyMuPDF"
+                finally:
+                    pdf_doc.close()
+            except ImportError:
+                pass
+            except Exception:
+                pass
+
+            # Method 2: Try pypdf as fallback
+            if not survey_pdf_text.strip():
+                try:
+                    survey_pdf_text = _extract_pdf_text(survey_pdf_content)
+                    if survey_pdf_text.strip():
+                        extraction_method = "pypdf"
+                except Exception:
+                    pass
+
+            # Method 3: Try pdfplumber as last resort
+            if not survey_pdf_text.strip():
+                try:
+                    import pdfplumber
+                    with pdfplumber.open(io.BytesIO(survey_pdf_content)) as pdf:
+                        for page in pdf.pages:
+                            page_text = page.extract_text()
+                            if page_text:
+                                survey_pdf_text += page_text + "\n"
+                    extraction_method = "pdfplumber"
+                except Exception:
+                    pass
+
+            st.session_state["survey_pdf_text"] = survey_pdf_text
+            if survey_pdf_text.strip():
+                st.success(f"Survey PDF uploaded: {survey_pdf.name} (text extracted via {extraction_method})")
+            else:
+                st.warning(f"Survey PDF uploaded: {survey_pdf.name} (text extraction failed, but file will be included in output)")
+        except Exception as e:
+            st.error(f"Failed to process survey PDF: {e}")
+
+    # ========================================
     # OPTIONAL: Preregistration / AsPredicted
     # ========================================
     st.markdown("---")
-    st.markdown("### 2. Preregistration Details (Optional)")
+    st.markdown("### 3. Preregistration Details (Optional)")
     st.caption("Upload your AsPredicted or preregistration PDF to improve simulation quality. The tool uses this to better understand your hypotheses and variables.")
 
     with st.expander("Add preregistration for better simulations", expanded=False):
@@ -2212,6 +2297,11 @@ if active_step == 3:
             if prereg_pdf:
                 prereg_name = st.session_state.get("prereg_pdf_name", "preregistration.pdf")
                 files[f"Source_Files/{prereg_name}"] = prereg_pdf
+
+            survey_pdf = st.session_state.get("survey_pdf_content")
+            if survey_pdf:
+                survey_pdf_name = st.session_state.get("survey_pdf_name", "survey_export.pdf")
+                files[f"Source_Files/{survey_pdf_name}"] = survey_pdf
 
             # Include preregistration text if provided
             prereg_outcomes = st.session_state.get("prereg_outcomes", "")
