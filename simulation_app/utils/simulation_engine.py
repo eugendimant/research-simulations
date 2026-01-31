@@ -1,4 +1,5 @@
 # simulation_app/utils/simulation_engine.py
+from __future__ import annotations
 """
 Legacy-compatible SimulationEngine wrapper.
 
@@ -8,8 +9,6 @@ To keep the codebase stable, we provide a thin wrapper around `EnhancedSimulatio
 
 # Version identifier to help track deployed code
 __version__ = "2.1.1"  # Synced with app.py
-
-from __future__ import annotations
 
 from .enhanced_simulation_engine import EnhancedSimulationEngine, EffectSizeSpec, ExclusionCriteria
 

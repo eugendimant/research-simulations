@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 Enhanced Condition and Variable Identifier
 ==========================================
@@ -13,8 +14,6 @@ to maximize identification accuracy.
 
 # Version identifier to help track deployed code
 __version__ = "2.1.1"  # Synced with app.py
-
-from __future__ import annotations
 
 import re
 import json
