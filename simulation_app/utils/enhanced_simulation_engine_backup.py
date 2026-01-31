@@ -1,4 +1,5 @@
 # simulation_app/utils/enhanced_simulation_engine.py
+from __future__ import annotations
 """
 Enhanced Simulation Engine for Behavioral Experiment Simulation Tool
 =============================================================================
@@ -20,8 +21,6 @@ Notes on reproducibility:
 This module is designed to run inside a `utils/` package (i.e., imported as
 `utils.enhanced_simulation_engine`), so relative imports are used.
 """
-
-from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime

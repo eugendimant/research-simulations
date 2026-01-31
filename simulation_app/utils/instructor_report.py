@@ -1,4 +1,5 @@
 # simulation_app/utils/instructor_report.py
+from __future__ import annotations
 """
 Instructor Report Generator for Behavioral Experiment Simulation Tool
 Generates comprehensive instructor-facing reports for student simulations.
@@ -6,8 +7,6 @@ Generates comprehensive instructor-facing reports for student simulations.
 
 # Version identifier to help track deployed code
 __version__ = "2.1.1"  # Synced with app.py
-
-from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
