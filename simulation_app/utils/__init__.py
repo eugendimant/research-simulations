@@ -2,12 +2,13 @@
 """
 Utility modules for the Behavioral Experiment Simulation Tool.
 
-Version: 2.1.2
+Version: 2.1.3
 Changes:
     - Fixed nested flow list handling in QSF parsers (qsf_parser, qsf_preview, condition_identifier)
     - Added _extract_flow_payload helper for robust QSF parsing
-    - Synced all module versions to 2.1.2
+    - Synced all module versions to 2.1.3
     - Fixed __future__ import position in all modules
+    - Added forced module reload in app.py to fix Streamlit caching issues
 
 Modules:
     - qsf_parser: Parse Qualtrics Survey Format (.qsf) files
@@ -24,7 +25,7 @@ Modules:
 """
 
 # Package version - should match all module versions
-__version__ = "2.1.2"
+__version__ = "2.1.3"
 
 from .qsf_parser import parse_qsf_file, extract_survey_structure, generate_qsf_summary
 from .simulation_engine import SimulationEngine

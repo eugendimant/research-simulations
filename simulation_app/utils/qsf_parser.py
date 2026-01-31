@@ -8,7 +8,7 @@ QSF files are JSON-based exports from Qualtrics survey platform.
 """
 
 # Version identifier to help track deployed code
-__version__ = "2.1.2"  # Fixed nested flow list handling in _normalize_flow
+__version__ = "2.1.3"  # Fixed nested flow list handling in _normalize_flow
 
 import json
 import re

@@ -13,7 +13,7 @@ to maximize identification accuracy.
 """
 
 # Version identifier to help track deployed code
-__version__ = "2.1.2"  # Fixed nested flow list handling, added _extract_flow_payload
+__version__ = "2.1.3"  # Fixed nested flow list handling, added _extract_flow_payload
 
 import re
 import json
