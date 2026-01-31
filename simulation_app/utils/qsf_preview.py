@@ -13,7 +13,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional
 
 # Version identifier to help track deployed code
-__version__ = "2.1.3"  # Updated: 2026-01-31 - All QSF parsers now use consistent nested list handling
+__version__ = "2.1.4"  # Improved scale detection with deduplication, better scale_points handling
 
 
 class LogLevel(Enum):
@@ -867,9 +867,21 @@ class QSFPreviewParser:
         return unique
 
     def _detect_scales(self, questions_map: Dict) -> List[Dict[str, Any]]:
-        """Detect multi-item scales from question patterns."""
+        """Detect multi-item scales from question patterns.
+
+        IMPORTANT: Only detects scales from QSF structure. Does NOT add default scales.
+        Default scales should only be added at the app layer if user hasn't specified DVs.
+
+        Returns scales with:
+        - name: Display name for the scale
+        - variable_name: Variable prefix for export
+        - items: Number of items in the scale
+        - scale_points: Number of response options (MUST be from QSF, not assumed)
+        - type: 'matrix' or 'numbered_items'
+        """
         scales = []
         scale_patterns = {}
+        seen_scale_names = set()  # Track to prevent duplicates
 
         # Safety check - ensure questions_map is a dict
         if not isinstance(questions_map, dict):
@@ -879,39 +891,69 @@ class QSFPreviewParser:
         # Look for numbered items (e.g., "Ownership_1", "Ownership_2")
         for q_id, q_info in questions_map.items():
             if q_info.is_matrix or q_info.question_type == 'Likert Scale Matrix':
-                # Matrix questions are scales
+                # Matrix questions are scales - use question_id as variable name
+                scale_name = q_info.question_text[:50].strip() or q_id
+                variable_name = q_id
+
+                # Skip if we've already seen this scale
+                name_key = variable_name.lower()
+                if name_key in seen_scale_names:
+                    continue
+                seen_scale_names.add(name_key)
+
+                num_items = len(q_info.sub_questions) if q_info.sub_questions else 1
+                scale_pts = q_info.scale_points  # Keep as-is, may be None
+
                 scales.append({
-                    'name': q_info.question_text[:50],
+                    'name': scale_name,
+                    'variable_name': variable_name,
                     'question_id': q_id,
-                    'items': len(q_info.sub_questions) if q_info.sub_questions else 1,
-                    'scale_points': q_info.scale_points,
+                    'items': num_items,
+                    'scale_points': scale_pts,
                     'type': 'matrix'
                 })
 
-            # Check for numbered pattern
+                self._log(
+                    LogLevel.INFO, "SCALE",
+                    f"Detected matrix scale: {scale_name} ({num_items} items, {scale_pts or 'unknown'}-point)"
+                )
+
+            # Check for numbered pattern (e.g., WTP_1, WTP_2)
             match = re.match(r'^(.+?)[-_]?(\d+)$', q_id)
             if match:
-                base_name = match.group(1)
+                base_name = match.group(1).rstrip('_-')
                 item_num = int(match.group(2))
                 if base_name not in scale_patterns:
                     scale_patterns[base_name] = []
                 scale_patterns[base_name].append({
                     'item_num': item_num,
-                    'scale_points': q_info.scale_points
+                    'scale_points': q_info.scale_points,
+                    'question_id': q_id
                 })
 
         # Consolidate numbered scales
         for base_name, items in scale_patterns.items():
             if len(items) >= 2:  # At least 2 items = scale
+                # Skip if this base_name was already detected as a matrix
+                name_key = base_name.lower()
+                if name_key in seen_scale_names:
+                    continue
+                seen_scale_names.add(name_key)
+
+                # Use the most common scale_points value from items
+                valid_points = [i['scale_points'] for i in items if i['scale_points'] is not None]
+                scale_pts = max(set(valid_points), key=valid_points.count) if valid_points else None
+
                 scales.append({
                     'name': base_name,
+                    'variable_name': base_name,
                     'items': len(items),
-                    'scale_points': items[0]['scale_points'],
+                    'scale_points': scale_pts,
                     'type': 'numbered_items'
                 })
                 self._log(
                     LogLevel.INFO, "SCALE",
-                    f"Detected scale: {base_name} ({len(items)} items)"
+                    f"Detected numbered scale: {base_name} ({len(items)} items, {scale_pts or 'unknown'}-point)"
                 )
 
         return scales

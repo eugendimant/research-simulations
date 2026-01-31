@@ -2,11 +2,14 @@
 """
 Utility modules for the Behavioral Experiment Simulation Tool.
 
-Version: 2.1.3
+Version: 2.1.4
 Changes:
+    - Fixed extra DV generation issue with scale deduplication
+    - Improved scale point detection and handling (preserve QSF values, track source)
+    - Added comprehensive persona transparency section to instructor report
+    - Added scale source tracking (QSF detected vs default) in reports
     - Fixed nested flow list handling in QSF parsers (qsf_parser, qsf_preview, condition_identifier)
     - Added _extract_flow_payload helper for robust QSF parsing
-    - Synced all module versions to 2.1.3
     - Fixed __future__ import position in all modules
     - Added forced module reload in app.py to fix Streamlit caching issues
 
@@ -25,7 +28,7 @@ Modules:
 """
 
 # Package version - should match all module versions
-__version__ = "2.1.3"
+__version__ = "2.1.4"
 
 from .qsf_parser import parse_qsf_file, extract_survey_structure, generate_qsf_summary
 from .simulation_engine import SimulationEngine
