@@ -7,6 +7,9 @@ and parameters for verification purposes.
 Uses reportlab for PDF generation.
 """
 
+# Version identifier to help track deployed code
+__version__ = "2.1.1"  # Synced with app.py
+
 import io
 from datetime import datetime
 from typing import Dict, Any

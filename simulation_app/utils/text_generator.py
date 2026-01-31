@@ -12,6 +12,9 @@ Uses multiple techniques:
 This provides LLM-like text generation quality for free.
 """
 
+# Version identifier to help track deployed code
+__version__ = "2.1.1"  # Synced with app.py
+
 from __future__ import annotations
 
 import random
