@@ -5,6 +5,9 @@ Manages student groups, tracks simulation usage, and controls access to
 Final Data Collection Mode (one-time use per group).
 """
 
+# Version identifier to help track deployed code
+__version__ = "2.1.1"  # Synced with app.py
+
 import hashlib
 import json
 import threading

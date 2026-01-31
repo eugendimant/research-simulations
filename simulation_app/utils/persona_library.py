@@ -14,6 +14,9 @@ Based on recent LLM simulation research:
 - Westwood (2025) - "Existential threat of LLMs to survey research" PNAS
 """
 
+# Version identifier to help track deployed code
+__version__ = "2.1.1"  # Synced with app.py
+
 import hashlib
 import random
 from dataclasses import dataclass

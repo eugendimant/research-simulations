@@ -7,6 +7,9 @@ questions, blocks, and embedded data for simulation.
 QSF files are JSON-based exports from Qualtrics survey platform.
 """
 
+# Version identifier to help track deployed code
+__version__ = "2.1.1"  # Synced with app.py and qsf_preview.py
+
 import json
 import re
 from typing import Any, Dict, List

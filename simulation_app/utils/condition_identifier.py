@@ -11,6 +11,9 @@ Uses multiple heuristics and cross-references with preregistration documents
 to maximize identification accuracy.
 """
 
+# Version identifier to help track deployed code
+__version__ = "2.1.1"  # Synced with app.py
+
 from __future__ import annotations
 
 import re

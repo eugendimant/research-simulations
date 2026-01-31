@@ -6,6 +6,9 @@ following the "FILE READ OK" and "SCHEMA LOCKED" format from the
 simulation methodology.
 """
 
+# Version identifier to help track deployed code
+__version__ = "2.1.1"  # Synced with app.py
+
 from datetime import datetime
 from typing import Any, Dict, List
 

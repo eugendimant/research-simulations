@@ -21,6 +21,9 @@ This module is designed to run inside a `utils/` package (i.e., imported as
 `utils.enhanced_simulation_engine`), so relative imports are used.
 """
 
+# Version identifier to help track deployed code
+__version__ = "2.1.1"  # Synced with app.py
+
 from __future__ import annotations
 
 from dataclasses import dataclass
