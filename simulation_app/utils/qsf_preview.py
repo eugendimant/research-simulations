@@ -13,7 +13,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional
 
 # Version identifier to help track deployed code
-__version__ = "2.1.2"  # Updated: 2026-01-31 - All QSF parsers now use consistent nested list handling
+__version__ = "2.1.3"  # Updated: 2026-01-31 - All QSF parsers now use consistent nested list handling
 
 
 class LogLevel(Enum):

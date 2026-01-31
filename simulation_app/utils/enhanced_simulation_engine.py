@@ -23,7 +23,7 @@ This module is designed to run inside a `utils/` package (i.e., imported as
 """
 
 # Version identifier to help track deployed code
-__version__ = "2.1.2"  # Synced all utils to same version
+__version__ = "2.1.3"  # Synced all utils to same version
 
 from dataclasses import dataclass
 from datetime import datetime

@@ -22,9 +22,11 @@ Email:
 from __future__ import annotations
 
 import base64
+import importlib
 import io
 import json
 import re
+import sys
 import zipfile
 from dataclasses import asdict
 from datetime import datetime
@@ -33,6 +35,37 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import pandas as pd
 import streamlit as st
+
+# =============================================================================
+# MODULE VERSION VERIFICATION
+# =============================================================================
+# This section ensures Streamlit Cloud loads the correct module versions.
+# Addresses known issue: https://github.com/streamlit/streamlit/issues/366
+# Where deeply imported modules don't hot-reload properly.
+
+REQUIRED_UTILS_VERSION = "2.1.3"
+BUILD_ID = "20260131-v213-force-reload"  # Change this to force cache invalidation
+
+def _verify_and_reload_utils():
+    """Verify utils modules are at correct version, force reload if needed."""
+    utils_modules = [
+        'utils',
+        'utils.qsf_preview',
+        'utils.qsf_parser',
+        'utils.condition_identifier',
+        'utils.enhanced_simulation_engine',
+        'utils.group_management',
+        'utils.schema_validator',
+        'utils.instructor_report',
+    ]
+
+    # First, remove all utils modules from sys.modules to force fresh import
+    modules_to_remove = [m for m in sys.modules if m.startswith('utils')]
+    for mod_name in modules_to_remove:
+        del sys.modules[mod_name]
+
+# Force fresh import of utils modules
+_verify_and_reload_utils()
 
 from utils.group_management import GroupManager, APIKeyManager
 from utils.qsf_preview import QSFPreviewParser, QSFPreviewResult
@@ -48,6 +81,11 @@ from utils.condition_identifier import (
     VariableRole,
     analyze_qsf_design,
 )
+import utils
+
+# Verify correct version loaded
+if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION:
+    st.warning(f"⚠️ Utils version mismatch: expected {REQUIRED_UTILS_VERSION}, got {utils.__version__}")
 
 
 # -----------------------------
@@ -55,8 +93,8 @@ from utils.condition_identifier import (
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF"
-APP_VERSION = "2.1.2"  # Fixed QSF nested flow parsing, synced all module versions
-APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d")
+APP_VERSION = "2.1.3"  # Force module reload to fix Streamlit cache issue
+APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
 BASE_STORAGE.mkdir(parents=True, exist_ok=True)
