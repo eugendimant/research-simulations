@@ -43,8 +43,8 @@ import streamlit as st
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "2.1.3"
-BUILD_ID = "20260131-v213-force-reload"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "2.1.4"
+BUILD_ID = "20260131-v214-simulation-fixes"  # Change this to force cache invalidation
 
 def _verify_and_reload_utils():
     """Verify utils modules are at correct version, force reload if needed."""
@@ -93,7 +93,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF"
-APP_VERSION = "2.1.3"  # Force module reload to fix Streamlit cache issue
+APP_VERSION = "2.1.4"  # Fixed extra DVs, scale points, persona transparency
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -167,26 +167,75 @@ def _split_comma_list(value: str) -> List[str]:
 
 
 def _normalize_scale_specs(scales: List[Any]) -> List[Dict[str, Any]]:
+    """
+    Normalize scales to consistent format with deduplication.
+
+    Preserves scale_points from source (QSF or user input) - only defaults when missing.
+    Deduplicates by variable name to prevent extra DVs.
+    """
     normalized: List[Dict[str, Any]] = []
+    seen_names: set = set()  # Track to prevent duplicates
+
     for scale in scales or []:
         if isinstance(scale, str):
             name = scale.strip()
-            if name:
-                normalized.append({"name": name, "num_items": 5, "scale_points": 7, "reverse_items": []})
+            if not name:
+                continue
+            name_key = name.lower().replace(" ", "_").replace("-", "_")
+            if name_key in seen_names:
+                continue
+            seen_names.add(name_key)
+            normalized.append({
+                "name": name,
+                "variable_name": name.replace(" ", "_"),
+                "num_items": 5,
+                "scale_points": 7,
+                "reverse_items": []
+            })
             continue
+
         if isinstance(scale, dict):
             name = str(scale.get("name", "")).strip()
             if not name:
                 continue
+
+            # Deduplicate by variable name (more precise) or name
+            var_name = str(scale.get("variable_name", name)).strip() or name
+            name_key = var_name.lower().replace(" ", "_").replace("-", "_")
+            if name_key in seen_names:
+                continue
+            seen_names.add(name_key)
+
+            # Carefully extract scale_points - preserve from source
+            raw_points = scale.get("scale_points")
+            if raw_points is None or (isinstance(raw_points, float) and np.isnan(raw_points)):
+                scale_points = 7
+            else:
+                try:
+                    scale_points = int(raw_points)
+                except (ValueError, TypeError):
+                    scale_points = 7
+
+            # Same for num_items
+            raw_items = scale.get("num_items")
+            if raw_items is None or (isinstance(raw_items, float) and np.isnan(raw_items)):
+                num_items = 5
+            else:
+                try:
+                    num_items = int(raw_items)
+                except (ValueError, TypeError):
+                    num_items = 5
+
             normalized.append(
                 {
                     "name": name,
-                    "variable_name": str(scale.get("variable_name", name)),
-                    "num_items": int(scale.get("num_items", 5)),
-                    "scale_points": int(scale.get("scale_points", 7)),
+                    "variable_name": var_name.replace(" ", "_"),
+                    "num_items": max(1, num_items),
+                    "scale_points": max(2, min(11, scale_points)),  # Reasonable bounds
                     "reverse_items": scale.get("reverse_items", []) or [],
                 }
             )
+
     return normalized
 
 
@@ -796,6 +845,9 @@ def _infer_factors_from_conditions(conditions: List[str]) -> List[Dict[str, Any]
 def _preview_to_engine_inputs(preview: QSFPreviewResult) -> Dict[str, Any]:
     """
     Convert QSFPreviewResult to engine-ready inputs with minimal assumptions.
+
+    IMPORTANT: Only includes scales actually detected from QSF - does NOT fabricate DVs.
+    Scale points are preserved from QSF detection; only defaults when truly unknown.
     """
     conditions = (preview.detected_conditions or [])[:]
     if not conditions:
@@ -804,21 +856,49 @@ def _preview_to_engine_inputs(preview: QSFPreviewResult) -> Dict[str, Any]:
     factors = _infer_factors_from_conditions(conditions)
 
     scales: List[Dict[str, Any]] = []
+    seen_scale_names: set = set()  # Track to prevent duplicates
+
     for s in (preview.detected_scales or []):
-        name = str(s.get("name", "Scale")).strip() or "Scale"
-        num_items = int(s.get("items", 5) or 5)
-        scale_points = int(s.get("scale_points", 7) or 7)
+        # Use variable_name if available (more precise), fall back to name
+        name = str(s.get("variable_name", s.get("name", "Scale"))).strip() or "Scale"
+        display_name = str(s.get("name", name)).strip() or name
+
+        # Deduplicate by normalized name
+        name_key = name.lower().replace(" ", "_").replace("-", "_")
+        if name_key in seen_scale_names:
+            continue
+        seen_scale_names.add(name_key)
+
+        # Use detected values, with reasonable defaults only when truly missing
+        num_items = s.get("items")
+        if num_items is None or (isinstance(num_items, float) and np.isnan(num_items)):
+            num_items = 5  # Default only if truly not detected
+        else:
+            num_items = int(num_items)
+
+        scale_points = s.get("scale_points")
+        if scale_points is None or (isinstance(scale_points, float) and np.isnan(scale_points)):
+            # IMPORTANT: Default to 7 only when QSF doesn't specify
+            # This will be logged for transparency in instructor report
+            scale_points = 7
+        else:
+            scale_points = int(scale_points)
+
         scales.append(
             {
-                "name": name,
+                "name": display_name,
+                "variable_name": name,
                 "num_items": max(1, num_items),
-                "scale_points": max(2, scale_points),
-                "reverse_items": [],
+                "scale_points": max(2, min(11, scale_points)),  # Reasonable bounds
+                "reverse_items": s.get("reverse_items", []) or [],
+                "detected_from_qsf": s.get("scale_points") is not None,  # Track source
             }
         )
 
+    # Only add default if NO scales were detected at all
+    # This prevents fabricating extra DVs
     if not scales:
-        scales = [{"name": "Main_DV", "num_items": 5, "scale_points": 7, "reverse_items": []}]
+        scales = [{"name": "Main_DV", "variable_name": "Main_DV", "num_items": 5, "scale_points": 7, "reverse_items": [], "detected_from_qsf": False}]
 
     open_ended = getattr(preview, "open_ended_questions", None) or []
 
