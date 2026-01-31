@@ -55,7 +55,7 @@ from utils.condition_identifier import (
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF"
-APP_VERSION = "2.1.1"  # Sync with qsf_preview.py version + fix for Survey PDF upload
+APP_VERSION = "2.1.2"  # Fixed QSF nested flow parsing, synced all module versions
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d")
 
 BASE_STORAGE = Path("data")

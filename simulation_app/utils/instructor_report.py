@@ -6,7 +6,7 @@ Generates comprehensive instructor-facing reports for student simulations.
 """
 
 # Version identifier to help track deployed code
-__version__ = "2.1.1"  # Synced with app.py
+__version__ = "2.1.2"  # Synced all utils to same version
 
 from dataclasses import dataclass
 from datetime import datetime
