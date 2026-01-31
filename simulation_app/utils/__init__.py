@@ -2,6 +2,13 @@
 """
 Utility modules for the Behavioral Experiment Simulation Tool.
 
+Version: 2.1.2
+Changes:
+    - Fixed nested flow list handling in QSF parsers (qsf_parser, qsf_preview, condition_identifier)
+    - Added _extract_flow_payload helper for robust QSF parsing
+    - Synced all module versions to 2.1.2
+    - Fixed __future__ import position in all modules
+
 Modules:
     - qsf_parser: Parse Qualtrics Survey Format (.qsf) files
     - simulation_engine: Core simulation logic with persona-based generation
@@ -15,6 +22,9 @@ Modules:
     - condition_identifier: Enhanced condition and variable identification
     - text_generator: Free open-ended text response generation
 """
+
+# Package version - should match all module versions
+__version__ = "2.1.2"
 
 from .qsf_parser import parse_qsf_file, extract_survey_structure, generate_qsf_summary
 from .simulation_engine import SimulationEngine

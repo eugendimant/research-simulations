@@ -13,7 +13,7 @@ to maximize identification accuracy.
 """
 
 # Version identifier to help track deployed code
-__version__ = "2.1.1"  # Synced with app.py
+__version__ = "2.1.2"  # Fixed nested flow list handling, added _extract_flow_payload
 
 import re
 import json
@@ -149,7 +149,14 @@ class EnhancedConditionIdentifier:
         return [element for element in elements if isinstance(element, dict)]
 
     def _normalize_flow(self, flow: Any) -> List[Dict[str, Any]]:
-        """Normalize flow structures into a list of dicts across QSF variants."""
+        """Normalize flow structures into a list of dicts across QSF variants.
+
+        Handles multiple QSF flow formats:
+        - Dict with 'Flow' key: {'Flow': [...]}
+        - Dict without 'Flow' key: {'0': {...}, '1': {...}}
+        - List of dicts: [{...}, {...}]
+        - List with nested lists: [{...}, [{...}, {...}], {...}]
+        """
         if isinstance(flow, dict):
             if 'Flow' in flow:
                 flow = flow.get('Flow', [])
@@ -157,7 +164,35 @@ class EnhancedConditionIdentifier:
                 flow = list(flow.values())
         if not isinstance(flow, list):
             return []
-        return [item for item in flow if isinstance(item, dict)]
+        # Handle nested lists within flow (some QSF exports nest flow items)
+        normalized: List[Dict[str, Any]] = []
+        for item in flow:
+            if isinstance(item, dict):
+                normalized.append(item)
+            elif isinstance(item, list):
+                # Flatten nested lists
+                for sub_item in item:
+                    if isinstance(sub_item, dict):
+                        normalized.append(sub_item)
+        return normalized
+
+    def _extract_flow_payload(self, flow_data: Any) -> List[Dict[str, Any]]:
+        """Extract a normalized flow list from any flow payload variant.
+
+        This helper handles the various ways flow data can be structured in QSF files:
+        - Element with Payload containing Flow
+        - Element with Payload that IS the flow
+        - Direct flow list
+        """
+        if flow_data is None:
+            return []
+        if isinstance(flow_data, dict):
+            payload = flow_data.get('Payload', flow_data)
+        else:
+            payload = flow_data
+        if isinstance(payload, dict) and 'Flow' in payload:
+            payload = payload.get('Flow', [])
+        return self._normalize_flow(payload)
 
     def analyze(
         self,
@@ -433,9 +468,9 @@ class EnhancedConditionIdentifier:
         fields = []
         for element in elements:
             if element.get('Element') == 'ED':
-                payload = element.get('Payload', {})
-                flow = payload.get('Flow', payload)
-                for item in self._normalize_flow(flow):
+                # Use the robust flow extraction helper
+                flow = self._extract_flow_payload(element)
+                for item in flow:
                     ed_list = item.get('EmbeddedData', [])
                     if isinstance(ed_list, list):
                         for ed in ed_list:
@@ -469,8 +504,8 @@ class EnhancedConditionIdentifier:
                 conditions_per_participant=1,
             ), []
 
-        payload = flow_data.get('Payload', {})
-        flow = self._normalize_flow(payload.get('Flow', payload))
+        # Use the robust flow extraction helper
+        flow = self._extract_flow_payload(flow_data)
 
         # Recursively find all randomizers
         self._find_randomizers(flow, randomizers, blocks_map, raw_conditions, depth=0)

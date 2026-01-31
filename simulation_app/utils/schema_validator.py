@@ -7,7 +7,7 @@ simulation methodology.
 """
 
 # Version identifier to help track deployed code
-__version__ = "2.1.1"  # Synced with app.py
+__version__ = "2.1.2"  # Synced all utils to same version
 
 from datetime import datetime
 from typing import Any, Dict, List

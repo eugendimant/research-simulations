@@ -8,7 +8,7 @@ QSF files are JSON-based exports from Qualtrics survey platform.
 """
 
 # Version identifier to help track deployed code
-__version__ = "2.1.1"  # Synced with app.py and qsf_preview.py
+__version__ = "2.1.2"  # Fixed nested flow list handling in _normalize_flow
 
 import json
 import re
@@ -26,7 +26,14 @@ def _normalize_survey_elements(qsf_data: Dict[str, Any]) -> List[Dict[str, Any]]
 
 
 def _normalize_flow(flow: Any) -> List[Dict[str, Any]]:
-    """Normalize flow structures into a list of dicts across QSF variants."""
+    """Normalize flow structures into a list of dicts across QSF variants.
+
+    Handles multiple QSF flow formats:
+    - Dict with 'Flow' key: {'Flow': [...]}
+    - Dict without 'Flow' key: {'0': {...}, '1': {...}}
+    - List of dicts: [{...}, {...}]
+    - List with nested lists: [{...}, [{...}, {...}], {...}]
+    """
     if isinstance(flow, dict):
         if 'Flow' in flow:
             flow = flow.get('Flow', [])
@@ -34,7 +41,36 @@ def _normalize_flow(flow: Any) -> List[Dict[str, Any]]:
             flow = list(flow.values())
     if not isinstance(flow, list):
         return []
-    return [item for item in flow if isinstance(item, dict)]
+    # Handle nested lists within flow (some QSF exports nest flow items)
+    normalized: List[Dict[str, Any]] = []
+    for item in flow:
+        if isinstance(item, dict):
+            normalized.append(item)
+        elif isinstance(item, list):
+            # Flatten nested lists
+            for sub_item in item:
+                if isinstance(sub_item, dict):
+                    normalized.append(sub_item)
+    return normalized
+
+
+def _extract_flow_payload(flow_data: Any) -> List[Dict[str, Any]]:
+    """Extract a normalized flow list from any flow payload variant.
+
+    This helper handles the various ways flow data can be structured in QSF files:
+    - Element with Payload containing Flow
+    - Element with Payload that IS the flow
+    - Direct flow list
+    """
+    if flow_data is None:
+        return []
+    if isinstance(flow_data, dict):
+        payload = flow_data.get('Payload', flow_data)
+    else:
+        payload = flow_data
+    if isinstance(payload, dict) and 'Flow' in payload:
+        payload = payload.get('Flow', [])
+    return _normalize_flow(payload)
 
 
 def parse_qsf_file(file_content: bytes) -> Dict[str, Any]:
