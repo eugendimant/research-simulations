@@ -44,8 +44,8 @@ import streamlit as st
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "2.1.5"
-BUILD_ID = "20260201-v216-major-ux-overhaul"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "2.1.6"
+BUILD_ID = "20260201-v216-html-reports-stats"  # Change this to force cache invalidation
 
 def _verify_and_reload_utils():
     """Verify utils modules are at correct version, force reload if needed."""
@@ -812,63 +812,167 @@ def _render_email_setup_diagnostics() -> None:
 
 def _clean_condition_name(condition: str) -> str:
     """Remove common suffixes and clean up condition names."""
-    # Remove common suffixes like (new), (copy), etc.
     import re
+    # Remove common suffixes like (new), (copy), etc.
     cleaned = re.sub(r'\s*\(new\)\s*$', '', condition, flags=re.IGNORECASE)
     cleaned = re.sub(r'\s*\(copy\)\s*$', '', cleaned, flags=re.IGNORECASE)
     cleaned = re.sub(r'\s*- copy\s*$', '', cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r'\s*_\d+$', '', cleaned)  # Remove trailing _1, _2, etc.
+    cleaned = re.sub(r'\s*\(\d+\)\s*$', '', cleaned)  # Remove trailing (1), (2), etc.
+    # Remove common Qualtrics block prefixes
+    cleaned = re.sub(r'^Block\s*\d+\s*[-:]\s*', '', cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r'^BL_\w+\s*[-:]\s*', '', cleaned, flags=re.IGNORECASE)
     return cleaned.strip()
 
 
 def _infer_factor_name(levels: List[str]) -> str:
-    """Try to infer a meaningful factor name from its levels."""
+    """
+    Try to infer a meaningful factor name from its levels.
+
+    This is designed to work with ANY QSF file by using general heuristics
+    rather than hardcoded patterns. The approach:
+    1. Check for common experimental design patterns
+    2. Look for semantic patterns (presence/absence, high/low, etc.)
+    3. Find common terms across levels
+    4. Fall back to generic names
+    """
     if not levels:
         return "Factor"
 
-    # Common patterns and their factor names
+    # Normalize levels for comparison
     level_set = set(l.lower().strip() for l in levels)
+    levels_lower = [l.lower().strip() for l in levels]
 
-    # AI-related
-    if any('ai' in l for l in level_set) or any('no ai' in l or 'noai' in l for l in level_set):
-        return "AI Presence"
+    # ==========================================================
+    # PATTERN 1: Presence/Absence patterns (AI, Robot, Human, etc.)
+    # ==========================================================
+    presence_patterns = {
+        ('ai', 'no ai', 'noai', 'without ai', 'no_ai'): "AI Presence",
+        ('robot', 'no robot', 'human', 'norobot'): "Agent Type",
+        ('chatbot', 'no chatbot', 'human agent'): "Agent Type",
+        ('personalization', 'no personalization', 'personalized', 'not personalized'): "Personalization",
+        ('disclosure', 'no disclosure', 'disclosed', 'not disclosed'): "Disclosure",
+        ('incentive', 'no incentive', 'incentivized'): "Incentive",
+        ('feedback', 'no feedback'): "Feedback",
+        ('warning', 'no warning'): "Warning",
+        ('label', 'no label', 'labeled', 'unlabeled'): "Labeling",
+    }
 
-    # Control/Treatment
-    if 'control' in level_set or 'treatment' in level_set:
-        return "Treatment"
+    for patterns, factor_name in presence_patterns.items():
+        if any(any(p in l for p in patterns) for l in level_set):
+            return factor_name
 
-    # High/Low patterns
-    if 'high' in level_set or 'low' in level_set:
-        # Try to find what's high/low
-        for level in levels:
-            if 'high' in level.lower():
-                base = level.lower().replace('high', '').strip()
-                if base:
-                    return base.title()
+    # ==========================================================
+    # PATTERN 2: Control/Treatment designs
+    # ==========================================================
+    if 'control' in level_set or 'treatment' in level_set or 'placebo' in level_set:
+        return "Condition"
+
+    # ==========================================================
+    # PATTERN 3: High/Low/Medium patterns
+    # ==========================================================
+    has_high = any('high' in l for l in level_set)
+    has_low = any('low' in l for l in level_set)
+    has_medium = any('medium' in l or 'mid' in l or 'moderate' in l for l in level_set)
+
+    if has_high or has_low or has_medium:
+        # Try to find what's being varied
+        for level in levels_lower:
+            for term in ['high', 'low', 'medium', 'mid', 'moderate']:
+                if term in level:
+                    base = level.replace(term, '').strip(' -_')
+                    if base and len(base) > 1:
+                        return base.title().replace('_', ' ')
         return "Level"
 
-    # Product type patterns
-    if any(x in level_set for x in ['hedonic', 'utilitarian', 'functional', 'experiential']):
-        return "Product Type"
+    # ==========================================================
+    # PATTERN 4: Product/Category types
+    # ==========================================================
+    product_patterns = {
+        ('hedonic', 'utilitarian', 'functional', 'experiential', 'luxury', 'necessity'): "Product Type",
+        ('food', 'electronics', 'clothing', 'service'): "Category",
+        ('positive', 'negative', 'neutral'): "Valence",
+        ('happy', 'sad', 'angry', 'neutral'): "Emotion",
+        ('gain', 'loss'): "Frame",
+        ('promotion', 'prevention'): "Regulatory Focus",
+    }
 
-    # Price patterns
-    if any('price' in l or '$' in l for l in level_set):
+    for patterns, factor_name in product_patterns.items():
+        if any(p in level_set for p in patterns):
+            return factor_name
+
+    # ==========================================================
+    # PATTERN 5: Price/Money patterns
+    # ==========================================================
+    if any('price' in l or '$' in l or 'expensive' in l or 'cheap' in l for l in level_set):
         return "Price"
 
-    # Brand patterns
+    # ==========================================================
+    # PATTERN 6: Brand patterns
+    # ==========================================================
     if any('brand' in l for l in level_set):
         return "Brand"
 
-    # If levels have common prefix, use that as base
-    if len(levels) >= 2:
-        # Find common words
-        words_sets = [set(l.lower().split()) for l in levels]
-        common_words = set.intersection(*words_sets) if words_sets else set()
-        if common_words:
-            # Remove common noise words
-            common_words -= {'the', 'a', 'an', 'with', 'without', 'no', 'vs'}
-            if common_words:
-                return ' '.join(sorted(common_words)).title()
+    # ==========================================================
+    # PATTERN 7: Time-related patterns
+    # ==========================================================
+    if any(t in level_set for t in ['past', 'present', 'future', 'before', 'after', 'now', 'later']):
+        return "Time Frame"
 
+    # ==========================================================
+    # PATTERN 8: Source/Origin patterns
+    # ==========================================================
+    if any(s in level_set for s in ['local', 'foreign', 'domestic', 'imported', 'organic', 'conventional']):
+        return "Source"
+
+    # ==========================================================
+    # PATTERN 9: Social patterns
+    # ==========================================================
+    if any(s in level_set for s in ['social', 'individual', 'group', 'alone', 'public', 'private']):
+        return "Social Context"
+
+    # ==========================================================
+    # PATTERN 10: Try to find common differentiating terms
+    # ==========================================================
+    if len(levels) >= 2:
+        # Find what makes levels different (the varying part)
+        words_lists = [l.split() for l in levels_lower]
+
+        # Find words that appear in some but not all levels
+        all_words = set()
+        for wl in words_lists:
+            all_words.update(wl)
+
+        varying_words = set()
+        for word in all_words:
+            count = sum(1 for wl in words_lists if word in wl)
+            if 0 < count < len(words_lists):
+                varying_words.add(word)
+
+        # Filter out noise words
+        noise_words = {'the', 'a', 'an', 'with', 'without', 'no', 'vs', 'and', 'or', 'in', 'on', 'for', 'to', 'of', 'is'}
+        varying_words -= noise_words
+
+        if varying_words:
+            # Use the longest varying word as potential factor name
+            best_word = max(varying_words, key=len)
+            if len(best_word) > 2:
+                return best_word.title()
+
+        # Find common words across all levels (the constant part)
+        words_sets = [set(wl) for wl in words_lists]
+        common_words = set.intersection(*words_sets) if words_sets else set()
+        common_words -= noise_words
+
+        if common_words:
+            # Use common words as factor name
+            common_str = ' '.join(sorted(common_words, key=len, reverse=True)[:2])
+            if common_str and len(common_str) > 2:
+                return common_str.title()
+
+    # ==========================================================
+    # FALLBACK: Generic factor name
+    # ==========================================================
     return "Factor"
 
 
@@ -876,9 +980,17 @@ def _infer_factors_from_conditions(conditions: List[str]) -> List[Dict[str, Any]
     """
     Parse factorial design from condition names.
 
+    This function is designed to work with ANY QSF file by:
+    1. Trying multiple separator patterns
+    2. Handling underscore-separated names (e.g., "AI_Hedonic")
+    3. Detecting numeric suffixes as potential factor levels
+    4. Falling back gracefully to single-factor designs
+
     Examples:
-    - "No AI x Utilitarian", "AI x Hedonic" → Factor 1: AI Presence (AI, No AI), Factor 2: Product Type (Utilitarian, Hedonic)
-    - "Control", "Treatment" → Single factor: Treatment (Control, Treatment)
+    - "No AI x Utilitarian", "AI x Hedonic" → 2 factors
+    - "Control", "Treatment" → 1 factor
+    - "Cond_1_A", "Cond_1_B", "Cond_2_A", "Cond_2_B" → 2 factors
+    - "High_Price", "Low_Price" → 1 factor (Price)
     """
     if not conditions:
         return [{"name": "Condition", "levels": ["Condition A"]}]
@@ -890,40 +1002,123 @@ def _infer_factors_from_conditions(conditions: List[str]) -> List[Dict[str, Any]
     if not conditions:
         return [{"name": "Condition", "levels": ["Condition A"]}]
 
-    # Try to find separator
-    seps = [" x ", " X ", " × ", " | ", " * "]
+    # If only one condition, return single factor
+    if len(conditions) == 1:
+        return [{"name": "Condition", "levels": conditions}]
+
+    # ==========================================================
+    # TRY MULTIPLE SEPARATOR PATTERNS
+    # ==========================================================
+    # Order matters: try more specific separators first
+    separator_patterns = [
+        " x ",     # Most common factorial separator
+        " X ",     # Uppercase version
+        " × ",     # Unicode multiplication sign
+        " | ",     # Pipe separator
+        " / ",     # Slash separator (but not in numbers like 1/2)
+        " - ",     # Dash separator (be careful with hyphenated words)
+        " * ",     # Asterisk
+        " & ",     # Ampersand
+        "_x_",     # Underscore x underscore
+        "__",      # Double underscore
+    ]
 
     chosen_sep = None
-    for sep in seps:
-        if any(sep in c for c in conditions):
+    for sep in separator_patterns:
+        # Count how many conditions contain this separator
+        matches = sum(1 for c in conditions if sep in c)
+        # Need at least 2 conditions with the separator, or all conditions
+        if matches >= 2 or matches == len(conditions):
             chosen_sep = sep
             break
 
-    if not chosen_sep:
-        # Single factor design
-        return [{"name": "Condition", "levels": conditions}]
+    # ==========================================================
+    # PARSE USING FOUND SEPARATOR
+    # ==========================================================
+    if chosen_sep:
+        split_rows = [c.split(chosen_sep) for c in conditions]
+        max_parts = max(len(r) for r in split_rows)
 
-    # Parse factorial structure
-    split_rows = [c.split(chosen_sep) for c in conditions]
-    max_parts = max(len(r) for r in split_rows)
+        # Check if splitting is consistent
+        if all(len(r) == max_parts for r in split_rows) and max_parts > 1:
+            # Extract unique levels for each factor position
+            factors: List[Dict[str, Any]] = []
+            for j in range(max_parts):
+                levels = sorted(list({r[j].strip() for r in split_rows if r[j].strip()}))
+                if not levels:
+                    continue
+                factor_name = _infer_factor_name(levels)
+                # Make factor name unique if needed
+                existing_names = [f.get("name") for f in factors]
+                if factor_name in existing_names:
+                    factor_name = f"{factor_name} {j+1}"
+                factors.append({"name": factor_name, "levels": levels})
 
-    # Check consistency
-    if any(len(r) != max_parts for r in split_rows):
-        # Inconsistent splitting - fall back to single factor
-        return [{"name": "Condition", "levels": conditions}]
+            if factors:
+                return factors
 
-    # Extract unique levels for each factor position
-    factors: List[Dict[str, Any]] = []
-    for j in range(max_parts):
-        levels = sorted(list({r[j].strip() for r in split_rows}))
-        factor_name = _infer_factor_name(levels)
-        # Make factor name unique if needed
-        existing_names = [f.get("name") for f in factors]
-        if factor_name in existing_names:
-            factor_name = f"{factor_name} {j+1}"
-        factors.append({"name": factor_name, "levels": levels})
+    # ==========================================================
+    # TRY UNDERSCORE-BASED PARSING (e.g., "AI_Hedonic", "NoAI_Utilitarian")
+    # ==========================================================
+    # Only if conditions have underscores and consistent structure
+    underscore_rows = [c.split('_') for c in conditions if '_' in c]
+    if len(underscore_rows) == len(conditions) and len(underscore_rows) > 1:
+        parts_count = [len(r) for r in underscore_rows]
+        if len(set(parts_count)) == 1 and parts_count[0] > 1:
+            # All conditions split into same number of parts
+            max_parts = parts_count[0]
+            factors = []
+            for j in range(max_parts):
+                levels = sorted(list({r[j].strip() for r in underscore_rows if r[j].strip()}))
+                if len(levels) > 1:  # Only include if there's variation
+                    factor_name = _infer_factor_name(levels)
+                    existing_names = [f.get("name") for f in factors]
+                    if factor_name in existing_names:
+                        factor_name = f"{factor_name} {j+1}"
+                    factors.append({"name": factor_name, "levels": levels})
 
-    return factors
+            if len(factors) > 1:
+                return factors
+
+    # ==========================================================
+    # TRY TO DETECT NUMERIC SUFFIXES AS FACTOR LEVELS
+    # ==========================================================
+    # e.g., "Cond1A", "Cond1B", "Cond2A", "Cond2B" → 2 factors
+    import re
+    numeric_pattern = re.compile(r'^(.+?)(\d+)(.*)$')
+    parsed_parts = []
+    for c in conditions:
+        match = numeric_pattern.match(c)
+        if match:
+            parsed_parts.append((match.group(1), match.group(2), match.group(3)))
+        else:
+            parsed_parts.append((c, '', ''))
+
+    # Check if we have consistent numeric patterns
+    if all(p[1] for p in parsed_parts):  # All have numbers
+        # Check if we have multiple levels in each "position"
+        prefixes = set(p[0] for p in parsed_parts)
+        numbers = set(p[1] for p in parsed_parts)
+        suffixes = set(p[2] for p in parsed_parts)
+
+        if len(numbers) > 1 and len(suffixes) > 1:
+            # Potential 2-factor design
+            factors = []
+            if len(numbers) > 1:
+                factor_name = _infer_factor_name(list(numbers))
+                factors.append({"name": factor_name if factor_name != "Factor" else "Factor 1", "levels": sorted(list(numbers))})
+            if len(suffixes) > 1:
+                factor_name = _infer_factor_name(list(suffixes))
+                factors.append({"name": factor_name if factor_name != "Factor" else "Factor 2", "levels": sorted(list(suffixes))})
+
+            if len(factors) > 1:
+                return factors
+
+    # ==========================================================
+    # FALLBACK: Single factor design
+    # ==========================================================
+    factor_name = _infer_factor_name(conditions)
+    return [{"name": factor_name if factor_name != "Factor" else "Condition", "levels": conditions}]
 
 
 def _preview_to_engine_inputs(preview: QSFPreviewResult) -> Dict[str, Any]:
@@ -1259,7 +1454,7 @@ with st.sidebar:
             "survey_pdf_content", "survey_pdf_name",
             "prereg_pdf_content", "prereg_pdf_name", "prereg_text_sanitized", "prereg_pdf_text",
             "prereg_outcomes", "prereg_iv", "prereg_exclusions", "prereg_analysis",
-            "enhanced_analysis", "inferred_design",
+            "enhanced_analysis", "inferred_design", "condition_allocation",
             "selected_conditions", "current_conditions", "custom_conditions",
             "last_df", "last_zip", "last_metadata",
             "has_generated", "is_generating", "generation_requested",
@@ -1280,9 +1475,9 @@ active_step = st.session_state["active_step"]
 # Get step completion status
 completion = _get_step_completion()
 step_complete = [
-    completion["study_title"] and completion["study_description"] and completion["sample_size"],
+    completion["study_title"] and completion["study_description"],
     completion["qsf_uploaded"],
-    completion["conditions_set"] and completion["primary_outcome"] and completion["independent_var"],
+    completion["conditions_set"] and completion["primary_outcome"] and completion["independent_var"] and completion["sample_size"],
     completion["design_ready"],
 ]
 
@@ -1482,7 +1677,7 @@ def _render_status_panel():
     if not completion["study_description"]:
         missing.append(("Study description", "Step 1"))
     if not completion["sample_size"]:
-        missing.append(("Sample size (minimum 10)", "Step 1"))
+        missing.append(("Sample size (minimum 10)", "Step 3"))
     if not completion["qsf_uploaded"]:
         missing.append(("QSF file upload", "Step 2"))
     if not completion["primary_outcome"]:
@@ -1515,7 +1710,7 @@ def _render_status_panel():
 if active_step == 0:
     # Step header with status
     completion = _get_step_completion()
-    step1_done = completion["study_title"] and completion["study_description"] and completion["sample_size"]
+    step1_done = completion["study_title"] and completion["study_description"]
 
     st.markdown("### Step 1: Study Information")
 
@@ -1527,8 +1722,6 @@ if active_step == 0:
             missing.append("Study title")
         if not completion["study_description"]:
             missing.append("Study description")
-        if not completion["sample_size"]:
-            missing.append("Sample size (minimum 10)")
         st.info(f"**Complete these fields to continue:** {', '.join(missing)}")
 
     st.markdown("---")
@@ -1550,23 +1743,9 @@ if active_step == 0:
             placeholder="Describe your study's purpose, manipulation, and main outcomes. This helps with domain detection and persona selection.",
             help="Include your manipulation, population, and intended outcomes (helps domain detection).",
         )
-        sample_size = st.number_input(
-            "Target sample size (N) * — based on power analysis",
-            min_value=10,
-            max_value=MAX_SIMULATED_N,
-            value=int(st.session_state.get("sample_size", 200)),
-            step=10,
-            help=(
-                "Enter the sample size from your power analysis (a priori power calculation). "
-                "This should be the N required to detect your expected effect size with adequate power (typically 80%). "
-                f"Maximum: {MAX_SIMULATED_N:,}."
-            ),
-        )
-        st.caption("💡 Use your power analysis result (e.g., from G*Power) to determine the appropriate N.")
 
         st.session_state["study_title"] = study_title
         st.session_state["study_description"] = study_description
-        st.session_state["sample_size"] = int(sample_size)
 
     with col2:
         st.markdown("### Team Information (optional)")
@@ -1595,7 +1774,7 @@ if active_step == 0:
 if active_step == 1:
     # Check if Step 1 is complete
     completion = _get_step_completion()
-    step1_done = completion["study_title"] and completion["study_description"] and completion["sample_size"]
+    step1_done = completion["study_title"] and completion["study_description"]
     step2_done = completion["qsf_uploaded"]
 
     st.markdown("### Step 2: Upload Files")
@@ -2176,11 +2355,108 @@ if active_step == 2:
             help="How participants are assigned to conditions.",
         )
 
-        # Sample size info
-        sample_size = st.session_state.get("sample_size", 100)
-        st.metric("Pre-registered sample size", sample_size)
+    # ========================================
+    # SAMPLE SIZE AND CONDITION ALLOCATION
+    # ========================================
+    st.markdown("---")
+    st.markdown("### 3. Sample Size & Condition Allocation")
+
+    # Sample size input (moved from Step 1)
+    sample_size = st.number_input(
+        "Target sample size (N) * — based on power analysis",
+        min_value=10,
+        max_value=MAX_SIMULATED_N,
+        value=int(st.session_state.get("sample_size", 200)),
+        step=10,
+        help=(
+            "Enter the sample size from your power analysis (a priori power calculation). "
+            "This should be the N required to detect your expected effect size with adequate power (typically 80%). "
+            f"Maximum: {MAX_SIMULATED_N:,}."
+        ),
+        key="sample_size_input_step3",
+    )
+    st.session_state["sample_size"] = int(sample_size)
+    st.caption("💡 Use your power analysis result (e.g., from G*Power) to determine the appropriate N.")
+
+    # Condition allocation (rebalancing) with sliders
+    if all_conditions and len(all_conditions) > 1:
+        st.markdown("#### Condition Allocation")
+        st.caption(
+            "By default, participants are divided equally across conditions. "
+            "Use the sliders below to adjust the allocation if needed (must sum to 100%)."
+        )
+
+        # Initialize allocation if not set
+        if "condition_allocation" not in st.session_state or len(st.session_state["condition_allocation"]) != len(all_conditions):
+            # Equal allocation by default
+            equal_pct = 100 // len(all_conditions)
+            remainder = 100 - (equal_pct * len(all_conditions))
+            st.session_state["condition_allocation"] = {
+                cond: equal_pct + (1 if i < remainder else 0)
+                for i, cond in enumerate(all_conditions)
+            }
+
+        allocation = st.session_state["condition_allocation"]
+
+        # Use columns for compact slider layout
+        slider_cols = st.columns(min(len(all_conditions), 3))
+
+        new_allocation = {}
+        for i, cond in enumerate(all_conditions):
+            col_idx = i % len(slider_cols)
+            with slider_cols[col_idx]:
+                # Clean condition name for display
+                display_name = cond[:25] + "..." if len(cond) > 25 else cond
+                current_val = allocation.get(cond, 100 // len(all_conditions))
+                new_val = st.slider(
+                    display_name,
+                    min_value=5,
+                    max_value=95,
+                    value=current_val,
+                    step=5,
+                    key=f"alloc_slider_{i}",
+                    help=f"Percentage of participants in '{cond}'"
+                )
+                new_allocation[cond] = new_val
+
+        # Calculate total and show warning if not 100%
+        total_pct = sum(new_allocation.values())
+
+        if total_pct != 100:
+            st.warning(f"⚠️ Allocations sum to **{total_pct}%** (should be 100%). Adjust sliders to balance.")
+            # Auto-normalize button
+            if st.button("Auto-balance to 100%", key="auto_balance_btn"):
+                scale_factor = 100 / total_pct
+                normalized = {}
+                running_total = 0
+                sorted_conds = sorted(new_allocation.keys())
+                for j, c in enumerate(sorted_conds[:-1]):
+                    normalized[c] = max(5, min(95, round(new_allocation[c] * scale_factor)))
+                    running_total += normalized[c]
+                # Last condition gets the remainder
+                normalized[sorted_conds[-1]] = 100 - running_total
+                st.session_state["condition_allocation"] = normalized
+                st.rerun()
+        else:
+            st.success(f"✓ Allocations sum to 100%")
+            st.session_state["condition_allocation"] = new_allocation
+
+        # Show expected N per condition
+        st.markdown("**Expected participants per condition:**")
+        n_per_cond = []
+        for cond in all_conditions:
+            pct = new_allocation.get(cond, 100 // len(all_conditions))
+            n = round(sample_size * pct / 100)
+            n_per_cond.append(f"{cond}: **{n}**")
+        st.markdown(" | ".join(n_per_cond))
+
+    elif all_conditions:
+        # Single condition - show simple info
+        st.info(f"Single condition design: all {sample_size} participants in '{all_conditions[0]}'")
+        st.session_state["condition_allocation"] = {all_conditions[0]: 100}
 
     # Factor configuration with clear explanation
+    st.markdown("---")
     st.markdown("#### Factor Structure")
     st.caption(
         "**Factors** are the independent variables you manipulate. "
@@ -2677,6 +2953,9 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
         clean_scales = _normalize_scale_specs(inferred.get("scales", []))
         clean_factors = _normalize_factor_specs(inferred.get("factors", []), inferred.get("conditions", []))
 
+        # Get condition allocation from session state
+        condition_allocation = st.session_state.get("condition_allocation", None)
+
         engine = EnhancedSimulationEngine(
             study_title=title,
             study_description=desc,
@@ -2692,6 +2971,7 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
             exclusion_criteria=exclusion,
             custom_persona_weights=custom_persona_weights,
             open_ended_questions=inferred.get("open_ended_questions", []),
+            condition_allocation=condition_allocation,
             seed=None,
             mode="pilot" if not st.session_state.get("advanced_mode", False) else "final",
         )
@@ -2743,17 +3023,32 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
 
             # COMPREHENSIVE instructor report (for instructor email ONLY - not included in student download)
             # This includes detailed statistical analysis, hypothesis testing, and recommendations
-            comprehensive_report = ComprehensiveInstructorReport().generate_comprehensive_report(
+            comprehensive_reporter = ComprehensiveInstructorReport()
+            team_info_dict = {
+                "team_name": st.session_state.get("team_name", ""),
+                "team_members": st.session_state.get("team_members_raw", ""),
+            }
+            prereg_text_report = st.session_state.get("prereg_text_sanitized", "")
+
+            # Markdown version (text-based)
+            comprehensive_report = comprehensive_reporter.generate_comprehensive_report(
                 df=df,
                 metadata=metadata,
                 schema_validation=schema_results,
-                prereg_text=st.session_state.get("prereg_text_sanitized", ""),
-                team_info={
-                    "team_name": st.session_state.get("team_name", ""),
-                    "team_members": st.session_state.get("team_members_raw", ""),
-                },
+                prereg_text=prereg_text_report,
+                team_info=team_info_dict,
             )
             comprehensive_bytes = comprehensive_report.encode("utf-8")
+
+            # HTML version with visualizations and statistical tests
+            comprehensive_html = comprehensive_reporter.generate_html_report(
+                df=df,
+                metadata=metadata,
+                schema_validation=schema_results,
+                prereg_text=prereg_text_report,
+                team_info=team_info_dict,
+            )
+            comprehensive_html_bytes = comprehensive_html.encode("utf-8")
 
             files = {
                 "Simulated_Data.csv": csv_bytes,
@@ -2810,8 +3105,14 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
             body = (
                 "COMPREHENSIVE INSTRUCTOR ANALYSIS ATTACHED\n"
                 "=========================================\n\n"
-                "This email includes a detailed statistical analysis that students do NOT receive.\n"
+                "This email includes detailed statistical analysis that students do NOT receive.\n"
                 "Students get only Study_Summary.md in their download ZIP.\n\n"
+                "INSTRUCTOR ATTACHMENTS:\n"
+                "- INSTRUCTOR_Statistical_Report.html - Full visual report with charts, t-tests,\n"
+                "  ANOVA, Mann-Whitney, chi-squared, regression analysis, and effect sizes.\n"
+                "  Open in any web browser for best viewing.\n"
+                "- INSTRUCTOR_Detailed_Analysis.md - Text-based analysis (Markdown format)\n"
+                "- Student_Study_Summary.md - What students receive (for reference)\n\n"
                 f"Team: {st.session_state.get('team_name','')}\n"
                 f"Members:\n{st.session_state.get('team_members_raw','')}\n\n"
                 f"Study: {title}\n"
@@ -2832,7 +3133,8 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
                 body_text=body,
                 attachments=[
                     ("simulation_output.zip", zip_bytes),
-                    ("INSTRUCTOR_Detailed_Analysis.md", comprehensive_bytes),  # Full statistical analysis (instructor only)
+                    ("INSTRUCTOR_Statistical_Report.html", comprehensive_html_bytes),  # HTML report with visualizations
+                    ("INSTRUCTOR_Detailed_Analysis.md", comprehensive_bytes),  # Markdown fallback
                     ("Student_Study_Summary.md", instructor_bytes),  # What students see (for reference)
                 ],
             )

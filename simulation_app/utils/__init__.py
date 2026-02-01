@@ -2,17 +2,18 @@
 """
 Utility modules for the Behavioral Experiment Simulation Tool.
 
-Version: 2.1.5
+Version: 2.1.6
 Changes:
-    - Added ComprehensiveInstructorReport for detailed instructor-only analysis
-    - Comprehensive report includes: statistical tests, effect sizes, hypothesis checks
-    - Instructor email now receives detailed analysis; students get simpler report
-    - Fixed extra DV generation issue with scale deduplication
-    - Improved scale point detection and handling (preserve QSF values, track source)
-    - Added comprehensive persona transparency section to instructor report
-    - Added scale source tracking (QSF detected vs default) in reports
-    - Fixed nested flow list handling in QSF parsers
-    - Added forced module reload in app.py to fix Streamlit caching issues
+    - Moved sample size question from Step 1 to Step 3 (Design Setup)
+    - Added condition rebalancing with intuitive sliders that sum to 100%
+    - Added HTML instructor report with visualizations (bar charts, box plots)
+    - Added comprehensive statistical tests: t-tests, Welch's t-test, Mann-Whitney U,
+      ANOVA, Kruskal-Wallis, chi-squared, regression analysis
+    - Added effect size calculations: Cohen's d, eta-squared
+    - Added assumption checks: Levene's test, Shapiro-Wilk
+    - Enhanced factor parsing to be more robust and scalable for all QSF files
+    - Improved condition name cleaning (handles more Qualtrics patterns)
+    - Instructor email now includes HTML report with full visualizations
 
 Modules:
     - qsf_parser: Parse Qualtrics Survey Format (.qsf) files
@@ -29,7 +30,7 @@ Modules:
 """
 
 # Package version - should match all module versions
-__version__ = "2.1.5"
+__version__ = "2.1.6"
 
 from .qsf_parser import parse_qsf_file, extract_survey_structure, generate_qsf_summary
 from .simulation_engine import SimulationEngine
