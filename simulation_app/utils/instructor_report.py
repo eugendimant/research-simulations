@@ -6,7 +6,7 @@ Generates comprehensive instructor-facing reports for student simulations.
 """
 
 # Version identifier to help track deployed code
-__version__ = "2.1.7"  # Robust stats with numpy fallbacks, factorial ANOVA, comprehensive tests, pairwise comparisons, clean condition names
+__version__ = "2.1.8"  # Enhanced visualizations, forest plots, interaction plots, violin+box plots
 
 from dataclasses import dataclass
 from datetime import datetime
@@ -1612,36 +1612,78 @@ class ComprehensiveInstructorReport:
         data: Dict[str, Tuple[float, float]],
         title: str,
         ylabel: str,
+        effect_size: Optional[float] = None,
+        p_value: Optional[float] = None,
     ) -> Optional[str]:
-        """Create a bar chart with error bars and return as base64-encoded PNG."""
+        """Create an enhanced bar chart with error bars, annotations, and styling."""
         if not MATPLOTLIB_AVAILABLE:
             return None
 
         try:
-            fig, ax = plt.subplots(figsize=(8, 5))
+            # Use a cleaner style
+            plt.style.use('seaborn-v0_8-whitegrid') if 'seaborn-v0_8-whitegrid' in plt.style.available else None
+
+            fig, ax = plt.subplots(figsize=(10, 6))
 
             conditions = list(data.keys())
             means = [data[c][0] for c in conditions]
             errors = [data[c][1] for c in conditions]
 
-            colors = ['#4C72B0', '#DD8452', '#55A868', '#C44E52', '#8172B3']
-            bars = ax.bar(conditions, means, yerr=errors, capsize=5,
-                         color=colors[:len(conditions)], edgecolor='black', alpha=0.8)
+            # Modern color palette (colorblind-friendly)
+            colors = ['#2ecc71', '#3498db', '#e74c3c', '#9b59b6', '#f39c12', '#1abc9c', '#e67e22']
+            bar_colors = colors[:len(conditions)]
 
-            ax.set_ylabel(ylabel, fontsize=11)
-            ax.set_title(title, fontsize=12, fontweight='bold')
-            ax.tick_params(axis='x', rotation=45)
+            # Create bars with gradient effect
+            bars = ax.bar(conditions, means, yerr=errors, capsize=8,
+                         color=bar_colors, edgecolor='white', linewidth=2,
+                         alpha=0.85, error_kw={'linewidth': 2, 'capthick': 2, 'ecolor': '#2c3e50'})
 
-            # Add value labels on bars
+            # Style improvements
+            ax.set_ylabel(ylabel, fontsize=13, fontweight='bold', color='#2c3e50')
+            ax.set_title(title, fontsize=14, fontweight='bold', color='#2c3e50', pad=20)
+            ax.tick_params(axis='x', rotation=30, labelsize=11)
+            ax.tick_params(axis='y', labelsize=10)
+
+            # Add value labels on bars with better formatting
             for bar, mean, error in zip(bars, means, errors):
-                ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + error + 0.05,
-                       f'{mean:.2f}', ha='center', va='bottom', fontsize=9)
+                height = bar.get_height()
+                ax.annotate(f'{mean:.2f}',
+                           xy=(bar.get_x() + bar.get_width() / 2, height + error),
+                           xytext=(0, 8), textcoords="offset points",
+                           ha='center', va='bottom', fontsize=11, fontweight='bold',
+                           color='#2c3e50',
+                           bbox=dict(boxstyle='round,pad=0.3', facecolor='white', alpha=0.8, edgecolor='none'))
+
+            # Add significance and effect size annotation if provided
+            annotation_text = []
+            if p_value is not None:
+                sig_symbol = "***" if p_value < 0.001 else ("**" if p_value < 0.01 else ("*" if p_value < 0.05 else "ns"))
+                annotation_text.append(f"p = {p_value:.4f} {sig_symbol}")
+            if effect_size is not None:
+                annotation_text.append(f"d = {effect_size:.2f}")
+
+            if annotation_text:
+                ax.text(0.98, 0.98, "\n".join(annotation_text),
+                       transform=ax.transAxes, fontsize=11,
+                       verticalalignment='top', horizontalalignment='right',
+                       bbox=dict(boxstyle='round,pad=0.5', facecolor='#ecf0f1', alpha=0.9, edgecolor='#bdc3c7'))
+
+            # Remove top and right spines for cleaner look
+            ax.spines['top'].set_visible(False)
+            ax.spines['right'].set_visible(False)
+            ax.spines['left'].set_color('#bdc3c7')
+            ax.spines['bottom'].set_color('#bdc3c7')
+
+            # Add subtle gridlines
+            ax.yaxis.grid(True, linestyle='--', alpha=0.7, color='#ecf0f1')
+            ax.set_axisbelow(True)
 
             plt.tight_layout()
 
-            # Save to base64
+            # Save to base64 with higher DPI
             buffer = io.BytesIO()
-            plt.savefig(buffer, format='png', dpi=100, bbox_inches='tight')
+            plt.savefig(buffer, format='png', dpi=150, bbox_inches='tight',
+                       facecolor='white', edgecolor='none')
             buffer.seek(0)
             img_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
             plt.close(fig)
@@ -1657,35 +1699,247 @@ class ComprehensiveInstructorReport:
         condition_column: str = "CONDITION",
         title: str = "Distribution by Condition",
     ) -> Optional[str]:
-        """Create a distribution plot (box + strip) and return as base64 PNG."""
+        """Create an enhanced violin/box plot with individual data points."""
         if not MATPLOTLIB_AVAILABLE:
             return None
 
         try:
-            fig, ax = plt.subplots(figsize=(8, 5))
+            fig, ax = plt.subplots(figsize=(10, 6))
 
-            conditions = df[condition_column].unique().tolist()
-            colors = ['#4C72B0', '#DD8452', '#55A868', '#C44E52', '#8172B3']
+            # Clean condition names for display
+            df_plot = df.copy()
+            df_plot['_clean_condition'] = df_plot[condition_column].apply(_clean_condition_name)
+            conditions = df_plot['_clean_condition'].unique().tolist()
 
-            # Create box plots
+            # Modern color palette
+            colors = ['#2ecc71', '#3498db', '#e74c3c', '#9b59b6', '#f39c12', '#1abc9c', '#e67e22']
+
             positions = range(len(conditions))
-            box_data = [df[df[condition_column] == c][column].dropna() for c in conditions]
+            box_data = [df_plot[df_plot['_clean_condition'] == c][column].dropna().values for c in conditions]
 
-            bp = ax.boxplot(box_data, positions=positions, patch_artist=True, widths=0.5)
+            # Create violin plots for density visualization
+            parts = ax.violinplot(box_data, positions=positions, showmeans=False,
+                                  showmedians=False, showextrema=False)
 
-            for patch, color in zip(bp['boxes'], colors[:len(conditions)]):
-                patch.set_facecolor(color)
-                patch.set_alpha(0.6)
+            for i, pc in enumerate(parts['bodies']):
+                pc.set_facecolor(colors[i % len(colors)])
+                pc.set_edgecolor('white')
+                pc.set_alpha(0.3)
 
+            # Overlay box plots
+            bp = ax.boxplot(box_data, positions=positions, patch_artist=True, widths=0.3,
+                           showfliers=False)
+
+            for i, (patch, median) in enumerate(zip(bp['boxes'], bp['medians'])):
+                patch.set_facecolor(colors[i % len(colors)])
+                patch.set_alpha(0.7)
+                patch.set_edgecolor('white')
+                patch.set_linewidth(2)
+                median.set_color('white')
+                median.set_linewidth(2)
+
+            # Style whiskers and caps
+            for whisker in bp['whiskers']:
+                whisker.set_color('#7f8c8d')
+                whisker.set_linewidth(1.5)
+            for cap in bp['caps']:
+                cap.set_color('#7f8c8d')
+                cap.set_linewidth(1.5)
+
+            # Add individual data points with jitter
+            for i, (pos, data) in enumerate(zip(positions, box_data)):
+                if len(data) > 0:
+                    jitter = np.random.normal(0, 0.04, len(data))
+                    ax.scatter(pos + jitter, data, alpha=0.4, s=20,
+                              color=colors[i % len(colors)], edgecolor='white', linewidth=0.5,
+                              zorder=3)
+
+            # Add mean markers
+            for i, (pos, data) in enumerate(zip(positions, box_data)):
+                if len(data) > 0:
+                    mean_val = np.mean(data)
+                    ax.scatter(pos, mean_val, marker='D', s=80, color='white',
+                              edgecolor=colors[i % len(colors)], linewidth=2, zorder=4)
+
+            # Styling
             ax.set_xticks(positions)
-            ax.set_xticklabels(conditions, rotation=45, ha='right')
-            ax.set_ylabel(column, fontsize=11)
-            ax.set_title(title, fontsize=12, fontweight='bold')
+            ax.set_xticklabels(conditions, rotation=30, ha='right', fontsize=11)
+            ax.set_ylabel("Score", fontsize=13, fontweight='bold', color='#2c3e50')
+            ax.set_title(title, fontsize=14, fontweight='bold', color='#2c3e50', pad=20)
+
+            # Add legend for mean marker
+            ax.scatter([], [], marker='D', s=80, color='white', edgecolor='#2c3e50',
+                      linewidth=2, label='Mean')
+            ax.legend(loc='upper right', framealpha=0.9)
+
+            # Clean up spines
+            ax.spines['top'].set_visible(False)
+            ax.spines['right'].set_visible(False)
+            ax.spines['left'].set_color('#bdc3c7')
+            ax.spines['bottom'].set_color('#bdc3c7')
+
+            ax.yaxis.grid(True, linestyle='--', alpha=0.5, color='#ecf0f1')
+            ax.set_axisbelow(True)
 
             plt.tight_layout()
 
             buffer = io.BytesIO()
-            plt.savefig(buffer, format='png', dpi=100, bbox_inches='tight')
+            plt.savefig(buffer, format='png', dpi=150, bbox_inches='tight',
+                       facecolor='white', edgecolor='none')
+            buffer.seek(0)
+            img_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
+            plt.close(fig)
+
+            return img_base64
+        except Exception:
+            return None
+
+    def _create_interaction_plot(
+        self,
+        df: pd.DataFrame,
+        column: str,
+        factor1_col: str,
+        factor2_col: str,
+        factor1_name: str,
+        factor2_name: str,
+        title: str = "Interaction Plot",
+    ) -> Optional[str]:
+        """Create an interaction plot for factorial designs."""
+        if not MATPLOTLIB_AVAILABLE:
+            return None
+
+        try:
+            fig, ax = plt.subplots(figsize=(10, 6))
+
+            # Get unique levels
+            f1_levels = df[factor1_col].dropna().unique().tolist()
+            f2_levels = df[factor2_col].dropna().unique().tolist()
+
+            # Colors and markers
+            colors = ['#2ecc71', '#e74c3c', '#3498db', '#9b59b6']
+            markers = ['o', 's', '^', 'D']
+
+            # Calculate means and SEs for each cell
+            for i, f2 in enumerate(f2_levels):
+                means = []
+                errors = []
+                for f1 in f1_levels:
+                    cell_data = df[(df[factor1_col] == f1) & (df[factor2_col] == f2)][column].dropna()
+                    if len(cell_data) > 0:
+                        means.append(cell_data.mean())
+                        errors.append(1.96 * cell_data.std() / np.sqrt(len(cell_data)) if len(cell_data) > 1 else 0)
+                    else:
+                        means.append(np.nan)
+                        errors.append(0)
+
+                # Plot line with error bars
+                x_positions = range(len(f1_levels))
+                ax.errorbar(x_positions, means, yerr=errors,
+                           marker=markers[i % len(markers)], markersize=12,
+                           color=colors[i % len(colors)], linewidth=2.5,
+                           capsize=6, capthick=2, label=f"{factor2_name}: {f2}",
+                           markeredgecolor='white', markeredgewidth=2)
+
+            # Styling
+            ax.set_xticks(range(len(f1_levels)))
+            ax.set_xticklabels([str(l) for l in f1_levels], fontsize=11)
+            ax.set_xlabel(factor1_name, fontsize=13, fontweight='bold', color='#2c3e50')
+            ax.set_ylabel("Mean Score", fontsize=13, fontweight='bold', color='#2c3e50')
+            ax.set_title(title, fontsize=14, fontweight='bold', color='#2c3e50', pad=20)
+
+            # Legend
+            ax.legend(loc='best', framealpha=0.95, fontsize=10)
+
+            # Clean up spines
+            ax.spines['top'].set_visible(False)
+            ax.spines['right'].set_visible(False)
+            ax.spines['left'].set_color('#bdc3c7')
+            ax.spines['bottom'].set_color('#bdc3c7')
+
+            ax.yaxis.grid(True, linestyle='--', alpha=0.5, color='#ecf0f1')
+            ax.set_axisbelow(True)
+
+            plt.tight_layout()
+
+            buffer = io.BytesIO()
+            plt.savefig(buffer, format='png', dpi=150, bbox_inches='tight',
+                       facecolor='white', edgecolor='none')
+            buffer.seek(0)
+            img_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
+            plt.close(fig)
+
+            return img_base64
+        except Exception:
+            return None
+
+    def _create_effect_size_forest_plot(
+        self,
+        comparisons: List[Dict[str, Any]],
+        title: str = "Effect Sizes (Cohen's d) with 95% CI",
+    ) -> Optional[str]:
+        """Create a forest plot showing effect sizes for all pairwise comparisons."""
+        if not MATPLOTLIB_AVAILABLE or not comparisons:
+            return None
+
+        try:
+            fig, ax = plt.subplots(figsize=(10, max(4, len(comparisons) * 0.6 + 1)))
+
+            y_positions = range(len(comparisons))
+            effects = [c['cohens_d'] for c in comparisons]
+            labels = [c['comparison'] for c in comparisons]
+            significant = [c['significant'] for c in comparisons]
+
+            # Approximate CI for Cohen's d (rough estimate)
+            ci_widths = [0.4 for _ in comparisons]  # Simplified
+
+            # Colors based on significance
+            colors = ['#2ecc71' if sig else '#95a5a6' for sig in significant]
+
+            # Plot effect sizes
+            for i, (effect, label, sig, color) in enumerate(zip(effects, labels, significant, colors)):
+                # Horizontal line for CI
+                ax.hlines(i, effect - ci_widths[i], effect + ci_widths[i],
+                         color=color, linewidth=3, alpha=0.7)
+                # Diamond marker for point estimate
+                ax.scatter(effect, i, marker='D', s=150, color=color,
+                          edgecolor='white', linewidth=2, zorder=3)
+
+            # Reference line at 0
+            ax.axvline(x=0, color='#e74c3c', linestyle='--', linewidth=2, alpha=0.7,
+                      label='No effect')
+
+            # Effect size interpretation zones
+            ax.axvspan(-0.2, 0.2, alpha=0.1, color='#f39c12', label='Negligible')
+            ax.axvspan(0.2, 0.5, alpha=0.1, color='#f1c40f')
+            ax.axvspan(-0.5, -0.2, alpha=0.1, color='#f1c40f')
+            ax.axvspan(0.5, 0.8, alpha=0.1, color='#e67e22')
+            ax.axvspan(-0.8, -0.5, alpha=0.1, color='#e67e22')
+
+            # Styling
+            ax.set_yticks(y_positions)
+            ax.set_yticklabels(labels, fontsize=11)
+            ax.set_xlabel("Cohen's d", fontsize=13, fontweight='bold', color='#2c3e50')
+            ax.set_title(title, fontsize=14, fontweight='bold', color='#2c3e50', pad=20)
+
+            # Add interpretation text
+            xlim = ax.get_xlim()
+            ax.text(xlim[1], -0.7, "Green = Significant (p < .05)\nGray = Non-significant",
+                   fontsize=9, ha='right', va='top', style='italic', color='#7f8c8d')
+
+            # Clean up spines
+            ax.spines['top'].set_visible(False)
+            ax.spines['right'].set_visible(False)
+            ax.spines['left'].set_color('#bdc3c7')
+            ax.spines['bottom'].set_color('#bdc3c7')
+
+            ax.xaxis.grid(True, linestyle='--', alpha=0.5, color='#ecf0f1')
+            ax.set_axisbelow(True)
+
+            plt.tight_layout()
+
+            buffer = io.BytesIO()
+            plt.savefig(buffer, format='png', dpi=150, bbox_inches='tight',
+                       facecolor='white', edgecolor='none')
             buffer.seek(0)
             img_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
             plt.close(fig)
@@ -1824,18 +2078,31 @@ class ComprehensiveInstructorReport:
 
                 html_parts.append("</table>")
 
-                # Create visualization
+                # Run statistical tests first to get effect size and p-value for chart
+                stats_results = {}
+                if len(conditions) >= 2 and "CONDITION" in df_analysis.columns:
+                    stats_results = self._run_statistical_tests(df_analysis, "_composite", "CONDITION")
+
+                # Extract effect size and p-value for bar chart annotation
+                effect_size_val = stats_results.get("cohens_d", {}).get("value") if "cohens_d" in stats_results else None
+                p_value_val = stats_results.get("t_test", {}).get("p_value") if "t_test" in stats_results else (
+                    stats_results.get("anova", {}).get("p_value") if "anova" in stats_results else None
+                )
+
+                # Create enhanced bar chart with annotations
                 chart_img = self._create_bar_chart(
                     chart_data,
                     f"{scale_name}: Means with 95% CI",
-                    "Mean Score"
+                    "Mean Score",
+                    effect_size=effect_size_val,
+                    p_value=p_value_val
                 )
                 if chart_img:
                     html_parts.append("<div class='chart-container'>")
                     html_parts.append(f"<img src='data:image/png;base64,{chart_img}' alt='Bar chart'>")
                     html_parts.append("</div>")
 
-                # Distribution plot
+                # Enhanced distribution plot (violin + box + points)
                 dist_img = self._create_distribution_plot(
                     df_analysis, "_composite", "CONDITION",
                     f"{scale_name}: Distribution by Condition"
@@ -1847,7 +2114,6 @@ class ComprehensiveInstructorReport:
 
                 # Statistical tests
                 if len(conditions) >= 2 and "CONDITION" in df_analysis.columns:
-                    stats_results = self._run_statistical_tests(df_analysis, "_composite", "CONDITION")
 
                     html_parts.append("<h4>Statistical Tests</h4>")
 
@@ -1940,6 +2206,16 @@ class ComprehensiveInstructorReport:
                         html_parts.append("</table>")
                         html_parts.append("<div class='warning-box'><em>Note: Multiple comparisons may inflate Type I error. Consider Bonferroni or other corrections.</em></div>")
 
+                        # Forest plot for effect sizes
+                        forest_img = self._create_effect_size_forest_plot(
+                            stats_results["pairwise_comparisons"],
+                            f"{scale_name}: Effect Sizes (Cohen's d)"
+                        )
+                        if forest_img:
+                            html_parts.append("<div class='chart-container'>")
+                            html_parts.append(f"<img src='data:image/png;base64,{forest_img}' alt='Forest plot'>")
+                            html_parts.append("</div>")
+
                     # Regression analysis
                     html_parts.append("<h4>Regression Analysis</h4>")
                     reg_results = self._run_regression_analysis(df_analysis, "_composite", "CONDITION")
@@ -2029,6 +2305,32 @@ class ComprehensiveInstructorReport:
                                     for cell, stats in factorial_results["cell_statistics"].items():
                                         html_parts.append(f"<tr><td>{cell}</td><td>{stats['n']}</td><td>{stats['mean']:.3f}</td><td>{stats['std']:.3f}</td></tr>")
                                     html_parts.append("</table>")
+
+                                # Interaction plot for factorial design
+                                if "factor1" in factorial_results and "factor2" in factorial_results:
+                                    f1_name = factorial_results["factor1"]["name"]
+                                    f2_name = factorial_results["factor2"]["name"]
+                                    f1_levels = factorial_results["factor1"]["levels"]
+                                    f2_levels = factorial_results["factor2"]["levels"]
+
+                                    # Create factor columns for plotting
+                                    df_plot = df_analysis.copy()
+                                    df_plot["_f1"] = df_plot["CONDITION"].apply(
+                                        lambda x: next((l for l in f1_levels if str(l).lower() in str(x).lower()), None)
+                                    )
+                                    df_plot["_f2"] = df_plot["CONDITION"].apply(
+                                        lambda x: next((l for l in f2_levels if str(l).lower() in str(x).lower()), None)
+                                    )
+
+                                    interaction_img = self._create_interaction_plot(
+                                        df_plot, "_composite", "_f1", "_f2",
+                                        f1_name, f2_name,
+                                        f"{scale_name}: Interaction Plot"
+                                    )
+                                    if interaction_img:
+                                        html_parts.append("<div class='chart-container'>")
+                                        html_parts.append(f"<img src='data:image/png;base64,{interaction_img}' alt='Interaction plot'>")
+                                        html_parts.append("</div>")
                         else:
                             err_msg = factorial_results.get("error", "Unable to parse factorial structure")
                             html_parts.append(f"<div class='warning-box'>Factorial ANOVA: {err_msg}</div>")
