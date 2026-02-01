@@ -43,8 +43,8 @@ import streamlit as st
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "2.1.10"
-BUILD_ID = "20260201-v2110-enhanced-reports"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "2.1.11"
+BUILD_ID = "20260201-v2111-condition-fixes"  # Change this to force cache invalidation
 
 def _verify_and_reload_utils():
     """Verify utils modules are at correct version, force reload if needed."""
@@ -93,7 +93,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF"
-APP_VERSION = "2.1.10"  # Enhanced reports: 3+ visualizations, control variables in regression, pre-reg parsing
+APP_VERSION = "2.1.11"  # PNG uploads, QSF identifier dropdown, allocation auto-balance fixes
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -1769,6 +1769,72 @@ def _get_condition_candidates(
     return list(dict.fromkeys([c for c in candidates if c.strip()]))
 
 
+def _get_qsf_identifiers(preview: Optional[QSFPreviewResult]) -> List[str]:
+    """
+    Extract all identifiers from QSF that could potentially be condition indicators.
+    Returns alphabetically sorted list excluding time/standard Qualtrics variables.
+    """
+    identifiers: List[str] = []
+
+    # Standard Qualtrics variables to exclude
+    excluded_patterns = {
+        'startdate', 'enddate', 'status', 'ipaddress', 'progress',
+        'duration', 'finished', 'recordeddate', 'responseid', 'recipientlastname',
+        'recipientfirstname', 'recipientemail', 'externalreference', 'locationlatitude',
+        'locationlongitude', 'distributionchannel', 'userlanguage', 'q_', 'gc', 'q_recaptchascore',
+        'q_relevantidduplicate', 'q_relevantidduplicatescore', 'q_relevantidfraudulentscore',
+        'q_relevantidlasttimesurvey', 'q_totalcount', 'q_url', 'q_ballotboxstuffing',
+        'q_ees', 'q_r', 'q_preview', 'q_qualtricssurvey', 'timing', '_first', '_last',
+        '_pagesubmit', '_click', 'timestamp', 'datetime', 'date', 'time', 'browser',
+        'version', 'operating', 'resolution', 'devicetype', 'consent', 'captcha',
+    }
+
+    if not preview:
+        return []
+
+    # Extract embedded data fields
+    if preview.embedded_data:
+        for ed in preview.embedded_data:
+            if ed and isinstance(ed, str):
+                ed_lower = ed.lower()
+                # Check if it's a standard/time variable
+                if not any(excl in ed_lower for excl in excluded_patterns):
+                    identifiers.append(ed)
+
+    # Extract from blocks (question IDs and data export tags could be condition indicators)
+    if preview.blocks:
+        for block in preview.blocks:
+            # Block names could be conditions
+            block_name = block.block_name.strip()
+            if block_name and block_name.lower() not in (
+                "default question block", "trash / unused questions", "block",
+                "intro", "introduction", "consent", "demographics", "debrief",
+            ):
+                identifiers.append(f"[Block] {block_name}")
+
+            # Question IDs from blocks
+            if hasattr(block, 'questions'):
+                for q in block.questions:
+                    q_id = q.question_id
+                    if q_id:
+                        q_lower = q_id.lower()
+                        if not any(excl in q_lower for excl in excluded_patterns):
+                            identifiers.append(q_id)
+
+    # Extract from randomizer info if available
+    if hasattr(preview, 'randomizer_info') and preview.randomizer_info:
+        rand_info = preview.randomizer_info
+        if rand_info.get('randomizers'):
+            for rand in rand_info['randomizers']:
+                desc = rand.get('description', '')
+                if desc and desc.strip():
+                    identifiers.append(f"[Randomizer] {desc}")
+
+    # Dedupe and sort alphabetically
+    unique_ids = list(dict.fromkeys(identifiers))
+    return sorted(unique_ids, key=lambda x: x.lower().lstrip('['))
+
+
 def _render_step_navigation(step_index: int, can_next: bool, next_label: str) -> None:
     """Render navigation buttons at the bottom of each step."""
     st.markdown("---")
@@ -2036,8 +2102,8 @@ if active_step == 1:
     # OPTIONAL: Survey PDF Export
     # ========================================
     st.markdown("---")
-    st.markdown("### 2. Survey PDF Export (Optional)")
-    st.caption("Upload a PDF export of your survey for better question identification and simulation output quality.")
+    st.markdown("### 2. Survey Materials (Optional)")
+    st.caption("Upload PDF exports, screenshots, or photos of your survey for better question identification and simulation output quality.")
 
     with st.expander("How to create a Survey PDF export from Qualtrics", expanded=False):
         st.markdown("""
@@ -2066,69 +2132,91 @@ if active_step == 1:
         change_survey_pdf = True
 
     if change_survey_pdf or not existing_survey_pdf_content:
-        survey_pdf = st.file_uploader(
-            "Survey PDF",
-            type=["pdf"],
-            help="PDF export of your Qualtrics survey (optional but recommended)",
+        survey_files = st.file_uploader(
+            "Survey Materials",
+            type=["pdf", "png", "jpg", "jpeg"],
+            accept_multiple_files=True,
+            help="PDF exports, screenshots, or photos of your survey (optional but recommended)",
             key="survey_pdf_uploader",
         )
     else:
-        survey_pdf = None
+        survey_files = None
 
-    if survey_pdf is not None:
-        try:
-            survey_pdf_content = survey_pdf.read()
-            st.session_state["survey_pdf_content"] = survey_pdf_content
-            st.session_state["survey_pdf_name"] = survey_pdf.name
+    if survey_files:
+        # Process multiple files
+        all_contents = []
+        all_names = []
+        all_text = ""
 
-            # Try to extract text from PDF
-            survey_pdf_text = ""
-            extraction_method = None
-
-            # Method 1: Try PyMuPDF (fitz)
+        for survey_file in survey_files:
             try:
-                import fitz
-                pdf_doc = fitz.open(stream=survey_pdf_content, filetype="pdf")
-                try:
-                    for page in pdf_doc:
-                        survey_pdf_text += page.get_text()
-                    extraction_method = "PyMuPDF"
-                finally:
-                    pdf_doc.close()
-            except ImportError:
-                pass
-            except Exception:
-                pass
+                file_content = survey_file.read()
+                file_name = survey_file.name
+                file_ext = file_name.lower().split('.')[-1]
 
-            # Method 2: Try pypdf as fallback
-            if not survey_pdf_text.strip():
-                try:
-                    survey_pdf_text = _extract_pdf_text(survey_pdf_content)
-                    if survey_pdf_text.strip():
-                        extraction_method = "pypdf"
-                except Exception:
-                    pass
+                all_contents.append(file_content)
+                all_names.append(file_name)
 
-            # Method 3: Try pdfplumber as last resort
-            if not survey_pdf_text.strip():
-                try:
-                    import pdfplumber
-                    with pdfplumber.open(io.BytesIO(survey_pdf_content)) as pdf:
-                        for page in pdf.pages:
-                            page_text = page.extract_text()
-                            if page_text:
-                                survey_pdf_text += page_text + "\n"
-                    extraction_method = "pdfplumber"
-                except Exception:
-                    pass
+                # Extract text from PDFs
+                if file_ext == 'pdf':
+                    file_text = ""
+                    extraction_method = None
 
-            st.session_state["survey_pdf_text"] = survey_pdf_text
-            if survey_pdf_text.strip():
-                st.success(f"Survey PDF uploaded: {survey_pdf.name} (text extracted via {extraction_method})")
-            else:
-                st.warning(f"Survey PDF uploaded: {survey_pdf.name} (text extraction failed, but file will be included in output)")
-        except Exception as e:
-            st.error(f"Failed to process survey PDF: {e}")
+                    # Method 1: Try PyMuPDF (fitz)
+                    try:
+                        import fitz
+                        pdf_doc = fitz.open(stream=file_content, filetype="pdf")
+                        try:
+                            for page in pdf_doc:
+                                file_text += page.get_text()
+                            extraction_method = "PyMuPDF"
+                        finally:
+                            pdf_doc.close()
+                    except ImportError:
+                        pass
+                    except Exception:
+                        pass
+
+                    # Method 2: Try pypdf as fallback
+                    if not file_text.strip():
+                        try:
+                            file_text = _extract_pdf_text(file_content)
+                            if file_text.strip():
+                                extraction_method = "pypdf"
+                        except Exception:
+                            pass
+
+                    # Method 3: Try pdfplumber as last resort
+                    if not file_text.strip():
+                        try:
+                            import pdfplumber
+                            with pdfplumber.open(io.BytesIO(file_content)) as pdf:
+                                for page in pdf.pages:
+                                    page_text = page.extract_text()
+                                    if page_text:
+                                        file_text += page_text + "\n"
+                            extraction_method = "pdfplumber"
+                        except Exception:
+                            pass
+
+                    all_text += f"\n--- {file_name} ---\n{file_text}"
+                    if file_text.strip():
+                        st.success(f"✓ {file_name} uploaded (text extracted via {extraction_method})")
+                    else:
+                        st.info(f"✓ {file_name} uploaded (image-based PDF, no text extracted)")
+                else:
+                    # PNG/JPG - just store the file, no text extraction
+                    st.success(f"✓ {file_name} uploaded (image file)")
+
+            except Exception as e:
+                st.error(f"Failed to process {survey_file.name}: {e}")
+
+        # Store all files in session state
+        if all_contents:
+            st.session_state["survey_pdf_content"] = all_contents[0] if len(all_contents) == 1 else all_contents
+            st.session_state["survey_pdf_name"] = ", ".join(all_names)
+            st.session_state["survey_materials"] = list(zip(all_names, all_contents))
+            st.session_state["survey_pdf_text"] = all_text.strip()
 
     # ========================================
     # OPTIONAL: Preregistration / AsPredicted
@@ -2374,45 +2462,76 @@ if active_step == 2:
 
     all_possible_conditions = condition_candidates or []
 
+    # Get all QSF identifiers for the dropdown option
+    qsf_identifiers = st.session_state.get("qsf_identifiers")
+    if qsf_identifiers is None:
+        qsf_identifiers = _get_qsf_identifiers(preview)
+        st.session_state["qsf_identifiers"] = qsf_identifiers
+
     # Initialize selected conditions in session state
     if "selected_conditions" not in st.session_state:
         # Default to QSF-detected conditions if any
         st.session_state["selected_conditions"] = condition_candidates[:] if condition_candidates else []
 
-    # Check if we have any possible conditions to select from
+    # Get current custom conditions
+    custom_conditions = st.session_state.get("custom_conditions", [])
+
+    # --- Option 1: Auto-detected conditions (multiselect) ---
     if all_possible_conditions:
-        st.markdown("**Select which blocks/groups represent your experimental conditions:**")
+        st.markdown("**Option 1: Select from auto-detected conditions**")
         st.caption(
-            "These were detected from your QSF file's randomizer and block structure. "
-            "Select the exact block names if you want them to match your survey flow."
+            "These were detected from your QSF file's randomizer and block structure."
         )
 
         # Multi-select from available options
         selected = st.multiselect(
-            "Select conditions from QSF",
+            "Auto-detected conditions",
             options=all_possible_conditions,
             default=st.session_state.get("selected_conditions", []),
-            help="Pick the block names that correspond to experimental conditions (matches the QSF flow).",
+            help="Pick the block names that correspond to experimental conditions.",
             key="condition_multiselect",
         )
         st.session_state["selected_conditions"] = selected
-
-        if not selected:
-            st.warning("Please select at least one condition, or add custom conditions below.")
     else:
-        st.info("No condition blocks detected in the QSF file.")
+        st.info("No conditions auto-detected from the QSF file. Use the options below to add conditions.")
         selected = []
         st.session_state["selected_conditions"] = []
 
-    # Option to add custom conditions (but using a controlled interface)
-    with st.expander("Add custom conditions (if not in QSF)", expanded=not bool(all_possible_conditions)):
-        st.caption(
-            "If your conditions aren't detected above, add them here. Use names that match your survey flow "
-            "if you want alignment, but any descriptive labels will still work for simulation."
-        )
+    # --- Options 2 & 3: Additional ways to add conditions ---
+    with st.expander("Add more conditions", expanded=not bool(all_possible_conditions) or not bool(selected)):
 
-        # Get current custom conditions
-        custom_conditions = st.session_state.get("custom_conditions", [])
+        # --- Option 2: Select from all QSF identifiers ---
+        if qsf_identifiers:
+            st.markdown("**Option 2: Select from QSF identifiers**")
+            st.caption("All blocks, embedded data fields, and question IDs from your QSF (alphabetically sorted).")
+
+            col_id1, col_id2 = st.columns([3, 1])
+            with col_id1:
+                id_to_add = st.selectbox(
+                    "Select identifier",
+                    options=[""] + qsf_identifiers,
+                    index=0,
+                    key="qsf_identifier_select",
+                    help="Select an identifier from your QSF to add as a condition.",
+                )
+            with col_id2:
+                st.write("")  # Spacer
+                if st.button("Add →", key="add_identifier_btn", disabled=not id_to_add):
+                    # Clean up the identifier (remove [Block] or [Randomizer] prefix if present)
+                    clean_id = id_to_add
+                    if clean_id.startswith("[Block] "):
+                        clean_id = clean_id[8:]
+                    elif clean_id.startswith("[Randomizer] "):
+                        clean_id = clean_id[13:]
+
+                    if clean_id and clean_id not in custom_conditions:
+                        custom_conditions.append(clean_id)
+                        st.session_state["custom_conditions"] = custom_conditions
+                        st.rerun()
+
+        # --- Option 3: Manual text entry ---
+        st.markdown("**Option 3: Type condition name manually**")
+        st.caption("Enter custom condition names if they aren't in the QSF or were not detected.")
 
         col_add1, col_add2 = st.columns([3, 1])
         with col_add1:
@@ -2420,30 +2539,31 @@ if active_step == 2:
                 "New condition name",
                 key="new_condition_input",
                 placeholder="e.g., Control, Treatment, High, Low",
-                help="Use the same spelling as your QSF block names if you want exact alignment.",
+                help="Type any condition name you want to add.",
             )
         with col_add2:
             st.write("")  # Spacer
-            if st.button("Add", key="add_condition_btn", disabled=not new_condition.strip()):
+            if st.button("Add →", key="add_condition_btn", disabled=not new_condition.strip()):
                 if new_condition.strip() and new_condition.strip() not in custom_conditions:
                     custom_conditions.append(new_condition.strip())
                     st.session_state["custom_conditions"] = custom_conditions
                     st.rerun()
 
-            # Show custom conditions with remove buttons
-            if custom_conditions:
-                st.markdown("**Custom conditions added:**")
-                for i, cc in enumerate(custom_conditions):
-                    col_cc, col_rm = st.columns([4, 1])
-                    with col_cc:
-                        st.text(f"• {cc}")
-                    with col_rm:
-                        # Use condition name in key for stability when list changes
-                        safe_key = cc.replace(" ", "_").replace(".", "_")[:20]
-                        if st.button("✕", key=f"rm_custom_{safe_key}_{i}"):
-                            custom_conditions.remove(cc)
-                            st.session_state["custom_conditions"] = custom_conditions
-                            st.rerun()
+        # Show custom conditions with remove buttons
+        if custom_conditions:
+            st.markdown("---")
+            st.markdown("**Conditions added:**")
+            for i, cc in enumerate(custom_conditions):
+                col_cc, col_rm = st.columns([4, 1])
+                with col_cc:
+                    st.text(f"• {cc}")
+                with col_rm:
+                    # Use condition name in key for stability when list changes
+                    safe_key = cc.replace(" ", "_").replace(".", "_")[:20]
+                    if st.button("✕", key=f"rm_custom_{safe_key}_{i}"):
+                        custom_conditions.remove(cc)
+                        st.session_state["custom_conditions"] = custom_conditions
+                        st.rerun()
 
     # Combine selected and custom conditions
     custom_conditions = st.session_state.get("custom_conditions", [])
@@ -2543,30 +2663,37 @@ if active_step == 2:
         )
 
         n_conditions = len(all_conditions)
-        prev_sample_size = st.session_state.get("_prev_sample_size", sample_size)
+        prev_sample_size = st.session_state.get("_prev_sample_size", 0)
+        prev_n_conditions = st.session_state.get("_prev_n_conditions", 0)
         prev_conditions = st.session_state.get("_prev_conditions", [])
+
+        # Detect what changed
+        conditions_changed = (
+            n_conditions != prev_n_conditions or
+            set(prev_conditions) != set(all_conditions)
+        )
+        sample_size_changed = prev_sample_size != sample_size and prev_sample_size > 0
 
         # Recalculate allocations if:
         # 1. No allocation exists, OR
         # 2. Number of conditions changed, OR
-        # 3. Sample size changed (proportionally adjust)
+        # 3. Condition names changed
         needs_recalc = (
             "condition_allocation_n" not in st.session_state or
-            len(st.session_state.get("condition_allocation_n", {})) != n_conditions or
-            set(prev_conditions) != set(all_conditions)
+            conditions_changed
         )
 
-        # Check if sample size changed - proportionally adjust existing allocations
-        sample_size_changed = prev_sample_size != sample_size and prev_sample_size > 0
-
         if needs_recalc:
-            # Fresh allocation: equal distribution
+            # Fresh allocation: equal distribution for current sample size
             n_per = sample_size // n_conditions
             remainder = sample_size % n_conditions
             st.session_state["condition_allocation_n"] = {
                 cond: n_per + (1 if i < remainder else 0)
                 for i, cond in enumerate(all_conditions)
             }
+            # Clear any stale widget state by incrementing a version counter
+            alloc_version = st.session_state.get("_alloc_version", 0) + 1
+            st.session_state["_alloc_version"] = alloc_version
         elif sample_size_changed:
             # Proportionally adjust existing allocations to match new total
             old_alloc = st.session_state.get("condition_allocation_n", {})
@@ -2582,9 +2709,13 @@ if active_step == 2:
                 # Last condition gets the remainder to ensure sum matches exactly
                 new_alloc[sorted_conds[-1]] = max(1, sample_size - running_total)
                 st.session_state["condition_allocation_n"] = new_alloc
+                # Increment version to force widget refresh
+                alloc_version = st.session_state.get("_alloc_version", 0) + 1
+                st.session_state["_alloc_version"] = alloc_version
 
         # Update tracking variables
         st.session_state["_prev_sample_size"] = sample_size
+        st.session_state["_prev_n_conditions"] = n_conditions
         st.session_state["_prev_conditions"] = list(all_conditions)
 
         allocation_n = st.session_state["condition_allocation_n"]
@@ -2595,6 +2726,9 @@ if active_step == 2:
         # Use columns for layout (max 3 per row)
         cols_per_row = min(n_conditions, 3)
         input_cols = st.columns(cols_per_row)
+
+        # Get version for unique widget keys
+        alloc_version = st.session_state.get("_alloc_version", 0)
 
         new_allocation_n = {}
         for i, cond in enumerate(all_conditions):
@@ -2609,13 +2743,14 @@ if active_step == 2:
                 # Ensure current_n doesn't exceed sample_size
                 current_n = min(max(1, current_n), sample_size)
 
+                # Use version in key to force widget refresh when conditions change
                 new_n = st.number_input(
                     display_name,
                     min_value=1,
                     max_value=sample_size,
                     value=current_n,
                     step=1,
-                    key=f"alloc_n_{i}",
+                    key=f"alloc_n_v{alloc_version}_{i}",
                     help=f"Number of participants in '{display_name}'"
                 )
                 new_allocation_n[cond] = new_n
@@ -2627,8 +2762,8 @@ if active_step == 2:
         if diff != 0:
             st.warning(f"⚠️ Allocations sum to **{total_n}** (should be {sample_size}). Difference: {'+' if diff > 0 else ''}{diff}")
             # Auto-balance button
-            if st.button("Auto-balance to match total N", key="auto_balance_n_btn"):
-                # Scale proportionally
+            if st.button("Auto-balance to match total N", key=f"auto_balance_n_btn_v{alloc_version}"):
+                # Scale proportionally to match sample_size
                 scale = sample_size / total_n if total_n > 0 else 1
                 normalized = {}
                 running_total = 0
@@ -2639,6 +2774,8 @@ if active_step == 2:
                 # Last condition gets the remainder
                 normalized[sorted_conds[-1]] = max(1, sample_size - running_total)
                 st.session_state["condition_allocation_n"] = normalized
+                # Increment version to force widget refresh
+                st.session_state["_alloc_version"] = alloc_version + 1
                 st.rerun()
         else:
             st.success(f"✓ Allocations sum to {sample_size}")
