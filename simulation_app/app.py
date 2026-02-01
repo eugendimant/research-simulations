@@ -44,8 +44,8 @@ import streamlit as st
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "2.1.6"
-BUILD_ID = "20260201-v216-html-reports-stats"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "2.1.7"
+BUILD_ID = "20260201-v217-factor-ui-n-allocation"  # Change this to force cache invalidation
 
 def _verify_and_reload_utils():
     """Verify utils modules are at correct version, force reload if needed."""
@@ -94,7 +94,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF"
-APP_VERSION = "2.1.6"  # Major UX overhaul: factor detection, file names, effect size UI, file persistence, Start Over
+APP_VERSION = "2.1.7"  # N-based allocation, improved factor structure UI, better condition name cleaning
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -813,15 +813,17 @@ def _render_email_setup_diagnostics() -> None:
 def _clean_condition_name(condition: str) -> str:
     """Remove common suffixes and clean up condition names."""
     import re
-    # Remove common suffixes like (new), (copy), etc.
-    cleaned = re.sub(r'\s*\(new\)\s*$', '', condition, flags=re.IGNORECASE)
-    cleaned = re.sub(r'\s*\(copy\)\s*$', '', cleaned, flags=re.IGNORECASE)
+    # Remove common suffixes like (new), (copy), etc. - can appear anywhere
+    cleaned = re.sub(r'\s*\(new\)', '', condition, flags=re.IGNORECASE)
+    cleaned = re.sub(r'\s*\(copy\)', '', cleaned, flags=re.IGNORECASE)
     cleaned = re.sub(r'\s*- copy\s*$', '', cleaned, flags=re.IGNORECASE)
     cleaned = re.sub(r'\s*_\d+$', '', cleaned)  # Remove trailing _1, _2, etc.
     cleaned = re.sub(r'\s*\(\d+\)\s*$', '', cleaned)  # Remove trailing (1), (2), etc.
     # Remove common Qualtrics block prefixes
     cleaned = re.sub(r'^Block\s*\d+\s*[-:]\s*', '', cleaned, flags=re.IGNORECASE)
     cleaned = re.sub(r'^BL_\w+\s*[-:]\s*', '', cleaned, flags=re.IGNORECASE)
+    # Clean up multiple spaces
+    cleaned = re.sub(r'\s+', ' ', cleaned)
     return cleaned.strip()
 
 
@@ -1119,6 +1121,129 @@ def _infer_factors_from_conditions(conditions: List[str]) -> List[Dict[str, Any]
     # ==========================================================
     factor_name = _infer_factor_name(conditions)
     return [{"name": factor_name if factor_name != "Factor" else "Condition", "levels": conditions}]
+
+
+def _render_manual_factor_config(
+    all_conditions: List[str],
+    auto_detected: Optional[List[Dict[str, Any]]] = None,
+) -> List[Dict[str, Any]]:
+    """
+    Render manual factor configuration UI.
+
+    This allows users to define factors and their levels directly,
+    with validation against the detected conditions.
+    """
+    import streamlit as st
+
+    # Determine number of factors
+    max_factors = min(3, len(all_conditions) // 2) if len(all_conditions) >= 2 else 1
+    default_num = len(auto_detected) if auto_detected else 1
+
+    num_factors = st.selectbox(
+        "Number of factors",
+        options=list(range(1, max_factors + 1)),
+        index=min(default_num - 1, max_factors - 1),
+        key="manual_num_factors",
+        help="Select how many independent variables (factors) you have",
+    )
+
+    factors = []
+
+    # Parse condition names to extract potential levels
+    # For each condition like "No AI x Utilitarian", extract parts
+    parsed_conditions = []
+    separator = None
+    for sep in [" x ", " X ", " × ", " | ", " / ", " - "]:
+        if any(sep in c for c in all_conditions):
+            separator = sep
+            break
+
+    if separator:
+        for c in all_conditions:
+            parts = [_clean_condition_name(p.strip()) for p in c.split(separator)]
+            parsed_conditions.append(parts)
+    else:
+        parsed_conditions = [[_clean_condition_name(c)] for c in all_conditions]
+
+    # Extract unique levels for each factor position
+    max_parts = max(len(p) for p in parsed_conditions) if parsed_conditions else 1
+
+    for f_idx in range(num_factors):
+        st.markdown(f"---")
+        st.markdown(f"**Factor {f_idx + 1}**")
+
+        # Default name from auto-detection or generic
+        default_name = (
+            auto_detected[f_idx].get("name", f"Factor {f_idx + 1}")
+            if auto_detected and f_idx < len(auto_detected)
+            else f"Factor {f_idx + 1}"
+        )
+
+        factor_name = st.text_input(
+            "Factor name",
+            value=default_name,
+            key=f"manual_factor_name_{f_idx}",
+            placeholder="e.g., AI Presence, Product Type",
+        )
+
+        # Extract potential levels from parsed conditions
+        if f_idx < max_parts:
+            potential_levels = sorted(list({p[f_idx] for p in parsed_conditions if len(p) > f_idx}))
+        else:
+            potential_levels = []
+
+        # Show levels input - user can type or select
+        st.markdown("**Factor levels** (the different values this factor can take):")
+
+        if potential_levels:
+            st.caption(f"Detected from conditions: {', '.join(potential_levels)}")
+            use_detected = st.checkbox(
+                f"Use detected levels for Factor {f_idx + 1}",
+                value=True,
+                key=f"use_detected_levels_{f_idx}",
+            )
+            if use_detected:
+                levels = potential_levels
+            else:
+                levels_input = st.text_input(
+                    "Enter levels (comma-separated)",
+                    value=", ".join(potential_levels),
+                    key=f"manual_levels_input_{f_idx}",
+                    placeholder="e.g., AI, No AI",
+                )
+                levels = [l.strip() for l in levels_input.split(",") if l.strip()]
+        else:
+            levels_input = st.text_input(
+                "Enter levels (comma-separated)",
+                value="",
+                key=f"manual_levels_input_{f_idx}",
+                placeholder="e.g., AI, No AI",
+            )
+            levels = [l.strip() for l in levels_input.split(",") if l.strip()]
+
+        if levels:
+            st.info(f"Levels: {' | '.join(levels)}")
+            factors.append({"name": factor_name, "levels": levels})
+        else:
+            st.warning(f"Please define levels for Factor {f_idx + 1}")
+
+    # Show expected condition combinations
+    if len(factors) > 1:
+        st.markdown("---")
+        st.markdown("**Expected condition combinations:**")
+        import itertools
+        all_combos = list(itertools.product(*[f["levels"] for f in factors]))
+        combo_names = [" × ".join(combo) for combo in all_combos]
+        st.caption(f"{len(combo_names)} combinations: {', '.join(combo_names[:8])}{'...' if len(combo_names) > 8 else ''}")
+
+        # Validate against actual conditions
+        if len(combo_names) != len(all_conditions):
+            st.warning(
+                f"Note: {len(combo_names)} factorial combinations vs {len(all_conditions)} actual conditions. "
+                "This may indicate a non-pure factorial design (e.g., with control)."
+            )
+
+    return factors
 
 
 def _preview_to_engine_inputs(preview: QSFPreviewResult) -> Dict[str, Any]:
@@ -1454,7 +1579,7 @@ with st.sidebar:
             "survey_pdf_content", "survey_pdf_name",
             "prereg_pdf_content", "prereg_pdf_name", "prereg_text_sanitized", "prereg_pdf_text",
             "prereg_outcomes", "prereg_iv", "prereg_exclusions", "prereg_analysis",
-            "enhanced_analysis", "inferred_design", "condition_allocation",
+            "enhanced_analysis", "inferred_design", "condition_allocation", "condition_allocation_n",
             "selected_conditions", "current_conditions", "custom_conditions",
             "last_df", "last_zip", "last_metadata",
             "has_generated", "is_generating", "generation_requested",
@@ -2302,7 +2427,9 @@ if active_step == 2:
     # Show final conditions summary
     st.markdown("---")
     if all_conditions:
-        st.success(f"**{len(all_conditions)} condition(s) configured:** {', '.join(all_conditions)}")
+        # Display cleaned condition names
+        clean_names = [_clean_condition_name(c) for c in all_conditions]
+        st.success(f"**{len(all_conditions)} condition(s) configured:** {', '.join(clean_names)}")
     else:
         st.error("❌ No conditions defined. Please select or add at least one condition.")
         all_conditions = ["Condition A"]  # Fallback
@@ -2378,82 +2505,105 @@ if active_step == 2:
     st.session_state["sample_size"] = int(sample_size)
     st.caption("💡 Use your power analysis result (e.g., from G*Power) to determine the appropriate N.")
 
-    # Condition allocation (rebalancing) with sliders
+    # Condition allocation (rebalancing) with number inputs
     if all_conditions and len(all_conditions) > 1:
         st.markdown("#### Condition Allocation")
         st.caption(
             "By default, participants are divided equally across conditions. "
-            "Use the sliders below to adjust the allocation if needed (must sum to 100%)."
+            "Adjust the number of participants per condition below (must sum to total N)."
         )
 
-        # Initialize allocation if not set
-        if "condition_allocation" not in st.session_state or len(st.session_state["condition_allocation"]) != len(all_conditions):
+        # Initialize allocation if not set or if conditions changed
+        n_conditions = len(all_conditions)
+        if "condition_allocation_n" not in st.session_state or len(st.session_state.get("condition_allocation_n", {})) != n_conditions:
             # Equal allocation by default
-            equal_pct = 100 // len(all_conditions)
-            remainder = 100 - (equal_pct * len(all_conditions))
-            st.session_state["condition_allocation"] = {
-                cond: equal_pct + (1 if i < remainder else 0)
+            n_per = sample_size // n_conditions
+            remainder = sample_size % n_conditions
+            st.session_state["condition_allocation_n"] = {
+                cond: n_per + (1 if i < remainder else 0)
                 for i, cond in enumerate(all_conditions)
             }
 
-        allocation = st.session_state["condition_allocation"]
+        allocation_n = st.session_state["condition_allocation_n"]
 
-        # Use columns for compact slider layout
-        slider_cols = st.columns(min(len(all_conditions), 3))
+        # Create a clean display table with number inputs
+        st.markdown("**Participants per condition:**")
 
-        new_allocation = {}
+        # Use columns for layout (max 3 per row)
+        cols_per_row = min(n_conditions, 3)
+        input_cols = st.columns(cols_per_row)
+
+        new_allocation_n = {}
         for i, cond in enumerate(all_conditions):
-            col_idx = i % len(slider_cols)
-            with slider_cols[col_idx]:
-                # Clean condition name for display
-                display_name = cond[:25] + "..." if len(cond) > 25 else cond
-                current_val = allocation.get(cond, 100 // len(all_conditions))
-                new_val = st.slider(
+            col_idx = i % cols_per_row
+            with input_cols[col_idx]:
+                # Clean display name
+                display_name = _clean_condition_name(cond)
+                if len(display_name) > 22:
+                    display_name = display_name[:20] + "..."
+
+                current_n = allocation_n.get(cond, sample_size // n_conditions)
+                # Ensure current_n doesn't exceed sample_size
+                current_n = min(current_n, sample_size)
+
+                new_n = st.number_input(
                     display_name,
-                    min_value=5,
-                    max_value=95,
-                    value=current_val,
-                    step=5,
-                    key=f"alloc_slider_{i}",
-                    help=f"Percentage of participants in '{cond}'"
+                    min_value=1,
+                    max_value=sample_size,
+                    value=current_n,
+                    step=1,
+                    key=f"alloc_n_{i}",
+                    help=f"Number of participants in '{display_name}'"
                 )
-                new_allocation[cond] = new_val
+                new_allocation_n[cond] = new_n
 
-        # Calculate total and show warning if not 100%
-        total_pct = sum(new_allocation.values())
+        # Calculate total and show status
+        total_n = sum(new_allocation_n.values())
+        diff = total_n - sample_size
 
-        if total_pct != 100:
-            st.warning(f"⚠️ Allocations sum to **{total_pct}%** (should be 100%). Adjust sliders to balance.")
-            # Auto-normalize button
-            if st.button("Auto-balance to 100%", key="auto_balance_btn"):
-                scale_factor = 100 / total_pct
+        if diff != 0:
+            st.warning(f"⚠️ Allocations sum to **{total_n}** (should be {sample_size}). Difference: {'+' if diff > 0 else ''}{diff}")
+            # Auto-balance button
+            if st.button("Auto-balance to match total N", key="auto_balance_n_btn"):
+                # Scale proportionally
+                scale = sample_size / total_n if total_n > 0 else 1
                 normalized = {}
                 running_total = 0
-                sorted_conds = sorted(new_allocation.keys())
+                sorted_conds = list(all_conditions)
                 for j, c in enumerate(sorted_conds[:-1]):
-                    normalized[c] = max(5, min(95, round(new_allocation[c] * scale_factor)))
+                    normalized[c] = max(1, round(new_allocation_n[c] * scale))
                     running_total += normalized[c]
                 # Last condition gets the remainder
-                normalized[sorted_conds[-1]] = 100 - running_total
-                st.session_state["condition_allocation"] = normalized
+                normalized[sorted_conds[-1]] = max(1, sample_size - running_total)
+                st.session_state["condition_allocation_n"] = normalized
                 st.rerun()
         else:
-            st.success(f"✓ Allocations sum to 100%")
-            st.session_state["condition_allocation"] = new_allocation
+            st.success(f"✓ Allocations sum to {sample_size}")
+            st.session_state["condition_allocation_n"] = new_allocation_n
 
-        # Show expected N per condition
-        st.markdown("**Expected participants per condition:**")
-        n_per_cond = []
+        # Show allocation summary with percentages
+        st.markdown("**Allocation summary:**")
+        summary_parts = []
         for cond in all_conditions:
-            pct = new_allocation.get(cond, 100 // len(all_conditions))
-            n = round(sample_size * pct / 100)
-            n_per_cond.append(f"{cond}: **{n}**")
-        st.markdown(" | ".join(n_per_cond))
+            n = new_allocation_n.get(cond, sample_size // n_conditions)
+            pct = (n / sample_size * 100) if sample_size > 0 else 0
+            clean_name = _clean_condition_name(cond)
+            if len(clean_name) > 18:
+                clean_name = clean_name[:16] + "..."
+            summary_parts.append(f"{clean_name}: **{n}** ({pct:.1f}%)")
+        st.markdown(" | ".join(summary_parts))
+
+        # Convert to percentage-based allocation for the simulation engine
+        st.session_state["condition_allocation"] = {
+            cond: (new_allocation_n.get(cond, 0) / sample_size * 100) if sample_size > 0 else 0
+            for cond in all_conditions
+        }
 
     elif all_conditions:
         # Single condition - show simple info
-        st.info(f"Single condition design: all {sample_size} participants in '{all_conditions[0]}'")
+        st.info(f"Single condition design: all {sample_size} participants in '{_clean_condition_name(all_conditions[0])}'")
         st.session_state["condition_allocation"] = {all_conditions[0]: 100}
+        st.session_state["condition_allocation_n"] = {all_conditions[0]: sample_size}
 
     # Factor configuration with clear explanation
     st.markdown("---")
@@ -2461,72 +2611,97 @@ if active_step == 2:
     st.caption(
         "**Factors** are the independent variables you manipulate. "
         "A 2×2 design has 2 factors (e.g., AI presence × Product type). "
-        "The tool auto-detects factors from condition names like 'AI x Hedonic' or 'Control | Treatment'."
+        "The tool auto-detects factors from condition names like 'AI x Hedonic'."
     )
 
-    # Let user override auto-detected factors
-    use_auto_factors = auto_num_factors > 1 and st.checkbox(
-        f"Use auto-detected {auto_num_factors}-factor structure",
-        value=True,
-        key="use_auto_factors",
-        help="Uncheck to manually configure factors"
+    # Detect design type
+    design_options = [
+        "Factorial design (2×2, 2×3, etc.)",
+        "Factorial + control (e.g., 2×2 + 1 control)",
+        "Simple multi-arm (separate conditions, no factorial structure)",
+    ]
+
+    # Default selection based on auto-detection
+    default_design_idx = 0 if auto_num_factors > 1 else 2
+
+    design_structure = st.selectbox(
+        "Design structure",
+        options=design_options,
+        index=default_design_idx,
+        key="design_structure_select",
+        help=(
+            "• **Factorial**: Conditions are combinations of factor levels (e.g., 2×2 = 4 conditions)\n"
+            "• **Factorial + control**: Factorial design plus a separate control condition\n"
+            "• **Simple multi-arm**: Independent conditions without factorial structure"
+        ),
     )
 
     factors = []
-    if use_auto_factors and auto_num_factors > 1:
-        # Show auto-detected structure with ability to rename
-        factors = auto_detected_factors
-        st.markdown("**Detected factor structure:**")
-        for i, f in enumerate(auto_detected_factors):
-            col_f1, col_f2 = st.columns([1, 2])
-            with col_f1:
-                new_name = st.text_input(
-                    f"Factor {i+1} name",
-                    value=f.get("name", f"Factor_{i+1}"),
-                    key=f"auto_factor_name_{i}",
-                )
-                factors[i]["name"] = new_name
-            with col_f2:
-                levels = f.get("levels", [])
-                st.caption(f"Levels: {', '.join(levels)}")
-    else:
-        # Manual factor configuration
-        if len(all_conditions) >= 4:
-            num_factors = st.selectbox(
-                "Number of factors",
-                options=[1, 2, 3],
-                index=0,
-                key="num_factors_select",
-                help=(
-                    "• **1 factor**: Simple design (Control vs Treatment)\n"
-                    "• **2 factors**: 2×2, 2×3, etc. (e.g., AI × Product Type)\n"
-                    "• **3 factors**: Complex designs (e.g., AI × Price × Brand)"
-                ),
-            )
 
-            if num_factors == 1:
-                factors = [{"name": "Condition", "levels": all_conditions}]
-            else:
-                st.info(f"Define your {num_factors} factors by selecting which conditions belong to each level.")
-                for f_idx in range(num_factors):
-                    st.markdown(f"**Factor {f_idx + 1}**")
-                    factor_name = st.text_input(
-                        "Name",
-                        value=f"Factor {f_idx + 1}",
-                        key=f"factor_name_{f_idx}",
+    if "Factorial" in design_structure and "multi-arm" not in design_structure:
+        # Factorial design (with or without control)
+        has_control = "control" in design_structure.lower()
+
+        # Show auto-detected factors if available
+        if auto_num_factors > 1:
+            st.success(f"Auto-detected {auto_num_factors}-factor design from condition names")
+
+            # Show detected factors with editable names
+            st.markdown("**Detected factors:**")
+            detected_factors_display = []
+            for i, f in enumerate(auto_detected_factors):
+                col_name, col_levels = st.columns([1, 2])
+                with col_name:
+                    new_name = st.text_input(
+                        f"Factor {i+1}",
+                        value=f.get("name", f"Factor {i+1}"),
+                        key=f"detected_factor_name_{i}",
                         label_visibility="collapsed",
-                        placeholder=f"e.g., {'AI Presence' if f_idx == 0 else 'Product Type'}"
                     )
-                    factor_levels = st.multiselect(
-                        f"Levels for {factor_name}",
-                        options=all_conditions,
-                        key=f"factor_levels_{f_idx}",
-                        help=f"Select the levels/conditions that belong to {factor_name}",
-                    )
-                    if factor_levels:
-                        factors.append({"name": factor_name, "levels": factor_levels})
+                with col_levels:
+                    levels = f.get("levels", [])
+                    # Clean level names for display
+                    clean_levels = [_clean_condition_name(l) for l in levels]
+                    st.markdown(f"**Levels:** {' | '.join(clean_levels)}")
+                detected_factors_display.append({"name": new_name, "levels": levels})
+
+            factors = detected_factors_display
+
+            # Option to manually adjust
+            if st.checkbox("Manually adjust factors", value=False, key="manual_adjust_factors"):
+                factors = _render_manual_factor_config(all_conditions, auto_detected_factors)
         else:
-            factors = [{"name": "Condition", "levels": all_conditions}]
+            # No auto-detection - manual configuration
+            st.info("Could not auto-detect factorial structure. Please configure manually.")
+            factors = _render_manual_factor_config(all_conditions, None)
+
+        # Handle control condition for "Factorial + control"
+        if has_control:
+            st.markdown("**Control condition:**")
+            # Find potential control conditions
+            control_candidates = [c for c in all_conditions if 'control' in c.lower()]
+            if not control_candidates:
+                control_candidates = all_conditions
+
+            control_cond = st.selectbox(
+                "Select the control condition",
+                options=all_conditions,
+                index=0 if not control_candidates else all_conditions.index(control_candidates[0]) if control_candidates[0] in all_conditions else 0,
+                key="control_condition_select",
+                help="This condition will be treated separately from the factorial structure",
+            )
+            st.session_state["control_condition"] = control_cond
+
+    else:
+        # Simple multi-arm design - each condition is independent
+        st.info("Each condition is treated as an independent level of a single factor.")
+        clean_conditions = [_clean_condition_name(c) for c in all_conditions]
+        factors = [{"name": "Condition", "levels": all_conditions}]
+
+        # Display the conditions cleanly
+        st.markdown("**Conditions:**")
+        for i, (orig, clean) in enumerate(zip(all_conditions, clean_conditions)):
+            st.markdown(f"  {i+1}. {clean}")
 
     # Ensure we have at least one factor
     if not factors:
@@ -2553,8 +2728,9 @@ if active_step == 2:
     summary_cols[2].metric("Scales", len(scales))
     summary_cols[3].metric("Design", design_type.split("(")[0].strip())
 
-    # Show condition list and detected scales
-    st.markdown(f"**Conditions:** {', '.join(all_conditions)}")
+    # Show condition list and detected scales (cleaned names)
+    clean_cond_names = [_clean_condition_name(c) for c in all_conditions]
+    st.markdown(f"**Conditions:** {', '.join(clean_cond_names)}")
     scale_names = [s.get('name', 'Unknown') for s in scales if s.get('name')]
     st.markdown(f"**Scales:** {', '.join(scale_names) if scale_names else 'Main_DV (default)'}")
 

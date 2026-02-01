@@ -2,18 +2,14 @@
 """
 Utility modules for the Behavioral Experiment Simulation Tool.
 
-Version: 2.1.6
+Version: 2.1.7
 Changes:
-    - Moved sample size question from Step 1 to Step 3 (Design Setup)
-    - Added condition rebalancing with intuitive sliders that sum to 100%
-    - Added HTML instructor report with visualizations (bar charts, box plots)
-    - Added comprehensive statistical tests: t-tests, Welch's t-test, Mann-Whitney U,
-      ANOVA, Kruskal-Wallis, chi-squared, regression analysis
-    - Added effect size calculations: Cohen's d, eta-squared
-    - Added assumption checks: Levene's test, Shapiro-Wilk
-    - Enhanced factor parsing to be more robust and scalable for all QSF files
-    - Improved condition name cleaning (handles more Qualtrics patterns)
-    - Instructor email now includes HTML report with full visualizations
+    - Changed condition allocation from % sliders to N-based number inputs
+    - Redesigned factor structure UI to properly show factor levels (not full conditions)
+    - Added design structure selector: Factorial, Factorial+Control, Simple multi-arm
+    - Improved manual factor configuration with level detection
+    - Enhanced condition name cleaning (removes "(new)" anywhere, multiple spaces)
+    - All condition displays now show cleaned names
 
 Modules:
     - qsf_parser: Parse Qualtrics Survey Format (.qsf) files
@@ -30,7 +26,7 @@ Modules:
 """
 
 # Package version - should match all module versions
-__version__ = "2.1.6"
+__version__ = "2.1.7"
 
 from .qsf_parser import parse_qsf_file, extract_survey_structure, generate_qsf_summary
 from .simulation_engine import SimulationEngine
