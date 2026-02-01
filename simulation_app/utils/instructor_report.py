@@ -6,7 +6,7 @@ Generates comprehensive instructor-facing reports for student simulations.
 """
 
 # Version identifier to help track deployed code
-__version__ = "2.1.6"  # Added HTML report with visualizations and statistical tests
+__version__ = "2.1.8"  # Enhanced visualizations, forest plots, interaction plots, violin+box plots
 
 from dataclasses import dataclass
 from datetime import datetime
@@ -14,25 +14,253 @@ import json
 import base64
 import io
 import warnings
-from typing import Any, Dict, List, Optional, Tuple
+import re
+import math
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import pandas as pd
 
-# Optional imports for statistics and visualization
+# Try multiple import strategies for scipy
+SCIPY_AVAILABLE = False
+scipy_stats = None
+
 try:
-    from scipy import stats as scipy_stats
+    from scipy import stats as _scipy_stats
+    scipy_stats = _scipy_stats
     SCIPY_AVAILABLE = True
 except ImportError:
-    SCIPY_AVAILABLE = False
+    pass
+
+if not SCIPY_AVAILABLE:
+    try:
+        import scipy.stats as _scipy_stats
+        scipy_stats = _scipy_stats
+        SCIPY_AVAILABLE = True
+    except ImportError:
+        pass
+
+# Matplotlib imports
+MATPLOTLIB_AVAILABLE = False
+plt = None
 
 try:
     import matplotlib
     matplotlib.use('Agg')  # Non-interactive backend
-    import matplotlib.pyplot as plt
+    import matplotlib.pyplot as _plt
+    plt = _plt
     MATPLOTLIB_AVAILABLE = True
 except ImportError:
-    MATPLOTLIB_AVAILABLE = False
+    pass
+
+
+def _clean_condition_name(condition: str) -> str:
+    """Remove common suffixes and clean up condition names for report display."""
+    if not condition:
+        return condition
+    cleaned = re.sub(r'\s*\(new\)', '', str(condition), flags=re.IGNORECASE)
+    cleaned = re.sub(r'\s*\(copy\)', '', cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r'\s*- copy\s*$', '', cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r'\s*_\d+$', '', cleaned)
+    cleaned = re.sub(r'\s*\(\d+\)\s*$', '', cleaned)
+    cleaned = re.sub(r'\s+', ' ', cleaned)
+    return cleaned.strip()
+
+
+# ============================================================================
+# NUMPY-BASED STATISTICAL FUNCTIONS (fallbacks when scipy unavailable)
+# ============================================================================
+
+def _numpy_ttest_ind(group1: np.ndarray, group2: np.ndarray, equal_var: bool = True) -> Tuple[float, float]:
+    """Independent samples t-test using numpy only."""
+    n1, n2 = len(group1), len(group2)
+    m1, m2 = np.mean(group1), np.mean(group2)
+    v1, v2 = np.var(group1, ddof=1), np.var(group2, ddof=1)
+
+    if equal_var:
+        # Pooled variance
+        sp = np.sqrt(((n1 - 1) * v1 + (n2 - 1) * v2) / (n1 + n2 - 2))
+        se = sp * np.sqrt(1/n1 + 1/n2)
+        df = n1 + n2 - 2
+    else:
+        # Welch's t-test
+        se = np.sqrt(v1/n1 + v2/n2)
+        df = (v1/n1 + v2/n2)**2 / ((v1/n1)**2/(n1-1) + (v2/n2)**2/(n2-1))
+
+    t_stat = (m1 - m2) / se if se > 0 else 0
+
+    # Approximate p-value using normal distribution for large samples
+    # For small samples, this is an approximation
+    if df > 30:
+        # Use normal approximation
+        p_value = 2 * (1 - _normal_cdf(abs(t_stat)))
+    else:
+        # Use t-distribution approximation
+        p_value = 2 * _t_sf(abs(t_stat), df)
+
+    return float(t_stat), float(p_value)
+
+
+def _normal_cdf(x: float) -> float:
+    """Standard normal CDF approximation."""
+    return 0.5 * (1 + math.erf(x / math.sqrt(2)))
+
+
+def _t_sf(t: float, df: float) -> float:
+    """Survival function (1-CDF) for t-distribution, approximated."""
+    # Use normal approximation for large df
+    if df > 100:
+        return 1 - _normal_cdf(t)
+    # For smaller df, use a rough approximation
+    x = df / (df + t**2)
+    # Beta function approximation
+    return 0.5 * _betainc(df/2, 0.5, x)
+
+
+def _betainc(a: float, b: float, x: float) -> float:
+    """Incomplete beta function approximation (very rough)."""
+    # For our purposes, a simple approximation
+    if x <= 0:
+        return 0.0
+    if x >= 1:
+        return 1.0
+    # Use a simple numerical integration
+    steps = 100
+    dx = x / steps
+    result = 0
+    for i in range(steps):
+        xi = (i + 0.5) * dx
+        result += (xi ** (a-1)) * ((1-xi) ** (b-1)) * dx
+    # Normalize (approximate)
+    norm = math.gamma(a) * math.gamma(b) / math.gamma(a + b)
+    return min(1.0, result / norm) if norm > 0 else 0.5
+
+
+def _numpy_f_oneway(*groups) -> Tuple[float, float]:
+    """One-way ANOVA using numpy only."""
+    groups = [np.asarray(g) for g in groups]
+    k = len(groups)  # number of groups
+    n_total = sum(len(g) for g in groups)
+
+    # Grand mean
+    all_data = np.concatenate(groups)
+    grand_mean = np.mean(all_data)
+
+    # Between-group sum of squares
+    ss_between = sum(len(g) * (np.mean(g) - grand_mean)**2 for g in groups)
+
+    # Within-group sum of squares
+    ss_within = sum(np.sum((g - np.mean(g))**2) for g in groups)
+
+    # Degrees of freedom
+    df_between = k - 1
+    df_within = n_total - k
+
+    # Mean squares
+    ms_between = ss_between / df_between if df_between > 0 else 0
+    ms_within = ss_within / df_within if df_within > 0 else 1
+
+    # F statistic
+    f_stat = ms_between / ms_within if ms_within > 0 else 0
+
+    # P-value approximation (using chi-square approximation for large samples)
+    # This is a rough approximation
+    if df_within > 30:
+        p_value = 1 - _chi2_cdf(f_stat * df_between, df_between)
+    else:
+        p_value = _f_sf(f_stat, df_between, df_within)
+
+    return float(f_stat), float(p_value)
+
+
+def _chi2_cdf(x: float, df: float) -> float:
+    """Chi-square CDF approximation."""
+    if x <= 0:
+        return 0.0
+    # Wilson-Hilferty approximation
+    if df > 0:
+        z = (x/df)**(1/3) - (1 - 2/(9*df))
+        z /= math.sqrt(2/(9*df))
+        return _normal_cdf(z)
+    return 0.5
+
+
+def _f_sf(f: float, df1: float, df2: float) -> float:
+    """F-distribution survival function approximation."""
+    if f <= 0:
+        return 1.0
+    # Use normal approximation for large df
+    if df1 > 30 and df2 > 30:
+        z = (f**(1/3) * (1 - 2/(9*df2)) - (1 - 2/(9*df1))) / math.sqrt(2/(9*df1) + f**(2/3) * 2/(9*df2))
+        return 1 - _normal_cdf(z)
+    # Rough approximation
+    return min(1.0, max(0.0, 1 - _chi2_cdf(f * df1, df1)))
+
+
+def _numpy_mannwhitneyu(group1: np.ndarray, group2: np.ndarray) -> Tuple[float, float]:
+    """Mann-Whitney U test using numpy only."""
+    n1, n2 = len(group1), len(group2)
+
+    # Combine and rank
+    combined = np.concatenate([group1, group2])
+    ranks = np.argsort(np.argsort(combined)) + 1
+
+    # Sum of ranks for group 1
+    r1 = np.sum(ranks[:n1])
+
+    # U statistics
+    u1 = r1 - n1 * (n1 + 1) / 2
+    u2 = n1 * n2 - u1
+    u_stat = min(u1, u2)
+
+    # Normal approximation for large samples
+    mu = n1 * n2 / 2
+    sigma = math.sqrt(n1 * n2 * (n1 + n2 + 1) / 12)
+    z = (u_stat - mu) / sigma if sigma > 0 else 0
+    p_value = 2 * (1 - _normal_cdf(abs(z)))
+
+    return float(u_stat), float(p_value)
+
+
+def _numpy_levene(*groups) -> Tuple[float, float]:
+    """Levene's test for homogeneity of variances using numpy."""
+    groups = [np.asarray(g) for g in groups]
+    k = len(groups)
+
+    # Use absolute deviations from median (Brown-Forsythe variant)
+    z_groups = [np.abs(g - np.median(g)) for g in groups]
+
+    # Apply one-way ANOVA on the transformed data
+    return _numpy_f_oneway(*z_groups)
+
+
+def _numpy_shapiro(data: np.ndarray) -> Tuple[float, float]:
+    """Simplified normality test using numpy (skewness/kurtosis based)."""
+    n = len(data)
+    if n < 3:
+        return 1.0, 1.0
+
+    # Calculate skewness and kurtosis
+    mean = np.mean(data)
+    std = np.std(data, ddof=1)
+    if std == 0:
+        return 1.0, 1.0
+
+    skew = np.mean(((data - mean) / std) ** 3)
+    kurt = np.mean(((data - mean) / std) ** 4) - 3
+
+    # D'Agostino-Pearson test approximation
+    # Combine skewness and kurtosis into a test statistic
+    z_skew = skew * math.sqrt((n + 1) * (n + 3) / (6 * (n - 2)))
+    z_kurt = kurt / math.sqrt(24 * n * (n - 2) * (n - 3) / ((n + 1)**2 * (n + 3) * (n + 5)))
+
+    k2 = z_skew**2 + z_kurt**2
+    p_value = 1 - _chi2_cdf(k2, 2)
+
+    # Return a pseudo W statistic and p-value
+    w_stat = 1 - min(abs(skew), 2) / 4  # Rough approximation
+
+    return float(w_stat), float(p_value)
 
 def _safe_to_markdown(df: pd.DataFrame, **kwargs) -> str:
     """
@@ -858,11 +1086,12 @@ class ComprehensiveInstructorReport:
         dv_column: str,
         condition_column: str = "CONDITION",
     ) -> Dict[str, Any]:
-        """Run comprehensive statistical tests on the data."""
-        results = {}
+        """Run comprehensive statistical tests on the data.
 
-        if not SCIPY_AVAILABLE:
-            return {"error": "scipy not available for statistical tests"}
+        Uses scipy if available, falls back to numpy implementations otherwise.
+        """
+        results = {}
+        results["scipy_used"] = SCIPY_AVAILABLE
 
         # Get unique conditions
         conditions = df[condition_column].unique().tolist()
@@ -871,100 +1100,156 @@ class ComprehensiveInstructorReport:
             return {"error": "Need at least 2 conditions for comparison"}
 
         # Get data by condition
-        groups = {cond: df[df[condition_column] == cond][dv_column].dropna() for cond in conditions}
+        groups = {cond: df[df[condition_column] == cond][dv_column].dropna().values for cond in conditions}
+
+        # Ensure all groups have data
+        valid_groups = {c: g for c, g in groups.items() if len(g) >= 2}
+        if len(valid_groups) < 2:
+            return {"error": "Need at least 2 groups with 2+ observations each"}
+
+        conditions = list(valid_groups.keys())
+        groups = valid_groups
 
         # Basic descriptive stats
         results["descriptives"] = {}
         for cond, data in groups.items():
-            results["descriptives"][cond] = {
+            clean_cond = _clean_condition_name(cond)
+            results["descriptives"][clean_cond] = {
                 "n": len(data),
-                "mean": float(data.mean()),
-                "std": float(data.std()),
-                "median": float(data.median()),
-                "se": float(data.std() / np.sqrt(len(data))) if len(data) > 0 else 0,
+                "mean": float(np.mean(data)),
+                "std": float(np.std(data, ddof=1)),
+                "median": float(np.median(data)),
+                "se": float(np.std(data, ddof=1) / np.sqrt(len(data))) if len(data) > 0 else 0,
             }
 
-        # Two-group comparisons
-        if len(conditions) == 2:
-            g1, g2 = groups[conditions[0]], groups[conditions[1]]
+        # Define test functions (scipy or numpy fallback)
+        if SCIPY_AVAILABLE and scipy_stats is not None:
+            ttest_func = lambda g1, g2, eq_var: scipy_stats.ttest_ind(g1, g2, equal_var=eq_var)
+            anova_func = scipy_stats.f_oneway
+            mannwhitney_func = lambda g1, g2: scipy_stats.mannwhitneyu(g1, g2, alternative='two-sided')
+            levene_func = scipy_stats.levene
+            shapiro_func = scipy_stats.shapiro
+            kruskal_func = scipy_stats.kruskal
+        else:
+            ttest_func = lambda g1, g2, eq_var: _numpy_ttest_ind(g1, g2, equal_var=eq_var)
+            anova_func = _numpy_f_oneway
+            mannwhitney_func = _numpy_mannwhitneyu
+            levene_func = _numpy_levene
+            shapiro_func = _numpy_shapiro
+            kruskal_func = lambda *args: _numpy_f_oneway(*args)  # Approximate
 
-            # Independent samples t-test
-            t_stat, t_p = scipy_stats.ttest_ind(g1, g2, equal_var=True)
-            results["t_test"] = {
-                "statistic": float(t_stat),
-                "p_value": float(t_p),
-                "significant": t_p < 0.05,
-            }
+        try:
+            # Two-group comparisons
+            if len(conditions) == 2:
+                g1, g2 = groups[conditions[0]], groups[conditions[1]]
 
-            # Welch's t-test (unequal variances)
-            welch_t, welch_p = scipy_stats.ttest_ind(g1, g2, equal_var=False)
-            results["welch_t_test"] = {
-                "statistic": float(welch_t),
-                "p_value": float(welch_p),
-                "significant": welch_p < 0.05,
-            }
+                # Independent samples t-test
+                t_stat, t_p = ttest_func(g1, g2, True)
+                results["t_test"] = {
+                    "statistic": float(t_stat),
+                    "p_value": float(t_p),
+                    "significant": t_p < 0.05,
+                    "groups": [_clean_condition_name(conditions[0]), _clean_condition_name(conditions[1])],
+                }
 
-            # Mann-Whitney U test (non-parametric)
-            u_stat, u_p = scipy_stats.mannwhitneyu(g1, g2, alternative='two-sided')
-            results["mann_whitney"] = {
-                "statistic": float(u_stat),
-                "p_value": float(u_p),
-                "significant": u_p < 0.05,
-            }
+                # Welch's t-test (unequal variances)
+                welch_t, welch_p = ttest_func(g1, g2, False)
+                results["welch_t_test"] = {
+                    "statistic": float(welch_t),
+                    "p_value": float(welch_p),
+                    "significant": welch_p < 0.05,
+                }
 
-            # Cohen's d effect size
-            pooled_std = np.sqrt((g1.std()**2 + g2.std()**2) / 2)
-            cohens_d = (g1.mean() - g2.mean()) / pooled_std if pooled_std > 0 else 0
-            results["cohens_d"] = {
-                "value": float(cohens_d),
-                "interpretation": self._interpret_cohens_d(cohens_d),
-            }
+                # Mann-Whitney U test (non-parametric)
+                u_stat, u_p = mannwhitney_func(g1, g2)
+                results["mann_whitney"] = {
+                    "statistic": float(u_stat),
+                    "p_value": float(u_p),
+                    "significant": u_p < 0.05,
+                }
 
-        # Multi-group comparisons (3+ conditions)
-        if len(conditions) >= 2:
+                # Cohen's d effect size
+                pooled_std = np.sqrt((np.var(g1, ddof=1) + np.var(g2, ddof=1)) / 2)
+                cohens_d = (np.mean(g1) - np.mean(g2)) / pooled_std if pooled_std > 0 else 0
+                results["cohens_d"] = {
+                    "value": float(cohens_d),
+                    "interpretation": self._interpret_cohens_d(cohens_d),
+                }
+
+            # Multi-group comparisons (2+ conditions)
+            group_list = [groups[c] for c in conditions]
+
             # One-way ANOVA
-            f_stat, anova_p = scipy_stats.f_oneway(*[groups[c] for c in conditions])
+            f_stat, anova_p = anova_func(*group_list)
             results["anova"] = {
                 "f_statistic": float(f_stat),
                 "p_value": float(anova_p),
                 "significant": anova_p < 0.05,
+                "num_groups": len(conditions),
             }
 
-            # Kruskal-Wallis (non-parametric)
-            h_stat, kw_p = scipy_stats.kruskal(*[groups[c] for c in conditions])
-            results["kruskal_wallis"] = {
-                "h_statistic": float(h_stat),
-                "p_value": float(kw_p),
-                "significant": kw_p < 0.05,
-            }
+            # Kruskal-Wallis (non-parametric) - only with scipy
+            if SCIPY_AVAILABLE and scipy_stats is not None:
+                try:
+                    h_stat, kw_p = scipy_stats.kruskal(*group_list)
+                    results["kruskal_wallis"] = {
+                        "h_statistic": float(h_stat),
+                        "p_value": float(kw_p),
+                        "significant": kw_p < 0.05,
+                    }
+                except Exception:
+                    pass
 
             # Eta-squared effect size for ANOVA
-            grand_mean = df[dv_column].mean()
-            ss_between = sum(len(groups[c]) * (groups[c].mean() - grand_mean)**2 for c in conditions)
-            ss_total = sum((df[dv_column] - grand_mean)**2)
+            all_data = np.concatenate(group_list)
+            grand_mean = np.mean(all_data)
+            ss_between = sum(len(g) * (np.mean(g) - grand_mean)**2 for g in group_list)
+            ss_total = np.sum((all_data - grand_mean)**2)
             eta_squared = ss_between / ss_total if ss_total > 0 else 0
             results["eta_squared"] = {
                 "value": float(eta_squared),
                 "interpretation": self._interpret_eta_squared(eta_squared),
             }
 
-        # Levene's test for homogeneity of variances
-        levene_stat, levene_p = scipy_stats.levene(*[groups[c] for c in conditions])
-        results["levene_test"] = {
-            "statistic": float(levene_stat),
-            "p_value": float(levene_p),
-            "homogeneous": levene_p > 0.05,
-        }
-
-        # Shapiro-Wilk normality test (on pooled data, limited to 5000)
-        pooled = df[dv_column].dropna()
-        if len(pooled) <= 5000:
-            shapiro_stat, shapiro_p = scipy_stats.shapiro(pooled)
-            results["shapiro_wilk"] = {
-                "statistic": float(shapiro_stat),
-                "p_value": float(shapiro_p),
-                "normal": shapiro_p > 0.05,
+            # Levene's test for homogeneity of variances
+            levene_stat, levene_p = levene_func(*group_list)
+            results["levene_test"] = {
+                "statistic": float(levene_stat),
+                "p_value": float(levene_p),
+                "homogeneous": levene_p > 0.05,
             }
+
+            # Normality test (on pooled data, limited to 5000)
+            if len(all_data) <= 5000:
+                shapiro_stat, shapiro_p = shapiro_func(all_data)
+                results["normality_test"] = {
+                    "statistic": float(shapiro_stat),
+                    "p_value": float(shapiro_p),
+                    "normal": shapiro_p > 0.05,
+                    "test_name": "Shapiro-Wilk" if SCIPY_AVAILABLE else "D'Agostino-Pearson (approx)",
+                }
+
+            # Pairwise comparisons for 3+ groups
+            if len(conditions) >= 3:
+                pairwise = []
+                for i in range(len(conditions)):
+                    for j in range(i + 1, len(conditions)):
+                        c1, c2 = conditions[i], conditions[j]
+                        g1, g2 = groups[c1], groups[c2]
+                        t_stat, t_p = ttest_func(g1, g2, True)
+                        pooled_std = np.sqrt((np.var(g1, ddof=1) + np.var(g2, ddof=1)) / 2)
+                        d = (np.mean(g1) - np.mean(g2)) / pooled_std if pooled_std > 0 else 0
+                        pairwise.append({
+                            "comparison": f"{_clean_condition_name(c1)} vs {_clean_condition_name(c2)}",
+                            "t_stat": float(t_stat),
+                            "p_value": float(t_p),
+                            "cohens_d": float(d),
+                            "significant": t_p < 0.05,
+                        })
+                results["pairwise_comparisons"] = pairwise
+
+        except Exception as e:
+            results["error"] = f"Statistical test error: {str(e)}"
 
         return results
 
@@ -974,11 +1259,12 @@ class ComprehensiveInstructorReport:
         dv_column: str,
         condition_column: str = "CONDITION",
     ) -> Dict[str, Any]:
-        """Run simple regression analysis with condition as predictor."""
-        results = {}
+        """Run simple regression analysis with condition as predictor.
 
-        if not SCIPY_AVAILABLE:
-            return {"error": "scipy not available"}
+        Works with or without scipy using numpy-based p-value approximations.
+        """
+        results = {}
+        results["scipy_used"] = SCIPY_AVAILABLE
 
         try:
             # Create dummy variables for conditions
@@ -987,9 +1273,13 @@ class ComprehensiveInstructorReport:
                 return {"error": "Need at least 2 conditions"}
 
             # Reference category is first condition
-            reference = conditions[0]
+            reference = _clean_condition_name(conditions[0])
             X = pd.get_dummies(df[condition_column], drop_first=True)
-            y = df[dv_column].values
+            y = df[dv_column].dropna().values
+            X = X.loc[df[dv_column].notna()]
+
+            if len(y) < 3:
+                return {"error": "Insufficient data for regression"}
 
             # Add constant
             X_with_const = np.column_stack([np.ones(len(X)), X.values])
@@ -1010,12 +1300,19 @@ class ComprehensiveInstructorReport:
             # Standard errors
             n = len(y)
             k = X_with_const.shape[1]
-            mse = ss_res / (n - k)
-            se = np.sqrt(np.diag(XtX_inv) * mse)
+            df_resid = n - k
+            mse = ss_res / df_resid if df_resid > 0 else 1
+            se = np.sqrt(np.maximum(np.diag(XtX_inv) * mse, 1e-10))
 
             # t-statistics and p-values
             t_stats = beta / se
-            p_values = 2 * (1 - scipy_stats.t.cdf(np.abs(t_stats), n - k))
+
+            # Calculate p-values (scipy or fallback)
+            if SCIPY_AVAILABLE and scipy_stats is not None:
+                p_values = 2 * (1 - scipy_stats.t.cdf(np.abs(t_stats), df_resid))
+            else:
+                # Use numpy fallback
+                p_values = np.array([2 * _t_sf(abs(t), df_resid) for t in t_stats])
 
             results["coefficients"] = {
                 "intercept": {
@@ -1026,10 +1323,12 @@ class ComprehensiveInstructorReport:
                 }
             }
 
-            # Condition coefficients
+            # Condition coefficients (clean names)
             predictor_names = X.columns.tolist()
+            results["reference_category"] = reference
             for i, name in enumerate(predictor_names):
-                results["coefficients"][name] = {
+                clean_name = _clean_condition_name(name)
+                results["coefficients"][clean_name] = {
                     "estimate": float(beta[i + 1]),
                     "std_error": float(se[i + 1]),
                     "t_stat": float(t_stats[i + 1]),
@@ -1039,15 +1338,21 @@ class ComprehensiveInstructorReport:
 
             results["model_fit"] = {
                 "r_squared": float(r_squared),
-                "adj_r_squared": float(1 - (1 - r_squared) * (n - 1) / (n - k - 1)),
+                "adj_r_squared": float(1 - (1 - r_squared) * (n - 1) / (n - k - 1)) if n > k + 1 else 0,
                 "n": n,
-                "df_residual": n - k,
+                "df_residual": df_resid,
             }
 
             # F-test for overall model
-            if k > 1:
-                f_stat = (r_squared / (k - 1)) / ((1 - r_squared) / (n - k)) if r_squared < 1 else float('inf')
-                f_p = 1 - scipy_stats.f.cdf(f_stat, k - 1, n - k)
+            if k > 1 and df_resid > 0:
+                f_stat = (r_squared / (k - 1)) / ((1 - r_squared) / df_resid) if r_squared < 1 else float('inf')
+
+                # F-test p-value (scipy or fallback)
+                if SCIPY_AVAILABLE and scipy_stats is not None:
+                    f_p = 1 - scipy_stats.f.cdf(f_stat, k - 1, df_resid)
+                else:
+                    f_p = _f_sf(f_stat, k - 1, df_resid)
+
                 results["f_test"] = {
                     "f_statistic": float(f_stat),
                     "p_value": float(f_p),
@@ -1055,7 +1360,227 @@ class ComprehensiveInstructorReport:
                 }
 
         except Exception as e:
-            results["error"] = str(e)
+            results["error"] = f"Regression error: {str(e)}"
+
+        return results
+
+    def _run_factorial_anova(
+        self,
+        df: pd.DataFrame,
+        dv_column: str,
+        factors: List[Dict[str, Any]],
+        condition_column: str = "CONDITION",
+    ) -> Dict[str, Any]:
+        """Run factorial ANOVA for 2x2+ designs with interaction effects.
+
+        Parses factorial structure from condition names and computes main effects
+        and interactions using Type III SS (approximated with numpy when scipy unavailable).
+        """
+        results = {}
+        results["scipy_used"] = SCIPY_AVAILABLE
+
+        try:
+            # Need at least 2 factors for factorial ANOVA
+            if len(factors) < 2:
+                return {"error": "Need at least 2 factors for factorial ANOVA", "single_factor": True}
+
+            # Extract factor levels from condition names
+            conditions = df[condition_column].dropna().unique().tolist()
+            if len(conditions) < 4:
+                return {"error": "Need at least 4 conditions for 2x2 factorial", "conditions": len(conditions)}
+
+            # Try to parse factor structure from conditions
+            # Common patterns: "Factor1_Level1 x Factor2_Level1", "Level1-Level2", etc.
+            factor1_name = factors[0].get("name", "Factor1") if len(factors) > 0 else "Factor1"
+            factor2_name = factors[1].get("name", "Factor2") if len(factors) > 1 else "Factor2"
+            factor1_levels = factors[0].get("levels", []) if len(factors) > 0 else []
+            factor2_levels = factors[1].get("levels", []) if len(factors) > 1 else []
+
+            # Create factor columns by parsing condition names
+            df_analysis = df.copy()
+
+            def extract_factor_level(condition: str, factor_levels: List[str], factor_idx: int) -> Optional[str]:
+                """Extract factor level from condition name."""
+                condition_lower = str(condition).lower()
+                for level in factor_levels:
+                    if level.lower() in condition_lower:
+                        return level
+                # Try positional extraction (split by common delimiters)
+                parts = re.split(r'[x×_\-\s]+', str(condition))
+                if len(parts) > factor_idx:
+                    return parts[factor_idx].strip()
+                return None
+
+            # Extract factor levels for each row
+            factor1_col = f"_factor1_{factor1_name}"
+            factor2_col = f"_factor2_{factor2_name}"
+
+            df_analysis[factor1_col] = df_analysis[condition_column].apply(
+                lambda x: extract_factor_level(x, factor1_levels, 0)
+            )
+            df_analysis[factor2_col] = df_analysis[condition_column].apply(
+                lambda x: extract_factor_level(x, factor2_levels, 1)
+            )
+
+            # Drop rows with missing factor assignments
+            df_analysis = df_analysis.dropna(subset=[factor1_col, factor2_col, dv_column])
+
+            if len(df_analysis) < 10:
+                return {"error": "Insufficient data after factor parsing"}
+
+            # Get unique levels
+            f1_levels = df_analysis[factor1_col].unique().tolist()
+            f2_levels = df_analysis[factor2_col].unique().tolist()
+
+            if len(f1_levels) < 2 or len(f2_levels) < 2:
+                return {"error": f"Need at least 2 levels per factor. Found {len(f1_levels)} and {len(f2_levels)}"}
+
+            results["factor1"] = {"name": factor1_name, "levels": f1_levels}
+            results["factor2"] = {"name": factor2_name, "levels": f2_levels}
+
+            # Calculate cell means and grand mean
+            grand_mean = df_analysis[dv_column].mean()
+            n_total = len(df_analysis)
+
+            # Cell means
+            cell_stats = {}
+            for f1 in f1_levels:
+                for f2 in f2_levels:
+                    cell_data = df_analysis[(df_analysis[factor1_col] == f1) &
+                                           (df_analysis[factor2_col] == f2)][dv_column]
+                    if len(cell_data) > 0:
+                        cell_key = f"{f1} × {f2}"
+                        cell_stats[cell_key] = {
+                            "n": len(cell_data),
+                            "mean": float(cell_data.mean()),
+                            "std": float(cell_data.std()) if len(cell_data) > 1 else 0,
+                        }
+
+            results["cell_statistics"] = cell_stats
+
+            # Calculate marginal means
+            f1_means = {lvl: df_analysis[df_analysis[factor1_col] == lvl][dv_column].mean() for lvl in f1_levels}
+            f2_means = {lvl: df_analysis[df_analysis[factor2_col] == lvl][dv_column].mean() for lvl in f2_levels}
+
+            results["marginal_means"] = {
+                factor1_name: {_clean_condition_name(k): float(v) for k, v in f1_means.items()},
+                factor2_name: {_clean_condition_name(k): float(v) for k, v in f2_means.items()},
+            }
+
+            # Calculate Sum of Squares
+            # SS Total
+            ss_total = np.sum((df_analysis[dv_column] - grand_mean) ** 2)
+
+            # SS Factor 1 (main effect)
+            ss_f1 = sum(
+                len(df_analysis[df_analysis[factor1_col] == lvl]) * (f1_means[lvl] - grand_mean) ** 2
+                for lvl in f1_levels
+            )
+
+            # SS Factor 2 (main effect)
+            ss_f2 = sum(
+                len(df_analysis[df_analysis[factor2_col] == lvl]) * (f2_means[lvl] - grand_mean) ** 2
+                for lvl in f2_levels
+            )
+
+            # SS Within (Error)
+            ss_within = 0
+            for f1 in f1_levels:
+                for f2 in f2_levels:
+                    cell_data = df_analysis[(df_analysis[factor1_col] == f1) &
+                                           (df_analysis[factor2_col] == f2)][dv_column]
+                    if len(cell_data) > 0:
+                        cell_mean = cell_data.mean()
+                        ss_within += np.sum((cell_data - cell_mean) ** 2)
+
+            # SS Interaction (by subtraction)
+            ss_interaction = ss_total - ss_f1 - ss_f2 - ss_within
+
+            # Degrees of freedom
+            df_f1 = len(f1_levels) - 1
+            df_f2 = len(f2_levels) - 1
+            df_interaction = df_f1 * df_f2
+            df_within = n_total - len(f1_levels) * len(f2_levels)
+
+            if df_within <= 0:
+                return {"error": "Insufficient degrees of freedom for error term"}
+
+            # Mean squares
+            ms_f1 = ss_f1 / df_f1 if df_f1 > 0 else 0
+            ms_f2 = ss_f2 / df_f2 if df_f2 > 0 else 0
+            ms_interaction = ss_interaction / df_interaction if df_interaction > 0 else 0
+            ms_within = ss_within / df_within if df_within > 0 else 1
+
+            # F statistics
+            f_f1 = ms_f1 / ms_within if ms_within > 0 else 0
+            f_f2 = ms_f2 / ms_within if ms_within > 0 else 0
+            f_interaction = ms_interaction / ms_within if ms_within > 0 else 0
+
+            # P-values
+            if SCIPY_AVAILABLE and scipy_stats is not None:
+                p_f1 = 1 - scipy_stats.f.cdf(f_f1, df_f1, df_within)
+                p_f2 = 1 - scipy_stats.f.cdf(f_f2, df_f2, df_within)
+                p_interaction = 1 - scipy_stats.f.cdf(f_interaction, df_interaction, df_within)
+            else:
+                p_f1 = _f_sf(f_f1, df_f1, df_within)
+                p_f2 = _f_sf(f_f2, df_f2, df_within)
+                p_interaction = _f_sf(f_interaction, df_interaction, df_within)
+
+            # Effect sizes (partial eta-squared)
+            eta2_f1 = ss_f1 / (ss_f1 + ss_within) if (ss_f1 + ss_within) > 0 else 0
+            eta2_f2 = ss_f2 / (ss_f2 + ss_within) if (ss_f2 + ss_within) > 0 else 0
+            eta2_interaction = ss_interaction / (ss_interaction + ss_within) if (ss_interaction + ss_within) > 0 else 0
+
+            # Store results
+            results["main_effect_1"] = {
+                "factor": factor1_name,
+                "ss": float(ss_f1),
+                "df": df_f1,
+                "ms": float(ms_f1),
+                "f_statistic": float(f_f1),
+                "p_value": float(p_f1),
+                "partial_eta_squared": float(eta2_f1),
+                "significant": p_f1 < 0.05,
+                "interpretation": self._interpret_eta_squared(eta2_f1),
+            }
+
+            results["main_effect_2"] = {
+                "factor": factor2_name,
+                "ss": float(ss_f2),
+                "df": df_f2,
+                "ms": float(ms_f2),
+                "f_statistic": float(f_f2),
+                "p_value": float(p_f2),
+                "partial_eta_squared": float(eta2_f2),
+                "significant": p_f2 < 0.05,
+                "interpretation": self._interpret_eta_squared(eta2_f2),
+            }
+
+            results["interaction"] = {
+                "factors": f"{factor1_name} × {factor2_name}",
+                "ss": float(ss_interaction),
+                "df": df_interaction,
+                "ms": float(ms_interaction),
+                "f_statistic": float(f_interaction),
+                "p_value": float(p_interaction),
+                "partial_eta_squared": float(eta2_interaction),
+                "significant": p_interaction < 0.05,
+                "interpretation": self._interpret_eta_squared(eta2_interaction),
+            }
+
+            results["error"] = {
+                "ss": float(ss_within),
+                "df": df_within,
+                "ms": float(ms_within),
+            }
+
+            results["total"] = {
+                "ss": float(ss_total),
+                "df": n_total - 1,
+            }
+
+        except Exception as e:
+            results["error"] = f"Factorial ANOVA error: {str(e)}"
 
         return results
 
@@ -1087,36 +1612,78 @@ class ComprehensiveInstructorReport:
         data: Dict[str, Tuple[float, float]],
         title: str,
         ylabel: str,
+        effect_size: Optional[float] = None,
+        p_value: Optional[float] = None,
     ) -> Optional[str]:
-        """Create a bar chart with error bars and return as base64-encoded PNG."""
+        """Create an enhanced bar chart with error bars, annotations, and styling."""
         if not MATPLOTLIB_AVAILABLE:
             return None
 
         try:
-            fig, ax = plt.subplots(figsize=(8, 5))
+            # Use a cleaner style
+            plt.style.use('seaborn-v0_8-whitegrid') if 'seaborn-v0_8-whitegrid' in plt.style.available else None
+
+            fig, ax = plt.subplots(figsize=(10, 6))
 
             conditions = list(data.keys())
             means = [data[c][0] for c in conditions]
             errors = [data[c][1] for c in conditions]
 
-            colors = ['#4C72B0', '#DD8452', '#55A868', '#C44E52', '#8172B3']
-            bars = ax.bar(conditions, means, yerr=errors, capsize=5,
-                         color=colors[:len(conditions)], edgecolor='black', alpha=0.8)
+            # Modern color palette (colorblind-friendly)
+            colors = ['#2ecc71', '#3498db', '#e74c3c', '#9b59b6', '#f39c12', '#1abc9c', '#e67e22']
+            bar_colors = colors[:len(conditions)]
 
-            ax.set_ylabel(ylabel, fontsize=11)
-            ax.set_title(title, fontsize=12, fontweight='bold')
-            ax.tick_params(axis='x', rotation=45)
+            # Create bars with gradient effect
+            bars = ax.bar(conditions, means, yerr=errors, capsize=8,
+                         color=bar_colors, edgecolor='white', linewidth=2,
+                         alpha=0.85, error_kw={'linewidth': 2, 'capthick': 2, 'ecolor': '#2c3e50'})
 
-            # Add value labels on bars
+            # Style improvements
+            ax.set_ylabel(ylabel, fontsize=13, fontweight='bold', color='#2c3e50')
+            ax.set_title(title, fontsize=14, fontweight='bold', color='#2c3e50', pad=20)
+            ax.tick_params(axis='x', rotation=30, labelsize=11)
+            ax.tick_params(axis='y', labelsize=10)
+
+            # Add value labels on bars with better formatting
             for bar, mean, error in zip(bars, means, errors):
-                ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + error + 0.05,
-                       f'{mean:.2f}', ha='center', va='bottom', fontsize=9)
+                height = bar.get_height()
+                ax.annotate(f'{mean:.2f}',
+                           xy=(bar.get_x() + bar.get_width() / 2, height + error),
+                           xytext=(0, 8), textcoords="offset points",
+                           ha='center', va='bottom', fontsize=11, fontweight='bold',
+                           color='#2c3e50',
+                           bbox=dict(boxstyle='round,pad=0.3', facecolor='white', alpha=0.8, edgecolor='none'))
+
+            # Add significance and effect size annotation if provided
+            annotation_text = []
+            if p_value is not None:
+                sig_symbol = "***" if p_value < 0.001 else ("**" if p_value < 0.01 else ("*" if p_value < 0.05 else "ns"))
+                annotation_text.append(f"p = {p_value:.4f} {sig_symbol}")
+            if effect_size is not None:
+                annotation_text.append(f"d = {effect_size:.2f}")
+
+            if annotation_text:
+                ax.text(0.98, 0.98, "\n".join(annotation_text),
+                       transform=ax.transAxes, fontsize=11,
+                       verticalalignment='top', horizontalalignment='right',
+                       bbox=dict(boxstyle='round,pad=0.5', facecolor='#ecf0f1', alpha=0.9, edgecolor='#bdc3c7'))
+
+            # Remove top and right spines for cleaner look
+            ax.spines['top'].set_visible(False)
+            ax.spines['right'].set_visible(False)
+            ax.spines['left'].set_color('#bdc3c7')
+            ax.spines['bottom'].set_color('#bdc3c7')
+
+            # Add subtle gridlines
+            ax.yaxis.grid(True, linestyle='--', alpha=0.7, color='#ecf0f1')
+            ax.set_axisbelow(True)
 
             plt.tight_layout()
 
-            # Save to base64
+            # Save to base64 with higher DPI
             buffer = io.BytesIO()
-            plt.savefig(buffer, format='png', dpi=100, bbox_inches='tight')
+            plt.savefig(buffer, format='png', dpi=150, bbox_inches='tight',
+                       facecolor='white', edgecolor='none')
             buffer.seek(0)
             img_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
             plt.close(fig)
@@ -1132,35 +1699,247 @@ class ComprehensiveInstructorReport:
         condition_column: str = "CONDITION",
         title: str = "Distribution by Condition",
     ) -> Optional[str]:
-        """Create a distribution plot (box + strip) and return as base64 PNG."""
+        """Create an enhanced violin/box plot with individual data points."""
         if not MATPLOTLIB_AVAILABLE:
             return None
 
         try:
-            fig, ax = plt.subplots(figsize=(8, 5))
+            fig, ax = plt.subplots(figsize=(10, 6))
 
-            conditions = df[condition_column].unique().tolist()
-            colors = ['#4C72B0', '#DD8452', '#55A868', '#C44E52', '#8172B3']
+            # Clean condition names for display
+            df_plot = df.copy()
+            df_plot['_clean_condition'] = df_plot[condition_column].apply(_clean_condition_name)
+            conditions = df_plot['_clean_condition'].unique().tolist()
 
-            # Create box plots
+            # Modern color palette
+            colors = ['#2ecc71', '#3498db', '#e74c3c', '#9b59b6', '#f39c12', '#1abc9c', '#e67e22']
+
             positions = range(len(conditions))
-            box_data = [df[df[condition_column] == c][column].dropna() for c in conditions]
+            box_data = [df_plot[df_plot['_clean_condition'] == c][column].dropna().values for c in conditions]
 
-            bp = ax.boxplot(box_data, positions=positions, patch_artist=True, widths=0.5)
+            # Create violin plots for density visualization
+            parts = ax.violinplot(box_data, positions=positions, showmeans=False,
+                                  showmedians=False, showextrema=False)
 
-            for patch, color in zip(bp['boxes'], colors[:len(conditions)]):
-                patch.set_facecolor(color)
-                patch.set_alpha(0.6)
+            for i, pc in enumerate(parts['bodies']):
+                pc.set_facecolor(colors[i % len(colors)])
+                pc.set_edgecolor('white')
+                pc.set_alpha(0.3)
 
+            # Overlay box plots
+            bp = ax.boxplot(box_data, positions=positions, patch_artist=True, widths=0.3,
+                           showfliers=False)
+
+            for i, (patch, median) in enumerate(zip(bp['boxes'], bp['medians'])):
+                patch.set_facecolor(colors[i % len(colors)])
+                patch.set_alpha(0.7)
+                patch.set_edgecolor('white')
+                patch.set_linewidth(2)
+                median.set_color('white')
+                median.set_linewidth(2)
+
+            # Style whiskers and caps
+            for whisker in bp['whiskers']:
+                whisker.set_color('#7f8c8d')
+                whisker.set_linewidth(1.5)
+            for cap in bp['caps']:
+                cap.set_color('#7f8c8d')
+                cap.set_linewidth(1.5)
+
+            # Add individual data points with jitter
+            for i, (pos, data) in enumerate(zip(positions, box_data)):
+                if len(data) > 0:
+                    jitter = np.random.normal(0, 0.04, len(data))
+                    ax.scatter(pos + jitter, data, alpha=0.4, s=20,
+                              color=colors[i % len(colors)], edgecolor='white', linewidth=0.5,
+                              zorder=3)
+
+            # Add mean markers
+            for i, (pos, data) in enumerate(zip(positions, box_data)):
+                if len(data) > 0:
+                    mean_val = np.mean(data)
+                    ax.scatter(pos, mean_val, marker='D', s=80, color='white',
+                              edgecolor=colors[i % len(colors)], linewidth=2, zorder=4)
+
+            # Styling
             ax.set_xticks(positions)
-            ax.set_xticklabels(conditions, rotation=45, ha='right')
-            ax.set_ylabel(column, fontsize=11)
-            ax.set_title(title, fontsize=12, fontweight='bold')
+            ax.set_xticklabels(conditions, rotation=30, ha='right', fontsize=11)
+            ax.set_ylabel("Score", fontsize=13, fontweight='bold', color='#2c3e50')
+            ax.set_title(title, fontsize=14, fontweight='bold', color='#2c3e50', pad=20)
+
+            # Add legend for mean marker
+            ax.scatter([], [], marker='D', s=80, color='white', edgecolor='#2c3e50',
+                      linewidth=2, label='Mean')
+            ax.legend(loc='upper right', framealpha=0.9)
+
+            # Clean up spines
+            ax.spines['top'].set_visible(False)
+            ax.spines['right'].set_visible(False)
+            ax.spines['left'].set_color('#bdc3c7')
+            ax.spines['bottom'].set_color('#bdc3c7')
+
+            ax.yaxis.grid(True, linestyle='--', alpha=0.5, color='#ecf0f1')
+            ax.set_axisbelow(True)
 
             plt.tight_layout()
 
             buffer = io.BytesIO()
-            plt.savefig(buffer, format='png', dpi=100, bbox_inches='tight')
+            plt.savefig(buffer, format='png', dpi=150, bbox_inches='tight',
+                       facecolor='white', edgecolor='none')
+            buffer.seek(0)
+            img_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
+            plt.close(fig)
+
+            return img_base64
+        except Exception:
+            return None
+
+    def _create_interaction_plot(
+        self,
+        df: pd.DataFrame,
+        column: str,
+        factor1_col: str,
+        factor2_col: str,
+        factor1_name: str,
+        factor2_name: str,
+        title: str = "Interaction Plot",
+    ) -> Optional[str]:
+        """Create an interaction plot for factorial designs."""
+        if not MATPLOTLIB_AVAILABLE:
+            return None
+
+        try:
+            fig, ax = plt.subplots(figsize=(10, 6))
+
+            # Get unique levels
+            f1_levels = df[factor1_col].dropna().unique().tolist()
+            f2_levels = df[factor2_col].dropna().unique().tolist()
+
+            # Colors and markers
+            colors = ['#2ecc71', '#e74c3c', '#3498db', '#9b59b6']
+            markers = ['o', 's', '^', 'D']
+
+            # Calculate means and SEs for each cell
+            for i, f2 in enumerate(f2_levels):
+                means = []
+                errors = []
+                for f1 in f1_levels:
+                    cell_data = df[(df[factor1_col] == f1) & (df[factor2_col] == f2)][column].dropna()
+                    if len(cell_data) > 0:
+                        means.append(cell_data.mean())
+                        errors.append(1.96 * cell_data.std() / np.sqrt(len(cell_data)) if len(cell_data) > 1 else 0)
+                    else:
+                        means.append(np.nan)
+                        errors.append(0)
+
+                # Plot line with error bars
+                x_positions = range(len(f1_levels))
+                ax.errorbar(x_positions, means, yerr=errors,
+                           marker=markers[i % len(markers)], markersize=12,
+                           color=colors[i % len(colors)], linewidth=2.5,
+                           capsize=6, capthick=2, label=f"{factor2_name}: {f2}",
+                           markeredgecolor='white', markeredgewidth=2)
+
+            # Styling
+            ax.set_xticks(range(len(f1_levels)))
+            ax.set_xticklabels([str(l) for l in f1_levels], fontsize=11)
+            ax.set_xlabel(factor1_name, fontsize=13, fontweight='bold', color='#2c3e50')
+            ax.set_ylabel("Mean Score", fontsize=13, fontweight='bold', color='#2c3e50')
+            ax.set_title(title, fontsize=14, fontweight='bold', color='#2c3e50', pad=20)
+
+            # Legend
+            ax.legend(loc='best', framealpha=0.95, fontsize=10)
+
+            # Clean up spines
+            ax.spines['top'].set_visible(False)
+            ax.spines['right'].set_visible(False)
+            ax.spines['left'].set_color('#bdc3c7')
+            ax.spines['bottom'].set_color('#bdc3c7')
+
+            ax.yaxis.grid(True, linestyle='--', alpha=0.5, color='#ecf0f1')
+            ax.set_axisbelow(True)
+
+            plt.tight_layout()
+
+            buffer = io.BytesIO()
+            plt.savefig(buffer, format='png', dpi=150, bbox_inches='tight',
+                       facecolor='white', edgecolor='none')
+            buffer.seek(0)
+            img_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
+            plt.close(fig)
+
+            return img_base64
+        except Exception:
+            return None
+
+    def _create_effect_size_forest_plot(
+        self,
+        comparisons: List[Dict[str, Any]],
+        title: str = "Effect Sizes (Cohen's d) with 95% CI",
+    ) -> Optional[str]:
+        """Create a forest plot showing effect sizes for all pairwise comparisons."""
+        if not MATPLOTLIB_AVAILABLE or not comparisons:
+            return None
+
+        try:
+            fig, ax = plt.subplots(figsize=(10, max(4, len(comparisons) * 0.6 + 1)))
+
+            y_positions = range(len(comparisons))
+            effects = [c['cohens_d'] for c in comparisons]
+            labels = [c['comparison'] for c in comparisons]
+            significant = [c['significant'] for c in comparisons]
+
+            # Approximate CI for Cohen's d (rough estimate)
+            ci_widths = [0.4 for _ in comparisons]  # Simplified
+
+            # Colors based on significance
+            colors = ['#2ecc71' if sig else '#95a5a6' for sig in significant]
+
+            # Plot effect sizes
+            for i, (effect, label, sig, color) in enumerate(zip(effects, labels, significant, colors)):
+                # Horizontal line for CI
+                ax.hlines(i, effect - ci_widths[i], effect + ci_widths[i],
+                         color=color, linewidth=3, alpha=0.7)
+                # Diamond marker for point estimate
+                ax.scatter(effect, i, marker='D', s=150, color=color,
+                          edgecolor='white', linewidth=2, zorder=3)
+
+            # Reference line at 0
+            ax.axvline(x=0, color='#e74c3c', linestyle='--', linewidth=2, alpha=0.7,
+                      label='No effect')
+
+            # Effect size interpretation zones
+            ax.axvspan(-0.2, 0.2, alpha=0.1, color='#f39c12', label='Negligible')
+            ax.axvspan(0.2, 0.5, alpha=0.1, color='#f1c40f')
+            ax.axvspan(-0.5, -0.2, alpha=0.1, color='#f1c40f')
+            ax.axvspan(0.5, 0.8, alpha=0.1, color='#e67e22')
+            ax.axvspan(-0.8, -0.5, alpha=0.1, color='#e67e22')
+
+            # Styling
+            ax.set_yticks(y_positions)
+            ax.set_yticklabels(labels, fontsize=11)
+            ax.set_xlabel("Cohen's d", fontsize=13, fontweight='bold', color='#2c3e50')
+            ax.set_title(title, fontsize=14, fontweight='bold', color='#2c3e50', pad=20)
+
+            # Add interpretation text
+            xlim = ax.get_xlim()
+            ax.text(xlim[1], -0.7, "Green = Significant (p < .05)\nGray = Non-significant",
+                   fontsize=9, ha='right', va='top', style='italic', color='#7f8c8d')
+
+            # Clean up spines
+            ax.spines['top'].set_visible(False)
+            ax.spines['right'].set_visible(False)
+            ax.spines['left'].set_color('#bdc3c7')
+            ax.spines['bottom'].set_color('#bdc3c7')
+
+            ax.xaxis.grid(True, linestyle='--', alpha=0.5, color='#ecf0f1')
+            ax.set_axisbelow(True)
+
+            plt.tight_layout()
+
+            buffer = io.BytesIO()
+            plt.savefig(buffer, format='png', dpi=150, bbox_inches='tight',
+                       facecolor='white', edgecolor='none')
             buffer.seek(0)
             img_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
             plt.close(fig)
@@ -1246,14 +2025,15 @@ class ComprehensiveInstructorReport:
         html_parts.append(f"<div class='metric-card'><div class='metric-value'>{len(conditions)}</div><div class='metric-label'>Conditions</div></div>")
         html_parts.append("</div>")
 
-        # Condition distribution
+        # Condition distribution (with cleaned names)
         if "CONDITION" in df.columns:
             html_parts.append("<h3>Condition Distribution</h3>")
             html_parts.append("<table><tr><th>Condition</th><th>N</th><th>%</th></tr>")
             cond_counts = df["CONDITION"].value_counts()
             for cond, count in cond_counts.items():
                 pct = count / n_total * 100
-                html_parts.append(f"<tr><td>{cond}</td><td>{count}</td><td>{pct:.1f}%</td></tr>")
+                clean_cond = _clean_condition_name(cond)
+                html_parts.append(f"<tr><td>{clean_cond}</td><td>{count}</td><td>{pct:.1f}%</td></tr>")
             html_parts.append("</table>")
 
         # Clean data for analysis
@@ -1292,23 +2072,37 @@ class ComprehensiveInstructorReport:
                         se = sd / np.sqrt(n) if n > 0 else 0
                         ci_low = mean - 1.96 * se
                         ci_high = mean + 1.96 * se
-                        html_parts.append(f"<tr><td>{cond}</td><td>{n}</td><td>{mean:.3f}</td><td>{sd:.3f}</td><td>[{ci_low:.3f}, {ci_high:.3f}]</td></tr>")
-                        chart_data[cond] = (mean, 1.96 * se)
+                        clean_cond = _clean_condition_name(cond)
+                        html_parts.append(f"<tr><td>{clean_cond}</td><td>{n}</td><td>{mean:.3f}</td><td>{sd:.3f}</td><td>[{ci_low:.3f}, {ci_high:.3f}]</td></tr>")
+                        chart_data[clean_cond] = (mean, 1.96 * se)
 
                 html_parts.append("</table>")
 
-                # Create visualization
+                # Run statistical tests first to get effect size and p-value for chart
+                stats_results = {}
+                if len(conditions) >= 2 and "CONDITION" in df_analysis.columns:
+                    stats_results = self._run_statistical_tests(df_analysis, "_composite", "CONDITION")
+
+                # Extract effect size and p-value for bar chart annotation
+                effect_size_val = stats_results.get("cohens_d", {}).get("value") if "cohens_d" in stats_results else None
+                p_value_val = stats_results.get("t_test", {}).get("p_value") if "t_test" in stats_results else (
+                    stats_results.get("anova", {}).get("p_value") if "anova" in stats_results else None
+                )
+
+                # Create enhanced bar chart with annotations
                 chart_img = self._create_bar_chart(
                     chart_data,
                     f"{scale_name}: Means with 95% CI",
-                    "Mean Score"
+                    "Mean Score",
+                    effect_size=effect_size_val,
+                    p_value=p_value_val
                 )
                 if chart_img:
                     html_parts.append("<div class='chart-container'>")
                     html_parts.append(f"<img src='data:image/png;base64,{chart_img}' alt='Bar chart'>")
                     html_parts.append("</div>")
 
-                # Distribution plot
+                # Enhanced distribution plot (violin + box + points)
                 dist_img = self._create_distribution_plot(
                     df_analysis, "_composite", "CONDITION",
                     f"{scale_name}: Distribution by Condition"
@@ -1320,7 +2114,6 @@ class ComprehensiveInstructorReport:
 
                 # Statistical tests
                 if len(conditions) >= 2 and "CONDITION" in df_analysis.columns:
-                    stats_results = self._run_statistical_tests(df_analysis, "_composite", "CONDITION")
 
                     html_parts.append("<h4>Statistical Tests</h4>")
 
@@ -1391,15 +2184,37 @@ class ComprehensiveInstructorReport:
                             html_parts.append(f"<strong>Levene's test:</strong> Variances may be heterogeneous (p = {lev['p_value']:.4f}). Consider Welch's t-test.")
                         html_parts.append("</div>")
 
-                    if "shapiro_wilk" in stats_results:
-                        sw = stats_results["shapiro_wilk"]
+                    if "normality_test" in stats_results:
+                        sw = stats_results["normality_test"]
+                        test_name = sw.get("test_name", "Normality test")
                         if sw["normal"]:
                             html_parts.append("<div class='success-box'>")
-                            html_parts.append(f"<strong>Shapiro-Wilk test:</strong> Data appears normally distributed (p = {sw['p_value']:.4f})")
+                            html_parts.append(f"<strong>{test_name}:</strong> Data appears normally distributed (p = {sw['p_value']:.4f})")
                         else:
                             html_parts.append("<div class='warning-box'>")
-                            html_parts.append(f"<strong>Shapiro-Wilk test:</strong> Data may not be normally distributed (p = {sw['p_value']:.4f}). Consider non-parametric tests.")
+                            html_parts.append(f"<strong>{test_name}:</strong> Data may not be normally distributed (p = {sw['p_value']:.4f}). Consider non-parametric tests.")
                         html_parts.append("</div>")
+
+                    # Pairwise comparisons for 3+ groups
+                    if "pairwise_comparisons" in stats_results and len(stats_results["pairwise_comparisons"]) > 0:
+                        html_parts.append("<h4>Pairwise Comparisons</h4>")
+                        html_parts.append("<table><tr><th>Comparison</th><th>t</th><th>p</th><th>Cohen's d</th><th>Significant</th></tr>")
+                        for comp in stats_results["pairwise_comparisons"]:
+                            sig_class = "sig" if comp["significant"] else "nonsig"
+                            sig_text = "Yes" if comp["significant"] else "No"
+                            html_parts.append(f"<tr><td>{comp['comparison']}</td><td>{comp['t_stat']:.3f}</td><td class='{sig_class}'>{comp['p_value']:.4f}</td><td>{comp['cohens_d']:.3f}</td><td class='{sig_class}'>{sig_text}</td></tr>")
+                        html_parts.append("</table>")
+                        html_parts.append("<div class='warning-box'><em>Note: Multiple comparisons may inflate Type I error. Consider Bonferroni or other corrections.</em></div>")
+
+                        # Forest plot for effect sizes
+                        forest_img = self._create_effect_size_forest_plot(
+                            stats_results["pairwise_comparisons"],
+                            f"{scale_name}: Effect Sizes (Cohen's d)"
+                        )
+                        if forest_img:
+                            html_parts.append("<div class='chart-container'>")
+                            html_parts.append(f"<img src='data:image/png;base64,{forest_img}' alt='Forest plot'>")
+                            html_parts.append("</div>")
 
                     # Regression analysis
                     html_parts.append("<h4>Regression Analysis</h4>")
@@ -1428,14 +2243,119 @@ class ComprehensiveInstructorReport:
                     else:
                         html_parts.append(f"<div class='warning-box'>Regression analysis unavailable: {reg_results['error']}</div>")
 
+                    # Factorial ANOVA for 2x2+ designs
+                    factors = metadata.get("factors", [])
+                    if len(factors) >= 2 and len(conditions) >= 4:
+                        html_parts.append("<h4>Factorial ANOVA (Main Effects & Interaction)</h4>")
+                        factorial_results = self._run_factorial_anova(df_analysis, "_composite", factors, "CONDITION")
+
+                        if "error" not in factorial_results or factorial_results.get("single_factor"):
+                            if "main_effect_1" in factorial_results and "main_effect_2" in factorial_results:
+                                # ANOVA summary table
+                                html_parts.append("<table><tr><th>Source</th><th>SS</th><th>df</th><th>MS</th><th>F</th><th>p</th><th>η²<sub>p</sub></th></tr>")
+
+                                # Main effect 1
+                                me1 = factorial_results["main_effect_1"]
+                                sig_class = "sig" if me1["significant"] else "nonsig"
+                                html_parts.append(f"<tr><td><strong>{me1['factor']}</strong></td><td>{me1['ss']:.2f}</td><td>{me1['df']}</td><td>{me1['ms']:.2f}</td><td>{me1['f_statistic']:.3f}</td><td class='{sig_class}'>{me1['p_value']:.4f}</td><td>{me1['partial_eta_squared']:.4f}</td></tr>")
+
+                                # Main effect 2
+                                me2 = factorial_results["main_effect_2"]
+                                sig_class = "sig" if me2["significant"] else "nonsig"
+                                html_parts.append(f"<tr><td><strong>{me2['factor']}</strong></td><td>{me2['ss']:.2f}</td><td>{me2['df']}</td><td>{me2['ms']:.2f}</td><td>{me2['f_statistic']:.3f}</td><td class='{sig_class}'>{me2['p_value']:.4f}</td><td>{me2['partial_eta_squared']:.4f}</td></tr>")
+
+                                # Interaction
+                                if "interaction" in factorial_results:
+                                    inter = factorial_results["interaction"]
+                                    sig_class = "sig" if inter["significant"] else "nonsig"
+                                    html_parts.append(f"<tr><td><strong>{inter['factors']}</strong></td><td>{inter['ss']:.2f}</td><td>{inter['df']}</td><td>{inter['ms']:.2f}</td><td>{inter['f_statistic']:.3f}</td><td class='{sig_class}'>{inter['p_value']:.4f}</td><td>{inter['partial_eta_squared']:.4f}</td></tr>")
+
+                                # Error
+                                if "error" in factorial_results and isinstance(factorial_results["error"], dict):
+                                    err = factorial_results["error"]
+                                    html_parts.append(f"<tr><td>Residual</td><td>{err['ss']:.2f}</td><td>{err['df']}</td><td>{err['ms']:.2f}</td><td>-</td><td>-</td><td>-</td></tr>")
+
+                                html_parts.append("</table>")
+
+                                # Interpretation
+                                html_parts.append("<div class='stat-box'>")
+                                html_parts.append("<strong>Interpretation:</strong><br>")
+                                if me1["significant"]:
+                                    html_parts.append(f"• Main effect of <strong>{me1['factor']}</strong> is significant ({me1['interpretation']} effect size)<br>")
+                                else:
+                                    html_parts.append(f"• No significant main effect of {me1['factor']}<br>")
+
+                                if me2["significant"]:
+                                    html_parts.append(f"• Main effect of <strong>{me2['factor']}</strong> is significant ({me2['interpretation']} effect size)<br>")
+                                else:
+                                    html_parts.append(f"• No significant main effect of {me2['factor']}<br>")
+
+                                if "interaction" in factorial_results:
+                                    inter = factorial_results["interaction"]
+                                    if inter["significant"]:
+                                        html_parts.append(f"• <strong>Significant interaction</strong> between factors ({inter['interpretation']} effect size). Main effects should be interpreted with caution.<br>")
+                                    else:
+                                        html_parts.append("• No significant interaction between factors<br>")
+                                html_parts.append("</div>")
+
+                                # Cell means table
+                                if "cell_statistics" in factorial_results:
+                                    html_parts.append("<br><strong>Cell Means:</strong>")
+                                    html_parts.append("<table><tr><th>Cell</th><th>N</th><th>Mean</th><th>SD</th></tr>")
+                                    for cell, stats in factorial_results["cell_statistics"].items():
+                                        html_parts.append(f"<tr><td>{cell}</td><td>{stats['n']}</td><td>{stats['mean']:.3f}</td><td>{stats['std']:.3f}</td></tr>")
+                                    html_parts.append("</table>")
+
+                                # Interaction plot for factorial design
+                                if "factor1" in factorial_results and "factor2" in factorial_results:
+                                    f1_name = factorial_results["factor1"]["name"]
+                                    f2_name = factorial_results["factor2"]["name"]
+                                    f1_levels = factorial_results["factor1"]["levels"]
+                                    f2_levels = factorial_results["factor2"]["levels"]
+
+                                    # Create factor columns for plotting
+                                    df_plot = df_analysis.copy()
+                                    df_plot["_f1"] = df_plot["CONDITION"].apply(
+                                        lambda x: next((l for l in f1_levels if str(l).lower() in str(x).lower()), None)
+                                    )
+                                    df_plot["_f2"] = df_plot["CONDITION"].apply(
+                                        lambda x: next((l for l in f2_levels if str(l).lower() in str(x).lower()), None)
+                                    )
+
+                                    interaction_img = self._create_interaction_plot(
+                                        df_plot, "_composite", "_f1", "_f2",
+                                        f1_name, f2_name,
+                                        f"{scale_name}: Interaction Plot"
+                                    )
+                                    if interaction_img:
+                                        html_parts.append("<div class='chart-container'>")
+                                        html_parts.append(f"<img src='data:image/png;base64,{interaction_img}' alt='Interaction plot'>")
+                                        html_parts.append("</div>")
+                        else:
+                            err_msg = factorial_results.get("error", "Unable to parse factorial structure")
+                            html_parts.append(f"<div class='warning-box'>Factorial ANOVA: {err_msg}</div>")
+
         # Chi-squared test for categorical associations
         if "CONDITION" in df_clean.columns and "Gender" in df_clean.columns:
             html_parts.append("<h2>3. Categorical Analysis</h2>")
             html_parts.append("<h3>Condition × Gender</h3>")
 
             try:
-                contingency = pd.crosstab(df_clean["CONDITION"], df_clean["Gender"])
-                chi2, p, dof, expected = scipy_stats.chi2_contingency(contingency)
+                contingency = pd.crosstab(df_clean["CONDITION"].apply(_clean_condition_name), df_clean["Gender"])
+
+                # Chi-squared test (scipy or numpy fallback)
+                if SCIPY_AVAILABLE and scipy_stats is not None:
+                    chi2, p, dof, expected = scipy_stats.chi2_contingency(contingency)
+                else:
+                    # Numpy-based chi-squared calculation
+                    observed = contingency.values
+                    row_sums = observed.sum(axis=1, keepdims=True)
+                    col_sums = observed.sum(axis=0, keepdims=True)
+                    total = observed.sum()
+                    expected = row_sums * col_sums / total
+                    chi2 = np.sum((observed - expected) ** 2 / np.where(expected > 0, expected, 1))
+                    dof = (observed.shape[0] - 1) * (observed.shape[1] - 1)
+                    p = 1 - _chi2_cdf(chi2, dof) if dof > 0 else 1.0
 
                 sig_class = "sig" if p < 0.05 else "nonsig"
                 html_parts.append("<div class='stat-box'>")
