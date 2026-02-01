@@ -35,13 +35,16 @@ We often face a timing gap: students design experiments but can't practice analy
 
 ### For Instructors
 
-The confidential instructor report provides:
-- Complete statistical analysis with visualizations
-- Effect sizes (Cohen's d, eta-squared) with interpretations
-- Assumption checks (Levene's, normality tests)
-- Factorial ANOVA with interaction effects
-- Pairwise comparisons with forest plots
-- An "answer key" to evaluate student work against
+**The tool automatically generates a confidential instructor report** — a comprehensive analysis document only you receive. This gives you an instant "answer key" without running any analyses yourself. I've attached an example to this email so you can see exactly what it looks like.
+
+The instructor report includes:
+- Complete statistical analysis with multiple visualizations per dependent variable
+- Effect sizes (Cohen's d, eta-squared, partial eta-squared) with interpretations
+- Assumption checks (Levene's test, normality tests)
+- Factorial ANOVA with interaction effects and post-hoc comparisons
+- Regression analyses with control variables (age, gender)
+- Forest plots, violin plots, histograms by condition
+- Clear interpretation guidance for each test
 
 ### Ideal Use Cases
 
@@ -52,9 +55,11 @@ The confidential instructor report provides:
 
 ### Try It / Next Steps
 
+Take a look at the attached instructor report example — it shows exactly what you'd receive when students generate simulated data.
+
 I'd welcome the chance to:
 1. Give you a 15-minute demo
-2. Have you test it with an existing study design
+2. Have you test it with one of your existing study designs
 3. Discuss how it might fit your course structure
 
 The tool is browser-based (Streamlit) and requires no installation for students. Happy to share access and would genuinely appreciate your feedback on what would make this more useful.
