@@ -43,8 +43,8 @@ import streamlit as st
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "2.1.9"
-BUILD_ID = "20260201-v219-allocation-factor-fixes"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "2.1.10"
+BUILD_ID = "20260201-v2110-enhanced-reports"  # Change this to force cache invalidation
 
 def _verify_and_reload_utils():
     """Verify utils modules are at correct version, force reload if needed."""
@@ -93,7 +93,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF"
-APP_VERSION = "2.1.9"  # Dynamic allocation, improved factor detection, smart control detection, state persistence
+APP_VERSION = "2.1.10"  # Enhanced reports: 3+ visualizations, control variables in regression, pre-reg parsing
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")

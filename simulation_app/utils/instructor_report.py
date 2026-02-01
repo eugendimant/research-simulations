@@ -6,7 +6,7 @@ Generates comprehensive instructor-facing reports for student simulations.
 """
 
 # Version identifier to help track deployed code
-__version__ = "2.1.8"  # Enhanced visualizations, forest plots, interaction plots, violin+box plots
+__version__ = "2.1.10"  # More visualizations, control variables in regression, pre-registration parsing
 
 from dataclasses import dataclass
 from datetime import datetime
@@ -1253,18 +1253,97 @@ class ComprehensiveInstructorReport:
 
         return results
 
+    def _parse_prereg_hypotheses(self, prereg_text: str) -> Dict[str, Any]:
+        """Parse pre-registration text to extract hypotheses and analysis plans.
+
+        Returns structured information about:
+        - Hypotheses (H1, H2, etc.)
+        - Mentioned DVs/outcomes
+        - Control variables mentioned
+        - Analysis methods mentioned
+        """
+        result = {
+            "hypotheses": [],
+            "mentioned_dvs": [],
+            "control_variables": [],
+            "analysis_methods": [],
+            "interactions_mentioned": False,
+        }
+
+        if not prereg_text:
+            return result
+
+        prereg_lower = prereg_text.lower()
+
+        # Extract hypotheses (H1, H2, Hypothesis 1, etc.)
+        hyp_patterns = [
+            r'h\d+[:\s]([^.!?\n]+[.!?]?)',
+            r'hypothesis\s*\d*[:\s]([^.!?\n]+[.!?]?)',
+            r'we\s+(?:hypothesize|predict|expect)\s+(?:that\s+)?([^.!?\n]+[.!?]?)',
+        ]
+        for pattern in hyp_patterns:
+            matches = re.findall(pattern, prereg_lower, re.IGNORECASE)
+            result["hypotheses"].extend([m.strip() for m in matches if len(m.strip()) > 10])
+
+        # Identify control variables mentioned
+        control_indicators = [
+            r'control(?:ling)?\s+(?:for\s+)?(\w+(?:\s+\w+)?)',
+            r'covariat(?:e|es)[:\s]+([^.!?\n]+)',
+            r'(?:age|gender|sex|education|income)\s+(?:as\s+)?(?:a\s+)?control',
+        ]
+        for pattern in control_indicators:
+            matches = re.findall(pattern, prereg_lower)
+            result["control_variables"].extend([m.strip() for m in matches])
+
+        # Check for specific control variables
+        if 'age' in prereg_lower:
+            if 'age' not in result["control_variables"]:
+                result["control_variables"].append('age')
+        if 'gender' in prereg_lower or 'sex' in prereg_lower:
+            if 'gender' not in result["control_variables"]:
+                result["control_variables"].append('gender')
+
+        # Check for interaction effects
+        interaction_terms = ['interaction', 'moderat', 'x ', ' × ', 'cross-over', 'crossover']
+        result["interactions_mentioned"] = any(term in prereg_lower for term in interaction_terms)
+
+        # Analysis methods mentioned
+        method_keywords = {
+            't-test': ['t-test', 't test', 'ttest'],
+            'ANOVA': ['anova', 'analysis of variance'],
+            'regression': ['regression', 'ols', 'ordinary least squares'],
+            'chi-squared': ['chi-squared', 'chi-square', 'χ²'],
+            'mediation': ['mediation', 'mediator', 'indirect effect'],
+            'moderation': ['moderation', 'moderator', 'interaction effect'],
+        }
+        for method, keywords in method_keywords.items():
+            if any(kw in prereg_lower for kw in keywords):
+                result["analysis_methods"].append(method)
+
+        return result
+
     def _run_regression_analysis(
         self,
         df: pd.DataFrame,
         dv_column: str,
         condition_column: str = "CONDITION",
+        include_controls: bool = True,
+        prereg_controls: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
-        """Run simple regression analysis with condition as predictor.
+        """Run regression analysis with condition as predictor and optional control variables.
+
+        Args:
+            df: DataFrame with data
+            dv_column: Name of dependent variable column
+            condition_column: Name of condition column
+            include_controls: Whether to include Age/Gender controls if available
+            prereg_controls: Additional control variables from pre-registration
 
         Works with or without scipy using numpy-based p-value approximations.
         """
         results = {}
         results["scipy_used"] = SCIPY_AVAILABLE
+        results["controls_included"] = []
 
         try:
             # Create dummy variables for conditions
@@ -1274,7 +1353,45 @@ class ComprehensiveInstructorReport:
 
             # Reference category is first condition
             reference = _clean_condition_name(conditions[0])
+
+            # Start with condition dummies
             X = pd.get_dummies(df[condition_column], drop_first=True)
+
+            # Add control variables if requested and available
+            control_cols = []
+
+            if include_controls:
+                # Age control
+                age_cols = [c for c in df.columns if 'age' in c.lower() and df[c].dtype in ['int64', 'float64']]
+                if age_cols:
+                    age_col = age_cols[0]
+                    # Standardize age for regression
+                    age_data = df[age_col].fillna(df[age_col].mean())
+                    X['Age'] = (age_data - age_data.mean()) / (age_data.std() + 1e-10)
+                    control_cols.append('Age')
+                    results["controls_included"].append('Age')
+
+                # Gender control (dummy coded)
+                gender_cols = [c for c in df.columns if 'gender' in c.lower() or 'sex' in c.lower()]
+                if gender_cols:
+                    gender_col = gender_cols[0]
+                    gender_dummies = pd.get_dummies(df[gender_col], prefix='Gender', drop_first=True)
+                    for col in gender_dummies.columns:
+                        X[col] = gender_dummies[col]
+                        control_cols.append(col)
+                    results["controls_included"].append('Gender')
+
+            # Add pre-registered control variables if specified
+            if prereg_controls:
+                for ctrl_name in prereg_controls:
+                    ctrl_cols = [c for c in df.columns if ctrl_name.lower() in c.lower()]
+                    for ctrl_col in ctrl_cols:
+                        if ctrl_col not in X.columns and df[ctrl_col].dtype in ['int64', 'float64']:
+                            ctrl_data = df[ctrl_col].fillna(df[ctrl_col].mean())
+                            X[ctrl_col] = (ctrl_data - ctrl_data.mean()) / (ctrl_data.std() + 1e-10)
+                            control_cols.append(ctrl_col)
+                            results["controls_included"].append(ctrl_col)
+
             y = df[dv_column].dropna().values
             X = X.loc[df[dv_column].notna()]
 
@@ -1948,6 +2065,134 @@ class ComprehensiveInstructorReport:
         except Exception:
             return None
 
+    def _create_histogram_by_condition(
+        self,
+        df: pd.DataFrame,
+        column: str,
+        condition_column: str = "CONDITION",
+        title: str = "Distribution Histogram by Condition",
+    ) -> Optional[str]:
+        """Create overlapping histograms for each condition."""
+        if not MATPLOTLIB_AVAILABLE:
+            return None
+
+        try:
+            fig, ax = plt.subplots(figsize=(10, 6))
+
+            # Clean condition names for display
+            df_plot = df.copy()
+            df_plot['_clean_condition'] = df_plot[condition_column].apply(_clean_condition_name)
+            conditions = df_plot['_clean_condition'].unique().tolist()
+
+            # Modern color palette with transparency
+            colors = ['#2ecc71', '#3498db', '#e74c3c', '#9b59b6', '#f39c12', '#1abc9c']
+
+            # Create histograms for each condition
+            for i, cond in enumerate(conditions):
+                data = df_plot[df_plot['_clean_condition'] == cond][column].dropna()
+                if len(data) > 0:
+                    ax.hist(data, bins=15, alpha=0.5, label=cond,
+                           color=colors[i % len(colors)], edgecolor='white', linewidth=1)
+
+            # Styling
+            ax.set_xlabel("Score", fontsize=13, fontweight='bold', color='#2c3e50')
+            ax.set_ylabel("Frequency", fontsize=13, fontweight='bold', color='#2c3e50')
+            ax.set_title(title, fontsize=14, fontweight='bold', color='#2c3e50', pad=20)
+            ax.legend(loc='upper right', framealpha=0.95, fontsize=10)
+
+            # Clean up spines
+            ax.spines['top'].set_visible(False)
+            ax.spines['right'].set_visible(False)
+            ax.spines['left'].set_color('#bdc3c7')
+            ax.spines['bottom'].set_color('#bdc3c7')
+
+            ax.yaxis.grid(True, linestyle='--', alpha=0.5, color='#ecf0f1')
+            ax.set_axisbelow(True)
+
+            plt.tight_layout()
+
+            buffer = io.BytesIO()
+            plt.savefig(buffer, format='png', dpi=150, bbox_inches='tight',
+                       facecolor='white', edgecolor='none')
+            buffer.seek(0)
+            img_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
+            plt.close(fig)
+
+            return img_base64
+        except Exception:
+            return None
+
+    def _create_means_dot_plot(
+        self,
+        data: Dict[str, Tuple[float, float]],
+        title: str,
+        ylabel: str,
+        grand_mean: Optional[float] = None,
+    ) -> Optional[str]:
+        """Create a dot plot with means and error bars - cleaner alternative to bar chart."""
+        if not MATPLOTLIB_AVAILABLE:
+            return None
+
+        try:
+            fig, ax = plt.subplots(figsize=(10, 6))
+
+            conditions = list(data.keys())
+            means = [data[c][0] for c in conditions]
+            errors = [data[c][1] for c in conditions]
+
+            # Modern color palette
+            colors = ['#2ecc71', '#3498db', '#e74c3c', '#9b59b6', '#f39c12', '#1abc9c', '#e67e22']
+
+            y_positions = range(len(conditions))
+
+            # Plot dots with error bars (horizontal)
+            for i, (cond, mean, error) in enumerate(zip(conditions, means, errors)):
+                color = colors[i % len(colors)]
+                # Error bar
+                ax.errorbar(mean, i, xerr=error, fmt='o', markersize=15,
+                           color=color, ecolor=color, capsize=8, capthick=2,
+                           markeredgecolor='white', markeredgewidth=2, elinewidth=2)
+                # Value label
+                ax.text(mean + error + 0.05, i, f'{mean:.2f}', va='center', ha='left',
+                       fontsize=11, fontweight='bold', color='#2c3e50')
+
+            # Add grand mean line if provided
+            if grand_mean is not None:
+                ax.axvline(x=grand_mean, color='#e74c3c', linestyle='--', linewidth=2,
+                          alpha=0.7, label=f'Grand Mean: {grand_mean:.2f}')
+                ax.legend(loc='lower right', framealpha=0.95)
+
+            # Styling
+            ax.set_yticks(y_positions)
+            ax.set_yticklabels(conditions, fontsize=11)
+            ax.set_xlabel(ylabel, fontsize=13, fontweight='bold', color='#2c3e50')
+            ax.set_title(title, fontsize=14, fontweight='bold', color='#2c3e50', pad=20)
+
+            # Clean up spines
+            ax.spines['top'].set_visible(False)
+            ax.spines['right'].set_visible(False)
+            ax.spines['left'].set_color('#bdc3c7')
+            ax.spines['bottom'].set_color('#bdc3c7')
+
+            ax.xaxis.grid(True, linestyle='--', alpha=0.5, color='#ecf0f1')
+            ax.set_axisbelow(True)
+
+            # Adjust x-axis to show full range
+            ax.set_xlim(left=min(means) - max(errors) - 0.5)
+
+            plt.tight_layout()
+
+            buffer = io.BytesIO()
+            plt.savefig(buffer, format='png', dpi=150, bbox_inches='tight',
+                       facecolor='white', edgecolor='none')
+            buffer.seek(0)
+            img_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
+            plt.close(fig)
+
+            return img_base64
+        except Exception:
+            return None
+
     def generate_html_report(
         self,
         df: pd.DataFrame,
@@ -2112,6 +2357,16 @@ class ComprehensiveInstructorReport:
                     html_parts.append(f"<img src='data:image/png;base64,{dist_img}' alt='Distribution'>")
                     html_parts.append("</div>")
 
+                # Third visualization: Histogram by condition
+                hist_img = self._create_histogram_by_condition(
+                    df_analysis, "_composite", "CONDITION",
+                    f"{scale_name}: Score Distribution Histogram"
+                )
+                if hist_img:
+                    html_parts.append("<div class='chart-container'>")
+                    html_parts.append(f"<img src='data:image/png;base64,{hist_img}' alt='Histogram'>")
+                    html_parts.append("</div>")
+
                 # Statistical tests
                 if len(conditions) >= 2 and "CONDITION" in df_analysis.columns:
 
@@ -2216,11 +2471,25 @@ class ComprehensiveInstructorReport:
                             html_parts.append(f"<img src='data:image/png;base64,{forest_img}' alt='Forest plot'>")
                             html_parts.append("</div>")
 
-                    # Regression analysis
-                    html_parts.append("<h4>Regression Analysis</h4>")
-                    reg_results = self._run_regression_analysis(df_analysis, "_composite", "CONDITION")
+                    # Regression analysis with control variables
+                    html_parts.append("<h4>Regression Analysis (with Controls)</h4>")
+
+                    # Parse pre-registration for control variables
+                    prereg_info = self._parse_prereg_hypotheses(prereg_text) if prereg_text else {}
+                    prereg_controls = prereg_info.get("control_variables", [])
+
+                    reg_results = self._run_regression_analysis(
+                        df_analysis, "_composite", "CONDITION",
+                        include_controls=True,
+                        prereg_controls=prereg_controls
+                    )
 
                     if "error" not in reg_results:
+                        # Show which controls were included
+                        controls_used = reg_results.get("controls_included", [])
+                        if controls_used:
+                            html_parts.append(f"<div class='stat-box'><strong>Control variables included:</strong> {', '.join(controls_used)}</div>")
+
                         html_parts.append("<div class='stat-box'>")
                         if "model_fit" in reg_results:
                             fit = reg_results["model_fit"]

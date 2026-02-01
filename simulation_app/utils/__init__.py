@@ -2,13 +2,13 @@
 """
 Utility modules for the Behavioral Experiment Simulation Tool.
 
-Version: 2.1.9
+Version: 2.1.10
 Changes:
-    - Dynamic allocation: adjusts proportionally when sample size changes
-    - Improved factor detection: handles 2x2+control designs correctly
-    - Smart control condition detection: identifies non-factorial conditions
-    - State persistence: Step 3 settings persist when navigating between steps
-    - Better error handling for edge cases in factor parsing
+    - Enhanced instructor reports with at least 3 visualizations per DV
+    - Regression now includes control variables (Age, Gender) by default
+    - Pre-registration text parsing for hypotheses and control variables
+    - Added histogram by condition and means dot plot visualizations
+    - Improved factor detection for 2x2+control designs
 
 Modules:
     - qsf_parser: Parse Qualtrics Survey Format (.qsf) files
@@ -25,7 +25,7 @@ Modules:
 """
 
 # Package version - should match all module versions
-__version__ = "2.1.9"
+__version__ = "2.1.10"
 
 from .qsf_parser import parse_qsf_file, extract_survey_structure, generate_qsf_summary
 from .simulation_engine import SimulationEngine
