@@ -2,15 +2,13 @@
 """
 Utility modules for the Behavioral Experiment Simulation Tool.
 
-Version: 2.1.8
+Version: 2.1.9
 Changes:
-    - Enhanced visualizations with modern styling (colorblind-friendly palette)
-    - Added violin+box plots with individual data points overlay
-    - Added forest plots for pairwise effect size comparisons
-    - Added interaction plots for factorial ANOVA designs
-    - Bar charts now show p-values and effect sizes as annotations
-    - Higher DPI output (150) for crisp charts
-    - Clean spines, grid styling, and professional typography
+    - Dynamic allocation: adjusts proportionally when sample size changes
+    - Improved factor detection: handles 2x2+control designs correctly
+    - Smart control condition detection: identifies non-factorial conditions
+    - State persistence: Step 3 settings persist when navigating between steps
+    - Better error handling for edge cases in factor parsing
 
 Modules:
     - qsf_parser: Parse Qualtrics Survey Format (.qsf) files
@@ -27,7 +25,7 @@ Modules:
 """
 
 # Package version - should match all module versions
-__version__ = "2.1.8"
+__version__ = "2.1.9"
 
 from .qsf_parser import parse_qsf_file, extract_survey_structure, generate_qsf_summary
 from .simulation_engine import SimulationEngine

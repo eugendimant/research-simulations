@@ -43,8 +43,8 @@ import streamlit as st
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "2.1.8"
-BUILD_ID = "20260201-v218-enhanced-visualizations"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "2.1.9"
+BUILD_ID = "20260201-v219-allocation-factor-fixes"  # Change this to force cache invalidation
 
 def _verify_and_reload_utils():
     """Verify utils modules are at correct version, force reload if needed."""
@@ -93,7 +93,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF"
-APP_VERSION = "2.1.8"  # Enhanced visualizations, comprehensive statistical tests, forest/interaction plots
+APP_VERSION = "2.1.9"  # Dynamic allocation, improved factor detection, smart control detection, state persistence
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -985,7 +985,8 @@ def _infer_factors_from_conditions(conditions: List[str]) -> List[Dict[str, Any]
     1. Trying multiple separator patterns
     2. Handling underscore-separated names (e.g., "AI_Hedonic")
     3. Detecting numeric suffixes as potential factor levels
-    4. Falling back gracefully to single-factor designs
+    4. Handling factorial + control designs (where one condition may not fit the pattern)
+    5. Falling back gracefully to single-factor designs
 
     Examples:
     - "No AI x Utilitarian", "AI x Hedonic" → 2 factors
@@ -1028,8 +1029,8 @@ def _infer_factors_from_conditions(conditions: List[str]) -> List[Dict[str, Any]
     for sep in separator_patterns:
         # Count how many conditions contain this separator
         matches = sum(1 for c in conditions if sep in c)
-        # Need at least 2 conditions with the separator, or all conditions
-        if matches >= 2 or matches == len(conditions):
+        # Need at least 2 conditions with the separator, or majority of conditions
+        if matches >= 2 and matches >= len(conditions) - 1:  # Allow 1 non-matching (control)
             chosen_sep = sep
             break
 
@@ -1037,40 +1038,52 @@ def _infer_factors_from_conditions(conditions: List[str]) -> List[Dict[str, Any]
     # PARSE USING FOUND SEPARATOR
     # ==========================================================
     if chosen_sep:
-        split_rows = [c.split(chosen_sep) for c in conditions]
-        max_parts = max(len(r) for r in split_rows)
+        # Separate conditions that match the separator from those that don't
+        matching_conditions = [c for c in conditions if chosen_sep in c]
+        non_matching = [c for c in conditions if chosen_sep not in c]
 
-        # Check if splitting is consistent
-        if all(len(r) == max_parts for r in split_rows) and max_parts > 1:
-            # Extract unique levels for each factor position
-            factors: List[Dict[str, Any]] = []
-            for j in range(max_parts):
-                levels = sorted(list({r[j].strip() for r in split_rows if r[j].strip()}))
-                if not levels:
-                    continue
-                factor_name = _infer_factor_name(levels)
-                # Make factor name unique if needed
-                existing_names = [f.get("name") for f in factors]
-                if factor_name in existing_names:
-                    factor_name = f"{factor_name} {j+1}"
-                factors.append({"name": factor_name, "levels": levels})
+        if len(matching_conditions) >= 2:
+            split_rows = [c.split(chosen_sep) for c in matching_conditions]
+            max_parts = max(len(r) for r in split_rows)
 
-            if factors:
-                return factors
+            # Check if splitting is consistent among matching conditions
+            consistent_rows = [r for r in split_rows if len(r) == max_parts]
+
+            if len(consistent_rows) >= 2 and max_parts > 1:
+                # Extract unique levels for each factor position
+                factors: List[Dict[str, Any]] = []
+                for j in range(max_parts):
+                    levels = sorted(list({r[j].strip() for r in consistent_rows if len(r) > j and r[j].strip()}))
+                    if not levels:
+                        continue
+                    factor_name = _infer_factor_name(levels)
+                    # Make factor name unique if needed
+                    existing_names = [f.get("name") for f in factors]
+                    if factor_name in existing_names:
+                        factor_name = f"{factor_name} {j+1}"
+                    factors.append({"name": factor_name, "levels": levels})
+
+                if factors and len(factors) >= 2:
+                    # Store info about non-matching conditions (potential controls)
+                    if non_matching:
+                        for f in factors:
+                            f["_non_matching_conditions"] = non_matching
+                    return factors
 
     # ==========================================================
     # TRY UNDERSCORE-BASED PARSING (e.g., "AI_Hedonic", "NoAI_Utilitarian")
     # ==========================================================
     # Only if conditions have underscores and consistent structure
     underscore_rows = [c.split('_') for c in conditions if '_' in c]
-    if len(underscore_rows) == len(conditions) and len(underscore_rows) > 1:
+    if len(underscore_rows) >= len(conditions) - 1 and len(underscore_rows) > 1:  # Allow 1 non-matching
         parts_count = [len(r) for r in underscore_rows]
-        if len(set(parts_count)) == 1 and parts_count[0] > 1:
-            # All conditions split into same number of parts
-            max_parts = parts_count[0]
+        most_common_parts = max(set(parts_count), key=parts_count.count)
+        consistent_rows = [r for r in underscore_rows if len(r) == most_common_parts]
+
+        if len(consistent_rows) >= 2 and most_common_parts > 1:
             factors = []
-            for j in range(max_parts):
-                levels = sorted(list({r[j].strip() for r in underscore_rows if r[j].strip()}))
+            for j in range(most_common_parts):
+                levels = sorted(list({r[j].strip() for r in consistent_rows if r[j].strip()}))
                 if len(levels) > 1:  # Only include if there's variation
                     factor_name = _infer_factor_name(levels)
                     existing_names = [f.get("name") for f in factors]
@@ -2501,19 +2514,23 @@ if active_step == 2:
     st.markdown("### 3. Sample Size & Condition Allocation")
 
     # Sample size input (moved from Step 1)
+    # Use consistent key for state persistence
+    default_sample_size = int(st.session_state.get("sample_size", 200))
+
     sample_size = st.number_input(
         "Target sample size (N) * — based on power analysis",
         min_value=10,
         max_value=MAX_SIMULATED_N,
-        value=int(st.session_state.get("sample_size", 200)),
+        value=default_sample_size,
         step=10,
         help=(
             "Enter the sample size from your power analysis (a priori power calculation). "
             "This should be the N required to detect your expected effect size with adequate power (typically 80%). "
             f"Maximum: {MAX_SIMULATED_N:,}."
         ),
-        key="sample_size_input_step3",
+        key="sample_size_step3",
     )
+    # Sync to canonical session state key
     st.session_state["sample_size"] = int(sample_size)
     st.caption("💡 Use your power analysis result (e.g., from G*Power) to determine the appropriate N.")
 
@@ -2525,16 +2542,50 @@ if active_step == 2:
             "Adjust the number of participants per condition below (must sum to total N)."
         )
 
-        # Initialize allocation if not set or if conditions changed
         n_conditions = len(all_conditions)
-        if "condition_allocation_n" not in st.session_state or len(st.session_state.get("condition_allocation_n", {})) != n_conditions:
-            # Equal allocation by default
+        prev_sample_size = st.session_state.get("_prev_sample_size", sample_size)
+        prev_conditions = st.session_state.get("_prev_conditions", [])
+
+        # Recalculate allocations if:
+        # 1. No allocation exists, OR
+        # 2. Number of conditions changed, OR
+        # 3. Sample size changed (proportionally adjust)
+        needs_recalc = (
+            "condition_allocation_n" not in st.session_state or
+            len(st.session_state.get("condition_allocation_n", {})) != n_conditions or
+            set(prev_conditions) != set(all_conditions)
+        )
+
+        # Check if sample size changed - proportionally adjust existing allocations
+        sample_size_changed = prev_sample_size != sample_size and prev_sample_size > 0
+
+        if needs_recalc:
+            # Fresh allocation: equal distribution
             n_per = sample_size // n_conditions
             remainder = sample_size % n_conditions
             st.session_state["condition_allocation_n"] = {
                 cond: n_per + (1 if i < remainder else 0)
                 for i, cond in enumerate(all_conditions)
             }
+        elif sample_size_changed:
+            # Proportionally adjust existing allocations to match new total
+            old_alloc = st.session_state.get("condition_allocation_n", {})
+            old_total = sum(old_alloc.values())
+            if old_total > 0:
+                scale = sample_size / old_total
+                new_alloc = {}
+                running_total = 0
+                sorted_conds = list(all_conditions)
+                for j, c in enumerate(sorted_conds[:-1]):
+                    new_alloc[c] = max(1, round(old_alloc.get(c, sample_size // n_conditions) * scale))
+                    running_total += new_alloc[c]
+                # Last condition gets the remainder to ensure sum matches exactly
+                new_alloc[sorted_conds[-1]] = max(1, sample_size - running_total)
+                st.session_state["condition_allocation_n"] = new_alloc
+
+        # Update tracking variables
+        st.session_state["_prev_sample_size"] = sample_size
+        st.session_state["_prev_conditions"] = list(all_conditions)
 
         allocation_n = st.session_state["condition_allocation_n"]
 
@@ -2556,7 +2607,7 @@ if active_step == 2:
 
                 current_n = allocation_n.get(cond, sample_size // n_conditions)
                 # Ensure current_n doesn't exceed sample_size
-                current_n = min(current_n, sample_size)
+                current_n = min(max(1, current_n), sample_size)
 
                 new_n = st.number_input(
                     display_name,
@@ -2633,8 +2684,11 @@ if active_step == 2:
         "Simple multi-arm (separate conditions, no factorial structure)",
     ]
 
-    # Default selection based on auto-detection
-    default_design_idx = 0 if auto_num_factors > 1 else 2
+    # Determine default index - use saved value if exists, otherwise auto-detect
+    if "design_structure_select" in st.session_state and st.session_state["design_structure_select"] in design_options:
+        default_design_idx = design_options.index(st.session_state["design_structure_select"])
+    else:
+        default_design_idx = 0 if auto_num_factors > 1 else 2
 
     design_structure = st.selectbox(
         "Design structure",
@@ -2690,16 +2744,59 @@ if active_step == 2:
         # Handle control condition for "Factorial + control"
         if has_control:
             st.markdown("**Control condition:**")
-            # Find potential control conditions
-            control_candidates = [c for c in all_conditions if 'control' in c.lower()]
+
+            # Smart control condition detection:
+            # 1. Check if any factor has "_non_matching_conditions" (conditions that didn't fit pattern)
+            # 2. Look for conditions containing "control"
+            # 3. Otherwise, find the condition that doesn't fit the factorial crossing
+            control_candidates = []
+
+            # Check for non-matching conditions from factor detection
+            for f in auto_detected_factors:
+                non_match = f.get("_non_matching_conditions", [])
+                if non_match:
+                    control_candidates.extend(non_match)
+                    break
+
+            # If no non-matching found, look for conditions with "control" in name
             if not control_candidates:
-                control_candidates = all_conditions
+                control_candidates = [c for c in all_conditions if 'control' in _clean_condition_name(c).lower()]
+
+            # If still no candidates, find conditions that don't match the factorial pattern
+            if not control_candidates and len(factors) >= 2:
+                # Get all factor levels
+                all_factor_levels = []
+                for f in factors:
+                    all_factor_levels.extend([l.lower() for l in f.get("levels", [])])
+
+                # Find conditions where not all parts match known factor levels
+                for cond in all_conditions:
+                    clean_cond = _clean_condition_name(cond).lower()
+                    # Check if this condition can be explained by the factorial crossing
+                    parts_match = sum(1 for level in all_factor_levels if level in clean_cond)
+                    if parts_match < len(factors):  # Doesn't match enough factor levels
+                        control_candidates.append(cond)
+
+            # Default to first condition if no candidates found
+            if not control_candidates:
+                control_candidates = [all_conditions[0]]
+
+            # Determine default index
+            default_ctrl_idx = 0
+            if control_candidates and control_candidates[0] in all_conditions:
+                default_ctrl_idx = all_conditions.index(control_candidates[0])
+
+            # Store detected control for display
+            if control_candidates:
+                detected_ctrl_name = _clean_condition_name(control_candidates[0])
+                st.caption(f"Auto-detected potential control: **{detected_ctrl_name}**")
 
             control_cond = st.selectbox(
                 "Select the control condition",
                 options=all_conditions,
-                index=0 if not control_candidates else all_conditions.index(control_candidates[0]) if control_candidates[0] in all_conditions else 0,
+                index=default_ctrl_idx,
                 key="control_condition_select",
+                format_func=_clean_condition_name,
                 help="This condition will be treated separately from the factorial structure",
             )
             st.session_state["control_condition"] = control_cond
