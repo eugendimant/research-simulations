@@ -162,6 +162,8 @@ class EnhancedSimulationEngine:
         open_ended_questions: Optional[List[Dict[str, Any]]] = None,
         # Stimulus/image evaluation settings
         stimulus_evaluations: Optional[List[Dict[str, Any]]] = None,
+        # Condition allocation (optional) - dict mapping condition name to percentage (0-100)
+        condition_allocation: Optional[Dict[str, float]] = None,
         # Seed for reproducibility (optional)
         seed: Optional[int] = None,
         # Mode
@@ -183,6 +185,7 @@ class EnhancedSimulationEngine:
         self.exclusion_criteria = exclusion_criteria or ExclusionCriteria()
         self.open_ended_questions = _normalize_open_ended(open_ended_questions)
         self.stimulus_evaluations = stimulus_evaluations or []
+        self.condition_allocation = condition_allocation  # Dict[condition_name, percentage 0-100]
         self.mode = (mode or "pilot").strip().lower()
         if self.mode not in ("pilot", "final"):
             self.mode = "pilot"
@@ -504,14 +507,34 @@ class EnhancedSimulationEngine:
         return pd.DataFrame({"Age": ages, "Gender": genders})
 
     def _generate_condition_assignment(self, n: int) -> pd.Series:
+        """Generate condition assignments based on allocation percentages or equal distribution."""
         n_conditions = len(self.conditions)
-        n_per = int(n) // n_conditions
-        remainder = int(n) % n_conditions
-
         assignments: List[str] = []
-        for i, cond in enumerate(self.conditions):
-            count = n_per + (1 if i < remainder else 0)
-            assignments.extend([cond] * count)
+
+        if self.condition_allocation and len(self.condition_allocation) > 0:
+            # Use specified allocation percentages
+            running_total = 0
+            for i, cond in enumerate(self.conditions):
+                pct = self.condition_allocation.get(cond, 100 / n_conditions)
+                if i == n_conditions - 1:
+                    # Last condition gets all remaining participants
+                    count = n - running_total
+                else:
+                    count = round(n * pct / 100)
+                    running_total += count
+                assignments.extend([cond] * max(0, count))
+        else:
+            # Equal distribution (original behavior)
+            n_per = int(n) // n_conditions
+            remainder = int(n) % n_conditions
+            for i, cond in enumerate(self.conditions):
+                count = n_per + (1 if i < remainder else 0)
+                assignments.extend([cond] * count)
+
+        # Ensure we have exactly n assignments
+        while len(assignments) < n:
+            assignments.append(self.conditions[-1])
+        assignments = assignments[:n]
 
         rng = np.random.RandomState(self.seed + 2000)
         rng.shuffle(assignments)

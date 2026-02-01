@@ -6,14 +6,33 @@ Generates comprehensive instructor-facing reports for student simulations.
 """
 
 # Version identifier to help track deployed code
-__version__ = "2.1.5"  # Added ComprehensiveInstructorReport for instructor-only detailed analysis
+__version__ = "2.1.6"  # Added HTML report with visualizations and statistical tests
 
 from dataclasses import dataclass
 from datetime import datetime
 import json
-from typing import Any, Dict, List, Optional
+import base64
+import io
+import warnings
+from typing import Any, Dict, List, Optional, Tuple
 
+import numpy as np
 import pandas as pd
+
+# Optional imports for statistics and visualization
+try:
+    from scipy import stats as scipy_stats
+    SCIPY_AVAILABLE = True
+except ImportError:
+    SCIPY_AVAILABLE = False
+
+try:
+    import matplotlib
+    matplotlib.use('Agg')  # Non-interactive backend
+    import matplotlib.pyplot as plt
+    MATPLOTLIB_AVAILABLE = True
+except ImportError:
+    MATPLOTLIB_AVAILABLE = False
 
 def _safe_to_markdown(df: pd.DataFrame, **kwargs) -> str:
     """
@@ -832,3 +851,622 @@ class ComprehensiveInstructorReport:
             "moderate responder": "Restricted range, may reduce variance",
         }
         return impacts.get(persona, "Standard patterns")
+
+    def _run_statistical_tests(
+        self,
+        df: pd.DataFrame,
+        dv_column: str,
+        condition_column: str = "CONDITION",
+    ) -> Dict[str, Any]:
+        """Run comprehensive statistical tests on the data."""
+        results = {}
+
+        if not SCIPY_AVAILABLE:
+            return {"error": "scipy not available for statistical tests"}
+
+        # Get unique conditions
+        conditions = df[condition_column].unique().tolist()
+
+        if len(conditions) < 2:
+            return {"error": "Need at least 2 conditions for comparison"}
+
+        # Get data by condition
+        groups = {cond: df[df[condition_column] == cond][dv_column].dropna() for cond in conditions}
+
+        # Basic descriptive stats
+        results["descriptives"] = {}
+        for cond, data in groups.items():
+            results["descriptives"][cond] = {
+                "n": len(data),
+                "mean": float(data.mean()),
+                "std": float(data.std()),
+                "median": float(data.median()),
+                "se": float(data.std() / np.sqrt(len(data))) if len(data) > 0 else 0,
+            }
+
+        # Two-group comparisons
+        if len(conditions) == 2:
+            g1, g2 = groups[conditions[0]], groups[conditions[1]]
+
+            # Independent samples t-test
+            t_stat, t_p = scipy_stats.ttest_ind(g1, g2, equal_var=True)
+            results["t_test"] = {
+                "statistic": float(t_stat),
+                "p_value": float(t_p),
+                "significant": t_p < 0.05,
+            }
+
+            # Welch's t-test (unequal variances)
+            welch_t, welch_p = scipy_stats.ttest_ind(g1, g2, equal_var=False)
+            results["welch_t_test"] = {
+                "statistic": float(welch_t),
+                "p_value": float(welch_p),
+                "significant": welch_p < 0.05,
+            }
+
+            # Mann-Whitney U test (non-parametric)
+            u_stat, u_p = scipy_stats.mannwhitneyu(g1, g2, alternative='two-sided')
+            results["mann_whitney"] = {
+                "statistic": float(u_stat),
+                "p_value": float(u_p),
+                "significant": u_p < 0.05,
+            }
+
+            # Cohen's d effect size
+            pooled_std = np.sqrt((g1.std()**2 + g2.std()**2) / 2)
+            cohens_d = (g1.mean() - g2.mean()) / pooled_std if pooled_std > 0 else 0
+            results["cohens_d"] = {
+                "value": float(cohens_d),
+                "interpretation": self._interpret_cohens_d(cohens_d),
+            }
+
+        # Multi-group comparisons (3+ conditions)
+        if len(conditions) >= 2:
+            # One-way ANOVA
+            f_stat, anova_p = scipy_stats.f_oneway(*[groups[c] for c in conditions])
+            results["anova"] = {
+                "f_statistic": float(f_stat),
+                "p_value": float(anova_p),
+                "significant": anova_p < 0.05,
+            }
+
+            # Kruskal-Wallis (non-parametric)
+            h_stat, kw_p = scipy_stats.kruskal(*[groups[c] for c in conditions])
+            results["kruskal_wallis"] = {
+                "h_statistic": float(h_stat),
+                "p_value": float(kw_p),
+                "significant": kw_p < 0.05,
+            }
+
+            # Eta-squared effect size for ANOVA
+            grand_mean = df[dv_column].mean()
+            ss_between = sum(len(groups[c]) * (groups[c].mean() - grand_mean)**2 for c in conditions)
+            ss_total = sum((df[dv_column] - grand_mean)**2)
+            eta_squared = ss_between / ss_total if ss_total > 0 else 0
+            results["eta_squared"] = {
+                "value": float(eta_squared),
+                "interpretation": self._interpret_eta_squared(eta_squared),
+            }
+
+        # Levene's test for homogeneity of variances
+        levene_stat, levene_p = scipy_stats.levene(*[groups[c] for c in conditions])
+        results["levene_test"] = {
+            "statistic": float(levene_stat),
+            "p_value": float(levene_p),
+            "homogeneous": levene_p > 0.05,
+        }
+
+        # Shapiro-Wilk normality test (on pooled data, limited to 5000)
+        pooled = df[dv_column].dropna()
+        if len(pooled) <= 5000:
+            shapiro_stat, shapiro_p = scipy_stats.shapiro(pooled)
+            results["shapiro_wilk"] = {
+                "statistic": float(shapiro_stat),
+                "p_value": float(shapiro_p),
+                "normal": shapiro_p > 0.05,
+            }
+
+        return results
+
+    def _run_regression_analysis(
+        self,
+        df: pd.DataFrame,
+        dv_column: str,
+        condition_column: str = "CONDITION",
+    ) -> Dict[str, Any]:
+        """Run simple regression analysis with condition as predictor."""
+        results = {}
+
+        if not SCIPY_AVAILABLE:
+            return {"error": "scipy not available"}
+
+        try:
+            # Create dummy variables for conditions
+            conditions = df[condition_column].unique().tolist()
+            if len(conditions) < 2:
+                return {"error": "Need at least 2 conditions"}
+
+            # Reference category is first condition
+            reference = conditions[0]
+            X = pd.get_dummies(df[condition_column], drop_first=True)
+            y = df[dv_column].values
+
+            # Add constant
+            X_with_const = np.column_stack([np.ones(len(X)), X.values])
+
+            # OLS regression: beta = (X'X)^-1 X'y
+            XtX_inv = np.linalg.pinv(X_with_const.T @ X_with_const)
+            beta = XtX_inv @ X_with_const.T @ y
+
+            # Predictions and residuals
+            y_pred = X_with_const @ beta
+            residuals = y - y_pred
+
+            # R-squared
+            ss_res = np.sum(residuals**2)
+            ss_tot = np.sum((y - np.mean(y))**2)
+            r_squared = 1 - (ss_res / ss_tot) if ss_tot > 0 else 0
+
+            # Standard errors
+            n = len(y)
+            k = X_with_const.shape[1]
+            mse = ss_res / (n - k)
+            se = np.sqrt(np.diag(XtX_inv) * mse)
+
+            # t-statistics and p-values
+            t_stats = beta / se
+            p_values = 2 * (1 - scipy_stats.t.cdf(np.abs(t_stats), n - k))
+
+            results["coefficients"] = {
+                "intercept": {
+                    "estimate": float(beta[0]),
+                    "std_error": float(se[0]),
+                    "t_stat": float(t_stats[0]),
+                    "p_value": float(p_values[0]),
+                }
+            }
+
+            # Condition coefficients
+            predictor_names = X.columns.tolist()
+            for i, name in enumerate(predictor_names):
+                results["coefficients"][name] = {
+                    "estimate": float(beta[i + 1]),
+                    "std_error": float(se[i + 1]),
+                    "t_stat": float(t_stats[i + 1]),
+                    "p_value": float(p_values[i + 1]),
+                    "significant": p_values[i + 1] < 0.05,
+                }
+
+            results["model_fit"] = {
+                "r_squared": float(r_squared),
+                "adj_r_squared": float(1 - (1 - r_squared) * (n - 1) / (n - k - 1)),
+                "n": n,
+                "df_residual": n - k,
+            }
+
+            # F-test for overall model
+            if k > 1:
+                f_stat = (r_squared / (k - 1)) / ((1 - r_squared) / (n - k)) if r_squared < 1 else float('inf')
+                f_p = 1 - scipy_stats.f.cdf(f_stat, k - 1, n - k)
+                results["f_test"] = {
+                    "f_statistic": float(f_stat),
+                    "p_value": float(f_p),
+                    "significant": f_p < 0.05,
+                }
+
+        except Exception as e:
+            results["error"] = str(e)
+
+        return results
+
+    def _interpret_cohens_d(self, d: float) -> str:
+        """Interpret Cohen's d effect size."""
+        abs_d = abs(d)
+        if abs_d < 0.2:
+            return "negligible"
+        elif abs_d < 0.5:
+            return "small"
+        elif abs_d < 0.8:
+            return "medium"
+        else:
+            return "large"
+
+    def _interpret_eta_squared(self, eta2: float) -> str:
+        """Interpret eta-squared effect size."""
+        if eta2 < 0.01:
+            return "negligible"
+        elif eta2 < 0.06:
+            return "small"
+        elif eta2 < 0.14:
+            return "medium"
+        else:
+            return "large"
+
+    def _create_bar_chart(
+        self,
+        data: Dict[str, Tuple[float, float]],
+        title: str,
+        ylabel: str,
+    ) -> Optional[str]:
+        """Create a bar chart with error bars and return as base64-encoded PNG."""
+        if not MATPLOTLIB_AVAILABLE:
+            return None
+
+        try:
+            fig, ax = plt.subplots(figsize=(8, 5))
+
+            conditions = list(data.keys())
+            means = [data[c][0] for c in conditions]
+            errors = [data[c][1] for c in conditions]
+
+            colors = ['#4C72B0', '#DD8452', '#55A868', '#C44E52', '#8172B3']
+            bars = ax.bar(conditions, means, yerr=errors, capsize=5,
+                         color=colors[:len(conditions)], edgecolor='black', alpha=0.8)
+
+            ax.set_ylabel(ylabel, fontsize=11)
+            ax.set_title(title, fontsize=12, fontweight='bold')
+            ax.tick_params(axis='x', rotation=45)
+
+            # Add value labels on bars
+            for bar, mean, error in zip(bars, means, errors):
+                ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + error + 0.05,
+                       f'{mean:.2f}', ha='center', va='bottom', fontsize=9)
+
+            plt.tight_layout()
+
+            # Save to base64
+            buffer = io.BytesIO()
+            plt.savefig(buffer, format='png', dpi=100, bbox_inches='tight')
+            buffer.seek(0)
+            img_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
+            plt.close(fig)
+
+            return img_base64
+        except Exception:
+            return None
+
+    def _create_distribution_plot(
+        self,
+        df: pd.DataFrame,
+        column: str,
+        condition_column: str = "CONDITION",
+        title: str = "Distribution by Condition",
+    ) -> Optional[str]:
+        """Create a distribution plot (box + strip) and return as base64 PNG."""
+        if not MATPLOTLIB_AVAILABLE:
+            return None
+
+        try:
+            fig, ax = plt.subplots(figsize=(8, 5))
+
+            conditions = df[condition_column].unique().tolist()
+            colors = ['#4C72B0', '#DD8452', '#55A868', '#C44E52', '#8172B3']
+
+            # Create box plots
+            positions = range(len(conditions))
+            box_data = [df[df[condition_column] == c][column].dropna() for c in conditions]
+
+            bp = ax.boxplot(box_data, positions=positions, patch_artist=True, widths=0.5)
+
+            for patch, color in zip(bp['boxes'], colors[:len(conditions)]):
+                patch.set_facecolor(color)
+                patch.set_alpha(0.6)
+
+            ax.set_xticks(positions)
+            ax.set_xticklabels(conditions, rotation=45, ha='right')
+            ax.set_ylabel(column, fontsize=11)
+            ax.set_title(title, fontsize=12, fontweight='bold')
+
+            plt.tight_layout()
+
+            buffer = io.BytesIO()
+            plt.savefig(buffer, format='png', dpi=100, bbox_inches='tight')
+            buffer.seek(0)
+            img_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
+            plt.close(fig)
+
+            return img_base64
+        except Exception:
+            return None
+
+    def generate_html_report(
+        self,
+        df: pd.DataFrame,
+        metadata: Dict[str, Any],
+        schema_validation: Optional[Dict[str, Any]] = None,
+        prereg_text: str = "",
+        team_info: Optional[Dict[str, Any]] = None,
+    ) -> str:
+        """Generate a comprehensive HTML report with visualizations and statistical tests."""
+
+        # CSS styles for the report
+        css = """
+        <style>
+            body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 1000px; margin: 0 auto; padding: 20px; background: #f8f9fa; }
+            .report-container { background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+            h1 { color: #2c3e50; border-bottom: 3px solid #3498db; padding-bottom: 10px; }
+            h2 { color: #34495e; border-bottom: 2px solid #ecf0f1; padding-bottom: 8px; margin-top: 30px; }
+            h3 { color: #7f8c8d; }
+            table { border-collapse: collapse; width: 100%; margin: 15px 0; }
+            th, td { border: 1px solid #ddd; padding: 10px; text-align: left; }
+            th { background-color: #3498db; color: white; }
+            tr:nth-child(even) { background-color: #f2f2f2; }
+            .stat-box { background: #e8f4f8; padding: 15px; border-radius: 5px; margin: 10px 0; border-left: 4px solid #3498db; }
+            .warning-box { background: #fff3cd; padding: 15px; border-radius: 5px; margin: 10px 0; border-left: 4px solid #ffc107; }
+            .success-box { background: #d4edda; padding: 15px; border-radius: 5px; margin: 10px 0; border-left: 4px solid #28a745; }
+            .error-box { background: #f8d7da; padding: 15px; border-radius: 5px; margin: 10px 0; border-left: 4px solid #dc3545; }
+            .chart-container { text-align: center; margin: 20px 0; }
+            .chart-container img { max-width: 100%; border: 1px solid #ddd; border-radius: 5px; }
+            .confidential { background: #dc3545; color: white; padding: 5px 15px; border-radius: 3px; display: inline-block; margin-bottom: 20px; }
+            .metric-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin: 20px 0; }
+            .metric-card { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; border-radius: 8px; text-align: center; }
+            .metric-value { font-size: 2em; font-weight: bold; }
+            .metric-label { font-size: 0.9em; opacity: 0.9; }
+            code { background: #f4f4f4; padding: 2px 6px; border-radius: 3px; }
+            .sig { color: #28a745; font-weight: bold; }
+            .nonsig { color: #6c757d; }
+        </style>
+        """
+
+        html_parts = [
+            "<!DOCTYPE html>",
+            "<html lang='en'>",
+            "<head>",
+            "<meta charset='UTF-8'>",
+            "<meta name='viewport' content='width=device-width, initial-scale=1.0'>",
+            f"<title>Instructor Report: {metadata.get('study_title', 'Study')}</title>",
+            css,
+            "</head>",
+            "<body>",
+            "<div class='report-container'>",
+        ]
+
+        # Header
+        html_parts.append("<span class='confidential'>CONFIDENTIAL - INSTRUCTOR ONLY</span>")
+        html_parts.append(f"<h1>Comprehensive Statistical Report</h1>")
+        html_parts.append(f"<p><strong>Study:</strong> {metadata.get('study_title', 'Untitled')}</p>")
+        html_parts.append(f"<p><strong>Generated:</strong> {metadata.get('generation_timestamp', datetime.now().isoformat())}</p>")
+        html_parts.append(f"<p><strong>Run ID:</strong> <code>{metadata.get('run_id', 'N/A')}</code></p>")
+
+        if team_info:
+            html_parts.append(f"<p><strong>Team:</strong> {team_info.get('team_name', 'N/A')}</p>")
+
+        # Summary metrics
+        n_total = len(df)
+        n_excluded = int(df["Exclude_Recommended"].sum()) if "Exclude_Recommended" in df.columns else 0
+        n_clean = n_total - n_excluded
+        exclusion_rate = (n_excluded / n_total * 100) if n_total > 0 else 0
+        conditions = metadata.get("conditions", [])
+
+        html_parts.append("<h2>1. Sample Overview</h2>")
+        html_parts.append("<div class='metric-grid'>")
+        html_parts.append(f"<div class='metric-card'><div class='metric-value'>{n_total}</div><div class='metric-label'>Total N</div></div>")
+        html_parts.append(f"<div class='metric-card'><div class='metric-value'>{n_clean}</div><div class='metric-label'>Clean N</div></div>")
+        html_parts.append(f"<div class='metric-card'><div class='metric-value'>{exclusion_rate:.1f}%</div><div class='metric-label'>Exclusion Rate</div></div>")
+        html_parts.append(f"<div class='metric-card'><div class='metric-value'>{len(conditions)}</div><div class='metric-label'>Conditions</div></div>")
+        html_parts.append("</div>")
+
+        # Condition distribution
+        if "CONDITION" in df.columns:
+            html_parts.append("<h3>Condition Distribution</h3>")
+            html_parts.append("<table><tr><th>Condition</th><th>N</th><th>%</th></tr>")
+            cond_counts = df["CONDITION"].value_counts()
+            for cond, count in cond_counts.items():
+                pct = count / n_total * 100
+                html_parts.append(f"<tr><td>{cond}</td><td>{count}</td><td>{pct:.1f}%</td></tr>")
+            html_parts.append("</table>")
+
+        # Clean data for analysis
+        df_clean = df[df["Exclude_Recommended"] == 0] if "Exclude_Recommended" in df.columns else df
+
+        # DV Analysis with statistical tests
+        scales = metadata.get("scales", [])
+        html_parts.append("<h2>2. Statistical Analysis by DV</h2>")
+
+        for scale in scales:
+            scale_name = scale.get("name", "Scale")
+            scale_cols = [c for c in df_clean.columns if c.startswith(f"{scale_name.replace(' ', '_')}_") and c[-1].isdigit()]
+
+            if not scale_cols:
+                continue
+
+            html_parts.append(f"<h3>{scale_name}</h3>")
+
+            # Calculate composite
+            if len(scale_cols) >= 1:
+                composite = df_clean[scale_cols].mean(axis=1)
+                df_analysis = df_clean.copy()
+                df_analysis["_composite"] = composite
+
+                # Descriptive stats table
+                html_parts.append("<h4>Descriptive Statistics</h4>")
+                html_parts.append("<table><tr><th>Condition</th><th>N</th><th>Mean</th><th>SD</th><th>95% CI</th></tr>")
+
+                chart_data = {}
+                for cond in conditions:
+                    cond_data = df_analysis[df_analysis["CONDITION"] == cond]["_composite"]
+                    if len(cond_data) > 0:
+                        mean = cond_data.mean()
+                        sd = cond_data.std()
+                        n = len(cond_data)
+                        se = sd / np.sqrt(n) if n > 0 else 0
+                        ci_low = mean - 1.96 * se
+                        ci_high = mean + 1.96 * se
+                        html_parts.append(f"<tr><td>{cond}</td><td>{n}</td><td>{mean:.3f}</td><td>{sd:.3f}</td><td>[{ci_low:.3f}, {ci_high:.3f}]</td></tr>")
+                        chart_data[cond] = (mean, 1.96 * se)
+
+                html_parts.append("</table>")
+
+                # Create visualization
+                chart_img = self._create_bar_chart(
+                    chart_data,
+                    f"{scale_name}: Means with 95% CI",
+                    "Mean Score"
+                )
+                if chart_img:
+                    html_parts.append("<div class='chart-container'>")
+                    html_parts.append(f"<img src='data:image/png;base64,{chart_img}' alt='Bar chart'>")
+                    html_parts.append("</div>")
+
+                # Distribution plot
+                dist_img = self._create_distribution_plot(
+                    df_analysis, "_composite", "CONDITION",
+                    f"{scale_name}: Distribution by Condition"
+                )
+                if dist_img:
+                    html_parts.append("<div class='chart-container'>")
+                    html_parts.append(f"<img src='data:image/png;base64,{dist_img}' alt='Distribution'>")
+                    html_parts.append("</div>")
+
+                # Statistical tests
+                if len(conditions) >= 2 and "CONDITION" in df_analysis.columns:
+                    stats_results = self._run_statistical_tests(df_analysis, "_composite", "CONDITION")
+
+                    html_parts.append("<h4>Statistical Tests</h4>")
+
+                    # Two-group tests
+                    if "t_test" in stats_results:
+                        t = stats_results["t_test"]
+                        sig_class = "sig" if t["significant"] else "nonsig"
+                        html_parts.append("<div class='stat-box'>")
+                        html_parts.append(f"<strong>Independent Samples t-test:</strong> t = {t['statistic']:.3f}, ")
+                        html_parts.append(f"<span class='{sig_class}'>p = {t['p_value']:.4f}</span>")
+                        html_parts.append("</div>")
+
+                    if "welch_t_test" in stats_results:
+                        w = stats_results["welch_t_test"]
+                        sig_class = "sig" if w["significant"] else "nonsig"
+                        html_parts.append("<div class='stat-box'>")
+                        html_parts.append(f"<strong>Welch's t-test:</strong> t = {w['statistic']:.3f}, ")
+                        html_parts.append(f"<span class='{sig_class}'>p = {w['p_value']:.4f}</span>")
+                        html_parts.append("</div>")
+
+                    if "mann_whitney" in stats_results:
+                        mw = stats_results["mann_whitney"]
+                        sig_class = "sig" if mw["significant"] else "nonsig"
+                        html_parts.append("<div class='stat-box'>")
+                        html_parts.append(f"<strong>Mann-Whitney U test:</strong> U = {mw['statistic']:.1f}, ")
+                        html_parts.append(f"<span class='{sig_class}'>p = {mw['p_value']:.4f}</span>")
+                        html_parts.append("</div>")
+
+                    if "cohens_d" in stats_results:
+                        d = stats_results["cohens_d"]
+                        html_parts.append("<div class='stat-box'>")
+                        html_parts.append(f"<strong>Cohen's d:</strong> {d['value']:.3f} ({d['interpretation']} effect)")
+                        html_parts.append("</div>")
+
+                    # ANOVA for any number of conditions
+                    if "anova" in stats_results:
+                        a = stats_results["anova"]
+                        sig_class = "sig" if a["significant"] else "nonsig"
+                        html_parts.append("<div class='stat-box'>")
+                        html_parts.append(f"<strong>One-way ANOVA:</strong> F = {a['f_statistic']:.3f}, ")
+                        html_parts.append(f"<span class='{sig_class}'>p = {a['p_value']:.4f}</span>")
+                        html_parts.append("</div>")
+
+                    if "kruskal_wallis" in stats_results:
+                        kw = stats_results["kruskal_wallis"]
+                        sig_class = "sig" if kw["significant"] else "nonsig"
+                        html_parts.append("<div class='stat-box'>")
+                        html_parts.append(f"<strong>Kruskal-Wallis test:</strong> H = {kw['h_statistic']:.3f}, ")
+                        html_parts.append(f"<span class='{sig_class}'>p = {kw['p_value']:.4f}</span>")
+                        html_parts.append("</div>")
+
+                    if "eta_squared" in stats_results:
+                        e = stats_results["eta_squared"]
+                        html_parts.append("<div class='stat-box'>")
+                        html_parts.append(f"<strong>η² (eta-squared):</strong> {e['value']:.4f} ({e['interpretation']} effect)")
+                        html_parts.append("</div>")
+
+                    # Assumption checks
+                    html_parts.append("<h4>Assumption Checks</h4>")
+
+                    if "levene_test" in stats_results:
+                        lev = stats_results["levene_test"]
+                        if lev["homogeneous"]:
+                            html_parts.append("<div class='success-box'>")
+                            html_parts.append(f"<strong>Levene's test:</strong> Variances are homogeneous (p = {lev['p_value']:.4f})")
+                        else:
+                            html_parts.append("<div class='warning-box'>")
+                            html_parts.append(f"<strong>Levene's test:</strong> Variances may be heterogeneous (p = {lev['p_value']:.4f}). Consider Welch's t-test.")
+                        html_parts.append("</div>")
+
+                    if "shapiro_wilk" in stats_results:
+                        sw = stats_results["shapiro_wilk"]
+                        if sw["normal"]:
+                            html_parts.append("<div class='success-box'>")
+                            html_parts.append(f"<strong>Shapiro-Wilk test:</strong> Data appears normally distributed (p = {sw['p_value']:.4f})")
+                        else:
+                            html_parts.append("<div class='warning-box'>")
+                            html_parts.append(f"<strong>Shapiro-Wilk test:</strong> Data may not be normally distributed (p = {sw['p_value']:.4f}). Consider non-parametric tests.")
+                        html_parts.append("</div>")
+
+                    # Regression analysis
+                    html_parts.append("<h4>Regression Analysis</h4>")
+                    reg_results = self._run_regression_analysis(df_analysis, "_composite", "CONDITION")
+
+                    if "error" not in reg_results:
+                        html_parts.append("<div class='stat-box'>")
+                        if "model_fit" in reg_results:
+                            fit = reg_results["model_fit"]
+                            html_parts.append(f"<strong>Model Fit:</strong> R² = {fit['r_squared']:.4f}, Adj. R² = {fit['adj_r_squared']:.4f}<br>")
+
+                        if "f_test" in reg_results:
+                            f = reg_results["f_test"]
+                            sig_class = "sig" if f["significant"] else "nonsig"
+                            html_parts.append(f"<strong>F-test:</strong> F = {f['f_statistic']:.3f}, <span class='{sig_class}'>p = {f['p_value']:.4f}</span><br>")
+
+                        # Coefficients table
+                        if "coefficients" in reg_results:
+                            html_parts.append("<br><strong>Coefficients:</strong>")
+                            html_parts.append("<table><tr><th>Predictor</th><th>B</th><th>SE</th><th>t</th><th>p</th></tr>")
+                            for pred, coef in reg_results["coefficients"].items():
+                                sig_class = "sig" if coef.get("significant", coef["p_value"] < 0.05) else "nonsig"
+                                html_parts.append(f"<tr><td>{pred}</td><td>{coef['estimate']:.3f}</td><td>{coef['std_error']:.3f}</td><td>{coef['t_stat']:.3f}</td><td class='{sig_class}'>{coef['p_value']:.4f}</td></tr>")
+                            html_parts.append("</table>")
+                        html_parts.append("</div>")
+                    else:
+                        html_parts.append(f"<div class='warning-box'>Regression analysis unavailable: {reg_results['error']}</div>")
+
+        # Chi-squared test for categorical associations
+        if "CONDITION" in df_clean.columns and "Gender" in df_clean.columns:
+            html_parts.append("<h2>3. Categorical Analysis</h2>")
+            html_parts.append("<h3>Condition × Gender</h3>")
+
+            try:
+                contingency = pd.crosstab(df_clean["CONDITION"], df_clean["Gender"])
+                chi2, p, dof, expected = scipy_stats.chi2_contingency(contingency)
+
+                sig_class = "sig" if p < 0.05 else "nonsig"
+                html_parts.append("<div class='stat-box'>")
+                html_parts.append(f"<strong>Chi-squared test:</strong> χ² = {chi2:.3f}, df = {dof}, ")
+                html_parts.append(f"<span class='{sig_class}'>p = {p:.4f}</span>")
+                if p >= 0.05:
+                    html_parts.append("<br><em>No significant association between condition and gender (randomization appears successful)</em>")
+                html_parts.append("</div>")
+
+                # Contingency table
+                html_parts.append("<table><tr><th>Condition</th>")
+                for col in contingency.columns:
+                    html_parts.append(f"<th>{col}</th>")
+                html_parts.append("</tr>")
+                for idx, row in contingency.iterrows():
+                    html_parts.append(f"<tr><td>{idx}</td>")
+                    for val in row:
+                        html_parts.append(f"<td>{val}</td>")
+                    html_parts.append("</tr>")
+                html_parts.append("</table>")
+            except Exception:
+                pass
+
+        # Footer
+        html_parts.append("<h2>Notes for Instructors</h2>")
+        html_parts.append("<div class='warning-box'>")
+        html_parts.append("<strong>This is simulated data.</strong> Results demonstrate what the analysis pipeline will produce. ")
+        html_parts.append("Students should practice these analyses independently and may get similar (but not identical) results due to random variation.")
+        html_parts.append("</div>")
+
+        html_parts.append(f"<p style='color:#999;font-size:0.9em;margin-top:30px;'>Generated by Behavioral Experiment Simulation Tool v{__version__}</p>")
+        html_parts.append("</div></body></html>")
+
+        return "\n".join(html_parts)
