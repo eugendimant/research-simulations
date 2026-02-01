@@ -2,15 +2,16 @@
 """
 Utility modules for the Behavioral Experiment Simulation Tool.
 
-Version: 2.1.4
+Version: 2.1.5
 Changes:
+    - Added ComprehensiveInstructorReport for detailed instructor-only analysis
+    - Comprehensive report includes: statistical tests, effect sizes, hypothesis checks
+    - Instructor email now receives detailed analysis; students get simpler report
     - Fixed extra DV generation issue with scale deduplication
     - Improved scale point detection and handling (preserve QSF values, track source)
     - Added comprehensive persona transparency section to instructor report
     - Added scale source tracking (QSF detected vs default) in reports
-    - Fixed nested flow list handling in QSF parsers (qsf_parser, qsf_preview, condition_identifier)
-    - Added _extract_flow_payload helper for robust QSF parsing
-    - Fixed __future__ import position in all modules
+    - Fixed nested flow list handling in QSF parsers
     - Added forced module reload in app.py to fix Streamlit caching issues
 
 Modules:
@@ -28,7 +29,7 @@ Modules:
 """
 
 # Package version - should match all module versions
-__version__ = "2.1.4"
+__version__ = "2.1.5"
 
 from .qsf_parser import parse_qsf_file, extract_survey_structure, generate_qsf_summary
 from .simulation_engine import SimulationEngine
@@ -52,6 +53,7 @@ from .qsf_preview import (
 )
 from .instructor_report import (
     InstructorReportGenerator,
+    ComprehensiveInstructorReport,
 )
 from .group_management import (
     GroupManager,
@@ -105,6 +107,7 @@ __all__ = [
     'QSFCorrections',
     # Instructor reports
     'InstructorReportGenerator',
+    'ComprehensiveInstructorReport',
     # Group management
     'GroupManager',
     'APIKeyManager',

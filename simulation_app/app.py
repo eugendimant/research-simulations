@@ -44,8 +44,8 @@ import streamlit as st
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "2.1.4"
-BUILD_ID = "20260131-v214-simulation-fixes"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "2.1.5"
+BUILD_ID = "20260201-v215-ux-improvements"  # Change this to force cache invalidation
 
 def _verify_and_reload_utils():
     """Verify utils modules are at correct version, force reload if needed."""
@@ -71,7 +71,7 @@ _verify_and_reload_utils()
 from utils.group_management import GroupManager, APIKeyManager
 from utils.qsf_preview import QSFPreviewParser, QSFPreviewResult
 from utils.schema_validator import validate_schema
-from utils.instructor_report import InstructorReportGenerator
+from utils.instructor_report import InstructorReportGenerator, ComprehensiveInstructorReport
 from utils.enhanced_simulation_engine import (
     EnhancedSimulationEngine,
     EffectSizeSpec,
@@ -94,7 +94,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF"
-APP_VERSION = "2.1.4"  # Fixed extra DVs, scale points, persona transparency
+APP_VERSION = "2.1.5"  # UX improvements: factors, snapshot, methods view, comprehensive instructor report
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -1028,21 +1028,40 @@ The simulator automatically assigns behavioral personas to simulated participant
     if methods_pdf_path.exists():
         methods_updated = datetime.utcfromtimestamp(methods_pdf_path.stat().st_mtime).strftime("%Y-%m-%d")
         st.caption(f"Methods summary (PDF) · Last updated: {methods_updated}")
-        st.download_button(
-            "📄 Download Methods Summary (PDF)",
-            data=methods_pdf_path.read_bytes(),
-            file_name=methods_pdf_path.name,
-            mime="application/pdf",
-        )
+
+        # Two options: download or view in browser
+        col_m1, col_m2 = st.columns(2)
+        with col_m1:
+            st.download_button(
+                "📥 Download PDF",
+                data=methods_pdf_path.read_bytes(),
+                file_name=methods_pdf_path.name,
+                mime="application/pdf",
+            )
+        with col_m2:
+            # Create a data URL for opening in new tab
+            pdf_bytes = methods_pdf_path.read_bytes()
+            pdf_b64 = base64.b64encode(pdf_bytes).decode()
+            pdf_data_url = f"data:application/pdf;base64,{pdf_b64}"
+            st.markdown(
+                f'<a href="{pdf_data_url}" target="_blank" rel="noopener noreferrer">'
+                f'📄 Open in new tab</a>',
+                unsafe_allow_html=True
+            )
     elif methods_md_path.exists():
         methods_updated = datetime.utcfromtimestamp(methods_md_path.stat().st_mtime).strftime("%Y-%m-%d %H:%M UTC")
         st.caption(f"Methods summary updated: {methods_updated}")
-        st.download_button(
-            "Download full methods summary (Markdown)",
-            data=methods_md_path.read_bytes(),
-            file_name=methods_md_path.name,
-            mime="text/markdown",
-        )
+        col_m1, col_m2 = st.columns(2)
+        with col_m1:
+            st.download_button(
+                "📥 Download Markdown",
+                data=methods_md_path.read_bytes(),
+                file_name=methods_md_path.name,
+                mime="text/markdown",
+            )
+        with col_m2:
+            with st.expander("📄 View Methods Summary"):
+                st.markdown(methods_md_path.read_text(encoding="utf-8"))
 
 with st.sidebar:
     st.subheader("Mode")
@@ -1061,16 +1080,65 @@ with st.sidebar:
 
     st.divider()
     st.subheader("Study Snapshot")
+
+    # Gather all snapshot data
     snapshot_conditions = st.session_state.get("current_conditions") or st.session_state.get("selected_conditions") or []
     snapshot_conditions = snapshot_conditions + st.session_state.get("custom_conditions", [])
     snapshot_conditions = list(dict.fromkeys([c for c in snapshot_conditions if str(c).strip()]))
-    snapshot_scales = st.session_state.get("inferred_design", {}).get("scales", [])
-    st.caption(f"Study title: {st.session_state.get('study_title', '—') or '—'}")
-    st.caption(f"Sample size: {st.session_state.get('sample_size', '—')}")
-    st.caption(f"Conditions: {len(snapshot_conditions)}")
+    inferred = st.session_state.get("inferred_design", {})
+    snapshot_scales = inferred.get("scales", [])
+    snapshot_factors = inferred.get("factors", [])
+
+    # Study title
+    title = st.session_state.get('study_title', '—') or '—'
+    st.markdown(f"**{title[:50]}{'...' if len(title) > 50 else ''}**")
+
+    # Key metrics in compact format
+    sample_size = st.session_state.get('sample_size', '—')
+    st.caption(f"N = {sample_size}")
+
+    # Detect design type from conditions
+    detected_factors = _infer_factors_from_conditions(snapshot_conditions) if snapshot_conditions else []
+    if len(detected_factors) == 1:
+        design_hint = f"{len(snapshot_conditions)}-condition"
+    elif len(detected_factors) == 2:
+        f1_levels = len(detected_factors[0].get("levels", []))
+        f2_levels = len(detected_factors[1].get("levels", []))
+        design_hint = f"{f1_levels}×{f2_levels} factorial"
+    elif len(detected_factors) > 2:
+        design_hint = f"{len(detected_factors)}-factor"
+    else:
+        design_hint = "—"
+
+    st.caption(f"Design: {design_hint}")
+
+    # Conditions (collapsible if many)
     if snapshot_conditions:
-        st.caption(", ".join(snapshot_conditions[:6]) + ("..." if len(snapshot_conditions) > 6 else ""))
-    st.caption(f"Scales: {len(snapshot_scales) if snapshot_scales else 0}")
+        if len(snapshot_conditions) <= 4:
+            st.caption(f"Conditions: {', '.join(snapshot_conditions)}")
+        else:
+            with st.expander(f"Conditions ({len(snapshot_conditions)})"):
+                for c in snapshot_conditions:
+                    st.caption(f"• {c}")
+
+    # Scales with scale points
+    if snapshot_scales:
+        scale_summary = []
+        for s in snapshot_scales[:3]:
+            name = s.get("name", "Scale")[:20]
+            pts = s.get("scale_points", "?")
+            scale_summary.append(f"{name} ({pts}pt)")
+        scales_text = ", ".join(scale_summary)
+        if len(snapshot_scales) > 3:
+            scales_text += f" +{len(snapshot_scales) - 3} more"
+        st.caption(f"DVs: {scales_text}")
+    else:
+        st.caption("DVs: Not configured")
+
+    # Factors (if detected)
+    if len(detected_factors) > 1:
+        factors_text = " × ".join([f.get("name", "Factor") for f in detected_factors[:3]])
+        st.caption(f"Factors: {factors_text}")
 
     st.divider()
     st.subheader("Progress")
@@ -1936,6 +2004,10 @@ if active_step == 2:
 
     col_design1, col_design2 = st.columns(2)
 
+    # Auto-detect factors from condition names
+    auto_detected_factors = _infer_factors_from_conditions(all_conditions)
+    auto_num_factors = len(auto_detected_factors)
+
     with col_design1:
         # Design type selection
         design_type = st.selectbox(
@@ -1951,14 +2023,12 @@ if active_step == 2:
             help="How are conditions assigned to participants? Most experiments use between-subjects designs.",
         )
 
-        # Number of factors
-        num_factors = st.selectbox(
-            "Number of factors (independent variables)",
-            options=[1, 2, 3],
-            index=0,
-            key="num_factors_select",
-            help="Most studies have 1-2 factors. A 2x2 design has 2 factors.",
-        )
+        # Show auto-detected design info
+        if auto_num_factors > 1:
+            factor_levels_str = " × ".join([str(len(f.get("levels", []))) for f in auto_detected_factors])
+            st.success(f"Auto-detected: {factor_levels_str} factorial design ({auto_num_factors} factors)")
+        elif len(all_conditions) > 1:
+            st.info(f"Detected: {len(all_conditions)}-condition single-factor design")
 
     with col_design2:
         # Randomization level
@@ -1978,29 +2048,80 @@ if active_step == 2:
         sample_size = st.session_state.get("sample_size", 100)
         st.metric("Pre-registered sample size", sample_size)
 
-    # Build factors automatically from conditions
+    # Factor configuration with clear explanation
+    st.markdown("#### Factor Structure")
+    st.caption(
+        "**Factors** are the independent variables you manipulate. "
+        "A 2×2 design has 2 factors (e.g., AI presence × Product type). "
+        "The tool auto-detects factors from condition names like 'AI x Hedonic' or 'Control | Treatment'."
+    )
+
+    # Let user override auto-detected factors
+    use_auto_factors = auto_num_factors > 1 and st.checkbox(
+        f"Use auto-detected {auto_num_factors}-factor structure",
+        value=True,
+        key="use_auto_factors",
+        help="Uncheck to manually configure factors"
+    )
+
     factors = []
-    if num_factors == 1:
-        factors = [{"name": "Condition", "levels": all_conditions}]
-    elif num_factors >= 2 and len(all_conditions) >= 4:
-        # Try to split conditions into factors
-        st.info("With multiple factors, organize your conditions into groups:")
-        for f_idx in range(num_factors):
-            factor_name = st.text_input(
-                f"Factor {f_idx + 1} name",
-                value=f"Factor {f_idx + 1}",
-                key=f"factor_name_{f_idx}",
-            )
-            factor_levels = st.multiselect(
-                f"Levels for {factor_name}",
-                options=all_conditions,
-                key=f"factor_levels_{f_idx}",
-                help=f"Select which conditions belong to {factor_name}",
-            )
-            if factor_levels:
-                factors.append({"name": factor_name, "levels": factor_levels})
+    if use_auto_factors and auto_num_factors > 1:
+        # Show auto-detected structure with ability to rename
+        factors = auto_detected_factors
+        st.markdown("**Detected factor structure:**")
+        for i, f in enumerate(auto_detected_factors):
+            col_f1, col_f2 = st.columns([1, 2])
+            with col_f1:
+                new_name = st.text_input(
+                    f"Factor {i+1} name",
+                    value=f.get("name", f"Factor_{i+1}"),
+                    key=f"auto_factor_name_{i}",
+                )
+                factors[i]["name"] = new_name
+            with col_f2:
+                levels = f.get("levels", [])
+                st.caption(f"Levels: {', '.join(levels)}")
     else:
-        # num_factors >= 2 but not enough conditions for multi-factor design
+        # Manual factor configuration
+        if len(all_conditions) >= 4:
+            num_factors = st.selectbox(
+                "Number of factors",
+                options=[1, 2, 3],
+                index=0,
+                key="num_factors_select",
+                help=(
+                    "• **1 factor**: Simple design (Control vs Treatment)\n"
+                    "• **2 factors**: 2×2, 2×3, etc. (e.g., AI × Product Type)\n"
+                    "• **3 factors**: Complex designs (e.g., AI × Price × Brand)"
+                ),
+            )
+
+            if num_factors == 1:
+                factors = [{"name": "Condition", "levels": all_conditions}]
+            else:
+                st.info(f"Define your {num_factors} factors by selecting which conditions belong to each level.")
+                for f_idx in range(num_factors):
+                    st.markdown(f"**Factor {f_idx + 1}**")
+                    factor_name = st.text_input(
+                        "Name",
+                        value=f"Factor {f_idx + 1}",
+                        key=f"factor_name_{f_idx}",
+                        label_visibility="collapsed",
+                        placeholder=f"e.g., {'AI Presence' if f_idx == 0 else 'Product Type'}"
+                    )
+                    factor_levels = st.multiselect(
+                        f"Levels for {factor_name}",
+                        options=all_conditions,
+                        key=f"factor_levels_{f_idx}",
+                        help=f"Select the levels/conditions that belong to {factor_name}",
+                    )
+                    if factor_levels:
+                        factors.append({"name": factor_name, "levels": factor_levels})
+        else:
+            factors = [{"name": "Condition", "levels": all_conditions}]
+
+    # Ensure we have at least one factor
+    if not factors:
         factors = [{"name": "Condition", "levels": all_conditions}]
 
     # Get scales from inferred design
@@ -2385,6 +2506,7 @@ if active_step == 3:
             meta_bytes = _safe_json(metadata).encode("utf-8")
             explainer_bytes = explainer.encode("utf-8")
             r_bytes = r_script.encode("utf-8")
+            # Standard instructor report (included in download for students)
             instructor_report = InstructorReportGenerator().generate_markdown_report(
                 df=df,
                 metadata=metadata,
@@ -2396,6 +2518,20 @@ if active_step == 3:
                 },
             )
             instructor_bytes = instructor_report.encode("utf-8")
+
+            # COMPREHENSIVE instructor report (for instructor email ONLY - not included in student download)
+            # This includes detailed statistical analysis, hypothesis testing, and recommendations
+            comprehensive_report = ComprehensiveInstructorReport().generate_comprehensive_report(
+                df=df,
+                metadata=metadata,
+                schema_validation=schema_results,
+                prereg_text=st.session_state.get("prereg_text_sanitized", ""),
+                team_info={
+                    "team_name": st.session_state.get("team_name", ""),
+                    "team_members": st.session_state.get("team_members_raw", ""),
+                },
+            )
+            comprehensive_bytes = comprehensive_report.encode("utf-8")
 
             files = {
                 "Simulated.csv": csv_bytes,
@@ -2450,10 +2586,15 @@ if active_step == 3:
             instructor_email = st.secrets.get("INSTRUCTOR_NOTIFICATION_EMAIL", "edimant@sas.upenn.edu")
             subject = f"[Behavioral Simulation] Output ({metadata.get('simulation_mode', 'pilot')}) - {title}"
             body = (
-                "Automatic instructor notification with simulation output.\n\n"
+                "COMPREHENSIVE INSTRUCTOR ANALYSIS ATTACHED\n"
+                "=========================================\n\n"
+                "This email includes a detailed statistical analysis that students do NOT receive.\n"
+                "Students get only the basic Instructor_Report.md in their download.\n\n"
                 f"Team: {st.session_state.get('team_name','')}\n"
                 f"Members:\n{st.session_state.get('team_members_raw','')}\n\n"
                 f"Study: {title}\n"
+                f"Sample Size: N={metadata.get('sample_size', 'N/A')}\n"
+                f"Conditions: {len(metadata.get('conditions', []))}\n"
                 f"Generated: {metadata.get('generation_timestamp','')}\n"
                 f"Run ID: {metadata.get('run_id','')}\n"
             )
@@ -2463,7 +2604,8 @@ if active_step == 3:
                 body_text=body,
                 attachments=[
                     ("simulation_output.zip", zip_bytes),
-                    ("Instructor_Report.md", instructor_bytes),
+                    ("COMPREHENSIVE_Instructor_Analysis.md", comprehensive_bytes),  # Full statistical analysis
+                    ("Student_Instructor_Report.md", instructor_bytes),  # What students see
                 ],
             )
             if ok:

@@ -6,7 +6,7 @@ Generates comprehensive instructor-facing reports for student simulations.
 """
 
 # Version identifier to help track deployed code
-__version__ = "2.1.4"  # Added comprehensive persona transparency and scale source tracking
+__version__ = "2.1.5"  # Added ComprehensiveInstructorReport for instructor-only detailed analysis
 
 from dataclasses import dataclass
 from datetime import datetime
@@ -474,3 +474,361 @@ class InstructorReportGenerator:
         r_lines.append("")
         r_lines.append("summary(data_clean)")
         return "\n".join(r_lines)
+
+
+class ComprehensiveInstructorReport:
+    """
+    Generates a detailed, comprehensive report for instructors ONLY.
+    This report includes statistical analyses, visualizations (as text/tables),
+    hypothesis testing based on preregistration, and data quality diagnostics.
+
+    This is NOT shared with students - they should practice these analyses themselves.
+    """
+
+    def __init__(self):
+        pass
+
+    def generate_comprehensive_report(
+        self,
+        df: pd.DataFrame,
+        metadata: Dict[str, Any],
+        schema_validation: Optional[Dict[str, Any]] = None,
+        prereg_text: str = "",
+        team_info: Optional[Dict[str, Any]] = None,
+    ) -> str:
+        """Generate the comprehensive instructor-only report."""
+        lines: List[str] = []
+
+        # Header
+        lines.append("=" * 80)
+        lines.append("COMPREHENSIVE INSTRUCTOR REPORT (CONFIDENTIAL)")
+        lines.append("=" * 80)
+        lines.append("")
+        lines.append("**This report is for instructor review only. Students receive a simpler version.**")
+        lines.append("")
+
+        # Basic info
+        lines.append(f"**Study:** {metadata.get('study_title', 'Untitled')}")
+        lines.append(f"**Generated:** {metadata.get('generation_timestamp', datetime.now().isoformat())}")
+        lines.append(f"**Run ID:** `{metadata.get('run_id', 'N/A')}`")
+        lines.append(f"**Mode:** {metadata.get('simulation_mode', 'pilot').title()}")
+        lines.append("")
+
+        if team_info:
+            lines.append(f"**Team:** {team_info.get('team_name', 'N/A')}")
+            members = team_info.get('team_members', '')
+            if members:
+                lines.append(f"**Members:** {members.replace(chr(10), ', ')}")
+            lines.append("")
+
+        # =============================================================
+        # SECTION 1: DATA QUALITY SUMMARY
+        # =============================================================
+        lines.append("-" * 80)
+        lines.append("## 1. DATA QUALITY SUMMARY")
+        lines.append("-" * 80)
+        lines.append("")
+
+        n_total = len(df)
+        n_excluded = int(df["Exclude_Recommended"].sum()) if "Exclude_Recommended" in df.columns else 0
+        n_clean = n_total - n_excluded
+        exclusion_rate = (n_excluded / n_total * 100) if n_total > 0 else 0
+
+        lines.append(f"| Metric | Value |")
+        lines.append(f"|--------|-------|")
+        lines.append(f"| Total N | {n_total} |")
+        lines.append(f"| Excluded | {n_excluded} ({exclusion_rate:.1f}%) |")
+        lines.append(f"| Clean N | {n_clean} |")
+        lines.append(f"| Missing cells | {int(df.isna().sum().sum())} |")
+        lines.append("")
+
+        # Attention check analysis
+        if "Attention_Pass_Rate" in df.columns:
+            lines.append("### Attention Check Analysis")
+            lines.append("")
+            attention_stats = df["Attention_Pass_Rate"].describe()
+            lines.append(f"- Mean pass rate: {attention_stats['mean']:.2%}")
+            lines.append(f"- Median pass rate: {attention_stats['50%']:.2%}")
+            lines.append(f"- Failed all checks (0%): {(df['Attention_Pass_Rate'] == 0).sum()} participants")
+            lines.append(f"- Passed all checks (100%): {(df['Attention_Pass_Rate'] == 1).sum()} participants")
+            lines.append("")
+
+        # Completion time analysis
+        if "Completion_Time_Seconds" in df.columns:
+            lines.append("### Completion Time Analysis")
+            lines.append("")
+            time_stats = df["Completion_Time_Seconds"].describe()
+            lines.append(f"- Mean: {time_stats['mean']:.1f} seconds ({time_stats['mean']/60:.1f} min)")
+            lines.append(f"- Median: {time_stats['50%']:.1f} seconds")
+            lines.append(f"- Min: {time_stats['min']:.1f} seconds")
+            lines.append(f"- Max: {time_stats['max']:.1f} seconds")
+            lines.append(f"- Suspiciously fast (<60s): {(df['Completion_Time_Seconds'] < 60).sum()}")
+            lines.append(f"- Very slow (>30min): {(df['Completion_Time_Seconds'] > 1800).sum()}")
+            lines.append("")
+
+        # =============================================================
+        # SECTION 2: EXPERIMENTAL DESIGN CHECK
+        # =============================================================
+        lines.append("-" * 80)
+        lines.append("## 2. EXPERIMENTAL DESIGN VERIFICATION")
+        lines.append("-" * 80)
+        lines.append("")
+
+        conditions = metadata.get("conditions", [])
+        factors = metadata.get("factors", [])
+        scales = metadata.get("scales", [])
+
+        lines.append(f"**Design type:** {metadata.get('design_type', 'Between-subjects')}")
+        lines.append(f"**Number of conditions:** {len(conditions)}")
+        lines.append(f"**Number of factors:** {len(factors)}")
+        lines.append(f"**Number of DVs:** {len(scales)}")
+        lines.append("")
+
+        # Condition distribution
+        if "CONDITION" in df.columns:
+            lines.append("### Condition Distribution")
+            lines.append("")
+            cond_counts = df["CONDITION"].value_counts()
+            lines.append("| Condition | N | % |")
+            lines.append("|-----------|---|---|")
+            for cond, count in cond_counts.items():
+                pct = count / n_total * 100
+                lines.append(f"| {cond} | {count} | {pct:.1f}% |")
+            lines.append("")
+
+            # Balance check
+            cv = cond_counts.std() / cond_counts.mean() * 100 if cond_counts.mean() > 0 else 0
+            if cv < 5:
+                lines.append("✅ **Excellent balance** (CV < 5%)")
+            elif cv < 10:
+                lines.append("✅ **Good balance** (CV < 10%)")
+            elif cv < 20:
+                lines.append("⚠️ **Slight imbalance** (CV 10-20%)")
+            else:
+                lines.append("❌ **Notable imbalance** (CV > 20%)")
+            lines.append("")
+
+        # Factor structure
+        if factors:
+            lines.append("### Factor Structure")
+            lines.append("")
+            for f in factors:
+                fname = f.get("name", "Factor")
+                levels = f.get("levels", [])
+                lines.append(f"- **{fname}**: {', '.join(levels)} ({len(levels)} levels)")
+            lines.append("")
+
+        # =============================================================
+        # SECTION 3: DV ANALYSIS & STATISTICS
+        # =============================================================
+        lines.append("-" * 80)
+        lines.append("## 3. DEPENDENT VARIABLE ANALYSIS")
+        lines.append("-" * 80)
+        lines.append("")
+
+        # Clean data for analysis
+        df_clean = df[df["Exclude_Recommended"] == 0] if "Exclude_Recommended" in df.columns else df
+
+        for scale in scales:
+            scale_name = scale.get("name", "Scale")
+            num_items = scale.get("num_items", 5)
+            scale_points = scale.get("scale_points", 7)
+
+            lines.append(f"### {scale_name}")
+            lines.append("")
+            lines.append(f"Configuration: {num_items} items, {scale_points}-point scale")
+            lines.append("")
+
+            # Find scale columns
+            scale_cols = [c for c in df_clean.columns if c.startswith(f"{scale_name.replace(' ', '_')}_") and c[-1].isdigit()]
+
+            if scale_cols:
+                # Item-level statistics
+                lines.append("#### Item-level Statistics")
+                lines.append("")
+                lines.append("| Item | Mean | SD | Min | Max |")
+                lines.append("|------|------|----|----|-----|")
+                for col in scale_cols[:10]:  # Limit to first 10 items
+                    if col in df_clean.columns:
+                        stats = df_clean[col].describe()
+                        lines.append(f"| {col} | {stats['mean']:.2f} | {stats['std']:.2f} | {stats['min']:.0f} | {stats['max']:.0f} |")
+                lines.append("")
+
+                # Composite calculation
+                if len(scale_cols) >= 2:
+                    composite = df_clean[scale_cols].mean(axis=1)
+                    lines.append("#### Composite Score (Mean)")
+                    lines.append("")
+                    comp_stats = composite.describe()
+                    lines.append(f"- Mean: {comp_stats['mean']:.3f}")
+                    lines.append(f"- SD: {comp_stats['std']:.3f}")
+                    lines.append(f"- Range: [{comp_stats['min']:.2f}, {comp_stats['max']:.2f}]")
+                    lines.append("")
+
+                    # By condition
+                    if "CONDITION" in df_clean.columns:
+                        lines.append("#### By Condition")
+                        lines.append("")
+                        lines.append("| Condition | N | Mean | SD | 95% CI |")
+                        lines.append("|-----------|---|------|----|---------| ")
+
+                        df_clean_copy = df_clean.copy()
+                        df_clean_copy["_composite"] = composite
+
+                        for cond in conditions:
+                            cond_data = df_clean_copy[df_clean_copy["CONDITION"] == cond]["_composite"]
+                            if len(cond_data) > 0:
+                                mean = cond_data.mean()
+                                sd = cond_data.std()
+                                n = len(cond_data)
+                                se = sd / (n ** 0.5) if n > 0 else 0
+                                ci_low = mean - 1.96 * se
+                                ci_high = mean + 1.96 * se
+                                lines.append(f"| {cond} | {n} | {mean:.3f} | {sd:.3f} | [{ci_low:.3f}, {ci_high:.3f}] |")
+                        lines.append("")
+
+                        # Effect size (Cohen's d for first two conditions)
+                        if len(conditions) >= 2:
+                            cond1_data = df_clean_copy[df_clean_copy["CONDITION"] == conditions[0]]["_composite"]
+                            cond2_data = df_clean_copy[df_clean_copy["CONDITION"] == conditions[1]]["_composite"]
+                            if len(cond1_data) > 1 and len(cond2_data) > 1:
+                                pooled_std = ((cond1_data.std()**2 + cond2_data.std()**2) / 2) ** 0.5
+                                if pooled_std > 0:
+                                    cohens_d = (cond1_data.mean() - cond2_data.mean()) / pooled_std
+                                    lines.append(f"**Effect size (Cohen's d, {conditions[0]} vs {conditions[1]}):** {cohens_d:.3f}")
+                                    if abs(cohens_d) < 0.2:
+                                        lines.append("  → Negligible effect")
+                                    elif abs(cohens_d) < 0.5:
+                                        lines.append("  → Small effect")
+                                    elif abs(cohens_d) < 0.8:
+                                        lines.append("  → Medium effect")
+                                    else:
+                                        lines.append("  → Large effect")
+                                    lines.append("")
+
+            lines.append("")
+
+        # =============================================================
+        # SECTION 4: PREREGISTRATION CHECK
+        # =============================================================
+        if prereg_text:
+            lines.append("-" * 80)
+            lines.append("## 4. PREREGISTRATION ALIGNMENT CHECK")
+            lines.append("-" * 80)
+            lines.append("")
+
+            # Sample size check
+            prereg_lower = prereg_text.lower()
+            lines.append("### Key Checks")
+            lines.append("")
+
+            # Look for sample size mentions
+            import re
+            size_matches = re.findall(r'n\s*=\s*(\d+)|sample.*?(\d+)|(\d+)\s*participants', prereg_lower)
+            if size_matches:
+                lines.append(f"**Sample size in preregistration:** Patterns found - check matches actual N={n_total}")
+
+            # Look for scale mentions
+            for scale in scales:
+                scale_name = scale.get("name", "").lower()
+                scale_points = scale.get("scale_points", 7)
+                if scale_name in prereg_lower:
+                    lines.append(f"**{scale_name}:** Mentioned in preregistration. Simulated with {scale_points}-point scale.")
+                    # Check for scale point mentions
+                    point_patterns = [f"{scale_points}-point", f"{scale_points} point", f"1-{scale_points}"]
+                    if any(p in prereg_lower for p in point_patterns):
+                        lines.append(f"  ✅ Scale points match preregistration")
+                    else:
+                        lines.append(f"  ⚠️ Verify scale points match preregistration")
+
+            lines.append("")
+            lines.append("### Preregistration Text (excerpt)")
+            lines.append("```")
+            lines.append(prereg_text[:1500] + ("..." if len(prereg_text) > 1500 else ""))
+            lines.append("```")
+            lines.append("")
+
+        # =============================================================
+        # SECTION 5: PERSONA DISTRIBUTION ANALYSIS
+        # =============================================================
+        lines.append("-" * 80)
+        lines.append("## 5. PERSONA DISTRIBUTION & IMPACT")
+        lines.append("-" * 80)
+        lines.append("")
+
+        dist = metadata.get("persona_distribution", {}) or {}
+        if dist:
+            lines.append("| Persona | % | Expected N | Impact on Data |")
+            lines.append("|---------|---|------------|----------------|")
+            for persona, share in sorted(dist.items(), key=lambda x: -float(x[1])):
+                share_val = float(share) if float(share) <= 1 else float(share) / 100
+                pct = share_val * 100
+                count = int(round(n_total * share_val))
+                impact = self._get_detailed_impact(persona.lower())
+                lines.append(f"| {persona.title()} | {pct:.1f}% | ~{count} | {impact} |")
+            lines.append("")
+
+            # Estimate impact on results
+            lines.append("### Estimated Impact on Results")
+            lines.append("")
+            acquiescent_share = float(dist.get("acquiescent", 0))
+            skeptic_share = float(dist.get("skeptic", 0))
+            if acquiescent_share > 0.1:
+                lines.append(f"⚠️ High acquiescence ({acquiescent_share:.0%}) may inflate positive responses")
+            if skeptic_share > 0.1:
+                lines.append(f"⚠️ High skepticism ({skeptic_share:.0%}) may deflate responses")
+            careless_share = float(dist.get("careless", 0)) + float(dist.get("random", 0))
+            if careless_share > 0.1:
+                lines.append(f"⚠️ Notable careless/random ({careless_share:.0%}) - verify exclusion criteria are working")
+            lines.append("")
+
+        # =============================================================
+        # SECTION 6: RECOMMENDATIONS
+        # =============================================================
+        lines.append("-" * 80)
+        lines.append("## 6. INSTRUCTOR RECOMMENDATIONS")
+        lines.append("-" * 80)
+        lines.append("")
+
+        lines.append("### For Student Evaluation")
+        lines.append("")
+        lines.append("1. **Data cleaning**: Have students identify and justify exclusions")
+        lines.append("2. **Descriptive statistics**: Verify they compute means/SDs by condition")
+        lines.append("3. **Effect sizes**: Check if they interpret Cohen's d correctly")
+        lines.append("4. **Scale reliability**: If they compute Cronbach's alpha, it should be reasonable")
+        lines.append("5. **Visualization**: Check for appropriate choice of plots")
+        lines.append("")
+
+        lines.append("### Things to Watch For")
+        lines.append("")
+        if exclusion_rate > 15:
+            lines.append(f"- Exclusion rate is {exclusion_rate:.1f}% - ask students to justify their criteria")
+        if n_clean < 30:
+            lines.append(f"- Clean N is only {n_clean} - discuss power implications")
+        if len(conditions) > 4:
+            lines.append(f"- {len(conditions)} conditions may be complex for analysis")
+        lines.append("")
+
+        # Footer
+        lines.append("-" * 80)
+        lines.append("END OF COMPREHENSIVE INSTRUCTOR REPORT")
+        lines.append("-" * 80)
+
+        return "\n".join(lines)
+
+    def _get_detailed_impact(self, persona: str) -> str:
+        """Get detailed impact description for instructor understanding."""
+        impacts = {
+            "engaged responder": "High quality data, typical variance patterns",
+            "engaged": "High quality data, typical variance patterns",
+            "satisficer": "Central tendency bias, may reduce effect detection",
+            "extreme responder": "Inflated variance, potential outlier effects",
+            "extreme": "Inflated variance, potential outlier effects",
+            "acquiescent": "Positively skewed responses, inflated agreement",
+            "skeptic": "Negatively skewed responses, deflated agreement",
+            "random": "Noise injection, should be caught by exclusion criteria",
+            "careless": "Straight-lining patterns, should trigger exclusion",
+            "careful responder": "Consistent, low-variance responses",
+            "moderate responder": "Restricted range, may reduce variance",
+        }
+        return impacts.get(persona, "Standard patterns")
