@@ -44,7 +44,7 @@ import streamlit as st
 # Where deeply imported modules don't hot-reload properly.
 
 REQUIRED_UTILS_VERSION = "2.1.5"
-BUILD_ID = "20260201-v215-ux-improvements"  # Change this to force cache invalidation
+BUILD_ID = "20260201-v216-major-ux-overhaul"  # Change this to force cache invalidation
 
 def _verify_and_reload_utils():
     """Verify utils modules are at correct version, force reload if needed."""
@@ -93,7 +93,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF"
-APP_VERSION = "2.1.5"  # UX improvements: factors, snapshot, methods view, comprehensive instructor report
+APP_VERSION = "2.1.6"  # Major UX overhaul: factor detection, file names, effect size UI, file persistence, Start Over
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -809,16 +809,88 @@ def _render_email_setup_diagnostics() -> None:
             st.success("SendGrid basics look configured.")
 
 
+def _clean_condition_name(condition: str) -> str:
+    """Remove common suffixes and clean up condition names."""
+    # Remove common suffixes like (new), (copy), etc.
+    import re
+    cleaned = re.sub(r'\s*\(new\)\s*$', '', condition, flags=re.IGNORECASE)
+    cleaned = re.sub(r'\s*\(copy\)\s*$', '', cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r'\s*- copy\s*$', '', cleaned, flags=re.IGNORECASE)
+    return cleaned.strip()
+
+
+def _infer_factor_name(levels: List[str]) -> str:
+    """Try to infer a meaningful factor name from its levels."""
+    if not levels:
+        return "Factor"
+
+    # Common patterns and their factor names
+    level_set = set(l.lower().strip() for l in levels)
+
+    # AI-related
+    if any('ai' in l for l in level_set) or any('no ai' in l or 'noai' in l for l in level_set):
+        return "AI Presence"
+
+    # Control/Treatment
+    if 'control' in level_set or 'treatment' in level_set:
+        return "Treatment"
+
+    # High/Low patterns
+    if 'high' in level_set or 'low' in level_set:
+        # Try to find what's high/low
+        for level in levels:
+            if 'high' in level.lower():
+                base = level.lower().replace('high', '').strip()
+                if base:
+                    return base.title()
+        return "Level"
+
+    # Product type patterns
+    if any(x in level_set for x in ['hedonic', 'utilitarian', 'functional', 'experiential']):
+        return "Product Type"
+
+    # Price patterns
+    if any('price' in l or '$' in l for l in level_set):
+        return "Price"
+
+    # Brand patterns
+    if any('brand' in l for l in level_set):
+        return "Brand"
+
+    # If levels have common prefix, use that as base
+    if len(levels) >= 2:
+        # Find common words
+        words_sets = [set(l.lower().split()) for l in levels]
+        common_words = set.intersection(*words_sets) if words_sets else set()
+        if common_words:
+            # Remove common noise words
+            common_words -= {'the', 'a', 'an', 'with', 'without', 'no', 'vs'}
+            if common_words:
+                return ' '.join(sorted(common_words)).title()
+
+    return "Factor"
+
+
 def _infer_factors_from_conditions(conditions: List[str]) -> List[Dict[str, Any]]:
     """
-    Heuristic inference:
-    - If condition names look like 'A x B' (or 'A | B'), split into multiple factors.
-    - Otherwise represent as single factor called 'Condition'.
+    Parse factorial design from condition names.
+
+    Examples:
+    - "No AI x Utilitarian", "AI x Hedonic" → Factor 1: AI Presence (AI, No AI), Factor 2: Product Type (Utilitarian, Hedonic)
+    - "Control", "Treatment" → Single factor: Treatment (Control, Treatment)
     """
     if not conditions:
         return [{"name": "Condition", "levels": ["Condition A"]}]
 
-    seps = [" x ", " X ", " | ", " + ", " * "]
+    # Clean all condition names first
+    conditions = [_clean_condition_name(c) for c in conditions]
+    conditions = [c for c in conditions if c]  # Remove empty
+
+    if not conditions:
+        return [{"name": "Condition", "levels": ["Condition A"]}]
+
+    # Try to find separator
+    seps = [" x ", " X ", " × ", " | ", " * "]
 
     chosen_sep = None
     for sep in seps:
@@ -827,18 +899,29 @@ def _infer_factors_from_conditions(conditions: List[str]) -> List[Dict[str, Any]
             break
 
     if not chosen_sep:
+        # Single factor design
         return [{"name": "Condition", "levels": conditions}]
 
+    # Parse factorial structure
     split_rows = [c.split(chosen_sep) for c in conditions]
     max_parts = max(len(r) for r in split_rows)
 
+    # Check consistency
     if any(len(r) != max_parts for r in split_rows):
+        # Inconsistent splitting - fall back to single factor
         return [{"name": "Condition", "levels": conditions}]
 
+    # Extract unique levels for each factor position
     factors: List[Dict[str, Any]] = []
     for j in range(max_parts):
         levels = sorted(list({r[j].strip() for r in split_rows}))
-        factors.append({"name": f"Factor_{j+1}", "levels": levels})
+        factor_name = _infer_factor_name(levels)
+        # Make factor name unique if needed
+        existing_names = [f.get("name") for f in factors]
+        if factor_name in existing_names:
+            factor_name = f"{factor_name} {j+1}"
+        factors.append({"name": factor_name, "levels": levels})
+
     return factors
 
 
@@ -1164,6 +1247,28 @@ with st.sidebar:
     elif not step4_ready:
         if st.button("Go to Generate", key="jump_step4", use_container_width=True):
             _go_to_step(3)
+
+    # Start Over button
+    st.divider()
+    if st.button("🔄 Start Over", key="start_over_btn", use_container_width=True, type="secondary"):
+        # Clear all session state
+        keys_to_clear = [
+            "study_title", "study_description", "sample_size", "team_name", "team_members_raw",
+            "qsf_preview", "qsf_raw_content", "qsf_file_name",
+            "survey_pdf_content", "survey_pdf_name",
+            "prereg_pdf_content", "prereg_pdf_name", "prereg_text_sanitized", "prereg_pdf_text",
+            "prereg_outcomes", "prereg_iv", "prereg_exclusions", "prereg_analysis",
+            "enhanced_analysis", "inferred_design",
+            "selected_conditions", "current_conditions", "custom_conditions",
+            "last_df", "last_zip", "last_metadata",
+            "has_generated", "is_generating", "generation_requested",
+            "active_step",
+        ]
+        for key in keys_to_clear:
+            if key in st.session_state:
+                del st.session_state[key]
+        st.rerun()
+    st.caption("Clear all entries and start fresh")
 
 
 if "active_step" not in st.session_state:
@@ -1512,17 +1617,31 @@ if active_step == 1:
     # ========================================
     st.markdown("### 1. Upload Qualtrics Survey File *")
 
+    # Check if we already have a file uploaded (persistence)
+    existing_qsf_name = st.session_state.get("qsf_file_name")
+    existing_qsf_content = st.session_state.get("qsf_raw_content")
+
     col_qsf, col_help = st.columns([2, 1])
 
     with col_qsf:
-        qsf_file = st.file_uploader(
-            "QSF file",
-            type=["qsf", "zip", "json"],
-            help=(
-                "Export from Qualtrics via Tools → Import/Export → Export Survey. "
-                "Upload the .qsf (or .zip) here."
-            ),
-        )
+        # Show existing file info if available
+        if existing_qsf_name and existing_qsf_content:
+            st.success(f"✓ **{existing_qsf_name}** uploaded ({len(existing_qsf_content):,} bytes)")
+            change_qsf = st.checkbox("Upload a different QSF file", value=False, key="change_qsf")
+        else:
+            change_qsf = True  # No existing file, show uploader
+
+        if change_qsf or not existing_qsf_content:
+            qsf_file = st.file_uploader(
+                "QSF file",
+                type=["qsf", "zip", "json"],
+                help=(
+                    "Export from Qualtrics via Tools → Import/Export → Export Survey. "
+                    "Upload the .qsf (or .zip) here."
+                ),
+            )
+        else:
+            qsf_file = None  # Use existing
 
     with col_help:
         with st.expander("How to export from Qualtrics", expanded=False):
@@ -1606,12 +1725,25 @@ if active_step == 1:
 - Improves the quality of simulated open-ended responses
 """)
 
-    survey_pdf = st.file_uploader(
-        "Survey PDF",
-        type=["pdf"],
-        help="PDF export of your Qualtrics survey (optional but recommended)",
-        key="survey_pdf_uploader",
-    )
+    # Check for existing Survey PDF
+    existing_survey_pdf_name = st.session_state.get("survey_pdf_name")
+    existing_survey_pdf_content = st.session_state.get("survey_pdf_content")
+
+    if existing_survey_pdf_name and existing_survey_pdf_content:
+        st.success(f"✓ **{existing_survey_pdf_name}** uploaded ({len(existing_survey_pdf_content):,} bytes)")
+        change_survey_pdf = st.checkbox("Upload a different Survey PDF", value=False, key="change_survey_pdf")
+    else:
+        change_survey_pdf = True
+
+    if change_survey_pdf or not existing_survey_pdf_content:
+        survey_pdf = st.file_uploader(
+            "Survey PDF",
+            type=["pdf"],
+            help="PDF export of your Qualtrics survey (optional but recommended)",
+            key="survey_pdf_uploader",
+        )
+    else:
+        survey_pdf = None
 
     if survey_pdf is not None:
         try:
@@ -2312,16 +2444,31 @@ if active_step == 3:
         effect_sizes: List[EffectSizeSpec] = []
         custom_persona_weights = None
 
-        with st.expander("Standardized settings (locked)"):
-            st.json(
-                {
-                    "demographics": demographics,
-                    "attention_rate": attention_rate,
-                    "random_responder_rate": random_responder_rate,
-                    "exclusion_criteria": asdict(exclusion),
-                    "effect_sizes": [],
-                }
-            )
+        with st.expander("View standardized settings (locked for comparability)"):
+            st.markdown("""
+These settings are locked to ensure all simulations are comparable across teams.
+To customize these parameters, enable **Advanced mode** in the sidebar.
+""")
+            col_std1, col_std2 = st.columns(2)
+            with col_std1:
+                st.markdown("**Demographics**")
+                st.markdown(f"- Gender balance: {demographics['gender_quota']}% male / {100-demographics['gender_quota']}% female")
+                st.markdown(f"- Age: M = {demographics['age_mean']}, SD = {demographics['age_sd']}")
+
+                st.markdown("**Data Quality**")
+                st.markdown(f"- Attention check pass rate: {attention_rate:.0%}")
+                st.markdown(f"- Random/careless responders: {random_responder_rate:.0%}")
+
+            with col_std2:
+                st.markdown("**Exclusion Criteria**")
+                st.markdown(f"- Min completion time: {exclusion.completion_time_min_seconds}s (1 min)")
+                st.markdown(f"- Max completion time: {exclusion.completion_time_max_seconds}s (30 min)")
+                st.markdown(f"- Straight-line threshold: {exclusion.straight_line_threshold}+ items")
+                st.markdown(f"- Check duplicate IPs: {'Yes' if exclusion.duplicate_ip_check else 'No'}")
+
+                st.markdown("**Effect Sizes**")
+                st.markdown("- No directional effects (null hypothesis)")
+                st.caption("Enable Advanced mode to specify expected effect sizes")
     else:
         st.markdown("### Advanced settings")
 
@@ -2349,34 +2496,109 @@ if active_step == 3:
                 exclude_careless_responders=False,
             )
 
-        st.markdown("### Optional: expected effect sizes")
-        st.caption("Only add this if you want the simulated data to reflect a directional hypothesis.")
-        effects_json = st.text_area(
-            "Effect sizes (JSON list) - optional",
-            value="[]",
-            height=140,
-            help='Example: [{"variable":"Main_DV","factor":"Condition","level_high":"AI","level_low":"No AI","cohens_d":0.3,"direction":"positive"}]',
+        st.markdown("### Expected Effect Sizes (Optional)")
+        st.caption(
+            "Specify the expected effect size for your main hypothesis. "
+            "This makes the simulated data reflect a directional hypothesis rather than a null effect."
         )
+
         effect_sizes = []
-        try:
-            raw = json.loads(effects_json)
-            if isinstance(raw, list):
-                for e in raw:
-                    if not isinstance(e, dict):
-                        continue  # Skip non-dict entries
+
+        # Get available scales and factors for selection
+        available_scales = [s.get("name", "Main_DV") for s in scales] if scales else ["Main_DV"]
+        available_factors = [f.get("name", "Condition") for f in factors] if factors else ["Condition"]
+
+        add_effect = st.checkbox("Add an expected effect size", value=False, key="add_effect_checkbox")
+
+        if add_effect:
+            st.markdown("**Configure Effect**")
+
+            eff_col1, eff_col2 = st.columns(2)
+
+            with eff_col1:
+                # Select DV
+                effect_variable = st.selectbox(
+                    "Dependent variable (scale)",
+                    options=available_scales,
+                    key="effect_variable",
+                    help="Which outcome variable should show the effect?"
+                )
+
+                # Select factor
+                effect_factor = st.selectbox(
+                    "Factor (independent variable)",
+                    options=available_factors,
+                    key="effect_factor",
+                    help="Which factor creates the effect?"
+                )
+
+                # Get levels for selected factor
+                selected_factor_data = next((f for f in factors if f.get("name") == effect_factor), None)
+                factor_levels = selected_factor_data.get("levels", []) if selected_factor_data else all_conditions
+
+            with eff_col2:
+                # Effect direction and magnitude
+                st.markdown("**Effect magnitude (Cohen's d)**")
+                effect_d = st.slider(
+                    "Cohen's d",
+                    min_value=0.0,
+                    max_value=1.5,
+                    value=0.3,
+                    step=0.05,
+                    key="effect_cohens_d",
+                    help="0.2 = small, 0.5 = medium, 0.8 = large effect"
+                )
+
+                # Visual guide for effect size
+                if effect_d < 0.3:
+                    st.caption("📊 Small effect")
+                elif effect_d < 0.6:
+                    st.caption("📊 Medium effect")
+                else:
+                    st.caption("📊 Large effect")
+
+                effect_direction = st.radio(
+                    "Direction",
+                    options=["Higher in treatment", "Lower in treatment"],
+                    key="effect_direction",
+                    horizontal=True
+                )
+
+            # Level selection
+            if len(factor_levels) >= 2:
+                lev_col1, lev_col2 = st.columns(2)
+                with lev_col1:
+                    level_high = st.selectbox(
+                        "Higher-scoring condition",
+                        options=factor_levels,
+                        key="effect_level_high",
+                        help="Which condition should have higher scores?"
+                    )
+                with lev_col2:
+                    other_levels = [l for l in factor_levels if l != level_high]
+                    level_low = st.selectbox(
+                        "Lower-scoring condition",
+                        options=other_levels if other_levels else factor_levels,
+                        key="effect_level_low",
+                        help="Which condition should have lower scores?"
+                    )
+
+                # Build effect spec
+                if effect_variable and effect_factor and level_high and level_low:
                     effect_sizes.append(
                         EffectSizeSpec(
-                            variable=str(e.get("variable", "")),
-                            factor=str(e.get("factor", "")),
-                            level_high=str(e.get("level_high", "")),
-                            level_low=str(e.get("level_low", "")),
-                            cohens_d=float(e.get("cohens_d", 0.0)),
-                            direction=str(e.get("direction", "positive")),
+                            variable=effect_variable,
+                            factor=effect_factor,
+                            level_high=level_high,
+                            level_low=level_low,
+                            cohens_d=effect_d,
+                            direction="positive" if "Higher" in effect_direction else "negative",
                         )
                     )
-        except Exception as e:
-            st.error(f"Effect sizes JSON invalid; ignoring. ({e})")
-            effect_sizes = []
+                    st.success(
+                        f"Effect configured: **{effect_variable}** will be {effect_d:.2f}d higher "
+                        f"in '{level_high}' vs '{level_low}'"
+                    )
 
         custom_persona_weights = None
 
@@ -2533,12 +2755,12 @@ if active_step == 3:
             comprehensive_bytes = comprehensive_report.encode("utf-8")
 
             files = {
-                "Simulated.csv": csv_bytes,
+                "Simulated_Data.csv": csv_bytes,
                 "Metadata.json": meta_bytes,
-                "Column_Explainer.txt": explainer_bytes,
+                "Data_Codebook_Handbook.txt": explainer_bytes,  # Explains all variable coding
                 "R_Prepare_Data.R": r_bytes,
                 "Schema_Validation.json": _safe_json(schema_results).encode("utf-8"),
-                "Instructor_Report.md": instructor_bytes,
+                "Study_Summary.md": instructor_bytes,  # Summary report (not the comprehensive instructor analysis)
             }
 
             # Include uploaded source files in "Source_Files" subfolder
@@ -2588,14 +2810,20 @@ if active_step == 3:
                 "COMPREHENSIVE INSTRUCTOR ANALYSIS ATTACHED\n"
                 "=========================================\n\n"
                 "This email includes a detailed statistical analysis that students do NOT receive.\n"
-                "Students get only the basic Instructor_Report.md in their download.\n\n"
+                "Students get only Study_Summary.md in their download ZIP.\n\n"
                 f"Team: {st.session_state.get('team_name','')}\n"
                 f"Members:\n{st.session_state.get('team_members_raw','')}\n\n"
                 f"Study: {title}\n"
                 f"Sample Size: N={metadata.get('sample_size', 'N/A')}\n"
                 f"Conditions: {len(metadata.get('conditions', []))}\n"
                 f"Generated: {metadata.get('generation_timestamp','')}\n"
-                f"Run ID: {metadata.get('run_id','')}\n"
+                f"Run ID: {metadata.get('run_id','')}\n\n"
+                "Files in ZIP (what students see):\n"
+                "- Simulated_Data.csv (the data)\n"
+                "- Data_Codebook_Handbook.txt (variable coding)\n"
+                "- Study_Summary.md (basic summary)\n"
+                "- R_Prepare_Data.R (R script)\n"
+                "- Metadata.json, Schema_Validation.json\n"
             )
             ok, msg = _send_email_with_sendgrid(
                 to_email=instructor_email,
@@ -2603,8 +2831,8 @@ if active_step == 3:
                 body_text=body,
                 attachments=[
                     ("simulation_output.zip", zip_bytes),
-                    ("COMPREHENSIVE_Instructor_Analysis.md", comprehensive_bytes),  # Full statistical analysis
-                    ("Student_Instructor_Report.md", instructor_bytes),  # What students see
+                    ("INSTRUCTOR_Detailed_Analysis.md", comprehensive_bytes),  # Full statistical analysis (instructor only)
+                    ("Student_Study_Summary.md", instructor_bytes),  # What students see (for reference)
                 ],
             )
             if ok:
