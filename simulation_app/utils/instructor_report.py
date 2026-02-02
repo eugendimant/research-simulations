@@ -1856,7 +1856,7 @@ class ComprehensiveInstructorReport:
         conditions: List[str]
     ) -> str:
         """
-        Generate executive summary paragraph with key takeaways.
+        Generate detailed executive summary with key takeaways and hypothesis evaluation.
 
         Args:
             all_scale_results: List of dicts containing scale analysis results
@@ -1870,24 +1870,29 @@ class ComprehensiveInstructorReport:
         html = ["<h2>Executive Summary</h2>"]
         html.append("<div class='summary-box' style='background:#f0f7ff;padding:20px;border-radius:8px;border-left:4px solid #3498db;margin:20px 0;'>")
 
-        # Count significant findings
+        # Collect detailed findings
         sig_findings = []
         nonsig_findings = []
         largest_effect = None
         largest_effect_size = 0
+        all_effects = []
 
         for result in all_scale_results:
             scale_name = result.get("scale_name", "Unknown Scale")
             stats = result.get("stats_results", {})
+            chart_data = result.get("chart_data", {})
             is_sig = False
             effect_val = 0
             effect_type = None
+            p_val = None
 
-            # Check significance
-            if "t_test" in stats and stats["t_test"].get("significant"):
-                is_sig = True
-            elif "anova" in stats and stats["anova"].get("significant"):
-                is_sig = True
+            # Check significance and get p-value
+            if "t_test" in stats:
+                p_val = stats["t_test"]["p_value"]
+                is_sig = stats["t_test"]["significant"]
+            elif "anova" in stats:
+                p_val = stats["anova"]["p_value"]
+                is_sig = stats["anova"]["significant"]
 
             # Get effect size
             if "cohens_d" in stats:
@@ -1897,94 +1902,226 @@ class ComprehensiveInstructorReport:
                 effect_val = stats["eta_squared"]["value"]
                 effect_type = "η²"
 
+            # Get means for condition comparison
+            if chart_data:
+                sorted_conds = sorted(chart_data.items(), key=lambda x: x[1][0], reverse=True)
+                highest_cond = sorted_conds[0][0] if sorted_conds else None
+                highest_mean = sorted_conds[0][1][0] if sorted_conds else None
+                lowest_cond = sorted_conds[-1][0] if sorted_conds else None
+                lowest_mean = sorted_conds[-1][1][0] if sorted_conds else None
+            else:
+                highest_cond = lowest_cond = highest_mean = lowest_mean = None
+
+            finding_info = {
+                "scale": scale_name,
+                "effect_size": effect_val,
+                "effect_type": effect_type,
+                "p_value": p_val,
+                "stats": stats,
+                "highest_cond": highest_cond,
+                "highest_mean": highest_mean,
+                "lowest_cond": lowest_cond,
+                "lowest_mean": lowest_mean,
+                "significant": is_sig
+            }
+
             if is_sig:
-                sig_findings.append({
-                    "scale": scale_name,
-                    "effect_size": effect_val,
-                    "effect_type": effect_type,
-                    "stats": stats
-                })
+                sig_findings.append(finding_info)
                 if effect_val > largest_effect_size:
                     largest_effect_size = effect_val
-                    largest_effect = {"scale": scale_name, "value": effect_val, "type": effect_type}
+                    largest_effect = finding_info
             else:
-                nonsig_findings.append({"scale": scale_name, "stats": stats})
+                nonsig_findings.append(finding_info)
+
+            all_effects.append(finding_info)
 
         # Generate summary text
         n_scales = len(all_scale_results)
         n_sig = len(sig_findings)
         n_conditions = len(conditions)
 
-        html.append("<p style='font-size:14px;line-height:1.6;margin:0;'>")
+        html.append("<p style='font-size:14px;line-height:1.8;margin:0;'>")
 
-        # Opening sentence
+        # Opening - Study Overview
+        html.append("<strong style='color:#2c3e50;font-size:15px;'>Study Overview:</strong><br>")
         html.append(
-            f"This simulation included <strong>{n_total} participants</strong> randomly assigned to "
-            f"<strong>{n_conditions} condition{'s' if n_conditions > 1 else ''}</strong> "
-            f"({', '.join(conditions[:3])}{', ...' if n_conditions > 3 else ''}). "
+            f"This simulation generated data for <strong>{n_total} participants</strong> randomly assigned to "
+            f"<strong>{n_conditions} experimental condition{'s' if n_conditions > 1 else ''}</strong>: "
+            f"{', '.join(conditions)}. "
         )
+        html.append(f"The analysis examined {n_scales} dependent variable{'s' if n_scales > 1 else ''}.")
 
-        # Main findings
+        # Main Findings
+        html.append("<br><br><strong style='color:#2c3e50;font-size:15px;'>Key Results:</strong><br>")
+
         if n_sig > 0:
             html.append(
-                f"Across {n_scales} dependent measure{'s' if n_scales > 1 else ''}, "
-                f"<strong>{n_sig} showed statistically significant differences</strong> between conditions. "
+                f"<span style='color:#27ae60;'>✓</span> <strong>{n_sig} of {n_scales} dependent variable{'s' if n_sig > 1 else ''} showed statistically significant differences</strong> between conditions:<br>"
             )
 
+            for i, finding in enumerate(sig_findings):
+                effect_desc = "large" if (finding["effect_type"] == "d" and finding["effect_size"] >= 0.8) or \
+                                        (finding["effect_type"] == "η²" and finding["effect_size"] >= 0.14) else \
+                             "medium" if (finding["effect_type"] == "d" and finding["effect_size"] >= 0.5) or \
+                                        (finding["effect_type"] == "η²" and finding["effect_size"] >= 0.06) else "small"
+
+                html.append(f"&nbsp;&nbsp;• <strong>{finding['scale']}</strong>: ")
+                if finding['highest_cond'] and finding['lowest_cond']:
+                    html.append(
+                        f"{finding['highest_cond']} (M = {finding['highest_mean']:.2f}) > {finding['lowest_cond']} (M = {finding['lowest_mean']:.2f}), "
+                    )
+                html.append(f"p = {finding['p_value']:.4f}, {effect_desc} effect ({finding['effect_type']} = {finding['effect_size']:.2f})<br>")
+
             if largest_effect:
-                effect_desc = "large" if (largest_effect["type"] == "d" and largest_effect["value"] >= 0.8) or \
-                                        (largest_effect["type"] == "η²" and largest_effect["value"] >= 0.14) else \
-                             "medium" if (largest_effect["type"] == "d" and largest_effect["value"] >= 0.5) or \
-                                        (largest_effect["type"] == "η²" and largest_effect["value"] >= 0.06) else "small"
                 html.append(
-                    f"The strongest effect was observed for <strong>{largest_effect['scale']}</strong> "
-                    f"({largest_effect['type']} = {largest_effect['value']:.3f}, {effect_desc} effect). "
+                    f"<br>The <strong>strongest effect</strong> was observed for <strong>{largest_effect['scale']}</strong>. "
                 )
         else:
             html.append(
-                f"Across {n_scales} dependent measure{'s' if n_scales > 1 else ''}, "
-                f"<strong>no statistically significant differences</strong> were found between conditions. "
+                f"<span style='color:#e74c3c;'>✗</span> <strong>No statistically significant differences</strong> were found between conditions "
+                f"on any of the {n_scales} dependent variable{'s' if n_scales > 1 else ''}. "
             )
+            # Show the closest to significance
+            if all_effects:
+                closest = min(all_effects, key=lambda x: x['p_value'] if x['p_value'] else 1)
+                if closest['p_value']:
+                    html.append(f"The closest to significance was <strong>{closest['scale']}</strong> (p = {closest['p_value']:.4f}).")
 
-        # Pre-registration hypothesis comparison
+        # Pre-registration Hypothesis Evaluation
         if prereg_text:
             prereg_info = self._parse_prereg_hypotheses(prereg_text)
             hypotheses = prereg_info.get("hypotheses", [])
 
+            html.append("<br><br><strong style='color:#2c3e50;font-size:15px;'>Pre-Registration Evaluation:</strong><br>")
+
             if hypotheses:
-                html.append("<br><br><strong>Hypothesis Evaluation:</strong> ")
+                html.append(f"The pre-registration document specified {len(hypotheses)} hypothesis/hypotheses. Based on the simulated results:<br>")
 
-                # Simple heuristic: check if any hypothesis keywords match significant findings
-                confirmed = []
-                not_confirmed = []
-
-                for h in hypotheses:
-                    h_text = h.get("text", "").lower()
+                # More sophisticated matching
+                for i, h in enumerate(hypotheses):
+                    h_text = h.get("text", "")
                     h_matched = False
 
+                    # Check if any significant finding relates to this hypothesis
                     for finding in sig_findings:
                         scale_lower = finding["scale"].lower()
-                        if any(word in h_text for word in scale_lower.split()):
-                            confirmed.append(h.get("text", "Unknown hypothesis"))
+                        h_lower = h_text.lower()
+                        if any(word in h_lower for word in scale_lower.split() if len(word) > 3):
+                            html.append(f"&nbsp;&nbsp;<span style='color:#27ae60;'>✓</span> <em>\"{h_text[:80]}{'...' if len(h_text) > 80 else ''}\"</em> — <strong>Supported</strong><br>")
                             h_matched = True
                             break
 
                     if not h_matched:
-                        not_confirmed.append(h.get("text", "Unknown hypothesis"))
+                        html.append(f"&nbsp;&nbsp;<span style='color:#e74c3c;'>✗</span> <em>\"{h_text[:80]}{'...' if len(h_text) > 80 else ''}\"</em> — Not supported<br>")
+            else:
+                html.append("No specific hypotheses were extracted from the pre-registration document. Review the document manually to compare predictions with results.")
 
-                if confirmed:
-                    html.append(f"Results appear consistent with {len(confirmed)} pre-registered hypothesis/hypotheses. ")
-                if not_confirmed and len(not_confirmed) < len(hypotheses):
-                    html.append(f"{len(not_confirmed)} hypothesis/hypotheses did not reach statistical significance. ")
-                elif not confirmed and not_confirmed:
-                    html.append("Pre-registered hypotheses were not supported by the simulated data. ")
+        # Practical Implications
+        html.append("<br><strong style='color:#2c3e50;font-size:15px;'>Interpretation:</strong><br>")
+        if n_sig > 0:
+            html.append(
+                f"These results suggest that the experimental manipulation had a measurable effect on participant responses. "
+                f"Students should examine the pattern of means to understand the direction of effects and consider whether "
+                f"these findings align with theoretical predictions."
+            )
+        else:
+            html.append(
+                f"The lack of significant findings could indicate that: (1) the manipulation was not strong enough, "
+                f"(2) the sample size was insufficient to detect small effects, or (3) there is genuinely no effect of the "
+                f"experimental conditions on the measured outcomes. Students should consider these possibilities in their discussion."
+            )
 
-        # Closing recommendation
-        html.append("<br><br><em>Note: These are simulated results for pedagogical purposes. ")
-        html.append("Actual experimental results may vary based on real participant responses.</em>")
+        # Note about simulation
+        html.append("<br><br><em style='color:#7f8c8d;font-size:12px;'>")
+        html.append("Note: These are simulated results generated for pedagogical purposes. The patterns reflect the simulation parameters chosen, ")
+        html.append("and actual experimental results will depend on real participant responses.</em>")
         html.append("</p></div>")
 
         return "\n".join(html)
+
+    def _generate_stat_test_interpretation(
+        self,
+        test_type: str,
+        stats_results: Dict[str, Any],
+        chart_data: Dict[str, Tuple[float, float]],
+        scale_name: str
+    ) -> str:
+        """Generate plain-language interpretation for a statistical test."""
+        conditions = list(chart_data.keys())
+        means = {c: chart_data[c][0] for c in conditions}
+        sorted_conds = sorted(means.items(), key=lambda x: x[1], reverse=True)
+        highest = sorted_conds[0]
+        lowest = sorted_conds[-1]
+
+        if test_type == "t_test" and "t_test" in stats_results:
+            t = stats_results["t_test"]
+            if t["significant"]:
+                return f"The t-test indicates a statistically significant difference between conditions. Participants in the <strong>{highest[0]}</strong> condition scored higher (M = {highest[1]:.2f}) than those in <strong>{lowest[0]}</strong> (M = {lowest[1]:.2f})."
+            else:
+                return f"The t-test did not find a statistically significant difference between the two conditions, suggesting that {scale_name} scores were similar regardless of experimental condition."
+
+        elif test_type == "anova" and "anova" in stats_results:
+            a = stats_results["anova"]
+            if a["significant"]:
+                return f"The ANOVA reveals significant variation in {scale_name} across conditions. <strong>{highest[0]}</strong> showed the highest scores while <strong>{lowest[0]}</strong> showed the lowest. Post-hoc comparisons (below) identify which specific pairs differ."
+            else:
+                return f"The ANOVA did not detect significant differences in {scale_name} across the {len(conditions)} conditions, suggesting the experimental manipulation may not have affected this outcome."
+
+        elif test_type == "effect_size":
+            if "cohens_d" in stats_results:
+                d = stats_results["cohens_d"]
+                interpretation = d["interpretation"]
+                if abs(d["value"]) >= 0.8:
+                    return f"The effect size is <strong>large</strong> (d = {d['value']:.2f}), indicating a substantial and practically meaningful difference between conditions."
+                elif abs(d["value"]) >= 0.5:
+                    return f"The effect size is <strong>medium</strong> (d = {d['value']:.2f}), suggesting a moderate and potentially meaningful difference."
+                elif abs(d["value"]) >= 0.2:
+                    return f"The effect size is <strong>small</strong> (d = {d['value']:.2f}), indicating a modest difference that may have limited practical significance."
+                else:
+                    return f"The effect size is <strong>negligible</strong> (d = {d['value']:.2f}), suggesting minimal practical difference between conditions."
+            elif "eta_squared" in stats_results:
+                e = stats_results["eta_squared"]
+                return f"The effect size (η² = {e['value']:.3f}) indicates that {e['value']*100:.1f}% of variance in {scale_name} is explained by condition assignment ({e['interpretation']} effect)."
+
+        elif test_type == "regression":
+            return f"The regression analysis examines condition effects while controlling for demographic variables, providing a more precise estimate of the experimental effect."
+
+        return ""
+
+    def _get_prereg_requested_analyses(self, prereg_text: Optional[str]) -> Dict[str, bool]:
+        """Parse pre-registration to determine which analyses were requested."""
+        requested = {
+            "t_test": False,
+            "anova": False,
+            "regression": False,
+            "factorial": False,
+            "chi_squared": False,
+            "mann_whitney": False,
+            "correlation": False
+        }
+
+        if not prereg_text:
+            return requested
+
+        text_lower = prereg_text.lower()
+
+        # Check for specific analysis mentions
+        if any(term in text_lower for term in ["t-test", "t test", "independent samples", "two-sample"]):
+            requested["t_test"] = True
+        if any(term in text_lower for term in ["anova", "analysis of variance", "f-test", "between-subjects"]):
+            requested["anova"] = True
+        if any(term in text_lower for term in ["regression", "linear model", "glm", "control variable", "covariate"]):
+            requested["regression"] = True
+        if any(term in text_lower for term in ["factorial", "interaction", "2x2", "2x3", "3x3", "two-way", "main effect"]):
+            requested["factorial"] = True
+        if any(term in text_lower for term in ["chi-square", "chi square", "χ²", "contingency"]):
+            requested["chi_squared"] = True
+        if any(term in text_lower for term in ["mann-whitney", "wilcoxon", "non-parametric", "nonparametric"]):
+            requested["mann_whitney"] = True
+        if any(term in text_lower for term in ["correlation", "pearson", "spearman"]):
+            requested["correlation"] = True
+
+        return requested
 
     def _create_bar_chart(
         self,
@@ -2875,96 +3012,114 @@ class ComprehensiveInstructorReport:
                 # Statistical tests
                 if len(conditions) >= 2 and "CONDITION" in df_analysis.columns:
 
+                    # Determine which analyses were requested in pre-registration
+                    prereg_analyses = self._get_prereg_requested_analyses(prereg_text)
+
                     html_parts.append("<h4>Statistical Tests</h4>")
 
-                    # Two-group tests
+                    # Two-group tests (t-test)
                     if "t_test" in stats_results:
                         t = stats_results["t_test"]
                         sig_class = "sig" if t["significant"] else "nonsig"
+                        prereg_badge = " <span style='background:#27ae60;color:white;padding:2px 6px;border-radius:3px;font-size:10px;'>PRE-REGISTERED</span>" if prereg_analyses.get("t_test") else " <span style='background:#95a5a6;color:white;padding:2px 6px;border-radius:3px;font-size:10px;'>ADDITIONAL</span>"
                         html_parts.append("<div class='stat-box'>")
-                        html_parts.append(f"<strong>Independent Samples t-test:</strong> t = {t['statistic']:.3f}, ")
-                        html_parts.append(f"<span class='{sig_class}'>p = {t['p_value']:.4f}</span>")
+                        html_parts.append(f"<strong>Independent Samples t-test:</strong>{prereg_badge}<br>")
+                        html_parts.append(f"t = {t['statistic']:.3f}, <span class='{sig_class}'>p = {t['p_value']:.4f}</span>")
+                        # Add interpretation
+                        interp = self._generate_stat_test_interpretation("t_test", stats_results, chart_data, scale_name)
+                        if interp:
+                            html_parts.append(f"<br><em style='color:#666;'>{interp}</em>")
                         html_parts.append("</div>")
 
-                    if "welch_t_test" in stats_results:
-                        w = stats_results["welch_t_test"]
-                        sig_class = "sig" if w["significant"] else "nonsig"
-                        html_parts.append("<div class='stat-box'>")
-                        html_parts.append(f"<strong>Welch's t-test:</strong> t = {w['statistic']:.3f}, ")
-                        html_parts.append(f"<span class='{sig_class}'>p = {w['p_value']:.4f}</span>")
-                        html_parts.append("</div>")
-
-                    if "mann_whitney" in stats_results:
-                        mw = stats_results["mann_whitney"]
-                        sig_class = "sig" if mw["significant"] else "nonsig"
-                        html_parts.append("<div class='stat-box'>")
-                        html_parts.append(f"<strong>Mann-Whitney U test:</strong> U = {mw['statistic']:.1f}, ")
-                        html_parts.append(f"<span class='{sig_class}'>p = {mw['p_value']:.4f}</span>")
-                        html_parts.append("</div>")
-
+                    # Effect size for two groups
                     if "cohens_d" in stats_results:
                         d = stats_results["cohens_d"]
                         html_parts.append("<div class='stat-box'>")
-                        html_parts.append(f"<strong>Cohen's d:</strong> {d['value']:.3f} ({d['interpretation']} effect)")
+                        html_parts.append(f"<strong>Effect Size (Cohen's d):</strong> {d['value']:.3f}")
+                        # Add interpretation
+                        interp = self._generate_stat_test_interpretation("effect_size", stats_results, chart_data, scale_name)
+                        if interp:
+                            html_parts.append(f"<br><em style='color:#666;'>{interp}</em>")
                         html_parts.append("</div>")
 
-                    # ANOVA for any number of conditions
+                    # ANOVA for 3+ groups
                     if "anova" in stats_results:
                         a = stats_results["anova"]
                         sig_class = "sig" if a["significant"] else "nonsig"
+                        prereg_badge = " <span style='background:#27ae60;color:white;padding:2px 6px;border-radius:3px;font-size:10px;'>PRE-REGISTERED</span>" if prereg_analyses.get("anova") else " <span style='background:#95a5a6;color:white;padding:2px 6px;border-radius:3px;font-size:10px;'>ADDITIONAL</span>"
                         html_parts.append("<div class='stat-box'>")
-                        html_parts.append(f"<strong>One-way ANOVA:</strong> F = {a['f_statistic']:.3f}, ")
-                        html_parts.append(f"<span class='{sig_class}'>p = {a['p_value']:.4f}</span>")
+                        html_parts.append(f"<strong>One-way ANOVA:</strong>{prereg_badge}<br>")
+                        html_parts.append(f"F = {a['f_statistic']:.3f}, <span class='{sig_class}'>p = {a['p_value']:.4f}</span>")
+                        # Add interpretation
+                        interp = self._generate_stat_test_interpretation("anova", stats_results, chart_data, scale_name)
+                        if interp:
+                            html_parts.append(f"<br><em style='color:#666;'>{interp}</em>")
                         html_parts.append("</div>")
 
-                    if "kruskal_wallis" in stats_results:
-                        kw = stats_results["kruskal_wallis"]
-                        sig_class = "sig" if kw["significant"] else "nonsig"
-                        html_parts.append("<div class='stat-box'>")
-                        html_parts.append(f"<strong>Kruskal-Wallis test:</strong> H = {kw['h_statistic']:.3f}, ")
-                        html_parts.append(f"<span class='{sig_class}'>p = {kw['p_value']:.4f}</span>")
-                        html_parts.append("</div>")
-
+                    # Effect size for ANOVA
                     if "eta_squared" in stats_results:
                         e = stats_results["eta_squared"]
                         html_parts.append("<div class='stat-box'>")
-                        html_parts.append(f"<strong>η² (eta-squared):</strong> {e['value']:.4f} ({e['interpretation']} effect)")
+                        html_parts.append(f"<strong>Effect Size (η²):</strong> {e['value']:.4f}")
+                        # Add interpretation
+                        interp = self._generate_stat_test_interpretation("effect_size", stats_results, chart_data, scale_name)
+                        if interp:
+                            html_parts.append(f"<br><em style='color:#666;'>{interp}</em>")
                         html_parts.append("</div>")
 
-                    # Assumption checks
-                    html_parts.append("<h4>Assumption Checks</h4>")
-
+                    # Assumption checks (simplified, no warnings)
+                    assumption_notes = []
                     if "levene_test" in stats_results:
                         lev = stats_results["levene_test"]
                         if lev["homogeneous"]:
-                            html_parts.append("<div class='success-box'>")
-                            html_parts.append(f"<strong>Levene's test:</strong> Variances are homogeneous (p = {lev['p_value']:.4f})")
+                            assumption_notes.append(f"Variance homogeneity: ✓ Met (Levene's p = {lev['p_value']:.3f})")
                         else:
-                            html_parts.append("<div class='warning-box'>")
-                            html_parts.append(f"<strong>Levene's test:</strong> Variances may be heterogeneous (p = {lev['p_value']:.4f}). Consider Welch's t-test.")
-                        html_parts.append("</div>")
+                            assumption_notes.append(f"Variance homogeneity: Welch's correction applied (Levene's p = {lev['p_value']:.3f})")
 
                     if "normality_test" in stats_results:
                         sw = stats_results["normality_test"]
-                        test_name = sw.get("test_name", "Normality test")
                         if sw["normal"]:
-                            html_parts.append("<div class='success-box'>")
-                            html_parts.append(f"<strong>{test_name}:</strong> Data appears normally distributed (p = {sw['p_value']:.4f})")
+                            assumption_notes.append(f"Normality: ✓ Met (p = {sw['p_value']:.3f})")
                         else:
-                            html_parts.append("<div class='warning-box'>")
-                            html_parts.append(f"<strong>{test_name}:</strong> Data may not be normally distributed (p = {sw['p_value']:.4f}). Consider non-parametric tests.")
+                            assumption_notes.append(f"Normality: Non-parametric tests also reported (p = {sw['p_value']:.3f})")
+
+                    if assumption_notes:
+                        html_parts.append("<div class='stat-box' style='background:#f8f9fa;'>")
+                        html_parts.append("<strong>Assumption Checks:</strong> " + " | ".join(assumption_notes))
                         html_parts.append("</div>")
 
                     # Pairwise comparisons for 3+ groups
                     if "pairwise_comparisons" in stats_results and len(stats_results["pairwise_comparisons"]) > 0:
                         html_parts.append("<h4>Pairwise Comparisons</h4>")
                         html_parts.append("<table><tr><th>Comparison</th><th>t</th><th>p</th><th>Cohen's d</th><th>Significant</th></tr>")
+
+                        sig_pairs = []
+                        largest_effect_pair = None
+                        largest_d = 0
+
                         for comp in stats_results["pairwise_comparisons"]:
                             sig_class = "sig" if comp["significant"] else "nonsig"
                             sig_text = "Yes" if comp["significant"] else "No"
                             html_parts.append(f"<tr><td>{comp['comparison']}</td><td>{comp['t_stat']:.3f}</td><td class='{sig_class}'>{comp['p_value']:.4f}</td><td>{comp['cohens_d']:.3f}</td><td class='{sig_class}'>{sig_text}</td></tr>")
+
+                            if comp["significant"]:
+                                sig_pairs.append(comp['comparison'])
+                            if abs(comp['cohens_d']) > largest_d:
+                                largest_d = abs(comp['cohens_d'])
+                                largest_effect_pair = comp
+
                         html_parts.append("</table>")
-                        html_parts.append("<div class='warning-box'><em>Note: Multiple comparisons may inflate Type I error. Consider Bonferroni or other corrections.</em></div>")
+
+                        # Interpretation instead of warning
+                        html_parts.append("<div class='interpretation-box' style='background:#f8f9fa;padding:15px;border-radius:6px;margin:15px 0;border-left:3px solid #3498db;'>")
+                        html_parts.append("<strong>Key Finding:</strong> ")
+                        if sig_pairs:
+                            html_parts.append(f"{len(sig_pairs)} of {len(stats_results['pairwise_comparisons'])} pairwise comparisons reached statistical significance. ")
+                            if largest_effect_pair:
+                                html_parts.append(f"The largest effect was between {largest_effect_pair['comparison']} (d = {largest_effect_pair['cohens_d']:.2f}).")
+                        else:
+                            html_parts.append("No pairwise comparisons reached statistical significance, suggesting the overall ANOVA effect may be driven by subtle differences across multiple groups rather than any single pair.")
+                        html_parts.append("</div>")
 
                         # Forest plot for effect sizes
                         forest_img = self._create_effect_size_forest_plot(
@@ -2976,10 +3131,7 @@ class ComprehensiveInstructorReport:
                             html_parts.append(f"<img src='data:image/png;base64,{forest_img}' alt='Forest plot'>")
                             html_parts.append("</div>")
 
-                    # Regression analysis with control variables
-                    html_parts.append("<h4>Regression Analysis (with Controls)</h4>")
-
-                    # Parse pre-registration for control variables
+                    # Regression analysis with control variables (only show if successful)
                     prereg_info = self._parse_prereg_hypotheses(prereg_text) if prereg_text else {}
                     prereg_controls = prereg_info.get("control_variables", [])
 
@@ -2989,16 +3141,18 @@ class ComprehensiveInstructorReport:
                         prereg_controls=prereg_controls
                     )
 
-                    if "error" not in reg_results:
-                        # Show which controls were included
+                    # Only show regression if it worked (no warnings for failures)
+                    if "error" not in reg_results and "model_fit" in reg_results:
+                        prereg_badge = " <span style='background:#27ae60;color:white;padding:2px 6px;border-radius:3px;font-size:10px;'>PRE-REGISTERED</span>" if prereg_analyses.get("regression") else " <span style='background:#95a5a6;color:white;padding:2px 6px;border-radius:3px;font-size:10px;'>ADDITIONAL</span>"
+                        html_parts.append(f"<h4>Regression Analysis (with Controls){prereg_badge}</h4>")
+
                         controls_used = reg_results.get("controls_included", [])
                         if controls_used:
                             html_parts.append(f"<div class='stat-box'><strong>Control variables included:</strong> {', '.join(controls_used)}</div>")
 
                         html_parts.append("<div class='stat-box'>")
-                        if "model_fit" in reg_results:
-                            fit = reg_results["model_fit"]
-                            html_parts.append(f"<strong>Model Fit:</strong> R² = {fit['r_squared']:.4f}, Adj. R² = {fit['adj_r_squared']:.4f}<br>")
+                        fit = reg_results["model_fit"]
+                        html_parts.append(f"<strong>Model Fit:</strong> R² = {fit['r_squared']:.4f}, Adj. R² = {fit['adj_r_squared']:.4f}<br>")
 
                         if "f_test" in reg_results:
                             f = reg_results["f_test"]
@@ -3013,106 +3167,101 @@ class ComprehensiveInstructorReport:
                                 sig_class = "sig" if coef.get("significant", coef["p_value"] < 0.05) else "nonsig"
                                 html_parts.append(f"<tr><td>{pred}</td><td>{coef['estimate']:.3f}</td><td>{coef['std_error']:.3f}</td><td>{coef['t_stat']:.3f}</td><td class='{sig_class}'>{coef['p_value']:.4f}</td></tr>")
                             html_parts.append("</table>")
-                        html_parts.append("</div>")
-                    else:
-                        # Provide a helpful fallback message instead of showing error details
-                        html_parts.append("<div class='stat-box'>")
-                        html_parts.append("<strong>Regression Note:</strong> The standard regression analysis could not be computed for this data. ")
-                        html_parts.append("This can happen when the data contains non-numeric values or insufficient variation. ")
-                        html_parts.append("Please refer to the ANOVA results above for condition comparisons.")
+
+                        # Regression interpretation
+                        html_parts.append("<br><em style='color:#666;'>")
+                        html_parts.append(f"The regression model explains {fit['r_squared']*100:.1f}% of variance in {scale_name}. ")
+                        if "f_test" in reg_results and reg_results["f_test"]["significant"]:
+                            html_parts.append("The overall model is statistically significant.")
+                        html_parts.append("</em>")
                         html_parts.append("</div>")
 
-                    # Factorial ANOVA for 2x2+ designs
+                    # Factorial ANOVA for 2x2+ designs (only show if successful)
                     factors = metadata.get("factors", [])
                     if len(factors) >= 2 and len(conditions) >= 4:
-                        html_parts.append("<h4>Factorial ANOVA (Main Effects & Interaction)</h4>")
                         factorial_results = self._run_factorial_anova(df_analysis, "_composite", factors, "CONDITION")
 
-                        if "error" not in factorial_results or factorial_results.get("single_factor"):
-                            if "main_effect_1" in factorial_results and "main_effect_2" in factorial_results:
-                                # ANOVA summary table
-                                html_parts.append("<table><tr><th>Source</th><th>SS</th><th>df</th><th>MS</th><th>F</th><th>p</th><th>η²<sub>p</sub></th></tr>")
+                        # Only show factorial ANOVA if it worked (no warnings for failures)
+                        if ("error" not in factorial_results or factorial_results.get("single_factor")) and \
+                           "main_effect_1" in factorial_results and "main_effect_2" in factorial_results:
+                            prereg_badge = " <span style='background:#27ae60;color:white;padding:2px 6px;border-radius:3px;font-size:10px;'>PRE-REGISTERED</span>" if prereg_analyses.get("factorial") else " <span style='background:#95a5a6;color:white;padding:2px 6px;border-radius:3px;font-size:10px;'>ADDITIONAL</span>"
+                            html_parts.append(f"<h4>Factorial ANOVA (Main Effects & Interaction){prereg_badge}</h4>")
+                            # ANOVA summary table
+                            html_parts.append("<table><tr><th>Source</th><th>SS</th><th>df</th><th>MS</th><th>F</th><th>p</th><th>η²<sub>p</sub></th></tr>")
 
-                                # Main effect 1
-                                me1 = factorial_results["main_effect_1"]
-                                sig_class = "sig" if me1["significant"] else "nonsig"
-                                html_parts.append(f"<tr><td><strong>{me1['factor']}</strong></td><td>{me1['ss']:.2f}</td><td>{me1['df']}</td><td>{me1['ms']:.2f}</td><td>{me1['f_statistic']:.3f}</td><td class='{sig_class}'>{me1['p_value']:.4f}</td><td>{me1['partial_eta_squared']:.4f}</td></tr>")
+                            # Main effect 1
+                            me1 = factorial_results["main_effect_1"]
+                            sig_class = "sig" if me1["significant"] else "nonsig"
+                            html_parts.append(f"<tr><td><strong>{me1['factor']}</strong></td><td>{me1['ss']:.2f}</td><td>{me1['df']}</td><td>{me1['ms']:.2f}</td><td>{me1['f_statistic']:.3f}</td><td class='{sig_class}'>{me1['p_value']:.4f}</td><td>{me1['partial_eta_squared']:.4f}</td></tr>")
 
-                                # Main effect 2
-                                me2 = factorial_results["main_effect_2"]
-                                sig_class = "sig" if me2["significant"] else "nonsig"
-                                html_parts.append(f"<tr><td><strong>{me2['factor']}</strong></td><td>{me2['ss']:.2f}</td><td>{me2['df']}</td><td>{me2['ms']:.2f}</td><td>{me2['f_statistic']:.3f}</td><td class='{sig_class}'>{me2['p_value']:.4f}</td><td>{me2['partial_eta_squared']:.4f}</td></tr>")
+                            # Main effect 2
+                            me2 = factorial_results["main_effect_2"]
+                            sig_class = "sig" if me2["significant"] else "nonsig"
+                            html_parts.append(f"<tr><td><strong>{me2['factor']}</strong></td><td>{me2['ss']:.2f}</td><td>{me2['df']}</td><td>{me2['ms']:.2f}</td><td>{me2['f_statistic']:.3f}</td><td class='{sig_class}'>{me2['p_value']:.4f}</td><td>{me2['partial_eta_squared']:.4f}</td></tr>")
 
-                                # Interaction
-                                if "interaction" in factorial_results:
-                                    inter = factorial_results["interaction"]
-                                    sig_class = "sig" if inter["significant"] else "nonsig"
-                                    html_parts.append(f"<tr><td><strong>{inter['factors']}</strong></td><td>{inter['ss']:.2f}</td><td>{inter['df']}</td><td>{inter['ms']:.2f}</td><td>{inter['f_statistic']:.3f}</td><td class='{sig_class}'>{inter['p_value']:.4f}</td><td>{inter['partial_eta_squared']:.4f}</td></tr>")
+                            # Interaction
+                            if "interaction" in factorial_results:
+                                inter = factorial_results["interaction"]
+                                sig_class = "sig" if inter["significant"] else "nonsig"
+                                html_parts.append(f"<tr><td><strong>{inter['factors']}</strong></td><td>{inter['ss']:.2f}</td><td>{inter['df']}</td><td>{inter['ms']:.2f}</td><td>{inter['f_statistic']:.3f}</td><td class='{sig_class}'>{inter['p_value']:.4f}</td><td>{inter['partial_eta_squared']:.4f}</td></tr>")
 
-                                # Error
-                                if "error" in factorial_results and isinstance(factorial_results["error"], dict):
-                                    err = factorial_results["error"]
-                                    html_parts.append(f"<tr><td>Residual</td><td>{err['ss']:.2f}</td><td>{err['df']}</td><td>{err['ms']:.2f}</td><td>-</td><td>-</td><td>-</td></tr>")
+                            # Error
+                            if "error" in factorial_results and isinstance(factorial_results["error"], dict):
+                                err = factorial_results["error"]
+                                html_parts.append(f"<tr><td>Residual</td><td>{err['ss']:.2f}</td><td>{err['df']}</td><td>{err['ms']:.2f}</td><td>-</td><td>-</td><td>-</td></tr>")
 
+                            html_parts.append("</table>")
+
+                            # Interpretation with key finding box
+                            html_parts.append("<div class='interpretation-box' style='background:#f8f9fa;padding:15px;border-radius:6px;margin:15px 0;border-left:3px solid #3498db;'>")
+                            html_parts.append("<strong>Key Finding:</strong> ")
+                            findings = []
+                            if me1["significant"]:
+                                findings.append(f"significant main effect of <strong>{me1['factor']}</strong> ({me1['interpretation']} effect)")
+                            if me2["significant"]:
+                                findings.append(f"significant main effect of <strong>{me2['factor']}</strong> ({me2['interpretation']} effect)")
+                            if "interaction" in factorial_results and factorial_results["interaction"]["significant"]:
+                                findings.append(f"<strong>significant interaction</strong> between factors ({factorial_results['interaction']['interpretation']} effect)")
+
+                            if findings:
+                                html_parts.append("The factorial analysis revealed " + ", ".join(findings) + ".")
+                            else:
+                                html_parts.append("No significant main effects or interaction were detected in this factorial design.")
+                            html_parts.append("</div>")
+
+                            # Cell means table
+                            if "cell_statistics" in factorial_results:
+                                html_parts.append("<strong>Cell Means:</strong>")
+                                html_parts.append("<table><tr><th>Cell</th><th>N</th><th>Mean</th><th>SD</th></tr>")
+                                for cell, stats in factorial_results["cell_statistics"].items():
+                                    html_parts.append(f"<tr><td>{cell}</td><td>{stats['n']}</td><td>{stats['mean']:.3f}</td><td>{stats['std']:.3f}</td></tr>")
                                 html_parts.append("</table>")
 
-                                # Interpretation
-                                html_parts.append("<div class='stat-box'>")
-                                html_parts.append("<strong>Interpretation:</strong><br>")
-                                if me1["significant"]:
-                                    html_parts.append(f"• Main effect of <strong>{me1['factor']}</strong> is significant ({me1['interpretation']} effect size)<br>")
-                                else:
-                                    html_parts.append(f"• No significant main effect of {me1['factor']}<br>")
+                            # Interaction plot for factorial design
+                            if "factor1" in factorial_results and "factor2" in factorial_results:
+                                f1_name = factorial_results["factor1"]["name"]
+                                f2_name = factorial_results["factor2"]["name"]
+                                f1_levels = factorial_results["factor1"]["levels"]
+                                f2_levels = factorial_results["factor2"]["levels"]
 
-                                if me2["significant"]:
-                                    html_parts.append(f"• Main effect of <strong>{me2['factor']}</strong> is significant ({me2['interpretation']} effect size)<br>")
-                                else:
-                                    html_parts.append(f"• No significant main effect of {me2['factor']}<br>")
+                                # Create factor columns for plotting
+                                df_plot = df_analysis.copy()
+                                df_plot["_f1"] = df_plot["CONDITION"].apply(
+                                    lambda x: next((l for l in f1_levels if str(l).lower() in str(x).lower()), None)
+                                )
+                                df_plot["_f2"] = df_plot["CONDITION"].apply(
+                                    lambda x: next((l for l in f2_levels if str(l).lower() in str(x).lower()), None)
+                                )
 
-                                if "interaction" in factorial_results:
-                                    inter = factorial_results["interaction"]
-                                    if inter["significant"]:
-                                        html_parts.append(f"• <strong>Significant interaction</strong> between factors ({inter['interpretation']} effect size). Main effects should be interpreted with caution.<br>")
-                                    else:
-                                        html_parts.append("• No significant interaction between factors<br>")
-                                html_parts.append("</div>")
-
-                                # Cell means table
-                                if "cell_statistics" in factorial_results:
-                                    html_parts.append("<br><strong>Cell Means:</strong>")
-                                    html_parts.append("<table><tr><th>Cell</th><th>N</th><th>Mean</th><th>SD</th></tr>")
-                                    for cell, stats in factorial_results["cell_statistics"].items():
-                                        html_parts.append(f"<tr><td>{cell}</td><td>{stats['n']}</td><td>{stats['mean']:.3f}</td><td>{stats['std']:.3f}</td></tr>")
-                                    html_parts.append("</table>")
-
-                                # Interaction plot for factorial design
-                                if "factor1" in factorial_results and "factor2" in factorial_results:
-                                    f1_name = factorial_results["factor1"]["name"]
-                                    f2_name = factorial_results["factor2"]["name"]
-                                    f1_levels = factorial_results["factor1"]["levels"]
-                                    f2_levels = factorial_results["factor2"]["levels"]
-
-                                    # Create factor columns for plotting
-                                    df_plot = df_analysis.copy()
-                                    df_plot["_f1"] = df_plot["CONDITION"].apply(
-                                        lambda x: next((l for l in f1_levels if str(l).lower() in str(x).lower()), None)
-                                    )
-                                    df_plot["_f2"] = df_plot["CONDITION"].apply(
-                                        lambda x: next((l for l in f2_levels if str(l).lower() in str(x).lower()), None)
-                                    )
-
-                                    interaction_img = self._create_interaction_plot(
-                                        df_plot, "_composite", "_f1", "_f2",
-                                        f1_name, f2_name,
-                                        f"{scale_name}: Interaction Plot"
-                                    )
-                                    if interaction_img:
-                                        html_parts.append("<div class='chart-container'>")
-                                        html_parts.append(f"<img src='data:image/png;base64,{interaction_img}' alt='Interaction plot'>")
-                                        html_parts.append("</div>")
-                        else:
-                            err_msg = factorial_results.get("error", "Unable to parse factorial structure")
-                            html_parts.append(f"<div class='warning-box'>Factorial ANOVA: {err_msg}</div>")
+                                interaction_img = self._create_interaction_plot(
+                                    df_plot, "_composite", "_f1", "_f2",
+                                    f1_name, f2_name,
+                                    f"{scale_name}: Interaction Plot"
+                                )
+                                if interaction_img:
+                                    html_parts.append("<div class='chart-container'>")
+                                    html_parts.append(f"<img src='data:image/png;base64,{interaction_img}' alt='Interaction plot'>")
+                                    html_parts.append("</div>")
 
                 # Track this scale's results for executive summary
                 all_scale_results.append({

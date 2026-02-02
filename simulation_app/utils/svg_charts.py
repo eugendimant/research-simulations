@@ -339,8 +339,8 @@ def create_histogram_svg(
     title: str = "Score Distribution Histogram",
     xlabel: str = "Score",
     n_bins: int = 10,
-    width: int = 600,
-    height: int = 350
+    width: int = 750,
+    height: int = 400
 ) -> str:
     """
     Create an SVG histogram showing overlapping distributions.
@@ -359,8 +359,14 @@ def create_histogram_svg(
     if not data or all(len(v) == 0 for v in data.values()):
         return _create_no_data_svg(width, height, "No data available for histogram")
 
+    conditions = list(data.keys())
+    n_conditions = len(conditions)
+
+    # Dynamic right margin based on longest label
+    max_label_len = max(len(str(c)) for c in conditions) if conditions else 10
+    margin_right = min(220, max(140, max_label_len * 7 + 30))
+
     margin_left = 60
-    margin_right = 120  # Space for legend
     margin_top = 50
     margin_bottom = 60
     chart_width = width - margin_left - margin_right
@@ -422,8 +428,6 @@ def create_histogram_svg(
             )
 
     # Draw histogram bars for each condition (slightly offset for visibility)
-    conditions = list(data.keys())
-    n_conditions = len(conditions)
     sub_bar_width = chart_width / n_bins / (n_conditions + 0.5)
 
     for cond_idx, cond in enumerate(conditions):
@@ -442,16 +446,17 @@ def create_histogram_svg(
                 f'<rect x="{x_left}" y="{y_top}" width="{sub_bar_width * 0.9}" height="{bar_height}" fill="{color}" opacity="0.7"/>'
             )
 
-    # Legend
+    # Legend with full labels
     legend_x = width - margin_right + 10
     for i, cond in enumerate(conditions):
-        legend_y = margin_top + 20 + i * 20
-        label = cond if len(cond) <= 12 else cond[:9] + "..."
+        legend_y = margin_top + 20 + i * 25  # More spacing between items
+        label = str(cond)
+        font_size = 10 if len(label) <= 20 else (9 if len(label) <= 30 else 8)
         svg_parts.append(
             f'<rect x="{legend_x}" y="{legend_y - 8}" width="12" height="12" fill="{COLORS[i % len(COLORS)]}" opacity="0.7"/>'
         )
         svg_parts.append(
-            f'<text x="{legend_x + 16}" y="{legend_y}" font-size="10" fill="#2c3e50">{_escape_xml(label)}</text>'
+            f'<text x="{legend_x + 16}" y="{legend_y}" font-size="{font_size}" fill="#2c3e50">{_escape_xml(label)}</text>'
         )
 
     svg_parts.append('</svg>')
