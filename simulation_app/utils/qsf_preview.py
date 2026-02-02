@@ -13,7 +13,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional
 
 # Version identifier to help track deployed code
-__version__ = "2.1.4"  # Improved scale detection with deduplication, better scale_points handling
+__version__ = "2.1.5"  # Improved condition detection: better BlockRandomizer parsing, exclusion lists
 
 
 class LogLevel(Enum):
@@ -65,6 +65,7 @@ class BlockInfo:
     questions: List[QuestionInfo] = field(default_factory=list)
     is_randomizer: bool = False
     randomizer_type: Optional[str] = None
+    block_type: str = "Standard"  # Standard, Default, Trash, etc.
 
 
 @dataclass
@@ -99,6 +100,38 @@ class QSFPreviewParser:
     - Validates survey structure
     - Generates detailed error logs
     """
+
+    # Block names that are NEVER experimental conditions
+    # These are common structural/admin block names in Qualtrics surveys
+    EXCLUDED_BLOCK_NAMES = {
+        # Generic block names
+        'block', 'block 1', 'block 2', 'block 3', 'block 4', 'block 5',
+        'default question block', 'default', 'standard',
+        # Structural/admin blocks
+        'trash', 'trash / unused questions', 'unused',
+        'intro', 'introduction', 'welcome',
+        'instructions', 'general instructions',
+        'consent', 'informed consent',
+        'captcha', 'bot check',
+        'end', 'end of survey', 'end of games', 'ending', 'debrief',
+        'thank you', 'thanks',
+        # Demographic/covariate blocks
+        'demographics', 'demographic info', 'demographic information',
+        'background', 'background info',
+        # Quality control blocks
+        'attention check', 'attention checks', 'quality check',
+        'manipulation check', 'manipulation checks',
+        # Feedback blocks
+        'feedback', 'comments', 'feedback on the survey',
+        'open-ended', 'open ended', 'free response',
+        # Game/task specific (but not conditions)
+        'game', 'task', 'main task',
+        'pairing', 'pairing prompt', 'pair',
+        'question', 'questions',
+    }
+
+    # Block type keywords that indicate non-condition blocks
+    EXCLUDED_BLOCK_TYPES = {'Trash', 'Default'}
 
     def __init__(self):
         self.log_entries: List[LogEntry] = []
@@ -705,35 +738,80 @@ class QSFPreviewParser:
                     block_questions.append(q_info)
 
             block_name = block_data.get('name', f'Block {block_id}')
+            block_type = block_data.get('type', 'Standard')
             is_randomizer = 'random' in block_name.lower()
 
             blocks.append(BlockInfo(
                 block_id=block_id,
                 block_name=block_name,
                 questions=block_questions,
-                is_randomizer=is_randomizer
+                is_randomizer=is_randomizer,
+                block_type=block_type
             ))
 
         return blocks
+
+    def _is_excluded_block_name(self, block_name: str) -> bool:
+        """Check if a block name is in the exclusion list."""
+        if not block_name:
+            return True
+        normalized = block_name.lower().strip()
+        # Check exact match
+        if normalized in self.EXCLUDED_BLOCK_NAMES:
+            return True
+        # Check if it starts with "block" followed by only numbers/spaces
+        if re.match(r'^block\s*\d*$', normalized):
+            return True
+        return False
 
     def _detect_conditions(
         self,
         flow_data: Optional[Any],
         blocks: List[BlockInfo]
     ) -> List[str]:
-        """Detect experimental conditions from randomizers and flow."""
+        """Detect experimental conditions from randomizers and flow.
+
+        Priority order:
+        1. Blocks inside BlockRandomizer with SubSet=1 (between-subjects)
+        2. Blocks inside Randomizer elements
+        3. Block names containing condition keywords (strict fallback)
+
+        Blocks are EXCLUDED if:
+        - Their name is in EXCLUDED_BLOCK_NAMES
+        - Their block type is 'Trash' or 'Default'
+        - They have generic names like 'Block 1', 'Block 2'
+        """
         conditions: List[str] = []
         blocks_by_id = {block.block_id: block.block_name for block in blocks}
+        # Also track block types for exclusion
+        blocks_type_by_id = {block.block_id: getattr(block, 'block_type', 'Standard')
+                            for block in blocks}
 
         # Parse flow for randomizer/branch elements with block IDs.
         if flow_data:
             flow = self._extract_flow_payload(flow_data)
             self._find_conditions_in_flow(flow, conditions, blocks_by_id)
 
-        # Fallback: use block names that look like conditions.
+        # Filter out excluded blocks from conditions
+        conditions = [c for c in conditions if not self._is_excluded_block_name(c)]
+
+        # Fallback: use block names that look like conditions (STRICT mode).
+        # Only use if no conditions were found from randomizers
         if not conditions:
+            self._log(
+                LogLevel.INFO, "CONDITIONS",
+                "No conditions detected from randomizers. Using fallback detection."
+            )
             for block in blocks:
                 desc = block.block_name.strip()
+                # Skip excluded blocks
+                if self._is_excluded_block_name(desc):
+                    continue
+                # Skip trash/default block types
+                block_type = getattr(block, 'block_type', 'Standard')
+                if block_type in self.EXCLUDED_BLOCK_TYPES:
+                    continue
+                # Only add if it strongly looks like a condition
                 if self._looks_like_condition(desc):
                     self._add_condition(desc, conditions)
 
@@ -749,27 +827,55 @@ class QSFPreviewParser:
         return conditions
 
     def _find_conditions_in_flow(self, flow: List, conditions: List[str], blocks_by_id: Dict[str, str]):
-        """Recursively find conditions in flow structure."""
+        """Recursively find conditions in flow structure.
+
+        Key logic:
+        - Only consider blocks inside Randomizer or BlockRandomizer elements
+        - Require at least 2 blocks in a randomizer for conditions
+        - Skip excluded block names
+        - BlockRandomizer with SubSet=1 means between-subjects (each block = condition)
+        """
         for item in flow:
             if isinstance(item, dict):
                 flow_type = item.get('Type', '')
 
-                if flow_type in {'Randomizer', 'BlockRandomizer'}:
+                if flow_type == 'Randomizer':
+                    # Standard Randomizer element
                     sub_flow = item.get('Flow', [])
                     sub_flow = self._normalize_flow(sub_flow)
+
+                    # Collect potential conditions from this randomizer
+                    randomizer_conditions = []
                     for sub_item in sub_flow:
                         block_id = self._extract_block_id(sub_item)
                         if block_id:
                             block_name = blocks_by_id.get(block_id, block_id)
-                            self._add_condition(block_name, conditions)
+                            if not self._is_excluded_block_name(block_name):
+                                randomizer_conditions.append(block_name)
                         if sub_item.get('Type') == 'Group':
                             group_name = sub_item.get('Description', '')
-                            if group_name:
-                                self._add_condition(group_name, conditions)
+                            if group_name and not self._is_excluded_block_name(group_name):
+                                randomizer_conditions.append(group_name)
 
+                    # Only add if there are at least 2 conditions (real randomization)
+                    if len(randomizer_conditions) >= 2:
+                        for cond in randomizer_conditions:
+                            self._add_condition(cond, conditions)
+                        self._log(
+                            LogLevel.INFO, "RANDOMIZER",
+                            f"Found Randomizer with {len(randomizer_conditions)} conditions: {randomizer_conditions}"
+                        )
+                    elif len(randomizer_conditions) == 1:
+                        self._log(
+                            LogLevel.INFO, "RANDOMIZER",
+                            f"Skipping single-block Randomizer (no real randomization): {randomizer_conditions}"
+                        )
+
+                    # Also check description for condition hints
                     description = item.get('Description', '')
                     for inferred in self._extract_conditions_from_description(description):
-                        self._add_condition(inferred, conditions)
+                        if not self._is_excluded_block_name(inferred):
+                            self._add_condition(inferred, conditions)
 
                 elif flow_type == 'BlockRandomizer':
                     # BlockRandomizer with SubSet=1 means between-subjects assignment
@@ -781,23 +887,50 @@ class QSFPreviewParser:
                         sub_set == 1 or
                         str(sub_set) == '1'
                     )
-                    if is_between_subjects:
-                        sub_flow = item.get('Flow', [])
-                        for sub_item in sub_flow:
-                            if isinstance(sub_item, dict):
-                                sub_type = sub_item.get('Type', '')
-                                if sub_type in ('Standard', 'Block'):
-                                    block_id = sub_item.get('ID', '')
-                                    if block_id:
-                                        block_name = blocks_by_id.get(block_id, block_id)
-                                        self._add_condition(block_name, conditions)
+
+                    # Collect blocks in this randomizer
+                    sub_flow = item.get('Flow', [])
+                    sub_flow = self._normalize_flow(sub_flow)
+                    randomizer_conditions = []
+
+                    for sub_item in sub_flow:
+                        if isinstance(sub_item, dict):
+                            sub_type = sub_item.get('Type', '')
+                            if sub_type in ('Standard', 'Block'):
+                                block_id = sub_item.get('ID', '')
+                                if block_id:
+                                    block_name = blocks_by_id.get(block_id, block_id)
+                                    if not self._is_excluded_block_name(block_name):
+                                        randomizer_conditions.append(block_name)
+
+                    # Only add as conditions if:
+                    # 1. It's between-subjects (SubSet=1)
+                    # 2. There are at least 2 blocks (real randomization)
+                    if is_between_subjects and len(randomizer_conditions) >= 2:
+                        for cond in randomizer_conditions:
+                            self._add_condition(cond, conditions)
+                        self._log(
+                            LogLevel.INFO, "BLOCK_RANDOMIZER",
+                            f"Found BlockRandomizer with {len(randomizer_conditions)} conditions: {randomizer_conditions}"
+                        )
+                    elif len(randomizer_conditions) == 1:
+                        self._log(
+                            LogLevel.INFO, "BLOCK_RANDOMIZER",
+                            f"Skipping single-block BlockRandomizer: {randomizer_conditions}"
+                        )
+                    elif not is_between_subjects:
+                        self._log(
+                            LogLevel.INFO, "BLOCK_RANDOMIZER",
+                            f"BlockRandomizer is within-subjects (SubSet != 1), not treating as conditions"
+                        )
 
                 elif flow_type == 'Branch':
                     description = item.get('Description', '')
                     for inferred in self._extract_conditions_from_description(description):
-                        self._add_condition(inferred, conditions)
+                        if not self._is_excluded_block_name(inferred):
+                            self._add_condition(inferred, conditions)
 
-                # Recurse
+                # Recurse into nested flows
                 if 'Flow' in item:
                     self._find_conditions_in_flow(self._normalize_flow(item['Flow']), conditions, blocks_by_id)
 
@@ -830,11 +963,46 @@ class QSFPreviewParser:
         return []
 
     def _looks_like_condition(self, label: str) -> bool:
+        """Check if a label strongly suggests an experimental condition.
+
+        This is used as a FALLBACK when no randomizers are detected.
+        We use strict criteria to avoid false positives.
+        """
         if not label:
             return False
+
+        # First check exclusion list
+        if self._is_excluded_block_name(label):
+            return False
+
         lowered = label.lower()
-        keywords = ("condition", "treatment", "group", "arm", "variant", "manipulation", "scenario")
-        return any(keyword in lowered for keyword in keywords)
+
+        # Strong positive indicators - these terms strongly suggest conditions
+        strong_keywords = (
+            "condition", "treatment", "control", "experimental",
+            "manipulation", "scenario", "stimulus", "stimuli"
+        )
+
+        # Weaker indicators - need additional context
+        weak_keywords = ("group", "arm", "variant")
+
+        # Check for strong keywords
+        if any(keyword in lowered for keyword in strong_keywords):
+            return True
+
+        # Check for weaker keywords with additional context
+        # e.g., "treatment group" is good, but "age group" is not
+        for keyword in weak_keywords:
+            if keyword in lowered:
+                # Check if it has condition-related context
+                condition_context = ("treatment", "control", "experimental", "test", "condition")
+                if any(ctx in lowered for ctx in condition_context):
+                    return True
+                # Check if it follows pattern like "Group A", "Group 1", etc.
+                if re.search(rf'{keyword}\s*[a-z0-9]', lowered, re.IGNORECASE):
+                    return True
+
+        return False
 
     def _normalize_condition_label(self, label: str) -> str:
         if not label:
