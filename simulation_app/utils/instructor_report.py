@@ -6,7 +6,7 @@ Generates comprehensive instructor-facing reports for student simulations.
 """
 
 # Version identifier to help track deployed code
-__version__ = "2.1.12"  # Guaranteed SVG visualizations - always produces charts
+__version__ = "2.1.12"  # Guaranteed visualizations, chart interpretations, executive summary
 
 from dataclasses import dataclass
 from datetime import datetime
@@ -1750,6 +1750,242 @@ class ComprehensiveInstructorReport:
         else:
             return "large"
 
+    def _generate_chart_interpretation(
+        self,
+        chart_data: Dict[str, Tuple[float, float]],
+        stats_results: Dict[str, Any],
+        scale_name: str
+    ) -> str:
+        """
+        Generate a 1-2 sentence interpretation of the chart results.
+
+        Args:
+            chart_data: Dict mapping condition names to (mean, std_error) tuples
+            stats_results: Statistical test results
+            scale_name: Name of the scale being analyzed
+
+        Returns:
+            HTML string with interpretation
+        """
+        if not chart_data:
+            return ""
+
+        conditions = list(chart_data.keys())
+        means = {c: chart_data[c][0] for c in conditions}
+        n_conditions = len(conditions)
+
+        interpretation_parts = []
+
+        # Find highest and lowest scoring conditions
+        sorted_conds = sorted(means.items(), key=lambda x: x[1], reverse=True)
+        highest = sorted_conds[0]
+        lowest = sorted_conds[-1]
+        mean_diff = highest[1] - lowest[1]
+
+        # Get significance and effect size info
+        p_value = None
+        effect_size = None
+        effect_interpretation = None
+        is_significant = False
+
+        if "t_test" in stats_results:
+            p_value = stats_results["t_test"]["p_value"]
+            is_significant = stats_results["t_test"]["significant"]
+        elif "anova" in stats_results:
+            p_value = stats_results["anova"]["p_value"]
+            is_significant = stats_results["anova"]["significant"]
+
+        if "cohens_d" in stats_results:
+            effect_size = stats_results["cohens_d"]["value"]
+            effect_interpretation = stats_results["cohens_d"]["interpretation"]
+        elif "eta_squared" in stats_results:
+            effect_size = stats_results["eta_squared"]["value"]
+            effect_interpretation = stats_results["eta_squared"]["interpretation"]
+
+        # Generate interpretation
+        if n_conditions == 2:
+            # Two-group comparison
+            if is_significant and p_value is not None:
+                interpretation_parts.append(
+                    f"<strong>{highest[0]}</strong> scored significantly higher (M = {highest[1]:.2f}) than "
+                    f"<strong>{lowest[0]}</strong> (M = {lowest[1]:.2f}), with a difference of {mean_diff:.2f} points "
+                    f"(p = {p_value:.4f})."
+                )
+                if effect_interpretation:
+                    interpretation_parts.append(
+                        f" This represents a <strong>{effect_interpretation} effect</strong>"
+                        f"{f' (d = {effect_size:.2f})' if effect_size else ''}."
+                    )
+            else:
+                interpretation_parts.append(
+                    f"No statistically significant difference was found between <strong>{highest[0]}</strong> "
+                    f"(M = {highest[1]:.2f}) and <strong>{lowest[0]}</strong> (M = {lowest[1]:.2f})"
+                    f"{f' (p = {p_value:.4f})' if p_value else ''}."
+                )
+                if effect_interpretation and effect_size:
+                    interpretation_parts.append(
+                        f" The effect size was {effect_interpretation} (d = {effect_size:.2f})."
+                    )
+        else:
+            # Multi-group comparison
+            if is_significant and p_value is not None:
+                interpretation_parts.append(
+                    f"Significant differences were found across conditions (p = {p_value:.4f}). "
+                    f"<strong>{highest[0]}</strong> showed the highest mean (M = {highest[1]:.2f}), "
+                    f"while <strong>{lowest[0]}</strong> showed the lowest (M = {lowest[1]:.2f})."
+                )
+                if effect_interpretation:
+                    interpretation_parts.append(
+                        f" The overall effect was <strong>{effect_interpretation}</strong>"
+                        f"{f' (η² = {effect_size:.3f})' if effect_size else ''}."
+                    )
+            else:
+                interpretation_parts.append(
+                    f"No significant differences were found across the {n_conditions} conditions"
+                    f"{f' (p = {p_value:.4f})' if p_value else ''}. "
+                    f"Means ranged from {lowest[1]:.2f} to {highest[1]:.2f}."
+                )
+
+        return "".join(interpretation_parts)
+
+    def _generate_executive_summary(
+        self,
+        all_scale_results: List[Dict[str, Any]],
+        prereg_text: Optional[str],
+        n_total: int,
+        conditions: List[str]
+    ) -> str:
+        """
+        Generate executive summary paragraph with key takeaways.
+
+        Args:
+            all_scale_results: List of dicts containing scale analysis results
+            prereg_text: Pre-registration text if available
+            n_total: Total sample size
+            conditions: List of condition names
+
+        Returns:
+            HTML string with executive summary
+        """
+        html = ["<h2>Executive Summary</h2>"]
+        html.append("<div class='summary-box' style='background:#f0f7ff;padding:20px;border-radius:8px;border-left:4px solid #3498db;margin:20px 0;'>")
+
+        # Count significant findings
+        sig_findings = []
+        nonsig_findings = []
+        largest_effect = None
+        largest_effect_size = 0
+
+        for result in all_scale_results:
+            scale_name = result.get("scale_name", "Unknown Scale")
+            stats = result.get("stats_results", {})
+            is_sig = False
+            effect_val = 0
+            effect_type = None
+
+            # Check significance
+            if "t_test" in stats and stats["t_test"].get("significant"):
+                is_sig = True
+            elif "anova" in stats and stats["anova"].get("significant"):
+                is_sig = True
+
+            # Get effect size
+            if "cohens_d" in stats:
+                effect_val = abs(stats["cohens_d"]["value"])
+                effect_type = "d"
+            elif "eta_squared" in stats:
+                effect_val = stats["eta_squared"]["value"]
+                effect_type = "η²"
+
+            if is_sig:
+                sig_findings.append({
+                    "scale": scale_name,
+                    "effect_size": effect_val,
+                    "effect_type": effect_type,
+                    "stats": stats
+                })
+                if effect_val > largest_effect_size:
+                    largest_effect_size = effect_val
+                    largest_effect = {"scale": scale_name, "value": effect_val, "type": effect_type}
+            else:
+                nonsig_findings.append({"scale": scale_name, "stats": stats})
+
+        # Generate summary text
+        n_scales = len(all_scale_results)
+        n_sig = len(sig_findings)
+        n_conditions = len(conditions)
+
+        html.append("<p style='font-size:14px;line-height:1.6;margin:0;'>")
+
+        # Opening sentence
+        html.append(
+            f"This simulation included <strong>{n_total} participants</strong> randomly assigned to "
+            f"<strong>{n_conditions} condition{'s' if n_conditions > 1 else ''}</strong> "
+            f"({', '.join(conditions[:3])}{', ...' if n_conditions > 3 else ''}). "
+        )
+
+        # Main findings
+        if n_sig > 0:
+            html.append(
+                f"Across {n_scales} dependent measure{'s' if n_scales > 1 else ''}, "
+                f"<strong>{n_sig} showed statistically significant differences</strong> between conditions. "
+            )
+
+            if largest_effect:
+                effect_desc = "large" if (largest_effect["type"] == "d" and largest_effect["value"] >= 0.8) or \
+                                        (largest_effect["type"] == "η²" and largest_effect["value"] >= 0.14) else \
+                             "medium" if (largest_effect["type"] == "d" and largest_effect["value"] >= 0.5) or \
+                                        (largest_effect["type"] == "η²" and largest_effect["value"] >= 0.06) else "small"
+                html.append(
+                    f"The strongest effect was observed for <strong>{largest_effect['scale']}</strong> "
+                    f"({largest_effect['type']} = {largest_effect['value']:.3f}, {effect_desc} effect). "
+                )
+        else:
+            html.append(
+                f"Across {n_scales} dependent measure{'s' if n_scales > 1 else ''}, "
+                f"<strong>no statistically significant differences</strong> were found between conditions. "
+            )
+
+        # Pre-registration hypothesis comparison
+        if prereg_text:
+            prereg_info = self._parse_prereg_hypotheses(prereg_text)
+            hypotheses = prereg_info.get("hypotheses", [])
+
+            if hypotheses:
+                html.append("<br><br><strong>Hypothesis Evaluation:</strong> ")
+
+                # Simple heuristic: check if any hypothesis keywords match significant findings
+                confirmed = []
+                not_confirmed = []
+
+                for h in hypotheses:
+                    h_text = h.get("text", "").lower()
+                    h_matched = False
+
+                    for finding in sig_findings:
+                        scale_lower = finding["scale"].lower()
+                        if any(word in h_text for word in scale_lower.split()):
+                            confirmed.append(h.get("text", "Unknown hypothesis"))
+                            h_matched = True
+                            break
+
+                    if not h_matched:
+                        not_confirmed.append(h.get("text", "Unknown hypothesis"))
+
+                if confirmed:
+                    html.append(f"Results appear consistent with {len(confirmed)} pre-registered hypothesis/hypotheses. ")
+                if not_confirmed and len(not_confirmed) < len(hypotheses):
+                    html.append(f"{len(not_confirmed)} hypothesis/hypotheses did not reach statistical significance. ")
+                elif not confirmed and not_confirmed:
+                    html.append("Pre-registered hypotheses were not supported by the simulated data. ")
+
+        # Closing recommendation
+        html.append("<br><br><em>Note: These are simulated results for pedagogical purposes. ")
+        html.append("Actual experimental results may vary based on real participant responses.</em>")
+        html.append("</p></div>")
+
+        return "\n".join(html)
+
     def _create_bar_chart(
         self,
         data: Dict[str, Tuple[float, float]],
@@ -2403,6 +2639,9 @@ class ComprehensiveInstructorReport:
         scales = metadata.get("scales", [])
         html_parts.append("<h2>2. Statistical Analysis by DV</h2>")
 
+        # Track all scale analysis results for executive summary
+        all_scale_results = []
+
         for scale in scales:
             scale_name = scale.get("name", "Scale")
             scale_cols = [c for c in df_clean.columns if c.startswith(f"{scale_name.replace(' ', '_')}_") and c[-1].isdigit()]
@@ -2624,6 +2863,14 @@ class ComprehensiveInstructorReport:
                 # Show info message only if we have visualizations
                 if viz_count > 0 and not matplotlib_worked:
                     html_parts.append("<p style='font-size:10px;color:#7f8c8d;margin-top:10px;'><em>Charts rendered using SVG visualization engine.</em></p>")
+
+                # Add chart interpretation summary
+                if viz_count > 0 and chart_data:
+                    interpretation = self._generate_chart_interpretation(chart_data, stats_results, scale_name)
+                    if interpretation:
+                        html_parts.append("<div class='interpretation-box' style='background:#f8f9fa;padding:15px;border-radius:6px;margin:15px 0;border-left:3px solid #3498db;'>")
+                        html_parts.append(f"<strong>Key Finding:</strong> {interpretation}")
+                        html_parts.append("</div>")
 
                 # Statistical tests
                 if len(conditions) >= 2 and "CONDITION" in df_analysis.columns:
@@ -2867,6 +3114,13 @@ class ComprehensiveInstructorReport:
                             err_msg = factorial_results.get("error", "Unable to parse factorial structure")
                             html_parts.append(f"<div class='warning-box'>Factorial ANOVA: {err_msg}</div>")
 
+                # Track this scale's results for executive summary
+                all_scale_results.append({
+                    "scale_name": scale_name,
+                    "chart_data": chart_data,
+                    "stats_results": stats_results
+                })
+
         # Chi-squared test for categorical associations
         if "CONDITION" in df_clean.columns and "Gender" in df_clean.columns:
             html_parts.append("<h2>3. Categorical Analysis</h2>")
@@ -2910,6 +3164,16 @@ class ComprehensiveInstructorReport:
                 html_parts.append("</table>")
             except Exception:
                 pass
+
+        # Executive Summary - Main takeaways from all analyses
+        if all_scale_results:
+            exec_summary = self._generate_executive_summary(
+                all_scale_results,
+                prereg_text,
+                n_total,
+                [_clean_condition_name(c) for c in conditions]
+            )
+            html_parts.append(exec_summary)
 
         # Footer
         html_parts.append("<h2>Notes for Instructors</h2>")

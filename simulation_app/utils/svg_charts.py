@@ -24,8 +24,8 @@ def create_bar_chart_svg(
     ylabel: str = "Mean Score",
     effect_size: Optional[float] = None,
     p_value: Optional[float] = None,
-    width: int = 600,
-    height: int = 400
+    width: int = 650,
+    height: int = 450
 ) -> str:
     """
     Create an SVG bar chart with error bars.
@@ -45,11 +45,15 @@ def create_bar_chart_svg(
     if not data:
         return _create_no_data_svg(width, height, "No data available for bar chart")
 
+    # Dynamic bottom margin based on longest label
+    conditions = list(data.keys())
+    max_label_len = max(len(str(c)) for c in conditions) if conditions else 10
+    margin_bottom = min(120, max(80, max_label_len * 3 + 30))
+
     # Chart dimensions
     margin_left = 70
     margin_right = 30
     margin_top = 60
-    margin_bottom = 80
     chart_width = width - margin_left - margin_right
     chart_height = height - margin_top - margin_bottom
 
@@ -149,10 +153,12 @@ def create_bar_chart_svg(
             f'<text x="{x_center}" y="{error_top - 8}" text-anchor="middle" font-size="11" font-weight="bold" fill="#2c3e50">{mean:.2f}</text>'
         )
 
-        # Condition label below (truncate if too long)
-        label = cond if len(cond) <= 15 else cond[:12] + "..."
+        # Condition label below - rotate more for long labels, use smaller font
+        label = str(cond)
+        font_size = 10 if len(label) <= 15 else (9 if len(label) <= 25 else 8)
+        rotation = -35 if len(label) > 15 else -25
         svg_parts.append(
-            f'<text x="{x_center}" y="{margin_top + chart_height + 20}" text-anchor="middle" font-size="10" fill="#2c3e50" transform="rotate(-25 {x_center} {margin_top + chart_height + 20})">{_escape_xml(label)}</text>'
+            f'<text x="{x_center}" y="{margin_top + chart_height + 20}" text-anchor="end" font-size="{font_size}" fill="#2c3e50" transform="rotate({rotation} {x_center} {margin_top + chart_height + 20})">{_escape_xml(label)}</text>'
         )
 
     # Add p-value and effect size annotation
@@ -184,8 +190,8 @@ def create_distribution_svg(
     data: Dict[str, List[float]],
     title: str = "Score Distribution by Condition",
     xlabel: str = "Score",
-    width: int = 600,
-    height: int = 350
+    width: int = 700,
+    height: int = 400
 ) -> str:
     """
     Create an SVG showing distribution as horizontal range plots with min/max/mean/median.
@@ -203,15 +209,17 @@ def create_distribution_svg(
     if not data or all(len(v) == 0 for v in data.values()):
         return _create_no_data_svg(width, height, "No data available for distribution plot")
 
-    margin_left = 120
+    conditions = list(data.keys())
+    n_conditions = len(conditions)
+
+    # Dynamic margin based on longest label
+    max_label_len = max(len(str(c)) for c in conditions) if conditions else 10
+    margin_left = min(200, max(140, max_label_len * 7 + 20))
     margin_right = 30
     margin_top = 50
     margin_bottom = 50
     chart_width = width - margin_left - margin_right
     chart_height = height - margin_top - margin_bottom
-
-    conditions = list(data.keys())
-    n_conditions = len(conditions)
 
     if n_conditions == 0:
         return _create_no_data_svg(width, height, "No conditions to display")
@@ -283,10 +291,11 @@ def create_distribution_svg(
         x_mean = to_x(cond_mean)
         x_median = to_x(cond_median)
 
-        # Condition label
-        label = cond if len(cond) <= 15 else cond[:12] + "..."
+        # Condition label - use smaller font for long labels
+        label = str(cond)
+        font_size = 11 if len(label) <= 20 else (9 if len(label) <= 30 else 8)
         svg_parts.append(
-            f'<text x="{margin_left - 10}" y="{y_center + 4}" text-anchor="end" font-size="11" fill="#2c3e50">{_escape_xml(label)}</text>'
+            f'<text x="{margin_left - 10}" y="{y_center + 4}" text-anchor="end" font-size="{font_size}" fill="#2c3e50">{_escape_xml(label)}</text>'
         )
 
         # Whisker line (min to max)
@@ -454,8 +463,8 @@ def create_means_comparison_svg(
     title: str = "Mean Comparison",
     xlabel: str = "Mean Score",
     grand_mean: Optional[float] = None,
-    width: int = 600,
-    height: int = 300
+    width: int = 700,
+    height: int = 350
 ) -> str:
     """
     Create an SVG dot plot showing means with error bars (horizontal layout).
@@ -474,13 +483,6 @@ def create_means_comparison_svg(
     if not data:
         return _create_no_data_svg(width, height, "No data available for means comparison")
 
-    margin_left = 120
-    margin_right = 30
-    margin_top = 50
-    margin_bottom = 50
-    chart_width = width - margin_left - margin_right
-    chart_height = height - margin_top - margin_bottom
-
     conditions = list(data.keys())
     means = [data[c][0] for c in conditions]
     errors = [data[c][1] for c in conditions]
@@ -488,6 +490,15 @@ def create_means_comparison_svg(
 
     if n_conditions == 0:
         return _create_no_data_svg(width, height, "No conditions to display")
+
+    # Dynamic margin based on longest label
+    max_label_len = max(len(str(c)) for c in conditions) if conditions else 10
+    margin_left = min(200, max(140, max_label_len * 7 + 20))
+    margin_right = 60  # Space for value labels
+    margin_top = 50
+    margin_bottom = 50
+    chart_width = width - margin_left - margin_right
+    chart_height = height - margin_top - margin_bottom
 
     # Calculate scale
     x_min = min(m - e for m, e in zip(means, errors))
@@ -538,10 +549,11 @@ def create_means_comparison_svg(
         x_low = margin_left + (mean - error - x_min) / (x_max - x_min) * chart_width
         x_high = margin_left + (mean + error - x_min) / (x_max - x_min) * chart_width
 
-        # Condition label
-        label = cond if len(cond) <= 15 else cond[:12] + "..."
+        # Condition label - use smaller font for long labels
+        label = str(cond)
+        font_size = 11 if len(label) <= 20 else (9 if len(label) <= 30 else 8)
         svg_parts.append(
-            f'<text x="{margin_left - 10}" y="{y_center + 4}" text-anchor="end" font-size="11" fill="#2c3e50">{_escape_xml(label)}</text>'
+            f'<text x="{margin_left - 10}" y="{y_center + 4}" text-anchor="end" font-size="{font_size}" fill="#2c3e50">{_escape_xml(label)}</text>'
         )
 
         # Error bar line
