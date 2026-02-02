@@ -346,7 +346,7 @@ The tool includes clear labeling in all outputs indicating data is simulated.
 
 If you use this tool in your research or teaching, please cite:
 
-> Dimant, E. (2025). Behavioral Experiment Simulation Tool (Version 2.1). University of Pennsylvania.
+> Dimant, E. (2026). Behavioral Experiment Simulation Tool (Version 2.1). University of Pennsylvania.
 
 ---
 
