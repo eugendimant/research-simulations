@@ -1566,21 +1566,15 @@ The simulator automatically assigns behavioral personas to simulated participant
         methods_updated = datetime.utcfromtimestamp(methods_pdf_path.stat().st_mtime).strftime("%Y-%m-%d")
         st.caption(f"Methods summary (PDF) · Last updated: {methods_updated}")
 
-        # Download button for PDF
+        # Download button for PDF - most reliable cross-browser option
         st.download_button(
             "📥 Download Methods PDF",
             data=methods_pdf_path.read_bytes(),
             file_name=methods_pdf_path.name,
             mime="application/pdf",
+            help="Click to download the methods summary PDF. Opens in your default PDF viewer."
         )
-
-        # Embedded PDF viewer in expander
-        with st.expander("📄 View Methods Summary (embedded)"):
-            pdf_bytes = methods_pdf_path.read_bytes()
-            pdf_b64 = base64.b64encode(pdf_bytes).decode()
-            pdf_display = f'<iframe src="data:application/pdf;base64,{pdf_b64}" width="100%" height="600" type="application/pdf"></iframe>'
-            st.markdown(pdf_display, unsafe_allow_html=True)
-            st.caption("If the PDF doesn't display, please use the download button above.")
+        st.caption("💡 *Click the button above to download and view the methods summary.*")
     elif methods_md_path.exists():
         methods_updated = datetime.utcfromtimestamp(methods_md_path.stat().st_mtime).strftime("%Y-%m-%d %H:%M UTC")
         st.caption(f"Methods summary updated: {methods_updated}")
@@ -3115,14 +3109,34 @@ if active_step == 2:
         scales = [{"name": "Main_DV", "num_items": 5, "scale_points": 7}]
 
     # ========================================
-    # STEP 4: SCALE CONFIRMATION (PROMINENT)
+    # STEP 4: SCALE CONFIRMATION (MANDATORY)
     # ========================================
     st.markdown("---")
-    st.markdown("### ⚠️ Confirm Your Dependent Variables (Scales)")
-    st.warning(
-        "**Important:** Please verify that the scales below are correctly identified from your QSF file. "
-        "The simulation will only generate data for these scales. Incorrect scale identification will affect your results."
+    st.markdown("### 🔴 REQUIRED: Confirm Your Dependent Variables (Scales)")
+    st.error(
+        "⚠️ **STOP AND VERIFY:** The scales below MUST match your actual survey before proceeding. "
+        "Students have reported that simulated data used incorrect scale ranges (e.g., 1-7 instead of 1-10). "
+        "**You must verify and adjust each scale's range (points) to match your Qualtrics survey.**"
     )
+
+    # Show scale instructions
+    with st.expander("❓ How to verify your scales", expanded=False):
+        st.markdown("""
+        **Why this matters:** If your Qualtrics survey uses a 1-10 scale but we simulate 1-7, your data will be wrong.
+
+        **How to check:**
+        1. Open your Qualtrics survey in edit mode
+        2. Look at each scale question's response options
+        3. Count the number of options (e.g., 1-10 has 10 points, 1-7 has 7 points)
+        4. Update the "Points" column below to match
+
+        **Common scale types:**
+        - 5-point Likert: 1-5 (Strongly Disagree to Strongly Agree)
+        - 7-point Likert: 1-7
+        - 10-point scale: 1-10
+        - 4-point: 1-4 (Never, Rarely, Sometimes, Always)
+        - 11-point NPS: 0-10 (use 11 points)
+        """)
 
     # Initialize scale confirmation state
     if "confirmed_scales" not in st.session_state:
@@ -3131,7 +3145,8 @@ if active_step == 2:
         st.session_state["scales_confirmed"] = False
 
     # Show detected scales with edit options
-    st.markdown("**Detected Scales from QSF:**")
+    st.markdown("**Your Scales (edit as needed):**")
+    st.caption("👆 **Adjust the 'Points' column to match your actual Qualtrics scale ranges**")
 
     # Create editable scale list
     confirmed_scales = st.session_state.get("confirmed_scales", scales.copy())
@@ -3216,13 +3231,13 @@ if active_step == 2:
     # Update session state with edited scales
     st.session_state["confirmed_scales"] = updated_scales
 
-    # Confirmation checkbox
+    # Confirmation checkbox - MANDATORY
     st.markdown("---")
     scales_confirmed = st.checkbox(
-        "✓ I confirm these scales are correct and ready for simulation",
+        "✅ I have verified that ALL scale ranges (points) match my Qualtrics survey",
         value=st.session_state.get("scales_confirmed", False),
         key="scales_confirm_checkbox",
-        help="You must confirm the scales are correct before proceeding"
+        help="You MUST confirm the scales are correct before proceeding"
     )
     st.session_state["scales_confirmed"] = scales_confirmed
 
@@ -3230,8 +3245,69 @@ if active_step == 2:
     scales = updated_scales if updated_scales else scales
 
     if not scales_confirmed:
-        st.info("👆 Please review the scales above and check the confirmation box to proceed.")
+        st.error("🛑 **You must confirm your scales before proceeding.** Check the box above after verifying each scale's range matches your survey.")
 
+    # ========================================
+    # ATTENTION & MANIPULATION CHECKS REVIEW
+    # ========================================
+    st.markdown("---")
+    st.markdown("### 📋 Review: Attention & Manipulation Checks")
+
+    # Get detected checks from QSF preview
+    preview = st.session_state.get("qsf_preview")
+    detected_attention = preview.attention_checks if preview and hasattr(preview, 'attention_checks') else []
+    detected_manipulation = []  # Will need to extract from analysis
+
+    # Try to get from enhanced analysis
+    enhanced_analysis = st.session_state.get("enhanced_analysis")
+    if enhanced_analysis and hasattr(enhanced_analysis, 'manipulation_checks'):
+        detected_manipulation = enhanced_analysis.manipulation_checks
+
+    col_attn, col_manip = st.columns(2)
+
+    with col_attn:
+        st.markdown("**Attention Checks**")
+        if detected_attention:
+            st.success(f"✓ {len(detected_attention)} attention check(s) detected")
+            for i, check in enumerate(detected_attention[:5]):  # Show first 5
+                st.caption(f"  • {check[:50]}..." if len(str(check)) > 50 else f"  • {check}")
+        else:
+            st.warning("No attention checks detected in QSF")
+
+        # Allow manual addition
+        with st.expander("Add/Edit Attention Checks"):
+            st.caption("Specify attention check question IDs or descriptions")
+            manual_attention = st.text_area(
+                "Attention check questions (one per line)",
+                value=st.session_state.get("manual_attention_checks", ""),
+                key="manual_attention_input",
+                height=100,
+                placeholder="e.g., Q15_Attention\nPlease select 'Agree' for this question"
+            )
+            st.session_state["manual_attention_checks"] = manual_attention
+
+    with col_manip:
+        st.markdown("**Manipulation Checks**")
+        if detected_manipulation:
+            st.success(f"✓ {len(detected_manipulation)} manipulation check(s) detected")
+            for i, check in enumerate(detected_manipulation[:5]):
+                st.caption(f"  • {check[:50]}..." if len(str(check)) > 50 else f"  • {check}")
+        else:
+            st.info("No manipulation checks detected (optional)")
+
+        # Allow manual addition
+        with st.expander("Add/Edit Manipulation Checks"):
+            st.caption("Specify manipulation check question IDs or descriptions")
+            manual_manipulation = st.text_area(
+                "Manipulation check questions (one per line)",
+                value=st.session_state.get("manual_manipulation_checks", ""),
+                key="manual_manipulation_input",
+                height=100,
+                placeholder="e.g., Q20_ManipCheck\nWhat condition were you assigned to?"
+            )
+            st.session_state["manual_manipulation_checks"] = manual_manipulation
+
+    st.caption("💡 *Attention checks help identify careless responders. Manipulation checks verify participants understood the experimental condition.*")
 
     # ========================================
     # FINAL SUMMARY & LOCK DESIGN
@@ -3251,8 +3327,8 @@ if active_step == 2:
     scale_names = [s.get('name', 'Unknown') for s in scales if s.get('name')]
     st.markdown(f"**Scales:** {', '.join(scale_names) if scale_names else 'Main_DV (default)'}")
 
-    # Validate and lock design - only require conditions and scales from QSF
-    design_valid = len(all_conditions) >= 1 and len(scales) >= 1
+    # Validate and lock design - require conditions, scales, AND scale confirmation
+    design_valid = len(all_conditions) >= 1 and len(scales) >= 1 and scales_confirmed
 
     if design_valid:
         # Save to session state
@@ -3286,14 +3362,16 @@ if active_step == 2:
                 st.session_state["inferred_design"], prereg_outcomes, prereg_iv, enhanced_analysis
             )
 
-        st.success("Design configuration complete. Proceed to the **Generate** step to run the simulation.")
+        st.success("✅ Design configuration complete. Proceed to the **Generate** step to run the simulation.")
     else:
         missing_bits = []
         if not all_conditions:
             missing_bits.append("conditions")
         if not scales:
             missing_bits.append("scales")
-        st.error("Please complete all required fields before proceeding: " + ", ".join(missing_bits))
+        if not scales_confirmed:
+            missing_bits.append("scale confirmation (check the box above)")
+        st.error("⚠️ Cannot proceed - missing: " + ", ".join(missing_bits))
 
     # ========================================
     # ADVANCED: Variable Review (collapsed)
