@@ -134,6 +134,117 @@ def _safe_json(obj: Any) -> str:
     return json.dumps(obj, indent=2, ensure_ascii=False, default=str)
 
 
+def _markdown_to_html(markdown_text: str, title: str = "Study Summary") -> str:
+    """
+    Convert markdown text to a well-formatted, standalone HTML document.
+    Uses simple regex-based conversion for common markdown patterns.
+    """
+    import re
+
+    # Start HTML document with styling
+    html_parts = [
+        '<!DOCTYPE html>',
+        '<html lang="en">',
+        '<head>',
+        '<meta charset="UTF-8">',
+        '<meta name="viewport" content="width=device-width, initial-scale=1.0">',
+        f'<title>{title}</title>',
+        '<style>',
+        'body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; ',
+        '       max-width: 900px; margin: 40px auto; padding: 20px; line-height: 1.6; color: #333; }',
+        'h1 { color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 10px; }',
+        'h2 { color: #34495e; border-bottom: 1px solid #bdc3c7; padding-bottom: 8px; margin-top: 30px; }',
+        'h3 { color: #7f8c8d; margin-top: 25px; }',
+        'table { border-collapse: collapse; width: 100%; margin: 15px 0; }',
+        'th, td { border: 1px solid #ddd; padding: 10px 12px; text-align: left; }',
+        'th { background-color: #f8f9fa; font-weight: 600; }',
+        'tr:nth-child(even) { background-color: #f9f9f9; }',
+        'code { background-color: #f4f4f4; padding: 2px 6px; border-radius: 3px; font-family: monospace; }',
+        'pre { background-color: #f4f4f4; padding: 15px; border-radius: 5px; overflow-x: auto; }',
+        'blockquote { border-left: 4px solid #3498db; margin: 15px 0; padding: 10px 20px; background: #f8f9fa; }',
+        'ul, ol { padding-left: 25px; }',
+        'li { margin: 5px 0; }',
+        '.info-box { background: #e8f4fd; border: 1px solid #3498db; border-radius: 5px; padding: 15px; margin: 15px 0; }',
+        '.warning-box { background: #fff3cd; border: 1px solid #ffc107; border-radius: 5px; padding: 15px; margin: 15px 0; }',
+        '@media print { body { max-width: 100%; margin: 20px; } }',
+        '</style>',
+        '</head>',
+        '<body>',
+    ]
+
+    content = markdown_text
+
+    # Convert headers
+    content = re.sub(r'^### (.+)$', r'<h3>\1</h3>', content, flags=re.MULTILINE)
+    content = re.sub(r'^## (.+)$', r'<h2>\1</h2>', content, flags=re.MULTILINE)
+    content = re.sub(r'^# (.+)$', r'<h1>\1</h1>', content, flags=re.MULTILINE)
+
+    # Convert bold and italic
+    content = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', content)
+    content = re.sub(r'\*(.+?)\*', r'<em>\1</em>', content)
+    content = re.sub(r'`([^`]+)`', r'<code>\1</code>', content)
+
+    # Convert tables (simple markdown tables)
+    lines = content.split('\n')
+    in_table = False
+    new_lines = []
+    for line in lines:
+        if '|' in line and not line.strip().startswith('```'):
+            cells = [c.strip() for c in line.split('|')[1:-1]]  # Remove empty first/last
+            if cells:
+                if all(c.replace('-', '').replace(':', '') == '' for c in cells):
+                    # This is a separator row, skip it
+                    continue
+                if not in_table:
+                    new_lines.append('<table>')
+                    # First row is header
+                    new_lines.append('<tr>' + ''.join(f'<th>{c}</th>' for c in cells) + '</tr>')
+                    in_table = True
+                else:
+                    new_lines.append('<tr>' + ''.join(f'<td>{c}</td>' for c in cells) + '</tr>')
+            else:
+                if in_table:
+                    new_lines.append('</table>')
+                    in_table = False
+                new_lines.append(line)
+        else:
+            if in_table:
+                new_lines.append('</table>')
+                in_table = False
+            new_lines.append(line)
+    if in_table:
+        new_lines.append('</table>')
+    content = '\n'.join(new_lines)
+
+    # Convert bullet lists
+    content = re.sub(r'^- (.+)$', r'<li>\1</li>', content, flags=re.MULTILINE)
+    content = re.sub(r'(<li>.*</li>\n?)+', r'<ul>\g<0></ul>', content)
+
+    # Convert line breaks to paragraphs (for non-HTML content)
+    paragraphs = []
+    current_para = []
+    for line in content.split('\n'):
+        line = line.strip()
+        if line.startswith('<') or not line:
+            if current_para:
+                paragraphs.append('<p>' + ' '.join(current_para) + '</p>')
+                current_para = []
+            if line:
+                paragraphs.append(line)
+        else:
+            current_para.append(line)
+    if current_para:
+        paragraphs.append('<p>' + ' '.join(current_para) + '</p>')
+
+    content = '\n'.join(paragraphs)
+
+    html_parts.append(content)
+    html_parts.append('</body>')
+    html_parts.append('</html>')
+
+    return '\n'.join(html_parts)
+
+
 def _bytes_to_zip(files: Dict[str, bytes]) -> bytes:
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
@@ -1455,25 +1566,21 @@ The simulator automatically assigns behavioral personas to simulated participant
         methods_updated = datetime.utcfromtimestamp(methods_pdf_path.stat().st_mtime).strftime("%Y-%m-%d")
         st.caption(f"Methods summary (PDF) · Last updated: {methods_updated}")
 
-        # Two options: download or view in browser
-        col_m1, col_m2 = st.columns(2)
-        with col_m1:
-            st.download_button(
-                "📥 Download PDF",
-                data=methods_pdf_path.read_bytes(),
-                file_name=methods_pdf_path.name,
-                mime="application/pdf",
-            )
-        with col_m2:
-            # Use data URL approach - works without JavaScript
+        # Download button for PDF
+        st.download_button(
+            "📥 Download Methods PDF",
+            data=methods_pdf_path.read_bytes(),
+            file_name=methods_pdf_path.name,
+            mime="application/pdf",
+        )
+
+        # Embedded PDF viewer in expander
+        with st.expander("📄 View Methods Summary (embedded)"):
             pdf_bytes = methods_pdf_path.read_bytes()
             pdf_b64 = base64.b64encode(pdf_bytes).decode()
-            # Direct data URL for PDF viewing in new tab
-            pdf_link = f"""
-            <a href="data:application/pdf;base64,{pdf_b64}" target="_blank" style="text-decoration: none; color: #1f77b4;">
-            📄 Open in new tab</a>
-            """
-            st.markdown(pdf_link, unsafe_allow_html=True)
+            pdf_display = f'<iframe src="data:application/pdf;base64,{pdf_b64}" width="100%" height="600" type="application/pdf"></iframe>'
+            st.markdown(pdf_display, unsafe_allow_html=True)
+            st.caption("If the PDF doesn't display, please use the download button above.")
     elif methods_md_path.exists():
         methods_updated = datetime.utcfromtimestamp(methods_md_path.stat().st_mtime).strftime("%Y-%m-%d %H:%M UTC")
         st.caption(f"Methods summary updated: {methods_updated}")
@@ -3670,13 +3777,19 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
             )
             comprehensive_html_bytes = comprehensive_html.encode("utf-8")
 
+            # Generate HTML version of study summary (easy to open and well-formatted)
+            study_title = metadata.get('study_title', 'Study Summary')
+            instructor_html = _markdown_to_html(instructor_report, title=f"Study Summary: {study_title}")
+            instructor_html_bytes = instructor_html.encode("utf-8")
+
             files = {
                 "Simulated_Data.csv": csv_bytes,
                 "Metadata.json": meta_bytes,
                 "Data_Codebook_Handbook.txt": explainer_bytes,  # Explains all variable coding
                 "R_Prepare_Data.R": r_bytes,
                 "Schema_Validation.json": _safe_json(schema_results).encode("utf-8"),
-                "Study_Summary.md": instructor_bytes,  # Summary report (not the comprehensive instructor analysis)
+                "Study_Summary.md": instructor_bytes,  # Summary report in Markdown
+                "Study_Summary.html": instructor_html_bytes,  # Same summary in HTML (easy to view in browser)
             }
 
             # Include uploaded source files in "Source_Files" subfolder
@@ -3726,7 +3839,7 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
                 "COMPREHENSIVE INSTRUCTOR ANALYSIS ATTACHED\n"
                 "=========================================\n\n"
                 "This email includes detailed statistical analysis that students do NOT receive.\n"
-                "Students get only Study_Summary.md in their download ZIP.\n\n"
+                "Students get Study_Summary.md and Study_Summary.html (browser-viewable) in their download ZIP.\n\n"
                 "INSTRUCTOR ATTACHMENTS:\n"
                 "- INSTRUCTOR_Statistical_Report.html - Full visual report with charts, t-tests,\n"
                 "  ANOVA, Mann-Whitney, chi-squared, regression analysis, and effect sizes.\n"
@@ -3743,7 +3856,8 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
                 "Files in ZIP (what students see):\n"
                 "- Simulated_Data.csv (the data)\n"
                 "- Data_Codebook_Handbook.txt (variable coding)\n"
-                "- Study_Summary.md (basic summary)\n"
+                "- Study_Summary.md (basic summary in Markdown)\n"
+                "- Study_Summary.html (same summary - opens in any browser)\n"
                 "- R_Prepare_Data.R (R script)\n"
                 "- Metadata.json, Schema_Validation.json\n"
             )
