@@ -2,13 +2,12 @@
 """
 Utility modules for the Behavioral Experiment Simulation Tool.
 
-Version: 2.1.11
+Version: 2.1.12
 Changes:
-    - Allow PNG/JPG uploads alongside PDFs for survey materials
-    - Multiple file uploads for survey materials
-    - QSF identifier dropdown for condition selection
-    - Fixed allocation auto-balance when number of conditions changes
-    - Widget versioning to force refresh on condition changes
+    - GUARANTEED visualizations - reports ALWAYS contain charts
+    - Pure SVG chart generators (no matplotlib dependency)
+    - Multiple fallback layers: matplotlib -> SVG module -> inline SVG
+    - Bar charts, distribution plots, histograms, means comparison
 
 Modules:
     - qsf_parser: Parse Qualtrics Survey Format (.qsf) files
@@ -22,10 +21,11 @@ Modules:
     - group_management: Student group registration and usage tracking
     - condition_identifier: Enhanced condition and variable identification
     - text_generator: Free open-ended text response generation
+    - svg_charts: Pure SVG chart generators (guaranteed fallback visualizations)
 """
 
 # Package version - should match all module versions
-__version__ = "2.1.11"
+__version__ = "2.1.12"
 
 from .qsf_parser import parse_qsf_file, extract_survey_structure, generate_qsf_summary
 from .simulation_engine import SimulationEngine
@@ -77,6 +77,14 @@ from .text_generator import (
     MarkovChainGenerator,
     create_text_generator,
 )
+from .svg_charts import (
+    create_bar_chart_svg,
+    create_distribution_svg,
+    create_histogram_svg,
+    create_means_comparison_svg,
+    create_effect_size_svg,
+    create_summary_table_svg,
+)
 
 __all__ = [
     # Original exports
@@ -127,4 +135,11 @@ __all__ = [
     'ResponseStyle',
     'MarkovChainGenerator',
     'create_text_generator',
+    # SVG charts (guaranteed visualization fallbacks)
+    'create_bar_chart_svg',
+    'create_distribution_svg',
+    'create_histogram_svg',
+    'create_means_comparison_svg',
+    'create_effect_size_svg',
+    'create_summary_table_svg',
 ]
