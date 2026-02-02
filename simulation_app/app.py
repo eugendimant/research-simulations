@@ -3283,7 +3283,9 @@ if active_step == 3:
 
     config_col1, config_col2 = st.columns(2)
     conditions = inferred.get('conditions', [])
-    scales = inferred.get('scales', [])
+    # Use confirmed scales if available (from scale confirmation UI), otherwise use inferred scales
+    scales = st.session_state.get('confirmed_scales', []) or inferred.get('scales', [])
+    factors = inferred.get('factors', [])  # Get factors for Advanced Mode effect size configuration
     scale_names = [s.get('name', 'Unknown') for s in scales if s.get('name')]
 
     with config_col1:
@@ -3394,7 +3396,14 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
 
                 # Get levels for selected factor
                 selected_factor_data = next((f for f in factors if f.get("name") == effect_factor), None)
-                factor_levels = selected_factor_data.get("levels", []) if selected_factor_data else all_conditions
+                if selected_factor_data:
+                    factor_levels = selected_factor_data.get("levels", [])
+                else:
+                    factor_levels = conditions if conditions else []
+
+                # Ensure we have at least some levels to work with
+                if not factor_levels:
+                    factor_levels = ["Control", "Treatment"]  # Fallback defaults
 
             with eff_col2:
                 # Effect direction and magnitude
@@ -3459,6 +3468,11 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
                         f"Effect configured: **{effect_variable}** will be {effect_d:.2f}d higher "
                         f"in '{level_high}' vs '{level_low}'"
                     )
+            else:
+                st.warning(
+                    "⚠️ Need at least 2 condition levels to configure effect sizes. "
+                    "Please ensure your study has multiple conditions defined."
+                )
 
         custom_persona_weights = None
 
