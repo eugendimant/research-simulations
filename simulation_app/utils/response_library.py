@@ -67,11 +67,32 @@ class QuestionType(Enum):
 class StudyDomain(Enum):
     """Research domains for context-specific responses.
 
-    This enum covers 100+ research domains across behavioral economics,
-    social psychology, political science, consumer behavior, organizational
-    behavior, technology, health, education, ethics, environmental studies,
-    cognitive psychology, developmental psychology, clinical psychology,
-    economics, and communication research.
+    This enum covers 175+ research domains across 24 categories:
+    - Behavioral Economics (12 domains)
+    - Social Psychology (15 domains)
+    - Political Science (10 domains)
+    - Consumer/Marketing (10 domains)
+    - Organizational Behavior (10 domains)
+    - Technology/AI (10 domains)
+    - Health Psychology (10 domains)
+    - Education (8 domains)
+    - Ethics/Moral Psychology (8 domains)
+    - Environmental (8 domains)
+    - Cognitive Psychology (8 domains)
+    - Developmental Psychology (6 domains)
+    - Clinical Psychology (6 domains)
+    - Communication (6 domains)
+    - Economics (6 domains)
+    - General (4 domains)
+    - Neuroscience/Neuroeconomics (6 domains)
+    - Sports Psychology (6 domains)
+    - Legal Psychology (6 domains)
+    - Food/Nutrition Psychology (6 domains)
+    - Human Factors/Ergonomics (6 domains)
+    - Cross-Cultural (5 domains)
+    - Positive Psychology (5 domains)
+    - Gender/Sexuality (4 domains)
+    - Relationship/Attachment (4 domains)
     """
     # ========== BEHAVIORAL ECONOMICS (12 domains) ==========
     BEHAVIORAL_ECONOMICS = "behavioral_economics"
@@ -241,6 +262,72 @@ class StudyDomain(Enum):
     SURVEY_FEEDBACK = "survey_feedback"
     OPEN_ENDED = "open_ended"
     MISCELLANEOUS = "miscellaneous"
+
+    # ========== NEUROSCIENCE/NEUROECONOMICS (6 domains) ==========
+    NEUROECONOMICS = "neuroeconomics"
+    REWARD_PROCESSING = "reward_processing"
+    IMPULSE_CONTROL = "impulse_control"
+    EMOTIONAL_REGULATION = "emotional_regulation"
+    NEURAL_DECISION = "neural_decision"
+    COGNITIVE_LOAD = "cognitive_load"
+
+    # ========== SPORTS PSYCHOLOGY (6 domains) ==========
+    SPORTS_PSYCHOLOGY = "sports_psychology"
+    ATHLETIC_MOTIVATION = "athletic_motivation"
+    TEAM_DYNAMICS = "team_dynamics"
+    PERFORMANCE_ANXIETY = "performance_anxiety"
+    COACH_ATHLETE = "coach_athlete"
+    FAN_BEHAVIOR = "fan_behavior"
+
+    # ========== LEGAL PSYCHOLOGY (6 domains) ==========
+    LEGAL_PSYCHOLOGY = "legal_psychology"
+    JURY_DECISION = "jury_decision"
+    WITNESS_MEMORY = "witness_memory"
+    PROCEDURAL_JUSTICE = "procedural_justice"
+    CRIMINAL_JUSTICE = "criminal_justice"
+    LEGAL_COMPLIANCE = "legal_compliance"
+
+    # ========== FOOD/NUTRITION PSYCHOLOGY (6 domains) ==========
+    FOOD_PSYCHOLOGY = "food_psychology"
+    EATING_BEHAVIOR = "eating_behavior"
+    FOOD_CHOICE = "food_choice"
+    NUTRITION_KNOWLEDGE = "nutrition_knowledge"
+    BODY_IMAGE = "body_image"
+    DIET_ADHERENCE = "diet_adherence"
+
+    # ========== HUMAN FACTORS/ERGONOMICS (6 domains) ==========
+    HUMAN_FACTORS = "human_factors"
+    USER_EXPERIENCE = "user_experience"
+    INTERFACE_DESIGN = "interface_design"
+    SAFETY_BEHAVIOR = "safety_behavior"
+    WORKLOAD = "workload"
+    HUMAN_ERROR = "human_error"
+
+    # ========== CROSS-CULTURAL (5 domains) ==========
+    CROSS_CULTURAL = "cross_cultural"
+    CULTURAL_VALUES = "cultural_values"
+    ACCULTURATION = "acculturation"
+    CULTURAL_IDENTITY = "cultural_identity"
+    GLOBAL_ATTITUDES = "global_attitudes"
+
+    # ========== POSITIVE PSYCHOLOGY (5 domains) ==========
+    POSITIVE_PSYCHOLOGY = "positive_psychology"
+    GRATITUDE = "gratitude"
+    RESILIENCE = "resilience"
+    FLOURISHING = "flourishing"
+    LIFE_SATISFACTION = "life_satisfaction"
+
+    # ========== GENDER/SEXUALITY (4 domains) ==========
+    GENDER_PSYCHOLOGY = "gender_psychology"
+    GENDER_ROLES = "gender_roles"
+    SEXUALITY_ATTITUDES = "sexuality_attitudes"
+    LGBTQ_EXPERIENCE = "lgbtq_experience"
+
+    # ========== RELATIONSHIP/ATTACHMENT (4 domains) ==========
+    RELATIONSHIP = "relationship"
+    ATTACHMENT = "attachment"
+    ROMANTIC_RELATIONSHIPS = "romantic_relationships"
+    SOCIAL_SUPPORT = "social_support"
 
 
 # ============================================================================
@@ -2786,6 +2873,264 @@ DOMAIN_TEMPLATES: Dict[str, Dict[str, Dict[str, List[str]]]] = {
             ],
         },
     },
+
+    # ========== NEUROSCIENCE/NEUROECONOMICS ==========
+
+    "neuroeconomics": {
+        "explanation": {
+            "very_positive": ["The decision felt intuitive and rewarding.", "My brain seemed to quickly process the best choice.", "The reward of making this choice felt immediate.", "I experienced a sense of clarity when deciding.", "The choice aligned well with my natural instincts."],
+            "positive": ["The decision process felt relatively smooth.", "I was able to weigh options fairly quickly.", "The choice didn't require too much mental effort.", "My intuition guided me reasonably well.", "The decision felt comfortable."],
+            "neutral": ["I'm not sure what drove this particular decision.", "The decision process was neither easy nor hard.", "I can't pinpoint exactly what influenced my choice.", "It was an average decision experience.", "No strong feelings about the process."],
+            "negative": ["The decision felt mentally taxing.", "I struggled to process all the information.", "My thinking felt clouded or conflicted.", "The choice required more effort than expected.", "I felt uncertain throughout the process."],
+            "very_negative": ["The decision was mentally exhausting.", "I felt overwhelmed by the options.", "My brain couldn't process everything effectively.", "The choice felt forced and uncomfortable.", "I had difficulty focusing on what mattered."],
+        },
+    },
+
+    "impulse_control": {
+        "explanation": {
+            "very_positive": ["I exercised strong self-control.", "I resisted the temptation successfully.", "I thought carefully before acting.", "I prioritized long-term over immediate gratification.", "I controlled my impulses effectively."],
+            "positive": ["I showed reasonable self-control.", "I managed to resist most temptations.", "I thought before acting.", "I considered the consequences.", "I maintained decent impulse control."],
+            "neutral": ["Sometimes I controlled impulses, sometimes not.", "My self-control was average.", "I had mixed success with impulse control.", "It varied depending on the situation.", "No strong pattern in my self-control."],
+            "negative": ["I struggled with self-control.", "Temptations were hard to resist.", "I acted impulsively at times.", "Short-term rewards influenced me too much.", "My impulse control was weaker than I'd like."],
+            "very_negative": ["I gave in to temptation.", "I couldn't control my impulses.", "I acted without thinking.", "Immediate gratification won out.", "My self-control failed me."],
+        },
+    },
+
+    "cognitive_load": {
+        "explanation": {
+            "very_positive": ["The task was easy to process mentally.", "I had plenty of mental capacity to handle this.", "The cognitive demands were manageable.", "My mind handled the complexity well.", "I felt mentally sharp and capable."],
+            "positive": ["The mental demands were reasonable.", "I managed the cognitive load adequately.", "The task wasn't too mentally taxing.", "I had sufficient mental resources.", "The processing was fairly smooth."],
+            "neutral": ["The mental demands were average.", "The cognitive load was neither high nor low.", "I had typical mental engagement.", "The processing was unremarkable.", "Standard mental effort was required."],
+            "negative": ["The task was mentally demanding.", "I felt cognitive strain.", "My mental resources were stretched.", "The complexity was challenging.", "I struggled with the mental load."],
+            "very_negative": ["I was cognitively overwhelmed.", "The mental demands were excessive.", "I couldn't process everything.", "My mind was overloaded.", "The cognitive burden was too high."],
+        },
+    },
+
+    # ========== SPORTS PSYCHOLOGY ==========
+
+    "sports_psychology": {
+        "explanation": {
+            "very_positive": ["Sports have been incredibly positive for me.", "Athletics helped me develop discipline and confidence.", "Competition brings out the best in me.", "Physical activity is central to my wellbeing.", "Sports taught me valuable life lessons."],
+            "positive": ["I enjoy participating in sports.", "Athletics have been generally positive.", "Competition can be motivating.", "Physical activity benefits me.", "Sports have contributed to my growth."],
+            "neutral": ["Sports are neither particularly important nor unimportant to me.", "I have average interest in athletics.", "Competition doesn't strongly affect me.", "Physical activity is just routine.", "My relationship with sports is neutral."],
+            "negative": ["Sports haven't been particularly positive for me.", "Competition can be stressful.", "Athletics have caused some negative experiences.", "Physical activity can be challenging.", "Sports have had mixed effects on me."],
+            "very_negative": ["Sports have been a source of stress.", "Competition negatively impacts me.", "Athletics have caused significant challenges.", "Physical activity has been discouraging.", "My sports experiences have been difficult."],
+        },
+    },
+
+    "performance_anxiety": {
+        "explanation": {
+            "very_positive": ["I perform well under pressure.", "Anxiety doesn't affect my performance.", "I thrive in high-pressure situations.", "Competition energizes me.", "I channel nervous energy productively."],
+            "positive": ["I manage performance pressure reasonably well.", "Some anxiety is motivating for me.", "I usually perform adequately under pressure.", "I've learned to cope with performance stress.", "Anxiety affects me minimally."],
+            "neutral": ["Pressure affects me sometimes, sometimes not.", "My response to performance anxiety varies.", "I have average ability to handle pressure.", "Performance situations are hit or miss.", "Anxiety has mixed effects on my performance."],
+            "negative": ["Performance pressure often affects me negatively.", "I struggle with anxiety in competitive situations.", "Pressure tends to hurt my performance.", "I get nervous before important events.", "Performance anxiety is challenging for me."],
+            "very_negative": ["Performance anxiety significantly impairs me.", "I struggle greatly under pressure.", "Competition triggers intense anxiety.", "I often choke in important moments.", "Performance situations are very stressful."],
+        },
+    },
+
+    "team_dynamics": {
+        "explanation": {
+            "very_positive": ["Our team works together excellently.", "Team chemistry is outstanding.", "Collaboration within the team is strong.", "We support each other effectively.", "Team dynamics enhance our performance."],
+            "positive": ["Our team generally works well together.", "Team dynamics are positive.", "We collaborate effectively most of the time.", "Team members support each other.", "The group functions reasonably well."],
+            "neutral": ["Team dynamics are average.", "We work together adequately.", "Collaboration is neither strong nor weak.", "Team functioning is typical.", "Our group dynamics are unremarkable."],
+            "negative": ["Team dynamics could be improved.", "There are some conflicts within the team.", "Collaboration is sometimes difficult.", "Team chemistry has issues.", "Group functioning has challenges."],
+            "very_negative": ["Team dynamics are problematic.", "There's significant conflict in the group.", "Collaboration is very difficult.", "Team chemistry is poor.", "The team functions poorly."],
+        },
+    },
+
+    # ========== LEGAL PSYCHOLOGY ==========
+
+    "legal_psychology": {
+        "explanation": {
+            "very_positive": ["The legal system worked fairly in this case.", "Justice was served appropriately.", "I trust the legal process.", "The procedures were handled correctly.", "The outcome was just and fair."],
+            "positive": ["The legal system generally worked well.", "Justice was mostly served.", "I have reasonable trust in the process.", "Procedures were adequate.", "The outcome was acceptable."],
+            "neutral": ["I have mixed views on the legal process.", "The system worked as expected.", "My trust in the legal process is average.", "Procedures were standard.", "The outcome was neither good nor bad."],
+            "negative": ["The legal process had some problems.", "Justice wasn't fully served.", "I have concerns about the process.", "Procedures could have been better.", "The outcome was somewhat unfair."],
+            "very_negative": ["The legal system failed.", "Justice was not served.", "I distrust the legal process.", "Procedures were mishandled.", "The outcome was unjust."],
+        },
+    },
+
+    "jury_decision": {
+        "explanation": {
+            "very_positive": ["The evidence clearly supported this verdict.", "I'm confident in my decision.", "The facts led me to this conclusion.", "I carefully considered all testimony.", "This verdict reflects justice."],
+            "positive": ["The evidence pointed toward this verdict.", "I'm reasonably confident in my decision.", "I considered the facts carefully.", "The testimony supported this conclusion.", "I believe this is the right verdict."],
+            "neutral": ["The evidence was mixed.", "I had difficulty reaching this decision.", "The facts weren't entirely clear.", "I'm uncertain about this verdict.", "It was a close call."],
+            "negative": ["I had doubts about this verdict.", "The evidence was insufficient.", "I struggled with this decision.", "The facts didn't clearly point one way.", "I'm not fully confident in this choice."],
+            "very_negative": ["I disagree with this verdict.", "The evidence didn't support this conclusion.", "This decision was very difficult.", "I believe this verdict may be wrong.", "I have serious doubts about this outcome."],
+        },
+    },
+
+    "procedural_justice": {
+        "explanation": {
+            "very_positive": ["The process was completely fair.", "I was treated with respect.", "My voice was heard.", "The procedures were transparent.", "I trust the fairness of the process."],
+            "positive": ["The process was generally fair.", "I was treated reasonably well.", "I had opportunity to be heard.", "Procedures were mostly transparent.", "The process seemed fair."],
+            "neutral": ["The process was average in fairness.", "Treatment was neither good nor bad.", "I somewhat had my voice heard.", "Procedures were partially transparent.", "Fairness was mixed."],
+            "negative": ["The process had fairness issues.", "I wasn't treated very well.", "My voice wasn't fully heard.", "Procedures lacked transparency.", "The process seemed somewhat unfair."],
+            "very_negative": ["The process was unfair.", "I was treated poorly.", "My voice was ignored.", "Procedures were opaque.", "The process was unjust."],
+        },
+    },
+
+    # ========== FOOD/NUTRITION ==========
+
+    "food_psychology": {
+        "explanation": {
+            "very_positive": ["I have a healthy relationship with food.", "Eating brings me joy without guilt.", "I make nutritious choices naturally.", "Food is a positive part of my life.", "I enjoy eating mindfully."],
+            "positive": ["My relationship with food is generally good.", "I usually make healthy choices.", "Eating is mostly enjoyable.", "I have reasonable eating habits.", "Food is generally positive for me."],
+            "neutral": ["My relationship with food is average.", "Eating is neither particularly enjoyable nor stressful.", "My food choices are mixed.", "I don't think much about food.", "My eating habits are typical."],
+            "negative": ["I sometimes struggle with food choices.", "Eating can be stressful.", "My relationship with food has challenges.", "I make unhealthy choices sometimes.", "Food can be a source of stress."],
+            "very_negative": ["I have a difficult relationship with food.", "Eating causes significant stress.", "I struggle with food choices.", "My eating habits are problematic.", "Food is a major challenge for me."],
+        },
+    },
+
+    "eating_behavior": {
+        "explanation": {
+            "very_positive": ["I eat mindfully and healthily.", "My eating patterns are well-regulated.", "I have excellent dietary habits.", "I make thoughtful food choices.", "I eat appropriate portions."],
+            "positive": ["I generally eat well.", "My eating patterns are reasonable.", "I have decent dietary habits.", "I usually make good food choices.", "My portions are appropriate."],
+            "neutral": ["My eating behavior is average.", "I eat without particular thought.", "My dietary patterns are typical.", "Food choices are mixed.", "My eating habits are unremarkable."],
+            "negative": ["My eating behavior could improve.", "I sometimes overeat or undereat.", "My dietary patterns are irregular.", "I make poor food choices at times.", "Eating habits are challenging."],
+            "very_negative": ["My eating behavior is problematic.", "I struggle with eating regulation.", "My dietary patterns are unhealthy.", "I consistently make poor choices.", "Eating is very challenging for me."],
+        },
+    },
+
+    "body_image": {
+        "explanation": {
+            "very_positive": ["I'm very satisfied with my body.", "I have a positive body image.", "I feel comfortable in my appearance.", "I appreciate my body.", "I feel confident about how I look."],
+            "positive": ["I'm generally satisfied with my body.", "My body image is mostly positive.", "I feel reasonably comfortable with my appearance.", "I accept my body.", "I feel decent about how I look."],
+            "neutral": ["I have mixed feelings about my body.", "My body image is neither positive nor negative.", "I don't think much about my appearance.", "I have average body satisfaction.", "My feelings about my body are neutral."],
+            "negative": ["I'm somewhat dissatisfied with my body.", "My body image has challenges.", "I feel uncomfortable with some aspects of my appearance.", "Body satisfaction is difficult.", "I'm critical of how I look."],
+            "very_negative": ["I'm very dissatisfied with my body.", "I have a negative body image.", "I feel very uncomfortable with my appearance.", "I dislike my body.", "Body image causes significant distress."],
+        },
+    },
+
+    # ========== HUMAN FACTORS ==========
+
+    "user_experience": {
+        "explanation": {
+            "very_positive": ["The interface was intuitive and easy to use.", "I had an excellent user experience.", "Everything worked exactly as expected.", "The design made my task effortless.", "I would highly recommend this experience."],
+            "positive": ["The interface was reasonably easy to use.", "The user experience was good.", "Most things worked as expected.", "The design was helpful.", "I had a positive experience overall."],
+            "neutral": ["The interface was average.", "The user experience was neither good nor bad.", "Some things worked, some didn't.", "The design was adequate.", "My experience was unremarkable."],
+            "negative": ["The interface was somewhat confusing.", "The user experience could be improved.", "Several things didn't work as expected.", "The design hindered my task.", "I had a frustrating experience."],
+            "very_negative": ["The interface was very confusing.", "The user experience was poor.", "Nothing worked as expected.", "The design made my task impossible.", "I would not recommend this."],
+        },
+    },
+
+    "human_error": {
+        "explanation": {
+            "very_positive": ["I performed without any errors.", "The system helped prevent mistakes.", "I was very careful and accurate.", "Error prevention was excellent.", "I made no significant mistakes."],
+            "positive": ["I made few errors.", "The system helped catch some mistakes.", "I was reasonably careful.", "Error prevention was adequate.", "Minor mistakes only."],
+            "neutral": ["I made an average number of errors.", "Some mistakes were caught, some weren't.", "I was somewhat careful.", "Error prevention was partial.", "Typical error rate."],
+            "negative": ["I made several errors.", "The system didn't prevent mistakes well.", "I wasn't as careful as I should have been.", "Error prevention was inadequate.", "I made more mistakes than usual."],
+            "very_negative": ["I made many errors.", "The system allowed too many mistakes.", "I wasn't careful enough.", "Error prevention failed.", "I made significant mistakes."],
+        },
+    },
+
+    "safety_behavior": {
+        "explanation": {
+            "very_positive": ["I always follow safety protocols.", "Safety is my top priority.", "I'm very conscious of risks.", "I take all precautions.", "I've never had a safety incident."],
+            "positive": ["I usually follow safety protocols.", "Safety is important to me.", "I'm aware of most risks.", "I take reasonable precautions.", "I rarely have safety issues."],
+            "neutral": ["I follow safety protocols sometimes.", "Safety is moderately important to me.", "I'm somewhat aware of risks.", "I take some precautions.", "Average safety record."],
+            "negative": ["I don't always follow safety protocols.", "Safety isn't always my priority.", "I sometimes overlook risks.", "I don't take all precautions.", "I've had some safety issues."],
+            "very_negative": ["I rarely follow safety protocols.", "Safety isn't a priority.", "I often overlook risks.", "I take few precautions.", "I've had significant safety issues."],
+        },
+    },
+
+    # ========== CROSS-CULTURAL ==========
+
+    "cross_cultural": {
+        "explanation": {
+            "very_positive": ["I embrace cultural diversity.", "Cross-cultural experiences enrich my life.", "I adapt well to different cultures.", "I value learning from other cultures.", "Cultural differences fascinate me."],
+            "positive": ["I appreciate cultural diversity.", "Cross-cultural experiences are valuable.", "I adapt reasonably well to different cultures.", "I'm interested in other cultures.", "Cultural differences are interesting."],
+            "neutral": ["I have average interest in cultural diversity.", "Cross-cultural experiences are neither important nor unimportant.", "I adapt somewhat to different cultures.", "Culture is just one factor.", "I'm neutral about cultural differences."],
+            "negative": ["Cultural differences can be challenging.", "Cross-cultural experiences are sometimes difficult.", "I struggle to adapt to different cultures.", "I prefer my own culture.", "Cultural differences are confusing."],
+            "very_negative": ["Cultural differences are very challenging.", "Cross-cultural experiences are stressful.", "I can't adapt to different cultures.", "I strongly prefer my own culture.", "Cultural differences are problematic."],
+        },
+    },
+
+    "cultural_identity": {
+        "explanation": {
+            "very_positive": ["I have a strong cultural identity.", "My heritage is very important to me.", "I'm proud of my cultural background.", "My culture shapes who I am.", "I embrace my cultural roots."],
+            "positive": ["I have a good sense of cultural identity.", "My heritage is important to me.", "I'm mostly proud of my background.", "My culture influences me.", "I value my cultural roots."],
+            "neutral": ["I have average awareness of cultural identity.", "My heritage is somewhat important.", "I have mixed feelings about my background.", "Culture has some influence on me.", "I'm neutral about cultural roots."],
+            "negative": ["I struggle with cultural identity.", "My heritage feels less relevant.", "I have conflicts about my background.", "Culture doesn't define me much.", "Cultural roots aren't very important."],
+            "very_negative": ["I have a weak cultural identity.", "My heritage isn't important to me.", "I reject my cultural background.", "Culture has no influence on me.", "I've disconnected from cultural roots."],
+        },
+    },
+
+    # ========== POSITIVE PSYCHOLOGY ==========
+
+    "gratitude": {
+        "explanation": {
+            "very_positive": ["I feel deeply grateful.", "I appreciate so many things in my life.", "Gratitude is central to my wellbeing.", "I regularly count my blessings.", "I'm thankful for what I have."],
+            "positive": ["I feel grateful.", "I appreciate good things in my life.", "Gratitude is important to me.", "I often feel thankful.", "I recognize my blessings."],
+            "neutral": ["I feel average gratitude.", "I sometimes appreciate things.", "Gratitude isn't particularly prominent.", "I occasionally feel thankful.", "I'm somewhat aware of blessings."],
+            "negative": ["I struggle to feel grateful.", "I don't appreciate things as much as I should.", "Gratitude is difficult for me.", "I rarely feel thankful.", "I focus more on what's missing."],
+            "very_negative": ["I feel very little gratitude.", "I don't appreciate what I have.", "Gratitude is foreign to me.", "I never feel thankful.", "I only see what's lacking."],
+        },
+    },
+
+    "resilience": {
+        "explanation": {
+            "very_positive": ["I bounce back quickly from setbacks.", "Adversity makes me stronger.", "I'm highly resilient.", "I overcome challenges effectively.", "Setbacks don't keep me down."],
+            "positive": ["I recover reasonably well from setbacks.", "I can handle adversity.", "I'm fairly resilient.", "I cope with challenges.", "I manage to overcome difficulties."],
+            "neutral": ["My resilience is average.", "I sometimes recover, sometimes struggle.", "Adversity has mixed effects on me.", "I have typical coping ability.", "Setbacks affect me moderately."],
+            "negative": ["I struggle to bounce back from setbacks.", "Adversity is difficult for me.", "My resilience could be better.", "I have trouble coping.", "Setbacks affect me significantly."],
+            "very_negative": ["I have great difficulty recovering from setbacks.", "Adversity overwhelms me.", "I have low resilience.", "I can't cope with challenges.", "Setbacks devastate me."],
+        },
+    },
+
+    "life_satisfaction": {
+        "explanation": {
+            "very_positive": ["I'm extremely satisfied with my life.", "Life is wonderful.", "I have everything I need.", "I couldn't ask for more.", "I'm very happy with how things are."],
+            "positive": ["I'm satisfied with my life.", "Life is good.", "I have what I need.", "Things are going well.", "I'm happy with my situation."],
+            "neutral": ["I'm neither satisfied nor dissatisfied.", "Life is okay.", "I have some of what I need.", "Things are average.", "I have mixed feelings about my life."],
+            "negative": ["I'm somewhat dissatisfied with my life.", "Life could be better.", "I'm missing things I need.", "Things aren't going well.", "I'm unhappy with some aspects of my life."],
+            "very_negative": ["I'm very dissatisfied with my life.", "Life is difficult.", "I don't have what I need.", "Things are going poorly.", "I'm unhappy with my life."],
+        },
+    },
+
+    # ========== GENDER/SEXUALITY ==========
+
+    "gender_roles": {
+        "explanation": {
+            "very_positive": ["I embrace flexible gender roles.", "Traditional roles don't define me.", "I believe in gender equality.", "People should choose their own roles.", "Gender shouldn't limit anyone."],
+            "positive": ["I support flexible gender roles.", "Traditional roles aren't essential.", "I lean toward gender equality.", "Roles should be chosen individually.", "Gender shouldn't be limiting."],
+            "neutral": ["I have mixed views on gender roles.", "Some traditional roles make sense.", "I'm moderate on gender equality.", "Context matters for roles.", "Gender role views vary."],
+            "negative": ["I lean toward traditional gender roles.", "Some distinctions are natural.", "Complete equality isn't realistic.", "Biology influences roles.", "Traditional patterns have value."],
+            "very_negative": ["I believe in traditional gender roles.", "Men and women have different roles.", "Traditional distinctions are important.", "Biology determines roles.", "Traditional patterns should continue."],
+        },
+    },
+
+    # ========== RELATIONSHIPS ==========
+
+    "attachment": {
+        "explanation": {
+            "very_positive": ["I feel securely attached in relationships.", "I'm comfortable with intimacy.", "I trust my partners completely.", "Close relationships are natural for me.", "I have healthy attachment patterns."],
+            "positive": ["I have mostly secure attachments.", "I'm fairly comfortable with intimacy.", "I generally trust my partners.", "Close relationships are important.", "My attachment style is healthy."],
+            "neutral": ["My attachment style varies.", "Intimacy is sometimes comfortable, sometimes not.", "I have mixed trust levels.", "Relationships have ups and downs.", "My attachment patterns are typical."],
+            "negative": ["I sometimes struggle with attachment.", "Intimacy can be uncomfortable.", "I have trust issues at times.", "Close relationships are challenging.", "My attachment style has challenges."],
+            "very_negative": ["I have significant attachment difficulties.", "Intimacy is very uncomfortable.", "I struggle greatly with trust.", "Close relationships are very hard.", "My attachment patterns are problematic."],
+        },
+    },
+
+    "romantic_relationships": {
+        "explanation": {
+            "very_positive": ["My romantic relationship is wonderful.", "I'm deeply in love and satisfied.", "We communicate excellently.", "Our relationship is strong.", "I feel completely fulfilled romantically."],
+            "positive": ["My romantic relationship is good.", "I'm happy with my partner.", "We communicate well.", "Our relationship is healthy.", "I'm satisfied romantically."],
+            "neutral": ["My romantic relationship is average.", "We have our ups and downs.", "Communication is mixed.", "The relationship is okay.", "I have mixed romantic satisfaction."],
+            "negative": ["My romantic relationship has challenges.", "There are issues with my partner.", "Communication could be better.", "The relationship is struggling.", "I'm not fully satisfied romantically."],
+            "very_negative": ["My romantic relationship is very difficult.", "There are serious problems.", "Communication has broken down.", "The relationship is failing.", "I'm very unsatisfied romantically."],
+        },
+    },
+
+    "social_support": {
+        "explanation": {
+            "very_positive": ["I have excellent social support.", "Many people care about me.", "I can always count on others.", "My support network is strong.", "I never feel alone."],
+            "positive": ["I have good social support.", "Several people care about me.", "I usually have support when needed.", "My support network is adequate.", "I rarely feel alone."],
+            "neutral": ["My social support is average.", "Some people care about me.", "I sometimes have support.", "My support network is limited.", "I occasionally feel alone."],
+            "negative": ["My social support is limited.", "Few people seem to care.", "I often lack support.", "My support network is weak.", "I frequently feel alone."],
+            "very_negative": ["I have no social support.", "Nobody cares about me.", "I have no one to turn to.", "My support network is nonexistent.", "I always feel alone."],
+        },
+    },
 }
 
 
@@ -3286,6 +3631,168 @@ DOMAIN_KEYWORDS: Dict[StudyDomain, List[str]] = {
     ],
     StudyDomain.ECONOMIC_EXPECTATIONS: [
         'economic outlook', 'expect', 'forecast', 'prediction',
+    ],
+
+    # ========== NEUROSCIENCE/NEUROECONOMICS ==========
+    StudyDomain.NEUROECONOMICS: [
+        'neuroeconomics', 'brain', 'neural', 'neuroscience', 'fmri', 'neuroimaging',
+    ],
+    StudyDomain.REWARD_PROCESSING: [
+        'reward', 'dopamine', 'pleasure', 'anticipation', 'gratification',
+    ],
+    StudyDomain.IMPULSE_CONTROL: [
+        'impulse', 'inhibition', 'self-control', 'impulsive', 'restraint',
+    ],
+    StudyDomain.EMOTIONAL_REGULATION: [
+        'emotion regulation', 'emotional control', 'manage emotion', 'regulate feeling',
+    ],
+    StudyDomain.NEURAL_DECISION: [
+        'neural decision', 'brain decision', 'cognitive neuroscience', 'decision brain',
+    ],
+    StudyDomain.COGNITIVE_LOAD: [
+        'cognitive load', 'mental effort', 'working memory', 'processing capacity',
+    ],
+
+    # ========== SPORTS PSYCHOLOGY ==========
+    StudyDomain.SPORTS_PSYCHOLOGY: [
+        'sport', 'athlete', 'competition', 'athletic', 'exercise',
+    ],
+    StudyDomain.ATHLETIC_MOTIVATION: [
+        'athletic motivation', 'training motivation', 'sports drive', 'competitive drive',
+    ],
+    StudyDomain.TEAM_DYNAMICS: [
+        'team dynamic', 'team cohesion', 'teamwork sport', 'team chemistry',
+    ],
+    StudyDomain.PERFORMANCE_ANXIETY: [
+        'performance anxiety', 'choking', 'competition anxiety', 'stage fright',
+    ],
+    StudyDomain.COACH_ATHLETE: [
+        'coach', 'coaching', 'trainer', 'athlete relationship', 'mentor sport',
+    ],
+    StudyDomain.FAN_BEHAVIOR: [
+        'fan', 'spectator', 'supporter', 'fandom', 'cheering',
+    ],
+
+    # ========== LEGAL PSYCHOLOGY ==========
+    StudyDomain.LEGAL_PSYCHOLOGY: [
+        'legal', 'law', 'court', 'justice system', 'forensic',
+    ],
+    StudyDomain.JURY_DECISION: [
+        'jury', 'verdict', 'deliberation', 'juror', 'trial decision',
+    ],
+    StudyDomain.WITNESS_MEMORY: [
+        'witness', 'eyewitness', 'testimony', 'lineup', 'identification',
+    ],
+    StudyDomain.PROCEDURAL_JUSTICE: [
+        'procedural justice', 'fair process', 'due process', 'treatment by authorities',
+    ],
+    StudyDomain.CRIMINAL_JUSTICE: [
+        'criminal', 'crime', 'offender', 'sentencing', 'punishment',
+    ],
+    StudyDomain.LEGAL_COMPLIANCE: [
+        'compliance law', 'follow rules', 'regulatory compliance', 'legal obedience',
+    ],
+
+    # ========== FOOD/NUTRITION PSYCHOLOGY ==========
+    StudyDomain.FOOD_PSYCHOLOGY: [
+        'food', 'eating', 'nutrition', 'diet', 'meal',
+    ],
+    StudyDomain.EATING_BEHAVIOR: [
+        'eating behavior', 'food consumption', 'eating pattern', 'dietary habit',
+    ],
+    StudyDomain.FOOD_CHOICE: [
+        'food choice', 'food selection', 'choose food', 'food preference',
+    ],
+    StudyDomain.NUTRITION_KNOWLEDGE: [
+        'nutrition knowledge', 'healthy eating', 'nutritional', 'dietary knowledge',
+    ],
+    StudyDomain.BODY_IMAGE: [
+        'body image', 'appearance', 'weight concern', 'body satisfaction',
+    ],
+    StudyDomain.DIET_ADHERENCE: [
+        'diet adherence', 'dietary compliance', 'follow diet', 'stick to diet',
+    ],
+
+    # ========== HUMAN FACTORS/ERGONOMICS ==========
+    StudyDomain.HUMAN_FACTORS: [
+        'human factors', 'ergonomic', 'usability', 'interface', 'design',
+    ],
+    StudyDomain.USER_EXPERIENCE: [
+        'user experience', 'ux', 'usability', 'user interface', 'interaction design',
+    ],
+    StudyDomain.INTERFACE_DESIGN: [
+        'interface', 'ui design', 'screen design', 'visual design', 'layout',
+    ],
+    StudyDomain.SAFETY_BEHAVIOR: [
+        'safety', 'hazard', 'risk prevention', 'protective behavior', 'accident',
+    ],
+    StudyDomain.WORKLOAD: [
+        'workload', 'task demand', 'mental demand', 'work demand', 'capacity',
+    ],
+    StudyDomain.HUMAN_ERROR: [
+        'human error', 'mistake', 'slip', 'lapse', 'error prevention',
+    ],
+
+    # ========== CROSS-CULTURAL ==========
+    StudyDomain.CROSS_CULTURAL: [
+        'cross-cultural', 'culture', 'cultural difference', 'multicultural',
+    ],
+    StudyDomain.CULTURAL_VALUES: [
+        'cultural value', 'tradition', 'custom', 'heritage', 'cultural norm',
+    ],
+    StudyDomain.ACCULTURATION: [
+        'acculturation', 'cultural adaptation', 'immigrant', 'cultural integration',
+    ],
+    StudyDomain.CULTURAL_IDENTITY: [
+        'cultural identity', 'ethnic identity', 'heritage identity', 'bicultural',
+    ],
+    StudyDomain.GLOBAL_ATTITUDES: [
+        'global', 'international', 'worldwide', 'globalization', 'foreign',
+    ],
+
+    # ========== POSITIVE PSYCHOLOGY ==========
+    StudyDomain.POSITIVE_PSYCHOLOGY: [
+        'positive psychology', 'happiness', 'wellbeing', 'thriving', 'optimal',
+    ],
+    StudyDomain.GRATITUDE: [
+        'gratitude', 'thankful', 'appreciate', 'grateful', 'blessing',
+    ],
+    StudyDomain.RESILIENCE: [
+        'resilience', 'bounce back', 'recover', 'adversity', 'overcome',
+    ],
+    StudyDomain.FLOURISHING: [
+        'flourish', 'thrive', 'optimal functioning', 'human flourishing',
+    ],
+    StudyDomain.LIFE_SATISFACTION: [
+        'life satisfaction', 'satisfied with life', 'quality of life', 'life evaluation',
+    ],
+
+    # ========== GENDER/SEXUALITY ==========
+    StudyDomain.GENDER_PSYCHOLOGY: [
+        'gender', 'sex difference', 'masculin', 'feminin', 'gender studies',
+    ],
+    StudyDomain.GENDER_ROLES: [
+        'gender role', 'gender expectation', 'traditional gender', 'gender stereotype',
+    ],
+    StudyDomain.SEXUALITY_ATTITUDES: [
+        'sexuality', 'sexual attitude', 'sexual orientation', 'sexual',
+    ],
+    StudyDomain.LGBTQ_EXPERIENCE: [
+        'lgbtq', 'gay', 'lesbian', 'transgender', 'queer', 'bisexual',
+    ],
+
+    # ========== RELATIONSHIP/ATTACHMENT ==========
+    StudyDomain.RELATIONSHIP: [
+        'relationship', 'partner', 'couple', 'interpersonal', 'connection',
+    ],
+    StudyDomain.ATTACHMENT: [
+        'attachment', 'attachment style', 'secure', 'anxious', 'avoidant',
+    ],
+    StudyDomain.ROMANTIC_RELATIONSHIPS: [
+        'romantic', 'dating', 'love', 'romantic partner', 'intimate relationship',
+    ],
+    StudyDomain.SOCIAL_SUPPORT: [
+        'social support', 'support network', 'emotional support', 'help from others',
     ],
 }
 

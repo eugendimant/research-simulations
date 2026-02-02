@@ -8,7 +8,7 @@ To keep the codebase stable, we provide a thin wrapper around `EnhancedSimulatio
 """
 
 # Version identifier to help track deployed code
-__version__ = "2.1.3"  # Synced all utils to same version
+__version__ = "2.2.0"  # Comprehensive update - all modules synced
 
 from .enhanced_simulation_engine import EnhancedSimulationEngine, EffectSizeSpec, ExclusionCriteria
 

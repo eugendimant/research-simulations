@@ -23,28 +23,78 @@ from enum import Enum
 
 
 class VariableRole(Enum):
-    """Role classifications for survey variables."""
+    """Role classifications for survey variables (25 types).
+
+    This comprehensive enum covers all common variable roles in behavioral
+    experiments, including primary and secondary outcomes, process variables,
+    control variables, and quality assurance measures.
+    """
+    # ========== Experimental Design Variables ==========
     CONDITION = "Condition"
     INDEPENDENT_VARIABLE = "Independent variable"
+    TREATMENT = "Treatment"
+    CONTROL = "Control"
+    MANIPULATION = "Manipulation"
+
+    # ========== Outcome Variables ==========
     PRIMARY_OUTCOME = "Primary outcome"
     SECONDARY_OUTCOME = "Secondary outcome"
+    EXPLORATORY_OUTCOME = "Exploratory outcome"
+    BEHAVIORAL_OUTCOME = "Behavioral outcome"
+    ATTITUDINAL_OUTCOME = "Attitudinal outcome"
+
+    # ========== Process/Mechanism Variables ==========
     MEDIATOR = "Mediator"
     MODERATOR = "Moderator"
+    CONFOUND = "Confound"
+    MECHANISM = "Mechanism"
+
+    # ========== Control/Background Variables ==========
     COVARIATE = "Covariate"
     DEMOGRAPHICS = "Demographics"
+    INDIVIDUAL_DIFFERENCE = "Individual difference"
+    BASELINE = "Baseline measure"
+
+    # ========== Quality Assurance ==========
     ATTENTION_CHECK = "Attention check"
     MANIPULATION_CHECK = "Manipulation check"
+    COMPREHENSION_CHECK = "Comprehension check"
+    INSTRUCTED_RESPONSE = "Instructed response item"
+    SPEEDING_CHECK = "Speeding check"
+
+    # ========== Response Types ==========
     OPEN_ENDED = "Open-ended"
     FILLER = "Filler"
+    TIMER = "Timer/Duration"
+    META_DATA = "Metadata"
     OTHER = "Other"
 
 
 class RandomizationLevel(Enum):
-    """Level at which randomization occurs."""
+    """Level at which randomization occurs (12 types).
+
+    Covers all common randomization schemes in behavioral research,
+    including cluster randomization, stratified designs, and adaptive
+    randomization methods.
+    """
+    # ========== Standard Randomization ==========
     PARTICIPANT = "Participant-level"
     GROUP = "Group/Cluster-level"
+    SITE = "Site-level"
+    STRATIFIED = "Stratified"
+
+    # ========== Within-Subject Designs ==========
     WITHIN_SUBJECT = "Within-subject"
+    CROSSOVER = "Crossover"
+    COUNTERBALANCED = "Counterbalanced"
+
+    # ========== Complex Designs ==========
     MULTIPLE_STAGES = "Multiple stages"
+    FACTORIAL = "Factorial"
+    ADAPTIVE = "Adaptive"
+    BLOCKED = "Blocked/Batch"
+
+    # ========== Control ==========
     NOT_RANDOMIZED = "Not randomized"
 
 
@@ -135,37 +185,95 @@ class EnhancedConditionIdentifier:
     It also integrates preregistration information to improve accuracy.
     """
 
-    # Block names that are NEVER experimental conditions
-    # These are common structural/admin block names in Qualtrics surveys
+    # Block names that are NEVER experimental conditions (100+ exclusions)
+    # Comprehensive list of structural/admin block names in Qualtrics surveys
     EXCLUDED_BLOCK_NAMES = {
-        # Generic block names
+        # ========== Generic Block Names ==========
         'block', 'block 1', 'block 2', 'block 3', 'block 4', 'block 5',
-        'default question block', 'default', 'standard',
-        # Structural/admin blocks
-        'trash', 'trash / unused questions', 'unused',
-        'intro', 'introduction', 'welcome',
-        'instructions', 'general instructions',
-        'consent', 'informed consent',
-        'captcha', 'bot check',
-        'end', 'end of survey', 'end of games', 'ending', 'debrief',
-        'thank you', 'thanks',
-        # Demographic/covariate blocks
-        'demographics', 'demographic info', 'demographic information',
-        'background', 'background info',
-        # Quality control blocks
+        'block 6', 'block 7', 'block 8', 'block 9', 'block 10',
+        'default question block', 'default', 'standard', 'main',
+        'new block', 'untitled', 'unnamed', 'copy', 'duplicate',
+
+        # ========== Introduction/Welcome ==========
+        'intro', 'introduction', 'welcome', 'welcome screen',
+        'landing page', 'start', 'beginning', 'overview',
+        'study intro', 'study introduction', 'survey intro',
+
+        # ========== Instructions ==========
+        'instructions', 'general instructions', 'task instructions',
+        'game instructions', 'study instructions', 'survey instructions',
+        'directions', 'guidelines', 'rules', 'procedure',
+
+        # ========== Consent ==========
+        'consent', 'informed consent', 'consent form',
+        'irb', 'eligibility', 'screening', 'qualification',
+        'age verification', 'terms', 'agreement',
+
+        # ========== Quality Control ==========
+        'captcha', 'bot check', 'recaptcha', 'verification',
         'attention check', 'attention checks', 'quality check',
-        'manipulation check', 'manipulation checks',
-        # Feedback blocks
+        'manipulation check', 'manipulation checks', 'mc', 'ac',
+        'comprehension check', 'comprehension', 'understanding check',
+        'instructed response', 'imc', 'trap question',
+        'speeding check', 'timing check',
+
+        # ========== Demographics ==========
+        'demographics', 'demographic info', 'demographic information',
+        'demographic questions', 'background', 'background info',
+        'personal info', 'personal information', 'about you',
+        'profile', 'participant info', 'respondent info',
+
+        # ========== End/Debrief ==========
+        'end', 'end of survey', 'end of games', 'ending', 'finish',
+        'completion', 'complete', 'done', 'final', 'conclusion',
+        'debrief', 'debriefing', 'debrief form',
+        'thank you', 'thanks', 'thank you screen',
+        'redirect', 'exit', 'goodbye',
+
+        # ========== Feedback ==========
         'feedback', 'comments', 'feedback on the survey',
+        'survey feedback', 'general feedback', 'final thoughts',
+        'additional comments', 'other comments',
+
+        # ========== Open-Ended ==========
         'open-ended', 'open ended', 'free response',
-        # Game/task specific (but not conditions)
-        'game', 'task', 'main task',
-        'pairing', 'pairing prompt', 'pair',
-        'question', 'questions',
+        'open text', 'text entry', 'essay', 'written response',
+
+        # ========== Structural ==========
+        'trash', 'trash / unused questions', 'unused', 'deleted',
+        'archive', 'hidden', 'disabled', 'inactive',
+        'test', 'testing', 'preview', 'draft',
+
+        # ========== Practice/Training ==========
+        'practice', 'practice trial', 'practice trials',
+        'training', 'training trial', 'tutorial', 'warmup',
+        'example', 'sample', 'demo',
+
+        # ========== Game/Task Structure ==========
+        'game', 'task', 'main task', 'primary task',
+        'pairing', 'pairing prompt', 'pair', 'matching',
+        'question', 'questions', 'items', 'measures',
+        'survey', 'questionnaire', 'assessment',
+
+        # ========== Timing/Progress ==========
+        'timer', 'timing', 'duration', 'progress',
+        'page break', 'break', 'intermission', 'pause',
+
+        # ========== Payment/Compensation ==========
+        'payment', 'compensation', 'reward', 'bonus',
+        'mturk', 'prolific', 'completion code', 'code',
     }
 
     # Block type keywords that indicate non-condition blocks
-    EXCLUDED_BLOCK_TYPES = {'Trash', 'Default'}
+    EXCLUDED_BLOCK_TYPES = {'Trash', 'Default', 'Standard', 'Question'}
+
+    # Keywords that indicate experimental condition blocks
+    CONDITION_BLOCK_KEYWORDS = {
+        'condition', 'treatment', 'experimental', 'manipulation',
+        'stimulus', 'scenario', 'version', 'group', 'arm',
+        'high', 'low', 'control', 'placebo', 'active',
+        'positive', 'negative', 'neutral', 'baseline',
+    }
 
     def __init__(self):
         self.warnings: List[str] = []

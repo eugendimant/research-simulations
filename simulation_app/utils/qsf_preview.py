@@ -1811,43 +1811,67 @@ class RandomizationPatternDetector:
     24. Loop & Merge - Repeated blocks with variations
     25. Conjoint/MaxDiff - Specialized experimental designs
 
-    Version: 2.2.0 - Expanded to 25+ patterns
+    Version: 2.2.0 - Expanded to 45+ patterns across 6 categories
     """
 
-    # Pattern names for logging and identification
+    # Pattern names for logging and identification (35+ patterns)
     PATTERN_TYPES = {
-        # Flow-based
+        # ========== Flow-Based Patterns (8) ==========
         'block_randomizer_between': 'BlockRandomizer (Between-Subjects)',
         'block_randomizer_within': 'BlockRandomizer (Within-Subjects)',
         'randomizer': 'Standard Randomizer',
         'group_randomizer': 'Group Randomizer',
         'nested': 'Nested/Factorial Design',
-        # Data-based
+        'table_randomizer': 'Table of Contents Randomizer',
+        'flow_group': 'Flow Group',
+        'standard_block': 'Standard Block Flow',
+
+        # ========== Data-Based Patterns (8) ==========
         'embedded_data': 'EmbeddedData Conditions',
         'random_number': 'Random Number Assignment',
         'piped_text': 'Piped Text Conditions',
         'set_value': 'SetValue Operations',
-        # Logic-based
+        'math_operation': 'Math Operations',
+        'counter': 'Counter/Scoring',
+        'response_import': 'Response Import',
+        'url_parameter': 'URL Parameter Capture',
+
+        # ========== Logic-Based Patterns (8) ==========
         'branch': 'Branch-Based Conditions',
         'skip_logic': 'Skip Logic Patterns',
         'display_logic': 'Display Logic Conditions',
         'carry_forward': 'Carry Forward Routing',
-        # External
+        'relevance': 'Relevance/Validation',
+        'timing': 'Timing-Based Logic',
+        'response_validation': 'Response Validation',
+        'content_validation': 'Content Validation',
+
+        # ========== External/Integration Patterns (6) ==========
         'webservice': 'WebService Conditions',
         'reference_survey': 'Reference Survey Conditions',
         'authenticator': 'Authenticator-Based',
         'panel_assignment': 'Panel/Contact List Assignment',
-        # Quota-based
+        'sso': 'Single Sign-On',
+        'api_trigger': 'API Trigger',
+
+        # ========== Quota-Based Patterns (5) ==========
         'quota': 'Quota-Based Assignment',
         'quota_action': 'Quota Action Branching',
         'cross_quota': 'Cross-Quota Interactions',
-        # Survey structure
+        'soft_quota': 'Soft Quota',
+        'scheduled_quota': 'Scheduled Quota',
+
+        # ========== Survey Structure Patterns (10) ==========
         'end_survey': 'EndSurvey Branches',
         'question_randomization': 'Question Randomization',
         'answer_randomization': 'Answer Randomization',
         'loop_merge': 'Loop & Merge',
         'conjoint': 'Conjoint/MaxDiff Design',
         'evenly_present': 'Even Presentation',
+        'matrix_table': 'Matrix/Grid Questions',
+        'slider': 'Slider Questions',
+        'heat_map': 'Heat Map/Click Map',
+        'rank_order': 'Rank Order Questions',
     }
 
     # Keywords that indicate condition assignment in field names

@@ -2,7 +2,7 @@
 """
 Utility modules for the Behavioral Experiment Simulation Tool.
 
-Version: 2.1.12
+Version: 2.2.0
 Changes:
     - GUARANTEED visualizations - reports ALWAYS contain charts
     - Pure SVG chart generators (no matplotlib dependency)
@@ -25,7 +25,7 @@ Modules:
 """
 
 # Package version - should match all module versions
-__version__ = "2.1.14"
+__version__ = "2.2.0"
 
 from .qsf_parser import parse_qsf_file, extract_survey_structure, generate_qsf_summary
 from .simulation_engine import SimulationEngine
