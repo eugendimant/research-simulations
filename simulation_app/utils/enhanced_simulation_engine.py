@@ -23,7 +23,7 @@ This module is designed to run inside a `utils/` package (i.e., imported as
 """
 
 # Version identifier to help track deployed code
-__version__ = "2.1.3"  # Synced all utils to same version
+__version__ = "2.1.6"  # Major: context-aware text generation, study_context support
 
 from dataclasses import dataclass
 from datetime import datetime
@@ -160,6 +160,8 @@ class EnhancedSimulationEngine:
         custom_persona_weights: Optional[Dict[str, float]] = None,
         # Open-ended response settings
         open_ended_questions: Optional[List[Dict[str, Any]]] = None,
+        # Study context for context-aware text generation
+        study_context: Optional[Dict[str, Any]] = None,
         # Stimulus/image evaluation settings
         stimulus_evaluations: Optional[List[Dict[str, Any]]] = None,
         # Condition allocation (optional) - dict mapping condition name to percentage (0-100)
@@ -184,6 +186,7 @@ class EnhancedSimulationEngine:
         self.effect_sizes = effect_sizes or []
         self.exclusion_criteria = exclusion_criteria or ExclusionCriteria()
         self.open_ended_questions = _normalize_open_ended(open_ended_questions)
+        self.study_context = study_context or {}
         self.stimulus_evaluations = stimulus_evaluations or []
         self.condition_allocation = condition_allocation  # Dict[condition_name, percentage 0-100]
         self.mode = (mode or "pilot").strip().lower()
@@ -438,7 +441,14 @@ class EnhancedSimulationEngine:
         participant_seed: int,
         response_mean: Optional[float] = None,
     ) -> str:
-        response_type = str(question_spec.get("type", "task_summary"))
+        """Generate an open-ended response using context-aware text generation.
+
+        Uses the study_context and question_text to generate appropriate responses
+        for behavioral economics, political studies, feedback questions, etc.
+        """
+        response_type = str(question_spec.get("type", "general"))
+        question_text = str(question_spec.get("question_text", ""))
+        context_type = str(question_spec.get("context_type", "general"))
 
         if float(traits.get("attention_level", 0.8)) < 0.5:
             style = "careless"
@@ -453,13 +463,20 @@ class EnhancedSimulationEngine:
 
         rng = np.random.RandomState(participant_seed)
 
+        # Build context from study_context and question_spec
+        study_domain = self.study_context.get("study_domain", "general")
+        study_topics = self.study_context.get("topics", [])
+        survey_name = self.study_context.get("survey_name", self.study_title)
+
         context = {
-            "topic": question_spec.get("topic", "the presented content"),
-            "stimulus": question_spec.get("stimulus", "product recommendation"),
-            "product": question_spec.get("product", "product"),
-            "feature": question_spec.get("feature", "features"),
+            "topic": question_spec.get("topic", study_domain),
+            "stimulus": question_spec.get("stimulus", survey_name),
+            "product": question_spec.get("product", "item"),
+            "feature": question_spec.get("feature", "aspect"),
             "emotion": str(rng.choice(["pleased", "interested", "satisfied", "engaged"])),
             "sentiment": "neutral",
+            "question_text": question_text,
+            "study_domain": study_domain,
         }
 
         cond = str(condition).lower()
@@ -758,16 +775,8 @@ class EnhancedSimulationEngine:
             data["Hedonic_Utilitarian"] = hedonic_values
             self.column_info.append(("Hedonic_Utilitarian", "Product type perception: 1=Utilitarian, 7=Hedonic"))
 
-        if not self.open_ended_questions:
-            self.open_ended_questions = [
-                {
-                    "name": "Task_Summary",
-                    "type": "task_summary",
-                    "topic": "product recommendations",
-                    "stimulus": "product recommendation",
-                }
-            ]
-
+        # ONLY generate open-ended responses for questions actually in the QSF
+        # Never create default/fake questions - this prevents fake variables like "Task_Summary"
         for q in self.open_ended_questions:
             col_name = str(q.get("name", "Open_Response")).replace(" ", "_")
             col_hash = _stable_int_hash(col_name)

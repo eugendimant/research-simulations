@@ -1505,11 +1505,23 @@ def _preview_to_engine_inputs(preview: QSFPreviewResult) -> Dict[str, Any]:
 
     open_ended = getattr(preview, "open_ended_questions", None) or []
 
+    # Extract detailed open-ended info for context-aware text generation
+    open_ended_details = getattr(preview, "open_ended_details", None) or []
+
+    # Extract study context for context-aware text generation
+    study_context = getattr(preview, "study_context", None) or {}
+
+    # Extract embedded data conditions (for surveys using embedded data for randomization)
+    embedded_data_conditions = getattr(preview, "embedded_data_conditions", None) or []
+
     return {
         "conditions": conditions,
         "factors": factors,
         "scales": scales,
         "open_ended_questions": open_ended,
+        "open_ended_details": open_ended_details,
+        "study_context": study_context,
+        "embedded_data_conditions": embedded_data_conditions,
     }
 
 
@@ -3847,6 +3859,20 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
         # Get condition allocation from session state
         condition_allocation = st.session_state.get("condition_allocation", None)
 
+        # Build open-ended questions with full context for text generation
+        # Use detailed info when available, otherwise fall back to basic list
+        open_ended_details = inferred.get("open_ended_details", [])
+        if open_ended_details:
+            # Use detailed info that includes question text and context type
+            open_ended_questions_for_engine = open_ended_details
+        else:
+            # Fallback to basic list (variable names only)
+            basic_open_ended = inferred.get("open_ended_questions", [])
+            open_ended_questions_for_engine = [
+                {"name": q, "question_text": q, "context_type": "general"}
+                for q in basic_open_ended
+            ]
+
         engine = EnhancedSimulationEngine(
             study_title=title,
             study_description=desc,
@@ -3861,7 +3887,8 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
             effect_sizes=effect_sizes,
             exclusion_criteria=exclusion,
             custom_persona_weights=custom_persona_weights,
-            open_ended_questions=inferred.get("open_ended_questions", []),
+            open_ended_questions=open_ended_questions_for_engine,
+            study_context=inferred.get("study_context", {}),
             condition_allocation=condition_allocation,
             seed=None,
             mode="pilot" if not st.session_state.get("advanced_mode", False) else "final",

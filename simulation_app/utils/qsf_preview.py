@@ -13,7 +13,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional
 
 # Version identifier to help track deployed code
-__version__ = "2.1.5"  # Improved condition detection: better BlockRandomizer parsing, exclusion lists
+__version__ = "2.1.6"  # Major: context-aware open-ended extraction, embedded data condition detection
 
 
 class LogLevel(Enum):
@@ -87,6 +87,12 @@ class QSFPreviewResult:
     open_ended_questions: List[str] = field(default_factory=list)
     attention_checks: List[str] = field(default_factory=list)
     randomizer_info: Dict[str, Any] = field(default_factory=dict)
+    # Detailed open-ended info (includes question text, context, etc.)
+    open_ended_details: List[Dict[str, Any]] = field(default_factory=list)
+    # Study context extracted from questions and instructions
+    study_context: Dict[str, Any] = field(default_factory=dict)
+    # Embedded data conditions (for surveys using EmbeddedData for randomization)
+    embedded_data_conditions: List[Dict[str, Any]] = field(default_factory=list)
 
 
 class QSFPreviewParser:
@@ -292,14 +298,23 @@ class QSFPreviewParser:
         # Parse flow elements
         flow_elements = self._parse_flow(flow_data)
 
-        # Detect open-ended questions
+        # Detect open-ended questions (basic list)
         open_ended = self._detect_open_ended(questions_map)
+
+        # Detect open-ended questions with FULL DETAILS (question text, context, etc.)
+        open_ended_details = self._extract_open_ended_details(questions_map, blocks)
+
+        # Extract study context from all questions and instructions
+        study_context = self._extract_study_context(survey_name, questions_map, blocks)
 
         # Detect attention checks
         attention_checks = self._detect_attention_checks(questions_map)
 
         # Analyze randomizer structure
         randomizer_info = self._analyze_randomizers(flow_data)
+
+        # Detect embedded data conditions (for surveys using EmbeddedData for randomization)
+        embedded_data_conditions = self._detect_embedded_data_conditions(flow_data)
 
         # Validate structure
         self._validate_structure(blocks, questions_map, detected_conditions)
@@ -331,6 +346,9 @@ class QSFPreviewParser:
             open_ended_questions=open_ended,
             attention_checks=attention_checks,
             randomizer_info=randomizer_info,
+            open_ended_details=open_ended_details,
+            study_context=study_context,
+            embedded_data_conditions=embedded_data_conditions,
         )
 
     def _parse_blocks(self, element: Dict, blocks_map: Dict):
@@ -1163,6 +1181,275 @@ class QSFPreviewParser:
                 )
 
         return attention_checks
+
+    def _extract_open_ended_details(
+        self,
+        questions_map: Dict,
+        blocks: List[BlockInfo]
+    ) -> List[Dict[str, Any]]:
+        """Extract detailed information about open-ended text entry questions.
+
+        This provides FULL context for each open-ended question so the text generator
+        can create appropriate, study-specific responses.
+
+        Returns list of dicts with:
+        - question_id: Question identifier
+        - variable_name: Export variable name
+        - question_text: Full question text
+        - block_name: Which block it's in
+        - context_type: What kind of response expected (feedback, explanation, description, etc.)
+        - preceding_questions: Context from questions before this one
+        """
+        open_ended_details = []
+
+        # Safety check
+        if not isinstance(questions_map, dict):
+            return open_ended_details
+
+        # Build a list of all question texts for context
+        all_question_texts = []
+        for q_id, q_info in questions_map.items():
+            if q_info.question_text:
+                all_question_texts.append({
+                    'id': q_id,
+                    'text': q_info.question_text,
+                    'type': q_info.question_type,
+                    'block': q_info.block_name
+                })
+
+        for q_id, q_info in questions_map.items():
+            if q_info.question_type == 'Text Entry':
+                # Skip questions that look like ID entry fields
+                text_lower = q_info.question_text.lower()
+                skip_patterns = [
+                    'mturk', 'worker id', 'prolific', 'participant id',
+                    'email', 'name', 'address', 'phone', 'zip', 'zipcode',
+                    'age', 'year born'
+                ]
+                if any(pat in text_lower for pat in skip_patterns):
+                    continue
+
+                # Determine context type based on question text
+                context_type = self._classify_open_ended_type(q_info.question_text)
+
+                # Get surrounding questions for context
+                preceding_questions = self._get_preceding_context(q_id, q_info.block_name, blocks)
+
+                detail = {
+                    'question_id': q_id,
+                    'variable_name': q_id.replace(' ', '_'),
+                    'question_text': q_info.question_text,
+                    'block_name': q_info.block_name,
+                    'context_type': context_type,
+                    'preceding_questions': preceding_questions,
+                }
+
+                open_ended_details.append(detail)
+
+                self._log(
+                    LogLevel.INFO, "OPEN_ENDED_DETAIL",
+                    f"Extracted open-ended: {q_id} ({context_type}) - {q_info.question_text[:50]}..."
+                )
+
+        return open_ended_details
+
+    def _classify_open_ended_type(self, question_text: str) -> str:
+        """Classify what type of open-ended response is expected."""
+        text_lower = question_text.lower()
+
+        # Explanation/reasoning
+        if any(kw in text_lower for kw in ['explain', 'why', 'reason', 'because', 'justify']):
+            return 'explanation'
+
+        # Feedback/opinion
+        if any(kw in text_lower for kw in ['feedback', 'opinion', 'think', 'feel', 'thoughts']):
+            return 'feedback'
+
+        # Description
+        if any(kw in text_lower for kw in ['describe', 'description', 'tell us', 'share']):
+            return 'description'
+
+        # Reflection
+        if any(kw in text_lower for kw in ['reflect', 'experience', 'notice']):
+            return 'reflection'
+
+        # Suggestion/improvement
+        if any(kw in text_lower for kw in ['suggest', 'improve', 'change', 'better']):
+            return 'suggestion'
+
+        # General comment
+        if any(kw in text_lower for kw in ['comment', 'anything else', 'additional']):
+            return 'comment'
+
+        return 'general'
+
+    def _get_preceding_context(
+        self,
+        question_id: str,
+        block_name: str,
+        blocks: List[BlockInfo]
+    ) -> List[str]:
+        """Get the text of questions preceding this one for context."""
+        preceding = []
+
+        for block in blocks:
+            if block.block_name == block_name:
+                found_target = False
+                for q in block.questions:
+                    if q.question_id == question_id:
+                        found_target = True
+                        break
+                    # Add preceding question text (limited)
+                    if q.question_text:
+                        preceding.append(q.question_text[:100])
+
+        # Return last 3 preceding questions
+        return preceding[-3:] if len(preceding) > 3 else preceding
+
+    def _extract_study_context(
+        self,
+        survey_name: str,
+        questions_map: Dict,
+        blocks: List[BlockInfo]
+    ) -> Dict[str, Any]:
+        """Extract overall study context from the survey content.
+
+        This analyzes all questions, instructions, and blocks to understand
+        what the study is about, enabling contextually appropriate text generation.
+        """
+        context = {
+            'survey_name': survey_name,
+            'topics': [],
+            'key_concepts': [],
+            'study_domain': 'general',
+            'instructions_text': '',
+            'main_questions': [],
+        }
+
+        if not isinstance(questions_map, dict):
+            return context
+
+        # Collect all text from questions
+        all_text = [survey_name]
+
+        for q_id, q_info in questions_map.items():
+            if q_info.question_text:
+                all_text.append(q_info.question_text)
+
+        combined_text = ' '.join(all_text).lower()
+
+        # Detect study domain
+        domain_keywords = {
+            'politics': ['trump', 'biden', 'democrat', 'republican', 'political', 'vote', 'election', 'president'],
+            'economics': ['money', 'dollars', 'contribute', 'invest', 'pay', 'price', 'cost', 'economic', 'financial'],
+            'behavioral_economics': ['dictator game', 'public goods', 'prisoner', 'ultimatum', 'trust game', 'cooperation'],
+            'social_psychology': ['social', 'group', 'other people', 'partner', 'interaction'],
+            'consumer': ['product', 'brand', 'purchase', 'buy', 'recommend', 'consumer'],
+            'technology': ['ai', 'artificial intelligence', 'robot', 'technology', 'computer'],
+            'health': ['health', 'medical', 'doctor', 'illness', 'treatment'],
+        }
+
+        detected_domains = []
+        for domain, keywords in domain_keywords.items():
+            match_count = sum(1 for kw in keywords if kw in combined_text)
+            if match_count >= 2:
+                detected_domains.append((domain, match_count))
+
+        if detected_domains:
+            # Sort by match count and take top domain
+            detected_domains.sort(key=lambda x: x[1], reverse=True)
+            context['study_domain'] = detected_domains[0][0]
+            context['topics'] = [d[0] for d in detected_domains[:3]]
+
+        # Extract key concepts (nouns that appear frequently)
+        # Find capitalized words that aren't at sentence start
+        import re
+        concept_pattern = r'(?<=[a-z]\s)([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)'
+        concepts = re.findall(concept_pattern, ' '.join(all_text[:10]))
+        context['key_concepts'] = list(set(concepts))[:10]
+
+        # Extract instruction text (from descriptive text questions)
+        for q_id, q_info in questions_map.items():
+            if q_info.question_type == 'Descriptive Text':
+                context['instructions_text'] += q_info.question_text + ' '
+
+        # Get main survey questions (not instructions, not demographics)
+        main_q_keywords = ['how', 'what', 'please rate', 'indicate', 'to what extent']
+        for q_id, q_info in questions_map.items():
+            text_lower = q_info.question_text.lower()
+            if any(kw in text_lower for kw in main_q_keywords):
+                if len(context['main_questions']) < 5:
+                    context['main_questions'].append(q_info.question_text[:100])
+
+        self._log(
+            LogLevel.INFO, "STUDY_CONTEXT",
+            f"Detected study domain: {context['study_domain']}, topics: {context['topics']}"
+        )
+
+        return context
+
+    def _detect_embedded_data_conditions(self, flow_data: Optional[Any]) -> List[Dict[str, Any]]:
+        """Detect experimental conditions set via EmbeddedData randomization.
+
+        Some surveys (like Hate_Trumps_Love) use EmbeddedData inside BlockRandomizers
+        to set condition values like "who loves Trump", "who hates Trump", etc.
+        """
+        conditions = []
+
+        if not flow_data:
+            return conditions
+
+        flow = self._extract_flow_payload(flow_data)
+        self._find_embedded_data_conditions(flow, conditions)
+
+        return conditions
+
+    def _find_embedded_data_conditions(
+        self,
+        flow: List,
+        conditions: List[Dict[str, Any]],
+        depth: int = 0
+    ):
+        """Recursively find EmbeddedData conditions inside randomizers."""
+        for item in flow:
+            if not isinstance(item, dict):
+                continue
+
+            flow_type = item.get('Type', '')
+
+            # Look for EmbeddedData inside BlockRandomizer or Randomizer
+            if flow_type in {'BlockRandomizer', 'Randomizer'}:
+                sub_flow = self._normalize_flow(item.get('Flow', []))
+
+                for sub_item in sub_flow:
+                    if isinstance(sub_item, dict):
+                        # Check for EmbeddedData in the randomized branch
+                        if sub_item.get('Type') == 'EmbeddedData':
+                            embedded_fields = sub_item.get('EmbeddedData', [])
+                            if isinstance(embedded_fields, list):
+                                for field in embedded_fields:
+                                    if isinstance(field, dict):
+                                        field_name = field.get('Field', '')
+                                        field_value = field.get('Value', '')
+                                        if field_value:  # Has a set value
+                                            conditions.append({
+                                                'field': field_name,
+                                                'value': field_value,
+                                                'source': 'EmbeddedData in Randomizer',
+                                                'depth': depth
+                                            })
+                                            self._log(
+                                                LogLevel.INFO, "EMBEDDED_CONDITION",
+                                                f"Found embedded condition: {field_name}={field_value}"
+                                            )
+
+            # Recurse into nested flows
+            if 'Flow' in item:
+                self._find_embedded_data_conditions(
+                    self._normalize_flow(item['Flow']),
+                    conditions,
+                    depth + 1
+                )
 
     def _analyze_randomizers(self, flow_data: Optional[Any]) -> Dict[str, Any]:
         """Analyze randomizer structure in detail."""
