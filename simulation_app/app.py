@@ -982,17 +982,17 @@ def _infer_factors_from_conditions(conditions: List[str]) -> List[Dict[str, Any]
     Parse factorial design from condition names.
 
     This function is designed to work with ANY QSF file by:
-    1. Trying multiple separator patterns
+    1. Normalizing separator patterns first (× x X etc. → standard ×)
     2. Handling underscore-separated names (e.g., "AI_Hedonic")
     3. Detecting numeric suffixes as potential factor levels
     4. Handling factorial + control designs (where one condition may not fit the pattern)
-    5. Falling back gracefully to single-factor designs
+    5. NEVER including interaction terms as factor levels
+    6. Falling back gracefully to single-factor designs
 
     Examples:
-    - "No AI x Utilitarian", "AI x Hedonic" → 2 factors
-    - "Control", "Treatment" → 1 factor
+    - "No AI x Utilitarian", "AI x Hedonic" → 2 factors: [AI, No AI] and [Hedonic, Utilitarian]
+    - "Control", "Treatment" → 1 factor: [Control, Treatment]
     - "Cond_1_A", "Cond_1_B", "Cond_2_A", "Cond_2_B" → 2 factors
-    - "High_Price", "Low_Price" → 1 factor (Price)
     """
     if not conditions:
         return [{"name": "Condition", "levels": ["Condition A"]}]
@@ -1009,66 +1009,61 @@ def _infer_factors_from_conditions(conditions: List[str]) -> List[Dict[str, Any]
         return [{"name": "Condition", "levels": conditions}]
 
     # ==========================================================
-    # TRY MULTIPLE SEPARATOR PATTERNS
+    # NORMALIZE ALL SEPARATOR VARIATIONS TO STANDARD " × "
     # ==========================================================
-    # Order matters: try more specific separators first
-    separator_patterns = [
-        " x ",     # Most common factorial separator
-        " X ",     # Uppercase version
-        " × ",     # Unicode multiplication sign
-        " | ",     # Pipe separator
-        " / ",     # Slash separator (but not in numbers like 1/2)
-        " - ",     # Dash separator (be careful with hyphenated words)
-        " * ",     # Asterisk
-        " & ",     # Ampersand
-        "_x_",     # Underscore x underscore
-        "__",      # Double underscore
-    ]
-
-    chosen_sep = None
-    for sep in separator_patterns:
-        # Count how many conditions contain this separator
-        matches = sum(1 for c in conditions if sep in c)
-        # Need at least 2 conditions with the separator, or majority of conditions
-        if matches >= 2 and matches >= len(conditions) - 1:  # Allow 1 non-matching (control)
-            chosen_sep = sep
-            break
+    # This is critical to prevent mixed separators from causing issues
+    normalized_conditions = []
+    for c in conditions:
+        norm = c
+        # Replace all separator variations with standard " × "
+        for sep in [" x ", " X ", " | ", "_x_", " * ", " & "]:
+            norm = norm.replace(sep, " × ")
+        normalized_conditions.append(norm)
 
     # ==========================================================
-    # PARSE USING FOUND SEPARATOR
+    # DETECT FACTORIAL STRUCTURE
     # ==========================================================
-    if chosen_sep:
-        # Separate conditions that match the separator from those that don't
-        matching_conditions = [c for c in conditions if chosen_sep in c]
-        non_matching = [c for c in conditions if chosen_sep not in c]
+    # Count conditions with the normalized separator
+    separator = " × "
+    factorial_conditions = [c for c in normalized_conditions if separator in c]
+    non_matching = [conditions[i] for i, c in enumerate(normalized_conditions) if separator not in c]
 
-        if len(matching_conditions) >= 2:
-            split_rows = [c.split(chosen_sep) for c in matching_conditions]
-            max_parts = max(len(r) for r in split_rows)
+    # ==========================================================
+    # PARSE USING FACTORIAL SEPARATOR
+    # ==========================================================
+    if len(factorial_conditions) >= 2:
+        split_rows = [c.split(separator) for c in factorial_conditions]
+        max_parts = max(len(r) for r in split_rows)
 
-            # Check if splitting is consistent among matching conditions
-            consistent_rows = [r for r in split_rows if len(r) == max_parts]
+        # Check if splitting is consistent among matching conditions
+        consistent_rows = [r for r in split_rows if len(r) == max_parts]
 
-            if len(consistent_rows) >= 2 and max_parts > 1:
-                # Extract unique levels for each factor position
-                factors: List[Dict[str, Any]] = []
-                for j in range(max_parts):
-                    levels = sorted(list({r[j].strip() for r in consistent_rows if len(r) > j and r[j].strip()}))
-                    if not levels:
-                        continue
-                    factor_name = _infer_factor_name(levels)
-                    # Make factor name unique if needed
-                    existing_names = [f.get("name") for f in factors]
-                    if factor_name in existing_names:
-                        factor_name = f"{factor_name} {j+1}"
-                    factors.append({"name": factor_name, "levels": levels})
+        if len(consistent_rows) >= 2 and max_parts > 1:
+            # Extract unique levels for each factor position
+            # IMPORTANT: Only include single-level terms, never interaction terms
+            factors: List[Dict[str, Any]] = []
+            for j in range(max_parts):
+                raw_levels = [r[j].strip() for r in consistent_rows if len(r) > j and r[j].strip()]
+                # Filter out any interaction-looking terms (contain × or x)
+                levels = sorted(list({
+                    l for l in raw_levels
+                    if " × " not in l and " x " not in l.lower() and " X " not in l
+                }))
+                if not levels:
+                    continue
+                factor_name = _infer_factor_name(levels)
+                # Make factor name unique if needed
+                existing_names = [f.get("name") for f in factors]
+                if factor_name in existing_names:
+                    factor_name = f"{factor_name} {j+1}"
+                factors.append({"name": factor_name, "levels": levels})
 
-                if factors and len(factors) >= 2:
-                    # Store info about non-matching conditions (potential controls)
-                    if non_matching:
-                        for f in factors:
-                            f["_non_matching_conditions"] = non_matching
-                    return factors
+            if factors and len(factors) >= 2:
+                # Store info about non-matching conditions (potential controls)
+                if non_matching:
+                    for f in factors:
+                        f["_non_matching_conditions"] = non_matching
+                return factors
 
     # ==========================================================
     # TRY UNDERSCORE-BASED PARSING (e.g., "AI_Hedonic", "NoAI_Utilitarian")
@@ -1144,40 +1139,48 @@ def _render_manual_factor_config(
 
     This allows users to define factors and their levels directly,
     with validation against the detected conditions.
+    Supports up to 3x3x3 designs (3 factors with up to 3 levels each).
     """
     import streamlit as st
 
-    # Determine number of factors
-    max_factors = min(3, len(all_conditions) // 2) if len(all_conditions) >= 2 else 1
-    default_num = len(auto_detected) if auto_detected else 1
+    # Always allow up to 3 factors for factorial designs
+    # User can select 1, 2, or 3 factors regardless of condition count
+    default_num = len(auto_detected) if auto_detected else 2
 
     num_factors = st.selectbox(
         "Number of factors",
-        options=list(range(1, max_factors + 1)),
-        index=min(default_num - 1, max_factors - 1),
+        options=[1, 2, 3],
+        index=min(default_num - 1, 2),
         key="manual_num_factors",
-        help="Select how many independent variables (factors) you have",
+        help="Select how many independent variables (factors) you have. Supports up to 3x3x3 designs.",
     )
 
     factors = []
 
     # Parse condition names to extract potential levels
-    # For each condition like "No AI x Utilitarian", extract parts
-    parsed_conditions = []
-    separator = None
-    for sep in [" x ", " X ", " × ", " | ", " / ", " - "]:
-        if any(sep in c for c in all_conditions):
-            separator = sep
-            break
+    # IMPORTANT: Normalize separators first and only include conditions that match the pattern
+    # This prevents interaction terms from being included as factor levels
 
-    if separator:
-        for c in all_conditions:
+    # Normalize all separator variations to a standard one
+    normalized_conditions = []
+    for c in all_conditions:
+        # Replace various separator types with standard " × "
+        norm = c.replace(" x ", " × ").replace(" X ", " × ").replace(" | ", " × ").replace("_x_", " × ")
+        normalized_conditions.append(norm)
+
+    # Detect if we have factorial structure (separator present)
+    separator = " × "
+    factorial_conditions = [c for c in normalized_conditions if separator in c]
+    non_factorial_conditions = [c for c in normalized_conditions if separator not in c]
+
+    # Parse only factorial conditions (exclude controls/non-matching)
+    parsed_conditions = []
+    if factorial_conditions:
+        for c in factorial_conditions:
             parts = [_clean_condition_name(p.strip()) for p in c.split(separator)]
             parsed_conditions.append(parts)
-    else:
-        parsed_conditions = [[_clean_condition_name(c)] for c in all_conditions]
 
-    # Extract unique levels for each factor position
+    # Extract unique levels for each factor position (excluding interaction terms)
     max_parts = max(len(p) for p in parsed_conditions) if parsed_conditions else 1
 
     for f_idx in range(num_factors):
@@ -1198,9 +1201,12 @@ def _render_manual_factor_config(
             placeholder="e.g., AI Presence, Product Type",
         )
 
-        # Extract potential levels from parsed conditions
-        if f_idx < max_parts:
-            potential_levels = sorted(list({p[f_idx] for p in parsed_conditions if len(p) > f_idx}))
+        # Extract potential levels from parsed conditions ONLY
+        # This ensures we only get single factor levels, not interaction combinations
+        if f_idx < max_parts and parsed_conditions:
+            potential_levels = sorted(list({p[f_idx] for p in parsed_conditions if len(p) > f_idx and p[f_idx]}))
+            # Filter out any remaining interaction-looking terms (contain × or x)
+            potential_levels = [l for l in potential_levels if " × " not in l and " x " not in l.lower()]
         else:
             potential_levels = []
 
@@ -2811,14 +2817,14 @@ if active_step == 2:
     st.caption(
         "**Factors** are the independent variables you manipulate. "
         "A 2×2 design has 2 factors (e.g., AI presence × Product type). "
-        "The tool auto-detects factors from condition names like 'AI x Hedonic'."
+        "Supports up to 3×3×3 designs (3 factors, 3 levels each)."
     )
 
     # Detect design type
     design_options = [
-        "Factorial design (2×2, 2×3, etc.)",
-        "Factorial + control (e.g., 2×2 + 1 control)",
-        "Simple multi-arm (separate conditions, no factorial structure)",
+        "Factorial design (2×2, 2×3, 3×3, etc.)",
+        "Factorial + control (factorial + 1 control condition)",
+        "Simple multi-arm (independent conditions, no factorial)",
     ]
 
     # Determine default index - use saved value if exists, otherwise auto-detect
@@ -2833,11 +2839,54 @@ if active_step == 2:
         index=default_design_idx,
         key="design_structure_select",
         help=(
-            "• **Factorial**: Conditions are combinations of factor levels (e.g., 2×2 = 4 conditions)\n"
+            "• **Factorial**: Conditions are factor level combinations (2×2=4, 2×3=6, 3×3=9, 2×2×2=8)\n"
             "• **Factorial + control**: Factorial design plus a separate control condition\n"
             "• **Simple multi-arm**: Independent conditions without factorial structure"
         ),
     )
+
+    # Show specific factorial design selection when factorial is chosen
+    if "Factorial" in design_structure and "multi-arm" not in design_structure:
+        factorial_designs = [
+            "2×2 (2 factors, 2 levels each = 4 conditions)",
+            "2×3 (2 factors: 2 and 3 levels = 6 conditions)",
+            "3×2 (2 factors: 3 and 2 levels = 6 conditions)",
+            "3×3 (2 factors, 3 levels each = 9 conditions)",
+            "2×2×2 (3 factors, 2 levels each = 8 conditions)",
+            "2×2×3 (3 factors: 2, 2, and 3 levels = 12 conditions)",
+            "3×3×3 (3 factors, 3 levels each = 27 conditions)",
+            "Custom (define factors manually)",
+        ]
+
+        # Auto-detect which factorial design matches
+        auto_design = "Custom (define factors manually)"
+        if auto_num_factors == 2:
+            f1_levels = len(auto_detected_factors[0].get("levels", [])) if len(auto_detected_factors) > 0 else 0
+            f2_levels = len(auto_detected_factors[1].get("levels", [])) if len(auto_detected_factors) > 1 else 0
+            if f1_levels == 2 and f2_levels == 2:
+                auto_design = "2×2 (2 factors, 2 levels each = 4 conditions)"
+            elif (f1_levels == 2 and f2_levels == 3) or (f1_levels == 3 and f2_levels == 2):
+                auto_design = "2×3 (2 factors: 2 and 3 levels = 6 conditions)" if f1_levels == 2 else "3×2 (2 factors: 3 and 2 levels = 6 conditions)"
+            elif f1_levels == 3 and f2_levels == 3:
+                auto_design = "3×3 (2 factors, 3 levels each = 9 conditions)"
+        elif auto_num_factors == 3:
+            levels = [len(f.get("levels", [])) for f in auto_detected_factors[:3]]
+            if levels == [2, 2, 2]:
+                auto_design = "2×2×2 (3 factors, 2 levels each = 8 conditions)"
+            elif sorted(levels) == [2, 2, 3]:
+                auto_design = "2×2×3 (3 factors: 2, 2, and 3 levels = 12 conditions)"
+            elif levels == [3, 3, 3]:
+                auto_design = "3×3×3 (3 factors, 3 levels each = 27 conditions)"
+
+        default_factorial_idx = factorial_designs.index(auto_design) if auto_design in factorial_designs else len(factorial_designs) - 1
+
+        selected_factorial = st.selectbox(
+            "Factorial design type",
+            options=factorial_designs,
+            index=default_factorial_idx,
+            key="factorial_design_type",
+            help="Select your specific factorial design. This helps validate your factor configuration.",
+        )
 
     factors = []
 
@@ -2863,10 +2912,15 @@ if active_step == 2:
                     )
                 with col_levels:
                     levels = f.get("levels", [])
-                    # Clean level names for display
-                    clean_levels = [_clean_condition_name(l) for l in levels]
+                    # Clean level names for display and filter out any interaction terms
+                    clean_levels = []
+                    for l in levels:
+                        clean_l = _clean_condition_name(l)
+                        # Skip if it looks like an interaction term (contains × or x)
+                        if " × " not in clean_l and " x " not in clean_l.lower():
+                            clean_levels.append(clean_l)
                     st.markdown(f"**Levels:** {' | '.join(clean_levels)}")
-                detected_factors_display.append({"name": new_name, "levels": levels})
+                detected_factors_display.append({"name": new_name, "levels": [l for l in levels if " × " not in _clean_condition_name(l) and " x " not in _clean_condition_name(l).lower()]})
 
             factors = detected_factors_display
 
