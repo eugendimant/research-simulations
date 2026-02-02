@@ -14,7 +14,7 @@ The Behavioral Experiment Simulation Tool generates realistic synthetic pilot da
 - Develop analysis scripts on realistic data structures
 - Learn to interpret statistical outputs on data with known properties
 
-This tool is designed for **educational and pilot testing purposes**—it does not replace actual human subjects research but provides a rigorous training ground for developing analytical skills.
+This tool is designed for **educational and pilot testing purposes**; it does not replace actual human subjects research but provides a rigorous training ground for developing analytical skills.
 
 ---
 
