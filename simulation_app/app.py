@@ -1465,28 +1465,15 @@ The simulator automatically assigns behavioral personas to simulated participant
                 mime="application/pdf",
             )
         with col_m2:
-            # Use JavaScript blob approach for reliable PDF viewing
+            # Use data URL approach - works without JavaScript
             pdf_bytes = methods_pdf_path.read_bytes()
             pdf_b64 = base64.b64encode(pdf_bytes).decode()
-            # JavaScript to convert base64 to blob and open in new tab
-            js_open_pdf = f"""
-            <script>
-            function openPdfInNewTab() {{
-                var byteCharacters = atob('{pdf_b64}');
-                var byteNumbers = new Array(byteCharacters.length);
-                for (var i = 0; i < byteCharacters.length; i++) {{
-                    byteNumbers[i] = byteCharacters.charCodeAt(i);
-                }}
-                var byteArray = new Uint8Array(byteNumbers);
-                var blob = new Blob([byteArray], {{type: 'application/pdf'}});
-                var blobUrl = URL.createObjectURL(blob);
-                window.open(blobUrl, '_blank');
-            }}
-            </script>
-            <a href="javascript:void(0);" onclick="openPdfInNewTab(); return false;" style="text-decoration: none;">
+            # Direct data URL for PDF viewing in new tab
+            pdf_link = f"""
+            <a href="data:application/pdf;base64,{pdf_b64}" target="_blank" style="text-decoration: none; color: #1f77b4;">
             📄 Open in new tab</a>
             """
-            st.markdown(js_open_pdf, unsafe_allow_html=True)
+            st.markdown(pdf_link, unsafe_allow_html=True)
     elif methods_md_path.exists():
         methods_updated = datetime.utcfromtimestamp(methods_md_path.stat().st_mtime).strftime("%Y-%m-%d %H:%M UTC")
         st.caption(f"Methods summary updated: {methods_updated}")
