@@ -6,7 +6,7 @@ Generates comprehensive instructor-facing reports for student simulations.
 """
 
 # Version identifier to help track deployed code
-__version__ = "2.1.12"  # Guaranteed visualizations, chart interpretations, executive summary
+__version__ = "2.1.13"  # Enhanced hypothesis extraction, ALL analyses have interpretations
 
 from dataclasses import dataclass
 from datetime import datetime
@@ -1272,6 +1272,8 @@ class ComprehensiveInstructorReport:
         - Mentioned DVs/outcomes
         - Control variables mentioned
         - Analysis methods mentioned
+
+        Enhanced pattern matching for common pre-registration formats.
         """
         result = {
             "hypotheses": [],
@@ -1285,16 +1287,90 @@ class ComprehensiveInstructorReport:
             return result
 
         prereg_lower = prereg_text.lower()
+        prereg_original = prereg_text  # Keep original case for better extraction
 
-        # Extract hypotheses (H1, H2, Hypothesis 1, etc.)
-        hyp_patterns = [
-            r'h\d+[:\s]([^.!?\n]+[.!?]?)',
-            r'hypothesis\s*\d*[:\s]([^.!?\n]+[.!?]?)',
-            r'we\s+(?:hypothesize|predict|expect)\s+(?:that\s+)?([^.!?\n]+[.!?]?)',
+        # ========================================
+        # ENHANCED HYPOTHESIS EXTRACTION
+        # ========================================
+
+        # Pattern 1: Explicit hypothesis labels (H1:, H2:, Hypothesis 1, etc.)
+        explicit_hyp_patterns = [
+            r'h\s*(\d+)[:\.\s-]+([^.!?\n]+[.!?]?)',  # H1: text, H1. text, H1 - text
+            r'hypothesis\s*(\d*)[:\.\s-]+([^.!?\n]+[.!?]?)',  # Hypothesis 1: text
+            r'prediction\s*(\d*)[:\.\s-]+([^.!?\n]+[.!?]?)',  # Prediction 1: text
         ]
-        for pattern in hyp_patterns:
-            matches = re.findall(pattern, prereg_lower, re.IGNORECASE)
-            result["hypotheses"].extend([m.strip() for m in matches if len(m.strip()) > 10])
+        for pattern in explicit_hyp_patterns:
+            matches = re.findall(pattern, prereg_original, re.IGNORECASE)
+            for match in matches:
+                # match is (number, text) or just (text,) depending on pattern
+                text = match[1] if len(match) > 1 else match[0]
+                text = text.strip()
+                if len(text) > 10 and text not in result["hypotheses"]:
+                    result["hypotheses"].append(text)
+
+        # Pattern 2: Prediction statements (we hypothesize/predict/expect/anticipate/propose)
+        prediction_patterns = [
+            r'we\s+(?:hypothesize|predict|expect|anticipate|propose)\s+(?:that\s+)?([^.!?\n]+[.!?]?)',
+            r'it\s+is\s+(?:hypothesized|predicted|expected|anticipated)\s+(?:that\s+)?([^.!?\n]+[.!?]?)',
+            r'our\s+(?:hypothesis|prediction)\s+is\s+(?:that\s+)?([^.!?\n]+[.!?]?)',
+        ]
+        for pattern in prediction_patterns:
+            matches = re.findall(pattern, prereg_original, re.IGNORECASE)
+            for m in matches:
+                text = m.strip()
+                if len(text) > 10 and text not in result["hypotheses"]:
+                    result["hypotheses"].append(text)
+
+        # Pattern 3: Effect direction statements (common in pre-regs)
+        effect_patterns = [
+            r'(?:participants|those|individuals)\s+(?:in|assigned\s+to|who\s+receive)\s+(?:the\s+)?(\w+\s+)?(?:condition|group)\s+will\s+([^.!?\n]+[.!?]?)',
+            r'(?:the\s+)?(\w+\s+)?(?:condition|group|treatment)\s+will\s+(?:result\s+in|lead\s+to|show|demonstrate|have)\s+([^.!?\n]+[.!?]?)',
+            r'(?:there\s+will\s+be\s+)?(?:a\s+)?(?:significant|positive|negative)?\s*(?:difference|effect|relationship|correlation)\s+(?:between|in)\s+([^.!?\n]+[.!?]?)',
+            r'(\w+)\s+will\s+be\s+(?:higher|lower|greater|less|more|stronger|weaker)\s+(?:in|for|among)\s+([^.!?\n]+[.!?]?)',
+        ]
+        for pattern in effect_patterns:
+            matches = re.findall(pattern, prereg_original, re.IGNORECASE)
+            for match in matches:
+                # Combine match groups into a hypothesis statement
+                if isinstance(match, tuple):
+                    text = " ".join([m for m in match if m]).strip()
+                else:
+                    text = match.strip()
+                if len(text) > 15 and text not in result["hypotheses"]:
+                    result["hypotheses"].append(text)
+
+        # Pattern 4: Look for hypotheses in sections/headers
+        # Find text after "Hypotheses:" or "Predictions:" headers
+        section_patterns = [
+            r'hypothes[ie]s?[:\s]*\n+([^\n]+(?:\n[^\n#]+)*)',  # After "Hypotheses:" header
+            r'predictions?[:\s]*\n+([^\n]+(?:\n[^\n#]+)*)',  # After "Predictions:" header
+        ]
+        for pattern in section_patterns:
+            matches = re.findall(pattern, prereg_original, re.IGNORECASE | re.MULTILINE)
+            for section_text in matches:
+                # Split by numbered items or bullet points
+                items = re.split(r'\n\s*(?:\d+[\.\)]\s*|\*\s*|-\s*|•\s*)', section_text)
+                for item in items:
+                    item = item.strip()
+                    if len(item) > 15 and item not in result["hypotheses"]:
+                        result["hypotheses"].append(item)
+
+        # Pattern 5: Bullet points or numbered lists that look like hypotheses
+        list_items = re.findall(r'(?:^|\n)\s*(?:\d+[\.\)]\s*|\*\s*|-\s*|•\s*)([^.!?\n]*(?:will|should|expect|predict|hypothesize|higher|lower|greater|less|more|significant)[^.!?\n]*[.!?]?)', prereg_original, re.IGNORECASE)
+        for item in list_items:
+            item = item.strip()
+            if len(item) > 15 and item not in result["hypotheses"]:
+                result["hypotheses"].append(item)
+
+        # Deduplicate and clean hypotheses
+        seen = set()
+        unique_hypotheses = []
+        for hyp in result["hypotheses"]:
+            hyp_clean = hyp.strip().lower()
+            if hyp_clean not in seen and len(hyp) > 10:
+                seen.add(hyp_clean)
+                unique_hypotheses.append(hyp.strip())
+        result["hypotheses"] = unique_hypotheses[:10]  # Cap at 10 hypotheses
 
         # Identify control variables mentioned
         control_indicators = [
@@ -2813,6 +2889,22 @@ class ComprehensiveInstructorReport:
                         chart_data[clean_cond] = (mean, 1.96 * se)
 
                 html_parts.append("</table>")
+
+                # Add interpretation for descriptive statistics
+                if chart_data:
+                    means = [(c, m[0]) for c, m in chart_data.items()]
+                    if len(means) >= 2:
+                        sorted_means = sorted(means, key=lambda x: x[1], reverse=True)
+                        highest = sorted_means[0]
+                        lowest = sorted_means[-1]
+                        diff = highest[1] - lowest[1]
+                        grand_mean = sum(m[1] for m in means) / len(means)
+
+                        html_parts.append("<div class='interpretation-box' style='background:#f8f9fa;padding:12px;border-radius:6px;margin:10px 0;border-left:3px solid #3498db;'>")
+                        html_parts.append(f"<strong>Summary:</strong> The <em>{highest[0]}</em> condition showed the highest mean ({highest[1]:.2f}), while <em>{lowest[0]}</em> showed the lowest ({lowest[1]:.2f}). ")
+                        html_parts.append(f"The difference between highest and lowest conditions is {diff:.2f} scale points. ")
+                        html_parts.append(f"The grand mean across conditions is {grand_mean:.2f}.")
+                        html_parts.append("</div>")
 
                 # Run statistical tests first to get effect size and p-value for chart
                 stats_results = {}

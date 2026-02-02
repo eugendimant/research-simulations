@@ -3015,6 +3015,113 @@ if active_step == 2:
     if not scales:
         scales = [{"name": "Main_DV", "num_items": 5, "scale_points": 7}]
 
+    # ========================================
+    # STEP 4: SCALE CONFIRMATION (PROMINENT)
+    # ========================================
+    st.markdown("---")
+    st.markdown("### ⚠️ Confirm Your Dependent Variables (Scales)")
+    st.warning(
+        "**Important:** Please verify that the scales below are correctly identified from your QSF file. "
+        "The simulation will only generate data for these scales. Incorrect scale identification will affect your results."
+    )
+
+    # Initialize scale confirmation state
+    if "confirmed_scales" not in st.session_state:
+        st.session_state["confirmed_scales"] = scales.copy()
+    if "scales_confirmed" not in st.session_state:
+        st.session_state["scales_confirmed"] = False
+
+    # Show detected scales with edit options
+    st.markdown("**Detected Scales from QSF:**")
+
+    # Create editable scale list
+    confirmed_scales = st.session_state.get("confirmed_scales", scales.copy())
+
+    # Display each scale with edit capability
+    updated_scales = []
+    for i, scale in enumerate(confirmed_scales):
+        with st.container():
+            col1, col2, col3, col4 = st.columns([3, 1, 1, 1])
+
+            with col1:
+                scale_name = st.text_input(
+                    f"Scale {i+1} Name",
+                    value=scale.get("name", f"Scale_{i+1}"),
+                    key=f"scale_name_{i}",
+                    label_visibility="collapsed"
+                )
+
+            with col2:
+                num_items = st.number_input(
+                    "Items",
+                    min_value=1,
+                    max_value=50,
+                    value=int(scale.get("num_items", 5)),
+                    key=f"scale_items_{i}",
+                    help="Number of items in this scale"
+                )
+
+            with col3:
+                scale_points = st.selectbox(
+                    "Points",
+                    options=[2, 3, 4, 5, 6, 7, 9, 10, 11],
+                    index=[2, 3, 4, 5, 6, 7, 9, 10, 11].index(int(scale.get("scale_points", 7))) if int(scale.get("scale_points", 7)) in [2, 3, 4, 5, 6, 7, 9, 10, 11] else 5,
+                    key=f"scale_points_{i}",
+                    help="Number of response options (e.g., 7 for 7-point Likert)"
+                )
+
+            with col4:
+                # Source indicator
+                if scale.get("detected_from_qsf", True):
+                    st.markdown("✓ *From QSF*")
+                else:
+                    st.markdown("⚙️ *Manual*")
+
+            if scale_name.strip():
+                updated_scales.append({
+                    "name": scale_name.strip(),
+                    "variable_name": scale.get("variable_name", scale_name.strip().replace(" ", "_")),
+                    "num_items": num_items,
+                    "scale_points": scale_points,
+                    "reverse_items": scale.get("reverse_items", []),
+                    "detected_from_qsf": scale.get("detected_from_qsf", True),
+                })
+
+    # Add new scale button
+    col_add, col_spacer = st.columns([1, 3])
+    with col_add:
+        if st.button("➕ Add Scale", key="add_scale_btn"):
+            new_scale = {
+                "name": f"New_Scale_{len(confirmed_scales)+1}",
+                "variable_name": f"New_Scale_{len(confirmed_scales)+1}",
+                "num_items": 5,
+                "scale_points": 7,
+                "reverse_items": [],
+                "detected_from_qsf": False,
+            }
+            confirmed_scales.append(new_scale)
+            st.session_state["confirmed_scales"] = confirmed_scales
+            st.rerun()
+
+    # Update session state with edited scales
+    st.session_state["confirmed_scales"] = updated_scales
+
+    # Confirmation checkbox
+    st.markdown("---")
+    scales_confirmed = st.checkbox(
+        "✓ I confirm these scales are correct and ready for simulation",
+        value=st.session_state.get("scales_confirmed", False),
+        key="scales_confirm_checkbox",
+        help="You must confirm the scales are correct before proceeding"
+    )
+    st.session_state["scales_confirmed"] = scales_confirmed
+
+    # Use confirmed scales for the rest of the flow
+    scales = updated_scales if updated_scales else scales
+
+    if not scales_confirmed:
+        st.info("👆 Please review the scales above and check the confirmation box to proceed.")
+
 
     # ========================================
     # FINAL SUMMARY & LOCK DESIGN
@@ -3426,7 +3533,27 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
 
         prereg_text = st.session_state.get("prereg_text_sanitized", "")
 
-        clean_scales = _normalize_scale_specs(inferred.get("scales", []))
+        # ========================================
+        # QSF VARIABLE VALIDATION
+        # Use only user-confirmed scales from the scale confirmation UI
+        # This ensures we ONLY simulate variables that exist in the QSF
+        # ========================================
+        confirmed_scales = st.session_state.get("confirmed_scales", [])
+        if confirmed_scales:
+            # User has confirmed scales - use those exclusively
+            clean_scales = _normalize_scale_specs(confirmed_scales)
+            # Log the validated scales for debugging
+            validated_scale_names = [s.get("name", "Unknown") for s in clean_scales]
+            st.session_state["_validated_scales_log"] = validated_scale_names
+        else:
+            # Fallback to inferred scales if no confirmation (shouldn't happen with new UI)
+            clean_scales = _normalize_scale_specs(inferred.get("scales", []))
+
+        # Additional validation: warn if no scales detected
+        if not clean_scales:
+            st.warning("⚠️ No scales detected or confirmed. A default scale will be used. Please verify your QSF file contains scale questions.")
+            clean_scales = [{"name": "Main_DV", "num_items": 5, "scale_points": 7, "reverse_items": []}]
+
         clean_factors = _normalize_factor_specs(inferred.get("factors", []), inferred.get("conditions", []))
 
         # Get condition allocation from session state
