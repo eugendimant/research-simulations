@@ -8,7 +8,7 @@ Uses reportlab for PDF generation.
 """
 
 # Version identifier to help track deployed code
-__version__ = "2.1.3"  # Synced all utils to same version
+__version__ = "2.2.0"  # Comprehensive update - all modules synced
 
 import io
 from datetime import datetime

@@ -54,22 +54,65 @@ class ResponseSentiment(Enum):
 
 
 class ResponseStyle(Enum):
-    """Writing style for responses."""
-    ELABORATE = "elaborate"  # Long, detailed responses
-    MODERATE = "moderate"  # Medium length, balanced
-    BRIEF = "brief"  # Short, to the point
-    MINIMAL = "minimal"  # Very short, possibly single words
+    """Writing style for responses (8 styles for comprehensive coverage)."""
+    # ========== Length-Based Styles ==========
+    ELABORATE = "elaborate"  # Long, detailed, comprehensive responses
+    MODERATE = "moderate"  # Medium length, balanced detail
+    BRIEF = "brief"  # Short, concise responses
+    MINIMAL = "minimal"  # Very short, possibly single words/phrases
+
+    # ========== Structure-Based Styles ==========
+    STRUCTURED = "structured"  # Organized with clear points/sections
+    NARRATIVE = "narrative"  # Story-like, flowing responses
+    BULLET_POINT = "bullet_point"  # List-like, enumerated points
+    CONVERSATIONAL = "conversational"  # Informal, dialogue-like
+
+
+class ResponseTone(Enum):
+    """Tone/register for responses (10 tones for nuanced expression)."""
+    # ========== Professional Tones ==========
+    FORMAL = "formal"  # Professional, academic language
+    PROFESSIONAL = "professional"  # Business-appropriate
+    TECHNICAL = "technical"  # Jargon-heavy, expert language
+
+    # ========== Casual Tones ==========
+    CASUAL = "casual"  # Relaxed, informal language
+    FRIENDLY = "friendly"  # Warm, approachable
+    HUMOROUS = "humorous"  # Light-hearted, playful
+
+    # ========== Emotional Tones ==========
+    ENTHUSIASTIC = "enthusiastic"  # Excited, energetic
+    RESERVED = "reserved"  # Restrained, measured
+    CRITICAL = "critical"  # Analytical, evaluative
+    NEUTRAL = "neutral"  # Balanced, objective
 
 
 @dataclass
 class PersonaTextTraits:
-    """Text generation traits for a persona."""
+    """Text generation traits for a persona (12 dimensions).
+
+    These traits control various aspects of response generation to create
+    realistic, varied responses that reflect individual differences.
+    """
+    # ========== Core Writing Traits ==========
     verbosity: float = 0.5  # 0 = minimal, 1 = very verbose
     formality: float = 0.5  # 0 = casual, 1 = formal
     enthusiasm: float = 0.5  # 0 = disengaged, 1 = very engaged
     detail_orientation: float = 0.5  # 0 = vague, 1 = specific
+
+    # ========== Content Traits ==========
     positivity_bias: float = 0.5  # 0 = negative, 1 = positive
     consistency: float = 0.8  # How consistent with numeric responses
+    concreteness: float = 0.5  # 0 = abstract, 1 = concrete examples
+
+    # ========== Language Traits ==========
+    vocabulary_complexity: float = 0.5  # 0 = simple, 1 = sophisticated
+    sentence_complexity: float = 0.5  # 0 = simple, 1 = complex
+    hedging_tendency: float = 0.3  # 0 = assertive, 1 = hedging
+
+    # ========== Quality Traits ==========
+    attentiveness: float = 0.9  # 0 = careless, 1 = attentive
+    coherence: float = 0.9  # 0 = incoherent, 1 = coherent
 
 
 # Domain-specific response templates
@@ -1098,6 +1141,7 @@ __all__ = [
     'PersonaTextTraits',
     'ResponseSentiment',
     'ResponseStyle',
+    'ResponseTone',
     'MarkovChainGenerator',
     'create_text_generator',
 ]

@@ -15,7 +15,7 @@ Based on recent LLM simulation research:
 """
 
 # Version identifier to help track deployed code
-__version__ = "2.1.3"  # Synced all utils to same version
+__version__ = "2.2.0"  # Comprehensive update - enhanced persona modeling
 
 import hashlib
 import random
@@ -32,11 +32,59 @@ def _stable_int_hash(s: str) -> int:
 
 @dataclass
 class PersonaTrait:
-    """Represents a single trait dimension with mean and variance."""
+    """Represents a single trait dimension with mean and variance.
+
+    Each trait dimension captures a specific aspect of response behavior
+    that influences how participants interact with survey items.
+    """
     name: str
     base_mean: float  # 0-1 scale
     base_sd: float    # Variance around mean
     description: str
+    # Optional additional parameters
+    min_value: float = 0.0  # Minimum possible value
+    max_value: float = 1.0  # Maximum possible value
+
+
+# Comprehensive list of trait dimensions (25 dimensions)
+TRAIT_DIMENSIONS = {
+    # ========== Attention & Engagement Traits ==========
+    'attention_level': 'How carefully the persona attends to stimuli',
+    'engagement': 'Overall engagement with the survey task',
+    'reading_speed': 'Speed of processing survey content',
+    'comprehension': 'Understanding of complex questions',
+    'effort': 'Cognitive effort invested in responding',
+
+    # ========== Response Style Traits ==========
+    'response_consistency': 'Within-person consistency across similar items',
+    'scale_use_breadth': 'Tendency to use full range vs. restricted range',
+    'acquiescence': 'Tendency to agree regardless of content',
+    'extremity': 'Tendency to use scale endpoints',
+    'midpoint_preference': 'Tendency to use scale midpoints',
+
+    # ========== Bias Traits ==========
+    'social_desirability': 'Tendency to respond in socially desirable ways',
+    'impression_management': 'Deliberate positive self-presentation',
+    'self_deception': 'Unconscious positive self-perception',
+    'demand_characteristics': 'Susceptibility to perceived study expectations',
+
+    # ========== Cognitive Traits ==========
+    'need_for_cognition': 'Enjoyment of effortful cognitive tasks',
+    'cognitive_reflection': 'Tendency for reflective vs. intuitive thinking',
+    'analytical_thinking': 'Preference for systematic analysis',
+    'risk_tolerance': 'Willingness to accept uncertainty',
+
+    # ========== Personality-Based Traits ==========
+    'openness': 'Openness to new experiences and ideas',
+    'conscientiousness': 'Thoroughness and dependability',
+    'extraversion': 'Outgoing, energetic orientation',
+    'agreeableness': 'Cooperative, trusting disposition',
+    'emotional_stability': 'Calm, emotionally resilient disposition',
+
+    # ========== Response Quality Traits ==========
+    'honesty': 'Truthfulness in self-reporting',
+    'elaboration': 'Tendency to provide detailed responses',
+}
 
 
 @dataclass
@@ -60,6 +108,9 @@ class PersonaLibrary:
     """
     Comprehensive library of behavioral personas organized by research domain.
 
+    This library provides 50+ behavioral archetypes organized across 15 research
+    domains, with 25 trait dimensions per persona for realistic response simulation.
+
     Domains covered:
     - Consumer Behavior & Marketing
     - AI & Technology Attitudes
@@ -68,6 +119,20 @@ class PersonaLibrary:
     - Social Psychology
     - Health Psychology
     - Environmental Psychology
+    - Political Psychology
+    - Educational Psychology
+    - Clinical Psychology
+    - Cognitive Psychology
+    - Legal Psychology
+    - Sports Psychology
+    - Cross-Cultural Psychology
+    - Positive Psychology
+
+    Each persona includes:
+    - Trait parameters (25 dimensions)
+    - Text style characteristics
+    - Applicable research domains
+    - Population weights for realistic sampling
     """
 
     def __init__(self, seed: Optional[int] = None):

@@ -6,7 +6,7 @@ Generates comprehensive instructor-facing reports for student simulations.
 """
 
 # Version identifier to help track deployed code
-__version__ = "2.1.13"  # Enhanced hypothesis extraction, ALL analyses have interpretations
+__version__ = "2.2.0"  # Comprehensive update - enhanced reports with full interpretation
 
 from dataclasses import dataclass
 from datetime import datetime
