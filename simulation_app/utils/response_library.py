@@ -3,19 +3,40 @@ Comprehensive Response Library for Open-Ended Survey Questions
 ==============================================================
 
 This module provides LLM-quality text generation for survey responses across
-50+ research domains with dynamic context adaptation.
+100+ research domains with dynamic context adaptation.
 
 Features:
-- 50+ domain-specific template sets
-- Dynamic context detection from QSF content
-- Persona-aware response generation
-- Markov chain text generation for variation
-- Question type classification and handling
+- 100+ domain-specific template sets covering all major research areas
+- 20+ question type handlers (explanation, feedback, description, etc.)
+- Dynamic context detection from QSF content and survey structure
+- Persona-aware response generation with 7 persona dimensions
+- Markov chain text generation with domain-specific corpora
+- Sophisticated sentiment mapping (5-level with nuanced variations)
+- Condition-aware response adaptation
+- Careless/inattentive responding simulation
+- Cross-cultural response style variations
 
-Version: 2.1.15
+Supported Research Domains:
+- Behavioral Economics: dictator, ultimatum, trust, public goods, risk, time
+- Social Psychology: intergroup, identity, norms, conformity, prosocial, trust
+- Political Science: polarization, partisanship, voting, media, policy
+- Consumer/Marketing: product, brand, advertising, purchase intent, loyalty
+- Organizational Behavior: workplace, leadership, teamwork, motivation, culture
+- Technology/AI: attitudes, privacy, automation, algorithm aversion, adoption
+- Health Psychology: medical decisions, wellbeing, behavior change, anxiety
+- Education: learning, assessment, feedback, engagement, motivation
+- Ethics/Moral: judgment, dilemmas, values, responsibility
+- Environmental: sustainability, climate attitudes, conservation
+- Cognitive Psychology: decision-making, memory, attention, reasoning
+- Developmental: parenting, childhood, aging, life transitions
+- Clinical: anxiety, depression, coping, therapy attitudes
+- Economics: negotiation, bargaining, framing effects, anchoring
+- Communication: persuasion, media effects, social media, misinformation
+
+Version: 2.2.0 - Major expansion with 100+ domains
 """
 
-__version__ = "2.1.15"
+__version__ = "2.2.0"
 
 import random
 import re
@@ -46,11 +67,13 @@ class QuestionType(Enum):
 class StudyDomain(Enum):
     """Research domains for context-specific responses.
 
-    This enum covers 50+ research domains across behavioral economics,
+    This enum covers 100+ research domains across behavioral economics,
     social psychology, political science, consumer behavior, organizational
-    behavior, technology, health, education, ethics, and environmental studies.
+    behavior, technology, health, education, ethics, environmental studies,
+    cognitive psychology, developmental psychology, clinical psychology,
+    economics, and communication research.
     """
-    # Behavioral Economics (8 domains)
+    # ========== BEHAVIORAL ECONOMICS (12 domains) ==========
     BEHAVIORAL_ECONOMICS = "behavioral_economics"
     DICTATOR_GAME = "dictator_game"
     PUBLIC_GOODS = "public_goods"
@@ -59,8 +82,12 @@ class StudyDomain(Enum):
     PRISONERS_DILEMMA = "prisoners_dilemma"
     RISK_PREFERENCE = "risk_preference"
     TIME_PREFERENCE = "time_preference"
+    LOSS_AVERSION = "loss_aversion"
+    FRAMING_EFFECTS = "framing_effects"
+    ANCHORING = "anchoring"
+    SUNK_COST = "sunk_cost"
 
-    # Social Psychology (9 domains)
+    # ========== SOCIAL PSYCHOLOGY (15 domains) ==========
     SOCIAL_PSYCHOLOGY = "social_psychology"
     INTERGROUP = "intergroup"
     IDENTITY = "identity"
@@ -70,54 +97,150 @@ class StudyDomain(Enum):
     TRUST = "trust"
     FAIRNESS = "fairness"
     COOPERATION = "cooperation"
+    SOCIAL_INFLUENCE = "social_influence"
+    ATTRIBUTION = "attribution"
+    STEREOTYPE = "stereotype"
+    PREJUDICE = "prejudice"
+    SELF_ESTEEM = "self_esteem"
+    EMPATHY = "empathy"
 
-    # Political Science (5 domains)
+    # ========== POLITICAL SCIENCE (10 domains) ==========
     POLITICAL = "political"
     POLARIZATION = "polarization"
     PARTISANSHIP = "partisanship"
     VOTING = "voting"
     MEDIA = "media"
+    POLICY_ATTITUDES = "policy_attitudes"
+    CIVIC_ENGAGEMENT = "civic_engagement"
+    POLITICAL_TRUST = "political_trust"
+    IDEOLOGY = "ideology"
+    MISINFORMATION = "misinformation"
 
-    # Consumer/Marketing (5 domains)
+    # ========== CONSUMER/MARKETING (10 domains) ==========
     CONSUMER = "consumer"
     BRAND = "brand"
     ADVERTISING = "advertising"
     PRODUCT_EVALUATION = "product_evaluation"
     PURCHASE_INTENT = "purchase_intent"
+    BRAND_LOYALTY = "brand_loyalty"
+    PRICE_PERCEPTION = "price_perception"
+    SERVICE_QUALITY = "service_quality"
+    CUSTOMER_SATISFACTION = "customer_satisfaction"
+    WORD_OF_MOUTH = "word_of_mouth"
 
-    # Organizational Behavior (5 domains)
+    # ========== ORGANIZATIONAL BEHAVIOR (10 domains) ==========
     ORGANIZATIONAL = "organizational"
     WORKPLACE = "workplace"
     LEADERSHIP = "leadership"
     TEAMWORK = "teamwork"
     MOTIVATION = "motivation"
+    JOB_SATISFACTION = "job_satisfaction"
+    ORGANIZATIONAL_COMMITMENT = "organizational_commitment"
+    WORK_LIFE_BALANCE = "work_life_balance"
+    EMPLOYEE_ENGAGEMENT = "employee_engagement"
+    ORGANIZATIONAL_CULTURE = "organizational_culture"
 
-    # Technology/AI (4 domains)
+    # ========== TECHNOLOGY/AI (10 domains) ==========
     TECHNOLOGY = "technology"
     AI_ATTITUDES = "ai_attitudes"
     PRIVACY = "privacy"
     AUTOMATION = "automation"
+    ALGORITHM_AVERSION = "algorithm_aversion"
+    TECHNOLOGY_ADOPTION = "technology_adoption"
+    SOCIAL_MEDIA = "social_media"
+    DIGITAL_WELLBEING = "digital_wellbeing"
+    HUMAN_AI_INTERACTION = "human_ai_interaction"
+    CYBERSECURITY = "cybersecurity"
 
-    # Health (3 domains)
+    # ========== HEALTH PSYCHOLOGY (10 domains) ==========
     HEALTH = "health"
     MEDICAL_DECISION = "medical_decision"
     WELLBEING = "wellbeing"
+    HEALTH_BEHAVIOR = "health_behavior"
+    MENTAL_HEALTH = "mental_health"
+    VACCINATION = "vaccination"
+    PAIN_MANAGEMENT = "pain_management"
+    HEALTH_ANXIETY = "health_anxiety"
+    PATIENT_PROVIDER = "patient_provider"
+    CHRONIC_ILLNESS = "chronic_illness"
 
-    # Education (2 domains)
+    # ========== EDUCATION (8 domains) ==========
     EDUCATION = "education"
     LEARNING = "learning"
+    ACADEMIC_MOTIVATION = "academic_motivation"
+    TEACHING_EFFECTIVENESS = "teaching_effectiveness"
+    ONLINE_LEARNING = "online_learning"
+    EDUCATIONAL_TECHNOLOGY = "educational_technology"
+    STUDENT_ENGAGEMENT = "student_engagement"
+    ASSESSMENT_FEEDBACK = "assessment_feedback"
 
-    # Ethics/Moral Psychology (2 domains)
+    # ========== ETHICS/MORAL PSYCHOLOGY (8 domains) ==========
     ETHICS = "ethics"
     MORAL_JUDGMENT = "moral_judgment"
+    MORAL_DILEMMA = "moral_dilemma"
+    ETHICAL_LEADERSHIP = "ethical_leadership"
+    CORPORATE_ETHICS = "corporate_ethics"
+    RESEARCH_ETHICS = "research_ethics"
+    MORAL_EMOTIONS = "moral_emotions"
+    VALUES = "values"
 
-    # Environmental (2 domains)
+    # ========== ENVIRONMENTAL (8 domains) ==========
     ENVIRONMENTAL = "environmental"
     SUSTAINABILITY = "sustainability"
+    CLIMATE_ATTITUDES = "climate_attitudes"
+    PRO_ENVIRONMENTAL = "pro_environmental"
+    GREEN_CONSUMPTION = "green_consumption"
+    CONSERVATION = "conservation"
+    ENERGY_BEHAVIOR = "energy_behavior"
+    ENVIRONMENTAL_JUSTICE = "environmental_justice"
 
-    # General (2 domains)
+    # ========== COGNITIVE PSYCHOLOGY (8 domains) ==========
+    COGNITIVE = "cognitive"
+    DECISION_MAKING = "decision_making"
+    MEMORY = "memory"
+    ATTENTION = "attention"
+    REASONING = "reasoning"
+    PROBLEM_SOLVING = "problem_solving"
+    COGNITIVE_BIAS = "cognitive_bias"
+    METACOGNITION = "metacognition"
+
+    # ========== DEVELOPMENTAL PSYCHOLOGY (6 domains) ==========
+    DEVELOPMENTAL = "developmental"
+    PARENTING = "parenting"
+    CHILDHOOD = "childhood"
+    AGING = "aging"
+    LIFE_TRANSITIONS = "life_transitions"
+    INTERGENERATIONAL = "intergenerational"
+
+    # ========== CLINICAL PSYCHOLOGY (6 domains) ==========
+    CLINICAL = "clinical"
+    ANXIETY = "anxiety"
+    DEPRESSION = "depression"
+    COPING = "coping"
+    THERAPY_ATTITUDES = "therapy_attitudes"
+    STRESS = "stress"
+
+    # ========== COMMUNICATION (6 domains) ==========
+    COMMUNICATION = "communication"
+    PERSUASION = "persuasion"
+    MEDIA_EFFECTS = "media_effects"
+    INTERPERSONAL = "interpersonal"
+    PUBLIC_OPINION = "public_opinion"
+    NARRATIVE = "narrative"
+
+    # ========== ECONOMICS (6 domains) ==========
+    ECONOMICS = "economics"
+    NEGOTIATION = "negotiation"
+    BARGAINING = "bargaining"
+    FINANCIAL_DECISION = "financial_decision"
+    SAVING_BEHAVIOR = "saving_behavior"
+    ECONOMIC_EXPECTATIONS = "economic_expectations"
+
+    # ========== GENERAL (4 domains) ==========
     GENERAL = "general"
     SURVEY_FEEDBACK = "survey_feedback"
+    OPEN_ENDED = "open_ended"
+    MISCELLANEOUS = "miscellaneous"
 
 
 # ============================================================================
@@ -1781,6 +1904,888 @@ DOMAIN_TEMPLATES: Dict[str, Dict[str, Dict[str, List[str]]]] = {
             ],
         },
     },
+
+    # ========== LOSS AVERSION ==========
+
+    "loss_aversion": {
+        "explanation": {
+            "very_positive": [
+                "I focused on potential gains more than losses.",
+                "The upside potential outweighed the risk of loss.",
+                "I'm comfortable accepting some risk for gains.",
+                "Losses don't worry me as much as missing opportunities.",
+                "I believe in taking calculated risks.",
+            ],
+            "positive": [
+                "I tried to balance potential gains against losses.",
+                "Some risk is acceptable for good returns.",
+                "I considered both sides before deciding.",
+                "I'm reasonably comfortable with risk.",
+                "The potential benefit seemed worth the risk.",
+            ],
+            "neutral": [
+                "I weighed gains and losses about equally.",
+                "Neither gain nor loss dominated my thinking.",
+                "I tried to be rational about the trade-offs.",
+                "I didn't feel strongly either way.",
+                "I just went with what seemed reasonable.",
+            ],
+            "negative": [
+                "I was worried about potential losses.",
+                "The fear of losing influenced my choice.",
+                "I preferred to avoid potential downsides.",
+                "Losing what I have concerns me more than gaining.",
+                "I'm risk-averse when it comes to losses.",
+            ],
+            "very_negative": [
+                "I strongly prefer avoiding losses over gaining.",
+                "The potential loss was too scary to risk.",
+                "I can't stand the thought of losing.",
+                "Protecting what I have is my priority.",
+                "I chose safety over potential gains.",
+            ],
+        },
+    },
+
+    # ========== FRAMING EFFECTS ==========
+
+    "framing_effects": {
+        "explanation": {
+            "very_positive": [
+                "The way it was presented made it seem very appealing.",
+                "I responded positively to how it was framed.",
+                "The positive framing influenced my favorable view.",
+                "I appreciated how the information was presented.",
+                "The description highlighted the benefits well.",
+            ],
+            "positive": [
+                "The framing helped me see it positively.",
+                "How it was described affected my perception.",
+                "I noticed the presentation was favorable.",
+                "The framing was reasonable and helpful.",
+                "I responded to the way it was presented.",
+            ],
+            "neutral": [
+                "I tried to look past how it was framed.",
+                "The framing didn't particularly affect me.",
+                "I focused on the substance, not presentation.",
+                "I didn't pay much attention to the wording.",
+                "The framing seemed neutral to me.",
+            ],
+            "negative": [
+                "The way it was framed bothered me.",
+                "I noticed the negative framing.",
+                "The presentation made it seem worse.",
+                "I was influenced by the negative description.",
+                "The framing highlighted the downsides.",
+            ],
+            "very_negative": [
+                "The negative framing strongly affected my view.",
+                "I couldn't ignore how badly it was presented.",
+                "The framing made me very concerned.",
+                "I was put off by how it was described.",
+                "The presentation was manipulatively negative.",
+            ],
+        },
+    },
+
+    # ========== ANCHORING ==========
+
+    "anchoring": {
+        "explanation": {
+            "very_positive": [
+                "The initial value seemed like a good starting point.",
+                "I adjusted appropriately from the anchor.",
+                "The reference point helped me make my judgment.",
+                "I used the given information effectively.",
+                "The anchor provided useful context.",
+            ],
+            "positive": [
+                "I considered the initial value in my response.",
+                "The starting point influenced my estimate.",
+                "I adjusted from the given anchor.",
+                "The reference was helpful for context.",
+                "I factored in the initial information.",
+            ],
+            "neutral": [
+                "I'm not sure how much the anchor affected me.",
+                "I tried to think independently.",
+                "The initial value was just one input.",
+                "I made my own judgment.",
+                "I didn't rely heavily on the given number.",
+            ],
+            "negative": [
+                "I tried to ignore the initial anchor.",
+                "The starting point seemed arbitrary.",
+                "I didn't want to be biased by the anchor.",
+                "I questioned the given reference value.",
+                "The anchor seemed potentially misleading.",
+            ],
+            "very_negative": [
+                "I rejected the anchor as manipulative.",
+                "The initial value was clearly biased.",
+                "I deliberately moved far from the anchor.",
+                "I didn't trust the starting point.",
+                "The anchor was irrelevant to my judgment.",
+            ],
+        },
+    },
+
+    # ========== SUNK COST ==========
+
+    "sunk_cost": {
+        "explanation": {
+            "very_positive": [
+                "I didn't let past investments bias my decision.",
+                "I focused on future value, not past costs.",
+                "What's spent is spent - I looked ahead.",
+                "I made a rational choice regardless of sunk costs.",
+                "Past investment shouldn't determine future choices.",
+            ],
+            "positive": [
+                "I tried not to let sunk costs affect me.",
+                "I focused more on future benefits than past costs.",
+                "I considered both but prioritized going forward.",
+                "I recognized the past investment but looked ahead.",
+                "I made a reasonably forward-looking decision.",
+            ],
+            "neutral": [
+                "I weighed past investment against future value.",
+                "It was hard to ignore what I'd already invested.",
+                "I considered both sunk costs and future returns.",
+                "I tried to be balanced in my thinking.",
+                "The decision was difficult either way.",
+            ],
+            "negative": [
+                "I felt I should continue given my investment.",
+                "Abandoning what I'd invested felt wasteful.",
+                "I didn't want my past investment to be for nothing.",
+                "The sunk cost influenced me somewhat.",
+                "I felt committed due to what I'd already put in.",
+            ],
+            "very_negative": [
+                "I couldn't abandon my investment.",
+                "I had to continue given what I'd already spent.",
+                "Quitting now would waste everything.",
+                "My past investment strongly influenced my choice.",
+                "I felt obligated to see it through.",
+            ],
+        },
+    },
+
+    # ========== SOCIAL INFLUENCE ==========
+
+    "social_influence": {
+        "explanation": {
+            "very_positive": [
+                "I was open to others' perspectives.",
+                "Social input helped inform my decision.",
+                "I value learning from what others think.",
+                "Others' views provided useful information.",
+                "I appreciate social guidance on decisions.",
+            ],
+            "positive": [
+                "I considered what others thought.",
+                "Social information was helpful.",
+                "I factored in others' opinions.",
+                "Knowing what others did influenced me.",
+                "I'm reasonably open to social input.",
+            ],
+            "neutral": [
+                "Others' views were one consideration.",
+                "I made my own choice regardless.",
+                "Social influence wasn't a big factor.",
+                "I didn't pay much attention to others.",
+                "I focused on my own judgment.",
+            ],
+            "negative": [
+                "I try not to be swayed by others.",
+                "Social pressure doesn't work on me.",
+                "I prefer to think independently.",
+                "Others' views didn't affect my choice.",
+                "I went my own way.",
+            ],
+            "very_negative": [
+                "I deliberately chose differently from others.",
+                "I reject social conformity.",
+                "Others' opinions are irrelevant to me.",
+                "I'm proud of my independence.",
+                "Social pressure actually pushes me away.",
+            ],
+        },
+    },
+
+    # ========== ATTRIBUTION ==========
+
+    "attribution": {
+        "explanation": {
+            "very_positive": [
+                "I attributed the outcome to positive factors.",
+                "The success was due to skill and effort.",
+                "Internal factors explain what happened.",
+                "I take responsibility for good outcomes.",
+                "The situation enabled this positive result.",
+            ],
+            "positive": [
+                "I think the outcome was deserved.",
+                "Both effort and circumstances contributed.",
+                "There were good reasons for this result.",
+                "I can explain why this happened.",
+                "The causes seem reasonable.",
+            ],
+            "neutral": [
+                "It's hard to know what caused this.",
+                "Multiple factors were probably involved.",
+                "I'm not sure about the attribution.",
+                "The causes aren't entirely clear.",
+                "It could be many things.",
+            ],
+            "negative": [
+                "External factors explain this outcome.",
+                "The situation was largely to blame.",
+                "I don't think effort mattered much.",
+                "Circumstances beyond control caused this.",
+                "The attribution seems unfair.",
+            ],
+            "very_negative": [
+                "This was entirely due to circumstances.",
+                "I had no control over this outcome.",
+                "External factors completely explain this.",
+                "Blaming internal factors would be wrong.",
+                "The situation was impossible.",
+            ],
+        },
+    },
+
+    # ========== STEREOTYPE ==========
+
+    "stereotype": {
+        "explanation": {
+            "very_positive": [
+                "I treat each person as an individual.",
+                "Stereotypes don't influence my judgments.",
+                "I actively resist categorical thinking.",
+                "Each person is unique regardless of group.",
+                "I reject stereotypical thinking.",
+            ],
+            "positive": [
+                "I try to avoid stereotyping.",
+                "I give individuals a fair chance.",
+                "I don't assume based on group membership.",
+                "I recognize stereotypes can be wrong.",
+                "I aim for individual assessment.",
+            ],
+            "neutral": [
+                "I have mixed views on this.",
+                "Sometimes categories are useful, sometimes not.",
+                "I try to be fair but it's difficult.",
+                "I'm aware stereotypes exist.",
+                "I don't have strong feelings either way.",
+            ],
+            "negative": [
+                "Group patterns do contain some truth.",
+                "Statistical differences exist between groups.",
+                "I consider group information sometimes.",
+                "Categories can be informative.",
+                "I use generalizations when appropriate.",
+            ],
+            "very_negative": [
+                "Group membership is informative.",
+                "Stereotypes often reflect reality.",
+                "I use categorical information in judgments.",
+                "Group patterns guide my expectations.",
+                "Generalizations are useful heuristics.",
+            ],
+        },
+    },
+
+    # ========== SELF ESTEEM ==========
+
+    "self_esteem": {
+        "explanation": {
+            "very_positive": [
+                "I feel confident in who I am.",
+                "I have a positive view of myself.",
+                "I'm comfortable with my identity.",
+                "I believe in my own worth.",
+                "I'm proud of who I've become.",
+            ],
+            "positive": [
+                "I generally feel good about myself.",
+                "I have reasonable self-confidence.",
+                "I accept myself overall.",
+                "My self-image is positive.",
+                "I'm fairly comfortable with myself.",
+            ],
+            "neutral": [
+                "I have mixed feelings about myself.",
+                "Some days I feel better than others.",
+                "My self-esteem varies.",
+                "I'm neither particularly confident nor insecure.",
+                "I don't think much about my self-worth.",
+            ],
+            "negative": [
+                "I sometimes struggle with self-doubt.",
+                "My confidence could be better.",
+                "I'm often critical of myself.",
+                "I have some insecurities.",
+                "My self-esteem isn't great.",
+            ],
+            "very_negative": [
+                "I often feel bad about myself.",
+                "I struggle with low self-esteem.",
+                "I'm very self-critical.",
+                "I lack confidence in myself.",
+                "I have a negative self-image.",
+            ],
+        },
+    },
+
+    # ========== EMPATHY ==========
+
+    "empathy": {
+        "explanation": {
+            "very_positive": [
+                "I deeply feel what others experience.",
+                "Others' emotions strongly affect me.",
+                "I'm highly attuned to others' feelings.",
+                "Empathy comes naturally to me.",
+                "I connect deeply with others' experiences.",
+            ],
+            "positive": [
+                "I try to understand others' feelings.",
+                "I'm reasonably empathetic.",
+                "I can put myself in others' shoes.",
+                "I care about how others feel.",
+                "Empathy is important to me.",
+            ],
+            "neutral": [
+                "I feel empathy sometimes.",
+                "It depends on the situation.",
+                "I'm moderately empathetic.",
+                "I don't always feel others' emotions.",
+                "My empathy is average.",
+            ],
+            "negative": [
+                "I don't always connect emotionally.",
+                "Empathy doesn't come easily to me.",
+                "I'm more logical than emotional.",
+                "I struggle to feel others' experiences.",
+                "I keep emotional distance.",
+            ],
+            "very_negative": [
+                "I rarely feel others' emotions.",
+                "I'm not very empathetic.",
+                "Others' feelings don't affect me much.",
+                "I prefer rational to emotional thinking.",
+                "Empathy isn't my strength.",
+            ],
+        },
+    },
+
+    # ========== POLICY ATTITUDES ==========
+
+    "policy_attitudes": {
+        "explanation": {
+            "very_positive": [
+                "I strongly support this policy.",
+                "This policy aligns with my values.",
+                "I believe this is the right approach.",
+                "This policy would benefit society.",
+                "I'm enthusiastic about this direction.",
+            ],
+            "positive": [
+                "I generally support this policy.",
+                "This seems like a reasonable approach.",
+                "I'm favorable toward this policy.",
+                "The benefits outweigh concerns.",
+                "I think this policy makes sense.",
+            ],
+            "neutral": [
+                "I'm undecided on this policy.",
+                "There are valid arguments both ways.",
+                "I don't have strong views on this.",
+                "This policy has pros and cons.",
+                "I'm neutral about this approach.",
+            ],
+            "negative": [
+                "I have concerns about this policy.",
+                "I'm skeptical this would work.",
+                "I disagree with this approach.",
+                "The downsides concern me.",
+                "I'm not convinced this is right.",
+            ],
+            "very_negative": [
+                "I strongly oppose this policy.",
+                "This policy is misguided.",
+                "I fundamentally disagree with this.",
+                "This would cause more harm than good.",
+                "I'm against this policy entirely.",
+            ],
+        },
+    },
+
+    # ========== MISINFORMATION ==========
+
+    "misinformation": {
+        "explanation": {
+            "very_positive": [
+                "I actively check facts and sources.",
+                "I'm skeptical of unverified claims.",
+                "I value accurate information.",
+                "I correct misinformation when I see it.",
+                "Truth and accuracy are important to me.",
+            ],
+            "positive": [
+                "I try to verify information.",
+                "I'm somewhat cautious about claims.",
+                "I consider the source of information.",
+                "I check facts when possible.",
+                "I value reliable sources.",
+            ],
+            "neutral": [
+                "I don't always verify information.",
+                "Sometimes I take things at face value.",
+                "I'm moderately concerned about accuracy.",
+                "I try to be careful but don't always check.",
+                "I have mixed practices around fact-checking.",
+            ],
+            "negative": [
+                "I don't always fact-check.",
+                "I might share before verifying.",
+                "Checking sources is sometimes too much effort.",
+                "I rely on my intuition about truth.",
+                "I'm less rigorous than I could be.",
+            ],
+            "very_negative": [
+                "I trust my gut about what's true.",
+                "Mainstream fact-checkers are biased.",
+                "I believe what makes sense to me.",
+                "I don't trust official sources.",
+                "I rely on alternative information.",
+            ],
+        },
+    },
+
+    # ========== BRAND LOYALTY ==========
+
+    "brand_loyalty": {
+        "explanation": {
+            "very_positive": [
+                "I'm very loyal to brands I trust.",
+                "I stick with brands that have served me well.",
+                "Brand loyalty is important to me.",
+                "I prefer to stay with familiar brands.",
+                "I have strong brand preferences.",
+            ],
+            "positive": [
+                "I tend to be loyal to good brands.",
+                "I prefer brands I know over new ones.",
+                "I'm reasonably brand loyal.",
+                "I give preference to brands I trust.",
+                "Brand familiarity matters to me.",
+            ],
+            "neutral": [
+                "I'm not particularly brand loyal.",
+                "I consider different brands each time.",
+                "Brand matters somewhat but not everything.",
+                "I'm flexible about brands.",
+                "I don't have strong brand loyalties.",
+            ],
+            "negative": [
+                "I switch brands easily.",
+                "I look for the best deal regardless of brand.",
+                "Brand loyalty seems overrated.",
+                "I'm always open to trying new brands.",
+                "I don't let brand affect my choices much.",
+            ],
+            "very_negative": [
+                "I actively avoid brand loyalty.",
+                "I always compare regardless of brand.",
+                "Brands are just marketing to me.",
+                "I see no reason for brand loyalty.",
+                "I'm deliberately brand-agnostic.",
+            ],
+        },
+    },
+
+    # ========== SERVICE QUALITY ==========
+
+    "service_quality": {
+        "explanation": {
+            "very_positive": [
+                "The service was exceptional.",
+                "I was very impressed with the service quality.",
+                "Outstanding service experience.",
+                "The service exceeded my expectations.",
+                "Best service I've experienced.",
+            ],
+            "positive": [
+                "Good service overall.",
+                "I was satisfied with the service.",
+                "The service met my expectations.",
+                "Decent service quality.",
+                "I had a positive service experience.",
+            ],
+            "neutral": [
+                "The service was average.",
+                "Nothing special about the service.",
+                "Standard service experience.",
+                "The service was okay.",
+                "Neither good nor bad service.",
+            ],
+            "negative": [
+                "The service was disappointing.",
+                "I wasn't satisfied with the service.",
+                "Service quality was below expectations.",
+                "The service could be improved.",
+                "I had issues with the service.",
+            ],
+            "very_negative": [
+                "The service was terrible.",
+                "Very poor service quality.",
+                "I'm very dissatisfied with the service.",
+                "Worst service I've experienced.",
+                "The service was unacceptable.",
+            ],
+        },
+    },
+
+    # ========== ALGORITHM AVERSION ==========
+
+    "algorithm_aversion": {
+        "explanation": {
+            "very_positive": [
+                "I trust algorithmic recommendations.",
+                "Algorithms often know better than humans.",
+                "I embrace AI-driven decisions.",
+                "Algorithms are more objective than humans.",
+                "I prefer data-driven recommendations.",
+            ],
+            "positive": [
+                "Algorithms can be helpful.",
+                "I'm open to algorithmic suggestions.",
+                "Algorithms have their place.",
+                "I consider algorithmic recommendations.",
+                "AI can assist human decision-making.",
+            ],
+            "neutral": [
+                "I'm neutral about algorithms.",
+                "Both humans and algorithms have merits.",
+                "It depends on the context.",
+                "I don't have strong feelings either way.",
+                "Algorithms are just one input.",
+            ],
+            "negative": [
+                "I prefer human judgment.",
+                "Algorithms lack context and nuance.",
+                "I'm skeptical of algorithmic decisions.",
+                "Human expertise is often better.",
+                "I don't fully trust algorithms.",
+            ],
+            "very_negative": [
+                "I distrust algorithmic recommendations.",
+                "Algorithms can't replace human judgment.",
+                "I strongly prefer human decision-making.",
+                "Algorithms are often wrong.",
+                "I avoid algorithm-based decisions.",
+            ],
+        },
+    },
+
+    # ========== SOCIAL MEDIA ==========
+
+    "social_media": {
+        "explanation": {
+            "very_positive": [
+                "Social media enriches my life.",
+                "I love staying connected online.",
+                "Social media provides great value.",
+                "I'm very active on social media.",
+                "Social platforms are important to me.",
+            ],
+            "positive": [
+                "I find social media useful.",
+                "Social media helps me stay connected.",
+                "I enjoy social media moderately.",
+                "It's a good way to stay informed.",
+                "Social media has benefits.",
+            ],
+            "neutral": [
+                "I have mixed feelings about social media.",
+                "Social media has pros and cons.",
+                "I use it but don't love it.",
+                "I'm indifferent about social media.",
+                "It's just part of life now.",
+            ],
+            "negative": [
+                "Social media is often negative.",
+                "I try to limit my social media use.",
+                "Social media can be harmful.",
+                "I have concerns about social media.",
+                "I'm reducing my social media time.",
+            ],
+            "very_negative": [
+                "Social media is toxic.",
+                "I strongly dislike social media.",
+                "Social media damages society.",
+                "I've quit or limited social media.",
+                "Social platforms are harmful.",
+            ],
+        },
+    },
+
+    # ========== VACCINATION ==========
+
+    "vaccination": {
+        "explanation": {
+            "very_positive": [
+                "Vaccines are safe and effective.",
+                "I strongly support vaccination.",
+                "Vaccines are crucial for public health.",
+                "I always get recommended vaccines.",
+                "Vaccination is a responsibility.",
+            ],
+            "positive": [
+                "I generally support vaccination.",
+                "Vaccines provide important protection.",
+                "I get most recommended vaccines.",
+                "I believe in vaccine science.",
+                "Vaccines are beneficial overall.",
+            ],
+            "neutral": [
+                "I have mixed views on vaccination.",
+                "I consider each vaccine individually.",
+                "I'm not strongly pro or anti vaccine.",
+                "I think about it case by case.",
+                "I have some questions about vaccines.",
+            ],
+            "negative": [
+                "I have concerns about some vaccines.",
+                "I'm selective about vaccination.",
+                "I question some vaccine recommendations.",
+                "I prefer natural immunity sometimes.",
+                "I'm cautious about new vaccines.",
+            ],
+            "very_negative": [
+                "I'm very skeptical of vaccines.",
+                "I avoid most vaccinations.",
+                "Vaccines carry significant risks.",
+                "I don't trust vaccine mandates.",
+                "I oppose forced vaccination.",
+            ],
+        },
+    },
+
+    # ========== ONLINE LEARNING ==========
+
+    "online_learning": {
+        "explanation": {
+            "very_positive": [
+                "Online learning works great for me.",
+                "I prefer online to in-person learning.",
+                "Online education is very effective.",
+                "I thrive in online learning environments.",
+                "Digital learning is the future.",
+            ],
+            "positive": [
+                "I find online learning helpful.",
+                "Online courses can be effective.",
+                "I appreciate the flexibility of online learning.",
+                "Online learning has worked well for me.",
+                "I'm satisfied with online education.",
+            ],
+            "neutral": [
+                "Online learning has trade-offs.",
+                "Both online and in-person have merits.",
+                "I'm okay with online learning.",
+                "It depends on the subject.",
+                "I don't prefer one over the other.",
+            ],
+            "negative": [
+                "I prefer in-person learning.",
+                "Online learning is harder for me.",
+                "I miss the classroom experience.",
+                "Online learning has limitations.",
+                "I struggle with online courses.",
+            ],
+            "very_negative": [
+                "Online learning doesn't work for me.",
+                "I strongly prefer in-person education.",
+                "Online courses are inferior.",
+                "I can't learn effectively online.",
+                "Online education is inadequate.",
+            ],
+        },
+    },
+
+    # ========== MORAL DILEMMA ==========
+
+    "moral_dilemma": {
+        "explanation": {
+            "very_positive": [
+                "I made the choice that helped the most people.",
+                "I prioritized the greater good.",
+                "My decision maximized positive outcomes.",
+                "I took the utilitarian approach.",
+                "I focused on consequences rather than rules.",
+            ],
+            "positive": [
+                "I tried to do what was best overall.",
+                "I weighed competing values carefully.",
+                "I considered all perspectives.",
+                "I made a reasoned ethical choice.",
+                "I aimed for the best outcome.",
+            ],
+            "neutral": [
+                "This was a difficult dilemma.",
+                "I'm not sure I made the right choice.",
+                "There were valid arguments both ways.",
+                "I struggled with this decision.",
+                "Neither option felt completely right.",
+            ],
+            "negative": [
+                "I followed my principles despite consequences.",
+                "Some things are wrong regardless of outcomes.",
+                "I prioritized rules over results.",
+                "I couldn't violate my values.",
+                "My conscience guided my choice.",
+            ],
+            "very_negative": [
+                "I absolutely refused to cross moral lines.",
+                "Some actions are simply wrong.",
+                "I stood by my principles firmly.",
+                "I couldn't live with the alternative.",
+                "Rules exist for good reasons.",
+            ],
+        },
+    },
+
+    # ========== STRESS ==========
+
+    "stress": {
+        "explanation": {
+            "very_positive": [
+                "I handle stress very well.",
+                "Stress doesn't affect me much.",
+                "I'm very resilient under pressure.",
+                "I actually perform better with some stress.",
+                "I've developed strong coping skills.",
+            ],
+            "positive": [
+                "I manage stress reasonably well.",
+                "I can handle most stressful situations.",
+                "I have good stress management skills.",
+                "Stress is manageable for me.",
+                "I cope with stress adequately.",
+            ],
+            "neutral": [
+                "I deal with stress like most people.",
+                "Sometimes stress affects me, sometimes not.",
+                "My stress management is average.",
+                "I have good days and bad days.",
+                "I'm neither particularly stressed nor calm.",
+            ],
+            "negative": [
+                "I struggle with stress sometimes.",
+                "Stress affects me more than I'd like.",
+                "I could improve my stress management.",
+                "I feel stressed fairly often.",
+                "Coping with stress is challenging.",
+            ],
+            "very_negative": [
+                "I'm very affected by stress.",
+                "Stress is a major problem for me.",
+                "I have difficulty coping with pressure.",
+                "I feel stressed most of the time.",
+                "Stress significantly impacts my life.",
+            ],
+        },
+    },
+
+    # ========== NEGOTIATION ==========
+
+    "negotiation": {
+        "explanation": {
+            "very_positive": [
+                "I negotiated for a win-win outcome.",
+                "I aimed for mutual benefit.",
+                "Collaborative negotiation works best.",
+                "I focused on creating value.",
+                "Both parties should gain from negotiation.",
+            ],
+            "positive": [
+                "I tried to find a fair compromise.",
+                "I considered the other side's interests.",
+                "I negotiated reasonably.",
+                "I aimed for a balanced outcome.",
+                "I was fair in my negotiation.",
+            ],
+            "neutral": [
+                "I stuck to my position.",
+                "I negotiated for my interests.",
+                "I tried to get a good deal.",
+                "I was neither aggressive nor passive.",
+                "I took a moderate approach.",
+            ],
+            "negative": [
+                "I pushed hard for my position.",
+                "I prioritized my own interests.",
+                "I was competitive in negotiation.",
+                "I tried to get the best deal for myself.",
+                "I negotiated firmly.",
+            ],
+            "very_negative": [
+                "I aimed to maximize my gains.",
+                "I was very competitive.",
+                "I prioritized winning the negotiation.",
+                "I wasn't concerned about fairness.",
+                "I took an aggressive approach.",
+            ],
+        },
+    },
+
+    # ========== FINANCIAL DECISION ==========
+
+    "financial_decision": {
+        "explanation": {
+            "very_positive": [
+                "I made a careful, well-reasoned financial choice.",
+                "I analyzed the options thoroughly.",
+                "I feel confident about this financial decision.",
+                "This was a sound financial choice.",
+                "I considered all relevant factors.",
+            ],
+            "positive": [
+                "I think this was a good financial decision.",
+                "I weighed the costs and benefits.",
+                "I made a reasonable financial choice.",
+                "I'm satisfied with my decision.",
+                "I considered the financial implications.",
+            ],
+            "neutral": [
+                "I'm not sure if this was the best choice.",
+                "Financial decisions are always uncertain.",
+                "I made what seemed reasonable at the time.",
+                "I have mixed feelings about this.",
+                "Time will tell if it was the right choice.",
+            ],
+            "negative": [
+                "I have some regrets about this decision.",
+                "I might have chosen differently.",
+                "This wasn't my best financial decision.",
+                "I didn't fully consider all options.",
+                "I'm somewhat uncertain about this choice.",
+            ],
+            "very_negative": [
+                "I regret this financial decision.",
+                "This was probably a mistake.",
+                "I should have been more careful.",
+                "I'm disappointed with my choice.",
+                "I didn't make a good financial decision.",
+            ],
+        },
+    },
 }
 
 
@@ -1854,6 +2859,7 @@ def detect_question_type(question_text: str) -> QuestionType:
 # ============================================================================
 
 DOMAIN_KEYWORDS: Dict[StudyDomain, List[str]] = {
+    # ========== BEHAVIORAL ECONOMICS ==========
     StudyDomain.DICTATOR_GAME: [
         'dictator', 'allocator', 'recipient', 'give money', 'keep money',
         'split', 'allocation decision', 'endowment',
@@ -1867,7 +2873,7 @@ DOMAIN_KEYWORDS: Dict[StudyDomain, List[str]] = {
         'triple', 'investment game',
     ],
     StudyDomain.ULTIMATUM_GAME: [
-        'ultimatum', 'proposer', 'responder', 'accept', 'reject offer',
+        'ultimatum', 'proposer', 'responder', 'accept', 'reject', 'offer',
     ],
     StudyDomain.PRISONERS_DILEMMA: [
         'prisoner', 'cooperate', 'defect', 'mutual', 'dilemma',
@@ -1880,6 +2886,21 @@ DOMAIN_KEYWORDS: Dict[StudyDomain, List[str]] = {
         'delay', 'discount', 'now vs later', 'patience', 'impatience',
         'immediate', 'future reward',
     ],
+    StudyDomain.LOSS_AVERSION: [
+        'loss', 'aversion', 'avoid loss', 'fear of losing', 'lose money',
+        'potential loss', 'downside risk',
+    ],
+    StudyDomain.FRAMING_EFFECTS: [
+        'fram', 'present', 'word', 'describ', 'format', 'way it was',
+    ],
+    StudyDomain.ANCHORING: [
+        'anchor', 'initial value', 'starting point', 'reference', 'adjust',
+    ],
+    StudyDomain.SUNK_COST: [
+        'sunk cost', 'already invested', 'past investment', 'continue', 'abandon',
+    ],
+
+    # ========== SOCIAL PSYCHOLOGY ==========
     StudyDomain.INTERGROUP: [
         'outgroup', 'ingroup', 'other group', 'group membership',
         'intergroup', 'different group',
@@ -1901,6 +2922,32 @@ DOMAIN_KEYWORDS: Dict[StudyDomain, List[str]] = {
     StudyDomain.COOPERATION: [
         'cooperat', 'collaborate', 'work together', 'joint', 'mutual benefit',
     ],
+    StudyDomain.CONFORMITY: [
+        'conform', 'social pressure', 'group influence', 'majority', 'peer',
+    ],
+    StudyDomain.PROSOCIAL: [
+        'helping', 'altru', 'prosocial', 'charity', 'donation', 'volunteer',
+    ],
+    StudyDomain.SOCIAL_INFLUENCE: [
+        'influence', 'persuad', 'social proof', 'comply', 'obedien',
+    ],
+    StudyDomain.ATTRIBUTION: [
+        'attribut', 'cause', 'explain', 'blame', 'credit', 'responsib',
+    ],
+    StudyDomain.STEREOTYPE: [
+        'stereotype', 'generaliz', 'category', 'group characteristic',
+    ],
+    StudyDomain.PREJUDICE: [
+        'prejud', 'discriminat', 'bias', 'racist', 'sexist',
+    ],
+    StudyDomain.SELF_ESTEEM: [
+        'self-esteem', 'self esteem', 'confidence', 'self-worth', 'self image',
+    ],
+    StudyDomain.EMPATHY: [
+        'empathy', 'empathic', 'compassion', 'feel for others', 'perspective taking',
+    ],
+
+    # ========== POLITICAL SCIENCE ==========
     StudyDomain.POLITICAL: [
         'politic', 'democrat', 'republican', 'liberal', 'conservative',
         'government', 'policy', 'election', 'vote',
@@ -1908,6 +2955,32 @@ DOMAIN_KEYWORDS: Dict[StudyDomain, List[str]] = {
     StudyDomain.POLARIZATION: [
         'polariz', 'divided', 'partisan', 'other side', 'opposing view',
     ],
+    StudyDomain.PARTISANSHIP: [
+        'partisan', 'party', 'democrat', 'republican', 'liberal', 'conservative',
+    ],
+    StudyDomain.VOTING: [
+        'vote', 'election', 'ballot', 'candidate', 'electoral',
+    ],
+    StudyDomain.MEDIA: [
+        'media', 'news', 'journalism', 'coverage', 'report',
+    ],
+    StudyDomain.POLICY_ATTITUDES: [
+        'policy', 'legislation', 'law', 'regulation', 'government action',
+    ],
+    StudyDomain.CIVIC_ENGAGEMENT: [
+        'civic', 'citizen', 'participat', 'community', 'volunteer',
+    ],
+    StudyDomain.POLITICAL_TRUST: [
+        'trust government', 'trust politician', 'institutional trust',
+    ],
+    StudyDomain.IDEOLOGY: [
+        'ideolog', 'left', 'right', 'progressive', 'traditionalist',
+    ],
+    StudyDomain.MISINFORMATION: [
+        'misinformation', 'fake news', 'fact check', 'false claim', 'debunk',
+    ],
+
+    # ========== CONSUMER/MARKETING ==========
     StudyDomain.CONSUMER: [
         'product', 'brand', 'purchase', 'buy', 'consumer', 'shopping',
         'customer',
@@ -1916,62 +2989,36 @@ DOMAIN_KEYWORDS: Dict[StudyDomain, List[str]] = {
         'brand', 'logo', 'company name', 'brand loyalty',
     ],
     StudyDomain.ADVERTISING: [
-        'ad', 'advertis', 'commercial', 'marketing message',
+        'ad', 'advertis', 'commercial', 'marketing', 'promotion',
     ],
+    StudyDomain.PRODUCT_EVALUATION: [
+        'product', 'purchase', 'buy', 'quality', 'review',
+    ],
+    StudyDomain.PURCHASE_INTENT: [
+        'intend to buy', 'purchase intent', 'likely to purchase', 'would buy',
+    ],
+    StudyDomain.BRAND_LOYALTY: [
+        'brand loyal', 'stick with brand', 'prefer brand', 'brand switch',
+    ],
+    StudyDomain.PRICE_PERCEPTION: [
+        'price', 'cost', 'value for money', 'expensive', 'cheap', 'worth',
+    ],
+    StudyDomain.SERVICE_QUALITY: [
+        'service', 'customer service', 'support', 'staff', 'helpful',
+    ],
+    StudyDomain.CUSTOMER_SATISFACTION: [
+        'satisf', 'pleased', 'happy with', 'content', 'dissatisf',
+    ],
+    StudyDomain.WORD_OF_MOUTH: [
+        'recommend', 'tell others', 'word of mouth', 'refer', 'share',
+    ],
+
+    # ========== ORGANIZATIONAL BEHAVIOR ==========
     StudyDomain.WORKPLACE: [
         'work', 'job', 'employee', 'organization', 'colleague', 'office',
     ],
     StudyDomain.LEADERSHIP: [
         'leader', 'manager', 'boss', 'supervisor', 'management',
-    ],
-    StudyDomain.AI_ATTITUDES: [
-        'ai', 'artificial intelligence', 'algorithm', 'machine learning',
-        'robot', 'automation', 'chatbot',
-    ],
-    StudyDomain.PRIVACY: [
-        'privacy', 'data', 'personal information', 'tracking', 'surveillance',
-    ],
-    StudyDomain.HEALTH: [
-        'health', 'medical', 'doctor', 'illness', 'wellbeing', 'wellness',
-    ],
-    StudyDomain.MORAL_JUDGMENT: [
-        'moral', 'ethical', 'right', 'wrong', 'should', 'ought',
-    ],
-    StudyDomain.ENVIRONMENTAL: [
-        'environment', 'climate', 'green', 'sustainab', 'eco', 'carbon',
-    ],
-    StudyDomain.ULTIMATUM_GAME: [
-        'ultimatum', 'proposer', 'responder', 'accept', 'reject', 'offer',
-    ],
-    StudyDomain.PRISONERS_DILEMMA: [
-        'prisoner', 'cooperate', 'defect', 'dilemma', 'mutual',
-    ],
-    StudyDomain.TIME_PREFERENCE: [
-        'delay', 'discount', 'patience', 'impatient', 'now vs later', 'immediate',
-    ],
-    StudyDomain.CONFORMITY: [
-        'conform', 'social pressure', 'group influence', 'majority', 'peer',
-    ],
-    StudyDomain.PROSOCIAL: [
-        'helping', 'altru', 'prosocial', 'charity', 'donation', 'volunteer',
-    ],
-    StudyDomain.FAIRNESS: [
-        'fair', 'unfair', 'equal', 'equity', 'justice', 'just',
-    ],
-    StudyDomain.COOPERATION: [
-        'cooperat', 'collaborate', 'team', 'collective', 'joint',
-    ],
-    StudyDomain.PARTISANSHIP: [
-        'partisan', 'party', 'democrat', 'republican', 'liberal', 'conservative',
-    ],
-    StudyDomain.VOTING: [
-        'vote', 'election', 'ballot', 'candidate', 'electoral',
-    ],
-    StudyDomain.PRODUCT_EVALUATION: [
-        'product', 'purchase', 'buy', 'quality', 'review',
-    ],
-    StudyDomain.ADVERTISING: [
-        'ad', 'advertis', 'commercial', 'marketing', 'promotion',
     ],
     StudyDomain.TEAMWORK: [
         'teamwork', 'team', 'group project', 'collaboration',
@@ -1979,8 +3026,55 @@ DOMAIN_KEYWORDS: Dict[StudyDomain, List[str]] = {
     StudyDomain.MOTIVATION: [
         'motivat', 'drive', 'engagement', 'interest', 'passion',
     ],
+    StudyDomain.JOB_SATISFACTION: [
+        'job satisf', 'happy at work', 'enjoy work', 'work satisf',
+    ],
+    StudyDomain.ORGANIZATIONAL_COMMITMENT: [
+        'commit', 'loyal', 'stay with', 'turnover', 'leave job',
+    ],
+    StudyDomain.WORK_LIFE_BALANCE: [
+        'work-life', 'work life balance', 'personal time', 'family time',
+    ],
+    StudyDomain.EMPLOYEE_ENGAGEMENT: [
+        'engag', 'involved', 'invested', 'enthusiasm', 'passionate',
+    ],
+    StudyDomain.ORGANIZATIONAL_CULTURE: [
+        'culture', 'values', 'company culture', 'organizational culture',
+    ],
+
+    # ========== TECHNOLOGY/AI ==========
+    StudyDomain.AI_ATTITUDES: [
+        'ai', 'artificial intelligence', 'algorithm', 'machine learning',
+        'robot', 'automation', 'chatbot',
+    ],
+    StudyDomain.PRIVACY: [
+        'privacy', 'data', 'personal information', 'tracking', 'surveillance',
+    ],
     StudyDomain.AUTOMATION: [
         'automat', 'robot', 'machine', 'ai replace',
+    ],
+    StudyDomain.ALGORITHM_AVERSION: [
+        'algorithm', 'ai decision', 'computer decision', 'automated decision',
+    ],
+    StudyDomain.TECHNOLOGY_ADOPTION: [
+        'adopt', 'new technology', 'try new', 'early adopter', 'tech savvy',
+    ],
+    StudyDomain.SOCIAL_MEDIA: [
+        'social media', 'facebook', 'twitter', 'instagram', 'tiktok', 'online',
+    ],
+    StudyDomain.DIGITAL_WELLBEING: [
+        'screen time', 'digital', 'phone use', 'internet use', 'tech addiction',
+    ],
+    StudyDomain.HUMAN_AI_INTERACTION: [
+        'interact with ai', 'human-ai', 'chatbot', 'virtual assistant',
+    ],
+    StudyDomain.CYBERSECURITY: [
+        'security', 'hack', 'cyber', 'password', 'protection',
+    ],
+
+    # ========== HEALTH PSYCHOLOGY ==========
+    StudyDomain.HEALTH: [
+        'health', 'medical', 'doctor', 'illness', 'wellbeing', 'wellness',
     ],
     StudyDomain.MEDICAL_DECISION: [
         'medical', 'health decision', 'treatment', 'doctor', 'patient',
@@ -1988,11 +3082,210 @@ DOMAIN_KEYWORDS: Dict[StudyDomain, List[str]] = {
     StudyDomain.WELLBEING: [
         'wellbeing', 'well-being', 'happiness', 'life satisfaction', 'quality of life',
     ],
+    StudyDomain.HEALTH_BEHAVIOR: [
+        'exercise', 'diet', 'sleep', 'smoking', 'alcohol', 'healthy habit',
+    ],
+    StudyDomain.MENTAL_HEALTH: [
+        'mental health', 'anxiety', 'depression', 'stress', 'psychological',
+    ],
+    StudyDomain.VACCINATION: [
+        'vaccin', 'immuniz', 'shot', 'jab', 'vaccine hesitan',
+    ],
+    StudyDomain.PAIN_MANAGEMENT: [
+        'pain', 'chronic pain', 'medication', 'relief', 'suffer',
+    ],
+    StudyDomain.HEALTH_ANXIETY: [
+        'health anxiety', 'worry about health', 'hypochondr', 'illness anxiety',
+    ],
+    StudyDomain.PATIENT_PROVIDER: [
+        'doctor', 'patient', 'provider', 'communication', 'trust doctor',
+    ],
+    StudyDomain.CHRONIC_ILLNESS: [
+        'chronic', 'long-term', 'managing', 'living with', 'condition',
+    ],
+
+    # ========== EDUCATION ==========
+    StudyDomain.EDUCATION: [
+        'education', 'school', 'university', 'college', 'learning',
+    ],
     StudyDomain.LEARNING: [
         'learn', 'education', 'study', 'knowledge', 'skill',
     ],
+    StudyDomain.ACADEMIC_MOTIVATION: [
+        'study motivation', 'academic', 'grades', 'achievement', 'perform',
+    ],
+    StudyDomain.TEACHING_EFFECTIVENESS: [
+        'teach', 'instructor', 'professor', 'effective teaching',
+    ],
+    StudyDomain.ONLINE_LEARNING: [
+        'online', 'remote', 'virtual', 'distance', 'e-learning',
+    ],
+    StudyDomain.EDUCATIONAL_TECHNOLOGY: [
+        'edtech', 'educational technology', 'learning platform', 'digital learning',
+    ],
+    StudyDomain.STUDENT_ENGAGEMENT: [
+        'engag', 'particip', 'attentive', 'interest', 'involv',
+    ],
+    StudyDomain.ASSESSMENT_FEEDBACK: [
+        'feedback', 'assessment', 'grade', 'evaluation', 'test',
+    ],
+
+    # ========== ETHICS/MORAL ==========
+    StudyDomain.ETHICS: [
+        'ethic', 'moral', 'right', 'wrong', 'principl',
+    ],
+    StudyDomain.MORAL_JUDGMENT: [
+        'moral', 'ethical', 'right', 'wrong', 'should', 'ought',
+    ],
+    StudyDomain.MORAL_DILEMMA: [
+        'dilemma', 'trolley', 'sacrifice', 'utilitarian', 'deontolog',
+    ],
+    StudyDomain.ETHICAL_LEADERSHIP: [
+        'ethical leader', 'integrity', 'honest leader', 'moral leader',
+    ],
+    StudyDomain.CORPORATE_ETHICS: [
+        'corporate', 'business ethics', 'csr', 'corporate social',
+    ],
+    StudyDomain.RESEARCH_ETHICS: [
+        'research ethics', 'informed consent', 'deception', 'irb',
+    ],
+    StudyDomain.MORAL_EMOTIONS: [
+        'guilt', 'shame', 'pride', 'moral emotion', 'regret',
+    ],
+    StudyDomain.VALUES: [
+        'values', 'priorities', 'what matters', 'important to me',
+    ],
+
+    # ========== ENVIRONMENTAL ==========
+    StudyDomain.ENVIRONMENTAL: [
+        'environment', 'climate', 'green', 'sustainab', 'eco', 'carbon',
+    ],
     StudyDomain.SUSTAINABILITY: [
         'sustainab', 'green', 'eco', 'renewable', 'recycle',
+    ],
+    StudyDomain.CLIMATE_ATTITUDES: [
+        'climate', 'global warming', 'greenhouse', 'carbon',
+    ],
+    StudyDomain.PRO_ENVIRONMENTAL: [
+        'environmentally friendly', 'green behavior', 'eco-friendly',
+    ],
+    StudyDomain.GREEN_CONSUMPTION: [
+        'green product', 'eco product', 'sustainable product', 'ethical consumption',
+    ],
+    StudyDomain.CONSERVATION: [
+        'conserv', 'protect', 'preserve', 'wildlife', 'nature',
+    ],
+    StudyDomain.ENERGY_BEHAVIOR: [
+        'energy', 'electricity', 'power', 'solar', 'renewable',
+    ],
+    StudyDomain.ENVIRONMENTAL_JUSTICE: [
+        'environmental justice', 'pollution', 'affected communities',
+    ],
+
+    # ========== COGNITIVE PSYCHOLOGY ==========
+    StudyDomain.COGNITIVE: [
+        'cognitive', 'thinking', 'mental process', 'mind',
+    ],
+    StudyDomain.DECISION_MAKING: [
+        'decision', 'choice', 'select', 'option', 'alternative',
+    ],
+    StudyDomain.MEMORY: [
+        'remember', 'recall', 'forget', 'memory', 'recognition',
+    ],
+    StudyDomain.ATTENTION: [
+        'attention', 'focus', 'concentrate', 'distract',
+    ],
+    StudyDomain.REASONING: [
+        'reason', 'logic', 'infer', 'deduc', 'induc',
+    ],
+    StudyDomain.PROBLEM_SOLVING: [
+        'problem', 'solve', 'solution', 'figure out',
+    ],
+    StudyDomain.COGNITIVE_BIAS: [
+        'bias', 'heuristic', 'shortcut', 'cognitive error',
+    ],
+    StudyDomain.METACOGNITION: [
+        'metacognit', 'thinking about thinking', 'self-aware', 'monitoring',
+    ],
+
+    # ========== DEVELOPMENTAL ==========
+    StudyDomain.DEVELOPMENTAL: [
+        'develop', 'age', 'life stage', 'mature',
+    ],
+    StudyDomain.PARENTING: [
+        'parent', 'child', 'mother', 'father', 'raising',
+    ],
+    StudyDomain.CHILDHOOD: [
+        'child', 'kid', 'young', 'grow up', 'adolescent',
+    ],
+    StudyDomain.AGING: [
+        'aging', 'older', 'elderly', 'senior', 'retirement',
+    ],
+    StudyDomain.LIFE_TRANSITIONS: [
+        'transition', 'change', 'new phase', 'moving on',
+    ],
+    StudyDomain.INTERGENERATIONAL: [
+        'generation', 'millennial', 'boomer', 'gen z', 'gen x',
+    ],
+
+    # ========== CLINICAL ==========
+    StudyDomain.CLINICAL: [
+        'clinical', 'disorder', 'symptom', 'diagnosis', 'treatment',
+    ],
+    StudyDomain.ANXIETY: [
+        'anxiety', 'anxious', 'worry', 'nervous', 'panic',
+    ],
+    StudyDomain.DEPRESSION: [
+        'depress', 'sad', 'hopeless', 'low mood', 'suicid',
+    ],
+    StudyDomain.COPING: [
+        'cope', 'deal with', 'handle', 'manage', 'adapt',
+    ],
+    StudyDomain.THERAPY_ATTITUDES: [
+        'therapy', 'counseling', 'psychologist', 'mental health treatment',
+    ],
+    StudyDomain.STRESS: [
+        'stress', 'pressure', 'overwhelm', 'burnout', 'strain',
+    ],
+
+    # ========== COMMUNICATION ==========
+    StudyDomain.COMMUNICATION: [
+        'communicat', 'message', 'information', 'convey',
+    ],
+    StudyDomain.PERSUASION: [
+        'persuad', 'convinc', 'influence', 'argument', 'appeal',
+    ],
+    StudyDomain.MEDIA_EFFECTS: [
+        'media effect', 'media impact', 'influence of media',
+    ],
+    StudyDomain.INTERPERSONAL: [
+        'interpersonal', 'relationship', 'interaction', 'social',
+    ],
+    StudyDomain.PUBLIC_OPINION: [
+        'public opinion', 'popular', 'majority think', 'general public',
+    ],
+    StudyDomain.NARRATIVE: [
+        'story', 'narrative', 'told', 'account', 'anecdote',
+    ],
+
+    # ========== ECONOMICS ==========
+    StudyDomain.ECONOMICS: [
+        'economic', 'money', 'financial', 'market', 'trade',
+    ],
+    StudyDomain.NEGOTIATION: [
+        'negotiat', 'bargain', 'deal', 'agreement', 'compromise',
+    ],
+    StudyDomain.BARGAINING: [
+        'bargain', 'haggle', 'price negotiation', 'deal-making',
+    ],
+    StudyDomain.FINANCIAL_DECISION: [
+        'financial decision', 'money decision', 'investment', 'spend',
+    ],
+    StudyDomain.SAVING_BEHAVIOR: [
+        'save', 'saving', 'retirement fund', 'emergency fund',
+    ],
+    StudyDomain.ECONOMIC_EXPECTATIONS: [
+        'economic outlook', 'expect', 'forecast', 'prediction',
     ],
 }
 

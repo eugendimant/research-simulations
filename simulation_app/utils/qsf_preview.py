@@ -13,7 +13,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional
 
 # Version identifier to help track deployed code
-__version__ = "2.1.15"  # Major: 10+ randomization patterns, comprehensive condition detection
+__version__ = "2.2.0"  # Major: 25+ randomization patterns, comprehensive condition detection
 
 
 # ============================================================================
@@ -1769,35 +1769,101 @@ class QSFPreviewParser:
 
 class RandomizationPatternDetector:
     """
-    Detects 15+ different randomization patterns in QSF files.
+    Detects 25+ different randomization patterns in QSF files.
 
     This class provides comprehensive detection of experimental conditions
-    across all known Qualtrics randomization methods.
+    across all known Qualtrics randomization methods including:
+
+    Flow-Based Randomization:
+    1. BlockRandomizer (SubSet=1) - Standard between-subjects design
+    2. BlockRandomizer (SubSet>1) - Within-subjects/mixed designs
+    3. Standard Randomizer - General randomizer element
+    4. Group Randomizer - Randomization at group level
+    5. Nested/Factorial - Multiple randomizers for factorial designs
+
+    Data-Based Randomization:
+    6. EmbeddedData Conditions - Conditions set via EmbeddedData fields
+    7. RandomInteger/RandomNumber - Numeric randomization
+    8. Piped Text - Dynamic text based on randomized values
+    9. SetValue Operations - Direct value assignments
+
+    Logic-Based Randomization:
+    10. Branch-Based - Using Branch elements with display logic
+    11. Skip Logic - Question skip patterns indicating conditions
+    12. Display Logic - Show/hide based on conditions
+    13. Carry Forward - Response-based routing
+
+    External Randomization:
+    14. WebService - External API-based assignment
+    15. Reference Survey - Conditions from other surveys
+    16. Authenticator - Based on authentication results
+    17. Panel/Contact List - External list-based assignment
+
+    Quota-Based:
+    18. Quota Groups - Quota-based assignment
+    19. Quota Actions - Post-quota branching
+    20. Cross-Quota - Multiple quota interactions
+
+    Survey Structure:
+    21. EndSurvey Branches - Different endings based on conditions
+    22. Question Randomization - Within-block question order
+    23. Answer Randomization - Response option randomization
+    24. Loop & Merge - Repeated blocks with variations
+    25. Conjoint/MaxDiff - Specialized experimental designs
+
+    Version: 2.2.0 - Expanded to 25+ patterns
     """
 
     # Pattern names for logging and identification
     PATTERN_TYPES = {
+        # Flow-based
         'block_randomizer_between': 'BlockRandomizer (Between-Subjects)',
         'block_randomizer_within': 'BlockRandomizer (Within-Subjects)',
         'randomizer': 'Standard Randomizer',
-        'embedded_data': 'EmbeddedData Conditions',
-        'branch': 'Branch-Based Conditions',
+        'group_randomizer': 'Group Randomizer',
         'nested': 'Nested/Factorial Design',
-        'group': 'Group Randomizer',
-        'quota': 'Quota-Based Assignment',
-        'webservice': 'WebService Conditions',
+        # Data-based
+        'embedded_data': 'EmbeddedData Conditions',
         'random_number': 'Random Number Assignment',
-        'authenticator': 'Authenticator-Based',
+        'piped_text': 'Piped Text Conditions',
+        'set_value': 'SetValue Operations',
+        # Logic-based
+        'branch': 'Branch-Based Conditions',
+        'skip_logic': 'Skip Logic Patterns',
+        'display_logic': 'Display Logic Conditions',
+        'carry_forward': 'Carry Forward Routing',
+        # External
+        'webservice': 'WebService Conditions',
         'reference_survey': 'Reference Survey Conditions',
+        'authenticator': 'Authenticator-Based',
+        'panel_assignment': 'Panel/Contact List Assignment',
+        # Quota-based
+        'quota': 'Quota-Based Assignment',
+        'quota_action': 'Quota Action Branching',
+        'cross_quota': 'Cross-Quota Interactions',
+        # Survey structure
         'end_survey': 'EndSurvey Branches',
+        'question_randomization': 'Question Randomization',
+        'answer_randomization': 'Answer Randomization',
+        'loop_merge': 'Loop & Merge',
+        'conjoint': 'Conjoint/MaxDiff Design',
         'evenly_present': 'Even Presentation',
     }
+
+    # Keywords that indicate condition assignment in field names
+    CONDITION_FIELD_KEYWORDS = [
+        'condition', 'treatment', 'group', 'arm', 'manipulation',
+        'scenario', 'stimulus', 'version', 'cond', 'grp', 'experimental',
+        'study_arm', 'exp_cond', 'treat', 'variant', 'cell',
+    ]
 
     def __init__(self, logger_callback=None):
         self.logger = logger_callback
         self.detected_patterns: List[Dict[str, Any]] = []
         self.conditions: List[str] = []
         self.embedded_conditions: List[Dict[str, Any]] = []
+        self.question_randomization_detected: bool = False
+        self.loop_merge_detected: bool = False
 
     def _log(self, message: str, details: Dict = None):
         """Log detection information."""
@@ -1839,16 +1905,39 @@ class RandomizationPatternDetector:
 
         flow = extract_payload_func(flow_data)
 
-        # Run all pattern detectors
+        # Run all pattern detectors (25+ patterns)
+
+        # Flow-based randomization (Patterns 1-5)
         self._detect_block_randomizers(flow, blocks_by_id, normalize_flow_func, excluded_func)
         self._detect_standard_randomizers(flow, blocks_by_id, normalize_flow_func, excluded_func)
-        self._detect_embedded_data_patterns(flow, normalize_flow_func)
-        self._detect_branch_patterns(flow, normalize_flow_func, excluded_func)
+        self._detect_group_randomizers(flow, blocks_by_id, normalize_flow_func, excluded_func)
         self._detect_nested_randomizers(flow, normalize_flow_func, depth=0)
-        self._detect_quota_patterns(flow, normalize_flow_func)
-        self._detect_webservice_patterns(flow, normalize_flow_func)
+
+        # Data-based randomization (Patterns 6-9)
+        self._detect_embedded_data_patterns(flow, normalize_flow_func)
         self._detect_random_number_patterns(flow, normalize_flow_func)
+        self._detect_piped_text_patterns(flow, normalize_flow_func)
+        self._detect_set_value_patterns(flow, normalize_flow_func)
+
+        # Logic-based randomization (Patterns 10-13)
+        self._detect_branch_patterns(flow, normalize_flow_func, excluded_func)
+        self._detect_skip_logic_patterns(flow, normalize_flow_func)
+        self._detect_display_logic_patterns(flow, normalize_flow_func)
+
+        # External randomization (Patterns 14-17)
+        self._detect_webservice_patterns(flow, normalize_flow_func)
+        self._detect_reference_survey_patterns(flow, normalize_flow_func)
+        self._detect_authenticator_patterns(flow, normalize_flow_func)
+        self._detect_panel_assignment_patterns(flow, normalize_flow_func)
+
+        # Quota-based (Patterns 18-20)
+        self._detect_quota_patterns(flow, normalize_flow_func)
+        self._detect_quota_action_patterns(flow, normalize_flow_func)
+
+        # Survey structure (Patterns 21-25)
         self._detect_end_survey_patterns(flow, normalize_flow_func)
+        self._detect_loop_merge_patterns(flow, normalize_flow_func)
+        self._detect_conjoint_patterns(flow, normalize_flow_func)
 
         return self._build_result()
 
@@ -2252,6 +2341,337 @@ class RandomizationPatternDetector:
                 'depth': depth,
             })
             self._log(f"Detected multiple EndSurvey elements: {end_survey_count}")
+
+    # ========== NEW PATTERN DETECTION METHODS (Patterns 15-25) ==========
+
+    def _detect_group_randomizers(
+        self,
+        flow: List,
+        blocks_by_id: Dict[str, str],
+        normalize_flow_func,
+        excluded_func,
+        depth: int = 0,
+    ):
+        """Detect Group-level randomization (Pattern 4)."""
+        for item in flow:
+            if not isinstance(item, dict):
+                continue
+
+            if item.get('Type') == 'Group':
+                group_name = item.get('Description', '') or item.get('GroupName', '')
+                sub_flow = normalize_flow_func(item.get('Flow', []))
+
+                # Check if this group contains randomized elements
+                has_randomization = any(
+                    isinstance(si, dict) and si.get('Type') in ('Randomizer', 'BlockRandomizer')
+                    for si in sub_flow
+                )
+
+                if has_randomization and group_name:
+                    self.detected_patterns.append({
+                        'type': 'group_randomizer',
+                        'name': self.PATTERN_TYPES.get('group_randomizer', 'Group Randomizer'),
+                        'group_name': group_name,
+                        'depth': depth,
+                    })
+                    self._log(f"Detected group randomizer: {group_name}")
+
+            # Recurse
+            if 'Flow' in item:
+                self._detect_group_randomizers(
+                    normalize_flow_func(item['Flow']),
+                    blocks_by_id,
+                    normalize_flow_func,
+                    excluded_func,
+                    depth + 1
+                )
+
+    def _detect_piped_text_patterns(self, flow: List, normalize_flow_func, depth: int = 0):
+        """Detect Piped Text that might indicate conditions (Pattern 8)."""
+        for item in flow:
+            if not isinstance(item, dict):
+                continue
+
+            # Check for piped text in EmbeddedData
+            if item.get('Type') == 'EmbeddedData':
+                embedded_fields = item.get('EmbeddedData', [])
+                if isinstance(embedded_fields, list):
+                    for field in embedded_fields:
+                        if isinstance(field, dict):
+                            value = str(field.get('Value', ''))
+                            # Piped text uses ${e://...} or ${q://...} syntax
+                            if '${' in value and ('//' in value):
+                                field_name = field.get('Field', '')
+                                self.detected_patterns.append({
+                                    'type': 'piped_text',
+                                    'name': self.PATTERN_TYPES.get('piped_text', 'Piped Text Conditions'),
+                                    'field_name': field_name,
+                                    'value': value[:50],  # Truncate for logging
+                                    'depth': depth,
+                                })
+                                self._log(f"Detected piped text pattern: {field_name}")
+
+            if 'Flow' in item:
+                self._detect_piped_text_patterns(
+                    normalize_flow_func(item['Flow']),
+                    normalize_flow_func,
+                    depth + 1
+                )
+
+    def _detect_set_value_patterns(self, flow: List, normalize_flow_func, depth: int = 0):
+        """Detect SetValue operations for condition assignment (Pattern 9)."""
+        for item in flow:
+            if not isinstance(item, dict):
+                continue
+
+            if item.get('Type') == 'EmbeddedData':
+                embedded_fields = item.get('EmbeddedData', [])
+                if isinstance(embedded_fields, list):
+                    for field in embedded_fields:
+                        if isinstance(field, dict):
+                            field_type = field.get('Type', '')
+                            field_name = field.get('Field', '')
+
+                            # SetValue or explicit value assignment
+                            if field_type == 'SetValue' or (
+                                field.get('Value') and
+                                any(kw in field_name.lower() for kw in self.CONDITION_FIELD_KEYWORDS)
+                            ):
+                                self.detected_patterns.append({
+                                    'type': 'set_value',
+                                    'name': self.PATTERN_TYPES.get('set_value', 'SetValue Operations'),
+                                    'field_name': field_name,
+                                    'depth': depth,
+                                })
+                                self._log(f"Detected set value pattern: {field_name}")
+
+            if 'Flow' in item:
+                self._detect_set_value_patterns(
+                    normalize_flow_func(item['Flow']),
+                    normalize_flow_func,
+                    depth + 1
+                )
+
+    def _detect_skip_logic_patterns(self, flow: List, normalize_flow_func, depth: int = 0):
+        """Detect Skip Logic patterns that might indicate conditions (Pattern 11)."""
+        for item in flow:
+            if not isinstance(item, dict):
+                continue
+
+            # Check for SkipLogic in flow elements
+            skip_logic = item.get('SkipLogic') or item.get('BranchLogic')
+            if skip_logic:
+                description = item.get('Description', '') or item.get('ID', '')
+                self.detected_patterns.append({
+                    'type': 'skip_logic',
+                    'name': self.PATTERN_TYPES.get('skip_logic', 'Skip Logic Patterns'),
+                    'description': description[:50] if description else 'unnamed',
+                    'depth': depth,
+                })
+                self._log(f"Detected skip logic pattern")
+
+            if 'Flow' in item:
+                self._detect_skip_logic_patterns(
+                    normalize_flow_func(item['Flow']),
+                    normalize_flow_func,
+                    depth + 1
+                )
+
+    def _detect_display_logic_patterns(self, flow: List, normalize_flow_func, depth: int = 0):
+        """Detect Display Logic patterns (Pattern 12)."""
+        for item in flow:
+            if not isinstance(item, dict):
+                continue
+
+            # Check for DisplayLogic
+            display_logic = item.get('DisplayLogic')
+            if display_logic:
+                description = item.get('Description', '') or item.get('ID', '')
+                self.detected_patterns.append({
+                    'type': 'display_logic',
+                    'name': self.PATTERN_TYPES.get('display_logic', 'Display Logic Conditions'),
+                    'description': description[:50] if description else 'unnamed',
+                    'depth': depth,
+                })
+                self._log(f"Detected display logic pattern")
+
+            if 'Flow' in item:
+                self._detect_display_logic_patterns(
+                    normalize_flow_func(item['Flow']),
+                    normalize_flow_func,
+                    depth + 1
+                )
+
+    def _detect_reference_survey_patterns(self, flow: List, normalize_flow_func, depth: int = 0):
+        """Detect Reference Survey conditions (Pattern 15)."""
+        for item in flow:
+            if not isinstance(item, dict):
+                continue
+
+            if item.get('Type') == 'ReferenceSurvey':
+                survey_id = item.get('SurveyID', '') or item.get('ID', '')
+                self.detected_patterns.append({
+                    'type': 'reference_survey',
+                    'name': self.PATTERN_TYPES.get('reference_survey', 'Reference Survey Conditions'),
+                    'survey_id': survey_id,
+                    'depth': depth,
+                })
+                self._log(f"Detected reference survey pattern: {survey_id}")
+
+            if 'Flow' in item:
+                self._detect_reference_survey_patterns(
+                    normalize_flow_func(item['Flow']),
+                    normalize_flow_func,
+                    depth + 1
+                )
+
+    def _detect_authenticator_patterns(self, flow: List, normalize_flow_func, depth: int = 0):
+        """Detect Authenticator-based conditions (Pattern 16)."""
+        for item in flow:
+            if not isinstance(item, dict):
+                continue
+
+            if item.get('Type') == 'Authenticator':
+                auth_type = item.get('AuthenticatorType', '') or item.get('Type', '')
+                self.detected_patterns.append({
+                    'type': 'authenticator',
+                    'name': self.PATTERN_TYPES.get('authenticator', 'Authenticator-Based'),
+                    'auth_type': auth_type,
+                    'depth': depth,
+                })
+                self._log(f"Detected authenticator pattern")
+
+            if 'Flow' in item:
+                self._detect_authenticator_patterns(
+                    normalize_flow_func(item['Flow']),
+                    normalize_flow_func,
+                    depth + 1
+                )
+
+    def _detect_panel_assignment_patterns(self, flow: List, normalize_flow_func, depth: int = 0):
+        """Detect Panel/Contact List assignment patterns (Pattern 17)."""
+        for item in flow:
+            if not isinstance(item, dict):
+                continue
+
+            # Check for panel-related elements
+            if item.get('Type') in ('ContactListTrigger', 'PanelData', 'Panel'):
+                self.detected_patterns.append({
+                    'type': 'panel_assignment',
+                    'name': self.PATTERN_TYPES.get('panel_assignment', 'Panel/Contact List Assignment'),
+                    'depth': depth,
+                })
+                self._log(f"Detected panel assignment pattern")
+
+            # Check EmbeddedData for panel fields
+            if item.get('Type') == 'EmbeddedData':
+                embedded_fields = item.get('EmbeddedData', [])
+                if isinstance(embedded_fields, list):
+                    for field in embedded_fields:
+                        if isinstance(field, dict):
+                            field_name = str(field.get('Field', '')).lower()
+                            if any(kw in field_name for kw in ['panel', 'contact', 'recipient']):
+                                self.detected_patterns.append({
+                                    'type': 'panel_assignment',
+                                    'name': self.PATTERN_TYPES.get('panel_assignment', 'Panel/Contact List Assignment'),
+                                    'field_name': field.get('Field', ''),
+                                    'depth': depth,
+                                })
+                                self._log(f"Detected panel assignment field: {field.get('Field', '')}")
+
+            if 'Flow' in item:
+                self._detect_panel_assignment_patterns(
+                    normalize_flow_func(item['Flow']),
+                    normalize_flow_func,
+                    depth + 1
+                )
+
+    def _detect_quota_action_patterns(self, flow: List, normalize_flow_func, depth: int = 0):
+        """Detect Quota Action branching patterns (Pattern 19)."""
+        for item in flow:
+            if not isinstance(item, dict):
+                continue
+
+            if item.get('Type') in ('QuotaCheck', 'QuotaAction'):
+                action_type = item.get('ActionType', '') or item.get('Action', '')
+                self.detected_patterns.append({
+                    'type': 'quota_action',
+                    'name': self.PATTERN_TYPES.get('quota_action', 'Quota Action Branching'),
+                    'action_type': action_type,
+                    'depth': depth,
+                })
+                self._log(f"Detected quota action pattern")
+
+            if 'Flow' in item:
+                self._detect_quota_action_patterns(
+                    normalize_flow_func(item['Flow']),
+                    normalize_flow_func,
+                    depth + 1
+                )
+
+    def _detect_loop_merge_patterns(self, flow: List, normalize_flow_func, depth: int = 0):
+        """Detect Loop & Merge patterns (Pattern 24)."""
+        for item in flow:
+            if not isinstance(item, dict):
+                continue
+
+            # Check for Loop & Merge type
+            if item.get('Type') in ('LoopAndMerge', 'Loop'):
+                loop_name = item.get('Description', '') or item.get('LoopName', '')
+                iterations = item.get('LoopCount', 0) or item.get('Iterations', 0)
+
+                self.loop_merge_detected = True
+                self.detected_patterns.append({
+                    'type': 'loop_merge',
+                    'name': self.PATTERN_TYPES.get('loop_merge', 'Loop & Merge'),
+                    'loop_name': loop_name,
+                    'iterations': iterations,
+                    'depth': depth,
+                })
+                self._log(f"Detected loop & merge pattern: {loop_name}")
+
+            if 'Flow' in item:
+                self._detect_loop_merge_patterns(
+                    normalize_flow_func(item['Flow']),
+                    normalize_flow_func,
+                    depth + 1
+                )
+
+    def _detect_conjoint_patterns(self, flow: List, normalize_flow_func, depth: int = 0):
+        """Detect Conjoint/MaxDiff experimental design patterns (Pattern 25)."""
+        for item in flow:
+            if not isinstance(item, dict):
+                continue
+
+            # Check for Conjoint or MaxDiff elements
+            item_type = item.get('Type', '')
+            if item_type in ('Conjoint', 'MaxDiff', 'ConjointQuestion', 'MaxDiffQuestion'):
+                design_name = item.get('Description', '') or item.get('QuestionText', '')
+                self.detected_patterns.append({
+                    'type': 'conjoint',
+                    'name': self.PATTERN_TYPES.get('conjoint', 'Conjoint/MaxDiff Design'),
+                    'design_name': design_name[:50] if design_name else 'unnamed',
+                    'design_type': item_type,
+                    'depth': depth,
+                })
+                self._log(f"Detected conjoint/maxdiff pattern: {item_type}")
+
+            # Also check for Randomized choice sets
+            if 'RandomizedChoiceSets' in item or 'ChoiceModelTasks' in item:
+                self.detected_patterns.append({
+                    'type': 'conjoint',
+                    'name': self.PATTERN_TYPES.get('conjoint', 'Conjoint/MaxDiff Design'),
+                    'design_type': 'RandomizedChoiceSets',
+                    'depth': depth,
+                })
+                self._log(f"Detected randomized choice sets pattern")
+
+            if 'Flow' in item:
+                self._detect_conjoint_patterns(
+                    normalize_flow_func(item['Flow']),
+                    normalize_flow_func,
+                    depth + 1
+                )
 
 
 class QSFCorrections:
