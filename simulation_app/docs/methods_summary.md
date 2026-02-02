@@ -355,4 +355,3 @@ If you use this tool in your research or teaching, please cite:
 For questions, issues, or feature requests:
 - **Website:** [https://eugendimant.github.io/](https://eugendimant.github.io/)
 - **Email:** edimant@sas.upenn.edu
-- **Issues:** [GitHub Repository](https://github.com/eugendimant/research-simulations)
