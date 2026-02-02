@@ -253,6 +253,72 @@ def _bytes_to_zip(files: Dict[str, bytes]) -> bytes:
     return buf.getvalue()
 
 
+# ========================================
+# INTERNAL USAGE COUNTER (for admin tracking only)
+# ========================================
+USAGE_COUNTER_FILE = Path(__file__).resolve().parent / ".usage_counter.json"
+
+def _get_usage_count() -> Dict[str, Any]:
+    """Get the current usage statistics from the counter file."""
+    try:
+        if USAGE_COUNTER_FILE.exists():
+            with open(USAGE_COUNTER_FILE, "r") as f:
+                data = json.load(f)
+                return data
+        return {"total_simulations": 0, "simulations_by_date": {}, "first_use": None, "last_use": None}
+    except Exception:
+        return {"total_simulations": 0, "simulations_by_date": {}, "first_use": None, "last_use": None}
+
+
+def _increment_usage_counter() -> Dict[str, Any]:
+    """Increment the usage counter and return updated stats."""
+    try:
+        stats = _get_usage_count()
+        now = datetime.now()
+        today = now.strftime("%Y-%m-%d")
+
+        stats["total_simulations"] = stats.get("total_simulations", 0) + 1
+
+        if "simulations_by_date" not in stats:
+            stats["simulations_by_date"] = {}
+        stats["simulations_by_date"][today] = stats["simulations_by_date"].get(today, 0) + 1
+
+        if not stats.get("first_use"):
+            stats["first_use"] = now.isoformat()
+        stats["last_use"] = now.isoformat()
+
+        # Save to file
+        with open(USAGE_COUNTER_FILE, "w") as f:
+            json.dump(stats, f, indent=2)
+
+        return stats
+    except Exception as e:
+        # If we can't write to file (e.g., read-only filesystem), just return current count
+        return {"total_simulations": "unknown", "error": str(e)}
+
+
+def _get_usage_summary() -> str:
+    """Get a formatted summary of usage statistics for email."""
+    stats = _get_usage_count()
+    total = stats.get("total_simulations", 0)
+    first_use = stats.get("first_use", "N/A")
+    last_use = stats.get("last_use", "N/A")
+
+    # Get recent daily counts
+    by_date = stats.get("simulations_by_date", {})
+    recent_dates = sorted(by_date.keys(), reverse=True)[:7]  # Last 7 days with activity
+    recent_summary = "\n".join([f"  {d}: {by_date[d]} simulation(s)" for d in recent_dates]) if recent_dates else "  No recent data"
+
+    return f"""
+=== INTERNAL USAGE STATS (admin only) ===
+Total simulations: {total}
+First use: {first_use}
+Last use: {last_use}
+Recent activity:
+{recent_summary}
+========================================="""
+
+
 def _sanitize_prereg_text(raw_text: str) -> Tuple[str, List[str]]:
     """
     Remove hypothesis-like language to avoid biasing simulation settings.
@@ -2322,77 +2388,98 @@ if active_step == 1:
     # ========================================
     st.markdown("---")
     st.markdown("### 3. Preregistration Details (Optional)")
-    st.caption("Upload your AsPredicted or preregistration PDF to improve simulation quality. The tool uses this to better understand your hypotheses and variables.")
+    st.caption("Upload your AsPredicted or preregistration PDF(s) to improve simulation quality. The tool uses this to better understand your hypotheses and variables.")
 
     with st.expander("Add preregistration for better simulations", expanded=False):
         col_prereg1, col_prereg2 = st.columns(2)
 
         with col_prereg1:
-            prereg_file = st.file_uploader(
-                "AsPredicted / Preregistration PDF",
+            prereg_files = st.file_uploader(
+                "AsPredicted / Preregistration PDF(s)",
                 type=["pdf"],
-                help="Upload your preregistration document (PDF format)",
+                accept_multiple_files=True,
+                help="Upload one or more preregistration documents (PDF format)",
                 key="prereg_pdf_uploader",
             )
 
-            if prereg_file is not None:
-                try:
-                    # Store the PDF content for later analysis
-                    pdf_content = prereg_file.read()
-                    st.session_state["prereg_pdf_content"] = pdf_content
-                    st.session_state["prereg_pdf_name"] = prereg_file.name
-                    st.success(f"Preregistration uploaded: {prereg_file.name}")
+            if prereg_files:
+                # Process multiple preregistration files
+                all_prereg_contents = []
+                all_prereg_names = []
+                all_prereg_text = ""
 
-                    # Try to extract text from PDF using multiple methods
-                    pdf_text = ""
-                    extraction_method = None
-
-                    # Method 1: Try PyMuPDF (fitz) - best quality
+                for prereg_file in prereg_files:
                     try:
-                        import fitz
-                        pdf_doc = fitz.open(stream=pdf_content, filetype="pdf")
-                        try:
-                            for page in pdf_doc:
-                                pdf_text += page.get_text()
-                            extraction_method = "PyMuPDF"
-                        finally:
-                            pdf_doc.close()
-                    except ImportError:
-                        pass
-                    except Exception:
-                        pass
+                        # Store the PDF content for later analysis
+                        pdf_content = prereg_file.read()
+                        all_prereg_contents.append(pdf_content)
+                        all_prereg_names.append(prereg_file.name)
 
-                    # Method 2: Try pypdf as fallback
-                    if not pdf_text.strip():
-                        try:
-                            pdf_text = _extract_pdf_text(pdf_content)
-                            if pdf_text.strip():
-                                extraction_method = "pypdf"
-                        except Exception:
-                            pass
+                        # Try to extract text from PDF using multiple methods
+                        pdf_text = ""
+                        extraction_method = None
 
-                    # Method 3: Try pdfplumber as last resort
-                    if not pdf_text.strip():
+                        # Method 1: Try PyMuPDF (fitz) - best quality
                         try:
-                            import pdfplumber
-                            with pdfplumber.open(io.BytesIO(pdf_content)) as pdf:
-                                for page in pdf.pages:
-                                    page_text = page.extract_text()
-                                    if page_text:
-                                        pdf_text += page_text + "\n"
-                            extraction_method = "pdfplumber"
+                            import fitz
+                            pdf_doc = fitz.open(stream=pdf_content, filetype="pdf")
+                            try:
+                                for page in pdf_doc:
+                                    pdf_text += page.get_text()
+                                extraction_method = "PyMuPDF"
+                            finally:
+                                pdf_doc.close()
                         except ImportError:
                             pass
                         except Exception:
                             pass
 
-                    st.session_state["prereg_pdf_text"] = pdf_text
-                    if pdf_text.strip():
-                        st.info(f"PDF text extracted successfully ({extraction_method}).")
+                        # Method 2: Try pypdf as fallback
+                        if not pdf_text.strip():
+                            try:
+                                pdf_text = _extract_pdf_text(pdf_content)
+                                if pdf_text.strip():
+                                    extraction_method = "pypdf"
+                            except Exception:
+                                pass
+
+                        # Method 3: Try pdfplumber as last resort
+                        if not pdf_text.strip():
+                            try:
+                                import pdfplumber
+                                with pdfplumber.open(io.BytesIO(pdf_content)) as pdf:
+                                    for page in pdf.pages:
+                                        page_text = page.extract_text()
+                                        if page_text:
+                                            pdf_text += page_text + "\n"
+                                extraction_method = "pdfplumber"
+                            except ImportError:
+                                pass
+                            except Exception:
+                                pass
+
+                        if pdf_text.strip():
+                            all_prereg_text += f"\n\n--- {prereg_file.name} ---\n\n{pdf_text}"
+
+                    except Exception as e:
+                        st.error(f"Failed to process {prereg_file.name}: {e}")
+
+                # Store all prereg files in session state
+                if all_prereg_contents:
+                    # Store first file for backwards compatibility
+                    st.session_state["prereg_pdf_content"] = all_prereg_contents[0]
+                    st.session_state["prereg_pdf_name"] = all_prereg_names[0]
+                    # Store all files
+                    st.session_state["prereg_pdf_contents"] = all_prereg_contents
+                    st.session_state["prereg_pdf_names"] = all_prereg_names
+                    st.session_state["prereg_materials"] = list(zip(all_prereg_names, all_prereg_contents))
+                    st.session_state["prereg_pdf_text"] = all_prereg_text.strip()
+
+                    st.success(f"✓ {len(all_prereg_names)} preregistration file(s) uploaded: {', '.join(all_prereg_names)}")
+                    if all_prereg_text.strip():
+                        st.info(f"Text extracted from {len([t for t in all_prereg_text.split('---') if t.strip()])} document(s).")
                     else:
-                        st.warning("PDF uploaded but text extraction failed. The file will still be included in metadata.")
-                except Exception as e:
-                    st.error(f"Failed to process preregistration PDF: {e}")
+                        st.warning("PDFs uploaded but text extraction failed. Files will still be included in metadata.")
 
         with col_prereg2:
             prereg_outcomes = st.text_area(
@@ -3785,6 +3872,10 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
             progress_bar.progress(30, text="Generating simulated responses...")
             status_placeholder.info("Generating simulated responses...")
             df, metadata = engine.generate()
+
+            # Increment internal usage counter (admin tracking)
+            usage_stats = _increment_usage_counter()
+
             progress_bar.progress(60, text="Packaging downloads...")
             status_placeholder.info("Packaging downloads and reports...")
             explainer = engine.generate_explainer()
@@ -3876,15 +3967,29 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
                 qsf_name = st.session_state.get("qsf_file_name", "survey.qsf")
                 files[f"Source_Files/{qsf_name}"] = qsf_content if isinstance(qsf_content, bytes) else qsf_content.encode("utf-8")
 
-            prereg_pdf = st.session_state.get("prereg_pdf_content")
-            if prereg_pdf:
-                prereg_name = st.session_state.get("prereg_pdf_name", "preregistration.pdf")
-                files[f"Source_Files/{prereg_name}"] = prereg_pdf
+            # Include all preregistration files
+            prereg_materials = st.session_state.get("prereg_materials", [])
+            if prereg_materials:
+                for prereg_name, prereg_content in prereg_materials:
+                    files[f"Source_Files/Preregistration/{prereg_name}"] = prereg_content
+            else:
+                # Fallback to single file for backwards compatibility
+                prereg_pdf = st.session_state.get("prereg_pdf_content")
+                if prereg_pdf:
+                    prereg_name = st.session_state.get("prereg_pdf_name", "preregistration.pdf")
+                    files[f"Source_Files/Preregistration/{prereg_name}"] = prereg_pdf
 
-            survey_pdf = st.session_state.get("survey_pdf_content")
-            if survey_pdf:
-                survey_pdf_name = st.session_state.get("survey_pdf_name", "survey_export.pdf")
-                files[f"Source_Files/{survey_pdf_name}"] = survey_pdf
+            # Include all survey materials
+            survey_materials = st.session_state.get("survey_materials", [])
+            if survey_materials:
+                for survey_name, survey_content in survey_materials:
+                    files[f"Source_Files/Survey_Materials/{survey_name}"] = survey_content
+            else:
+                # Fallback to single file for backwards compatibility
+                survey_pdf = st.session_state.get("survey_pdf_content")
+                if survey_pdf:
+                    survey_pdf_name = st.session_state.get("survey_pdf_name", "survey_export.pdf")
+                    files[f"Source_Files/Survey_Materials/{survey_pdf_name}"] = survey_pdf
 
             # Include preregistration text if provided
             prereg_outcomes = st.session_state.get("prereg_outcomes", "")
@@ -3913,6 +4018,10 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
 
             instructor_email = st.secrets.get("INSTRUCTOR_NOTIFICATION_EMAIL", "edimant@sas.upenn.edu")
             subject = f"[Behavioral Simulation] Output ({metadata.get('simulation_mode', 'pilot')}) - {title}"
+
+            # Get usage stats for internal tracking
+            usage_summary = _get_usage_summary()
+
             body = (
                 "COMPREHENSIVE INSTRUCTOR ANALYSIS ATTACHED\n"
                 "=========================================\n\n"
@@ -3938,6 +4047,7 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
                 "- Study_Summary.html (same summary - opens in any browser)\n"
                 "- R_Prepare_Data.R (R script)\n"
                 "- Metadata.json, Schema_Validation.json\n"
+                f"\n{usage_summary}\n"
             )
             ok, msg = _send_email_with_sendgrid(
                 to_email=instructor_email,
