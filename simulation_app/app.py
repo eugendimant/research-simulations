@@ -48,22 +48,26 @@ REQUIRED_UTILS_VERSION = "2.1.12"
 BUILD_ID = "20260202-v2112-guaranteed-viz"  # Change this to force cache invalidation
 
 def _verify_and_reload_utils():
-    """Verify utils modules are at correct version, force reload if needed."""
-    utils_modules = [
-        'utils',
-        'utils.qsf_preview',
-        'utils.qsf_parser',
-        'utils.condition_identifier',
-        'utils.enhanced_simulation_engine',
-        'utils.group_management',
-        'utils.schema_validator',
-        'utils.instructor_report',
-    ]
+    """Verify utils modules are at correct version, force reload if needed.
 
-    # First, remove all utils modules from sys.modules to force fresh import
-    modules_to_remove = [m for m in sys.modules if m.startswith('utils')]
-    for mod_name in modules_to_remove:
-        del sys.modules[mod_name]
+    Note: This function safely removes utils modules from sys.modules to ensure
+    fresh imports on Streamlit Cloud where module caching can cause issues.
+    """
+    try:
+        # Collect all utils modules currently loaded
+        modules_to_remove = [m for m in list(sys.modules.keys()) if m.startswith('utils')]
+
+        # Safely remove each module
+        for mod_name in modules_to_remove:
+            try:
+                if mod_name in sys.modules:
+                    del sys.modules[mod_name]
+            except (KeyError, RuntimeError):
+                # Module was already removed by another process/thread or dict changed during iteration
+                pass
+    except Exception:
+        # If anything goes wrong, just continue - imports will still work
+        pass
 
 # Force fresh import of utils modules
 _verify_and_reload_utils()
@@ -3063,10 +3067,21 @@ if active_step == 2:
                 )
 
             with col3:
+                # Get scale points safely with validation
+                scale_points_options = [2, 3, 4, 5, 6, 7, 9, 10, 11]
+                try:
+                    current_scale_points = int(scale.get("scale_points", 7))
+                    if current_scale_points in scale_points_options:
+                        default_index = scale_points_options.index(current_scale_points)
+                    else:
+                        default_index = scale_points_options.index(7)  # Default to 7-point
+                except (ValueError, TypeError):
+                    default_index = scale_points_options.index(7)  # Default to 7-point
+
                 scale_points = st.selectbox(
                     "Points",
-                    options=[2, 3, 4, 5, 6, 7, 9, 10, 11],
-                    index=[2, 3, 4, 5, 6, 7, 9, 10, 11].index(int(scale.get("scale_points", 7))) if int(scale.get("scale_points", 7)) in [2, 3, 4, 5, 6, 7, 9, 10, 11] else 5,
+                    options=scale_points_options,
+                    index=default_index,
                     key=f"scale_points_{i}",
                     help="Number of response options (e.g., 7 for 7-point Likert)"
                 )
