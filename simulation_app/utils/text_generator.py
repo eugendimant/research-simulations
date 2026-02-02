@@ -14,7 +14,7 @@ This provides LLM-like text generation quality for free.
 """
 
 # Version identifier to help track deployed code
-__version__ = "2.1.3"  # Synced all utils to same version
+__version__ = "2.1.6"  # Major: context-aware responses, behavioral economics templates
 
 import random
 import re
@@ -199,6 +199,158 @@ RESPONSE_TEMPLATES: Dict[str, Dict[str, List[str]]] = {
             "This is problematic. {Concern}",
             "I oppose this. {Objection}",
             "Completely against this approach.",
+        ],
+    },
+    # BEHAVIORAL ECONOMICS - for dictator games, public goods, trust games, etc.
+    "economic_decision_explanation": {
+        "very_positive": [
+            "I chose to give a large amount because I believe in fairness and sharing.",
+            "I gave generously because it felt like the right thing to do.",
+            "I wanted my partner to benefit too, so I shared most of the money.",
+            "Cooperation and fairness are important to me, so I contributed a lot.",
+            "I believe in treating others as I would want to be treated.",
+        ],
+        "positive": [
+            "I gave a reasonable amount because fairness matters to me.",
+            "I tried to balance my own interest with being fair to my partner.",
+            "I shared some of the money because I thought it was the right thing.",
+            "I contributed a fair amount to the common pool.",
+            "I wanted to cooperate while still keeping something for myself.",
+        ],
+        "neutral": [
+            "I just split the amount roughly in half.",
+            "I wasn't sure what to do, so I gave a moderate amount.",
+            "I tried to find a middle ground between keeping and giving.",
+            "No strong reason, just felt like a reasonable choice.",
+            "I went with what seemed fair without thinking too much.",
+        ],
+        "negative": [
+            "I kept most of the money because I earned the right to decide.",
+            "I gave less because I don't know this person and don't owe them anything.",
+            "I prefer to look out for my own interests first.",
+            "I kept more because I'm not sure if they would share with me.",
+            "I gave a small amount just to not seem completely unfair.",
+        ],
+        "very_negative": [
+            "I kept all the money because it was my decision to make.",
+            "I don't see why I should give anything to a stranger.",
+            "In this situation, I prioritized my own benefit.",
+            "I kept everything because there's no reason to share.",
+            "Why give money away when I don't have to?",
+        ],
+    },
+    # POLITICAL STUDIES - for attitudes, polarization, intergroup relations
+    "political_attitude_explanation": {
+        "very_positive": [
+            "I have strong positive views on this political topic.",
+            "My political position is firm and I feel strongly about it.",
+            "This aligns well with my values and beliefs.",
+            "I'm very confident in my stance on this issue.",
+            "This is something I care deeply about.",
+        ],
+        "positive": [
+            "I generally support this political position.",
+            "My views lean in favor of this.",
+            "I think this approach makes sense overall.",
+            "I have a moderately positive view on this.",
+            "This seems like a reasonable political stance.",
+        ],
+        "neutral": [
+            "I don't have strong political feelings either way.",
+            "I can see both sides of this issue.",
+            "My views on this are mixed.",
+            "I'm not particularly engaged with this topic.",
+            "I try to stay neutral on political matters.",
+        ],
+        "negative": [
+            "I have concerns about this political direction.",
+            "My views don't align with this position.",
+            "I disagree with this approach.",
+            "This doesn't represent my values.",
+            "I'm skeptical of this political stance.",
+        ],
+        "very_negative": [
+            "I strongly oppose this political position.",
+            "This goes against everything I believe in.",
+            "I fundamentally disagree with this approach.",
+            "My views are completely opposite to this.",
+            "I find this political stance problematic.",
+        ],
+    },
+    # SURVEY FEEDBACK - for end-of-survey comments
+    "survey_feedback": {
+        "very_positive": [
+            "The survey was well-designed and easy to follow.",
+            "I found the questions clear and relevant.",
+            "Good survey, no issues at all.",
+            "Everything made sense and flowed well.",
+            "No confusion, straightforward to complete.",
+        ],
+        "positive": [
+            "The survey was fine overall.",
+            "Most questions were clear.",
+            "Pretty straightforward to complete.",
+            "No major issues with the survey.",
+            "It was okay, nothing confusing.",
+        ],
+        "neutral": [
+            "The survey was okay.",
+            "Nothing particularly stood out.",
+            "Finished it without problems.",
+            "Standard survey experience.",
+            "No comment really.",
+        ],
+        "negative": [
+            "Some questions were a bit confusing.",
+            "The instructions could be clearer.",
+            "A few things were unclear to me.",
+            "The survey was a bit long.",
+            "Some parts were hard to understand.",
+        ],
+        "very_negative": [
+            "The survey was confusing and hard to follow.",
+            "Many questions didn't make sense to me.",
+            "Instructions were unclear.",
+            "Too long and repetitive.",
+            "Had trouble understanding what was being asked.",
+        ],
+    },
+    # INTERGROUP - for partner/group interaction studies
+    "intergroup_explanation": {
+        "very_positive": [
+            "I feel positively about interacting with this person.",
+            "I'm open to working with people who have different views.",
+            "I think we can find common ground despite differences.",
+            "I approached this interaction with openness.",
+            "I wanted to give them a fair chance.",
+        ],
+        "positive": [
+            "I was reasonably positive about the interaction.",
+            "I tried to be fair regardless of their background.",
+            "I'm willing to engage with different perspectives.",
+            "I approached it with an open mind.",
+            "I didn't let their views affect my decision too much.",
+        ],
+        "neutral": [
+            "I didn't think much about who they were.",
+            "Their background didn't really factor into my choice.",
+            "I treated this like any other interaction.",
+            "I tried to stay neutral.",
+            "I focused on the task itself.",
+        ],
+        "negative": [
+            "I had some reservations about this person.",
+            "Their views made me less inclined to cooperate.",
+            "I was a bit cautious in my approach.",
+            "I wasn't sure how much to trust them.",
+            "Their position influenced my decision somewhat.",
+        ],
+        "very_negative": [
+            "I didn't want to help someone with those views.",
+            "I strongly disagree with their position, so I acted accordingly.",
+            "I couldn't look past our differences.",
+            "Their views affected how I treated them.",
+            "I kept most for myself because of who they are.",
         ],
     },
 }
@@ -549,8 +701,46 @@ class OpenEndedTextGenerator:
             return ResponseStyle.MINIMAL
 
     def _detect_domain(self, question_text: str, study_context: str) -> str:
-        """Detect the domain of the question for appropriate templates."""
+        """Detect the domain of the question for appropriate templates.
+
+        Enhanced detection for behavioral economics, political, and survey studies.
+        """
         combined = f"{question_text} {study_context}".lower()
+
+        # BEHAVIORAL ECONOMICS - dictator game, public goods, trust games
+        economic_keywords = [
+            'explain your choice', 'why did you', 'explain your decision',
+            'dictator', 'public goods', 'trust game', 'ultimatum',
+            'give', 'keep', 'contribute', 'split', 'share', 'money',
+            'dollars', 'partner', 'allocation', 'decision', 'cooperat'
+        ]
+        if any(kw in combined for kw in economic_keywords):
+            return 'economic_decision_explanation'
+
+        # POLITICAL/INTERGROUP - political attitudes, partner views
+        political_keywords = [
+            'trump', 'biden', 'democrat', 'republican', 'political',
+            'liberal', 'conservative', 'vote', 'election', 'party',
+            'hate', 'love', 'opinion towards', 'attitude towards'
+        ]
+        if any(kw in combined for kw in political_keywords):
+            return 'political_attitude_explanation'
+
+        # INTERGROUP RELATIONS - interactions with outgroup members
+        intergroup_keywords = [
+            'partner', 'matched with', 'person who', 'someone who',
+            'interaction', 'working with', 'paired with'
+        ]
+        if any(kw in combined for kw in intergroup_keywords):
+            return 'intergroup_explanation'
+
+        # SURVEY FEEDBACK - end of survey questions
+        feedback_keywords = [
+            'feedback', 'confusing', 'survey', 'experiment', 'unclear',
+            'anything else', 'comments', 'suggestions', 'improve'
+        ]
+        if any(kw in combined for kw in feedback_keywords):
+            return 'survey_feedback'
 
         # Product/purchase related
         product_keywords = [
@@ -562,7 +752,7 @@ class OpenEndedTextGenerator:
 
         # Experience related
         experience_keywords = [
-            'experience', 'service', 'interaction', 'visit',
+            'experience', 'service', 'visit',
             'session', 'event', 'activity', 'process'
         ]
         if any(kw in combined for kw in experience_keywords):

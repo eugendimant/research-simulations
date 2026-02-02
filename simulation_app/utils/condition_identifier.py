@@ -13,7 +13,7 @@ to maximize identification accuracy.
 """
 
 # Version identifier to help track deployed code
-__version__ = "2.1.3"  # Fixed nested flow list handling, added _extract_flow_payload
+__version__ = "2.1.4"  # Improved condition detection: exclusion lists, strict fallback
 
 import re
 import json
@@ -135,9 +135,54 @@ class EnhancedConditionIdentifier:
     It also integrates preregistration information to improve accuracy.
     """
 
+    # Block names that are NEVER experimental conditions
+    # These are common structural/admin block names in Qualtrics surveys
+    EXCLUDED_BLOCK_NAMES = {
+        # Generic block names
+        'block', 'block 1', 'block 2', 'block 3', 'block 4', 'block 5',
+        'default question block', 'default', 'standard',
+        # Structural/admin blocks
+        'trash', 'trash / unused questions', 'unused',
+        'intro', 'introduction', 'welcome',
+        'instructions', 'general instructions',
+        'consent', 'informed consent',
+        'captcha', 'bot check',
+        'end', 'end of survey', 'end of games', 'ending', 'debrief',
+        'thank you', 'thanks',
+        # Demographic/covariate blocks
+        'demographics', 'demographic info', 'demographic information',
+        'background', 'background info',
+        # Quality control blocks
+        'attention check', 'attention checks', 'quality check',
+        'manipulation check', 'manipulation checks',
+        # Feedback blocks
+        'feedback', 'comments', 'feedback on the survey',
+        'open-ended', 'open ended', 'free response',
+        # Game/task specific (but not conditions)
+        'game', 'task', 'main task',
+        'pairing', 'pairing prompt', 'pair',
+        'question', 'questions',
+    }
+
+    # Block type keywords that indicate non-condition blocks
+    EXCLUDED_BLOCK_TYPES = {'Trash', 'Default'}
+
     def __init__(self):
         self.warnings: List[str] = []
         self.suggestions: List[str] = []
+
+    def _is_excluded_block_name(self, block_name: str) -> bool:
+        """Check if a block name is in the exclusion list."""
+        if not block_name:
+            return True
+        normalized = block_name.lower().strip()
+        # Check exact match
+        if normalized in self.EXCLUDED_BLOCK_NAMES:
+            return True
+        # Check if it starts with "block" followed by only numbers/spaces
+        if re.match(r'^block\s*\d*$', normalized):
+            return True
+        return False
 
     def _normalize_survey_elements(self, qsf_data: Dict[str, Any]) -> List[Dict[str, Any]]:
         """Normalize SurveyElements into a list of dicts across QSF variants."""
@@ -555,7 +600,13 @@ class EnhancedConditionIdentifier:
         raw_conditions: List[Dict],
         depth: int = 0,
     ):
-        """Recursively find and analyze randomizer elements."""
+        """Recursively find and analyze randomizer elements.
+
+        Key improvements:
+        - Filter out excluded block names
+        - Require at least 2 blocks for conditions (real randomization)
+        - Skip Trash/Default block types
+        """
         for item in flow:
             if not isinstance(item, dict):
                 continue
@@ -566,15 +617,23 @@ class EnhancedConditionIdentifier:
                 rand_info = self._parse_randomizer(item, blocks_map, depth)
                 randomizers.append(rand_info)
 
-                # Extract conditions from this randomizer
+                # Collect valid conditions from this randomizer
+                valid_branches = []
                 for branch in rand_info.get('branches', []):
-                    raw_conditions.append({
-                        'name': branch.get('name', ''),
-                        'block_id': branch.get('block_id', ''),
-                        'source': 'Randomizer Flow',
-                        'randomizer_id': rand_info.get('flow_id', ''),
-                        'confidence': 0.9,  # High confidence for randomizer-based detection
-                    })
+                    branch_name = branch.get('name', '')
+                    if not self._is_excluded_block_name(branch_name):
+                        valid_branches.append(branch)
+
+                # Only add conditions if there are at least 2 valid branches
+                if len(valid_branches) >= 2:
+                    for branch in valid_branches:
+                        raw_conditions.append({
+                            'name': branch.get('name', ''),
+                            'block_id': branch.get('block_id', ''),
+                            'source': 'Randomizer Flow',
+                            'randomizer_id': rand_info.get('flow_id', ''),
+                            'confidence': 0.9,  # High confidence for randomizer-based detection
+                        })
 
                 # Recurse into randomizer's flow
                 sub_flow = self._normalize_flow(item.get('Flow', []))
@@ -584,39 +643,40 @@ class EnhancedConditionIdentifier:
                 # BlockRandomizer is another randomization type
                 rand_info = self._parse_block_randomizer(item, blocks_map, depth)
                 randomizers.append(rand_info)
-                for block_id in rand_info.get('block_ids', []):
-                    block_name = blocks_map.get(block_id, {}).get('name', block_id)
-                    if self._looks_like_condition(block_name):
-                        raw_conditions.append({
-                            'name': block_name,
-                            'block_id': block_id,
-                            'source': 'Block Randomizer',
-                            'confidence': 0.6,
-                        })
 
                 # Extract conditions if SubSet=1 (between-subjects assignment)
-                # Also check sub_set value directly to handle string "1" case
                 is_between_subjects = (
                     rand_info.get('randomization_type') == 'present_one' or
                     rand_info.get('sub_set') == 1 or
                     str(rand_info.get('sub_set', '')) == '1'
                 )
+
                 if is_between_subjects:
+                    # Collect valid branches (not excluded)
+                    valid_branches = []
                     for branch in rand_info.get('branches', []):
-                        raw_conditions.append({
-                            'name': branch.get('name', ''),
-                            'block_id': branch.get('block_id', ''),
-                            'source': 'BlockRandomizer',
-                            'randomizer_id': rand_info.get('flow_id', ''),
-                            'confidence': 0.85,  # High confidence for BlockRandomizer-based detection
-                        })
+                        branch_name = branch.get('name', '')
+                        if not self._is_excluded_block_name(branch_name):
+                            valid_branches.append(branch)
+
+                    # Only add as conditions if there are at least 2 valid branches
+                    if len(valid_branches) >= 2:
+                        for branch in valid_branches:
+                            raw_conditions.append({
+                                'name': branch.get('name', ''),
+                                'block_id': branch.get('block_id', ''),
+                                'source': 'BlockRandomizer',
+                                'randomizer_id': rand_info.get('flow_id', ''),
+                                'confidence': 0.85,
+                            })
 
             elif flow_type == 'Branch':
                 # Branches can also indicate conditions
                 branch_info = self._parse_branch(item, blocks_map)
-                if branch_info.get('looks_like_condition'):
+                branch_name = branch_info.get('description', '')
+                if branch_info.get('looks_like_condition') and not self._is_excluded_block_name(branch_name):
                     raw_conditions.append({
-                        'name': branch_info.get('description', ''),
+                        'name': branch_name,
                         'source': 'Branch Logic',
                         'confidence': 0.6,  # Lower confidence for branches
                     })
@@ -764,8 +824,13 @@ class EnhancedConditionIdentifier:
 
         We ONLY use:
         1. Randomizer structure from QSF flow (highest reliability)
-        2. Block names that are part of randomizers
-        3. Embedded data fields that indicate conditions
+        2. Block names that are part of randomizers (with at least 2 blocks)
+        3. Block names that strongly suggest conditions (strict fallback)
+
+        Key filtering:
+        - Exclude common non-condition block names (demographics, instructions, etc.)
+        - Exclude Trash/Default block types
+        - Require at least 2 conditions from randomizers
 
         We do NOT parse preregistration text for conditions as this produces
         garbage fragments. The user can manually add conditions if needed.
@@ -777,29 +842,35 @@ class EnhancedConditionIdentifier:
         for rc in raw_conditions:
             name = self._normalize_condition_name(rc.get('name', ''))
             if name and name.lower() not in seen_names:
-                # Skip generic/default block names
-                if name.lower() in ('default question block', 'block', 'standard'):
+                # Skip excluded block names
+                if self._is_excluded_block_name(name):
                     continue
                 seen_names.add(name.lower())
                 conditions.append(IdentifiedCondition(
                     name=name,
                     factor='Treatment',
                     source='QSF Randomizer',
-                    confidence=0.9,  # High confidence for QSF-detected
+                    confidence=rc.get('confidence', 0.9),
                     block_ids=[rc.get('block_id')] if rc.get('block_id') else [],
                     randomizer_id=rc.get('randomizer_id'),
                 ))
 
-        # Fallback: look at block names that suggest conditions
+        # Fallback: look at block names that strongly suggest conditions
         # Only if no conditions found from randomizer
         if not conditions and isinstance(blocks_map, dict):
             for block_id, block_data in blocks_map.items():
                 if not isinstance(block_data, dict):
                     continue
                 block_name = block_data.get('name', '')
-                # Skip generic blocks
-                if block_name.lower() in ('default question block', 'block', 'standard', 'trash / unused questions'):
+                block_type = block_data.get('type', 'Standard')
+
+                # Skip excluded blocks
+                if self._is_excluded_block_name(block_name):
                     continue
+                # Skip Trash/Default block types
+                if block_type in self.EXCLUDED_BLOCK_TYPES:
+                    continue
+                # Only add if it strongly looks like a condition
                 if self._looks_like_condition(block_name):
                     name = self._normalize_condition_name(block_name)
                     if name and name.lower() not in seen_names:
@@ -855,15 +926,45 @@ class EnhancedConditionIdentifier:
         return list(set(conditions))
 
     def _looks_like_condition(self, text: str) -> bool:
-        """Check if text looks like a condition name."""
+        """Check if text strongly suggests an experimental condition.
+
+        This is used as a FALLBACK when no randomizers are detected.
+        We use strict criteria to avoid false positives.
+        """
         if not text:
             return False
+
+        # First check exclusion list
+        if self._is_excluded_block_name(text):
+            return False
+
         lower = text.lower()
-        keywords = [
+
+        # Strong positive indicators - these terms strongly suggest conditions
+        strong_keywords = [
             'condition', 'treatment', 'control', 'experimental',
-            'group', 'arm', 'manipulation', 'scenario', 'stimulus'
+            'manipulation', 'scenario', 'stimulus', 'stimuli'
         ]
-        return any(kw in lower for kw in keywords)
+
+        # Weaker indicators - need additional context
+        weak_keywords = ['group', 'arm', 'variant']
+
+        # Check for strong keywords
+        if any(kw in lower for kw in strong_keywords):
+            return True
+
+        # Check for weaker keywords with additional context
+        for keyword in weak_keywords:
+            if keyword in lower:
+                # Check if it has condition-related context
+                condition_context = ['treatment', 'control', 'experimental', 'test', 'condition']
+                if any(ctx in lower for ctx in condition_context):
+                    return True
+                # Check if it follows pattern like "Group A", "Group 1", etc.
+                if re.search(rf'{keyword}\s*[a-z0-9]', lower, re.IGNORECASE):
+                    return True
+
+        return False
 
     def _normalize_condition_name(self, name: str) -> str:
         """Normalize a condition name."""
