@@ -23,7 +23,7 @@ This module is designed to run inside a `utils/` package (i.e., imported as
 """
 
 # Version identifier to help track deployed code
-__version__ = "2.1.6"  # Major: context-aware text generation, study_context support
+__version__ = "2.1.7"  # Major: comprehensive response library integration
 
 from dataclasses import dataclass
 from datetime import datetime
@@ -41,6 +41,19 @@ from .persona_library import (
     TextResponseGenerator,
     StimulusEvaluationHandler,
 )
+
+# Import comprehensive response library for LLM-quality text generation
+try:
+    from .response_library import (
+        ComprehensiveResponseGenerator,
+        detect_study_domain,
+        detect_question_type,
+        StudyDomain,
+        QuestionType,
+    )
+    HAS_RESPONSE_LIBRARY = True
+except ImportError:
+    HAS_RESPONSE_LIBRARY = False
 
 
 def _stable_int_hash(s: str) -> int:
@@ -234,6 +247,13 @@ class EnhancedSimulationEngine:
 
         self.text_generator = TextResponseGenerator()
         self.stimulus_handler = StimulusEvaluationHandler()
+
+        # Initialize comprehensive response generator if available
+        self.comprehensive_generator = None
+        if HAS_RESPONSE_LIBRARY:
+            self.comprehensive_generator = ComprehensiveResponseGenerator(seed=self.seed)
+            if self.study_context:
+                self.comprehensive_generator.set_study_context(self.study_context)
 
         self.column_info: List[Tuple[str, str]] = []
         self.validation_log: List[str] = []
@@ -443,14 +463,72 @@ class EnhancedSimulationEngine:
     ) -> str:
         """Generate an open-ended response using context-aware text generation.
 
-        Uses the study_context and question_text to generate appropriate responses
-        for behavioral economics, political studies, feedback questions, etc.
+        Uses the comprehensive response library (if available) for LLM-quality
+        responses across 50+ research domains. Falls back to the basic text
+        generator if the library is not available.
+
+        The response is generated based on:
+        - Question text and type (explanation, feedback, description, etc.)
+        - Study context (domain, topics, survey name)
+        - Persona traits (verbosity, formality, engagement, attention)
+        - Experimental condition
+        - Response sentiment (based on scale responses)
         """
         response_type = str(question_spec.get("type", "general"))
         question_text = str(question_spec.get("question_text", ""))
         context_type = str(question_spec.get("context_type", "general"))
 
-        if float(traits.get("attention_level", 0.8)) < 0.5:
+        rng = np.random.RandomState(participant_seed)
+
+        # Determine sentiment from response mean
+        if response_mean is not None:
+            if response_mean >= 5.5:
+                sentiment = "very_positive"
+            elif response_mean >= 4.5:
+                sentiment = "positive"
+            elif response_mean <= 2.5:
+                sentiment = "very_negative"
+            elif response_mean <= 3.5:
+                sentiment = "negative"
+            else:
+                sentiment = "neutral"
+        else:
+            sentiment = "neutral"
+
+        # Extract persona traits for response generation
+        attention_level = float(traits.get("attention_level", 0.8))
+        verbosity = float(traits.get("verbosity", 0.5))
+        formality = float(traits.get("formality", 0.5))
+
+        # Map persona to engagement level
+        if attention_level < 0.5:
+            engagement = 0.2  # Careless
+        elif persona.name == "Satisficer":
+            engagement = 0.3
+        elif persona.name == "Extreme Responder":
+            engagement = 0.6
+        elif persona.name == "Engaged Responder":
+            engagement = 0.9
+        else:
+            engagement = 0.5
+
+        # Try to use comprehensive response generator if available
+        if self.comprehensive_generator is not None:
+            try:
+                return self.comprehensive_generator.generate(
+                    question_text=question_text or response_type,
+                    sentiment=sentiment,
+                    persona_verbosity=verbosity,
+                    persona_formality=formality,
+                    persona_engagement=engagement,
+                    condition=condition,
+                )
+            except Exception:
+                # Fall back to basic generator on any error
+                pass
+
+        # Fallback to basic text generator
+        if attention_level < 0.5:
             style = "careless"
         elif persona.name == "Satisficer":
             style = "satisficer"
@@ -461,11 +539,8 @@ class EnhancedSimulationEngine:
         else:
             style = "default"
 
-        rng = np.random.RandomState(participant_seed)
-
         # Build context from study_context and question_spec
         study_domain = self.study_context.get("study_domain", "general")
-        study_topics = self.study_context.get("topics", [])
         survey_name = self.study_context.get("survey_name", self.study_title)
 
         context = {
@@ -474,7 +549,7 @@ class EnhancedSimulationEngine:
             "product": question_spec.get("product", "item"),
             "feature": question_spec.get("feature", "aspect"),
             "emotion": str(rng.choice(["pleased", "interested", "satisfied", "engaged"])),
-            "sentiment": "neutral",
+            "sentiment": sentiment.replace("very_", ""),  # Basic generator uses simple sentiment
             "question_text": question_text,
             "study_domain": study_domain,
         }
@@ -486,14 +561,6 @@ class EnhancedSimulationEngine:
             context["product"] = "hedonic " + str(context["product"])
         elif "utilitarian" in cond:
             context["product"] = "functional " + str(context["product"])
-
-        if response_mean is not None:
-            if response_mean >= 4.5:
-                context["sentiment"] = "positive"
-            elif response_mean <= 3.5:
-                context["sentiment"] = "negative"
-            else:
-                context["sentiment"] = "neutral"
 
         return self.text_generator.generate_response(
             response_type, style, context, traits, participant_seed

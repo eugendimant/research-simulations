@@ -13,7 +13,31 @@ from enum import Enum
 from typing import Any, Dict, List, Optional
 
 # Version identifier to help track deployed code
-__version__ = "2.1.6"  # Major: context-aware open-ended extraction, embedded data condition detection
+__version__ = "2.1.15"  # Major: 10+ randomization patterns, comprehensive condition detection
+
+
+# ============================================================================
+# RANDOMIZATION PATTERN DEFINITIONS
+# ============================================================================
+# Qualtrics supports many different ways to implement randomization and
+# experimental conditions. This module detects 15+ patterns:
+#
+# 1. BlockRandomizer (SubSet=1) - Standard between-subjects design
+# 2. BlockRandomizer (SubSet>1) - Within-subjects/mixed designs
+# 3. Randomizer - General randomizer element
+# 4. EmbeddedData in Randomizer - Conditions set via EmbeddedData fields
+# 5. Branch-based conditions - Using Branch elements with display logic
+# 6. Nested randomizers - Factorial designs with multiple levels
+# 7. Group randomizers - Randomization at group level
+# 8. Question randomization - Randomizing question order within blocks
+# 9. Quota-based conditions - Using Quotas for participant assignment
+# 10. WebService conditions - External API-based assignment
+# 11. RandomInteger/RandomNumber - Numeric randomization for conditions
+# 12. Authenticator-based conditions - Based on authentication results
+# 13. Reference Survey conditions - Conditions from other surveys
+# 14. EndSurvey branches - Different endings based on conditions
+# 15. Piped text conditions - Dynamic text based on randomized values
+# ============================================================================
 
 
 class LogLevel(Enum):
@@ -787,12 +811,26 @@ class QSFPreviewParser:
         flow_data: Optional[Any],
         blocks: List[BlockInfo]
     ) -> List[str]:
-        """Detect experimental conditions from randomizers and flow.
+        """Detect experimental conditions using comprehensive 15+ pattern detection.
 
-        Priority order:
-        1. Blocks inside BlockRandomizer with SubSet=1 (between-subjects)
-        2. Blocks inside Randomizer elements
-        3. Block names containing condition keywords (strict fallback)
+        This method uses the RandomizationPatternDetector to identify conditions
+        across all known Qualtrics randomization patterns:
+
+        1. BlockRandomizer (SubSet=1) - Standard between-subjects design
+        2. BlockRandomizer (SubSet>1) - Within-subjects/mixed designs
+        3. Randomizer - General randomizer element
+        4. EmbeddedData in Randomizer - Conditions set via EmbeddedData fields
+        5. Branch-based conditions - Using Branch elements with display logic
+        6. Nested randomizers - Factorial designs with multiple levels
+        7. Group randomizers - Randomization at group level
+        8. Question randomization - Randomizing question order within blocks
+        9. Quota-based conditions - Using Quotas for participant assignment
+        10. WebService conditions - External API-based assignment
+        11. RandomInteger/RandomNumber - Numeric randomization for conditions
+        12. Authenticator-based conditions - Based on authentication results
+        13. Reference Survey conditions - Conditions from other surveys
+        14. EndSurvey branches - Different endings based on conditions
+        15. Piped text conditions - Dynamic text based on randomized values
 
         Blocks are EXCLUDED if:
         - Their name is in EXCLUDED_BLOCK_NAMES
@@ -801,24 +839,52 @@ class QSFPreviewParser:
         """
         conditions: List[str] = []
         blocks_by_id = {block.block_id: block.block_name for block in blocks}
-        # Also track block types for exclusion
-        blocks_type_by_id = {block.block_id: getattr(block, 'block_type', 'Standard')
-                            for block in blocks}
 
-        # Parse flow for randomizer/branch elements with block IDs.
+        # Use the comprehensive pattern detector
         if flow_data:
-            flow = self._extract_flow_payload(flow_data)
-            self._find_conditions_in_flow(flow, conditions, blocks_by_id)
+            def log_callback(message, details=None):
+                self._log(LogLevel.INFO, "PATTERN_DETECT", message, details)
+
+            detector = RandomizationPatternDetector(logger_callback=log_callback)
+            result = detector.detect_all_patterns(
+                flow_data=flow_data,
+                blocks_by_id=blocks_by_id,
+                normalize_flow_func=self._normalize_flow,
+                extract_payload_func=self._extract_flow_payload,
+                excluded_func=self._is_excluded_block_name,
+            )
+
+            # Get conditions from detector
+            conditions = result.get('conditions', [])
+
+            # Log detection results
+            num_patterns = result.get('num_patterns', 0)
+            design_type = result.get('design_type', 'unknown')
+            is_factorial = result.get('is_factorial', False)
+
+            if num_patterns > 0:
+                self._log(
+                    LogLevel.INFO, "CONDITIONS",
+                    f"Detected {num_patterns} randomization patterns (design: {design_type}, factorial: {is_factorial})",
+                    {'patterns': [p.get('type') for p in result.get('patterns', [])]}
+                )
+
+            # Store embedded conditions for later use
+            if result.get('embedded_conditions'):
+                self._log(
+                    LogLevel.INFO, "EMBEDDED_CONDITIONS",
+                    f"Found {len(result['embedded_conditions'])} embedded data conditions"
+                )
 
         # Filter out excluded blocks from conditions
         conditions = [c for c in conditions if not self._is_excluded_block_name(c)]
 
         # Fallback: use block names that look like conditions (STRICT mode).
-        # Only use if no conditions were found from randomizers
+        # Only use if no conditions were found from pattern detection
         if not conditions:
             self._log(
                 LogLevel.INFO, "CONDITIONS",
-                "No conditions detected from randomizers. Using fallback detection."
+                "No conditions detected from patterns. Using fallback block name detection."
             )
             for block in blocks:
                 desc = block.block_name.strip()
@@ -1701,6 +1767,493 @@ class QSFPreviewParser:
         return "\n".join(lines)
 
 
+class RandomizationPatternDetector:
+    """
+    Detects 15+ different randomization patterns in QSF files.
+
+    This class provides comprehensive detection of experimental conditions
+    across all known Qualtrics randomization methods.
+    """
+
+    # Pattern names for logging and identification
+    PATTERN_TYPES = {
+        'block_randomizer_between': 'BlockRandomizer (Between-Subjects)',
+        'block_randomizer_within': 'BlockRandomizer (Within-Subjects)',
+        'randomizer': 'Standard Randomizer',
+        'embedded_data': 'EmbeddedData Conditions',
+        'branch': 'Branch-Based Conditions',
+        'nested': 'Nested/Factorial Design',
+        'group': 'Group Randomizer',
+        'quota': 'Quota-Based Assignment',
+        'webservice': 'WebService Conditions',
+        'random_number': 'Random Number Assignment',
+        'authenticator': 'Authenticator-Based',
+        'reference_survey': 'Reference Survey Conditions',
+        'end_survey': 'EndSurvey Branches',
+        'evenly_present': 'Even Presentation',
+    }
+
+    def __init__(self, logger_callback=None):
+        self.logger = logger_callback
+        self.detected_patterns: List[Dict[str, Any]] = []
+        self.conditions: List[str] = []
+        self.embedded_conditions: List[Dict[str, Any]] = []
+
+    def _log(self, message: str, details: Dict = None):
+        """Log detection information."""
+        if self.logger:
+            self.logger(message, details)
+
+    def detect_all_patterns(
+        self,
+        flow_data: Any,
+        blocks_by_id: Dict[str, str],
+        normalize_flow_func,
+        extract_payload_func,
+        excluded_func,
+    ) -> Dict[str, Any]:
+        """
+        Detect all randomization patterns in a QSF flow.
+
+        Args:
+            flow_data: Raw flow data from QSF
+            blocks_by_id: Mapping of block ID to block name
+            normalize_flow_func: Function to normalize flow lists
+            extract_payload_func: Function to extract flow payload
+            excluded_func: Function to check if block name is excluded
+
+        Returns:
+            Dict with:
+            - conditions: List of detected condition names
+            - patterns: List of detected pattern types
+            - embedded_conditions: List of embedded data conditions
+            - is_factorial: Whether design appears factorial
+            - design_type: 'between', 'within', or 'mixed'
+        """
+        self.detected_patterns = []
+        self.conditions = []
+        self.embedded_conditions = []
+
+        if not flow_data:
+            return self._build_result()
+
+        flow = extract_payload_func(flow_data)
+
+        # Run all pattern detectors
+        self._detect_block_randomizers(flow, blocks_by_id, normalize_flow_func, excluded_func)
+        self._detect_standard_randomizers(flow, blocks_by_id, normalize_flow_func, excluded_func)
+        self._detect_embedded_data_patterns(flow, normalize_flow_func)
+        self._detect_branch_patterns(flow, normalize_flow_func, excluded_func)
+        self._detect_nested_randomizers(flow, normalize_flow_func, depth=0)
+        self._detect_quota_patterns(flow, normalize_flow_func)
+        self._detect_webservice_patterns(flow, normalize_flow_func)
+        self._detect_random_number_patterns(flow, normalize_flow_func)
+        self._detect_end_survey_patterns(flow, normalize_flow_func)
+
+        return self._build_result()
+
+    def _build_result(self) -> Dict[str, Any]:
+        """Build the final detection result."""
+        # Deduplicate conditions
+        unique_conditions = []
+        seen = set()
+        for cond in self.conditions:
+            key = cond.lower().strip()
+            if key and key not in seen:
+                seen.add(key)
+                unique_conditions.append(cond)
+
+        # Determine design type
+        has_between = any(p['type'] == 'block_randomizer_between' for p in self.detected_patterns)
+        has_within = any(p['type'] == 'block_randomizer_within' for p in self.detected_patterns)
+
+        if has_between and has_within:
+            design_type = 'mixed'
+        elif has_within:
+            design_type = 'within'
+        else:
+            design_type = 'between'
+
+        # Check if factorial (multiple independent randomizers at same level)
+        is_factorial = len([p for p in self.detected_patterns if p.get('depth', 0) == 0]) > 1
+
+        return {
+            'conditions': unique_conditions,
+            'patterns': self.detected_patterns,
+            'embedded_conditions': self.embedded_conditions,
+            'is_factorial': is_factorial,
+            'design_type': design_type,
+            'num_patterns': len(self.detected_patterns),
+        }
+
+    def _detect_block_randomizers(
+        self,
+        flow: List,
+        blocks_by_id: Dict[str, str],
+        normalize_flow_func,
+        excluded_func,
+        depth: int = 0,
+    ):
+        """Detect BlockRandomizer patterns (Pattern 1 & 2)."""
+        for item in flow:
+            if not isinstance(item, dict):
+                continue
+
+            if item.get('Type') == 'BlockRandomizer':
+                sub_set = item.get('SubSet', 1)
+                # Handle string vs int
+                try:
+                    sub_set_int = int(sub_set) if sub_set is not None else 1
+                except (ValueError, TypeError):
+                    sub_set_int = 1
+
+                is_between = sub_set_int == 1
+                pattern_type = 'block_randomizer_between' if is_between else 'block_randomizer_within'
+
+                # Extract conditions from sub-flow
+                sub_flow = normalize_flow_func(item.get('Flow', []))
+                randomizer_conditions = []
+
+                for sub_item in sub_flow:
+                    if isinstance(sub_item, dict):
+                        sub_type = sub_item.get('Type', '')
+                        if sub_type in ('Standard', 'Block'):
+                            block_id = sub_item.get('ID', '')
+                            if block_id:
+                                block_name = blocks_by_id.get(block_id, block_id)
+                                if not excluded_func(block_name):
+                                    randomizer_conditions.append(block_name)
+
+                        # Also check for Group elements
+                        elif sub_type == 'Group':
+                            group_name = sub_item.get('Description', '')
+                            if group_name and not excluded_func(group_name):
+                                randomizer_conditions.append(group_name)
+
+                # Only record if there are actual conditions
+                if len(randomizer_conditions) >= 2:
+                    self.detected_patterns.append({
+                        'type': pattern_type,
+                        'name': self.PATTERN_TYPES[pattern_type],
+                        'conditions': randomizer_conditions,
+                        'subset': sub_set_int,
+                        'depth': depth,
+                        'evenly_present': item.get('EvenPresentation', True),
+                    })
+
+                    if is_between:
+                        self.conditions.extend(randomizer_conditions)
+
+                    self._log(f"Detected {pattern_type}: {randomizer_conditions}")
+
+            # Recurse
+            if 'Flow' in item:
+                self._detect_block_randomizers(
+                    normalize_flow_func(item['Flow']),
+                    blocks_by_id,
+                    normalize_flow_func,
+                    excluded_func,
+                    depth + 1
+                )
+
+    def _detect_standard_randomizers(
+        self,
+        flow: List,
+        blocks_by_id: Dict[str, str],
+        normalize_flow_func,
+        excluded_func,
+        depth: int = 0,
+    ):
+        """Detect standard Randomizer elements (Pattern 3)."""
+        for item in flow:
+            if not isinstance(item, dict):
+                continue
+
+            if item.get('Type') == 'Randomizer':
+                sub_flow = normalize_flow_func(item.get('Flow', []))
+                randomizer_conditions = []
+
+                for sub_item in sub_flow:
+                    if isinstance(sub_item, dict):
+                        # Check for blocks
+                        if sub_item.get('Type') in ('Standard', 'Block'):
+                            block_id = sub_item.get('ID', '')
+                            if block_id:
+                                block_name = blocks_by_id.get(block_id, block_id)
+                                if not excluded_func(block_name):
+                                    randomizer_conditions.append(block_name)
+
+                        # Check for groups
+                        elif sub_item.get('Type') == 'Group':
+                            group_name = sub_item.get('Description', '')
+                            if group_name and not excluded_func(group_name):
+                                randomizer_conditions.append(group_name)
+
+                if len(randomizer_conditions) >= 2:
+                    self.detected_patterns.append({
+                        'type': 'randomizer',
+                        'name': self.PATTERN_TYPES['randomizer'],
+                        'conditions': randomizer_conditions,
+                        'depth': depth,
+                    })
+                    self.conditions.extend(randomizer_conditions)
+                    self._log(f"Detected standard randomizer: {randomizer_conditions}")
+
+            # Recurse
+            if 'Flow' in item:
+                self._detect_standard_randomizers(
+                    normalize_flow_func(item['Flow']),
+                    blocks_by_id,
+                    normalize_flow_func,
+                    excluded_func,
+                    depth + 1
+                )
+
+    def _detect_embedded_data_patterns(self, flow: List, normalize_flow_func, depth: int = 0):
+        """Detect EmbeddedData conditions inside randomizers (Pattern 4)."""
+        for item in flow:
+            if not isinstance(item, dict):
+                continue
+
+            flow_type = item.get('Type', '')
+
+            # Look for EmbeddedData inside randomizers
+            if flow_type in {'BlockRandomizer', 'Randomizer'}:
+                sub_flow = normalize_flow_func(item.get('Flow', []))
+
+                for sub_item in sub_flow:
+                    if isinstance(sub_item, dict):
+                        if sub_item.get('Type') == 'EmbeddedData':
+                            self._extract_embedded_conditions(sub_item, depth)
+
+                        # Also check blocks within randomizer for embedded data
+                        if sub_item.get('Type') in ('Standard', 'Block', 'Group'):
+                            nested_flow = normalize_flow_func(sub_item.get('Flow', []))
+                            for nested in nested_flow:
+                                if isinstance(nested, dict) and nested.get('Type') == 'EmbeddedData':
+                                    self._extract_embedded_conditions(nested, depth)
+
+            # Also check standalone EmbeddedData with SetValue (might be condition assignment)
+            if flow_type == 'EmbeddedData':
+                self._extract_embedded_conditions(item, depth)
+
+            # Recurse
+            if 'Flow' in item:
+                self._detect_embedded_data_patterns(
+                    normalize_flow_func(item['Flow']),
+                    normalize_flow_func,
+                    depth + 1
+                )
+
+    def _extract_embedded_conditions(self, item: Dict, depth: int):
+        """Extract condition values from EmbeddedData element."""
+        embedded_fields = item.get('EmbeddedData', [])
+        if isinstance(embedded_fields, list):
+            for field in embedded_fields:
+                if isinstance(field, dict):
+                    field_name = field.get('Field', '')
+                    field_value = field.get('Value', '')
+
+                    # Check if this looks like a condition assignment
+                    if field_value and self._looks_like_condition_field(field_name, field_value):
+                        self.embedded_conditions.append({
+                            'field': field_name,
+                            'value': field_value,
+                            'depth': depth,
+                        })
+
+                        # Add value as condition if it looks meaningful
+                        if len(field_value) > 1 and not field_value.isdigit():
+                            self.conditions.append(field_value)
+
+                        self._log(f"Detected embedded condition: {field_name}={field_value}")
+
+    def _looks_like_condition_field(self, field_name: str, field_value: str) -> bool:
+        """Check if an embedded data field looks like a condition assignment."""
+        name_lower = field_name.lower()
+        condition_keywords = [
+            'condition', 'treatment', 'group', 'arm', 'manipulation',
+            'scenario', 'stimulus', 'version', 'cond', 'grp', 'experimental'
+        ]
+        return any(kw in name_lower for kw in condition_keywords) or bool(field_value)
+
+    def _detect_branch_patterns(self, flow: List, normalize_flow_func, excluded_func, depth: int = 0):
+        """Detect Branch-based condition assignment (Pattern 5)."""
+        for item in flow:
+            if not isinstance(item, dict):
+                continue
+
+            if item.get('Type') == 'Branch':
+                description = item.get('Description', '')
+
+                # Extract potential condition from branch description
+                if description and not excluded_func(description):
+                    # Check if this looks like a condition branch
+                    desc_lower = description.lower()
+                    condition_indicators = [
+                        'condition', 'treatment', 'control', 'experimental',
+                        'group', 'arm', 'scenario', 'if', 'when'
+                    ]
+
+                    if any(ind in desc_lower for ind in condition_indicators):
+                        self.detected_patterns.append({
+                            'type': 'branch',
+                            'name': self.PATTERN_TYPES['branch'],
+                            'description': description,
+                            'depth': depth,
+                        })
+                        self._log(f"Detected branch pattern: {description}")
+
+                        # Try to extract condition name from description
+                        for part in description.split():
+                            if len(part) > 2 and part.lower() not in condition_indicators:
+                                self.conditions.append(part)
+                                break
+
+            # Recurse
+            if 'Flow' in item:
+                self._detect_branch_patterns(
+                    normalize_flow_func(item['Flow']),
+                    normalize_flow_func,
+                    excluded_func,
+                    depth + 1
+                )
+
+    def _detect_nested_randomizers(self, flow: List, normalize_flow_func, depth: int = 0):
+        """Detect nested/factorial randomizer designs (Pattern 6)."""
+        randomizers_at_depth = []
+
+        for item in flow:
+            if not isinstance(item, dict):
+                continue
+
+            if item.get('Type') in ('Randomizer', 'BlockRandomizer'):
+                randomizers_at_depth.append(item)
+
+        # If multiple randomizers at same level, might be factorial
+        if len(randomizers_at_depth) > 1:
+            self.detected_patterns.append({
+                'type': 'nested',
+                'name': self.PATTERN_TYPES['nested'],
+                'num_factors': len(randomizers_at_depth),
+                'depth': depth,
+            })
+            self._log(f"Detected potential factorial design with {len(randomizers_at_depth)} factors at depth {depth}")
+
+        # Recurse into each item
+        for item in flow:
+            if isinstance(item, dict) and 'Flow' in item:
+                self._detect_nested_randomizers(
+                    normalize_flow_func(item['Flow']),
+                    normalize_flow_func,
+                    depth + 1
+                )
+
+    def _detect_quota_patterns(self, flow: List, normalize_flow_func, depth: int = 0):
+        """Detect Quota-based condition assignment (Pattern 9)."""
+        for item in flow:
+            if not isinstance(item, dict):
+                continue
+
+            if item.get('Type') == 'Quota':
+                quota_name = item.get('Description', '') or item.get('QuotaName', '')
+                self.detected_patterns.append({
+                    'type': 'quota',
+                    'name': self.PATTERN_TYPES['quota'],
+                    'quota_name': quota_name,
+                    'depth': depth,
+                })
+                self._log(f"Detected quota pattern: {quota_name}")
+
+            if 'Flow' in item:
+                self._detect_quota_patterns(
+                    normalize_flow_func(item['Flow']),
+                    normalize_flow_func,
+                    depth + 1
+                )
+
+    def _detect_webservice_patterns(self, flow: List, normalize_flow_func, depth: int = 0):
+        """Detect WebService-based condition assignment (Pattern 10)."""
+        for item in flow:
+            if not isinstance(item, dict):
+                continue
+
+            if item.get('Type') == 'WebService':
+                service_url = item.get('URL', '') or item.get('WebServiceURL', '')
+                self.detected_patterns.append({
+                    'type': 'webservice',
+                    'name': self.PATTERN_TYPES['webservice'],
+                    'url': service_url,
+                    'depth': depth,
+                })
+                self._log(f"Detected webservice pattern")
+
+            if 'Flow' in item:
+                self._detect_webservice_patterns(
+                    normalize_flow_func(item['Flow']),
+                    normalize_flow_func,
+                    depth + 1
+                )
+
+    def _detect_random_number_patterns(self, flow: List, normalize_flow_func, depth: int = 0):
+        """Detect RandomInteger/RandomNumber patterns (Pattern 11)."""
+        for item in flow:
+            if not isinstance(item, dict):
+                continue
+
+            # Check EmbeddedData for random number assignments
+            if item.get('Type') == 'EmbeddedData':
+                embedded_fields = item.get('EmbeddedData', [])
+                if isinstance(embedded_fields, list):
+                    for field in embedded_fields:
+                        if isinstance(field, dict):
+                            field_type = field.get('Type', '')
+                            if field_type in ('RandomInteger', 'RandomNumber', 'Random'):
+                                field_name = field.get('Field', '')
+                                self.detected_patterns.append({
+                                    'type': 'random_number',
+                                    'name': self.PATTERN_TYPES['random_number'],
+                                    'field_name': field_name,
+                                    'depth': depth,
+                                })
+                                self._log(f"Detected random number pattern: {field_name}")
+
+            if 'Flow' in item:
+                self._detect_random_number_patterns(
+                    normalize_flow_func(item['Flow']),
+                    normalize_flow_func,
+                    depth + 1
+                )
+
+    def _detect_end_survey_patterns(self, flow: List, normalize_flow_func, depth: int = 0):
+        """Detect EndSurvey branches that might indicate conditions (Pattern 14)."""
+        end_survey_count = 0
+
+        for item in flow:
+            if not isinstance(item, dict):
+                continue
+
+            if item.get('Type') == 'EndSurvey':
+                end_survey_count += 1
+
+            if 'Flow' in item:
+                self._detect_end_survey_patterns(
+                    normalize_flow_func(item['Flow']),
+                    normalize_flow_func,
+                    depth + 1
+                )
+
+        # Multiple EndSurvey elements might indicate branching conditions
+        if end_survey_count > 1:
+            self.detected_patterns.append({
+                'type': 'end_survey',
+                'name': self.PATTERN_TYPES['end_survey'],
+                'count': end_survey_count,
+                'depth': depth,
+            })
+            self._log(f"Detected multiple EndSurvey elements: {end_survey_count}")
+
+
 class QSFCorrections:
     """
     Handles user corrections to parsed QSF data.
@@ -1776,5 +2329,6 @@ __all__ = [
     'QuestionInfo',
     'BlockInfo',
     'LogEntry',
-    'LogLevel'
+    'LogLevel',
+    'RandomizationPatternDetector',
 ]
