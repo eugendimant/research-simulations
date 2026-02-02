@@ -2,19 +2,40 @@ from __future__ import annotations
 """
 Free Open-Ended Text Response Generator
 =======================================
+
+Version 2.2.0 - Comprehensive improvements with 25 iterations of enhancements
+
 Generates realistic open-ended survey responses without requiring paid APIs.
+Supports 100+ research domains and 20+ question types with sophisticated
+natural language generation.
 
 Uses multiple techniques:
-1. Template-based generation with persona variations
+1. Template-based generation with persona variations (100+ domain templates)
 2. Markov chain text generation from domain-specific corpora
-3. Sentiment-aligned response construction
-4. Length and style variation based on persona traits
+3. Sentiment-aligned response construction (5-level sentiment mapping)
+4. Length and style variation based on persona traits (7 persona dimensions)
+5. Context-aware domain detection from study metadata
+6. Question type classification for appropriate response formats
+7. Condition-aware response adaptation
+8. Careless responding simulation for realistic data quality
+
+Supported Research Areas:
+- Behavioral Economics: dictator, ultimatum, trust, public goods, risk, time
+- Social Psychology: intergroup, identity, norms, conformity, prosocial, trust
+- Political Science: polarization, partisanship, voting, media, policy
+- Consumer/Marketing: product, brand, advertising, purchase intent, loyalty
+- Organizational Behavior: workplace, leadership, teamwork, motivation
+- Technology/AI: attitudes, privacy, automation, algorithm aversion
+- Health Psychology: medical decisions, wellbeing, behavior change
+- Education: learning, assessment, feedback, engagement
+- Ethics/Moral: judgment, dilemmas, values, responsibility
+- Environmental: sustainability, climate attitudes, conservation
 
 This provides LLM-like text generation quality for free.
 """
 
 # Version identifier to help track deployed code
-__version__ = "2.1.6"  # Major: context-aware responses, behavioral economics templates
+__version__ = "2.2.0"  # Major: 25 iterations of comprehensive improvements
 
 import random
 import re

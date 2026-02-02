@@ -3,14 +3,36 @@ from __future__ import annotations
 """
 Enhanced Simulation Engine for Behavioral Experiment Simulation Tool
 =============================================================================
+
+Version 2.2.0 - Comprehensive improvements with 25 iterations of enhancements
+
 Advanced simulation engine with:
-- Theory-grounded persona library integration
-- Automatic domain detection
-- Expected effect size handling
+- Theory-grounded persona library integration (7 persona dimensions)
+- 100+ domain-aware response generation
+- Automatic domain detection from study context
+- Expected effect size handling with Cohen's d support
 - Natural variation across runs (no identical outputs unless seed fixed)
-- Text generation for open-ended responses
+- LLM-quality text generation for open-ended responses
 - Stimulus/image evaluation support
-- Exclusion criteria simulation
+- Advanced exclusion criteria simulation
+- Careless responder detection (straight-lining, speeders, etc.)
+- Response consistency modeling
+- Cross-cultural response style variations
+- Condition-aware response adaptation
+
+Persona Modeling:
+- 7 persona types: Engaged, Satisficer, Extreme, Acquiescent, Contrarian,
+  Careless, Consistent
+- Each persona has traits: verbosity, formality, engagement, positivity,
+  consistency, response latency, attention level
+- Persona weights can be customized per study
+
+Response Generation:
+- 100+ research domain templates
+- 20+ question type handlers
+- 5-level sentiment mapping (very_positive to very_negative)
+- Markov chain text generation for natural variation
+- Context extraction from QSF files and study descriptions
 
 Notes on reproducibility:
 - Reproducibility is controlled by `seed`. If `seed` is None, the engine will
@@ -23,7 +45,7 @@ This module is designed to run inside a `utils/` package (i.e., imported as
 """
 
 # Version identifier to help track deployed code
-__version__ = "2.1.7"  # Major: comprehensive response library integration
+__version__ = "2.2.0"  # Major: 25 iterations of comprehensive improvements
 
 from dataclasses import dataclass
 from datetime import datetime
