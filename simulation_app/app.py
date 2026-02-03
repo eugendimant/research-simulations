@@ -44,8 +44,8 @@ import streamlit as st
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "2.2.2"
-BUILD_ID = "20260203-v223-enhanced-dv-detection"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "2.2.4"
+BUILD_ID = "20260203-v224-major-improvements"  # Change this to force cache invalidation
 
 def _verify_and_reload_utils():
     """Verify utils modules are at correct version, force reload if needed.
