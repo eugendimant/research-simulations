@@ -60,10 +60,10 @@ introspection, memory, experience, recall, opinion, belief, preference, attitude
 value, worldview, prediction, intention, suggestion, recommendation, advice,
 association, impression, perception, feedback, comment, observation, general
 
-Version: 2.2.6 - Synchronized with simulation engine effect size fix
+Version: 2.2.8 - Synchronized with full domain persona calibration
 """
 
-__version__ = "2.2.6"
+__version__ = "2.2.8"
 
 import random
 import re

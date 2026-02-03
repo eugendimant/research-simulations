@@ -2,23 +2,23 @@
 """
 Utility modules for the Behavioral Experiment Simulation Tool.
 
-Version: 2.2.6
-Changes (v2.2.6 - CRITICAL Effect Size Fix):
-    - FIXED: Simulations now produce statistically detectable between-condition differences
-    - Auto-generated condition effects when no explicit effect sizes configured
-    - Increased effect multiplier from 0.25 to 0.40 for realistic d values
-    - Added condition-specific trait modifiers for realistic response patterns
-    - Added _compute_observed_effect_sizes() to validate generated data
-    - Metadata now includes observed Cohen's d values for verification
-    - Proper Cohen's d calculation with pooled standard deviation
+Version: 2.2.8
+Changes (v2.2.8 - FULL DOMAIN Scientific Calibration):
+    - ALL domain-specific personas now have response_tendency and extremity traits
+    - Consumer personas: Brand Loyalist, Deal Seeker, Impulse Buyer, etc.
+    - Technology personas: Tech Enthusiast, Tech Skeptic, AI Pragmatist, etc.
+    - Behavioral economics personas: Loss Averse, Present Biased, Rational Deliberator
+    - Organizational personas: High Performer, Disengaged Employee, Transformational Leader
+    - Social psychology personas: Prosocial Individual, Individualist, Conformist
+    - Health/Environmental personas: Health Conscious, Eco Warrior, etc.
+    - Domain-adaptive response mechanism based on variable names (Oliver, Slovic, Mayer)
+    - Scale-type calibration for Likert, slider, WTP (Krosnick & Fabrigar, 1997)
+    - Comprehensive SCIENTIFIC_METHODS_DOCUMENTATION constant
+    - generate_methods_writeup() for publication-ready methods sections
 
-Previous (v2.2.5):
-    - Enhanced input validation with real-time feedback
-    - Improved scale/DV detection with manipulation check detection
-    - Consolidated error handling and unified messaging
-    - Enhanced condition name cleaning (HTML, Qualtrics artifacts)
-    - Smart defaults based on study context
-    - More robust state persistence with edge case handling
+Previous (v2.2.7):
+    - Core response style personas calibrated from published research
+    - Krosnick (1991), Greenleaf (1992), Paulhus (1991), Meade & Craig (2012)
 
 Modules:
     - qsf_parser: Parse Qualtrics Survey Format (.qsf) files
@@ -37,7 +37,7 @@ Modules:
 """
 
 # Package version - should match all module versions
-__version__ = "2.2.6"
+__version__ = "2.2.8"
 
 from .qsf_parser import parse_qsf_file, extract_survey_structure, generate_qsf_summary
 from .simulation_engine import SimulationEngine
