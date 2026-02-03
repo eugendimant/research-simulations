@@ -2,8 +2,8 @@
 """
 Utility modules for the Behavioral Experiment Simulation Tool.
 
-Version: 2.4.0
-Changes (v2.4.0 - EXPANDED - 100+ Manipulation Types from 75+ Sources):
+Version: 2.4.1
+Changes (v2.4.1 - EXPANDED - 100+ Manipulation Types from 75+ Sources):
     - EXPANDED: 100+ manipulation types grounded in 75+ published sources
     - Following Westwood (PNAS 2025) for realistic human simulation
     - 16 research domains with theory-based effect directions:
@@ -39,7 +39,7 @@ Modules:
 """
 
 # Package version - should match all module versions
-__version__ = "2.4.0"
+__version__ = "2.4.1"
 
 from .qsf_parser import parse_qsf_file, extract_survey_structure, generate_qsf_summary
 from .simulation_engine import SimulationEngine

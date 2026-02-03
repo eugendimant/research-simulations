@@ -33,7 +33,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Union
 
 # Version identifier to help track deployed code
-__version__ = "2.4.0"  # 100+ manipulation types from 75+ published sources
+__version__ = "2.4.1"  # ENHANCED: Complete open-ended detection including MC text entries
 
 
 # ============================================================================
@@ -99,6 +99,14 @@ class QuestionInfo:
     is_matrix: bool = False
     sub_questions: List[str] = field(default_factory=list)
     validation_issues: List[str] = field(default_factory=list)
+    # NEW: Track text entry choices in MC questions (e.g., "Other: ____")
+    text_entry_choices: List[Dict[str, str]] = field(default_factory=list)
+    # NEW: Track if this question has ForceResponse validation
+    force_response: bool = False
+    # NEW: Track the export tag (variable name in data)
+    export_tag: str = ""
+    # NEW: Raw payload for advanced parsing
+    raw_payload: Dict = field(default_factory=dict)
 
 
 @dataclass
@@ -697,6 +705,37 @@ class QSFPreviewParser:
             # Get the data export tag (actual variable name in exported data)
             data_export_tag = payload.get('DataExportTag', q_id)
 
+            # NEW: Detect text entry choices in MC questions (e.g., "Other: ____")
+            text_entry_choices = []
+            if isinstance(choices_data, dict):
+                for choice_id, choice_data in choices_data.items():
+                    if isinstance(choice_data, dict):
+                        # Check if this choice has TextEntry enabled
+                        if choice_data.get('TextEntry') or choice_data.get('TextEntrySize'):
+                            choice_text = choice_data.get('Display', str(choice_data))
+                            text_entry_choices.append({
+                                'choice_id': str(choice_id),
+                                'choice_text': choice_text,
+                                'variable_name': f"{data_export_tag}_{choice_id}_TEXT"
+                            })
+                            self._log(
+                                LogLevel.INFO, "TEXT_ENTRY_CHOICE",
+                                f"Found text entry in choice {choice_id} of {q_id}: {choice_text[:30]}..."
+                            )
+
+            # NEW: Check for ForceResponse validation
+            force_response = False
+            validation = payload.get('Validation', {})
+            if isinstance(validation, dict):
+                settings = validation.get('Settings', {})
+                if isinstance(settings, dict):
+                    force_val = settings.get('ForceResponse')
+                    force_response = force_val in ['ON', True, 'on', '1', 1]
+                    # Also check ForceResponseType
+                    force_type = settings.get('ForceResponseType')
+                    if force_type in ['ON', 'Force', 'ForceAll']:
+                        force_response = True
+
             questions_map[q_id] = QuestionInfo(
                 question_id=q_id,
                 question_text=question_text[:200] + ('...' if len(question_text) > 200 else ''),
@@ -705,12 +744,16 @@ class QSFPreviewParser:
                 choices=choices,
                 scale_points=scale_points,
                 is_matrix=is_matrix,
-                sub_questions=sub_questions
+                sub_questions=sub_questions,
+                text_entry_choices=text_entry_choices,
+                force_response=force_response,
+                export_tag=data_export_tag,
+                raw_payload=payload
             )
 
             self._log(
                 LogLevel.INFO, "QUESTION",
-                f"Parsed question {q_id}: {category} (scale_points={scale_points})",
+                f"Parsed question {q_id}: {category} (scale_points={scale_points}, force={force_response}, text_entries={len(text_entry_choices)})",
                 {'text_preview': question_text[:100], 'data_export_tag': data_export_tag}
             )
         except Exception as e:
@@ -1569,18 +1612,73 @@ class QSFPreviewParser:
         return scales
 
     def _detect_open_ended(self, questions_map: Dict) -> List[str]:
-        """Detect open-ended text entry questions."""
+        """Detect ALL open-ended text entry questions including MC with text entry.
+
+        v2.4.1: ENHANCED detection to capture:
+        1. Standalone TE (Text Entry) questions
+        2. MC questions with TextEntry choices (e.g., "Other: ____")
+        3. Matrix questions with TextEntry columns
+        4. Form fields with text entry
+        """
         open_ended = []
         # Safety check - ensure questions_map is a dict
         if not isinstance(questions_map, dict):
             return open_ended
+
         for q_id, q_info in questions_map.items():
+            # Type 1: Standalone Text Entry questions
             if q_info.question_type == 'Text Entry':
-                open_ended.append(q_id)
+                # Use export_tag if available, otherwise q_id
+                var_name = q_info.export_tag if q_info.export_tag else q_id
+                open_ended.append(var_name)
                 self._log(
                     LogLevel.INFO, "OPEN_ENDED",
-                    f"Detected open-ended question: {q_id}"
+                    f"Detected text entry question: {var_name}"
                 )
+
+            # Type 2: MC questions with TextEntry choices
+            if q_info.text_entry_choices:
+                for te_choice in q_info.text_entry_choices:
+                    var_name = te_choice.get('variable_name', f"{q_id}_TEXT")
+                    if var_name not in open_ended:
+                        open_ended.append(var_name)
+                        self._log(
+                            LogLevel.INFO, "OPEN_ENDED",
+                            f"Detected MC text entry choice: {var_name}"
+                        )
+
+            # Type 3: Check raw payload for additional text entry patterns
+            if q_info.raw_payload:
+                payload = q_info.raw_payload
+
+                # Check for Essay Box selector (common for text entry)
+                selector = payload.get('Selector', '')
+                if selector in ['ESTB', 'ML', 'SL', 'FORM']:  # Essay, Multi-line, Single-line, Form
+                    var_name = q_info.export_tag if q_info.export_tag else q_id
+                    if var_name not in open_ended:
+                        open_ended.append(var_name)
+                        self._log(
+                            LogLevel.INFO, "OPEN_ENDED",
+                            f"Detected text entry by selector ({selector}): {var_name}"
+                        )
+
+                # Check Answers for TextEntry (Matrix with text columns)
+                answers_data = payload.get('Answers', {})
+                if isinstance(answers_data, dict):
+                    for ans_id, ans_data in answers_data.items():
+                        if isinstance(ans_data, dict) and ans_data.get('TextEntry'):
+                            var_name = f"{q_info.export_tag or q_id}_{ans_id}_TEXT"
+                            if var_name not in open_ended:
+                                open_ended.append(var_name)
+                                self._log(
+                                    LogLevel.INFO, "OPEN_ENDED",
+                                    f"Detected Matrix text entry: {var_name}"
+                                )
+
+        self._log(
+            LogLevel.INFO, "OPEN_ENDED_TOTAL",
+            f"Total open-ended fields detected: {len(open_ended)}"
+        )
         return open_ended
 
     def _detect_attention_checks(self, questions_map: Dict) -> List[str]:
@@ -1714,69 +1812,178 @@ class QSFPreviewParser:
         questions_map: Dict,
         blocks: List[BlockInfo]
     ) -> List[Dict[str, Any]]:
-        """Extract detailed information about open-ended text entry questions.
+        """Extract detailed information about ALL open-ended text entry questions.
 
-        This provides FULL context for each open-ended question so the text generator
-        can create appropriate, study-specific responses.
+        v2.4.1: ENHANCED to capture all text entry types:
+        1. Standalone Text Entry questions
+        2. MC questions with TextEntry choices
+        3. Matrix questions with TextEntry columns
+        4. Form fields
 
         Returns list of dicts with:
         - question_id: Question identifier
-        - variable_name: Export variable name
+        - variable_name: Export variable name (for data column)
+        - name: Alias for variable_name (backwards compatibility)
         - question_text: Full question text
         - block_name: Which block it's in
-        - context_type: What kind of response expected (feedback, explanation, description, etc.)
+        - context_type: What kind of response expected
         - preceding_questions: Context from questions before this one
+        - force_response: Whether response is required
+        - source_type: 'text_entry' | 'mc_text_choice' | 'matrix_text' | 'form'
         """
         open_ended_details = []
+        seen_variables = set()  # Prevent duplicates
 
         # Safety check
         if not isinstance(questions_map, dict):
             return open_ended_details
 
-        # Build a list of all question texts for context
-        all_question_texts = []
-        for q_id, q_info in questions_map.items():
-            if q_info.question_text:
-                all_question_texts.append({
-                    'id': q_id,
-                    'text': q_info.question_text,
-                    'type': q_info.question_type,
-                    'block': q_info.block_name
-                })
+        # Patterns for ID/demographic fields to handle differently
+        id_patterns = [
+            'mturk', 'worker id', 'prolific', 'participant id',
+            'email address', 'phone number', 'zip code', 'zipcode',
+            'age', 'year born', 'birth year'
+        ]
 
         for q_id, q_info in questions_map.items():
+            text_lower = q_info.question_text.lower() if q_info.question_text else ''
+
+            # TYPE 1: Standalone Text Entry questions
             if q_info.question_type == 'Text Entry':
-                # Skip questions that look like ID entry fields
-                text_lower = q_info.question_text.lower()
-                skip_patterns = [
-                    'mturk', 'worker id', 'prolific', 'participant id',
-                    'email', 'name', 'address', 'phone', 'zip', 'zipcode',
-                    'age', 'year born'
-                ]
-                if any(pat in text_lower for pat in skip_patterns):
-                    continue
+                var_name = q_info.export_tag if q_info.export_tag else q_id
+                var_name = var_name.replace(' ', '_')
 
-                # Determine context type based on question text
-                context_type = self._classify_open_ended_type(q_info.question_text)
+                if var_name not in seen_variables:
+                    seen_variables.add(var_name)
 
-                # Get surrounding questions for context
-                preceding_questions = self._get_preceding_context(q_id, q_info.block_name, blocks)
+                    # Determine if it's an ID field (still include but mark differently)
+                    is_id_field = any(pat in text_lower for pat in id_patterns)
 
-                detail = {
-                    'question_id': q_id,
-                    'variable_name': q_id.replace(' ', '_'),
-                    'question_text': q_info.question_text,
-                    'block_name': q_info.block_name,
-                    'context_type': context_type,
-                    'preceding_questions': preceding_questions,
-                }
+                    # Determine context type based on question text
+                    if is_id_field:
+                        context_type = 'identifier'
+                    else:
+                        context_type = self._classify_open_ended_type(q_info.question_text)
 
-                open_ended_details.append(detail)
+                    # Get surrounding questions for context
+                    preceding_questions = self._get_preceding_context(q_id, q_info.block_name, blocks)
 
-                self._log(
-                    LogLevel.INFO, "OPEN_ENDED_DETAIL",
-                    f"Extracted open-ended: {q_id} ({context_type}) - {q_info.question_text[:50]}..."
-                )
+                    detail = {
+                        'question_id': q_id,
+                        'variable_name': var_name,
+                        'name': var_name,  # Backwards compatibility
+                        'question_text': q_info.question_text,
+                        'block_name': q_info.block_name,
+                        'context_type': context_type,
+                        'preceding_questions': preceding_questions,
+                        'force_response': q_info.force_response,
+                        'source_type': 'text_entry'
+                    }
+
+                    open_ended_details.append(detail)
+
+                    self._log(
+                        LogLevel.INFO, "OPEN_ENDED_DETAIL",
+                        f"Extracted text entry: {var_name} ({context_type}) - {q_info.question_text[:50]}..."
+                    )
+
+            # TYPE 2: MC questions with TextEntry choices
+            if q_info.text_entry_choices:
+                for te_choice in q_info.text_entry_choices:
+                    var_name = te_choice.get('variable_name', f"{q_id}_TEXT")
+                    var_name = var_name.replace(' ', '_')
+
+                    if var_name not in seen_variables:
+                        seen_variables.add(var_name)
+
+                        # Context is the parent question + choice text
+                        choice_text = te_choice.get('choice_text', '')
+                        combined_text = f"{q_info.question_text} - {choice_text}"
+
+                        detail = {
+                            'question_id': q_id,
+                            'variable_name': var_name,
+                            'name': var_name,
+                            'question_text': combined_text,
+                            'block_name': q_info.block_name,
+                            'context_type': 'elaboration',  # Usually "Other: please specify"
+                            'preceding_questions': [],
+                            'force_response': False,  # MC text entry usually optional
+                            'source_type': 'mc_text_choice',
+                            'parent_question': q_info.question_text,
+                            'choice_text': choice_text
+                        }
+
+                        open_ended_details.append(detail)
+
+                        self._log(
+                            LogLevel.INFO, "OPEN_ENDED_DETAIL",
+                            f"Extracted MC text choice: {var_name} - {choice_text[:30]}..."
+                        )
+
+            # TYPE 3: Check for text entry via selector (Essay, Multi-line, etc.)
+            if q_info.raw_payload:
+                payload = q_info.raw_payload
+                selector = payload.get('Selector', '')
+
+                # Essay/Form selectors that weren't caught as Text Entry type
+                if selector in ['ESTB', 'ML', 'SL', 'FORM'] and q_info.question_type != 'Text Entry':
+                    var_name = q_info.export_tag if q_info.export_tag else q_id
+                    var_name = var_name.replace(' ', '_')
+
+                    if var_name not in seen_variables:
+                        seen_variables.add(var_name)
+
+                        context_type = self._classify_open_ended_type(q_info.question_text)
+                        preceding_questions = self._get_preceding_context(q_id, q_info.block_name, blocks)
+
+                        detail = {
+                            'question_id': q_id,
+                            'variable_name': var_name,
+                            'name': var_name,
+                            'question_text': q_info.question_text,
+                            'block_name': q_info.block_name,
+                            'context_type': context_type,
+                            'preceding_questions': preceding_questions,
+                            'force_response': q_info.force_response,
+                            'source_type': 'form'
+                        }
+
+                        open_ended_details.append(detail)
+
+                # TYPE 4: Matrix questions with TextEntry answers
+                answers_data = payload.get('Answers', {})
+                if isinstance(answers_data, dict):
+                    for ans_id, ans_data in answers_data.items():
+                        if isinstance(ans_data, dict) and ans_data.get('TextEntry'):
+                            var_name = f"{q_info.export_tag or q_id}_{ans_id}_TEXT"
+                            var_name = var_name.replace(' ', '_')
+
+                            if var_name not in seen_variables:
+                                seen_variables.add(var_name)
+
+                                ans_text = ans_data.get('Display', '')
+                                combined_text = f"{q_info.question_text} - {ans_text}"
+
+                                detail = {
+                                    'question_id': q_id,
+                                    'variable_name': var_name,
+                                    'name': var_name,
+                                    'question_text': combined_text,
+                                    'block_name': q_info.block_name,
+                                    'context_type': 'elaboration',
+                                    'preceding_questions': [],
+                                    'force_response': q_info.force_response,
+                                    'source_type': 'matrix_text',
+                                    'parent_question': q_info.question_text
+                                }
+
+                                open_ended_details.append(detail)
+
+        self._log(
+            LogLevel.INFO, "OPEN_ENDED_DETAILS_TOTAL",
+            f"Total open-ended details extracted: {len(open_ended_details)}"
+        )
 
         return open_ended_details
 
