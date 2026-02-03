@@ -159,7 +159,7 @@ Based on recent LLM simulation research:
 """
 
 # Version identifier to help track deployed code
-__version__ = "2.4.5"  # Enhanced with cultural response styles and domain-specific personas
+__version__ = "1.0.0"  # OFFICIAL: Enhanced with cultural response styles and domain-specific personas
 
 import hashlib
 import random

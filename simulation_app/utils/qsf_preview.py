@@ -33,7 +33,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Union
 
 # Version identifier to help track deployed code
-__version__ = "2.4.5"  # v2.4.5: Enhanced DV detection, cultural personas, new domains, export formats
+__version__ = "1.0.0"  # v1.0.0 OFFICIAL RELEASE: Enhanced scale detection, skip logic, difficulty levels, mediation, pre-reg checker
 
 
 # ============================================================================
@@ -134,6 +134,18 @@ class QuestionInfo:
     # v2.4.3: Randomization tracking
     choice_randomization: bool = False  # Whether choices are randomized
     fixed_choices: List[str] = field(default_factory=list)  # Choices fixed at end
+    # v1.0.0: Enhanced skip/display logic details
+    skip_logic_details: Dict[str, Any] = field(default_factory=dict)  # Full skip logic definition
+    display_logic_details: Dict[str, Any] = field(default_factory=dict)  # Full display logic definition
+    depends_on_questions: List[str] = field(default_factory=list)  # Questions this depends on
+    triggers_skip_to: List[str] = field(default_factory=list)  # Questions this can skip to
+    # v1.0.0: Semantic scale detection
+    scale_semantic_type: Optional[str] = None  # satisfaction, trust, intention, etc.
+    is_reverse_coded: bool = False  # Whether this is a reverse-coded item
+    scale_anchors: Dict[str, str] = field(default_factory=dict)  # {1: "Strongly disagree", 7: "Strongly agree"}
+    # v1.0.0: Mediation variable detection
+    is_potential_mediator: bool = False  # Based on position and type
+    mediator_hints: List[str] = field(default_factory=list)  # Keywords suggesting mediation
 
 
 @dataclass
@@ -180,6 +192,18 @@ class QSFPreviewResult:
     slider_questions: List[Dict[str, Any]] = field(default_factory=list)
     # v2.4.3: Text entry questions with validation requirements
     text_entry_questions: List[Dict[str, Any]] = field(default_factory=list)
+    # v1.0.0: Enhanced skip/display logic awareness
+    skip_logic_map: Dict[str, Dict[str, Any]] = field(default_factory=dict)  # question_id -> skip logic details
+    display_logic_map: Dict[str, Dict[str, Any]] = field(default_factory=dict)  # question_id -> display logic details
+    question_dependencies: Dict[str, List[str]] = field(default_factory=dict)  # question_id -> list of dependent question_ids
+    conditional_branches: List[Dict[str, Any]] = field(default_factory=list)  # All branch conditions in survey
+    # v1.0.0: Mediation variable detection
+    potential_mediators: List[Dict[str, Any]] = field(default_factory=list)  # Detected potential mediator variables
+    # v1.0.0: Enhanced scale detection with semantic types
+    scale_semantic_types: Dict[str, str] = field(default_factory=dict)  # scale_name -> semantic_type
+    recognized_scales: List[Dict[str, Any]] = field(default_factory=list)  # Well-known scales (Big Five, PANAS, etc.)
+    # v1.0.0: Scale validation and quality metrics
+    scale_quality_scores: Dict[str, Dict[str, Any]] = field(default_factory=dict)  # scale_name -> quality metrics
 
 
 class QSFPreviewParser:
@@ -1094,6 +1118,299 @@ class QSFPreviewParser:
                 anchor_count += 1
 
         return anchor_count >= 2
+
+    # =========================================================================
+    # v1.0.0: ENHANCED SCALE DETECTION - SEMANTIC TYPE CLASSIFICATION
+    # =========================================================================
+
+    # Well-known psychological scales with their patterns
+    WELL_KNOWN_SCALES = {
+        'big_five': {
+            'patterns': [r'big\s*five', r'ocean', r'personality', r'extraversion', r'agreeableness',
+                        r'conscientiousness', r'neuroticism', r'openness', r'bfi', r'ipip', r'neo'],
+            'items': 5,  # Minimum expected items for short form
+            'domains': ['Extraversion', 'Agreeableness', 'Conscientiousness', 'Neuroticism', 'Openness'],
+            'scale_points': [5, 7],
+        },
+        'panas': {
+            'patterns': [r'panas', r'positive\s*affect', r'negative\s*affect', r'emotional\s*state'],
+            'items': 10,  # 10-item PANAS short form
+            'domains': ['Positive Affect', 'Negative Affect'],
+            'scale_points': [5, 7],
+        },
+        'rosenberg_self_esteem': {
+            'patterns': [r'self\s*esteem', r'rosenberg', r'rse', r'self\s*worth'],
+            'items': 10,
+            'scale_points': [4, 5],
+        },
+        'satisfaction_with_life': {
+            'patterns': [r'satisfaction\s*with\s*life', r'swls', r'life\s*satisfaction', r'diener'],
+            'items': 5,
+            'scale_points': [7],
+        },
+        'perceived_stress': {
+            'patterns': [r'perceived\s*stress', r'pss', r'stress\s*scale'],
+            'items': 10,  # PSS-10
+            'scale_points': [5],
+        },
+        'trust_propensity': {
+            'patterns': [r'trust\s*propensity', r'generalized\s*trust', r'interpersonal\s*trust'],
+            'items': 5,
+            'scale_points': [5, 7],
+        },
+        'risk_propensity': {
+            'patterns': [r'risk\s*propensity', r'risk\s*taking', r'dospert', r'risk\s*attitude'],
+            'items': 6,
+            'scale_points': [5, 7],
+        },
+        'need_for_cognition': {
+            'patterns': [r'need\s*for\s*cognition', r'nfc', r'thinking\s*preference'],
+            'items': 18,
+            'scale_points': [5, 9],
+        },
+        'social_desirability': {
+            'patterns': [r'social\s*desirability', r'marlowe\s*crowne', r'impression\s*management'],
+            'items': 10,
+            'scale_points': [2, 5, 7],
+        },
+        'regulatory_focus': {
+            'patterns': [r'regulatory\s*focus', r'promotion\s*focus', r'prevention\s*focus', r'rfq'],
+            'items': 11,
+            'scale_points': [5, 7],
+        },
+    }
+
+    # Semantic scale type patterns
+    SEMANTIC_TYPE_PATTERNS = {
+        'satisfaction': [r'satisf', r'pleased', r'content(?:ment)?', r'happy\s*with'],
+        'trust': [r'trust', r'reliabl', r'dependab', r'faith\s*in'],
+        'intention': [r'intention', r'intend', r'likely\s*to', r'plan\s*to', r'will\s*i'],
+        'attitude': [r'attitude', r'feel\s*about', r'opinion', r'view\s*of'],
+        'preference': [r'prefer', r'like\s*better', r'rather', r'favorite'],
+        'risk': [r'risk', r'danger', r'threat', r'hazard', r'uncertain'],
+        'anxiety': [r'anxious', r'nervous', r'worried', r'fear', r'apprehension'],
+        'efficacy': [r'efficac', r'capable', r'able\s*to', r'confident\s*in\s*ability'],
+        'engagement': [r'engag', r'involv', r'participat', r'commit'],
+        'motivation': [r'motivat', r'driven', r'desire', r'willing'],
+        'fairness': [r'fair', r'just', r'equitab', r'impartial'],
+        'identification': [r'identif', r'belong', r'part\s*of', r'member'],
+        'quality': [r'quality', r'excellent', r'superior', r'well\s*made'],
+        'willingness_to_pay': [r'willing\s*to\s*pay', r'wtp', r'pay\s*for', r'spend'],
+        'purchase_intention': [r'buy', r'purchase', r'acquire', r'shopping'],
+        'recommendation': [r'recommend', r'suggest', r'refer', r'tell\s*friends'],
+    }
+
+    # Mediation-related keywords
+    MEDIATOR_KEYWORDS = [
+        'perceived', 'feelings', 'thoughts', 'reaction', 'response',
+        'interpretation', 'judgment', 'evaluation', 'assessment',
+        'attribution', 'expectation', 'belief', 'attitude',
+        'mechanism', 'process', 'mediating', 'underlying',
+        'explanation', 'reason', 'why', 'how'
+    ]
+
+    def _detect_semantic_scale_type(self, question_text: str, variable_name: str, choices: List[str]) -> Optional[str]:
+        """Detect the semantic type of a scale based on text content."""
+        combined_text = f"{question_text} {variable_name} {' '.join(choices)}".lower()
+
+        for sem_type, patterns in self.SEMANTIC_TYPE_PATTERNS.items():
+            for pattern in patterns:
+                if re.search(pattern, combined_text):
+                    return sem_type
+        return None
+
+    def _detect_well_known_scale(self, questions: List[QuestionInfo],
+                                  scale_name: str) -> Optional[Dict[str, Any]]:
+        """Detect if a scale matches a well-known psychological scale."""
+        combined_text = scale_name.lower()
+
+        # Also check question texts
+        for q in questions:
+            combined_text += f" {q.question_text.lower()}"
+
+        for scale_id, scale_info in self.WELL_KNOWN_SCALES.items():
+            for pattern in scale_info['patterns']:
+                if re.search(pattern, combined_text):
+                    return {
+                        'scale_id': scale_id,
+                        'expected_items': scale_info['items'],
+                        'expected_scale_points': scale_info['scale_points'],
+                        'domains': scale_info.get('domains', []),
+                        'match_confidence': 'high' if len([p for p in scale_info['patterns']
+                                                          if re.search(p, combined_text)]) > 1 else 'medium'
+                    }
+        return None
+
+    def _detect_reverse_coded_items(self, question_text: str, choices: List[str]) -> bool:
+        """Detect if an item is likely reverse-coded."""
+        reverse_indicators = [
+            r'\(r\)', r'\(reversed\)', r'\(rev\)', r'_r$', r'_rev$',
+            r'not\s+at\s+all', r'never', r'negative', r'bad', r'poor',
+            r'disagree', r'unlikely', r'difficult', r'hard', r'impossible'
+        ]
+
+        text_lower = question_text.lower()
+        for indicator in reverse_indicators:
+            if re.search(indicator, text_lower):
+                return True
+        return False
+
+    def _extract_scale_anchors(self, choices: List[str]) -> Dict[str, str]:
+        """Extract scale anchors from choice list."""
+        anchors = {}
+        if not choices:
+            return anchors
+
+        # Assume ordered choices
+        for i, choice in enumerate(choices, 1):
+            anchors[str(i)] = str(choice).strip()
+        return anchors
+
+    def _detect_potential_mediator(self, q_info: QuestionInfo, block_position: int,
+                                    total_blocks: int) -> Tuple[bool, List[str]]:
+        """Detect if a question is likely a potential mediator variable."""
+        hints = []
+        is_mediator = False
+
+        # Check question text for mediator keywords
+        text_lower = q_info.question_text.lower()
+        matches = [kw for kw in self.MEDIATOR_KEYWORDS if kw in text_lower]
+        if matches:
+            hints.extend([f"Contains mediator keyword: {kw}" for kw in matches[:3]])
+
+        # Mediators often appear between manipulation and DV (middle of survey)
+        relative_position = block_position / max(1, total_blocks)
+        if 0.3 < relative_position < 0.7:
+            hints.append("Positioned between manipulation and outcome (typical mediator location)")
+
+        # Scale types that are often mediators
+        mediator_scale_types = ['perception', 'attitude', 'evaluation', 'interpretation', 'feeling']
+        if any(t in text_lower for t in mediator_scale_types):
+            hints.append("Scale type commonly used as mediator")
+
+        is_mediator = len(hints) >= 2
+        return is_mediator, hints
+
+    def _compute_scale_quality_score(self, scale_info: Dict[str, Any],
+                                      questions: List[QuestionInfo]) -> Dict[str, Any]:
+        """Compute quality metrics for a detected scale."""
+        quality = {
+            'completeness': 1.0,
+            'consistency': 1.0,
+            'detection_confidence': 'high',
+            'warnings': [],
+            'recommendations': []
+        }
+
+        # Check item count
+        items = scale_info.get('items', 1)
+        if items < 3:
+            quality['warnings'].append("Single or 2-item scale may have low reliability")
+            quality['completeness'] *= 0.7
+
+        # Check scale points consistency
+        scale_points = scale_info.get('scale_points')
+        if scale_points is None:
+            quality['warnings'].append("Scale points not detected from QSF")
+            quality['detection_confidence'] = 'medium'
+        elif scale_points not in [5, 7, 9, 11]:
+            quality['recommendations'].append(f"Unusual scale points ({scale_points}), verify correct")
+
+        # Check for reverse-coded items if multi-item
+        if items >= 3:
+            has_reverse = any(q.is_reverse_coded for q in questions if hasattr(q, 'is_reverse_coded'))
+            if not has_reverse:
+                quality['recommendations'].append("Consider adding reverse-coded items to reduce acquiescence bias")
+
+        return quality
+
+    # =========================================================================
+    # v1.0.0: SKIP LOGIC AND DISPLAY LOGIC PARSING
+    # =========================================================================
+
+    def _parse_display_logic(self, display_logic: Dict[str, Any]) -> Dict[str, Any]:
+        """Parse DisplayLogic from QSF into structured format."""
+        if not display_logic:
+            return {}
+
+        parsed = {
+            'type': display_logic.get('Type', 'Unknown'),
+            'conditions': [],
+            'depends_on': [],
+        }
+
+        # Parse the logic conditions
+        logic_conditions = display_logic.get('0', {})
+        if isinstance(logic_conditions, dict):
+            # Extract question dependencies
+            choice_locator = logic_conditions.get('ChoiceLocator', '')
+            if choice_locator:
+                # Format: "q://QID123/SelectableChoice/1"
+                match = re.search(r'q://([^/]+)/', choice_locator)
+                if match:
+                    parsed['depends_on'].append(match.group(1))
+
+            question_id = logic_conditions.get('QuestionID', '')
+            if question_id:
+                parsed['depends_on'].append(question_id)
+
+            parsed['conditions'].append({
+                'logic_type': logic_conditions.get('LogicType', ''),
+                'choice_locator': choice_locator,
+                'operator': logic_conditions.get('Operator', ''),
+                'question_id': question_id,
+            })
+
+        return parsed
+
+    def _parse_skip_logic(self, skip_logic: Dict[str, Any]) -> Dict[str, Any]:
+        """Parse SkipLogic from QSF into structured format."""
+        if not skip_logic:
+            return {}
+
+        parsed = {
+            'type': 'SkipLogic',
+            'skip_to': None,
+            'conditions': [],
+        }
+
+        # SkipLogic typically has SkipToDestination
+        skip_dest = skip_logic.get('SkipToDestination', '')
+        if skip_dest:
+            parsed['skip_to'] = skip_dest
+
+        # Parse conditions
+        for key, value in skip_logic.items():
+            if isinstance(value, dict) and 'LogicType' in value:
+                parsed['conditions'].append({
+                    'logic_type': value.get('LogicType', ''),
+                    'choice': value.get('Choice', ''),
+                    'question_id': value.get('QuestionID', ''),
+                })
+
+        return parsed
+
+    def _build_question_dependency_graph(self, questions_map: Dict[str, QuestionInfo]) -> Dict[str, List[str]]:
+        """Build a dependency graph from skip/display logic."""
+        dependencies = {}
+
+        for q_id, q_info in questions_map.items():
+            deps = []
+
+            # Add dependencies from display logic
+            if q_info.display_logic_details:
+                deps.extend(q_info.display_logic_details.get('depends_on', []))
+
+            # Add dependencies from skip logic
+            if q_info.skip_logic_details:
+                for cond in q_info.skip_logic_details.get('conditions', []):
+                    if cond.get('question_id'):
+                        deps.append(cond['question_id'])
+
+            if deps:
+                dependencies[q_id] = list(set(deps))
+
+        return dependencies
 
     def _categorize_question(self, q_type: str, selector: str) -> str:
         """Categorize question type with enhanced selector support.

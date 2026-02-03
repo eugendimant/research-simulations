@@ -44,8 +44,8 @@ import streamlit as st
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "2.4.5"
-BUILD_ID = "20260203-v245-enhanced"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.0.0"
+BUILD_ID = "20260203-v100-official"  # Change this to force cache invalidation
 
 def _verify_and_reload_utils():
     """Verify utils modules are at correct version, force reload if needed.
@@ -98,7 +98,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF"
-APP_VERSION = "2.4.5"  # v2.4.5: Enhanced DV detection, cultural personas, new domains, export formats, UI improvements
+APP_VERSION = "1.0.0"  # v1.0.0 OFFICIAL: Enhanced scale detection, skip logic, difficulty levels, mediation, pre-reg checker, live preview
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -667,6 +667,470 @@ def _extract_conditions_from_prereg(prereg_iv: str, prereg_notes: str, prereg_pd
     Kept for backwards compatibility but returns empty list.
     """
     return []
+
+
+# =============================================================================
+# v1.0.0: PRE-REGISTRATION PARSING (OSF, AEA, AsPredicted)
+# =============================================================================
+
+# Pre-registration format patterns for parsing
+PREREG_SECTION_PATTERNS = {
+    'osf': {
+        'study_info': [
+            r'(?:1|A)\.?\s*(?:Study|Title|Registration)',
+            r'Study\s*Information',
+            r'Study\s*Title',
+        ],
+        'hypotheses': [
+            r'(?:2|B)\.?\s*Hypothes[ie]s',
+            r'Prediction[s]?',
+            r'Expected\s*Results?',
+        ],
+        'design': [
+            r'(?:3|C)\.?\s*(?:Study|Research)\s*Design',
+            r'Design\s*Plan',
+            r'Experimental\s*Design',
+        ],
+        'sample': [
+            r'(?:4|D)\.?\s*(?:Sample|Sampling|Data\s*Collection)',
+            r'Sample\s*Size',
+            r'Participants?',
+        ],
+        'variables': [
+            r'(?:5|E)\.?\s*(?:Variables?|Measures?)',
+            r'Manipulated\s*Variables?',
+            r'Measured\s*Variables?',
+            r'Independent\s*Variables?',
+            r'Dependent\s*Variables?',
+        ],
+        'analysis': [
+            r'(?:6|F)\.?\s*Analysis\s*Plan',
+            r'Statistical\s*Analysis',
+            r'Planned\s*Analyses?',
+        ],
+        'prereg_number': [
+            r'Registration\s*(?:Number|ID|#)',
+            r'OSF\s*(?:Prereg|Registration)',
+            r'https?://osf\.io/[a-z0-9]+',
+        ],
+    },
+    'aea': {
+        'title': [r'Title\s*:?', r'(?:1|I)\.?\s*Title'],
+        'investigators': [r'(?:Principal\s*)?Investigators?\s*:?'],
+        'sample': [r'Sample\s*Size\s*:?', r'Power\s*Calculation'],
+        'outcomes': [r'Primary\s*Outcome', r'Secondary\s*Outcome'],
+        'hypotheses': [r'Hypothes[ie]s\s*:?', r'Pre-Analysis\s*Plan'],
+        'prereg_number': [
+            r'AEA\s*(?:RCT\s*)?Registry',
+            r'AEARCTR-\d+',
+            r'Registration\s*(?:Number|ID)',
+        ],
+    },
+    'aspredicted': {
+        'main_question': [r'(?:1|A)\.?\s*(?:What.s the main question|Main\s*Question)'],
+        'dvs': [r'(?:2|B)\.?\s*(?:Dependent\s*Variable|What are you measuring|DV)'],
+        'conditions': [r'(?:3|C)\.?\s*(?:Conditions|Treatment|How many conditions)'],
+        'analyses': [r'(?:4|D)\.?\s*(?:Analyses|Statistical\s*tests)'],
+        'outliers': [r'(?:5|E)\.?\s*(?:Outliers|Exclusion)'],
+        'sample_size': [r'(?:6|F)\.?\s*(?:Sample\s*size|How many observations)'],
+        'other': [r'(?:7|G)\.?\s*(?:Other|Anything else)'],
+        'prereg_number': [
+            r'AsPredicted\s*#?\d+',
+            r'aspredicted\.org/[a-z0-9]+',
+            r'Pre-registration\s*(?:Number|ID)',
+        ],
+    },
+}
+
+
+def _detect_prereg_format(text: str) -> str:
+    """Detect the pre-registration format from text content."""
+    text_lower = text.lower()
+
+    # Check for AsPredicted
+    if 'aspredicted' in text_lower or 'as predicted' in text_lower:
+        return 'aspredicted'
+
+    # Check for AEA Registry
+    if 'aea' in text_lower and ('registry' in text_lower or 'rct' in text_lower):
+        return 'aea'
+    if 'aearctr' in text_lower:
+        return 'aea'
+
+    # Check for OSF (most common)
+    if 'osf' in text_lower or 'open science framework' in text_lower:
+        return 'osf'
+
+    # Check for structural patterns
+    aspredicted_count = sum(1 for p in PREREG_SECTION_PATTERNS['aspredicted']['main_question']
+                           if re.search(p, text, re.IGNORECASE))
+    osf_count = sum(1 for p in PREREG_SECTION_PATTERNS['osf']['hypotheses']
+                   if re.search(p, text, re.IGNORECASE))
+
+    if aspredicted_count > osf_count:
+        return 'aspredicted'
+
+    return 'osf'  # Default to OSF format
+
+
+def _extract_prereg_number(text: str, format_type: str) -> Optional[str]:
+    """Extract the pre-registration number/ID from text."""
+    patterns = PREREG_SECTION_PATTERNS.get(format_type, {}).get('prereg_number', [])
+
+    for pattern in patterns:
+        match = re.search(pattern, text, re.IGNORECASE)
+        if match:
+            # Try to extract the actual number/ID
+            if 'osf.io' in pattern.lower():
+                url_match = re.search(r'osf\.io/([a-z0-9]+)', text, re.IGNORECASE)
+                if url_match:
+                    return f"OSF: {url_match.group(1)}"
+            elif 'aearctr' in pattern.lower():
+                id_match = re.search(r'AEARCTR-(\d+)', text, re.IGNORECASE)
+                if id_match:
+                    return f"AEA: AEARCTR-{id_match.group(1)}"
+            elif 'aspredicted' in pattern.lower():
+                num_match = re.search(r'#?(\d+)', match.group())
+                if num_match:
+                    return f"AsPredicted: #{num_match.group(1)}"
+            return match.group()
+
+    return None
+
+
+def _parse_prereg_sections(text: str, format_type: str) -> Dict[str, str]:
+    """Parse pre-registration text into sections based on format."""
+    sections = {}
+    patterns = PREREG_SECTION_PATTERNS.get(format_type, {})
+
+    for section_name, section_patterns in patterns.items():
+        if section_name == 'prereg_number':
+            continue  # Handle separately
+
+        for pattern in section_patterns:
+            match = re.search(pattern, text, re.IGNORECASE | re.MULTILINE)
+            if match:
+                # Extract content after the header until next section or end
+                start_pos = match.end()
+                # Find the next section header
+                next_match = None
+                next_pos = len(text)
+                for other_name, other_patterns in patterns.items():
+                    if other_name == section_name:
+                        continue
+                    for other_pattern in other_patterns:
+                        other_match = re.search(other_pattern, text[start_pos:], re.IGNORECASE)
+                        if other_match and (start_pos + other_match.start()) < next_pos:
+                            next_pos = start_pos + other_match.start()
+
+                content = text[start_pos:next_pos].strip()
+                # Clean up the content
+                content = re.sub(r'^\s*[:]\s*', '', content)  # Remove leading colons
+                content = content[:2000]  # Limit length
+                if content:
+                    sections[section_name] = content
+                break
+
+    return sections
+
+
+def _extract_prereg_variables(sections: Dict[str, str]) -> Dict[str, List[str]]:
+    """Extract variables from parsed pre-registration sections."""
+    variables = {
+        'ivs': [],
+        'dvs': [],
+        'mediators': [],
+        'moderators': [],
+        'covariates': [],
+    }
+
+    # Keywords to identify variable types
+    iv_keywords = ['independent', 'manipulat', 'condition', 'treatment', 'iv']
+    dv_keywords = ['dependent', 'outcome', 'measure', 'dv']
+    mediator_keywords = ['mediat', 'mechanism', 'process']
+    moderator_keywords = ['moderat', 'boundary', 'interact']
+    covariate_keywords = ['covariate', 'control', 'demographic']
+
+    for section_name, content in sections.items():
+        content_lower = content.lower()
+
+        # Check IVs
+        if any(kw in section_name.lower() or kw in content_lower for kw in iv_keywords):
+            # Extract variable names (simple heuristic)
+            lines = content.split('\n')
+            for line in lines[:10]:  # Limit to first 10 lines
+                line = line.strip()
+                if line and len(line) > 3 and len(line) < 100:
+                    # Clean up bullet points and numbering
+                    clean = re.sub(r'^[\d\.\-\*\•]\s*', '', line)
+                    if clean and clean not in variables['ivs']:
+                        variables['ivs'].append(clean[:50])
+
+        # Check DVs
+        if any(kw in section_name.lower() or kw in content_lower for kw in dv_keywords):
+            lines = content.split('\n')
+            for line in lines[:10]:
+                line = line.strip()
+                if line and len(line) > 3 and len(line) < 100:
+                    clean = re.sub(r'^[\d\.\-\*\•]\s*', '', line)
+                    if clean and clean not in variables['dvs']:
+                        variables['dvs'].append(clean[:50])
+
+        # Check mediators
+        if any(kw in content_lower for kw in mediator_keywords):
+            match = re.search(r'mediat\w*[:\s]+([^\.]+)', content, re.IGNORECASE)
+            if match:
+                variables['mediators'].append(match.group(1).strip()[:50])
+
+        # Check moderators
+        if any(kw in content_lower for kw in moderator_keywords):
+            match = re.search(r'moderat\w*[:\s]+([^\.]+)', content, re.IGNORECASE)
+            if match:
+                variables['moderators'].append(match.group(1).strip()[:50])
+
+    return variables
+
+
+def _check_prereg_consistency(prereg_data: Dict[str, Any], design_data: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Check consistency between pre-registration and current design."""
+    warnings = []
+
+    prereg_vars = prereg_data.get('variables', {})
+    design_conditions = design_data.get('conditions', [])
+    design_scales = design_data.get('scales', [])
+
+    # Check sample size
+    prereg_sample = prereg_data.get('sample_size')
+    design_sample = design_data.get('sample_size')
+    if prereg_sample and design_sample:
+        if abs(int(prereg_sample) - int(design_sample)) > 10:
+            warnings.append({
+                'type': 'sample_size',
+                'severity': 'warning',
+                'message': f"Sample size mismatch: Pre-reg={prereg_sample}, Current={design_sample}",
+                'recommendation': "Verify the sample size matches your pre-registration"
+            })
+
+    # Check conditions
+    prereg_ivs = prereg_vars.get('ivs', [])
+    if prereg_ivs and design_conditions:
+        # Check if any pre-registered IVs are missing
+        missing_ivs = []
+        for iv in prereg_ivs:
+            iv_lower = iv.lower()
+            found = any(iv_lower in cond.lower() or cond.lower() in iv_lower
+                       for cond in design_conditions)
+            if not found:
+                missing_ivs.append(iv)
+        if missing_ivs:
+            warnings.append({
+                'type': 'missing_ivs',
+                'severity': 'info',
+                'message': f"Pre-registered IVs not found in conditions: {', '.join(missing_ivs[:3])}",
+                'recommendation': "Verify all pre-registered conditions are included"
+            })
+
+    # Check DVs
+    prereg_dvs = prereg_vars.get('dvs', [])
+    if prereg_dvs and design_scales:
+        scale_names = [s.get('name', '').lower() for s in design_scales]
+        missing_dvs = []
+        for dv in prereg_dvs:
+            dv_lower = dv.lower()
+            found = any(dv_lower in name or name in dv_lower for name in scale_names)
+            if not found:
+                missing_dvs.append(dv)
+        if missing_dvs:
+            warnings.append({
+                'type': 'missing_dvs',
+                'severity': 'info',
+                'message': f"Pre-registered DVs not found in scales: {', '.join(missing_dvs[:3])}",
+                'recommendation': "Verify all pre-registered outcome measures are included"
+            })
+
+    # Check mediators
+    prereg_mediators = prereg_vars.get('mediators', [])
+    if prereg_mediators:
+        warnings.append({
+            'type': 'mediators_detected',
+            'severity': 'info',
+            'message': f"Pre-registration mentions mediators: {', '.join(prereg_mediators[:3])}",
+            'recommendation': "Consider adding mediator variables in the design"
+        })
+
+    return warnings
+
+
+# =============================================================================
+# v1.0.0: DIFFICULTY LEVELS FOR DATA QUALITY
+# =============================================================================
+
+DIFFICULTY_LEVELS = {
+    'easy': {
+        'name': 'Easy (Clean Data)',
+        'description': 'Minimal noise, clear patterns, high attention rates',
+        'attention_rate': 0.98,
+        'random_responder_rate': 0.02,
+        'careless_rate': 0.02,
+        'straightline_rate': 0.03,
+        'text_quality': 'high',
+        'text_effort': 0.9,
+        'numeric_noise': 0.1,
+        'effect_clarity': 1.2,  # Amplify effects for clearer patterns
+    },
+    'medium': {
+        'name': 'Medium (Realistic)',
+        'description': 'Standard noise levels typical of online samples',
+        'attention_rate': 0.92,
+        'random_responder_rate': 0.05,
+        'careless_rate': 0.05,
+        'straightline_rate': 0.08,
+        'text_quality': 'medium',
+        'text_effort': 0.7,
+        'numeric_noise': 0.25,
+        'effect_clarity': 1.0,
+    },
+    'hard': {
+        'name': 'Hard (Noisy Data)',
+        'description': 'Higher noise, more careless responding, unclear patterns',
+        'attention_rate': 0.85,
+        'random_responder_rate': 0.10,
+        'careless_rate': 0.10,
+        'straightline_rate': 0.15,
+        'text_quality': 'low',
+        'text_effort': 0.5,
+        'numeric_noise': 0.4,
+        'effect_clarity': 0.8,
+    },
+    'expert': {
+        'name': 'Expert (Very Noisy)',
+        'description': 'Challenging data quality requiring advanced cleaning',
+        'attention_rate': 0.75,
+        'random_responder_rate': 0.15,
+        'careless_rate': 0.15,
+        'straightline_rate': 0.20,
+        'text_quality': 'very_low',
+        'text_effort': 0.3,
+        'numeric_noise': 0.5,
+        'effect_clarity': 0.6,
+    },
+}
+
+
+def _get_difficulty_settings(level: str) -> Dict[str, Any]:
+    """Get simulation settings for a difficulty level."""
+    return DIFFICULTY_LEVELS.get(level, DIFFICULTY_LEVELS['medium'])
+
+
+# =============================================================================
+# v1.0.0: LIVE DATA PREVIEW GENERATOR
+# =============================================================================
+
+def _generate_preview_data(
+    conditions: List[str],
+    scales: List[Dict[str, Any]],
+    open_ended: List[Dict[str, Any]],
+    n_rows: int = 5,
+    difficulty: str = 'medium'
+) -> pd.DataFrame:
+    """Generate a preview of simulated data (5 rows by default)."""
+    preview_data = {}
+    difficulty_settings = _get_difficulty_settings(difficulty)
+
+    # Add participant ID
+    preview_data['participant_id'] = [f"P{i+1:03d}" for i in range(n_rows)]
+
+    # Add condition assignment
+    if conditions:
+        preview_data['condition'] = [conditions[i % len(conditions)] for i in range(n_rows)]
+
+    # Add scale responses
+    for scale in scales[:5]:  # Limit to 5 scales for preview
+        scale_name = scale.get('name', 'Scale')
+        scale_points = scale.get('scale_points', 7)
+        items = scale.get('num_items', 1)
+
+        if items == 1:
+            # Single item
+            var_name = scale_name.replace(' ', '_')
+            preview_data[var_name] = [
+                np.random.randint(1, scale_points + 1) for _ in range(n_rows)
+            ]
+        else:
+            # Multi-item scale - show first item and composite
+            var_name = scale_name.replace(' ', '_')
+            preview_data[f"{var_name}_1"] = [
+                np.random.randint(1, scale_points + 1) for _ in range(n_rows)
+            ]
+            preview_data[f"{var_name}_mean"] = [
+                round(np.random.uniform(1, scale_points), 2) for _ in range(n_rows)
+            ]
+
+    # Add sample open-ended responses
+    for oe in open_ended[:2]:  # Limit to 2 open-ended for preview
+        var_name = oe.get('variable_name', oe.get('name', 'OE'))
+        preview_data[var_name] = [
+            _get_sample_text_response(difficulty_settings['text_quality'], i)
+            for i in range(n_rows)
+        ]
+
+    # Add demographics
+    preview_data['age'] = [np.random.randint(18, 65) for _ in range(n_rows)]
+    preview_data['gender'] = [np.random.choice(['Male', 'Female', 'Other']) for _ in range(n_rows)]
+
+    # Add attention check
+    preview_data['attention_check_pass'] = [
+        1 if np.random.random() < difficulty_settings['attention_rate'] else 0
+        for _ in range(n_rows)
+    ]
+
+    return pd.DataFrame(preview_data)
+
+
+def _get_sample_text_response(quality: str, idx: int) -> str:
+    """Generate sample text responses based on quality level."""
+    high_quality_responses = [
+        "I found this experience to be quite engaging and thought-provoking.",
+        "The scenario presented was realistic and made me consider multiple perspectives.",
+        "This was an interesting task that required careful deliberation.",
+        "I appreciated the clarity of the instructions and the relevance of the topic.",
+        "The questions were well-designed and captured my genuine reactions.",
+    ]
+
+    medium_quality_responses = [
+        "It was okay, nothing special.",
+        "I thought about it for a bit before deciding.",
+        "The task was straightforward.",
+        "Made me think about the topic.",
+        "Interesting scenario overall.",
+    ]
+
+    low_quality_responses = [
+        "fine",
+        "good",
+        "ok",
+        "yes",
+        "idk",
+    ]
+
+    very_low_quality_responses = [
+        "asdf",
+        "...",
+        "n/a",
+        "x",
+        "",
+    ]
+
+    if quality == 'high':
+        responses = high_quality_responses
+    elif quality == 'medium':
+        responses = medium_quality_responses
+    elif quality == 'low':
+        responses = low_quality_responses
+    else:  # very_low
+        responses = very_low_quality_responses
+
+    return responses[idx % len(responses)]
 
 
 def _merge_condition_sources(qsf_conditions: List[str], prereg_conditions: List[str]) -> Tuple[List[str], List[Dict[str, str]]]:
@@ -4760,17 +5224,126 @@ if active_step == 3:
         st.markdown(f"**Conditions:** {', '.join(conditions) if conditions else 'Not detected'}")
         st.markdown(f"**Scales:** {', '.join(scale_names[:3])}{' ...' if len(scale_names) > 3 else ''}" if scale_names else "**Scales:** Default (Main_DV)")
 
+    # ========================================
+    # v1.0.0: DIFFICULTY LEVEL SELECTOR
+    # ========================================
+    st.markdown("---")
+    st.markdown("### Data Quality Difficulty")
+
+    difficulty_col1, difficulty_col2 = st.columns([1, 2])
+    with difficulty_col1:
+        difficulty_level = st.selectbox(
+            "Select difficulty level",
+            options=['easy', 'medium', 'hard', 'expert'],
+            format_func=lambda x: DIFFICULTY_LEVELS[x]['name'],
+            index=1,  # Default to 'medium'
+            key="difficulty_level",
+            help="Controls the amount of noise and data quality issues in the simulated data"
+        )
+
+    with difficulty_col2:
+        diff_settings = _get_difficulty_settings(difficulty_level)
+        st.caption(f"**{diff_settings['description']}**")
+        st.caption(f"Attention rate: {diff_settings['attention_rate']:.0%} | "
+                  f"Careless: {diff_settings['careless_rate']:.0%} | "
+                  f"Text quality: {diff_settings['text_quality']}")
+
+    # ========================================
+    # v1.0.0: PRE-REGISTRATION CONSISTENCY CHECK
+    # ========================================
+    prereg_text = st.session_state.get("prereg_text_sanitized", "")
+    prereg_pdf_names = st.session_state.get("prereg_pdf_names", [])
+
+    if prereg_text or prereg_pdf_names:
+        st.markdown("---")
+        st.markdown("### Pre-registration Consistency Check")
+
+        # Parse the pre-registration
+        prereg_format = _detect_prereg_format(prereg_text)
+        prereg_number = _extract_prereg_number(prereg_text, prereg_format)
+        prereg_sections = _parse_prereg_sections(prereg_text, prereg_format)
+        prereg_variables = _extract_prereg_variables(prereg_sections)
+
+        # Show detected pre-registration info
+        if prereg_number:
+            st.info(f"**Pre-registration ID:** {prereg_number}")
+
+        # Build design data for comparison
+        design_data = {
+            'conditions': conditions,
+            'scales': scales,
+            'sample_size': st.session_state.get('sample_size', 0),
+        }
+
+        prereg_data = {
+            'variables': prereg_variables,
+            'sample_size': None,  # Would need to extract from sections
+            'format': prereg_format,
+        }
+
+        # Run consistency check
+        consistency_warnings = _check_prereg_consistency(prereg_data, design_data)
+
+        if consistency_warnings:
+            for warning in consistency_warnings:
+                if warning['severity'] == 'warning':
+                    st.warning(f"**{warning['type'].replace('_', ' ').title()}**: {warning['message']}")
+                else:
+                    st.info(f"**{warning['type'].replace('_', ' ').title()}**: {warning['message']}")
+                if warning.get('recommendation'):
+                    st.caption(f"💡 {warning['recommendation']}")
+        else:
+            st.success("No consistency issues detected between pre-registration and design.")
+
+        # Show detected variables from pre-registration
+        with st.expander("View detected pre-registration variables"):
+            if prereg_variables.get('ivs'):
+                st.markdown(f"**Independent Variables:** {', '.join(prereg_variables['ivs'][:5])}")
+            if prereg_variables.get('dvs'):
+                st.markdown(f"**Dependent Variables:** {', '.join(prereg_variables['dvs'][:5])}")
+            if prereg_variables.get('mediators'):
+                st.markdown(f"**Mediators:** {', '.join(prereg_variables['mediators'][:3])}")
+            if prereg_variables.get('moderators'):
+                st.markdown(f"**Moderators:** {', '.join(prereg_variables['moderators'][:3])}")
+
+    # ========================================
+    # v1.0.0: LIVE DATA PREVIEW
+    # ========================================
+    st.markdown("---")
+    st.markdown("### Live Data Preview")
+    st.caption("Preview 5 rows of simulated data before full generation")
+
+    if st.button("Generate Preview (5 rows)", key="preview_button"):
+        open_ended_for_preview = st.session_state.get('confirmed_open_ended', [])
+        preview_df = _generate_preview_data(
+            conditions=conditions,
+            scales=scales,
+            open_ended=open_ended_for_preview,
+            n_rows=5,
+            difficulty=difficulty_level
+        )
+        st.session_state['preview_df'] = preview_df
+
+    if 'preview_df' in st.session_state and st.session_state['preview_df'] is not None:
+        st.dataframe(st.session_state['preview_df'], use_container_width=True, height=200)
+        st.caption(f"Preview generated at difficulty level: **{DIFFICULTY_LEVELS[difficulty_level]['name']}**")
+
     st.markdown("---")
 
     if not st.session_state.get("advanced_mode", False):
+        # v1.0.0: Use difficulty level settings
+        diff_settings = _get_difficulty_settings(difficulty_level)
         demographics = STANDARD_DEFAULTS["demographics"].copy()
-        attention_rate = STANDARD_DEFAULTS["attention_rate"]
-        random_responder_rate = STANDARD_DEFAULTS["random_responder_rate"]
+        attention_rate = diff_settings['attention_rate']  # From difficulty level
+        random_responder_rate = diff_settings['random_responder_rate']  # From difficulty level
         exclusion = ExclusionCriteria(**STANDARD_DEFAULTS["exclusion_criteria"])
         effect_sizes: List[EffectSizeSpec] = []
         custom_persona_weights = None
 
-        with st.expander("View standardized settings (locked for comparability)"):
+        # Store difficulty settings in session state for engine
+        st.session_state['difficulty_settings'] = diff_settings
+
+        with st.expander("View settings (based on difficulty level)"):
             st.markdown("""
 These settings are locked to ensure all simulations are comparable across teams.
 To customize these parameters, enable **Advanced mode** in the sidebar.
