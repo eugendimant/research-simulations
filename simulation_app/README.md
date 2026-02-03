@@ -1,6 +1,6 @@
 # Behavioral Experiment Simulation Tool
 
-**Version 2.4.5** | A Streamlit application for generating realistic synthetic behavioral experiment data using theory-grounded persona-driven simulation.
+**Version 1.0.0 OFFICIAL RELEASE** | A Streamlit application for generating realistic synthetic behavioral experiment data using theory-grounded persona-driven simulation.
 
 ## What This Tool Does
 
@@ -9,20 +9,59 @@
 - Automatic detection of conditions, factors, and scales
 - Open-ended text responses that align with numeric ratings
 - Attention check failures and exclusion flags
-- R script ready for analysis
+- R/Python/Julia/SPSS/Stata scripts ready for analysis
 
 ### Why Use Simulated Pilot Data?
 
 - **Test your analysis pipeline** before collecting real data
 - **Practice data cleaning** with realistic quality issues
 - **Verify survey logic** and variable coding
-- **Develop R/Python/Julia/SPSS/Stata scripts** on properly structured data
+- **Develop analysis scripts** on properly structured data
+- **Check pre-registration consistency** before data collection
 
-## Features (v2.4.5)
+## Features (v1.0.0 OFFICIAL)
+
+### NEW: Enhanced Scale/Matrix Detection
+- **Semantic scale type detection** (satisfaction, trust, intention, risk, etc.)
+- **Well-known scale recognition** (Big Five, PANAS, SWLS, PSS, RSE, etc.)
+- **Reverse-coded item detection** with automatic flagging
+- **Scale quality scoring** with warnings and recommendations
+- **10+ scale types supported**: Matrix, Likert, slider, numeric, constant sum, rank order, best-worst, paired comparison, and more
+
+### NEW: Live Data Preview (5 Rows)
+- **Preview before generation**: See 5 rows of sample data before full simulation
+- **Format verification**: Preview shows exact column structure and data types
+- **Difficulty-aware preview**: Preview reflects selected difficulty level
+
+### NEW: Conditional/Skip Logic Awareness
+- **Full DisplayLogic parsing** from QSF structure
+- **SkipLogic destination tracking** for conditional questions
+- **Question dependency graph** showing which questions depend on others
+- **Conditional branching detection** for complex survey flows
+
+### NEW: Difficulty Levels for Data Quality
+- **4 difficulty levels**: Easy, Medium, Hard, Expert
+- **Impacts numeric data**: Noise levels, straight-lining, careless responding
+- **Impacts open-text responses**: Response length, effort, coherence, typos
+- **Training-focused**: Practice data cleaning at your skill level
+
+### NEW: Mediation Variable Support
+- **Automatic mediator detection** based on position and keywords
+- **Mediator hints** suggesting likely mechanism variables
+- **Path coefficient simulation** for mediation models
+- **Support for moderation** and moderated mediation
+
+### NEW: Pre-registration Consistency Checker
+- **OSF format parsing** with section extraction
+- **AEA Registry format parsing** for RCT pre-registrations
+- **AsPredicted format parsing** with all 7 standard sections
+- **Pre-reg number extraction** from uploaded documents
+- **Consistency warnings** comparing pre-reg to current design
+- **Only appears when pre-registration uploaded** - no clutter otherwise
 
 ### Comprehensive DV Detection
 - **Automatic DV identification** from QSF survey structure
-- **6 DV types supported**: Matrix scales, Likert scales, sliders, single-item DVs, numeric inputs, constant sum
+- **10+ DV types supported**: Matrix scales, Likert scales, sliders, single-item DVs, numeric inputs, constant sum, rank order, best-worst, paired comparison, hot spot
 - **Question text display** for easy verification of detected DVs
 - **Easy add/remove** with one-click removal buttons
 - **Type badges** showing DV category (Matrix, Slider, Single Item, etc.)

@@ -2,43 +2,50 @@
 """
 Utility modules for the Behavioral Experiment Simulation Tool.
 
-Version: 2.4.5
-Changes (v2.4.5 - 5 Iterations of Improvements):
-    - NEW: Enhanced DV detection (rank-order, best-worst, paired comparison, hot spot scales)
-    - NEW: 6 cultural response style personas (East Asian, Latin, Nordic, Middle Eastern)
-    - NEW: 2 generational personas (Gen Z, Baby Boomer)
-    - NEW: 33 new research domains (AI alignment, climate action, health disparities, genomics, etc.)
-    - NEW: 10 new domain templates for emerging research areas
-    - NEW: Python/pandas export script (Python_Prepare_Data.py)
-    - NEW: Julia/DataFrames export script (Julia_Prepare_Data.jl)
-    - NEW: SPSS syntax export (SPSS_Prepare_Data.sps)
-    - NEW: Stata do-file export (Stata_Prepare_Data.do)
-    - NEW: Design Preview panel in Step 3 with configuration summary
-    - ENHANCED: Progress indicators with percentage and status emojis
-    - ENHANCED: Design type auto-detection (2×2, 2×3, 3×3 factorial)
+Version: 1.0.0 OFFICIAL RELEASE
 
-Previous (v2.4.4 - UI/UX Improvements + Instructor Report):
-    - FIX: Step 3 now scrolls to top (section 1) when navigating
-    - NEW: Open-ended question verification step in Step 3 UI (Section 5)
-    - NEW: User can add/remove open-ended questions like conditions/DVs
-    - NEW: Confirmed open-ended questions passed to simulation engine
-    - NEW: Instructor report Section 6: Open-Ended Questions Summary
-    - NEW: Instructor report Section 7: Effect Size Quality Assessment
-    - NEW: Instructor report Section 8: Condition Balance Analysis
-    - ENHANCED: Design Summary now shows open-ended question count
-    - ENHANCED: 5 scroll-to-top strategies for Streamlit compatibility
+Changes (v1.0.0 - 20 Iterations of Comprehensive Improvements):
+    === ENHANCED SCALE/MATRIX DETECTION ===
+    - NEW: Semantic scale type detection (satisfaction, trust, intention, etc.)
+    - NEW: Well-known scale recognition (Big Five, PANAS, SWLS, PSS, etc.)
+    - NEW: Reverse-coded item detection
+    - NEW: Scale anchor extraction
+    - NEW: Scale quality scoring with warnings/recommendations
+    - ENHANCED: Multi-dimensional scale detection with domain mapping
 
-Previous (v2.4.3):
-    - QSF training on 6 files, 15+ selector types, slider config, validation details
+    === LIVE DATA PREVIEW ===
+    - NEW: 5-row preview before full generation
+    - NEW: Preview shows exact output format
+    - NEW: Column type indicators in preview
 
-Previous (v2.4.2):
-    - Enhanced detection from QSF analysis, FORM fields, ForceResponse tracking
+    === CONDITIONAL/SKIP LOGIC AWARENESS ===
+    - NEW: Full DisplayLogic parsing from QSF
+    - NEW: SkipLogic parsing with destination tracking
+    - NEW: Question dependency graph building
+    - NEW: Conditional branching detection
+    - NEW: Skip logic awareness in data generation
 
-Previous (v2.4.1):
-    - 100+ manipulation types grounded in 75+ published sources
+    === DIFFICULTY LEVELS FOR DATA QUALITY ===
+    - NEW: 4 difficulty levels (Easy, Medium, Hard, Expert)
+    - NEW: Difficulty impacts numeric response patterns
+    - NEW: Difficulty impacts open-text response quality and complexity
+    - NEW: Difficulty-aware careless responder rates
 
-Previous (v2.3.0):
-    - COMPREHENSIVE: All manipulation types grounded in published literature
+    === MEDIATION VARIABLE SUPPORT ===
+    - NEW: Automatic mediator variable detection
+    - NEW: Mediator configuration UI
+    - NEW: Mediation model data generation
+    - NEW: Path coefficient simulation
+
+    === PRE-REGISTRATION CONSISTENCY CHECKER ===
+    - NEW: OSF pre-registration format parsing
+    - NEW: AEA pre-registration format parsing
+    - NEW: AsPredicted format parsing
+    - NEW: Consistency checker comparing pre-reg to design
+    - NEW: Warnings for deviations from pre-registration
+
+Previous (v2.4.5 - 5 Iterations of Improvements):
+    - Enhanced DV detection, cultural personas, new domains, export formats
 
 Modules:
     - qsf_parser: Parse Qualtrics Survey Format (.qsf) files
@@ -57,7 +64,7 @@ Modules:
 """
 
 # Package version - should match all module versions
-__version__ = "2.4.5"
+__version__ = "1.0.0"
 
 from .qsf_parser import parse_qsf_file, extract_survey_structure, generate_qsf_summary
 from .simulation_engine import SimulationEngine
