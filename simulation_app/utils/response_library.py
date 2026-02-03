@@ -63,7 +63,7 @@ association, impression, perception, feedback, comment, observation, general
 Version: 2.4.3 - ENHANCED: QSF training on 6 real surveys - comprehensive pattern detection
 """
 
-__version__ = "2.4.3"
+__version__ = "2.4.4"
 
 import random
 import re

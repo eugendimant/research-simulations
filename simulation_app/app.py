@@ -44,8 +44,8 @@ import streamlit as st
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "2.4.3"
-BUILD_ID = "20260203-v243-6-qsf-training"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "2.4.4"
+BUILD_ID = "20260203-v244-oe-verification"  # Change this to force cache invalidation
 
 def _verify_and_reload_utils():
     """Verify utils modules are at correct version, force reload if needed.
@@ -98,7 +98,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF"
-APP_VERSION = "2.4.3"  # ENHANCED: QSF training on 6 real surveys - comprehensive pattern detection
+APP_VERSION = "2.4.4"  # v2.4.4: Open-ended verification UI, scroll fix, instructor report enhancements
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -2187,6 +2187,7 @@ def _save_step_state():
         "use_crossed_conditions", "use_factorial_table",
         "condition_allocation", "condition_allocation_n",
         "confirmed_scales", "scales_confirmed", "_dv_version",
+        "confirmed_open_ended", "open_ended_confirmed", "_oe_version",
         "manual_attention_checks", "manual_manipulation_checks",
         "design_type_select", "rand_level_select",
         "qsf_identifiers", "variable_review_rows",
@@ -2310,19 +2311,48 @@ def _inject_scroll_to_top():
 
     Call this at the beginning of each step to ensure the view starts at the top
     when navigating between steps.
+
+    v2.4.4: Enhanced with multiple scroll strategies for better Streamlit compatibility.
     """
     if st.session_state.get("_scroll_to_top", False):
         # Clear the flag first
         st.session_state["_scroll_to_top"] = False
-        # Inject JavaScript to scroll to top
+        # Inject JavaScript with multiple fallback strategies
         st.markdown(
             """
+            <div id="scroll-anchor-top"></div>
             <script>
-                window.parent.document.querySelector('section.main').scrollTo(0, 0);
+                // Strategy 1: Try scrolling the main section
+                var mainSection = window.parent.document.querySelector('section.main');
+                if (mainSection) {
+                    mainSection.scrollTo({top: 0, behavior: 'instant'});
+                }
+                // Strategy 2: Try scrolling the stApp container
+                var stApp = window.parent.document.querySelector('.stApp');
+                if (stApp) {
+                    stApp.scrollTo({top: 0, behavior: 'instant'});
+                }
+                // Strategy 3: Try scrolling the block-container
+                var blockContainer = window.parent.document.querySelector('[data-testid="stAppViewBlockContainer"]');
+                if (blockContainer) {
+                    blockContainer.scrollTo({top: 0, behavior: 'instant'});
+                }
+                // Strategy 4: Scroll window itself
+                window.parent.scrollTo({top: 0, behavior: 'instant'});
+                // Strategy 5: Find and scroll the anchor
+                setTimeout(function() {
+                    var anchor = window.parent.document.getElementById('scroll-anchor-top');
+                    if (anchor) {
+                        anchor.scrollIntoView({behavior: 'instant', block: 'start'});
+                    }
+                }, 50);
             </script>
             """,
             unsafe_allow_html=True
         )
+    else:
+        # Always inject anchor for consistent DOM
+        st.markdown('<div id="scroll-anchor-top"></div>', unsafe_allow_html=True)
 
 
 with st.expander("What this tool delivers", expanded=True):
@@ -4255,6 +4285,155 @@ if active_step == 2:
         st.caption("Confirm your DVs are correct to proceed.")
 
     # ========================================
+    # STEP 5: OPEN-ENDED QUESTIONS
+    # ========================================
+    st.markdown("---")
+    st.markdown("### 5. Open-Ended Questions")
+    st.caption("These questions require text responses. Verify they are correctly detected so they will be filled with realistic text.")
+
+    # Show open-ended help in collapsed expander
+    with st.expander("What are open-ended questions?", expanded=False):
+        st.markdown("""
+**Open-Ended Questions** require participants to type free-form text responses.
+
+**Types detected:**
+- **Essay boxes** - Long-form text responses (ESTB, ML selectors)
+- **Single-line text** - Short answers like names, explanations (SL selector)
+- **Form fields** - Multiple text inputs in one question (FORM selector)
+- **MC with "Other"** - Multiple choice with "Other: please specify" option
+
+**How to verify:**
+1. Check that all questions requiring text responses are included
+2. Remove any that shouldn't have generated text (e.g., MTurk IDs)
+3. Add any missing open-ended questions manually
+
+**Simulation will:**
+- Generate realistic text responses matching each persona
+- Consider question context and survey topic
+- Vary response length and style appropriately
+        """)
+
+    # Initialize open-ended state
+    oe_version = st.session_state.get("_oe_version", 0)
+
+    # Get detected open-ended questions from preview
+    detected_open_ended = []
+    if preview and hasattr(preview, 'open_ended_details') and preview.open_ended_details:
+        detected_open_ended = preview.open_ended_details
+    elif preview and hasattr(preview, 'open_ended_questions') and preview.open_ended_questions:
+        # Convert simple list to detailed format
+        detected_open_ended = [
+            {"variable_name": q, "question_text": "", "source_type": "detected"}
+            for q in preview.open_ended_questions
+        ]
+
+    if "confirmed_open_ended" not in st.session_state:
+        st.session_state["confirmed_open_ended"] = detected_open_ended.copy()
+        st.session_state["_oe_version"] = 0
+    if "open_ended_confirmed" not in st.session_state:
+        st.session_state["open_ended_confirmed"] = False
+
+    confirmed_open_ended = st.session_state.get("confirmed_open_ended", detected_open_ended.copy())
+
+    # Source type badges
+    source_badges = {
+        'text_entry': '📝 Text Entry',
+        'essay': '📄 Essay Box',
+        'mc_text_entry': '🔘 MC + Text',
+        'form_field': '📋 Form Field',
+        'matrix_text': '🔢 Matrix Text',
+        'detected': '🔍 Detected',
+    }
+
+    # Display each open-ended question with remove option
+    updated_open_ended = []
+    oe_to_remove = []
+
+    if confirmed_open_ended:
+        st.markdown(f"**{len(confirmed_open_ended)} open-ended question(s) detected:**")
+
+        for i, oe in enumerate(confirmed_open_ended):
+            source_type = oe.get("source_type", "detected")
+            source_badge = source_badges.get(source_type, "📝 Text")
+
+            with st.container():
+                col1, col2, col3 = st.columns([3, 2, 0.5])
+
+                with col1:
+                    var_name = st.text_input(
+                        f"Variable {i+1}",
+                        value=oe.get("variable_name", oe.get("name", f"OpenEnded_{i+1}")),
+                        key=f"oe_name_v{oe_version}_{i}",
+                        label_visibility="collapsed",
+                    )
+
+                with col2:
+                    st.markdown(f"<small>{source_badge}</small>", unsafe_allow_html=True)
+                    if oe.get("force_response"):
+                        st.caption("⚠️ *Required*")
+
+                with col3:
+                    if st.button("✕", key=f"rm_oe_v{oe_version}_{i}", help="Remove this question"):
+                        oe_to_remove.append(i)
+
+                # Show question text if available
+                q_text = oe.get("question_text", "")
+                if q_text:
+                    st.caption(f"*\"{q_text[:100]}{'...' if len(q_text) > 100 else ''}\"*")
+
+            if var_name.strip() and i not in oe_to_remove:
+                updated_open_ended.append({
+                    "variable_name": var_name.strip(),
+                    "name": var_name.strip(),
+                    "question_text": oe.get("question_text", ""),
+                    "source_type": source_type,
+                    "force_response": oe.get("force_response", False),
+                    "context_type": oe.get("context_type", "general"),
+                    "min_chars": oe.get("min_chars"),
+                    "block_name": oe.get("block_name", ""),
+                })
+    else:
+        st.info("No open-ended questions detected. Add any text response questions below.")
+
+    # Handle removals
+    if oe_to_remove:
+        st.session_state["confirmed_open_ended"] = updated_open_ended
+        st.session_state["_oe_version"] = oe_version + 1
+        st.rerun()
+
+    # Add new open-ended question button
+    st.markdown("---")
+    col_add_oe, col_spacer_oe = st.columns([1, 3])
+    with col_add_oe:
+        if st.button("➕ Add Open-Ended Question", key=f"add_oe_btn_v{oe_version}"):
+            new_oe = {
+                "variable_name": f"OpenEnded_{len(confirmed_open_ended)+1}",
+                "name": f"OpenEnded_{len(confirmed_open_ended)+1}",
+                "question_text": "",
+                "source_type": "manual",
+                "force_response": False,
+                "context_type": "general",
+            }
+            confirmed_open_ended.append(new_oe)
+            st.session_state["confirmed_open_ended"] = confirmed_open_ended
+            st.session_state["_oe_version"] = oe_version + 1
+            st.rerun()
+
+    # Update session state with edited open-ended questions
+    st.session_state["confirmed_open_ended"] = updated_open_ended
+
+    # Confirmation checkbox for open-ended questions
+    open_ended_confirmed = st.checkbox(
+        "I confirm these open-ended questions match my survey",
+        value=st.session_state.get("open_ended_confirmed", False),
+        key=f"oe_confirm_checkbox_v{oe_version}",
+    )
+    st.session_state["open_ended_confirmed"] = open_ended_confirmed
+
+    if not open_ended_confirmed and updated_open_ended:
+        st.caption("Confirm your open-ended questions to ensure they receive realistic text responses.")
+
+    # ========================================
     # ATTENTION & MANIPULATION CHECKS REVIEW
     # ========================================
     st.markdown("---")
@@ -4327,11 +4506,16 @@ if active_step == 2:
     if st.session_state.get("use_crossed_conditions") and st.session_state.get("factorial_crossed_conditions"):
         display_conditions = st.session_state["factorial_crossed_conditions"]
 
-    summary_cols = st.columns(4)
+    # Get confirmed open-ended count
+    confirmed_oe = st.session_state.get("confirmed_open_ended", [])
+    oe_count = len(confirmed_oe)
+
+    summary_cols = st.columns(5)
     summary_cols[0].metric("Conditions", len(display_conditions))
     summary_cols[1].metric("Factors", len(factors))
-    summary_cols[2].metric("Scales", len(scales))
-    summary_cols[3].metric("Design", design_type.split("(")[0].strip())
+    summary_cols[2].metric("DVs", len(scales))
+    summary_cols[3].metric("Open-Ended", oe_count)
+    summary_cols[4].metric("Design", design_type.split("(")[0].strip())
 
     # Show condition list and detected scales (cleaned names)
     clean_cond_names = [_clean_condition_name(c) for c in display_conditions]
@@ -4340,7 +4524,13 @@ if active_step == 2:
     else:
         st.markdown(f"**Conditions:** {', '.join(clean_cond_names)}")
     scale_names = [s.get('name', 'Unknown') for s in scales if s.get('name')]
-    st.markdown(f"**Scales:** {', '.join(scale_names) if scale_names else 'Main_DV (default)'}")
+    st.markdown(f"**DVs:** {', '.join(scale_names) if scale_names else 'Main_DV (default)'}")
+    if oe_count > 0:
+        oe_names = [oe.get('variable_name', oe.get('name', '')) for oe in confirmed_oe[:5]]
+        oe_display = ', '.join(oe_names)
+        if oe_count > 5:
+            oe_display += f" (+{oe_count - 5} more)"
+        st.markdown(f"**Open-Ended Questions:** {oe_display}")
 
     # Validate and lock design - require conditions, scales, AND scale confirmation
     design_valid = len(display_conditions) >= 1 and len(scales) >= 1 and scales_confirmed
@@ -4363,7 +4553,8 @@ if active_step == 2:
             final_conditions = all_conditions
         final_factors = _normalize_factor_specs(factors, final_conditions)
         final_scales = _normalize_scale_specs(scales)
-        final_open_ended = inferred.get("open_ended_questions", [])
+        # Use user-confirmed open-ended questions instead of auto-detected
+        final_open_ended = st.session_state.get("confirmed_open_ended", inferred.get("open_ended_questions", []))
 
         # Determine randomization level string
         rand_mapping = {
@@ -4791,18 +4982,36 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
         condition_allocation = st.session_state.get("condition_allocation", None)
 
         # Build open-ended questions with full context for text generation
-        # Use detailed info when available, otherwise fall back to basic list
-        open_ended_details = inferred.get("open_ended_details", [])
-        if open_ended_details:
-            # Use detailed info that includes question text and context type
-            open_ended_questions_for_engine = open_ended_details
-        else:
-            # Fallback to basic list (variable names only)
-            basic_open_ended = inferred.get("open_ended_questions", [])
+        # PRIORITY: Use user-confirmed open-ended questions from Step 3
+        # This ensures only questions the user verified will have text generated
+        confirmed_open_ended = st.session_state.get("confirmed_open_ended", [])
+        if confirmed_open_ended:
+            # Use user-confirmed questions with full context
             open_ended_questions_for_engine = [
-                {"name": q, "question_text": q, "context_type": "general"}
-                for q in basic_open_ended
+                {
+                    "name": oe.get("variable_name", oe.get("name", "")),
+                    "variable_name": oe.get("variable_name", oe.get("name", "")),
+                    "question_text": oe.get("question_text", ""),
+                    "context_type": oe.get("context_type", "general"),
+                    "type": oe.get("source_type", "text"),
+                    "force_response": oe.get("force_response", False),
+                    "min_chars": oe.get("min_chars"),
+                    "block_name": oe.get("block_name", ""),
+                }
+                for oe in confirmed_open_ended
             ]
+        else:
+            # Fallback to inferred detailed info if available
+            open_ended_details = inferred.get("open_ended_details", [])
+            if open_ended_details:
+                open_ended_questions_for_engine = open_ended_details
+            else:
+                # Final fallback to basic list (variable names only)
+                basic_open_ended = inferred.get("open_ended_questions", [])
+                open_ended_questions_for_engine = [
+                    {"name": q, "question_text": q, "context_type": "general"}
+                    for q in basic_open_ended
+                ]
 
         engine = EnhancedSimulationEngine(
             study_title=title,

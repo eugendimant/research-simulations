@@ -6,7 +6,7 @@ Generates comprehensive instructor-facing reports for student simulations.
 """
 
 # Version identifier to help track deployed code
-__version__ = "2.2.0"  # Comprehensive update - enhanced reports with full interpretation
+__version__ = "2.4.4"  # v2.4.4: Added 3 new sections - Open-ended summary, Effect size quality, Condition balance
 
 from dataclasses import dataclass
 from datetime import datetime
@@ -1062,10 +1062,176 @@ class ComprehensiveInstructorReport:
             lines.append("")
 
         # =============================================================
-        # SECTION 6: RECOMMENDATIONS
+        # SECTION 6: OPEN-ENDED QUESTIONS SUMMARY (NEW v2.4.4)
         # =============================================================
         lines.append("-" * 80)
-        lines.append("## 6. INSTRUCTOR RECOMMENDATIONS")
+        lines.append("## 6. OPEN-ENDED QUESTIONS SUMMARY")
+        lines.append("-" * 80)
+        lines.append("")
+
+        # Find open-ended columns (text columns that aren't standard)
+        standard_cols = {
+            'PARTICIPANT_ID', 'RUN_ID', 'SIMULATION_ID', 'CONDITION', 'Age', 'Gender',
+            'Completion_Time_Seconds', 'Attention_Pass_Rate', 'Max_Straight_Line',
+            'Flag_Speed', 'Flag_Attention', 'Flag_StraightLine', 'Exclude_Recommended'
+        }
+        open_ended_cols = []
+        for col in df.columns:
+            # Check if column contains string data and is not a standard column
+            if col not in standard_cols and df[col].dtype == 'object':
+                sample_val = df[col].iloc[0] if len(df) > 0 else ""
+                if isinstance(sample_val, str) and len(sample_val) > 10:
+                    open_ended_cols.append(col)
+
+        if open_ended_cols:
+            lines.append(f"**{len(open_ended_cols)} open-ended question(s) simulated:**")
+            lines.append("")
+            for col in open_ended_cols[:10]:  # Limit to first 10
+                lines.append(f"### {col}")
+                lines.append("")
+                # Show sample responses by condition if possible
+                if "CONDITION" in df.columns and len(conditions) > 0:
+                    for cond in conditions[:3]:  # First 3 conditions
+                        cond_data = df[df["CONDITION"] == cond][col]
+                        if len(cond_data) > 0:
+                            sample = cond_data.iloc[0]
+                            if isinstance(sample, str) and len(sample) > 0:
+                                truncated = sample[:200] + "..." if len(sample) > 200 else sample
+                                lines.append(f"**{cond}:** *\"{truncated}\"*")
+                                lines.append("")
+                else:
+                    # Just show first response
+                    sample = df[col].iloc[0] if len(df) > 0 else ""
+                    if isinstance(sample, str) and len(sample) > 0:
+                        truncated = sample[:300] + "..." if len(sample) > 300 else sample
+                        lines.append(f"*Sample:* \"{truncated}\"")
+                        lines.append("")
+
+                # Response length statistics
+                lengths = df[col].apply(lambda x: len(str(x)) if x else 0)
+                lines.append(f"- **Response length:** Mean={lengths.mean():.0f} chars, Range=[{lengths.min()}-{lengths.max()}]")
+                lines.append("")
+        else:
+            lines.append("No open-ended questions were simulated in this dataset.")
+            lines.append("")
+
+        # =============================================================
+        # SECTION 7: EFFECT SIZE QUALITY ASSESSMENT (NEW v2.4.4)
+        # =============================================================
+        lines.append("-" * 80)
+        lines.append("## 7. EFFECT SIZE QUALITY ASSESSMENT")
+        lines.append("-" * 80)
+        lines.append("")
+
+        configured_effects = metadata.get("effect_sizes_configured", [])
+        observed_effects = metadata.get("effect_sizes_observed", [])
+
+        if configured_effects:
+            lines.append("### Configured vs Observed Effect Sizes")
+            lines.append("")
+            lines.append("| Variable | Configured d | Observed d | Match Quality |")
+            lines.append("|----------|--------------|------------|---------------|")
+
+            for cfg in configured_effects:
+                var = cfg.get("variable", "Unknown")
+                cfg_d = cfg.get("cohens_d", 0)
+                # Find matching observed effect
+                obs_d = None
+                for obs in observed_effects:
+                    if obs.get("variable") == var:
+                        obs_d = obs.get("cohens_d", obs.get("d_observed"))
+                        break
+
+                if obs_d is not None:
+                    diff = abs(cfg_d - obs_d)
+                    if diff < 0.1:
+                        quality = "✅ Excellent"
+                    elif diff < 0.2:
+                        quality = "✅ Good"
+                    elif diff < 0.3:
+                        quality = "⚠️ Acceptable"
+                    else:
+                        quality = "❌ Poor match"
+                    lines.append(f"| {var} | {cfg_d:.3f} | {obs_d:.3f} | {quality} |")
+                else:
+                    lines.append(f"| {var} | {cfg_d:.3f} | N/A | ⚠️ Not computed |")
+            lines.append("")
+
+            # Overall assessment
+            lines.append("### Quality Interpretation")
+            lines.append("")
+            lines.append("Effect sizes are calibrated from published meta-analyses and research findings.")
+            lines.append("Good matches indicate the simulation faithfully reproduces expected effect magnitudes.")
+            lines.append("")
+        else:
+            lines.append("No effect sizes were explicitly configured for this simulation.")
+            lines.append("The simulation used domain-inferred defaults based on study context.")
+            lines.append("")
+
+        # =============================================================
+        # SECTION 8: CONDITION BALANCE ANALYSIS (NEW v2.4.4)
+        # =============================================================
+        lines.append("-" * 80)
+        lines.append("## 8. CONDITION BALANCE ANALYSIS")
+        lines.append("-" * 80)
+        lines.append("")
+
+        if "CONDITION" in df.columns:
+            cond_counts = df["CONDITION"].value_counts()
+            total = len(df)
+            expected_per_cond = total / len(conditions) if conditions else total
+
+            lines.append("### Participant Distribution by Condition")
+            lines.append("")
+            lines.append("| Condition | N | % | Deviation from Expected |")
+            lines.append("|-----------|---|---|------------------------|")
+
+            max_deviation = 0
+            for cond in conditions:
+                count = cond_counts.get(cond, 0)
+                pct = (count / total * 100) if total > 0 else 0
+                deviation = abs(count - expected_per_cond)
+                deviation_pct = (deviation / expected_per_cond * 100) if expected_per_cond > 0 else 0
+                max_deviation = max(max_deviation, deviation_pct)
+
+                if deviation_pct < 5:
+                    dev_indicator = "✅"
+                elif deviation_pct < 10:
+                    dev_indicator = "⚠️"
+                else:
+                    dev_indicator = "❌"
+
+                lines.append(f"| {cond} | {count} | {pct:.1f}% | {dev_indicator} {deviation_pct:.1f}% |")
+
+            lines.append("")
+
+            # Balance assessment
+            lines.append("### Balance Assessment")
+            lines.append("")
+            if max_deviation < 5:
+                lines.append("✅ **Excellent balance** - Conditions are evenly distributed.")
+            elif max_deviation < 10:
+                lines.append("✅ **Good balance** - Minor deviations within acceptable range.")
+            elif max_deviation < 15:
+                lines.append("⚠️ **Acceptable balance** - Some imbalance, but unlikely to affect analysis.")
+            else:
+                lines.append("❌ **Imbalanced** - Consider adjusting condition allocation for future runs.")
+            lines.append("")
+
+            # Check for empty conditions
+            empty_conds = [c for c in conditions if cond_counts.get(c, 0) == 0]
+            if empty_conds:
+                lines.append(f"⚠️ **Warning:** {len(empty_conds)} condition(s) have no participants: {', '.join(empty_conds)}")
+                lines.append("")
+        else:
+            lines.append("No CONDITION column found in data.")
+            lines.append("")
+
+        # =============================================================
+        # SECTION 9: RECOMMENDATIONS
+        # =============================================================
+        lines.append("-" * 80)
+        lines.append("## 9. INSTRUCTOR RECOMMENDATIONS")
         lines.append("-" * 80)
         lines.append("")
 
