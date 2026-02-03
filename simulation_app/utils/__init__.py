@@ -2,26 +2,23 @@
 """
 Utility modules for the Behavioral Experiment Simulation Tool.
 
-Version: 2.2.5
-Changes (v2.2.5 - Ten Iterations):
+Version: 2.2.6
+Changes (v2.2.6 - CRITICAL Effect Size Fix):
+    - FIXED: Simulations now produce statistically detectable between-condition differences
+    - Auto-generated condition effects when no explicit effect sizes configured
+    - Increased effect multiplier from 0.25 to 0.40 for realistic d values
+    - Added condition-specific trait modifiers for realistic response patterns
+    - Added _compute_observed_effect_sizes() to validate generated data
+    - Metadata now includes observed Cohen's d values for verification
+    - Proper Cohen's d calculation with pooled standard deviation
+
+Previous (v2.2.5):
     - Enhanced input validation with real-time feedback
     - Improved scale/DV detection with manipulation check detection
     - Consolidated error handling and unified messaging
     - Enhanced condition name cleaning (HTML, Qualtrics artifacts)
-    - Smart defaults based on study context (pilot, replication, online/lab)
+    - Smart defaults based on study context
     - More robust state persistence with edge case handling
-    - Comprehensive validation summaries with progress indicators
-    - Enhanced attention check detection (30+ patterns)
-    - Manipulation check detection (new feature)
-
-Previous (v2.2.4):
-    - 225+ research domains with comprehensive response templates
-    - 40 question type handlers for open-ended responses
-    - 200+ trash/unused block exclusion patterns
-    - Enhanced factorial design table with visual feedback
-    - State persistence across step navigation
-    - Comprehensive DV detection (matrix, slider, single-item, numeric input, constant sum)
-    - Robust QSF parsing with multi-format support
 
 Modules:
     - qsf_parser: Parse Qualtrics Survey Format (.qsf) files
@@ -40,7 +37,7 @@ Modules:
 """
 
 # Package version - should match all module versions
-__version__ = "2.2.5"
+__version__ = "2.2.6"
 
 from .qsf_parser import parse_qsf_file, extract_survey_structure, generate_qsf_summary
 from .simulation_engine import SimulationEngine

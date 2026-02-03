@@ -33,7 +33,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Union
 
 # Version identifier to help track deployed code
-__version__ = "2.2.5"  # Enhanced: attention/manipulation check detection, improved DV detection
+__version__ = "2.2.6"  # Synchronized with simulation engine effect size fix
 
 
 # ============================================================================
