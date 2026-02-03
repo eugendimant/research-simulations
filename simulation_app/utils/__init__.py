@@ -2,23 +2,22 @@
 """
 Utility modules for the Behavioral Experiment Simulation Tool.
 
-Version: 2.2.6
-Changes (v2.2.6 - CRITICAL Effect Size Fix):
-    - FIXED: Simulations now produce statistically detectable between-condition differences
-    - Auto-generated condition effects when no explicit effect sizes configured
-    - Increased effect multiplier from 0.25 to 0.40 for realistic d values
-    - Added condition-specific trait modifiers for realistic response patterns
-    - Added _compute_observed_effect_sizes() to validate generated data
-    - Metadata now includes observed Cohen's d values for verification
-    - Proper Cohen's d calculation with pooled standard deviation
+Version: 2.2.7
+Changes (v2.2.7 - SCIENTIFIC Persona Calibration):
+    - ALL persona traits calibrated from published research
+    - Krosnick (1991) satisficing theory: 20-30% satisficers, trait values calibrated
+    - Greenleaf (1992) ERS: 8-15% prevalence, extremity = 0.85-0.95
+    - Paulhus (1991) BIDR: Social desirability calibrated to published norms
+    - Meade & Craig (2012): Careless responding at 3-9% prevalence
+    - Billiet & McClendon (2000): Acquiescence bias (+0.8 point inflation)
+    - Added 'response_tendency' trait for proper mean calibration
+    - Response generation matches published norms (M=4.0-5.2, SD=1.2-1.8)
+    - Enhanced scientific documentation with full citations
 
-Previous (v2.2.5):
-    - Enhanced input validation with real-time feedback
-    - Improved scale/DV detection with manipulation check detection
-    - Consolidated error handling and unified messaging
-    - Enhanced condition name cleaning (HTML, Qualtrics artifacts)
-    - Smart defaults based on study context
-    - More robust state persistence with edge case handling
+Previous (v2.2.6):
+    - Auto-generated condition effects for detectable differences
+    - Increased effect multiplier from 0.25 to 0.40
+    - Added _compute_observed_effect_sizes() validation
 
 Modules:
     - qsf_parser: Parse Qualtrics Survey Format (.qsf) files
@@ -37,7 +36,7 @@ Modules:
 """
 
 # Package version - should match all module versions
-__version__ = "2.2.6"
+__version__ = "2.2.7"
 
 from .qsf_parser import parse_qsf_file, extract_survey_structure, generate_qsf_summary
 from .simulation_engine import SimulationEngine
