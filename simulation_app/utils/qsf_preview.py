@@ -30,7 +30,7 @@ import re
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 # Version identifier to help track deployed code
 __version__ = "1.0.0"  # v1.0.0 OFFICIAL RELEASE: Enhanced scale detection, skip logic, difficulty levels, mediation, pre-reg checker
