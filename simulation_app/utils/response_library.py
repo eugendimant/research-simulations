@@ -60,10 +60,10 @@ introspection, memory, experience, recall, opinion, belief, preference, attitude
 value, worldview, prediction, intention, suggestion, recommendation, advice,
 association, impression, perception, feedback, comment, observation, general
 
-Version: 2.2.3 - Major expansion with 225+ domains, 40 question types
+Version: 2.2.5 - Synchronized with main package version
 """
 
-__version__ = "2.2.3"
+__version__ = "2.2.5"
 
 import random
 import re

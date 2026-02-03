@@ -44,8 +44,8 @@ import streamlit as st
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "2.2.4"
-BUILD_ID = "20260203-v224-major-improvements"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "2.2.5"
+BUILD_ID = "20260203-v225-ten-iterations"  # Change this to force cache invalidation
 
 def _verify_and_reload_utils():
     """Verify utils modules are at correct version, force reload if needed.
@@ -98,7 +98,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF"
-APP_VERSION = "2.2.4"  # Major: 225+ domains, 40 Q types, 200+ exclusions, enhanced UI
+APP_VERSION = "2.2.5"  # Ten iterations: validation, error handling, smart defaults, enhanced detection
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -132,6 +132,212 @@ ADVANCED_DEFAULTS = {
 # -----------------------------
 def _safe_json(obj: Any) -> str:
     return json.dumps(obj, indent=2, ensure_ascii=False, default=str)
+
+
+# =============================================================================
+# INPUT VALIDATION HELPERS (Iteration 1: Enhanced validation)
+# =============================================================================
+def _validate_study_title(title: str) -> Tuple[bool, str]:
+    """Validate study title with helpful feedback."""
+    if not title or not title.strip():
+        return False, "Study title is required"
+    title = title.strip()
+    if len(title) < 5:
+        return False, "Title should be at least 5 characters"
+    if len(title) > 200:
+        return False, f"Title is too long ({len(title)} chars, max 200)"
+    # Check for placeholder text
+    placeholders = ["test", "untitled", "my study", "example", "xxx", "asdf"]
+    if title.lower() in placeholders:
+        return False, "Please enter a descriptive study title"
+    return True, "Valid"
+
+
+def _validate_study_description(desc: str) -> Tuple[bool, str, List[str]]:
+    """Validate study description with quality suggestions."""
+    suggestions = []
+    if not desc or not desc.strip():
+        return False, "Study description is required", suggestions
+    desc = desc.strip()
+    if len(desc) < 20:
+        return False, "Description should be at least 20 characters", suggestions
+    if len(desc) > 5000:
+        return False, f"Description is too long ({len(desc)} chars, max 5000)", suggestions
+
+    # Quality suggestions
+    key_elements = {
+        "manipulation": ["manipulate", "condition", "treatment", "vary", "experimental"],
+        "outcome": ["measure", "outcome", "dependent", "dv", "effect"],
+        "population": ["participant", "sample", "population", "respondent", "subject"],
+    }
+
+    desc_lower = desc.lower()
+    for element, keywords in key_elements.items():
+        if not any(kw in desc_lower for kw in keywords):
+            suggestions.append(f"Consider mentioning your {element}")
+
+    return True, "Valid", suggestions
+
+
+def _validate_sample_size(n: int, n_conditions: int = 1) -> Tuple[bool, str, List[str]]:
+    """Validate sample size with power analysis guidance."""
+    warnings = []
+    if n < 10:
+        return False, "Sample size must be at least 10", warnings
+    if n > MAX_SIMULATED_N:
+        return False, f"Sample size cannot exceed {MAX_SIMULATED_N:,}", warnings
+
+    # Power analysis guidance
+    per_condition = n // max(1, n_conditions)
+    if per_condition < 20:
+        warnings.append(f"Only {per_condition} per condition may have low power")
+    elif per_condition < 30:
+        warnings.append(f"{per_condition} per condition - consider if sufficient for your effect size")
+
+    if n % n_conditions != 0:
+        warnings.append("Sample size doesn't divide evenly across conditions")
+
+    return True, "Valid", warnings
+
+
+def _validate_condition_name(name: str) -> Tuple[bool, str]:
+    """Validate a condition name."""
+    if not name or not name.strip():
+        return False, "Condition name cannot be empty"
+    name = name.strip()
+    if len(name) > 100:
+        return False, "Condition name is too long (max 100 chars)"
+    # Check for problematic characters
+    if any(c in name for c in ['<', '>', '&', '"', "'"]):
+        return False, "Condition name contains invalid characters"
+    return True, "Valid"
+
+
+def _get_validation_summary(completion: Dict[str, bool]) -> Dict[str, Any]:
+    """Generate a comprehensive validation summary."""
+    total_required = 7  # Number of required fields
+    completed = sum(1 for v in list(completion.values())[:total_required] if v)
+
+    status = "complete" if completed == total_required else "incomplete"
+    percentage = int((completed / total_required) * 100)
+
+    missing_items = []
+    if not completion.get("study_title"):
+        missing_items.append({"field": "Study title", "step": 1, "priority": "required"})
+    if not completion.get("study_description"):
+        missing_items.append({"field": "Study description", "step": 1, "priority": "required"})
+    if not completion.get("qsf_uploaded"):
+        missing_items.append({"field": "QSF file", "step": 2, "priority": "required"})
+    if not completion.get("conditions_set"):
+        missing_items.append({"field": "Conditions", "step": 3, "priority": "required"})
+    if not completion.get("sample_size"):
+        missing_items.append({"field": "Sample size", "step": 3, "priority": "required"})
+
+    return {
+        "status": status,
+        "percentage": percentage,
+        "completed": completed,
+        "total": total_required,
+        "missing": missing_items,
+        "ready_to_generate": status == "complete"
+    }
+
+
+# =============================================================================
+# UNIFIED ERROR HANDLING (Iteration 3: Consolidate error messages)
+# =============================================================================
+class SimulationError:
+    """Unified error/warning message container."""
+    INFO = "info"
+    WARNING = "warning"
+    ERROR = "error"
+    SUCCESS = "success"
+
+    def __init__(self, level: str, message: str, details: str = "", fix_action: str = ""):
+        self.level = level
+        self.message = message
+        self.details = details
+        self.fix_action = fix_action
+
+    def render(self):
+        """Render the error message using Streamlit components."""
+        if self.level == self.ERROR:
+            st.error(self.message)
+        elif self.level == self.WARNING:
+            st.warning(self.message)
+        elif self.level == self.SUCCESS:
+            st.success(self.message)
+        else:
+            st.info(self.message)
+
+        if self.details:
+            st.caption(self.details)
+        if self.fix_action:
+            st.caption(f"Suggested fix: {self.fix_action}")
+
+
+def _show_step_error(step_name: str, missing_step: int, missing_fields: List[str]) -> None:
+    """Show a consistent error message for incomplete prerequisite steps."""
+    step_names = ["Study Info", "Upload Files", "Design Setup", "Generate"]
+    target_step = step_names[missing_step] if 0 <= missing_step < len(step_names) else "previous step"
+
+    st.error(f"Please complete **Step {missing_step + 1}: {target_step}** before proceeding to {step_name}.")
+
+    if missing_fields:
+        st.caption(f"Missing: {', '.join(missing_fields)}")
+
+
+def _show_validation_summary(completion: Dict[str, bool], show_details: bool = True) -> bool:
+    """Render a comprehensive validation summary (Iteration 10).
+
+    Returns True if all validations pass.
+    """
+    summary = _get_validation_summary(completion)
+
+    # Progress indicator
+    if summary["percentage"] == 100:
+        st.success(f"All {summary['total']} requirements complete. Ready to generate simulation.")
+        return True
+    else:
+        st.progress(summary["percentage"] / 100, text=f"Setup: {summary['completed']}/{summary['total']} complete ({summary['percentage']}%)")
+
+        if show_details and summary["missing"]:
+            missing_by_step = {}
+            for item in summary["missing"]:
+                step = item["step"]
+                if step not in missing_by_step:
+                    missing_by_step[step] = []
+                missing_by_step[step].append(item["field"])
+
+            for step_num, fields in sorted(missing_by_step.items()):
+                st.caption(f"Step {step_num}: {', '.join(fields)}")
+
+        return False
+
+
+def _render_readiness_checklist() -> Dict[str, bool]:
+    """Render a visual readiness checklist for simulation generation."""
+    completion = _get_step_completion()
+
+    checks = [
+        ("Study title", completion.get("study_title", False)),
+        ("Study description", completion.get("study_description", False)),
+        ("QSF file uploaded", completion.get("qsf_uploaded", False)),
+        ("Conditions defined", completion.get("conditions_set", False)),
+        ("Sample size set (≥10)", completion.get("sample_size", False)),
+    ]
+
+    all_passed = all(c[1] for c in checks)
+
+    # Compact checklist display
+    check_items = []
+    for label, passed in checks:
+        icon = "✓" if passed else "○"
+        check_items.append(f"{icon} {label}")
+
+    st.caption(" | ".join(check_items))
+
+    return {"all_passed": all_passed, "checks": dict(checks)}
 
 
 def _markdown_to_html(markdown_text: str, title: str = "Study Summary") -> str:
@@ -992,20 +1198,87 @@ def _render_email_setup_diagnostics() -> None:
 
 
 def _clean_condition_name(condition: str) -> str:
-    """Remove common suffixes and clean up condition names."""
+    """Remove common suffixes, prefixes, and clean up condition names.
+
+    Enhanced cleaning (Iteration 4):
+    - Removes HTML tags and entities
+    - Strips Qualtrics artifact patterns
+    - Normalizes whitespace and special characters
+    - Preserves meaningful content while removing noise
+    """
+    if not condition:
+        return ""
+
     import re
-    # Remove common suffixes like (new), (copy), etc. - can appear anywhere
-    cleaned = re.sub(r'\s*\(new\)', '', condition, flags=re.IGNORECASE)
-    cleaned = re.sub(r'\s*\(copy\)', '', cleaned, flags=re.IGNORECASE)
-    cleaned = re.sub(r'\s*- copy\s*$', '', cleaned, flags=re.IGNORECASE)
-    cleaned = re.sub(r'\s*_\d+$', '', cleaned)  # Remove trailing _1, _2, etc.
-    cleaned = re.sub(r'\s*\(\d+\)\s*$', '', cleaned)  # Remove trailing (1), (2), etc.
+    import html
+
+    # First, decode HTML entities
+    cleaned = html.unescape(str(condition))
+
+    # Remove HTML tags
+    cleaned = re.sub(r'<[^>]+>', '', cleaned)
+
+    # Remove common Qualtrics suffixes/artifacts
+    patterns_to_remove = [
+        r'\s*\(new\)',           # (new)
+        r'\s*\(copy\)',          # (copy)
+        r'\s*\(old\)',           # (old)
+        r'\s*- copy\s*$',        # - copy at end
+        r'\s*copy\s+of\s+',      # copy of at start
+        r'\s*_v\d+$',            # _v1, _v2, etc.
+        r'\s*v\d+$',             # v1, v2 at end
+        r'\s*_old$',             # _old
+        r'\s*_new$',             # _new
+        r'\s*_backup$',          # _backup
+        r'\s*\(unused\)',        # (unused)
+        r'\s*\[unused\]',        # [unused]
+        r'\s*_\d+$',             # trailing _1, _2 (but not if it's the whole ID like "Condition_1")
+        r'\s*\(\d+\)\s*$',       # trailing (1), (2)
+        r'\s*#\d+$',             # trailing #1, #2
+    ]
+
+    for pattern in patterns_to_remove:
+        cleaned = re.sub(pattern, '', cleaned, flags=re.IGNORECASE)
+
     # Remove common Qualtrics block prefixes
-    cleaned = re.sub(r'^Block\s*\d+\s*[-:]\s*', '', cleaned, flags=re.IGNORECASE)
-    cleaned = re.sub(r'^BL_\w+\s*[-:]\s*', '', cleaned, flags=re.IGNORECASE)
-    # Clean up multiple spaces
+    prefix_patterns = [
+        r'^Block\s*\d+\s*[-:]\s*',           # Block 1:
+        r'^BL_\w+\s*[-:]\s*',                # BL_abc123:
+        r'^FL_\w+\s*[-:]\s*',                # FL_abc123:
+        r'^Default\s*Block\s*[-:]\s*',       # Default Block:
+        r'^Untitled\s*Block\s*[-:]\s*',      # Untitled Block:
+        r'^\[\w+\]\s*',                      # [Block], [Randomizer], etc.
+    ]
+
+    for pattern in prefix_patterns:
+        cleaned = re.sub(pattern, '', cleaned, flags=re.IGNORECASE)
+
+    # Normalize separators - convert various separators to consistent format
+    # but preserve meaningful patterns like "AI × Hedonic"
+    cleaned = re.sub(r'\s*[|]\s*', ' | ', cleaned)  # Normalize pipe
+    cleaned = re.sub(r'\s*[×xX]\s*', ' × ', cleaned)  # Normalize multiplication
+
+    # Clean up multiple spaces and trim
     cleaned = re.sub(r'\s+', ' ', cleaned)
-    return cleaned.strip()
+    cleaned = cleaned.strip(' -_:')
+
+    # If cleaning removed everything, return a sanitized version of original
+    if not cleaned:
+        return re.sub(r'[^\w\s-]', '', str(condition)).strip()[:50] or "Condition"
+
+    return cleaned
+
+
+def _normalize_condition_for_comparison(condition: str) -> str:
+    """Normalize a condition name for duplicate detection."""
+    if not condition:
+        return ""
+    # Lowercase, remove spaces/underscores/hyphens, strip common words
+    normalized = condition.lower()
+    normalized = re.sub(r'[\s_\-]+', '', normalized)
+    # Remove common prefixes/suffixes that don't differentiate conditions
+    normalized = re.sub(r'^(condition|cond|group|arm|treatment|trt)', '', normalized)
+    return normalized
 
 
 def _infer_factor_name(levels: List[str]) -> str:
@@ -1800,6 +2073,7 @@ def _get_step_completion() -> Dict[str, bool]:
 def _save_step_state():
     """Save current step state to ensure persistence across navigation.
 
+    Enhanced (Iteration 9): More robust state capture with edge case handling.
     This function captures all important state that should persist when
     navigating between steps. Call before any step change.
     """
@@ -1807,8 +2081,12 @@ def _save_step_state():
     persist_keys = [
         # Step 1: Study Info
         "study_title", "study_description", "researcher_name", "researcher_email",
+        "team_name", "team_members_raw",
         # Step 2: Upload
         "qsf_preview", "enhanced_analysis", "inferred_design",
+        "qsf_content", "qsf_filename",
+        "prereg_text", "prereg_pdf_text", "prereg_files",
+        "survey_pdf_content", "survey_pdf_name",
         # Step 3: Design Setup
         "selected_conditions", "custom_conditions", "condition_candidates",
         "factorial_table_factors", "factorial_crossed_conditions",
@@ -1816,29 +2094,112 @@ def _save_step_state():
         "condition_allocation", "condition_allocation_n",
         "confirmed_scales", "scales_confirmed", "_dv_version",
         "manual_attention_checks", "manual_manipulation_checks",
+        "design_type_select", "rand_level_select",
+        "qsf_identifiers", "variable_review_rows",
         # Step 4: Generate
         "sample_size", "effect_size_d",
+        "demographics_config", "data_quality_config",
+        # UI State
+        "_prev_sample_size", "_prev_n_conditions", "_prev_conditions",
+        "_alloc_version",
     ]
 
-    # Create a snapshot of current state
+    # Create a snapshot of current state with deep copy for mutable objects
     state_snapshot = {}
     for key in persist_keys:
         if key in st.session_state:
-            state_snapshot[key] = st.session_state[key]
+            value = st.session_state[key]
+            # Deep copy lists and dicts to prevent reference issues
+            if isinstance(value, (list, dict)):
+                import copy
+                try:
+                    state_snapshot[key] = copy.deepcopy(value)
+                except Exception:
+                    state_snapshot[key] = value  # Fallback for non-serializable
+            else:
+                state_snapshot[key] = value
 
     st.session_state["_state_snapshot"] = state_snapshot
+    st.session_state["_state_saved_at"] = datetime.now().isoformat()
 
 
 def _restore_step_state():
     """Restore previously saved state after navigation.
 
+    Enhanced (Iteration 9): Safer restoration with validation.
     Call at the beginning of each step to restore any state that may have
     been saved before navigating away.
     """
     snapshot = st.session_state.get("_state_snapshot", {})
+
+    # Validate snapshot age (prevent restoring very old state)
+    saved_at = st.session_state.get("_state_saved_at")
+    if saved_at:
+        try:
+            saved_time = datetime.fromisoformat(saved_at)
+            age_seconds = (datetime.now() - saved_time).total_seconds()
+            # Don't restore state older than 1 hour
+            if age_seconds > 3600:
+                return
+        except Exception:
+            pass
+
     for key, value in snapshot.items():
+        # Only restore if key is missing AND value is valid
         if key not in st.session_state:
+            # Validate certain keys before restoring
+            if key == "sample_size" and not isinstance(value, (int, float)):
+                continue
+            if key in ("selected_conditions", "custom_conditions") and not isinstance(value, list):
+                continue
             st.session_state[key] = value
+
+
+def _get_smart_defaults(study_description: str = "", preview: Any = None) -> Dict[str, Any]:
+    """Generate smart defaults based on study context (Iteration 6).
+
+    Analyzes study description and QSF structure to suggest appropriate defaults.
+    """
+    defaults = {
+        "sample_size": 200,
+        "effect_size_d": 0.5,  # Medium effect
+        "attention_rate": 0.95,
+        "random_responder_rate": 0.05,
+    }
+
+    desc_lower = study_description.lower() if study_description else ""
+
+    # Adjust defaults based on study type keywords
+    if any(kw in desc_lower for kw in ["online", "mturk", "prolific", "crowdsource"]):
+        defaults["attention_rate"] = 0.90  # Lower for online samples
+        defaults["random_responder_rate"] = 0.08
+
+    if any(kw in desc_lower for kw in ["lab", "laboratory", "in-person"]):
+        defaults["attention_rate"] = 0.98  # Higher for lab studies
+        defaults["random_responder_rate"] = 0.02
+
+    if any(kw in desc_lower for kw in ["small effect", "subtle", "weak"]):
+        defaults["effect_size_d"] = 0.2  # Small effect
+        defaults["sample_size"] = 400  # Need more power
+
+    if any(kw in desc_lower for kw in ["large effect", "strong", "robust"]):
+        defaults["effect_size_d"] = 0.8  # Large effect
+        defaults["sample_size"] = 100  # Fewer needed
+
+    if any(kw in desc_lower for kw in ["pilot", "preliminary", "exploratory"]):
+        defaults["sample_size"] = 50  # Smaller for pilots
+
+    if any(kw in desc_lower for kw in ["replication", "replicate", "confirm"]):
+        defaults["sample_size"] = 300  # Larger for replications
+
+    # Adjust based on detected conditions if preview available
+    if preview and hasattr(preview, 'detected_conditions'):
+        n_conditions = len(preview.detected_conditions) if preview.detected_conditions else 1
+        # Ensure at least 30 per cell for basic power
+        min_n = n_conditions * 30
+        defaults["sample_size"] = max(defaults["sample_size"], min_n)
+
+    return defaults
 
 
 def _go_to_step(step_index: int) -> None:
