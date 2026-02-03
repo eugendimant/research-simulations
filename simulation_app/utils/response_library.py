@@ -60,10 +60,10 @@ introspection, memory, experience, recall, opinion, belief, preference, attitude
 value, worldview, prediction, intention, suggestion, recommendation, advice,
 association, impression, perception, feedback, comment, observation, general
 
-Version: 2.2.5 - Synchronized with main package version
+Version: 2.2.6 - Synchronized with simulation engine effect size fix
 """
 
-__version__ = "2.2.5"
+__version__ = "2.2.6"
 
 import random
 import re
