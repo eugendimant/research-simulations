@@ -205,3 +205,100 @@ https://claude.ai/code/[session-id]
 ```
 
 Always include the Claude session link for traceability.
+
+---
+
+## Development Philosophy & Learnings
+
+### The Power of Iterative Improvement
+
+**CRITICAL: Complex systems improve best through focused iterations, not big-bang rewrites.**
+
+When improving the simulation tool, we learned that requesting "10 iterations of improvements" is far more effective than a single massive change. Each iteration should:
+
+1. **Focus on one area**: Trash handling, then DV detection, then UI, etc.
+2. **Build on previous work**: Each iteration benefits from prior improvements
+3. **Allow for discovery**: Issues often reveal themselves only after earlier fixes
+4. **Maintain stability**: Small changes are easier to test and debug
+
+Example iteration sequence that worked well:
+1. Trash block exclusion patterns (foundation)
+2. Domain expansion (content)
+3. Question type handlers (content)
+4. Factorial design table (UI/UX)
+5. State persistence (reliability)
+6. UI streamlining (polish)
+7. DV detection improvements (accuracy)
+8. Validation enhancements (robustness)
+9. Condition detection filtering (accuracy)
+10. Documentation updates (maintenance)
+
+### Key Learnings by Area
+
+#### Trash Block Handling
+- **Start with exact matches, then add patterns**: `EXCLUDED_BLOCK_NAMES` handles known names, `EXCLUDED_BLOCK_PATTERNS` catches variations
+- **Be aggressive with exclusions**: Better to exclude too much than pollute conditions with trash
+- **Common naming conventions to exclude**:
+  - Prefixes: `trash_`, `unused_`, `old_`, `test_`, `copy_`, `delete_`, `archive_`
+  - Suffixes: `_old`, `_copy`, `_backup`, `_unused`, `_v1`, `_v2`, `_DONOTUSE`
+  - Admin blocks: consent, demographics, debrief, instructions, intro, end
+  - Quality control: attention_check, manipulation_check, IMC, screener
+
+#### Version Synchronization
+- **Learned the hard way**: Mismatched versions cause user-visible warnings
+- **Streamlit caches modules**: Old versions persist unless BUILD_ID changes
+- **Automate the checklist**: Never rely on memory for multi-file updates
+- **Version checks are valuable**: They catch deployment issues early
+
+#### State Persistence
+- **Users lose work without it**: Navigating steps should never clear selections
+- **Define persist_keys explicitly**: Be deliberate about what survives navigation
+- **Save before, restore after**: `_save_step_state()` before navigation, `_restore_step_state()` at step start
+- **Test navigation thoroughly**: Forward and backward, direct step clicks, edge cases
+
+#### DV Detection
+- **QSF files vary widely**: Support multiple detection strategies
+- **6 detection types cover most cases**:
+  1. Matrix scales (multi-item Likert)
+  2. Numbered items (Scale_1, Scale_2, etc.)
+  3. Likert scales (grouped single-choice)
+  4. Sliders (visual analog)
+  5. Single-item DVs (standalone ratings)
+  6. Numeric inputs (WTP, quantities)
+- **Flag detection source**: `detected_from_qsf: True` distinguishes auto from manual
+- **Include question text**: Helps users verify correct detection
+
+#### Factorial Design
+- **Visual tables reduce errors**: Users understand 2×2 grids better than lists
+- **Auto-generate crossed conditions**: Factor1_Level1 × Factor2_Level1, etc.
+- **Persist factorial state**: Factors, levels, and crossed conditions must survive navigation
+- **Clear cell numbering**: "Cell 1", "Cell 2" helps with analysis planning
+
+#### UI/UX Streamlining
+- **Scroll to top on navigation**: Users expect to start at the beginning of each step
+- **Type badges for DVs**: "Matrix", "Slider", etc. help users understand what was detected
+- **Easy remove buttons**: One-click removal of incorrect detections
+- **Progressive disclosure**: Show advanced options only when needed
+
+#### Condition Detection
+- **Comprehensive filtering is essential**: Apply all exclusion patterns before presenting candidates
+- **Multiple sources**: Block names, embedded data, BlockRandomizer elements
+- **Never auto-select trash**: Always filter before presenting to user
+- **Validate against known patterns**: Check both exact matches and regex patterns
+
+### Anti-Patterns to Avoid
+
+1. **Big-bang rewrites**: Break into iterations instead
+2. **Forgetting version sync**: Always use the checklist
+3. **Assuming state persists**: Explicitly save and restore
+4. **Trusting QSF block names**: Always filter for trash
+5. **Hardcoding patterns**: Use configurable lists for exclusions
+6. **Skipping validation**: Users will find edge cases you missed
+7. **Ignoring UI feedback**: Scroll position, visual feedback matter
+
+### Documentation Philosophy
+
+- **Update docs with code**: Never leave documentation stale
+- **Changelog is essential**: Track what changed and why
+- **Version in multiple places**: README, docstrings, __version__ variables
+- **Include session links**: Traceability helps debug later issues
