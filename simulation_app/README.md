@@ -1,6 +1,6 @@
 # Behavioral Experiment Simulation Tool
 
-A Streamlit application for generating realistic synthetic behavioral experiment data using theory-grounded persona-driven simulation.
+**Version 2.2** | A Streamlit application for generating realistic synthetic behavioral experiment data using theory-grounded persona-driven simulation.
 
 ## What This Tool Does
 
@@ -18,14 +18,44 @@ A Streamlit application for generating realistic synthetic behavioral experiment
 - **Verify survey logic** and variable coding
 - **Develop R/Python scripts** on properly structured data
 
-## Features
+## Features (v2.2)
 
-- **Automatic Survey Parsing**: Extracts conditions, factors, and scales from Qualtrics QSF
-- **Theory-Grounded Personas**: Response styles based on survey methodology literature (Krosnick 1991, Greenleaf 1992)
-- **Behavioral Realism**: Attention check patterns, satisficing, extreme responding
-- **Variable Text Responses**: Open-ended answers that match numeric response sentiment
-- **Standardized Defaults**: Consistent parameters for comparable datasets across teams
-- **Complete Output Package**: CSV, R script, metadata, schema validation, instructor report
+### Automatic Survey Parsing
+- Extracts conditions, factors, and scales from Qualtrics QSF
+- **Enhanced scale detection**: Matrix, numbered items, Likert-type, and slider scales
+- **175+ research domains** for context-aware response generation
+- **30 question type handlers** for open-ended responses
+
+### Visual Factorial Design Table
+For factorial experiments (2×2, 2×3, 3×3, etc.):
+- **Intuitive table interface** to assign conditions to factors
+- **Visual crossing display** showing all condition combinations
+- **Automatic condition generation** (e.g., "Dictator game + Match with Hater")
+- Supports 2-factor and 3-factor designs
+
+### Theory-Grounded Personas
+Response styles based on survey methodology literature:
+- **Engaged Responder** (30%) - High attention, full scale use
+- **Satisficer** (20%) - Midpoint tendency, minimal text
+- **Extreme Responder** (8%) - Endpoint use, emphatic responses
+- **Acquiescent Responder** (7%) - Agreement bias
+- **Careless Responder** (5%) - Low attention, fails checks
+
+### Behavioral Realism
+- Attention check patterns with realistic pass/fail rates
+- Satisficing and extreme responding patterns
+- Individual trait-based variation
+- Open-ended responses matching numeric sentiment
+
+### Complete Output Package
+| File | Description |
+|------|-------------|
+| `Simulated.csv` | Generated dataset |
+| `Metadata.json` | All simulation parameters |
+| `Schema_Validation.json` | Data quality checks |
+| `R_Prepare_Data.R` | Ready-to-use R script |
+| `Column_Explainer.txt` | Variable descriptions |
+| `Instructor_Report.md` | Documentation for verification |
 
 ## Quick Start
 
@@ -61,14 +91,30 @@ streamlit run app.py
 - Optionally upload survey PDF for better domain detection
 - Fill in pre-registration style checklist
 
-### Step 3: Review
-- Verify auto-detected conditions, factors, and scales
-- Edit in Advanced mode if needed
+### Step 3: Design Setup
+- **Conditions**: Select from auto-detected conditions or add manually
+- **Factorial Design**: Use the visual table to create crossed conditions
+- **Scales**: Review and verify detected dependent variables
+- **Sample Size**: Set target N and condition allocation
 
 ### Step 4: Generate
 - Click Generate to create your simulation package
 - Download ZIP with all outputs
 - Optional: Send via email
+
+## Factorial Design Table
+
+For experiments with multiple factors (e.g., 2×3 design):
+
+1. **Factor 1 (Rows)**: Select conditions like "Dictator game", "PGG"
+2. **Factor 2 (Columns)**: Select conditions like "Match with Hater", "Match with Lover", "Match with Unknown"
+3. **View the table**: See the visual crossing of all combinations
+4. **Result**: 6 conditions automatically generated and properly crossed
+
+| Factor 1 | Match with Hater | Match with Lover | Match with Unknown |
+|----------|------------------|------------------|-------------------|
+| **Dictator game** | ✓ | ✓ | ✓ |
+| **PGG** | ✓ | ✓ | ✓ |
 
 ## Uploading Qualtrics Files
 
@@ -80,16 +126,19 @@ streamlit run app.py
 
 The PDF improves domain detection and persona selection by providing question wording context.
 
-## Output Package Contents
+## Research Domains (175+)
 
-| File | Description |
-|------|-------------|
-| `Simulated.csv` | Generated dataset |
-| `Metadata.json` | All simulation parameters |
-| `Schema_Validation.json` | Data quality checks |
-| `R_Prepare_Data.R` | Ready-to-use R script |
-| `Column_Explainer.txt` | Variable descriptions |
-| `Instructor_Report.md` | Documentation for verification |
+The tool supports 175+ research domains across 24 categories:
+
+- **Behavioral Economics**: Dictator game, ultimatum, trust, public goods, risk, time preferences
+- **Social Psychology**: Intergroup relations, identity, norms, conformity, prosocial behavior
+- **Political Science**: Polarization, partisanship, voting, media effects, policy attitudes
+- **Consumer/Marketing**: Brand attitudes, advertising, pricing, purchase decisions
+- **Organizational Behavior**: Leadership, teamwork, motivation, job satisfaction
+- **Technology/AI**: AI attitudes, automation, human-robot interaction, privacy
+- **Health Psychology**: Risk perception, health behaviors, medical decisions
+- **Education**: Learning, motivation, feedback, assessment
+- And many more...
 
 ## Research Foundations
 
@@ -118,12 +167,13 @@ simulation_app/
     ├── __init__.py
     ├── enhanced_simulation_engine.py  # Core simulation logic
     ├── persona_library.py      # Behavioral personas
-    ├── qsf_preview.py          # QSF parsing
-    ├── qsf_parser.py           # QSF utilities
+    ├── qsf_preview.py          # QSF parsing & scale detection
+    ├── response_library.py     # 175+ domains, 30 question types
+    ├── text_generator.py       # Open-ended response generation
+    ├── condition_identifier.py # Condition & factor detection
     ├── schema_validator.py     # Data validation
-    ├── pdf_generator.py        # Audit log generation
-    ├── group_management.py     # Team/API management
-    └── instructor_report.py    # Report generation
+    ├── instructor_report.py    # Report generation
+    └── group_management.py     # Team/API management
 ```
 
 ## Configuration
@@ -148,6 +198,6 @@ For academic and educational use.
 ## Citation
 
 ```
-Dimant, E. (2025). Behavioral Experiment Simulation Tool (Version 2.0).
+Dimant, E. (2025). Behavioral Experiment Simulation Tool (Version 2.2).
 https://github.com/edimant/research-simulations
 ```
