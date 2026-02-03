@@ -33,7 +33,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Union
 
 # Version identifier to help track deployed code
-__version__ = "2.2.4"  # Enhanced: 200+ exclusions, comprehensive DV detection, improved filtering
+__version__ = "2.2.5"  # Enhanced: attention/manipulation check detection, improved DV detection
 
 
 # ============================================================================
@@ -1584,11 +1584,45 @@ class QSFPreviewParser:
         return open_ended
 
     def _detect_attention_checks(self, questions_map: Dict) -> List[str]:
-        """Detect attention check questions."""
+        """Detect attention check questions with comprehensive pattern matching.
+
+        Enhanced detection covers:
+        - Instructed response items (IRI)
+        - Instructional manipulation checks (IMC)
+        - Bogus items / trap questions
+        - Directed query items
+        - Red herring items
+        - Consistency checks (reverse-coded)
+        """
         attention_checks = []
+
+        # Expanded keyword patterns for attention checks
         attention_keywords = [
-            'attention', 'check', 'please select', 'instructed',
-            'carefully read', 'quality', 'verify', 'bot'
+            # Direct instructions
+            'attention', 'check', 'please select', 'instructed', 'carefully read',
+            'quality', 'verify', 'bot', 'reading carefully',
+            # Instructed response items
+            'select the option', 'choose the answer', 'click on', 'mark the',
+            'select strongly', 'select agree', 'select disagree', 'select neutral',
+            # IMC patterns
+            'this is an attention', 'demonstrate that you', 'show that you',
+            'prove that you are', 'confirm you are reading', 'ensure you are paying',
+            # Trap/bogus items
+            'trap', 'bogus', 'never happened', 'impossible', 'do not answer',
+            'skip this question', 'leave blank', 'do not select',
+            # Specific instructions
+            'for this question', 'ignore the question above', 'answer option',
+            'to show you', 'to demonstrate', 'to prove',
+            # Common attention check phrases
+            'i have visited', 'i have traveled to', 'i read instructions',
+            'i am paying attention', 'i understand the instructions',
+            'walkaround test', 'screener',
+        ]
+
+        # Question ID patterns that suggest attention checks
+        attention_id_patterns = [
+            r'att[_-]?check', r'attention', r'ac[_\d]', r'imc', r'iri',
+            r'trap', r'bogus', r'quality', r'screen', r'valid',
         ]
 
         # Safety check - ensure questions_map is a dict
@@ -1596,8 +1630,23 @@ class QSFPreviewParser:
             return attention_checks
 
         for q_id, q_info in questions_map.items():
-            text = q_info.question_text.lower()
-            if any(kw in text for kw in attention_keywords):
+            text = q_info.question_text.lower() if q_info.question_text else ''
+            q_id_lower = q_id.lower()
+
+            # Check text content
+            is_attention = any(kw in text for kw in attention_keywords)
+
+            # Check question ID patterns
+            if not is_attention:
+                is_attention = any(re.search(p, q_id_lower) for p in attention_id_patterns)
+
+            # Check for specific instructed responses in choices
+            if not is_attention and q_info.choices:
+                choices_text = ' '.join(c.lower() for c in q_info.choices if c)
+                if 'please select this' in choices_text or 'choose this option' in choices_text:
+                    is_attention = True
+
+            if is_attention:
                 attention_checks.append(q_id)
                 self._log(
                     LogLevel.INFO, "ATTENTION_CHECK",
@@ -1605,6 +1654,60 @@ class QSFPreviewParser:
                 )
 
         return attention_checks
+
+    def _detect_manipulation_checks(self, questions_map: Dict) -> List[str]:
+        """Detect manipulation check questions.
+
+        Manipulation checks verify participants understood/noticed the manipulation.
+        Different from attention checks (which verify general attention).
+        """
+        manipulation_checks = []
+
+        # Patterns that suggest manipulation checks
+        manip_keywords = [
+            'manipulation check', 'manip check', 'understanding check',
+            'did you notice', 'do you recall', 'what was the',
+            'in the scenario', 'in the study', 'in the experiment',
+            'what did the', 'who was the', 'which condition',
+            'the [product/person/article]', 'comprehension',
+            'perceived as', 'seemed like', 'appeared to be',
+            'treatment you received', 'condition you were in',
+            'recall what', 'remember what',
+        ]
+
+        # Question ID patterns for manipulation checks
+        manip_id_patterns = [
+            r'mc[_\d]', r'manip', r'manipulation', r'comprehension',
+            r'recall', r'check', r'understand',
+        ]
+
+        if not isinstance(questions_map, dict):
+            return manipulation_checks
+
+        for q_id, q_info in questions_map.items():
+            text = q_info.question_text.lower() if q_info.question_text else ''
+            q_id_lower = q_id.lower()
+
+            # Check text content
+            is_manip = any(kw in text for kw in manip_keywords)
+
+            # Check question ID patterns
+            if not is_manip:
+                is_manip = any(re.search(p, q_id_lower) for p in manip_id_patterns)
+
+            # Avoid false positives - don't flag if it's an attention check
+            attention_indicators = ['attention', 'please select', 'instructed']
+            if is_manip and any(ind in text for ind in attention_indicators):
+                continue
+
+            if is_manip:
+                manipulation_checks.append(q_id)
+                self._log(
+                    LogLevel.INFO, "MANIPULATION_CHECK",
+                    f"Detected manipulation check: {q_id}"
+                )
+
+        return manipulation_checks
 
     def _extract_open_ended_details(
         self,

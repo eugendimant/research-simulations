@@ -2,17 +2,25 @@
 """
 Utility modules for the Behavioral Experiment Simulation Tool.
 
-Version: 2.2.4
-Changes:
+Version: 2.2.5
+Changes (v2.2.5 - Ten Iterations):
+    - Enhanced input validation with real-time feedback
+    - Improved scale/DV detection with manipulation check detection
+    - Consolidated error handling and unified messaging
+    - Enhanced condition name cleaning (HTML, Qualtrics artifacts)
+    - Smart defaults based on study context (pilot, replication, online/lab)
+    - More robust state persistence with edge case handling
+    - Comprehensive validation summaries with progress indicators
+    - Enhanced attention check detection (30+ patterns)
+    - Manipulation check detection (new feature)
+
+Previous (v2.2.4):
     - 225+ research domains with comprehensive response templates
     - 40 question type handlers for open-ended responses
     - 200+ trash/unused block exclusion patterns
     - Enhanced factorial design table with visual feedback
     - State persistence across step navigation
     - Comprehensive DV detection (matrix, slider, single-item, numeric input, constant sum)
-    - Improved page scroll behavior when navigating between steps
-    - Enhanced DV/scale UI with clear labeling and easy add/remove
-    - Enhanced condition detection with comprehensive filtering
     - Robust QSF parsing with multi-format support
 
 Modules:
@@ -32,7 +40,7 @@ Modules:
 """
 
 # Package version - should match all module versions
-__version__ = "2.2.4"
+__version__ = "2.2.5"
 
 from .qsf_parser import parse_qsf_file, extract_survey_structure, generate_qsf_summary
 from .simulation_engine import SimulationEngine
