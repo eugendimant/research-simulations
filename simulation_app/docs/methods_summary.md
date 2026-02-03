@@ -1,6 +1,6 @@
 # Behavioral Experiment Simulation Tool — Methods Summary
 
-**Version 2.4** | Created by Dr. [Eugen Dimant](https://eugendimant.github.io/)
+**Version 1.0.0 OFFICIAL RELEASE** | Created by Dr. [Eugen Dimant](https://eugendimant.github.io/)
 
 ---
 
@@ -13,12 +13,91 @@ The Behavioral Experiment Simulation Tool generates realistic synthetic pilot da
 - Verify survey logic and variable coding
 - Develop analysis scripts on realistic data structures
 - Learn to interpret statistical outputs on data with known properties
+- **NEW in v1.0.0**: Check pre-registration consistency before data collection
 
 This tool is designed for **educational and pilot testing purposes**; it does not replace actual human subjects research but provides a rigorous training ground for developing analytical skills.
 
 ---
 
-## Key Features (v2.4)
+## Key Features (v1.0.0 Official Release)
+
+### NEW: Enhanced Scale/Matrix Detection
+The tool now supports semantic scale type detection and well-known scale recognition:
+
+**Semantic Scale Types Detected:**
+- Satisfaction, trust, intention, attitude, preference
+- Risk, anxiety, efficacy, engagement, motivation
+- Fairness, identification, quality, purchase intention
+- Willingness to pay, recommendation
+
+**Well-Known Psychological Scales Recognized:**
+- Big Five (BFI, IPIP, NEO) - Personality
+- PANAS - Positive and Negative Affect
+- Rosenberg Self-Esteem Scale (RSE)
+- Satisfaction With Life Scale (SWLS)
+- Perceived Stress Scale (PSS)
+- Trust Propensity, Risk Propensity
+- Need for Cognition, Social Desirability
+- Regulatory Focus Questionnaire
+
+**Scale Quality Scoring:**
+- Completeness metrics
+- Consistency warnings
+- Reverse-coded item detection
+- Recommendations for improvement
+
+### NEW: Live Data Preview
+Before running the full simulation, you can:
+- **Generate 5-row preview** of simulated data
+- **Verify column structure** and data types
+- **Check difficulty level impact** on response patterns
+
+### NEW: Conditional/Skip Logic Awareness
+Full parsing of Qualtrics display and skip logic:
+- **DisplayLogic extraction** from QSF
+- **SkipLogic destination tracking**
+- **Question dependency graphs**
+- **Conditional branching detection**
+
+### NEW: Difficulty Levels for Data Quality
+Four levels to practice different data cleaning challenges:
+
+| Level | Attention Rate | Careless Rate | Text Quality | Use Case |
+|-------|---------------|---------------|--------------|----------|
+| Easy | 98% | 2% | High | Learning basics |
+| Medium | 92% | 5% | Medium | Typical online samples |
+| Hard | 85% | 10% | Low | MTurk/crowdsourcing |
+| Expert | 75% | 15% | Very Low | Advanced cleaning |
+
+**Impacts on Data:**
+- Numeric responses: Noise levels, straight-lining patterns
+- Open-text responses: Length, effort, coherence, typos
+- Attention checks: Pass/fail rates
+
+### NEW: Mediation Variable Support
+Automatic detection of potential mediator variables:
+- **Position-based detection**: Variables between IV and DV
+- **Keyword-based detection**: "perceived", "feelings", "thoughts", etc.
+- **Mediator hints**: Suggestions for mechanism variables
+
+### NEW: Pre-registration Consistency Checker
+When you upload a pre-registration document (PDF):
+
+**Supported Formats:**
+- **OSF** (Open Science Framework) pre-registrations
+- **AEA** (American Economic Association) RCT Registry
+- **AsPredicted** (all 7 standard sections)
+
+**Features:**
+- Pre-registration number extraction
+- Variable comparison (IVs, DVs, mediators)
+- Sample size mismatch warnings
+- Recommendations for alignment
+- Only appears when pre-registration is uploaded
+
+---
+
+## Key Features (continued)
 
 ### Automatic Survey Parsing
 Upload your Qualtrics QSF file and the tool automatically:
