@@ -45,7 +45,7 @@ import streamlit as st
 # Where deeply imported modules don't hot-reload properly.
 
 REQUIRED_UTILS_VERSION = "2.2.1"
-BUILD_ID = "20260203-v221-enhanced-ui"  # Change this to force cache invalidation
+BUILD_ID = "20260203-v221-factorial-table"  # Change this to force cache invalidation
 
 def _verify_and_reload_utils():
     """Verify utils modules are at correct version, force reload if needed.
@@ -1444,6 +1444,194 @@ def _render_manual_factor_config(
             )
 
     return factors
+
+
+def _render_factorial_design_table(
+    detected_conditions: List[str],
+    session_key_prefix: str = "factorial_table",
+) -> Tuple[List[Dict[str, Any]], List[str]]:
+    """
+    Render an intuitive factorial design table UI.
+
+    This creates a visual table where users can:
+    1. Assign detected conditions to Factor 1 (rows) vs Factor 2 (columns)
+    2. See the resulting crossed conditions in a table format
+    3. Easily understand what conditions will be generated
+
+    For a 2x3 design like:
+    - Factor 1 (Game): Dictator game, PGG
+    - Factor 2 (Match): Hater, Lover, Unknown
+
+    The table shows:
+                        | Match with Hater | Match with Lover | Match with Unknown
+    Dictator game       |       ✓          |        ✓         |         ✓
+    PGG                 |       ✓          |        ✓         |         ✓
+
+    Returns:
+        Tuple of (factors list, crossed condition names)
+    """
+    import streamlit as st
+    import itertools
+
+    st.markdown("#### 📊 Factorial Design Table")
+    st.markdown("""
+    **Instructions:** Assign your detected conditions to factors. Each participant will be
+    assigned to ONE level from EACH factor (e.g., "Dictator game + Match with Hater").
+    """)
+
+    # Clean condition names
+    clean_conditions = [_clean_condition_name(c) for c in detected_conditions]
+
+    # Provide option for user to specify number of factors
+    col_nf1, col_nf2 = st.columns([1, 3])
+    with col_nf1:
+        num_factors = st.selectbox(
+            "Number of factors",
+            options=[2, 3],
+            index=0,
+            key=f"{session_key_prefix}_num_factors",
+            help="How many independent variables do you have?",
+        )
+
+    # Initialize session state for factor assignments
+    if f"{session_key_prefix}_factor1_levels" not in st.session_state:
+        st.session_state[f"{session_key_prefix}_factor1_levels"] = []
+    if f"{session_key_prefix}_factor2_levels" not in st.session_state:
+        st.session_state[f"{session_key_prefix}_factor2_levels"] = []
+    if f"{session_key_prefix}_factor3_levels" not in st.session_state:
+        st.session_state[f"{session_key_prefix}_factor3_levels"] = []
+
+    st.markdown("---")
+
+    # Factor 1 Configuration
+    st.markdown("**Factor 1 (Rows)**")
+    col_f1_name, col_f1_levels = st.columns([1, 2])
+    with col_f1_name:
+        factor1_name = st.text_input(
+            "Name",
+            value=st.session_state.get(f"{session_key_prefix}_f1_name", "Game Type"),
+            key=f"{session_key_prefix}_f1_name_input",
+            placeholder="e.g., Game Type, AI Presence",
+        )
+    with col_f1_levels:
+        # Multiselect to pick which conditions belong to Factor 1
+        factor1_levels = st.multiselect(
+            "Select levels for Factor 1",
+            options=clean_conditions,
+            default=st.session_state.get(f"{session_key_prefix}_factor1_levels", []),
+            key=f"{session_key_prefix}_f1_levels_select",
+            help="Which conditions represent the levels of this factor?",
+        )
+        st.session_state[f"{session_key_prefix}_factor1_levels"] = factor1_levels
+
+    # Factor 2 Configuration
+    st.markdown("**Factor 2 (Columns)**")
+    # Filter out conditions already assigned to Factor 1
+    remaining_conditions = [c for c in clean_conditions if c not in factor1_levels]
+
+    col_f2_name, col_f2_levels = st.columns([1, 2])
+    with col_f2_name:
+        factor2_name = st.text_input(
+            "Name",
+            value=st.session_state.get(f"{session_key_prefix}_f2_name", "Match Type"),
+            key=f"{session_key_prefix}_f2_name_input",
+            placeholder="e.g., Match Type, Product Type",
+        )
+    with col_f2_levels:
+        factor2_levels = st.multiselect(
+            "Select levels for Factor 2",
+            options=remaining_conditions,
+            default=[c for c in st.session_state.get(f"{session_key_prefix}_factor2_levels", []) if c in remaining_conditions],
+            key=f"{session_key_prefix}_f2_levels_select",
+            help="Which conditions represent the levels of this factor?",
+        )
+        st.session_state[f"{session_key_prefix}_factor2_levels"] = factor2_levels
+
+    # Factor 3 Configuration (if 3 factors)
+    factor3_name = ""
+    factor3_levels = []
+    if num_factors == 3:
+        st.markdown("**Factor 3**")
+        remaining_for_f3 = [c for c in remaining_conditions if c not in factor2_levels]
+        col_f3_name, col_f3_levels = st.columns([1, 2])
+        with col_f3_name:
+            factor3_name = st.text_input(
+                "Name",
+                value=st.session_state.get(f"{session_key_prefix}_f3_name", "Factor 3"),
+                key=f"{session_key_prefix}_f3_name_input",
+            )
+        with col_f3_levels:
+            factor3_levels = st.multiselect(
+                "Select levels for Factor 3",
+                options=remaining_for_f3,
+                default=[c for c in st.session_state.get(f"{session_key_prefix}_factor3_levels", []) if c in remaining_for_f3],
+                key=f"{session_key_prefix}_f3_levels_select",
+            )
+            st.session_state[f"{session_key_prefix}_factor3_levels"] = factor3_levels
+
+    # Build factors list
+    factors = []
+    if factor1_levels:
+        factors.append({"name": factor1_name or "Factor 1", "levels": factor1_levels})
+    if factor2_levels:
+        factors.append({"name": factor2_name or "Factor 2", "levels": factor2_levels})
+    if num_factors == 3 and factor3_levels:
+        factors.append({"name": factor3_name or "Factor 3", "levels": factor3_levels})
+
+    # Generate crossed conditions
+    crossed_conditions = []
+    if len(factors) >= 2:
+        all_combos = list(itertools.product(*[f["levels"] for f in factors]))
+        crossed_conditions = [" + ".join(combo) for combo in all_combos]
+
+        # Display the factorial design table
+        st.markdown("---")
+        st.markdown("#### 📋 Resulting Factorial Design")
+
+        if num_factors == 2 and factor1_levels and factor2_levels:
+            # Create a visual table for 2-factor design
+            st.markdown(f"**{len(factor1_levels)} × {len(factor2_levels)} = {len(crossed_conditions)} conditions**")
+
+            # Build table header
+            header = f"| {factor1_name} |"
+            for f2_level in factor2_levels:
+                header += f" {f2_level} |"
+            separator = "|" + "---|" * (len(factor2_levels) + 1)
+
+            # Build table rows
+            table_md = header + "\n" + separator + "\n"
+            for f1_level in factor1_levels:
+                row = f"| **{f1_level}** |"
+                for f2_level in factor2_levels:
+                    combo = f"{f1_level} + {f2_level}"
+                    row += f" ✓ |"
+                table_md += row + "\n"
+
+            st.markdown(table_md)
+
+            # Show the actual condition names
+            st.markdown("**Resulting conditions for each participant:**")
+            for i, combo in enumerate(crossed_conditions, 1):
+                st.markdown(f"  {i}. {combo}")
+
+        elif num_factors == 3 and factor1_levels and factor2_levels and factor3_levels:
+            # For 3-factor design, show a summary
+            st.markdown(f"**{len(factor1_levels)} × {len(factor2_levels)} × {len(factor3_levels)} = {len(crossed_conditions)} conditions**")
+            st.markdown("**All condition combinations:**")
+            for i, combo in enumerate(crossed_conditions, 1):
+                st.markdown(f"  {i}. {combo}")
+
+        # Important note about how this works
+        st.info(
+            "💡 **How it works:** Each simulated participant will be randomly assigned to "
+            f"ONE level from {factor1_name} AND ONE level from {factor2_name}"
+            + (f" AND ONE level from {factor3_name}" if num_factors == 3 else "")
+            + ". The CONDITION column will show combined values like 'Dictator game + Match with Hater'."
+        )
+    else:
+        st.warning("Please assign conditions to both Factor 1 and Factor 2 to see the factorial design.")
+
+    return factors, crossed_conditions
 
 
 def _preview_to_engine_inputs(preview: QSFPreviewResult) -> Dict[str, Any]:
@@ -3053,6 +3241,59 @@ if active_step == 2:
 
     # Show specific factorial design selection when factorial is chosen
     if "Factorial" in design_structure and "multi-arm" not in design_structure:
+        # Detect if conditions appear to be from separate randomizers (not already crossed)
+        # This happens when conditions don't contain separators like " x ", " × ", " + "
+        separators = [" x ", " X ", " × ", " + ", " | "]
+        conditions_already_crossed = any(
+            any(sep in c for sep in separators)
+            for c in all_conditions
+        )
+
+        # If conditions are NOT already crossed, offer the visual factorial table
+        if not conditions_already_crossed and len(all_conditions) >= 2:
+            st.warning(
+                "⚠️ **Detected separate factor levels** (not crossed). "
+                "Your conditions appear to be individual factor levels that need to be combined. "
+                "Use the **Factorial Design Table** below to define which conditions belong to each factor."
+            )
+
+            # Use the visual factorial design table
+            use_factorial_table = st.checkbox(
+                "Use Visual Factorial Design Table (recommended for separate randomizers)",
+                value=True,
+                key="use_factorial_table",
+                help="Use an intuitive table to assign conditions to factors and generate crossed combinations."
+            )
+
+            if use_factorial_table:
+                factors, crossed_conditions = _render_factorial_design_table(
+                    all_conditions,
+                    session_key_prefix="factorial_design"
+                )
+
+                # Update all_conditions to use the crossed conditions
+                if crossed_conditions:
+                    st.session_state["factorial_crossed_conditions"] = crossed_conditions
+                    st.session_state["use_crossed_conditions"] = True
+
+                    # Update condition allocation for crossed conditions
+                    n_crossed = len(crossed_conditions)
+                    if n_crossed > 0:
+                        n_per = sample_size // n_crossed
+                        remainder = sample_size % n_crossed
+                        st.session_state["condition_allocation"] = {
+                            cond: ((n_per + (1 if i < remainder else 0)) / sample_size * 100)
+                            for i, cond in enumerate(crossed_conditions)
+                        }
+                        st.session_state["condition_allocation_n"] = {
+                            cond: n_per + (1 if i < remainder else 0)
+                            for i, cond in enumerate(crossed_conditions)
+                        }
+
+        else:
+            # Conditions already have factorial structure - use traditional approach
+            st.session_state["use_crossed_conditions"] = False
+
         factorial_designs = [
             "2×2 (2 factors, 2 levels each = 4 conditions)",
             "2×3 (2 factors: 2 and 3 levels = 6 conditions)",
@@ -3084,12 +3325,14 @@ if active_step == 2:
             elif levels == [3, 3, 3]:
                 auto_design = "3×3×3 (3 factors, 3 levels each = 27 conditions)"
 
-        default_factorial_idx = factorial_designs.index(auto_design) if auto_design in factorial_designs else len(factorial_designs) - 1
+        # Only show factorial type selector if not using the visual table
+        if not st.session_state.get("use_factorial_table", False) or conditions_already_crossed:
+            default_factorial_idx = factorial_designs.index(auto_design) if auto_design in factorial_designs else len(factorial_designs) - 1
 
-        selected_factorial = st.selectbox(
-            "Factorial design type",
-            options=factorial_designs,
-            index=default_factorial_idx,
+            selected_factorial = st.selectbox(
+                "Factorial design type",
+                options=factorial_designs,
+                index=default_factorial_idx,
             key="factorial_design_type",
             help="Select your specific factorial design. This helps validate your factor configuration.",
         )
@@ -3428,25 +3671,46 @@ if active_step == 2:
     st.markdown("---")
     st.markdown("### Design Summary")
 
+    # Check if using crossed factorial conditions
+    display_conditions = all_conditions
+    if st.session_state.get("use_crossed_conditions") and st.session_state.get("factorial_crossed_conditions"):
+        display_conditions = st.session_state["factorial_crossed_conditions"]
+
     summary_cols = st.columns(4)
-    summary_cols[0].metric("Conditions", len(all_conditions))
+    summary_cols[0].metric("Conditions", len(display_conditions))
     summary_cols[1].metric("Factors", len(factors))
     summary_cols[2].metric("Scales", len(scales))
     summary_cols[3].metric("Design", design_type.split("(")[0].strip())
 
     # Show condition list and detected scales (cleaned names)
-    clean_cond_names = [_clean_condition_name(c) for c in all_conditions]
-    st.markdown(f"**Conditions:** {', '.join(clean_cond_names)}")
+    clean_cond_names = [_clean_condition_name(c) for c in display_conditions]
+    if st.session_state.get("use_crossed_conditions"):
+        st.markdown(f"**Factorial Conditions (crossed):** {', '.join(clean_cond_names)}")
+    else:
+        st.markdown(f"**Conditions:** {', '.join(clean_cond_names)}")
     scale_names = [s.get('name', 'Unknown') for s in scales if s.get('name')]
     st.markdown(f"**Scales:** {', '.join(scale_names) if scale_names else 'Main_DV (default)'}")
 
     # Validate and lock design - require conditions, scales, AND scale confirmation
-    design_valid = len(all_conditions) >= 1 and len(scales) >= 1 and scales_confirmed
+    design_valid = len(display_conditions) >= 1 and len(scales) >= 1 and scales_confirmed
 
     if design_valid:
         # Save to session state
-        final_conditions = all_conditions
-        final_factors = _normalize_factor_specs(factors, all_conditions)
+        # If using factorial crossed conditions from the visual table, use those instead
+        if st.session_state.get("use_crossed_conditions") and st.session_state.get("factorial_crossed_conditions"):
+            final_conditions = st.session_state["factorial_crossed_conditions"]
+            # Update condition allocation for the crossed conditions
+            n_crossed = len(final_conditions)
+            if n_crossed > 0 and "condition_allocation" not in st.session_state:
+                n_per = sample_size // n_crossed
+                remainder = sample_size % n_crossed
+                st.session_state["condition_allocation"] = {
+                    cond: ((n_per + (1 if i < remainder else 0)) / sample_size * 100)
+                    for i, cond in enumerate(final_conditions)
+                }
+        else:
+            final_conditions = all_conditions
+        final_factors = _normalize_factor_specs(factors, final_conditions)
         final_scales = _normalize_scale_specs(scales)
         final_open_ended = inferred.get("open_ended_questions", [])
 
