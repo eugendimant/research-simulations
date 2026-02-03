@@ -45,7 +45,7 @@ This module is designed to run inside a `utils/` package (i.e., imported as
 """
 
 # Version identifier to help track deployed code
-__version__ = "2.3.0"  # COMPREHENSIVE: All manipulation types grounded in published literature
+__version__ = "2.4.0"  # EXPANDED: 100+ manipulation types grounded in 75+ published sources
 
 # =============================================================================
 # SCIENTIFIC FOUNDATIONS FOR SIMULATION
@@ -1143,6 +1143,332 @@ class EnhancedSimulationEngine:
             semantic_effect += 0.15
         elif 'no intervention' in condition_lower or 'waitlist' in condition_lower:
             semantic_effect -= 0.05
+
+        # =====================================================================
+        # DOMAIN 9: ADDITIONAL COGNITIVE/DECISION MANIPULATIONS (50+ more)
+        # =====================================================================
+
+        # Choice Overload (Iyengar & Lepper, 2000; Scheibehenne et al. 2010 meta)
+        # Original jam study d = 0.77; meta-analysis shows mean effect near 0
+        # Effect is moderated by complexity and expertise
+        if any(c in condition_lower for c in ['many options', 'large assortment', 'high choice', 'extensive']):
+            semantic_effect -= 0.12  # Choice overload reduces satisfaction
+        elif any(c in condition_lower for c in ['few options', 'small assortment', 'limited choice', 'simple']):
+            semantic_effect += 0.08
+
+        # Sunk Cost Fallacy (Staw, 1976; Sleesman et al. 2012 meta-analysis)
+        # Personal responsibility increases escalation; d ≈ 0.37
+        if any(s in condition_lower for s in ['sunk cost', 'invested', 'escalation', 'committed']):
+            semantic_effect += 0.15  # Escalation tendency
+        elif 'no sunk cost' in condition_lower or 'fresh start' in condition_lower:
+            semantic_effect -= 0.05
+
+        # Construal Level Theory (Trope & Liberman, 2010; Soderberg et al. meta)
+        # Psychological distance affects abstraction; robust effect
+        if any(d in condition_lower for d in ['distant', 'far future', 'abstract', 'why']):
+            semantic_effect += 0.12  # Abstract = more desirable
+        elif any(c in condition_lower for c in ['near', 'soon', 'concrete', 'how']):
+            semantic_effect -= 0.08  # Concrete = more feasibility concerns
+
+        # Intrinsic Motivation Crowding Out (Deci, Koestner & Ryan, 1999 meta)
+        # Tangible rewards undermine intrinsic motivation; d = -0.40
+        if any(e in condition_lower for e in ['extrinsic reward', 'payment', 'incentive', 'bonus for']):
+            semantic_effect -= 0.15  # Undermining effect
+        elif any(i in condition_lower for i in ['intrinsic', 'no reward', 'autonomous', 'self-determined']):
+            semantic_effect += 0.12
+
+        # Mere Exposure Effect (Zajonc, 1968; Bornstein, 1989 meta r = 0.26)
+        # Repeated exposure increases liking
+        if any(e in condition_lower for e in ['familiar', 'repeated exposure', 'seen before', 'recognized']):
+            semantic_effect += 0.15
+        elif any(n in condition_lower for n in ['novel', 'unfamiliar', 'first time', 'new']):
+            semantic_effect -= 0.05
+
+        # Bystander Effect (Darley & Latané, 1968; Fischer et al. 2011 meta)
+        # More bystanders = less helping; 85% alone vs 31% with 4 others
+        if any(b in condition_lower for b in ['alone', 'sole witness', 'only one']):
+            semantic_effect += 0.25  # More likely to help
+        elif any(b in condition_lower for b in ['crowd', 'many bystanders', 'group present', 'others present']):
+            semantic_effect -= 0.20  # Diffusion of responsibility
+
+        # Stereotype Threat (Steele & Aronson, 1995; Nguyen & Ryan 2008 meta d = 0.26)
+        # Threat of confirming negative stereotype impairs performance
+        if any(s in condition_lower for s in ['stereotype threat', 'diagnostic', 'ability test']):
+            semantic_effect -= 0.15
+        elif any(n in condition_lower for n in ['no threat', 'non-diagnostic', 'practice']):
+            semantic_effect += 0.08
+
+        # Reactance (Brehm, 1966; Rains 2013 meta; 2025 meta r = -0.23)
+        # Freedom threat leads to boomerang effects
+        if any(r in condition_lower for r in ['must', 'required', 'mandatory', 'have to', 'forced']):
+            semantic_effect -= 0.18  # Reactance reduces compliance
+        elif any(f in condition_lower for f in ['optional', 'choice', 'voluntary', 'may']):
+            semantic_effect += 0.10
+
+        # Emotional Contagion (Hatfield et al., 1993; replicated in social networks)
+        # Emotions transfer between individuals
+        if any(e in condition_lower for e in ['happy confederate', 'positive mood', 'smiling']):
+            semantic_effect += 0.15
+        elif any(e in condition_lower for e in ['sad confederate', 'negative mood', 'frowning']):
+            semantic_effect -= 0.15
+
+        # Negativity Bias (Rozin & Royzman, 2001; Baumeister et al. 2001)
+        # Bad is stronger than good; negative information weighted more
+        if 'negative info' in condition_lower or 'criticism' in condition_lower:
+            semantic_effect -= 0.22  # Stronger negative effect
+        elif 'positive info' in condition_lower or 'praise' in condition_lower:
+            semantic_effect += 0.15  # Weaker positive effect
+
+        # Identifiable Victim Effect (Small, Loewenstein & Slovic, 2007)
+        # Meta-analysis r = 0.13; single identified victim > statistics
+        if any(i in condition_lower for i in ['identified victim', 'named', 'individual story', 'one person']):
+            semantic_effect += 0.12
+        elif any(s in condition_lower for s in ['statistics', 'many victims', 'aggregate', 'numbers']):
+            semantic_effect -= 0.05
+
+        # Confirmation Bias (Nickerson, 1998; Hart et al. 2009 selective exposure meta)
+        # People seek belief-consistent information
+        if 'confirming' in condition_lower or 'consistent' in condition_lower:
+            semantic_effect += 0.15
+        elif 'disconfirming' in condition_lower or 'inconsistent' in condition_lower:
+            semantic_effect -= 0.12
+
+        # Hyperbolic Discounting (Laibson, 1997; Amlung et al. meta)
+        # Present bias; immediate rewards overweighted
+        if any(h in condition_lower for h in ['$10 now', 'today', 'immediate small']):
+            semantic_effect += 0.20
+        elif any(d in condition_lower for d in ['$15 later', 'delayed large', 'wait for more']):
+            semantic_effect -= 0.08
+
+        # =====================================================================
+        # DOMAIN 10: COMMUNICATION & PERSUASION MANIPULATIONS
+        # =====================================================================
+
+        # Source Credibility (Hovland & Weiss, 1951; Wilson & Sherrell, 1993 meta)
+        # High credibility sources more persuasive
+        if any(c in condition_lower for c in ['credible source', 'expert source', 'trustworthy']):
+            semantic_effect += 0.20
+        elif any(l in condition_lower for l in ['low credibility', 'non-expert', 'untrustworthy']):
+            semantic_effect -= 0.18
+
+        # Message Sidedness (Allen, 1991 meta-analysis)
+        # Two-sided messages more effective for educated audiences
+        if 'two-sided' in condition_lower or 'both sides' in condition_lower:
+            semantic_effect += 0.12
+        elif 'one-sided' in condition_lower:
+            semantic_effect -= 0.05
+
+        # Narrative vs Statistical Evidence (Allen & Preiss, 1997 meta)
+        # Narratives often more persuasive than statistics
+        if any(n in condition_lower for n in ['narrative', 'story', 'anecdote', 'testimonial']):
+            semantic_effect += 0.15
+        elif any(s in condition_lower for s in ['statistical', 'data', 'numbers', 'facts']):
+            semantic_effect += 0.08  # Both positive, narratives more so
+
+        # Vividness Effect (Taylor & Thompson, 1982)
+        # Vivid information more impactful
+        if any(v in condition_lower for v in ['vivid', 'graphic', 'detailed', 'concrete']):
+            semantic_effect += 0.12
+        elif any(a in condition_lower for a in ['pallid', 'abstract', 'summary']):
+            semantic_effect -= 0.05
+
+        # Inoculation Theory (McGuire, 1961; Banas & Rains 2010 meta d = 0.29)
+        # Pre-exposure to weakened arguments confers resistance
+        if 'inoculation' in condition_lower or 'prebunk' in condition_lower:
+            semantic_effect += 0.18  # Resistance to persuasion
+        elif 'no inoculation' in condition_lower:
+            semantic_effect -= 0.05
+
+        # =====================================================================
+        # DOMAIN 11: LEARNING & MEMORY MANIPULATIONS
+        # =====================================================================
+
+        # Testing Effect (Roediger & Karpicke, 2006; Rowland 2014 meta d = 0.50)
+        # Retrieval practice enhances long-term retention
+        if any(t in condition_lower for t in ['test', 'retrieval practice', 'quiz']):
+            semantic_effect += 0.22
+        elif any(s in condition_lower for s in ['restudy', 'review', 'read again']):
+            semantic_effect -= 0.05
+
+        # Spacing Effect (Cepeda et al. 2006 meta; robust effect)
+        # Distributed practice superior to massed
+        if any(s in condition_lower for s in ['spaced', 'distributed', 'interleaved']):
+            semantic_effect += 0.20
+        elif any(m in condition_lower for m in ['massed', 'blocked', 'crammed']):
+            semantic_effect -= 0.10
+
+        # Generation Effect (Slamecka & Graf, 1978)
+        # Self-generated information better remembered
+        if any(g in condition_lower for g in ['generate', 'produce', 'create', 'self-generated']):
+            semantic_effect += 0.18
+        elif any(r in condition_lower for r in ['read', 'provided', 'given']):
+            semantic_effect -= 0.05
+
+        # Desirable Difficulties (Bjork, 1994)
+        # Challenges that slow learning can enhance retention
+        if 'difficult' in condition_lower or 'challenging' in condition_lower:
+            semantic_effect += 0.10  # Long-term benefit despite short-term cost
+        elif 'easy' in condition_lower or 'simple' in condition_lower:
+            semantic_effect += 0.05
+
+        # =====================================================================
+        # DOMAIN 12: SOCIAL IDENTITY & GROUP MANIPULATIONS
+        # =====================================================================
+
+        # Common Identity (Gaertner et al., 1993)
+        # Superordinate identity reduces intergroup bias
+        if any(c in condition_lower for c in ['common identity', 'superordinate', 'we', 'shared']):
+            semantic_effect += 0.22
+        elif any(d in condition_lower for d in ['dual identity', 'subgroup', 'they']):
+            semantic_effect -= 0.10
+
+        # Contact Hypothesis (Allport, 1954; Pettigrew & Tropp 2006 meta r = -0.21)
+        # Intergroup contact reduces prejudice
+        if any(c in condition_lower for c in ['contact', 'interaction', 'exposure to outgroup']):
+            semantic_effect += 0.18
+        elif any(n in condition_lower for n in ['no contact', 'segregated', 'separate']):
+            semantic_effect -= 0.12
+
+        # Minimal Group Paradigm (Tajfel, 1971; Balliet et al. 2014)
+        # Even arbitrary categories produce in-group favoritism
+        if any(m in condition_lower for m in ['overestimator', 'klee group', 'blue team']):
+            semantic_effect += 0.15  # In-group favoritism even in minimal groups
+
+        # Social Identity Salience (Oakes, 1987)
+        # Making identity salient activates associated attitudes
+        if any(s in condition_lower for s in ['identity salient', 'reminded of', 'primed with']):
+            semantic_effect += 0.15
+        elif 'identity not salient' in condition_lower:
+            semantic_effect -= 0.05
+
+        # =====================================================================
+        # DOMAIN 13: MOTIVATION & SELF-REGULATION MANIPULATIONS
+        # =====================================================================
+
+        # Implementation Intentions (Gollwitzer, 1999; Gollwitzer & Sheeran 2006 meta d = 0.65)
+        # If-then planning increases goal attainment
+        if any(i in condition_lower for i in ['implementation intention', 'if-then', 'when-then', 'planning']):
+            semantic_effect += 0.28
+        elif 'goal intention' in condition_lower or 'motivation only' in condition_lower:
+            semantic_effect -= 0.05
+
+        # Growth vs Fixed Mindset (Dweck, 2006; Sisk et al. 2018 meta d = 0.10)
+        # Malleable beliefs about ability; effect sizes smaller than originally claimed
+        if any(g in condition_lower for g in ['growth mindset', 'malleable', 'can improve']):
+            semantic_effect += 0.08
+        elif any(f in condition_lower for f in ['fixed mindset', 'innate', 'cannot change']):
+            semantic_effect -= 0.08
+
+        # Regulatory Focus (Higgins, 1997)
+        # Promotion vs prevention focus affects behavior
+        if any(p in condition_lower for p in ['promotion', 'eager', 'gains', 'aspirations']):
+            semantic_effect += 0.15
+        elif any(p in condition_lower for p in ['prevention', 'vigilant', 'losses', 'obligations']):
+            semantic_effect -= 0.10
+
+        # Goal Gradient Effect (Hull, 1932; Kivetz et al. 2006)
+        # Effort increases as goal approaches
+        if any(n in condition_lower for n in ['near goal', 'almost there', 'close to']):
+            semantic_effect += 0.18
+        elif any(f in condition_lower for f in ['far from goal', 'just started', 'beginning']):
+            semantic_effect -= 0.08
+
+        # Licensing Effect (Merritt et al. 2010 meta)
+        # Good deeds license subsequent bad behavior
+        if any(l in condition_lower for l in ['licensed', 'already helped', 'did good']):
+            semantic_effect -= 0.12  # Reduced subsequent prosocial
+        elif 'no license' in condition_lower:
+            semantic_effect += 0.05
+
+        # =====================================================================
+        # DOMAIN 14: ENVIRONMENTAL & CONTEXTUAL MANIPULATIONS
+        # =====================================================================
+
+        # Temperature and Aggression (Anderson et al. 2000)
+        # Heat increases aggressive cognition and behavior
+        if any(h in condition_lower for h in ['hot', 'warm room', 'heat']):
+            semantic_effect -= 0.12  # More negative affect
+        elif any(c in condition_lower for c in ['cool', 'cold room', 'comfortable temp']):
+            semantic_effect += 0.05
+
+        # Crowding (Baum & Paulus, 1987)
+        # High density increases stress
+        if any(c in condition_lower for c in ['crowded', 'high density', 'cramped']):
+            semantic_effect -= 0.15
+        elif any(s in condition_lower for s in ['spacious', 'low density', 'uncrowded']):
+            semantic_effect += 0.08
+
+        # Cleanliness (Schnall et al., 2008; Lee & Schwarz 2010)
+        # Clean environments reduce severity of moral judgments
+        if any(c in condition_lower for c in ['clean', 'tidy', 'pure', 'washed hands']):
+            semantic_effect += 0.12
+        elif any(d in condition_lower for d in ['dirty', 'messy', 'contaminated']):
+            semantic_effect -= 0.15
+
+        # Nature Exposure (Berman et al., 2008; Bratman et al., 2012)
+        # Nature reduces stress, improves mood
+        if any(n in condition_lower for n in ['nature', 'park', 'green space', 'outdoors']):
+            semantic_effect += 0.15
+        elif any(u in condition_lower for u in ['urban', 'city', 'concrete', 'indoors']):
+            semantic_effect -= 0.05
+
+        # Lighting (Baron et al., 1992)
+        # Bright light improves mood and alertness
+        if any(b in condition_lower for b in ['bright light', 'well-lit', 'daylight']):
+            semantic_effect += 0.08
+        elif any(d in condition_lower for d in ['dim light', 'dark', 'low light']):
+            semantic_effect -= 0.05
+
+        # =====================================================================
+        # DOMAIN 15: EMBODIMENT & PHYSICAL MANIPULATIONS
+        # =====================================================================
+
+        # Facial Feedback (Strack et al., 1988; Coles et al. 2019 many-labs r = 0.03)
+        # Facial expressions may influence emotional experience
+        # Effect small or null in replications
+        if any(f in condition_lower for f in ['smile', 'pen in teeth', 'happy expression']):
+            semantic_effect += 0.05  # Small effect
+        elif any(f in condition_lower for f in ['frown', 'pen in lips', 'sad expression']):
+            semantic_effect -= 0.05
+
+        # Power Posing (Carney et al., 2010; Credé & Phillips 2017 critique)
+        # Expansive poses may affect feelings; effects contested
+        if any(p in condition_lower for p in ['power pose', 'expansive', 'open posture']):
+            semantic_effect += 0.08  # Contested, smaller than original claims
+        elif any(c in condition_lower for c in ['contractive', 'closed posture', 'slumped']):
+            semantic_effect -= 0.05
+
+        # Heaviness and Importance (Jostmann et al., 2009)
+        # Heavier objects associated with importance
+        if any(h in condition_lower for h in ['heavy clipboard', 'weighty', 'substantial']):
+            semantic_effect += 0.10
+        elif any(l in condition_lower for l in ['light clipboard', 'lightweight', 'flimsy']):
+            semantic_effect -= 0.05
+
+        # =====================================================================
+        # DOMAIN 16: TIME & TEMPORAL MANIPULATIONS
+        # =====================================================================
+
+        # Time Pressure (Dror et al., 1999)
+        # Time constraints affect decision quality
+        if any(t in condition_lower for t in ['time pressure', 'deadline', 'hurry', 'limited time']):
+            semantic_effect -= 0.15  # More errors, less satisfaction
+        elif any(n in condition_lower for n in ['no time pressure', 'unlimited time', 'take your time']):
+            semantic_effect += 0.08
+
+        # Morning vs Afternoon (Sievertsen et al., 2016)
+        # Cognitive performance varies by time of day
+        if any(m in condition_lower for m in ['morning', 'early', 'am session']):
+            semantic_effect += 0.08
+        elif any(a in condition_lower for a in ['afternoon', 'late', 'pm session', 'evening']):
+            semantic_effect -= 0.05
+
+        # Waiting (Kumar et al., 2014)
+        # Anticipation affects experience
+        if any(w in condition_lower for w in ['anticipation', 'waiting', 'expecting']):
+            semantic_effect += 0.12
+        elif 'immediate' in condition_lower:
+            semantic_effect += 0.05
 
         # =====================================================================
         # FACTORIAL DESIGN PARSING

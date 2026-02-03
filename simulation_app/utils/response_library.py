@@ -60,10 +60,10 @@ introspection, memory, experience, recall, opinion, belief, preference, attitude
 value, worldview, prediction, intention, suggestion, recommendation, advice,
 association, impression, perception, feedback, comment, observation, general
 
-Version: 2.3.0 - All manipulation types grounded in published literature
+Version: 2.4.0 - 100+ manipulation types from 75+ published sources
 """
 
-__version__ = "2.3.0"
+__version__ = "2.4.0"
 
 import random
 import re

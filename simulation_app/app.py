@@ -43,8 +43,8 @@ import streamlit as st
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "2.3.0"
-BUILD_ID = "20260203-v230-literature-grounded"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "2.4.0"
+BUILD_ID = "20260203-v240-expanded-literature"  # Change this to force cache invalidation
 
 def _verify_and_reload_utils():
     """Verify utils modules are at correct version, force reload if needed.
@@ -97,7 +97,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF"
-APP_VERSION = "2.3.0"  # COMPREHENSIVE: All manipulation types grounded in published literature
+APP_VERSION = "2.4.0"  # EXPANDED: 100+ manipulation types grounded in 75+ published sources
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -1102,6 +1102,100 @@ def _design_analysis_to_inferred(
         "manipulation_checks": analysis.manipulation_checks if analysis else [],
         "randomization_level": analysis.randomization.level.value if analysis and analysis.randomization else "Participant-level",
     }
+
+
+# ========================================
+# FEEDBACK/BUG REPORT SYSTEM
+# ========================================
+
+FEEDBACK_EMAIL = "edimant@sas.upenn.edu"
+
+def _render_feedback_button() -> None:
+    """
+    Render a prominent feedback/bug report button at the bottom of each page.
+    Users can report bugs, send recommendations, or a mix of both.
+    """
+    st.markdown("---")
+    st.markdown("### 📬 Feedback & Bug Reports")
+
+    with st.expander("**Report a bug or send feedback**", expanded=False):
+        feedback_type = st.radio(
+            "What would you like to do?",
+            options=["Report a bug 🐛", "Send a recommendation 💡", "Both (bug + recommendation) 🔧"],
+            horizontal=True,
+            key="feedback_type_radio"
+        )
+
+        feedback_subject_prefix = {
+            "Report a bug 🐛": "[BUG REPORT]",
+            "Send a recommendation 💡": "[RECOMMENDATION]",
+            "Both (bug + recommendation) 🔧": "[BUG + RECOMMENDATION]"
+        }
+
+        user_email = st.text_input(
+            "Your email (optional, for follow-up)",
+            placeholder="your.email@example.com",
+            key="feedback_user_email"
+        )
+
+        feedback_message = st.text_area(
+            "Describe the bug or your recommendation",
+            placeholder="Please provide as much detail as possible. For bugs: what were you trying to do? What happened instead? For recommendations: what feature would you like to see?",
+            height=150,
+            key="feedback_message"
+        )
+
+        if st.button("📧 Send Feedback", type="primary", key="send_feedback_btn"):
+            if not feedback_message.strip():
+                st.error("Please enter a message before sending.")
+            else:
+                # Prepare email
+                prefix = feedback_subject_prefix.get(feedback_type, "[FEEDBACK]")
+                subject = f"{prefix} Behavioral Experiment Simulation Tool v{APP_VERSION}"
+
+                body = f"""
+{prefix} - Behavioral Experiment Simulation Tool
+{'='*60}
+
+FEEDBACK TYPE: {feedback_type}
+
+FROM: {user_email if user_email else 'Anonymous'}
+
+MESSAGE:
+{feedback_message}
+
+{'='*60}
+SYSTEM INFO:
+- App Version: {APP_VERSION}
+- Build ID: {BUILD_ID}
+- Timestamp: {datetime.now().isoformat()}
+- Study Title: {st.session_state.get('study_title', 'N/A')}
+"""
+
+                # Try to send via SendGrid if configured
+                ok, msg = _send_email_with_sendgrid(
+                    to_email=FEEDBACK_EMAIL,
+                    subject=subject,
+                    body_text=body,
+                )
+
+                if ok:
+                    st.success("✅ Thank you! Your feedback has been sent successfully.")
+                    st.balloons()
+                else:
+                    # Fallback: show mailto link
+                    mailto_subject = subject.replace(" ", "%20")
+                    mailto_body = feedback_message.replace("\n", "%0A").replace(" ", "%20")
+                    mailto_link = f"mailto:{FEEDBACK_EMAIL}?subject={mailto_subject}&body={mailto_body}"
+
+                    st.warning(
+                        f"Email service unavailable. Please send your feedback manually:\n\n"
+                        f"**Email:** {FEEDBACK_EMAIL}\n\n"
+                        f"**Subject:** {subject}"
+                    )
+                    st.markdown(f"[📧 Click here to open your email client]({mailto_link})")
+
+        st.caption(f"Feedback is sent to Dr. Eugen Dimant ({FEEDBACK_EMAIL})")
 
 
 def _send_email_with_sendgrid(
@@ -5011,3 +5105,8 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
                 st.caption("Instructor email not configured in secrets (INSTRUCTOR_NOTIFICATION_EMAIL).")
 
     _render_step_navigation(3, True, "Finish")
+
+# ========================================
+# FEEDBACK BUTTON (Shown on all pages)
+# ========================================
+_render_feedback_button()

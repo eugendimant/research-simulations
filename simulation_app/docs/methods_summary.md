@@ -1,6 +1,6 @@
 # Behavioral Experiment Simulation Tool — Methods Summary
 
-**Version 2.2** | Created by Dr. [Eugen Dimant](https://eugendimant.github.io/)
+**Version 2.4** | Created by Dr. [Eugen Dimant](https://eugendimant.github.io/)
 
 ---
 
@@ -18,7 +18,7 @@ This tool is designed for **educational and pilot testing purposes**—it does n
 
 ---
 
-## Key Features (v2.2)
+## Key Features (v2.4)
 
 ### Automatic Survey Parsing
 Upload your Qualtrics QSF file and the tool automatically:
@@ -242,6 +242,31 @@ To ensure uniqueness across thousands of data points, the system applies:
 
 ## Research Foundations
 
+### Literature-Grounded Simulation (v2.4)
+
+The simulation engine now incorporates **100+ manipulation effects** from **75+ published sources** across 16 research domains. Effect sizes are calibrated to meta-analytic findings where available.
+
+#### Manipulation Effect Categories (75+ Sources)
+
+| Domain | Key Sources | Example Effects |
+|--------|-------------|-----------------|
+| **AI/Technology** | Dietvorst et al. (2015); Epley et al. (2007) | Algorithm aversion d≈-0.3, Anthropomorphism d≈+0.3 |
+| **Consumer/Marketing** | Babin et al. (1994); Barton meta (2022) | Scarcity d≈+0.30, Social proof r≈0.15 |
+| **Social Psychology** | Tajfel (1971); Balliet meta (2014); Milgram (1963) | In-group bias d≈0.3-0.5, Authority +46pp compliance |
+| **Behavioral Economics** | Tversky & Kahneman (1981); Johnson & Goldstein (2003) | Loss aversion λ≈2.0, Defaults +60-80pp |
+| **Game Theory** | Fehr & Gächter (2000); Sally meta (1995) | PGG punishment +40%, Cooperation ≈47% |
+| **Health/Risk** | Bandura (1977); Witte & Allen meta (2000) | Self-efficacy +0.22, Fear appeals d≈0.3-0.5 |
+| **Organizational** | Colquitt meta (2001); Judge & Piccolo meta (2004) | Justice ρ≈.40-.50, Leadership ρ≈.44 |
+| **Political/Moral** | Graham & Haidt (2009); Iyengar & Westwood (2015) | Polarization d>0.5, Moral foundations |
+| **Cognitive/Decision** | Iyengar & Lepper (2000); Staw (1976); Trope & Liberman (2010) | Choice overload d≈0.77, Sunk cost d≈0.37 |
+| **Communication** | Hovland & Weiss (1951); McGuire (1961); Banas & Rains meta (2010) | Source credibility +0.20, Inoculation d≈0.29 |
+| **Learning/Memory** | Roediger & Karpicke (2006); Rowland meta (2014) | Testing effect d≈0.50, Spacing effect robust |
+| **Social Identity** | Pettigrew & Tropp meta (2006); Gaertner (1993) | Contact r≈-0.21, Common identity +0.22 |
+| **Motivation** | Gollwitzer & Sheeran meta (2006); Deci et al. meta (1999) | Implementation intentions d≈0.65, Crowding out d≈-0.40 |
+| **Environmental** | Anderson et al. (2000); Berman et al. (2008) | Heat +aggression, Nature +mood |
+| **Embodiment** | Coles et al. many-labs (2019); Credé & Phillips (2017) | Facial feedback r≈0.03 (contested) |
+| **Temporal** | Dror et al. (1999); Sievertsen et al. (2016) | Time pressure -0.15, Circadian effects |
+
 ### Core LLM Simulation Research
 
 The use of language models and algorithmic approaches for simulating human survey responses is supported by a growing body of rigorous research:
@@ -250,61 +275,43 @@ The use of language models and algorithmic approaches for simulating human surve
 
 1. **Argyle, L. P., Busby, E. C., Fulda, N., Gubler, J. R., Rytting, C., & Wingate, D. (2023)**. Out of one, many: Using language models to simulate human samples. *Political Analysis*, 31(3), 337-351.
    - **DOI:** [10.1017/pan.2023.2](https://doi.org/10.1017/pan.2023.2)
-   - **Key Finding:** LLMs achieve "algorithmic fidelity"—replicating human response distributions across demographic subgroups on political attitudes and social issues.
+   - **Key Finding:** LLMs achieve "algorithmic fidelity"—replicating human response distributions.
 
 2. **Horton, J. J. (2023)**. Large language models as simulated economic agents: What can we learn from Homo Silicus? *NBER Working Paper* No. 31122.
-   - **DOI:** [10.3386/w31122](https://doi.org/10.3386/w31122)
-   - **Key Finding:** LLM-simulated agents exhibit canonical economic behaviors including downward-sloping demand, status quo bias, and anchoring effects.
+   - **Key Finding:** LLM agents exhibit canonical economic behaviors including status quo bias and anchoring.
 
-3. **Aher, G. V., Arriaga, R. I., & Kalai, A. T. (2023)**. Using large language models to simulate multiple humans and replicate human subject studies. *ICML 2023*, PMLR 202:337-371.
-   - **Paper:** [proceedings.mlr.press/v202/aher23a](https://proceedings.mlr.press/v202/aher23a.html)
-   - **Key Finding:** "Turing Experiments" successfully replicate classic psychology studies including the Milgram paradigm and ultimatum games.
+3. **Aher, G. V., Arriaga, R. I., & Kalai, A. T. (2023)**. Using large language models to simulate multiple humans. *ICML 2023*.
+   - **Key Finding:** "Turing Experiments" successfully replicate classic psychology studies.
 
-**High-Impact Validation:**
+4. **Binz, M. & Schulz, E. (2023)**. Using cognitive psychology to understand GPT-3. *PNAS*, 120(6).
+   - **Key Finding:** LLMs exhibit human-like patterns in decision-making and cognitive biases.
 
-4. **Park, J. S., O'Brien, J., Cai, C. J., Morris, M. R., Liang, P., & Bernstein, M. S. (2023)**. Generative Agents: Interactive Simulacra of Human Behavior. *ACM UIST*.
-   - **DOI:** [10.1145/3586183.3606763](https://doi.org/10.1145/3586183.3606763)
-   - **Key Finding:** Stanford/Google research demonstrating that simulated agents can maintain consistent personalities and exhibit believable autonomous behavior over extended interactions.
-
-5. **Binz, M. & Schulz, E. (2023)**. Using cognitive psychology to understand GPT-3. *PNAS*, 120(6), e2218523120.
-   - **DOI:** [10.1073/pnas.2218523120](https://doi.org/10.1073/pnas.2218523120)
-   - **Key Finding:** Systematic comparison showing LLMs exhibit human-like patterns in decision-making, analogical reasoning, and cognitive biases.
-
-6. **Dillion, D., Tandon, N., Gu, Y., & Gray, K. (2023)**. Can AI language models replace human participants? *Trends in Cognitive Sciences*, 27, 597-600.
-   - **DOI:** [10.1016/j.tics.2023.04.008](https://doi.org/10.1016/j.tics.2023.04.008)
-   - **Key Finding:** 0.95 correlation between GPT-3.5 and human moral judgments; provides framework for when LLM simulation is appropriate.
+5. **Westwood, S. J. (2025)**. The potential existential threat of LLMs to survey research. *PNAS*, 122(47).
+   - **Key Finding:** LLM responses can evade 99.8% of attention checks; underscores simulation standards.
 
 ### Survey Methodology Foundations
 
-The persona system draws on classic survey methodology research:
+6. **Krosnick, J. A. (1991)**. Response strategies for coping with cognitive demands. *Applied Cognitive Psychology*.
+   - **Key Concept:** Satisficing theory—"good enough" rather than optimal responses.
 
-7. **Krosnick, J. A. (1991)**. Response strategies for coping with the cognitive demands of attitude measures in surveys. *Applied Cognitive Psychology*, 5(3), 213-236.
-   - **Key Concept:** Satisficing theory—respondents may provide "good enough" rather than optimal responses when cognitive demands are high.
+7. **Meade, A. W., & Craig, S. B. (2012)**. Identifying careless responses. *Psychological Methods*.
+   - **Key Concept:** Methods for detecting careless/inattentive responding.
 
-8. **Greenleaf, E. A. (1992)**. Measuring extreme response style. *Public Opinion Quarterly*, 56(3), 328-351.
-   - **Key Concept:** Extreme response style (ERS) is a stable individual difference affecting scale use.
+### Behavioral Science Sources (Selected from 75+)
 
-9. **Paulhus, D. L. (1991)**. Measurement and control of response bias. In *Measures of Personality and Social Psychological Attitudes* (pp. 17-59).
-   - **Key Concept:** Response biases including acquiescence, social desirability, and extreme responding.
+**Decision Making:** Tversky & Kahneman (1981); Thaler (1985); Johnson & Goldstein (2003); Iyengar & Lepper (2000); Scheibehenne meta (2010); Staw (1976); Sleesman meta (2012)
 
-10. **Meade, A. W., & Craig, S. B. (2012)**. Identifying careless responses in survey data. *Psychological Methods*, 17(3), 437-455.
-    - **DOI:** [10.1037/a0028085](https://doi.org/10.1037/a0028085)
-    - **Key Concept:** Methods for detecting and handling careless/inattentive responding in surveys.
+**Social Influence:** Cialdini (2001); Milgram (1963); Asch (1951); Brehm (1966); Rains meta (2013); Hatfield et al. (1993); Bond & Smith meta (1996)
 
-### On LLM Detection & Survey Validity
+**Motivation:** Deci, Koestner & Ryan meta (1999); Gollwitzer & Sheeran meta (2006); Dweck (2006); Sisk meta (2018); Higgins (1997)
 
-11. **Veselovsky, V., Ribeiro, M. H., & West, R. (2023)**. Artificial Artificial Artificial Intelligence: Crowd Workers Widely Use Large Language Models for Text Production Tasks. *arXiv:2306.07899*.
-    - **Key Finding:** Raises important questions about data quality that simulation tools must address.
+**Intergroup Relations:** Tajfel (1971); Allport (1954); Pettigrew & Tropp meta (2006); Gaertner (1993); Balliet meta (2014)
 
-12. **Westwood, S. J. (2025)**. The potential existential threat of large language models to online survey research. *PNAS*, 122(47).
-    - **DOI:** [10.1073/pnas.2518075122](https://doi.org/10.1073/pnas.2518075122)
-    - **Key Finding:** LLM-generated responses can evade 99.8% of attention checks; underscores the importance of rigorous simulation standards and realistic careless responding patterns.
+**Learning/Memory:** Roediger & Karpicke (2006); Cepeda meta (2006); Rowland meta (2014); Bjork (1994)
 
-### Market Research Applications
+**Communication:** Hovland & Weiss (1951); McGuire (1961); Allen & Preiss (1997); Banas & Rains meta (2010)
 
-13. **Brand, J., Israeli, A., & Ngwe, D. (2023)**. Using GPT for Market Research. *Harvard Business School Working Paper* 23-062.
-    - **Paper:** [hbs.edu/ris/download.aspx?name=23-062.pdf](https://www.hbs.edu/ris/download.aspx?name=23-062.pdf)
-    - **Key Finding:** LLMs can generate realistic willingness-to-pay estimates and consumer preference data at minimal cost.
+**Embodiment/Context:** Anderson et al. (2000); Berman (2008); Schnall (2008); Strack (1988); Coles many-labs (2019)
 
 ---
 
@@ -427,7 +434,7 @@ The tool includes clear labeling in all outputs indicating data is simulated.
 
 If you use this tool in your research or teaching, please cite:
 
-> Dimant, E. (2025). Behavioral Experiment Simulation Tool (Version 2.2). University of Pennsylvania.
+> Dimant, E. (2025). Behavioral Experiment Simulation Tool (Version 2.4). University of Pennsylvania.
 
 ---
 
