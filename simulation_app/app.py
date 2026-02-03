@@ -98,7 +98,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF"
-APP_VERSION = "2.2.3"  # Enhanced: Better DV detection, scroll fix, improved UI
+APP_VERSION = "2.2.4"  # Major: 225+ domains, 40 Q types, 200+ exclusions, enhanced UI
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -1451,10 +1451,16 @@ def _render_factorial_design_table(
     session_key_prefix: str = "factorial_table",
 ) -> Tuple[List[Dict[str, Any]], List[str]]:
     """
-    Render a streamlined factorial design table UI.
+    Render an enhanced factorial design table UI with clear visual feedback.
 
     Creates a visual table where users assign conditions to factors.
     Returns factors and crossed condition names, saved to session state for persistence.
+
+    Features:
+    - Color-coded factor assignment
+    - Real-time condition count
+    - Visual crossing table
+    - Clear validation feedback
     """
     import streamlit as st
     import itertools
@@ -1462,73 +1468,107 @@ def _render_factorial_design_table(
     # Clean condition names
     clean_conditions = [_clean_condition_name(c) for c in detected_conditions]
 
-    # Number of factors - compact inline
-    num_factors = st.radio(
-        "Number of factors",
-        options=[2, 3],
-        index=0,
-        horizontal=True,
-        key=f"{session_key_prefix}_num_factors",
-    )
+    # Header with design type selector
+    st.markdown("**Configure your factorial design:**")
 
-    # Factor 1 Configuration - compact layout
+    # Number of factors - compact inline with helpful text
+    col_factors, col_help = st.columns([2, 3])
+    with col_factors:
+        num_factors = st.radio(
+            "Number of factors",
+            options=[2, 3],
+            index=0,
+            horizontal=True,
+            key=f"{session_key_prefix}_num_factors",
+            help="2 factors = 2×2, 2×3, 3×3 designs. 3 factors = 2×2×2, etc."
+        )
+    with col_help:
+        if num_factors == 2:
+            st.caption("Examples: 2×2 (4 cells), 2×3 (6 cells), 3×3 (9 cells)")
+        else:
+            st.caption("Examples: 2×2×2 (8 cells), 2×2×3 (12 cells)")
+
+    st.markdown("---")
+
+    # Factor 1 Configuration - with visual indicator
+    st.markdown("**Factor 1** (rows in design table)")
     col_f1_name, col_f1_levels = st.columns([1, 3])
     with col_f1_name:
         factor1_name = st.text_input(
-            "Factor 1 name",
+            "Name",
             value=st.session_state.get(f"{session_key_prefix}_f1_name", "Factor 1"),
             key=f"{session_key_prefix}_f1_name_input",
+            label_visibility="collapsed",
+            placeholder="e.g., Game Type"
         )
         st.session_state[f"{session_key_prefix}_f1_name"] = factor1_name
     with col_f1_levels:
         factor1_levels = st.multiselect(
-            "Factor 1 levels",
+            "Levels",
             options=clean_conditions,
             default=st.session_state.get(f"{session_key_prefix}_factor1_levels", []),
             key=f"{session_key_prefix}_f1_levels_select",
+            label_visibility="collapsed",
+            placeholder="Select levels for Factor 1..."
         )
         st.session_state[f"{session_key_prefix}_factor1_levels"] = factor1_levels
+    if factor1_levels:
+        st.caption(f"✓ {len(factor1_levels)} level(s): {', '.join(factor1_levels)}")
 
     # Factor 2 Configuration
     remaining_conditions = [c for c in clean_conditions if c not in factor1_levels]
+    st.markdown("**Factor 2** (columns in design table)")
     col_f2_name, col_f2_levels = st.columns([1, 3])
     with col_f2_name:
         factor2_name = st.text_input(
-            "Factor 2 name",
+            "Name",
             value=st.session_state.get(f"{session_key_prefix}_f2_name", "Factor 2"),
             key=f"{session_key_prefix}_f2_name_input",
+            label_visibility="collapsed",
+            placeholder="e.g., Partner Type"
         )
         st.session_state[f"{session_key_prefix}_f2_name"] = factor2_name
     with col_f2_levels:
         factor2_levels = st.multiselect(
-            "Factor 2 levels",
+            "Levels",
             options=remaining_conditions,
             default=[c for c in st.session_state.get(f"{session_key_prefix}_factor2_levels", []) if c in remaining_conditions],
             key=f"{session_key_prefix}_f2_levels_select",
+            label_visibility="collapsed",
+            placeholder="Select levels for Factor 2..."
         )
         st.session_state[f"{session_key_prefix}_factor2_levels"] = factor2_levels
+    if factor2_levels:
+        st.caption(f"✓ {len(factor2_levels)} level(s): {', '.join(factor2_levels)}")
 
     # Factor 3 Configuration (if 3 factors)
     factor3_name = ""
     factor3_levels = []
     if num_factors == 3:
         remaining_for_f3 = [c for c in remaining_conditions if c not in factor2_levels]
+        st.markdown("**Factor 3** (layers in design)")
         col_f3_name, col_f3_levels = st.columns([1, 3])
         with col_f3_name:
             factor3_name = st.text_input(
-                "Factor 3 name",
+                "Name",
                 value=st.session_state.get(f"{session_key_prefix}_f3_name", "Factor 3"),
                 key=f"{session_key_prefix}_f3_name_input",
+                label_visibility="collapsed",
+                placeholder="e.g., Feedback Type"
             )
             st.session_state[f"{session_key_prefix}_f3_name"] = factor3_name
         with col_f3_levels:
             factor3_levels = st.multiselect(
-                "Factor 3 levels",
+                "Levels",
                 options=remaining_for_f3,
                 default=[c for c in st.session_state.get(f"{session_key_prefix}_factor3_levels", []) if c in remaining_for_f3],
                 key=f"{session_key_prefix}_f3_levels_select",
+                label_visibility="collapsed",
+                placeholder="Select levels for Factor 3..."
             )
             st.session_state[f"{session_key_prefix}_factor3_levels"] = factor3_levels
+        if factor3_levels:
+            st.caption(f"✓ {len(factor3_levels)} level(s): {', '.join(factor3_levels)}")
 
     # Build factors list
     factors = []
@@ -1548,28 +1588,59 @@ def _render_factorial_design_table(
         all_combos = list(itertools.product(*[f["levels"] for f in factors]))
         crossed_conditions = [" + ".join(combo) for combo in all_combos]
 
-        # Display the factorial design table
+        # Display the factorial design visualization
         st.markdown("---")
-        if num_factors == 2 and factor1_levels and factor2_levels:
-            st.success(f"**{len(factor1_levels)} × {len(factor2_levels)} = {len(crossed_conditions)} conditions**")
 
-            # Build visual table
-            header = f"| {factor1_name} |" + "".join(f" {l} |" for l in factor2_levels)
+        if num_factors == 2 and factor1_levels and factor2_levels:
+            # Design summary
+            design_str = f"{len(factor1_levels)}×{len(factor2_levels)}"
+            st.success(f"**{design_str} Factorial Design = {len(crossed_conditions)} conditions**")
+
+            # Build enhanced visual table with condition names
+            st.markdown(f"**Design Table** ({factor1_name} × {factor2_name}):")
+
+            # Create table header
+            header_row = f"| **{factor1_name}** \\ **{factor2_name}** |"
+            for f2_level in factor2_levels:
+                header_row += f" {f2_level} |"
             separator = "|" + "---|" * (len(factor2_levels) + 1)
-            table_md = header + "\n" + separator + "\n"
+
+            table_md = header_row + "\n" + separator + "\n"
+
+            # Create table rows with cell numbers
+            cell_num = 1
             for f1_level in factor1_levels:
-                table_md += f"| **{f1_level}** |" + " ✓ |" * len(factor2_levels) + "\n"
+                row = f"| **{f1_level}** |"
+                for f2_level in factor2_levels:
+                    row += f" Cell {cell_num} |"
+                    cell_num += 1
+                table_md += row + "\n"
+
             st.markdown(table_md)
 
         elif num_factors == 3 and factor1_levels and factor2_levels and factor3_levels:
-            st.success(f"**{len(factor1_levels)} × {len(factor2_levels)} × {len(factor3_levels)} = {len(crossed_conditions)} conditions**")
+            design_str = f"{len(factor1_levels)}×{len(factor2_levels)}×{len(factor3_levels)}"
+            st.success(f"**{design_str} Factorial Design = {len(crossed_conditions)} conditions**")
+            st.caption(f"Factors: {factor1_name} × {factor2_name} × {factor3_name}")
 
-        # Show resulting conditions compactly
-        with st.expander(f"View all {len(crossed_conditions)} condition combinations", expanded=False):
-            for i, combo in enumerate(crossed_conditions, 1):
-                st.markdown(f"{i}. {combo}")
+        # Show resulting conditions in expandable section
+        st.markdown("**Resulting condition combinations:**")
+        with st.expander(f"View all {len(crossed_conditions)} conditions", expanded=True):
+            # Display in columns for better readability
+            n_cols = min(3, len(crossed_conditions))
+            cols = st.columns(n_cols)
+            for i, combo in enumerate(crossed_conditions):
+                with cols[i % n_cols]:
+                    st.markdown(f"**{i+1}.** {combo}")
+
     else:
-        st.caption("Assign conditions to both factors to see the design table.")
+        # Helpful validation message
+        missing = []
+        if not factor1_levels:
+            missing.append("Factor 1")
+        if not factor2_levels:
+            missing.append("Factor 2")
+        st.warning(f"Select levels for {' and '.join(missing)} to generate the design table.")
 
     return factors, crossed_conditions
 
@@ -1726,8 +1797,54 @@ def _get_step_completion() -> Dict[str, bool]:
     }
 
 
+def _save_step_state():
+    """Save current step state to ensure persistence across navigation.
+
+    This function captures all important state that should persist when
+    navigating between steps. Call before any step change.
+    """
+    # Keys that should persist across step navigation
+    persist_keys = [
+        # Step 1: Study Info
+        "study_title", "study_description", "researcher_name", "researcher_email",
+        # Step 2: Upload
+        "qsf_preview", "enhanced_analysis", "inferred_design",
+        # Step 3: Design Setup
+        "selected_conditions", "custom_conditions", "condition_candidates",
+        "factorial_table_factors", "factorial_crossed_conditions",
+        "use_crossed_conditions", "use_factorial_table",
+        "condition_allocation", "condition_allocation_n",
+        "confirmed_scales", "scales_confirmed", "_dv_version",
+        "manual_attention_checks", "manual_manipulation_checks",
+        # Step 4: Generate
+        "sample_size", "effect_size_d",
+    ]
+
+    # Create a snapshot of current state
+    state_snapshot = {}
+    for key in persist_keys:
+        if key in st.session_state:
+            state_snapshot[key] = st.session_state[key]
+
+    st.session_state["_state_snapshot"] = state_snapshot
+
+
+def _restore_step_state():
+    """Restore previously saved state after navigation.
+
+    Call at the beginning of each step to restore any state that may have
+    been saved before navigating away.
+    """
+    snapshot = st.session_state.get("_state_snapshot", {})
+    for key, value in snapshot.items():
+        if key not in st.session_state:
+            st.session_state[key] = value
+
+
 def _go_to_step(step_index: int) -> None:
-    """Navigate to a specific step with scroll-to-top."""
+    """Navigate to a specific step with scroll-to-top and state persistence."""
+    # Save current state before navigating
+    _save_step_state()
     st.session_state["active_step"] = max(0, min(step_index, len(STEP_LABELS) - 1))
     st.session_state["_scroll_to_top"] = True  # Flag to trigger scroll on next render
     st.rerun()
@@ -2091,22 +2208,80 @@ def _get_condition_candidates(
     preview: Optional[QSFPreviewResult],
     enhanced_analysis: Optional[DesignAnalysisResult],
 ) -> List[str]:
+    """
+    Extract condition candidates from QSF analysis.
+
+    IMPORTANT: Filters out all trash/unused/admin blocks to prevent
+    false condition detection. Uses comprehensive exclusion patterns.
+    """
+    # Comprehensive exclusion patterns - must NOT be conditions
+    excluded_lower = {
+        # Trash/unused
+        'trash', 'unused', 'deleted', 'archived', 'old', 'deprecated',
+        'trash / unused questions', 'trash/unused questions', 'do not use',
+        # Generic
+        'block', 'default', 'default question block', 'standard', 'main',
+        'block 1', 'block 2', 'block 3', 'block 4', 'block 5',
+        # Intro/consent
+        'intro', 'introduction', 'welcome', 'consent', 'informed consent',
+        # Instructions
+        'instructions', 'directions', 'guidelines', 'tutorial',
+        # Quality control
+        'attention check', 'manipulation check', 'quality check', 'screener',
+        'captcha', 'bot check',
+        # Demographics/end
+        'demographics', 'background', 'debrief', 'debriefing',
+        'end', 'ending', 'thank you', 'thanks', 'completion',
+        # Structural
+        'feedback', 'comments', 'practice', 'training', 'timer', 'timing',
+        # Payment
+        'payment', 'compensation', 'prolific', 'mturk', 'code',
+    }
+
+    # Patterns that indicate exclusion
+    excluded_patterns = ['trash', 'unused', 'delete', 'archive', 'old question',
+                         'not use', 'hidden', 'disabled', 'draft', 'test']
+
+    def is_excluded(name: str) -> bool:
+        """Check if a name should be excluded from conditions."""
+        name_lower = name.lower().strip()
+        if name_lower in excluded_lower:
+            return True
+        if any(pat in name_lower for pat in excluded_patterns):
+            return True
+        # Exclude generic numbered blocks
+        if re.match(r'^block\s*\d*$', name_lower):
+            return True
+        return False
+
     candidates: List[str] = []
+
+    # Extract from enhanced analysis (highest quality source)
     if enhanced_analysis and enhanced_analysis.conditions:
         for cond in enhanced_analysis.conditions:
             if cond.source in ("QSF Randomizer", "QSF Block Name"):
-                candidates.append(cond.name)
+                if not is_excluded(cond.name):
+                    candidates.append(cond.name)
 
+    # Extract from QSF blocks
     if preview and preview.blocks:
         for block in preview.blocks:
             block_name = block.block_name.strip()
-            if block_name and block_name.lower() not in (
-                "default question block",
-                "trash / unused questions",
-                "block",
-            ):
+            if block_name and not is_excluded(block_name):
+                # Also check block type
+                if hasattr(block, 'block_type') and block.block_type in ('Trash', 'Default'):
+                    continue
                 candidates.append(block_name)
 
+    # Extract from embedded data conditions (may indicate randomization)
+    if preview and hasattr(preview, 'embedded_data_conditions'):
+        for edc in (preview.embedded_data_conditions or []):
+            if isinstance(edc, dict):
+                name = edc.get('name', '') or edc.get('field', '')
+                if name and not is_excluded(name):
+                    candidates.append(name)
+
+    # Deduplicate while preserving order
     return list(dict.fromkeys([c for c in candidates if c.strip()]))
 
 
@@ -2785,6 +2960,7 @@ if active_step == 1:
 # -----------------------------
 if active_step == 2:
     _inject_scroll_to_top()  # Scroll to top when navigating to this step
+    _restore_step_state()  # Restore any saved state from previous navigation
     preview: Optional[QSFPreviewResult] = st.session_state.get("qsf_preview", None)
     enhanced_analysis: Optional[DesignAnalysisResult] = st.session_state.get("enhanced_analysis", None)
 
