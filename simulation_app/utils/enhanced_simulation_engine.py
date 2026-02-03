@@ -45,7 +45,7 @@ This module is designed to run inside a `utils/` package (i.e., imported as
 """
 
 # Version identifier to help track deployed code
-__version__ = "2.4.0"  # EXPANDED: 100+ manipulation types grounded in 75+ published sources
+__version__ = "2.4.1"  # EXPANDED: 100+ manipulation types grounded in 75+ published sources
 
 # =============================================================================
 # SCIENTIFIC FOUNDATIONS FOR SIMULATION
