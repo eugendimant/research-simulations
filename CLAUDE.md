@@ -1,5 +1,22 @@
 # Claude Code Development Guidelines
 
+## MANDATORY: PR Link After Every Change
+
+**EVERY response that involves code changes MUST end with a working, mergeable PR link.**
+
+After completing any task:
+1. Commit all changes with descriptive message
+2. Push to the feature branch
+3. Provide the PR link in this format:
+   ```
+   ## PR Link
+   **https://github.com/eugendimant/research-simulations/pull/new/claude/[branch-name]**
+   ```
+
+Never leave changes uncommitted. Never forget the PR link.
+
+---
+
 ## Version Management (CRITICAL - MUST BE AUTOMATED)
 
 **VERSION SYNCHRONIZATION IS MANDATORY AND MUST BE FULLY AUTOMATED**
@@ -53,7 +70,30 @@ If versions don't match, users see a warning and the app may behave unexpectedly
 
 ---
 
-## Trash/Unused Block Handling
+## Code Quality Standards
+
+### Before Every Commit:
+1. Run `python3 -m py_compile <file>` on ALL modified Python files
+2. Verify version numbers are synchronized (see checklist above)
+3. Test the app loads without version mismatch warning
+4. Ensure no syntax errors or import failures
+
+### Code Style:
+- Use type hints for function parameters and returns
+- Include docstrings for all public functions
+- Follow existing code patterns in the codebase
+- Keep functions focused and single-purpose
+
+### Error Handling:
+- Always handle edge cases (empty lists, None values, missing keys)
+- Use defensive programming with `get()` for dict access
+- Log errors appropriately using the `_log()` method where available
+
+---
+
+## Behavioral Data Simulation Requirements
+
+### Trash/Unused Block Handling
 
 **CRITICAL: Trash blocks must NEVER affect simulation**
 
@@ -64,9 +104,40 @@ If versions don't match, users see a warning and the app may behave unexpectedly
 
 Always add new exclusion patterns when discovering new trash block naming conventions.
 
----
+### Condition Detection
 
-## State Persistence
+Conditions must be properly detected from QSF files:
+- Block names that represent experimental conditions
+- Embedded data fields used for randomization
+- BlockRandomizer elements
+
+**Never include these as conditions:**
+- Trash/unused blocks
+- Admin blocks (consent, demographics, debrief)
+- Structural blocks (intro, instructions, end)
+- Quality control blocks (attention checks, manipulation checks)
+
+### DV Detection
+
+The `_detect_scales()` method in qsf_preview.py detects 6 types:
+- Matrix scales (multi-item Likert)
+- Numbered items (e.g., Scale_1, Scale_2)
+- Likert scales (grouped single-choice)
+- Sliders (visual analog scales)
+- Single-item DVs (standalone rating questions)
+- Numeric inputs (willingness to pay, etc.)
+
+Always include `detected_from_qsf: True` flag to distinguish from manual entries.
+
+### Factorial Design
+
+For factorial experiments (2×2, 2×3, etc.):
+- Use `_render_factorial_design_table()` for visual setup
+- Generate crossed conditions (Factor1_Level × Factor2_Level)
+- Save factors to session state for persistence
+- Display clear design table with cell numbers
+
+### State Persistence
 
 When users navigate between steps, their selections MUST persist:
 
@@ -74,19 +145,37 @@ When users navigate between steps, their selections MUST persist:
 - `_restore_step_state()` - Call at step start
 - `persist_keys` list defines what to save
 
+Key state that must persist:
+- Selected conditions and factors
+- Confirmed scales/DVs
+- Factorial table configuration
+- Sample size and effect size settings
+
 ---
 
-## DV Detection
+## Domain & Question Type Coverage
 
-The `_detect_scales()` method in qsf_preview.py detects 6 types:
-- Matrix scales
-- Numbered items (e.g., Scale_1, Scale_2)
-- Likert scales
-- Sliders
-- Single-item DVs
-- Numeric inputs
+### Research Domains (225+)
+Organized into 33 categories:
+- Behavioral Economics (12)
+- Social Psychology (15)
+- Political Science (10)
+- Consumer/Marketing (10)
+- Organizational Behavior (10)
+- Technology/AI (10)
+- Health Psychology (10)
+- And 26 more categories...
 
-Always include `detected_from_qsf: True` flag to distinguish from manual entries.
+### Question Types (40)
+- Explanatory: explanation, justification, reasoning, causation, motivation
+- Descriptive: description, narration, elaboration, detail, context
+- Evaluative: evaluation, assessment, comparison, critique, rating_explanation, judgment, appraisal
+- Reflective: reflection, introspection, memory, experience, recall
+- Opinion/Attitude: opinion, belief, preference, attitude, value, worldview
+- Forward-looking: prediction, intention, suggestion, recommendation, advice
+- Associative: association, impression, perception
+- Feedback: feedback, comment, observation
+- General: general (catch-all)
 
 ---
 
@@ -96,3 +185,23 @@ Before committing:
 1. Run `python3 -m py_compile <file>` on modified Python files
 2. Verify version numbers are synchronized
 3. Test the app loads without version mismatch warning
+4. Verify trash blocks are properly excluded
+5. Check that state persists across step navigation
+
+---
+
+## Commit Message Format
+
+Use clear, descriptive commit messages:
+
+```
+v2.X.X: Brief description of changes
+
+- Specific change 1
+- Specific change 2
+- Specific change 3
+
+https://claude.ai/code/[session-id]
+```
+
+Always include the Claude session link for traceability.
