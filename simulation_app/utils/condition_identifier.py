@@ -13,7 +13,7 @@ to maximize identification accuracy.
 """
 
 # Version identifier to help track deployed code
-__version__ = "2.2.0"  # Major: 25+ pattern detection, comprehensive condition identification
+__version__ = "2.2.1"  # Enhanced: factorial design detection, multiple randomizer support
 
 import re
 import json
