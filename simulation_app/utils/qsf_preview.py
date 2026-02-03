@@ -1248,12 +1248,19 @@ class QSFPreviewParser:
         IMPORTANT: Only detects scales from QSF structure. Does NOT add default scales.
         Default scales should only be added at the app layer if user hasn't specified DVs.
 
+        Enhanced detection covers:
+        - Matrix questions (Likert Scale Matrix)
+        - Numbered items (e.g., "Ownership_1", "Ownership_2")
+        - Single choice Likert-type questions
+        - Slider/visual analog scales
+        - Questions with similar variable prefixes
+
         Returns scales with:
         - name: Display name for the scale
         - variable_name: Variable prefix for export
         - items: Number of items in the scale
         - scale_points: Number of response options (MUST be from QSF, not assumed)
-        - type: 'matrix' or 'numbered_items'
+        - type: 'matrix', 'numbered_items', 'likert', or 'slider'
         """
         scales = []
         scale_patterns = {}
@@ -1264,21 +1271,22 @@ class QSFPreviewParser:
             self._log(LogLevel.WARNING, "SCALES", f"questions_map is {type(questions_map).__name__}, expected dict")
             return scales
 
-        # Look for numbered items (e.g., "Ownership_1", "Ownership_2")
+        # Track single-choice Likert questions for grouping
+        likert_questions = {}
+
         for q_id, q_info in questions_map.items():
+            # 1. Matrix questions are scales
             if q_info.is_matrix or q_info.question_type == 'Likert Scale Matrix':
-                # Matrix questions are scales - use question_id as variable name
                 scale_name = q_info.question_text[:50].strip() or q_id
                 variable_name = q_id
 
-                # Skip if we've already seen this scale
                 name_key = variable_name.lower()
                 if name_key in seen_scale_names:
                     continue
                 seen_scale_names.add(name_key)
 
                 num_items = len(q_info.sub_questions) if q_info.sub_questions else 1
-                scale_pts = q_info.scale_points  # Keep as-is, may be None
+                scale_pts = q_info.scale_points
 
                 scales.append({
                     'name': scale_name,
@@ -1288,13 +1296,9 @@ class QSFPreviewParser:
                     'scale_points': scale_pts,
                     'type': 'matrix'
                 })
+                self._log(LogLevel.INFO, "SCALE", f"Detected matrix scale: {variable_name} ({num_items} items)")
 
-                self._log(
-                    LogLevel.INFO, "SCALE",
-                    f"Detected matrix scale: {scale_name} ({num_items} items, {scale_pts or 'unknown'}-point)"
-                )
-
-            # Check for numbered pattern (e.g., WTP_1, WTP_2)
+            # 2. Check for numbered pattern (e.g., WTP_1, WTP_2)
             match = re.match(r'^(.+?)[-_]?(\d+)$', q_id)
             if match:
                 base_name = match.group(1).rstrip('_-')
@@ -1307,16 +1311,48 @@ class QSFPreviewParser:
                     'question_id': q_id
                 })
 
+            # 3. Single choice Likert-type questions (MC with scale responses)
+            elif q_info.question_type in ['Single Choice (Radio)', 'Single Choice', 'MC']:
+                # Check if choices suggest a Likert scale
+                choices = q_info.choices if q_info.choices else []
+                if 2 <= len(choices) <= 11:  # Typical Likert range
+                    # Group by similar question text prefix or structure
+                    q_text_lower = q_info.question_text.lower()
+                    # Extract potential scale name from question ID
+                    q_prefix = re.sub(r'[-_]?\d+$', '', q_id)
+                    if q_prefix:
+                        if q_prefix not in likert_questions:
+                            likert_questions[q_prefix] = []
+                        likert_questions[q_prefix].append({
+                            'question_id': q_id,
+                            'scale_points': len(choices),
+                            'question_text': q_info.question_text
+                        })
+
+            # 4. Slider/Visual Analog scales
+            elif q_info.question_type in ['Slider', 'Visual Analog', 'VAS']:
+                scale_name = q_info.question_text[:50].strip() or q_id
+                name_key = q_id.lower()
+                if name_key not in seen_scale_names:
+                    seen_scale_names.add(name_key)
+                    scales.append({
+                        'name': scale_name,
+                        'variable_name': q_id,
+                        'question_id': q_id,
+                        'items': 1,
+                        'scale_points': 100,  # Sliders typically 0-100
+                        'type': 'slider'
+                    })
+                    self._log(LogLevel.INFO, "SCALE", f"Detected slider scale: {q_id}")
+
         # Consolidate numbered scales
         for base_name, items in scale_patterns.items():
             if len(items) >= 2:  # At least 2 items = scale
-                # Skip if this base_name was already detected as a matrix
                 name_key = base_name.lower()
                 if name_key in seen_scale_names:
                     continue
                 seen_scale_names.add(name_key)
 
-                # Use the most common scale_points value from items
                 valid_points = [i['scale_points'] for i in items if i['scale_points'] is not None]
                 scale_pts = max(set(valid_points), key=valid_points.count) if valid_points else None
 
@@ -1327,10 +1363,27 @@ class QSFPreviewParser:
                     'scale_points': scale_pts,
                     'type': 'numbered_items'
                 })
-                self._log(
-                    LogLevel.INFO, "SCALE",
-                    f"Detected numbered scale: {base_name} ({len(items)} items, {scale_pts or 'unknown'}-point)"
-                )
+                self._log(LogLevel.INFO, "SCALE", f"Detected numbered scale: {base_name} ({len(items)} items)")
+
+        # Consolidate grouped Likert questions
+        for prefix, items in likert_questions.items():
+            if len(items) >= 2:
+                name_key = prefix.lower()
+                if name_key in seen_scale_names:
+                    continue
+                seen_scale_names.add(name_key)
+
+                valid_points = [i['scale_points'] for i in items if i['scale_points'] is not None]
+                scale_pts = max(set(valid_points), key=valid_points.count) if valid_points else None
+
+                scales.append({
+                    'name': prefix,
+                    'variable_name': prefix,
+                    'items': len(items),
+                    'scale_points': scale_pts,
+                    'type': 'likert'
+                })
+                self._log(LogLevel.INFO, "SCALE", f"Detected Likert scale: {prefix} ({len(items)} items)")
 
         return scales
 
@@ -1772,13 +1825,16 @@ class QSFPreviewParser:
         if not isinstance(blocks, list):
             blocks = []
 
-        # Check for empty blocks
+        # Check for empty blocks (skip trash/unused blocks - they're not relevant)
         for block in blocks:
             if not hasattr(block, 'questions') or not hasattr(block, 'is_randomizer'):
                 continue
+            # Skip validation for trash/unused blocks - they're intentionally empty
+            if hasattr(block, 'block_name') and self._is_excluded_block_name(block.block_name):
+                continue
             if len(block.questions) == 0 and not block.is_randomizer:
                 self._log(
-                    LogLevel.WARNING, "VALIDATION",
+                    LogLevel.INFO, "VALIDATION",
                     f"Block '{block.block_name}' has no questions"
                 )
 
