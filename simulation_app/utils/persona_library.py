@@ -159,7 +159,7 @@ Based on recent LLM simulation research:
 """
 
 # Version identifier to help track deployed code
-__version__ = "2.3.0"  # All manipulation types grounded in published literature
+__version__ = "2.4.0"  # 100+ manipulation types from 75+ published sources
 
 import hashlib
 import random
