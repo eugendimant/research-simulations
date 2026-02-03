@@ -159,7 +159,7 @@ Based on recent LLM simulation research:
 """
 
 # Version identifier to help track deployed code
-__version__ = "2.4.1"  # 100+ manipulation types from 75+ published sources
+__version__ = "2.4.5"  # Enhanced with cultural response styles and domain-specific personas
 
 import hashlib
 import random
@@ -1300,6 +1300,175 @@ class PersonaLibrary:
                 'sentiment_alignment': 'skeptical'
             },
             applicable_domains=['environmental_psychology', 'sustainability', 'climate', 'skepticism']
+        )
+
+        # ================================================================
+        # CULTURAL RESPONSE STYLE PERSONAS (v2.4.5: NEW)
+        # Scientific basis: Cross-cultural psychology, response style research.
+        # References: Chen et al. (1995), Harzing (2006), Hui & Triandis (1989)
+        # Response styles differ systematically across cultures
+        # ================================================================
+
+        personas['east_asian_response_style'] = Persona(
+            name="East Asian Response Style",
+            category="cultural",
+            description="Response pattern typical of East Asian cultures (China, Japan, Korea). "
+                       "Moderate/midpoint tendency, avoids extreme responses, socially harmonious. "
+                       "Chen et al. (1995): East Asians show reduced ERS and higher midpoint use.",
+            weight=0.08,
+            traits={
+                'midpoint_preference': PersonaTrait('midpoint_preference', 0.72, 0.10, 'High midpoint use'),
+                'extremity': PersonaTrait('extremity', 0.15, 0.08, 'Very low - avoids endpoints'),
+                'social_desirability': PersonaTrait('social_desirability', 0.68, 0.10, 'Moderate-high'),
+                'acquiescence': PersonaTrait('acquiescence', 0.50, 0.10, 'Neutral'),
+                'collectivism': PersonaTrait('collectivism', 0.78, 0.10, 'High'),
+                'harmony_seeking': PersonaTrait('harmony_seeking', 0.80, 0.08, 'High'),
+                'response_tendency': PersonaTrait('response_tendency', 0.52, 0.08, 'Centered - moderation'),
+                'scale_use_breadth': PersonaTrait('scale_use_breadth', 0.45, 0.10, 'Restricted - center bias'),
+            },
+            text_style={
+                'verbosity': 'moderate',
+                'detail_level': 'nuanced',
+                'coherence': 'high',
+                'sentiment_alignment': 'balanced'
+            },
+            applicable_domains=['all', 'cross_cultural']
+        )
+
+        personas['latin_response_style'] = Persona(
+            name="Latin Response Style",
+            category="cultural",
+            description="Response pattern typical of Latin American and Mediterranean cultures. "
+                       "Higher extreme responding, expressive, acquiescence tendency. "
+                       "Harzing (2006): Latin cultures show elevated ERS and acquiescence.",
+            weight=0.08,
+            traits={
+                'midpoint_preference': PersonaTrait('midpoint_preference', 0.30, 0.12, 'Low midpoint'),
+                'extremity': PersonaTrait('extremity', 0.70, 0.10, 'Higher - expressive'),
+                'social_desirability': PersonaTrait('social_desirability', 0.62, 0.10, 'Moderate-high'),
+                'acquiescence': PersonaTrait('acquiescence', 0.68, 0.10, 'Elevated'),
+                'expressiveness': PersonaTrait('expressiveness', 0.78, 0.10, 'High'),
+                'warmth': PersonaTrait('warmth', 0.75, 0.10, 'Warm communication'),
+                'response_tendency': PersonaTrait('response_tendency', 0.62, 0.12, 'Positive tendency'),
+                'scale_use_breadth': PersonaTrait('scale_use_breadth', 0.75, 0.10, 'Wide range use'),
+            },
+            text_style={
+                'verbosity': 'expressive',
+                'detail_level': 'emotional',
+                'coherence': 'high',
+                'sentiment_alignment': 'warm'
+            },
+            applicable_domains=['all', 'cross_cultural']
+        )
+
+        personas['nordic_response_style'] = Persona(
+            name="Nordic Response Style",
+            category="cultural",
+            description="Response pattern typical of Scandinavian cultures (Sweden, Norway, Denmark). "
+                       "Direct, low social desirability, balanced scale use. "
+                       "Hofstede (1980): Nordic cultures show low power distance, direct communication.",
+            weight=0.06,
+            traits={
+                'midpoint_preference': PersonaTrait('midpoint_preference', 0.45, 0.10, 'Moderate'),
+                'extremity': PersonaTrait('extremity', 0.32, 0.10, 'Moderate-low'),
+                'social_desirability': PersonaTrait('social_desirability', 0.35, 0.10, 'Low - direct'),
+                'acquiescence': PersonaTrait('acquiescence', 0.42, 0.10, 'Low'),
+                'egalitarianism': PersonaTrait('egalitarianism', 0.85, 0.08, 'High'),
+                'directness': PersonaTrait('directness', 0.78, 0.10, 'Direct communication'),
+                'response_tendency': PersonaTrait('response_tendency', 0.55, 0.10, 'Balanced'),
+                'scale_use_breadth': PersonaTrait('scale_use_breadth', 0.68, 0.10, 'Thoughtful range'),
+            },
+            text_style={
+                'verbosity': 'concise',
+                'detail_level': 'factual',
+                'coherence': 'very_high',
+                'sentiment_alignment': 'direct'
+            },
+            applicable_domains=['all', 'cross_cultural']
+        )
+
+        personas['middle_eastern_response_style'] = Persona(
+            name="Middle Eastern Response Style",
+            category="cultural",
+            description="Response pattern typical of Middle Eastern cultures. "
+                       "Higher acquiescence, social desirability, relationship-focused. "
+                       "Hui & Triandis (1989): High collectivism cultures show elevated ARS.",
+            weight=0.06,
+            traits={
+                'midpoint_preference': PersonaTrait('midpoint_preference', 0.35, 0.12, 'Lower'),
+                'extremity': PersonaTrait('extremity', 0.55, 0.12, 'Moderate-high'),
+                'social_desirability': PersonaTrait('social_desirability', 0.72, 0.10, 'High'),
+                'acquiescence': PersonaTrait('acquiescence', 0.70, 0.10, 'Elevated'),
+                'collectivism': PersonaTrait('collectivism', 0.80, 0.08, 'High'),
+                'hospitality': PersonaTrait('hospitality', 0.82, 0.08, 'Very high'),
+                'response_tendency': PersonaTrait('response_tendency', 0.65, 0.10, 'Positive tendency'),
+                'scale_use_breadth': PersonaTrait('scale_use_breadth', 0.65, 0.12, 'Moderately wide'),
+            },
+            text_style={
+                'verbosity': 'elaborate',
+                'detail_level': 'relationship_focused',
+                'coherence': 'high',
+                'sentiment_alignment': 'hospitable'
+            },
+            applicable_domains=['all', 'cross_cultural']
+        )
+
+        # ================================================================
+        # GENERATIONAL PERSONAS (v2.4.5: NEW)
+        # Scientific basis: Generational cohort research, Pew Research Center.
+        # References: Twenge (2017), Howe & Strauss (2000)
+        # ================================================================
+
+        personas['gen_z_digital_native'] = Persona(
+            name="Gen Z Digital Native",
+            category="generational",
+            description="Younger respondent (born 1997-2012) with digital-first mindset. "
+                       "Quick responses, comfortable with technology, values authenticity. "
+                       "Twenge (2017): iGen shows different communication patterns.",
+            weight=0.10,
+            traits={
+                'digital_fluency': PersonaTrait('digital_fluency', 0.95, 0.04, 'Very high'),
+                'attention_span': PersonaTrait('attention_span', 0.55, 0.15, 'Variable'),
+                'authenticity_value': PersonaTrait('authenticity_value', 0.82, 0.08, 'High'),
+                'social_media_use': PersonaTrait('social_media_use', 0.88, 0.08, 'Heavy'),
+                'environmental_concern': PersonaTrait('environmental_concern', 0.72, 0.12, 'Higher'),
+                'diversity_acceptance': PersonaTrait('diversity_acceptance', 0.85, 0.08, 'High'),
+                'response_tendency': PersonaTrait('response_tendency', 0.58, 0.12, 'Varied'),
+                'reading_speed': PersonaTrait('reading_speed', 0.78, 0.10, 'Fast'),
+            },
+            text_style={
+                'verbosity': 'brief',
+                'detail_level': 'informal',
+                'coherence': 'moderate',
+                'sentiment_alignment': 'authentic'
+            },
+            applicable_domains=['all', 'technology', 'social_media', 'generational']
+        )
+
+        personas['boomer_traditional'] = Persona(
+            name="Baby Boomer Traditional",
+            category="generational",
+            description="Older respondent (born 1946-1964) with more traditional communication. "
+                       "Thorough responses, values quality, may be less tech-comfortable. "
+                       "Pew Research: Boomers show distinct survey response patterns.",
+            weight=0.08,
+            traits={
+                'digital_fluency': PersonaTrait('digital_fluency', 0.55, 0.15, 'Variable'),
+                'thoroughness': PersonaTrait('thoroughness', 0.78, 0.10, 'High'),
+                'traditional_values': PersonaTrait('traditional_values', 0.72, 0.12, 'Higher'),
+                'brand_loyalty': PersonaTrait('brand_loyalty', 0.75, 0.10, 'Strong'),
+                'quality_focus': PersonaTrait('quality_focus', 0.80, 0.08, 'High'),
+                'patience': PersonaTrait('patience', 0.72, 0.10, 'Higher'),
+                'response_tendency': PersonaTrait('response_tendency', 0.60, 0.10, 'Thoughtful'),
+                'reading_speed': PersonaTrait('reading_speed', 0.55, 0.12, 'Careful'),
+            },
+            text_style={
+                'verbosity': 'detailed',
+                'detail_level': 'thorough',
+                'coherence': 'high',
+                'sentiment_alignment': 'considered'
+            },
+            applicable_domains=['all', 'consumer_behavior', 'generational']
         )
 
         return personas

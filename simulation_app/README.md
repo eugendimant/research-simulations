@@ -1,6 +1,6 @@
 # Behavioral Experiment Simulation Tool
 
-**Version 2.2.4** | A Streamlit application for generating realistic synthetic behavioral experiment data using theory-grounded persona-driven simulation.
+**Version 2.4.5** | A Streamlit application for generating realistic synthetic behavioral experiment data using theory-grounded persona-driven simulation.
 
 ## What This Tool Does
 
@@ -16,9 +16,9 @@
 - **Test your analysis pipeline** before collecting real data
 - **Practice data cleaning** with realistic quality issues
 - **Verify survey logic** and variable coding
-- **Develop R/Python scripts** on properly structured data
+- **Develop R/Python/Julia/SPSS/Stata scripts** on properly structured data
 
-## Features (v2.2.4)
+## Features (v2.4.5)
 
 ### Comprehensive DV Detection
 - **Automatic DV identification** from QSF survey structure

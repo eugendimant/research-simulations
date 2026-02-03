@@ -2740,6 +2740,302 @@ class EnhancedSimulationEngine:
 
         return "\n".join(lines)
 
+    def generate_python_export(self, df: pd.DataFrame) -> str:
+        """
+        Generate Python-compatible export script with pandas (v2.4.5).
+
+        Returns a Python script that loads and prepares Simulated.csv.
+        """
+        def _py_quote(x: str) -> str:
+            x = str(x).replace("\\", "\\\\").replace("'", "\\'")
+            return f"'{x}'"
+
+        condition_levels = ", ".join([_py_quote(c) for c in self.conditions])
+
+        lines: List[str] = [
+            "# ============================================================",
+            f"# Python Data Preparation Script - {self.study_title}",
+            f"# Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+            f"# Run ID: {self.run_id}",
+            "# ============================================================",
+            "",
+            "import pandas as pd",
+            "import numpy as np",
+            "",
+            "# Load the data",
+            "data = pd.read_csv('Simulated_Data.csv')",
+            "",
+            "# Convert CONDITION to categorical with proper order",
+            f"condition_order = [{condition_levels}]",
+            "data['CONDITION'] = pd.Categorical(data['CONDITION'], categories=condition_order, ordered=True)",
+            "",
+            "# Convert Gender to categorical",
+            "gender_labels = {1: 'Male', 2: 'Female', 3: 'Non-binary', 4: 'Prefer not to say'}",
+            "data['Gender_Label'] = data['Gender'].map(gender_labels)",
+            "",
+        ]
+
+        for scale in self.scales:
+            scale_name_raw = str(scale.get("name", "Scale")).strip() or "Scale"
+            scale_name = scale_name_raw.replace(" ", "_")
+            num_items = int(scale.get("num_items", 5))
+            scale_points = int(scale.get("scale_points", 7))
+            reverse_items = set(int(x) for x in (scale.get("reverse_items", []) or []))
+
+            items = [f"{scale_name}_{i}" for i in range(1, num_items + 1)]
+
+            if reverse_items:
+                lines.append(f"# {scale_name_raw} - reverse code items {sorted(reverse_items)}")
+                for r_item in sorted(reverse_items):
+                    item_name = f"{scale_name}_{r_item}"
+                    max_val = scale_points
+                    lines.append(f"data['{item_name}_R'] = {max_val + 1} - data['{item_name}']")
+                lines.append("")
+
+            lines.append(f"# Create {scale_name_raw} composite")
+            item_list = ", ".join([f"'{item}'" for item in items])
+            lines.append(f"data['{scale_name}_composite'] = data[[{item_list}]].mean(axis=1)")
+            lines.append("")
+
+        lines.extend([
+            "# Filter excluded participants (optional)",
+            "data_clean = data[data['Exclude_Recommended'] == 0].copy()",
+            "",
+            "print(f'Total N: {len(data)}')",
+            "print(f'Clean N: {len(data_clean)}')",
+            "",
+            "# Ready for analysis",
+            "# Example: data_clean.groupby('CONDITION')['Scale_composite'].mean()",
+        ])
+
+        return "\n".join(lines)
+
+    def generate_julia_export(self, df: pd.DataFrame) -> str:
+        """
+        Generate Julia-compatible export script with DataFrames.jl (v2.4.5).
+
+        Returns a Julia script that loads and prepares Simulated.csv.
+        """
+        def _jl_quote(x: str) -> str:
+            x = str(x).replace("\\", "\\\\").replace('"', '\\"')
+            return f'"{x}"'
+
+        condition_levels = ", ".join([_jl_quote(c) for c in self.conditions])
+
+        lines: List[str] = [
+            "# ============================================================",
+            f"# Julia Data Preparation Script - {self.study_title}",
+            f"# Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+            f"# Run ID: {self.run_id}",
+            "# ============================================================",
+            "",
+            "using CSV",
+            "using DataFrames",
+            "using CategoricalArrays",
+            "using Statistics",
+            "",
+            "# Load the data",
+            'data = CSV.read("Simulated_Data.csv", DataFrame)',
+            "",
+            "# Convert CONDITION to categorical with proper order",
+            f"condition_levels = [{condition_levels}]",
+            "data.CONDITION = categorical(data.CONDITION, levels=condition_levels, ordered=true)",
+            "",
+            "# Convert Gender to categorical",
+            'gender_labels = Dict(1 => "Male", 2 => "Female", 3 => "Non-binary", 4 => "Prefer not to say")',
+            "data.Gender_Label = [get(gender_labels, g, missing) for g in data.Gender]",
+            "",
+        ]
+
+        for scale in self.scales:
+            scale_name_raw = str(scale.get("name", "Scale")).strip() or "Scale"
+            scale_name = scale_name_raw.replace(" ", "_")
+            num_items = int(scale.get("num_items", 5))
+            scale_points = int(scale.get("scale_points", 7))
+            reverse_items = set(int(x) for x in (scale.get("reverse_items", []) or []))
+
+            items = [f"{scale_name}_{i}" for i in range(1, num_items + 1)]
+
+            if reverse_items:
+                lines.append(f"# {scale_name_raw} - reverse code items {sorted(reverse_items)}")
+                for r_item in sorted(reverse_items):
+                    item_name = f"{scale_name}_{r_item}"
+                    max_val = scale_points
+                    lines.append(f'data.{item_name}_R = {max_val + 1} .- data.{item_name}')
+                lines.append("")
+
+            lines.append(f"# Create {scale_name_raw} composite")
+            item_syms = ", ".join([f":{item}" for item in items])
+            lines.append(f"data.{scale_name}_composite = mean.(eachrow(data[:, [{item_syms}]]))")
+            lines.append("")
+
+        lines.extend([
+            "# Filter excluded participants (optional)",
+            "data_clean = filter(row -> row.Exclude_Recommended == 0, data)",
+            "",
+            'println("Total N: ", nrow(data))',
+            'println("Clean N: ", nrow(data_clean))',
+            "",
+            "# Ready for analysis",
+            "# Example: combine(groupby(data_clean, :CONDITION), :Scale_composite => mean)",
+        ])
+
+        return "\n".join(lines)
+
+    def generate_spss_export(self, df: pd.DataFrame) -> str:
+        """
+        Generate SPSS syntax file for data preparation (v2.4.5).
+
+        Returns SPSS syntax that prepares the data after import.
+        """
+        def _spss_quote(x: str) -> str:
+            x = str(x).replace("'", "''")
+            return f"'{x}'"
+
+        lines: List[str] = [
+            "* ============================================================.",
+            f"* SPSS Data Preparation Syntax - {self.study_title}.",
+            f"* Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}.",
+            f"* Run ID: {self.run_id}.",
+            "* ============================================================.",
+            "",
+            "* Load the data first using:",
+            "*   File > Import Data > CSV Data...",
+            "*   Select 'Simulated_Data.csv'.",
+            "",
+            "* Define variable labels and value labels.",
+            "",
+        ]
+
+        # Add condition value labels
+        condition_labels = " ".join([f"{i+1} {_spss_quote(c)}" for i, c in enumerate(self.conditions)])
+        lines.extend([
+            "VALUE LABELS CONDITION",
+            f"  {condition_labels}.",
+            "",
+            "VALUE LABELS Gender",
+            "  1 'Male'",
+            "  2 'Female'",
+            "  3 'Non-binary'",
+            "  4 'Prefer not to say'.",
+            "",
+        ])
+
+        for scale in self.scales:
+            scale_name_raw = str(scale.get("name", "Scale")).strip() or "Scale"
+            scale_name = scale_name_raw.replace(" ", "_")
+            num_items = int(scale.get("num_items", 5))
+            scale_points = int(scale.get("scale_points", 7))
+            reverse_items = set(int(x) for x in (scale.get("reverse_items", []) or []))
+
+            items = [f"{scale_name}_{i}" for i in range(1, num_items + 1)]
+
+            if reverse_items:
+                lines.append(f"* {scale_name_raw} - reverse code items {sorted(reverse_items)}.")
+                for r_item in sorted(reverse_items):
+                    item_name = f"{scale_name}_{r_item}"
+                    max_val = scale_points
+                    lines.append(f"COMPUTE {item_name}_R = {max_val + 1} - {item_name}.")
+                lines.append("EXECUTE.")
+                lines.append("")
+
+            lines.append(f"* Create {scale_name_raw} composite.")
+            item_list = " ".join(items)
+            lines.append(f"COMPUTE {scale_name}_composite = MEAN({item_list}).")
+            lines.append("EXECUTE.")
+            lines.append("")
+
+        lines.extend([
+            "* Filter excluded participants (optional).",
+            "USE ALL.",
+            "COMPUTE filter_$=(Exclude_Recommended = 0).",
+            "VARIABLE LABELS filter_$ 'Exclude_Recommended = 0 (FILTER)'.",
+            "VALUE LABELS filter_$ 0 'Not Selected' 1 'Selected'.",
+            "FORMATS filter_$ (f1.0).",
+            "FILTER BY filter_$.",
+            "EXECUTE.",
+            "",
+            "* Descriptive statistics.",
+            "DESCRIPTIVES VARIABLES=ALL /STATISTICS=MEAN STDDEV MIN MAX.",
+            "",
+        ])
+
+        return "\n".join(lines)
+
+    def generate_stata_export(self, df: pd.DataFrame) -> str:
+        """
+        Generate Stata .do file for data preparation (v2.4.5).
+
+        Returns Stata commands that prepare the data after import.
+        """
+        def _stata_quote(x: str) -> str:
+            x = str(x).replace('"', "'")
+            return f'"{x}"'
+
+        lines: List[str] = [
+            "// ============================================================",
+            f"// Stata Data Preparation Do-File - {self.study_title}",
+            f"// Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+            f"// Run ID: {self.run_id}",
+            "// ============================================================",
+            "",
+            "// Load the data",
+            'import delimited "Simulated_Data.csv", clear',
+            "",
+            "// Label the CONDITION variable",
+        ]
+
+        # Add condition value labels
+        for i, c in enumerate(self.conditions):
+            lines.append(f'label define condition_lbl {i+1} {_stata_quote(c)}, add')
+        lines.extend([
+            "encode condition, gen(condition_num) label(condition_lbl)",
+            "",
+            "// Label Gender variable",
+            'label define gender_lbl 1 "Male" 2 "Female" 3 "Non-binary" 4 "Prefer not to say"',
+            "label values gender gender_lbl",
+            "",
+        ])
+
+        for scale in self.scales:
+            scale_name_raw = str(scale.get("name", "Scale")).strip() or "Scale"
+            scale_name = scale_name_raw.replace(" ", "_").lower()
+            num_items = int(scale.get("num_items", 5))
+            scale_points = int(scale.get("scale_points", 7))
+            reverse_items = set(int(x) for x in (scale.get("reverse_items", []) or []))
+
+            items = [f"{scale_name}_{i}" for i in range(1, num_items + 1)]
+
+            if reverse_items:
+                lines.append(f"// {scale_name_raw} - reverse code items {sorted(reverse_items)}")
+                for r_item in sorted(reverse_items):
+                    item_name = f"{scale_name}_{r_item}"
+                    max_val = scale_points
+                    lines.append(f"gen {item_name}_r = {max_val + 1} - {item_name}")
+                lines.append("")
+
+            lines.append(f"// Create {scale_name_raw} composite")
+            item_list = " ".join(items)
+            lines.append(f"egen {scale_name}_composite = rowmean({item_list})")
+            lines.append("")
+
+        lines.extend([
+            "// Filter excluded participants (optional)",
+            "preserve",
+            "keep if exclude_recommended == 0",
+            "",
+            '// Display counts',
+            'display "Total N: " _N',
+            "",
+            "// Summary statistics",
+            "summarize",
+            "",
+            "// Ready for analysis",
+            "restore",
+        ])
+
+        return "\n".join(lines)
+
     def generate_methods_writeup(self, condensed: bool = True) -> str:
         """
         Generate a scientific methods write-up for the simulation.

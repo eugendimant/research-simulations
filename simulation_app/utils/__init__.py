@@ -2,8 +2,22 @@
 """
 Utility modules for the Behavioral Experiment Simulation Tool.
 
-Version: 2.4.4
-Changes (v2.4.4 - UI/UX Improvements + Instructor Report):
+Version: 2.4.5
+Changes (v2.4.5 - 5 Iterations of Improvements):
+    - NEW: Enhanced DV detection (rank-order, best-worst, paired comparison, hot spot scales)
+    - NEW: 6 cultural response style personas (East Asian, Latin, Nordic, Middle Eastern)
+    - NEW: 2 generational personas (Gen Z, Baby Boomer)
+    - NEW: 33 new research domains (AI alignment, climate action, health disparities, genomics, etc.)
+    - NEW: 10 new domain templates for emerging research areas
+    - NEW: Python/pandas export script (Python_Prepare_Data.py)
+    - NEW: Julia/DataFrames export script (Julia_Prepare_Data.jl)
+    - NEW: SPSS syntax export (SPSS_Prepare_Data.sps)
+    - NEW: Stata do-file export (Stata_Prepare_Data.do)
+    - NEW: Design Preview panel in Step 3 with configuration summary
+    - ENHANCED: Progress indicators with percentage and status emojis
+    - ENHANCED: Design type auto-detection (2×2, 2×3, 3×3 factorial)
+
+Previous (v2.4.4 - UI/UX Improvements + Instructor Report):
     - FIX: Step 3 now scrolls to top (section 1) when navigating
     - NEW: Open-ended question verification step in Step 3 UI (Section 5)
     - NEW: User can add/remove open-ended questions like conditions/DVs
@@ -43,7 +57,7 @@ Modules:
 """
 
 # Package version - should match all module versions
-__version__ = "2.4.4"
+__version__ = "2.4.5"
 
 from .qsf_parser import parse_qsf_file, extract_survey_structure, generate_qsf_summary
 from .simulation_engine import SimulationEngine

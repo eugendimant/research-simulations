@@ -63,7 +63,7 @@ association, impression, perception, feedback, comment, observation, general
 Version: 2.4.3 - ENHANCED: QSF training on 6 real surveys - comprehensive pattern detection
 """
 
-__version__ = "2.4.4"
+__version__ = "2.4.5"
 
 import random
 import re
@@ -473,6 +473,53 @@ class StudyDomain(Enum):
     HAZARD_PERCEPTION = "hazard_perception"
     DISASTER_PREPAREDNESS = "disaster_preparedness"
     RISK_COMMUNICATION = "risk_communication"
+
+    # ========== NEW DOMAINS (v2.4.5) ==========
+
+    # AI Alignment & Ethics (6 domains)
+    AI_ALIGNMENT = "ai_alignment"
+    AI_ETHICS = "ai_ethics"
+    AI_SAFETY = "ai_safety"
+    MACHINE_VALUES = "machine_values"
+    AI_GOVERNANCE = "ai_governance"
+    AI_TRANSPARENCY = "ai_transparency"
+
+    # Climate Science & Action (6 domains)
+    CLIMATE_ACTION = "climate_action"
+    CLIMATE_COMMUNICATION = "climate_communication"
+    CARBON_FOOTPRINT = "carbon_footprint"
+    CLIMATE_ADAPTATION = "climate_adaptation"
+    CLIMATE_JUSTICE = "climate_justice"
+    RENEWABLE_ENERGY = "renewable_energy"
+
+    # Health Disparities (6 domains)
+    HEALTH_DISPARITIES = "health_disparities"
+    HEALTHCARE_ACCESS = "healthcare_access"
+    HEALTH_EQUITY = "health_equity"
+    SOCIAL_DETERMINANTS = "social_determinants"
+    HEALTH_LITERACY = "health_literacy"
+    MEDICAL_MISTRUST = "medical_mistrust"
+
+    # Genomics & Personalized Medicine (5 domains)
+    GENOMICS = "genomics"
+    GENETIC_TESTING = "genetic_testing"
+    PERSONALIZED_MEDICINE = "personalized_medicine"
+    GENE_THERAPY = "gene_therapy"
+    BIOETHICS = "bioethics"
+
+    # Digital Society (5 domains)
+    DIGITAL_DIVIDE = "digital_divide"
+    ONLINE_POLARIZATION = "online_polarization"
+    ALGORITHMIC_FAIRNESS = "algorithmic_fairness"
+    DATA_PRIVACY = "data_privacy"
+    DIGITAL_LITERACY = "digital_literacy"
+
+    # Future of Work (5 domains)
+    AUTOMATION_ANXIETY = "automation_anxiety"
+    GIG_ECONOMY = "gig_economy"
+    SKILLS_OBSOLESCENCE = "skills_obsolescence"
+    UNIVERSAL_BASIC_INCOME = "universal_basic_income"
+    HUMAN_MACHINE_COLLABORATION = "human_machine_collaboration"
 
 
 # ============================================================================
@@ -3274,6 +3321,113 @@ DOMAIN_TEMPLATES: Dict[str, Dict[str, Dict[str, List[str]]]] = {
             "neutral": ["My social support is average.", "Some people care about me.", "I sometimes have support.", "My support network is limited.", "I occasionally feel alone."],
             "negative": ["My social support is limited.", "Few people seem to care.", "I often lack support.", "My support network is weak.", "I frequently feel alone."],
             "very_negative": ["I have no social support.", "Nobody cares about me.", "I have no one to turn to.", "My support network is nonexistent.", "I always feel alone."],
+        },
+    },
+
+    # ========== NEW DOMAINS (v2.4.5) ==========
+
+    # AI ALIGNMENT & ETHICS
+    "ai_alignment": {
+        "explanation": {
+            "very_positive": ["AI alignment research is crucial for humanity's future.", "We must ensure AI systems share human values.", "I strongly support efforts to make AI beneficial.", "AI safety should be a top priority.", "Aligned AI can help solve major global challenges."],
+            "positive": ["AI alignment is important for safe development.", "I support research into AI value alignment.", "Making AI systems beneficial seems worthwhile.", "AI safety research is valuable.", "We should work on aligning AI with human values."],
+            "neutral": ["AI alignment is one of many concerns.", "I'm not sure how serious the alignment problem is.", "It's hard to know what AI values should be.", "I have mixed views on AI alignment priorities.", "The importance of alignment research is unclear."],
+            "negative": ["AI alignment concerns may be overstated.", "Other AI issues seem more pressing.", "I'm skeptical about alignment as a problem.", "Current AI doesn't need complex alignment.", "Alignment research seems premature."],
+            "very_negative": ["AI alignment fears are exaggerated.", "We shouldn't slow AI progress for alignment.", "The alignment problem is overhyped.", "I don't believe AI poses existential risks.", "Alignment concerns distract from real issues."],
+        },
+    },
+
+    "ai_ethics": {
+        "explanation": {
+            "very_positive": ["AI ethics are essential for responsible development.", "We must consider ethical implications of AI.", "I strongly support ethical AI guidelines.", "AI developers have moral obligations.", "Ethics should guide all AI decisions."],
+            "positive": ["AI ethics matter for good outcomes.", "Ethical considerations in AI are important.", "I support ethical AI development.", "AI should be developed responsibly.", "Ethics should inform AI decisions."],
+            "neutral": ["AI ethics is one consideration among many.", "It's hard to apply ethics to AI systems.", "I have mixed views on AI ethics.", "The right ethical framework is unclear.", "AI ethics is complicated."],
+            "negative": ["AI ethics can slow beneficial progress.", "Ethical concerns about AI are often overblown.", "Market forces will guide AI better than ethics.", "Too much focus on AI ethics.", "Ethics shouldn't restrict AI innovation."],
+            "very_negative": ["AI ethics is mostly hand-wringing.", "Ethical restrictions on AI harm progress.", "I reject most AI ethics concerns.", "AI ethics is a distraction.", "Innovation matters more than AI ethics."],
+        },
+    },
+
+    # CLIMATE SCIENCE & ACTION
+    "climate_action": {
+        "explanation": {
+            "very_positive": ["Urgent climate action is absolutely essential.", "We must act immediately on climate change.", "Climate action is the defining issue of our time.", "I strongly support aggressive climate policies.", "We need transformative climate action now."],
+            "positive": ["Climate action is important and needed.", "I support policies to address climate change.", "We should do more for the climate.", "Climate action makes sense.", "I care about climate action."],
+            "neutral": ["Climate action has costs and benefits.", "I have mixed views on climate policies.", "Some climate action is needed, but not sure how much.", "Climate policy trade-offs are complex.", "I'm moderate on climate action."],
+            "negative": ["Climate action costs are too high.", "Current policies go too far.", "Economic concerns should balance climate action.", "I'm skeptical of aggressive climate policies.", "Climate action is often misguided."],
+            "very_negative": ["Climate action hurts the economy unnecessarily.", "Climate policies are government overreach.", "I oppose most climate action proposals.", "Climate activism is excessive.", "Climate action is a waste of resources."],
+        },
+    },
+
+    "climate_justice": {
+        "explanation": {
+            "very_positive": ["Climate justice is essential for equity.", "Those least responsible suffer most from climate change.", "I strongly support climate justice principles.", "Wealthy nations owe climate debt to developing countries.", "Environmental racism must be addressed."],
+            "positive": ["Climate justice concerns are valid.", "Equity should be part of climate policy.", "I support fair climate burden-sharing.", "Climate impacts are unevenly distributed.", "Justice should inform climate action."],
+            "neutral": ["Climate justice is complicated.", "I have mixed views on climate equity.", "It's hard to know what's fair.", "Climate justice claims vary in validity.", "I'm uncertain about climate justice."],
+            "negative": ["Climate justice can complicate needed action.", "Individual responsibility matters more.", "Climate justice claims are sometimes excessive.", "Other priorities compete with climate justice.", "Climate justice is too politicized."],
+            "very_negative": ["Climate justice is a political agenda.", "I reject the climate justice framework.", "Personal responsibility, not collective guilt.", "Climate justice distracts from solutions.", "I don't accept climate justice claims."],
+        },
+    },
+
+    # HEALTH DISPARITIES
+    "health_disparities": {
+        "explanation": {
+            "very_positive": ["Health disparities are a critical injustice.", "We must address systemic health inequities.", "I strongly support eliminating health disparities.", "Everyone deserves equal health outcomes.", "Health equity should be a national priority."],
+            "positive": ["Health disparities are concerning.", "We should work to reduce health inequities.", "I support policies addressing health disparities.", "Equal health access is important.", "Reducing health disparities matters."],
+            "neutral": ["Health disparities exist but causes are complex.", "I have mixed views on health equity policies.", "Individual factors also affect health.", "Addressing disparities is complicated.", "I'm moderate on health disparity solutions."],
+            "negative": ["Health disparities have multiple causes beyond policy.", "Individual choices affect health significantly.", "Not all disparities are inequities.", "Current approaches may not work.", "Health disparity emphasis is sometimes excessive."],
+            "very_negative": ["Health disparities are mostly due to individual choices.", "I reject systemic explanations for health differences.", "Personal responsibility is what matters.", "Health equity policies are misguided.", "Health disparity focus is political."],
+        },
+    },
+
+    "healthcare_access": {
+        "explanation": {
+            "very_positive": ["Universal healthcare access is a right.", "Everyone deserves affordable quality care.", "I strongly support expanded healthcare access.", "Healthcare should not depend on wealth.", "Access barriers must be eliminated."],
+            "positive": ["Healthcare access is important.", "I support improving access to care.", "More people should have healthcare.", "Access to care should be expanded.", "Healthcare should be more affordable."],
+            "neutral": ["Healthcare access trade-offs are real.", "I have mixed views on healthcare policy.", "Expanding access has costs.", "The best approach is unclear.", "I'm moderate on healthcare access."],
+            "negative": ["Current healthcare access is adequate.", "Market solutions are better than mandates.", "Expanding access is too expensive.", "Quality matters more than access.", "Government healthcare expansion is problematic."],
+            "very_negative": ["Healthcare is not a right.", "I oppose government healthcare expansion.", "Personal responsibility for healthcare.", "Current access is sufficient.", "Healthcare mandates are wrong."],
+        },
+    },
+
+    # GENOMICS & PERSONALIZED MEDICINE
+    "genomics": {
+        "explanation": {
+            "very_positive": ["Genomics will revolutionize medicine.", "Genetic knowledge empowers health decisions.", "I'm very excited about genomic advances.", "Personalized medicine is the future.", "Genomics offers tremendous benefits."],
+            "positive": ["Genomics has promising applications.", "Genetic information can be useful.", "I'm interested in genomic medicine.", "Personalized treatments seem valuable.", "Genomics research is worthwhile."],
+            "neutral": ["Genomics has potential and risks.", "I have mixed views on genetic medicine.", "Benefits and concerns both seem valid.", "It's hard to know the right approach.", "I'm uncertain about genomics."],
+            "negative": ["Genomics raises concerning issues.", "Genetic information has privacy risks.", "I'm skeptical of genomic medicine hype.", "Genetic determinism is concerning.", "Genomics risks outweigh benefits."],
+            "very_negative": ["Genomics is dangerous territory.", "Genetic information shouldn't be collected.", "I strongly oppose genomic medicine trends.", "Privacy and discrimination risks are too high.", "We shouldn't pursue genomic medicine."],
+        },
+    },
+
+    "genetic_testing": {
+        "explanation": {
+            "very_positive": ["Genetic testing provides valuable health information.", "I support widespread genetic testing.", "Knowing my genetic risks empowers me.", "Genetic testing should be accessible to all.", "Testing enables better health decisions."],
+            "positive": ["Genetic testing can be useful.", "I'm open to genetic testing for myself.", "Testing has legitimate uses.", "Some genetic tests are worthwhile.", "Genetic information can help health decisions."],
+            "neutral": ["Genetic testing has pros and cons.", "I'm undecided about genetic testing.", "It depends on the specific test.", "Testing isn't clearly good or bad.", "I have mixed views on genetic testing."],
+            "negative": ["Genetic testing raises privacy concerns.", "I'm cautious about genetic testing.", "Testing can cause unnecessary worry.", "Insurance and employment discrimination risks.", "Genetic testing is often not useful."],
+            "very_negative": ["Genetic testing is an invasion of privacy.", "I oppose genetic testing.", "Testing creates more problems than it solves.", "Genetic information should stay private.", "I refuse genetic testing."],
+        },
+    },
+
+    # DIGITAL SOCIETY
+    "algorithmic_fairness": {
+        "explanation": {
+            "very_positive": ["Algorithmic fairness is essential for justice.", "AI systems must be unbiased.", "I strongly support algorithmic auditing.", "Biased algorithms cause real harm.", "Fairness must be designed into systems."],
+            "positive": ["Algorithmic fairness matters.", "AI systems should be checked for bias.", "I support fairness in algorithms.", "Biased algorithms are concerning.", "We should work on fair AI."],
+            "neutral": ["Algorithmic fairness is complicated.", "Defining fairness is difficult.", "I have mixed views on this.", "Trade-offs between fairness criteria exist.", "It's hard to know the right approach."],
+            "negative": ["Algorithmic fairness can harm accuracy.", "Fairness mandates may be counterproductive.", "I'm skeptical of fairness requirements.", "Too much focus on algorithmic bias.", "Fairness concerns are sometimes overblown."],
+            "very_negative": ["Algorithmic fairness is a misguided concept.", "I oppose fairness mandates for AI.", "Accuracy matters more than fairness.", "Fairness requirements harm innovation.", "I reject the algorithmic fairness agenda."],
+        },
+    },
+
+    "automation_anxiety": {
+        "explanation": {
+            "very_positive": ["Automation will create new opportunities.", "I'm optimistic about the automated future.", "Technology always creates new jobs.", "Automation will improve quality of life.", "I embrace automation fully."],
+            "positive": ["Automation has more benefits than risks.", "New jobs will replace old ones.", "I'm generally positive about automation.", "Technology usually helps workers.", "Automation can be managed well."],
+            "neutral": ["Automation has both upsides and downsides.", "Job impacts are hard to predict.", "I have mixed feelings about automation.", "Some jobs will be lost, some created.", "The future is uncertain."],
+            "negative": ["I'm concerned about job displacement.", "Automation threatens many livelihoods.", "Workers aren't prepared for automation.", "Transition will be difficult.", "Automation anxiety is justified."],
+            "very_negative": ["Automation will devastate the job market.", "Mass unemployment is coming.", "Technology is replacing humans unfairly.", "Workers will suffer greatly.", "I'm very worried about automation."],
         },
     },
 }

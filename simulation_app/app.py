@@ -44,8 +44,8 @@ import streamlit as st
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "2.4.4"
-BUILD_ID = "20260203-v244-oe-verification"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "2.4.5"
+BUILD_ID = "20260203-v245-enhanced"  # Change this to force cache invalidation
 
 def _verify_and_reload_utils():
     """Verify utils modules are at correct version, force reload if needed.
@@ -98,7 +98,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF"
-APP_VERSION = "2.4.4"  # v2.4.4: Open-ended verification UI, scroll fix, instructor report enhancements
+APP_VERSION = "2.4.5"  # v2.4.5: Enhanced DV detection, cultural personas, new domains, export formats, UI improvements
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -2874,7 +2874,7 @@ def _get_total_conditions() -> int:
 # UNIFIED STATUS PANEL - Shows progress across all steps
 # ========================================
 def _render_status_panel():
-    """Render a unified status panel showing all required fields."""
+    """Render a unified status panel showing all required fields (v2.4.5 enhanced)."""
     completion = _get_step_completion()
 
     # Calculate overall progress
@@ -2883,9 +2883,11 @@ def _render_status_panel():
     completed_count = sum(1 for k in required_items if completion.get(k, False))
     total_count = len(required_items)
 
-    # Progress bar
+    # v2.4.5: Enhanced progress bar with percentage
     progress = completed_count / total_count
-    st.progress(progress, text=f"Setup progress: {completed_count}/{total_count} required fields")
+    pct = int(progress * 100)
+    status_emoji = "🟢" if pct == 100 else "🟡" if pct >= 50 else "🔴"
+    st.progress(progress, text=f"{status_emoji} Setup progress: {pct}% ({completed_count}/{total_count} required fields)")
 
     # Missing fields with clickable guidance
     missing = []
@@ -4635,6 +4637,60 @@ if active_step == 2:
             )
             st.session_state["variable_review_rows"] = variable_df.to_dict(orient="records")
 
+    # ========================================
+    # v2.4.5: DESIGN PREVIEW SUMMARY
+    # ========================================
+    if design_valid:
+        st.markdown("---")
+        st.markdown("### 📋 Design Preview")
+        st.caption("Review your experiment configuration before generating data")
+
+        preview_col1, preview_col2 = st.columns(2)
+        with preview_col1:
+            st.markdown("**Study Details**")
+            study_title = st.session_state.get("study_title", "Untitled Study")
+            sample_n = st.session_state.get("sample_size", 100)
+            st.markdown(f"- **Title:** {study_title[:60]}{'...' if len(study_title) > 60 else ''}")
+            st.markdown(f"- **Sample Size:** N = {sample_n}")
+
+            st.markdown("**Experimental Design**")
+            st.markdown(f"- **Conditions:** {len(all_conditions)}")
+            if all_conditions:
+                cond_preview = ", ".join(all_conditions[:4])
+                if len(all_conditions) > 4:
+                    cond_preview += f", +{len(all_conditions) - 4} more"
+                st.markdown(f"  _{cond_preview}_")
+
+        with preview_col2:
+            st.markdown("**Dependent Variables**")
+            st.markdown(f"- **Scales/DVs:** {len(scales)}")
+            if scales:
+                for s in scales[:3]:
+                    s_name = s.get("name", "Scale")[:30]
+                    s_type = s.get("type", "unknown")
+                    st.markdown(f"  - {s_name} _({s_type})_")
+                if len(scales) > 3:
+                    st.markdown(f"  - _+{len(scales) - 3} more_")
+
+            # Effect size preview
+            effect_size = st.session_state.get("effect_size", 0.5)
+            st.markdown(f"**Effect Size:** d = {effect_size:.2f}")
+
+        # Design type detection
+        design_type = "Between-subjects"
+        if len(all_conditions) == 1:
+            design_type = "Single group"
+        elif len(all_conditions) == 2:
+            design_type = "2-group comparison"
+        elif len(all_conditions) == 4:
+            design_type = "2×2 factorial"
+        elif len(all_conditions) == 6:
+            design_type = "2×3 factorial"
+        elif len(all_conditions) == 9:
+            design_type = "3×3 factorial"
+
+        st.info(f"**Design Type:** {design_type} · **Total Cells:** {len(all_conditions)} · **N per cell:** ~{sample_n // max(1, len(all_conditions))}")
+
     # Navigation at bottom of Step 3 (outside expander)
     _render_step_navigation(2, design_valid, "Generate")
 
@@ -5046,6 +5102,11 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
             status_placeholder.info("Packaging downloads and reports...")
             explainer = engine.generate_explainer()
             r_script = engine.generate_r_export(df)
+            # v2.4.5: Generate additional analysis scripts for Python, Julia, SPSS, Stata
+            python_script = engine.generate_python_export(df)
+            julia_script = engine.generate_julia_export(df)
+            spss_script = engine.generate_spss_export(df)
+            stata_script = engine.generate_stata_export(df)
 
             metadata["preregistration_summary"] = {
                 "outcomes": st.session_state.get("prereg_outcomes", ""),
@@ -5070,6 +5131,11 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
             meta_bytes = _safe_json(metadata).encode("utf-8")
             explainer_bytes = explainer.encode("utf-8")
             r_bytes = r_script.encode("utf-8")
+            # v2.4.5: Encode additional analysis scripts
+            python_bytes = python_script.encode("utf-8")
+            julia_bytes = julia_script.encode("utf-8")
+            spss_bytes = spss_script.encode("utf-8")
+            stata_bytes = stata_script.encode("utf-8")
             # Standard instructor report (included in download for students)
             instructor_report = InstructorReportGenerator().generate_markdown_report(
                 df=df,
@@ -5122,6 +5188,10 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
                 "Metadata.json": meta_bytes,
                 "Data_Codebook_Handbook.txt": explainer_bytes,  # Explains all variable coding
                 "R_Prepare_Data.R": r_bytes,
+                "Python_Prepare_Data.py": python_bytes,  # v2.4.5: Python/pandas script
+                "Julia_Prepare_Data.jl": julia_bytes,  # v2.4.5: Julia/DataFrames script
+                "SPSS_Prepare_Data.sps": spss_bytes,  # v2.4.5: SPSS syntax file
+                "Stata_Prepare_Data.do": stata_bytes,  # v2.4.5: Stata do-file
                 "Schema_Validation.json": _safe_json(schema_results).encode("utf-8"),
                 "Study_Summary.md": instructor_bytes,  # Summary report in Markdown
                 "Study_Summary.html": instructor_html_bytes,  # Same summary in HTML (easy to view in browser)
@@ -5212,6 +5282,10 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
                 "- Study_Summary.md (basic summary in Markdown)\n"
                 "- Study_Summary.html (same summary - opens in any browser)\n"
                 "- R_Prepare_Data.R (R script)\n"
+                "- Python_Prepare_Data.py (Python/pandas script)\n"
+                "- Julia_Prepare_Data.jl (Julia/DataFrames script)\n"
+                "- SPSS_Prepare_Data.sps (SPSS syntax)\n"
+                "- Stata_Prepare_Data.do (Stata do-file)\n"
                 "- Metadata.json, Schema_Validation.json\n"
                 f"\n{usage_summary}\n"
             )
