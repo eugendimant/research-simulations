@@ -294,13 +294,255 @@ def _normalize_open_ended(open_ended: Optional[List[Any]]) -> List[Dict[str, Any
         if isinstance(item, str):
             name = item.strip()
             if name:
-                normalized.append({"name": name, "type": "text"})
+                normalized.append({"name": name, "type": "text", "question_text": name})
             continue
         if isinstance(item, dict):
             name = str(item.get("name", "")).strip()
             if name:
-                normalized.append(item)
+                # Preserve question_text, display_logic, and condition info for survey flow
+                normalized_item = dict(item)
+                # Ensure question_text is set for unique response generation
+                if not normalized_item.get("question_text"):
+                    normalized_item["question_text"] = name
+                normalized.append(normalized_item)
     return normalized
+
+
+class SurveyFlowHandler:
+    """
+    Handler for survey flow logic - determines which questions participants see
+    based on their experimental condition.
+
+    Implements condition-based question visibility to ensure simulated
+    participants only receive responses for questions they would actually see.
+
+    Detection methods:
+    1. Explicit condition restrictions in question spec
+    2. DisplayLogic parsing for condition checks
+    3. Block name analysis (condition keywords in block names)
+    4. Embedded data checks referencing condition variables
+    5. Factor-level matching for factorial designs
+    """
+
+    def __init__(self, conditions: List[str], open_ended_questions: List[Dict[str, Any]]):
+        self.conditions = [str(c).lower().strip() for c in conditions]
+        self.condition_map = {c.lower().strip(): c for c in conditions}
+        self.questions = open_ended_questions
+        # Parse conditions into factors for factorial designs
+        self.factor_levels = self._extract_factor_levels()
+        self.visibility_map = self._build_visibility_map()
+
+    def _extract_factor_levels(self) -> Dict[str, Set[str]]:
+        """Extract factor levels from condition names for factorial designs."""
+        # Common separators in factorial condition names
+        separators = ['×', ' x ', '_x_', ' × ']
+        factor_levels: Dict[str, Set[str]] = {}
+
+        for cond in self.conditions:
+            # Check if this is a crossed condition
+            parts = None
+            for sep in separators:
+                if sep in cond:
+                    parts = [p.strip() for p in cond.split(sep)]
+                    break
+
+            if parts and len(parts) >= 2:
+                for i, part in enumerate(parts):
+                    factor_key = f"factor_{i}"
+                    if factor_key not in factor_levels:
+                        factor_levels[factor_key] = set()
+                    factor_levels[factor_key].add(part.lower())
+
+        return factor_levels
+
+    def _build_visibility_map(self) -> Dict[str, Dict[str, bool]]:
+        """Build map of question -> condition -> visibility."""
+        visibility = {}
+
+        for q in self.questions:
+            q_name = str(q.get("name", "")).strip()
+            if not q_name:
+                continue
+
+            # Get various sources of visibility info
+            display_logic = q.get("display_logic") or q.get("display_logic_details") or {}
+            condition_restriction = q.get("condition") or q.get("visible_conditions") or []
+            block_name = str(q.get("block_name", "")).lower()
+            question_text = str(q.get("question_text", "")).lower()
+
+            # Initialize all conditions as visible by default
+            q_visibility = {c: True for c in self.conditions}
+
+            # Method 1: Explicit condition restrictions
+            if condition_restriction:
+                if isinstance(condition_restriction, str):
+                    condition_restriction = [condition_restriction]
+                allowed = [str(c).lower().strip() for c in condition_restriction]
+                for cond in self.conditions:
+                    q_visibility[cond] = self._condition_matches_any(cond, allowed)
+
+            # Method 2: Display logic parsing
+            if display_logic and isinstance(display_logic, dict):
+                self._apply_display_logic(q_visibility, display_logic)
+
+            # Method 3: Block name analysis
+            self._apply_block_name_logic(q_visibility, block_name)
+
+            # Method 4: Question text hints (e.g., "For AI condition participants...")
+            self._apply_question_text_hints(q_visibility, question_text)
+
+            visibility[q_name] = q_visibility
+
+        return visibility
+
+    def _condition_matches_any(self, condition: str, allowed: List[str]) -> bool:
+        """Check if a condition matches any in the allowed list."""
+        cond_lower = condition.lower()
+
+        # Direct match
+        if cond_lower in allowed:
+            return True
+
+        # Partial match for factorial conditions
+        for a in allowed:
+            # Check if allowed pattern is a factor level within condition
+            # e.g., "ai" should match "ai × hedonic"
+            if a in cond_lower or cond_lower in a:
+                return True
+
+            # Check factor-level matching
+            for factor_key, levels in self.factor_levels.items():
+                if a in levels and a in cond_lower:
+                    return True
+
+        return False
+
+    def _apply_display_logic(self, q_visibility: Dict[str, bool], display_logic: Dict[str, Any]):
+        """Apply display logic rules to visibility map."""
+        logic_conditions = display_logic.get("conditions", [])
+
+        for logic_cond in logic_conditions:
+            if not isinstance(logic_cond, dict):
+                continue
+
+            choice_locator = str(logic_cond.get("choice_locator", "")).lower()
+            question_id = str(logic_cond.get("question_id", "")).lower()
+            operator = str(logic_cond.get("operator", "")).lower()
+
+            # Check for condition-related locators
+            if "condition" in choice_locator or "condition" in question_id:
+                # Extract condition value from locator
+                # Format often: q://QID123/SelectableChoice/1
+                # or contains embedded data field names
+                for cond in self.conditions:
+                    cond_parts = cond.replace('×', ' ').replace('_', ' ').split()
+                    # If the locator contains references to specific conditions
+                    matches = any(p in choice_locator for p in cond_parts if len(p) > 2)
+                    if matches and operator in ["selected", "equalto", "is"]:
+                        # This question is only for this condition
+                        for other_cond in self.conditions:
+                            if other_cond != cond:
+                                q_visibility[other_cond] = False
+
+    def _apply_block_name_logic(self, q_visibility: Dict[str, bool], block_name: str):
+        """Apply visibility rules based on block name."""
+        if not block_name:
+            return
+
+        # Common block name patterns indicating condition-specific blocks
+        condition_keywords_in_block = []
+
+        for cond in self.conditions:
+            # Split condition into parts for factorial matching
+            cond_parts = cond.replace('×', ' ').replace('_', ' ').lower().split()
+
+            for part in cond_parts:
+                if len(part) > 2 and part in block_name:
+                    condition_keywords_in_block.append((cond, part))
+
+        # If block name contains specific condition keywords
+        if condition_keywords_in_block:
+            # Find the most specific match
+            best_match = max(condition_keywords_in_block, key=lambda x: len(x[1]))
+            matching_cond = best_match[0]
+
+            # Only this condition sees questions in this block
+            for cond in self.conditions:
+                if cond != matching_cond:
+                    # Check if they share a factor level
+                    matching_parts = set(matching_cond.replace('×', ' ').split())
+                    cond_parts = set(cond.replace('×', ' ').split())
+                    shared = matching_parts & cond_parts
+                    # If they share a factor level, both see it
+                    if not shared:
+                        q_visibility[cond] = False
+
+    def _apply_question_text_hints(self, q_visibility: Dict[str, bool], question_text: str):
+        """Check question text for condition-specific language."""
+        if not question_text:
+            return
+
+        # Patterns that indicate condition-specific questions
+        condition_phrases = [
+            ("for those who", True),
+            ("if you were in the", True),
+            ("in the ai condition", True),
+            ("in the human condition", False),
+            ("for participants who", True),
+        ]
+
+        for phrase, _ in condition_phrases:
+            if phrase in question_text:
+                # Try to extract which condition this refers to
+                for cond in self.conditions:
+                    cond_parts = cond.replace('×', ' ').replace('_', ' ').lower().split()
+                    for part in cond_parts:
+                        if len(part) > 2 and part in question_text:
+                            # This question mentions a specific condition
+                            for other_cond in self.conditions:
+                                if part not in other_cond:
+                                    q_visibility[other_cond] = False
+                            break
+
+    def is_question_visible(self, question_name: str, condition: str) -> bool:
+        """Check if a question is visible for a given condition."""
+        # Try exact match first
+        q_visibility = self.visibility_map.get(question_name, {})
+
+        # Also try without underscores/spaces
+        if not q_visibility:
+            normalized = question_name.replace("_", " ").replace("-", " ")
+            for q_name, vis in self.visibility_map.items():
+                if q_name.replace("_", " ").replace("-", " ") == normalized:
+                    q_visibility = vis
+                    break
+
+        if not q_visibility:
+            return True  # Default to visible
+
+        condition_lower = str(condition).lower().strip()
+
+        # Direct match
+        if condition_lower in q_visibility:
+            return q_visibility[condition_lower]
+
+        # Partial match for factorial conditions
+        for mapped_cond, visible in q_visibility.items():
+            if self._conditions_share_factor(mapped_cond, condition_lower):
+                return visible
+
+        return True
+
+    def _conditions_share_factor(self, cond1: str, cond2: str) -> bool:
+        """Check if two conditions share a factor level."""
+        parts1 = set(cond1.replace('×', ' ').replace('_', ' ').split())
+        parts2 = set(cond2.replace('×', ' ').replace('_', ' ').split())
+        return bool(parts1 & parts2)
+
+    def get_visible_questions(self, condition: str) -> List[Dict[str, Any]]:
+        """Get all questions visible for a specific condition."""
+        return [q for q in self.questions
+                if self.is_question_visible(str(q.get("name", "")), condition)]
 
 
 @dataclass
@@ -448,6 +690,13 @@ class EnhancedSimulationEngine:
             self.comprehensive_generator = ComprehensiveResponseGenerator(seed=self.seed)
             if self.study_context:
                 self.comprehensive_generator.set_study_context(self.study_context)
+
+        # Initialize survey flow handler for condition-based question visibility
+        # This ensures participants only get responses for questions they would see
+        self.survey_flow_handler = SurveyFlowHandler(
+            conditions=self.conditions,
+            open_ended_questions=self.open_ended_questions
+        )
 
         self.column_info: List[Tuple[str, str]] = []
         self.validation_log: List[str] = []
@@ -2371,28 +2620,42 @@ class EnhancedSimulationEngine:
 
         # ONLY generate open-ended responses for questions actually in the QSF
         # Never create default/fake questions - this prevents fake variables like "Task_Summary"
+        # v1.0.0: Use survey flow handler to determine question visibility per condition
         for q in self.open_ended_questions:
             col_name = str(q.get("name", "Open_Response")).replace(" ", "_")
-            col_hash = _stable_int_hash(col_name)
+            q_text = str(q.get("question_text", col_name))
+            col_hash = _stable_int_hash(col_name + q_text)  # Include question text for uniqueness
             responses: List[str] = []
             for i in range(n):
-                p_seed = (self.seed + i * 100 + col_hash) % (2**31)
+                participant_condition = conditions.iloc[i]
+
+                # Check if this participant's condition allows them to see this question
+                if not self.survey_flow_handler.is_question_visible(col_name, participant_condition):
+                    # Participant wouldn't see this question - leave blank (NA)
+                    responses.append("")
+                    continue
+
+                # Generate unique seed using participant, question, and question text hash
+                p_seed = (self.seed + i * 100 + col_hash + hash(q_text[:50]) % 10000) % (2**31)
                 persona_name = assigned_personas[i]
                 persona = self.available_personas[persona_name]
                 response_vals = participant_item_responses[i]
                 response_mean = float(np.mean(response_vals)) if response_vals else None
+
+                # Generate response with enhanced uniqueness
                 text = self._generate_open_response(
                     q,
                     persona,
                     all_traits[i],
-                    conditions.iloc[i],
+                    participant_condition,
                     p_seed,
                     response_mean=response_mean,
                 )
                 responses.append(str(text))
 
             data[col_name] = responses
-            self.column_info.append((col_name, f"Open-ended response: {q.get('type', 'text')}"))
+            q_desc = q.get("question_text", "")[:50] if q.get("question_text") else q.get('type', 'text')
+            self.column_info.append((col_name, f"Open-ended: {q_desc}"))
 
         exclusion_data: List[Dict[str, Any]] = []
         for i in range(n):

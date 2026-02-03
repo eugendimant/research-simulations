@@ -4320,6 +4320,9 @@ class ComprehensiveResponseGenerator:
         """
         Generate a context-appropriate response to an open-ended question.
 
+        v1.0.0: Enhanced to generate unique responses per question by extracting
+        and using question-specific keywords and context.
+
         Args:
             question_text: The question being answered
             sentiment: Overall sentiment of the response
@@ -4335,8 +4338,14 @@ class ComprehensiveResponseGenerator:
         q_type = detect_question_type(question_text)
         domain = detect_study_domain(self.study_context, question_text)
 
+        # Extract keywords from the question text for unique response generation
+        question_keywords = self._extract_question_keywords(question_text)
+
         # Get appropriate template
         response = self._get_template_response(domain, q_type, sentiment)
+
+        # Personalize response based on question content
+        response = self._personalize_for_question(response, question_text, question_keywords, condition)
 
         # Handle disengaged/careless personas
         if persona_engagement < 0.3:
@@ -4350,6 +4359,88 @@ class ComprehensiveResponseGenerator:
             response = self._shorten(response)
         elif persona_verbosity > 0.7:
             response = self._extend(response, domain, sentiment)
+
+        return response
+
+    def _extract_question_keywords(self, question_text: str) -> List[str]:
+        """Extract meaningful keywords from question text for response customization."""
+        if not question_text:
+            return []
+
+        # Common stop words to exclude
+        stop_words = {
+            'the', 'a', 'an', 'is', 'are', 'was', 'were', 'be', 'been', 'being',
+            'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could',
+            'should', 'may', 'might', 'must', 'shall', 'can', 'need', 'dare',
+            'and', 'or', 'but', 'if', 'then', 'else', 'when', 'where', 'why',
+            'how', 'what', 'which', 'who', 'whom', 'whose', 'that', 'this',
+            'these', 'those', 'to', 'of', 'in', 'for', 'on', 'with', 'at', 'by',
+            'from', 'up', 'about', 'into', 'over', 'after', 'your', 'you', 'our',
+            'please', 'describe', 'explain', 'tell', 'us', 'me', 'briefly', 'any',
+        }
+
+        # Extract words (3+ characters, alphabetic)
+        words = re.findall(r'\b[a-zA-Z]{3,}\b', question_text.lower())
+        keywords = [w for w in words if w not in stop_words]
+
+        # Return unique keywords, prioritizing longer words
+        unique_keywords = list(dict.fromkeys(keywords))
+        return sorted(unique_keywords, key=len, reverse=True)[:5]
+
+    def _personalize_for_question(
+        self,
+        response: str,
+        question_text: str,
+        keywords: List[str],
+        condition: str
+    ) -> str:
+        """Personalize the response based on question content and condition."""
+        if not keywords and not condition:
+            return response
+
+        # Build context-specific phrases based on question keywords
+        context_phrases = []
+        question_lower = question_text.lower() if question_text else ""
+
+        # Add topic-specific introductions based on keywords
+        topic_intros = {
+            'decision': ['When making this decision, ', 'Regarding my decision, '],
+            'product': ['About the product, ', 'For this product, '],
+            'experience': ['Based on my experience, ', 'From what I experienced, '],
+            'feeling': ['I felt that ', 'My feeling was that '],
+            'opinion': ['In my opinion, ', 'I think that '],
+            'task': ['For this task, ', 'While doing this task, '],
+            'choice': ['With my choice, ', 'Regarding my choice, '],
+            'recommend': ['I would recommend ', 'My recommendation is '],
+            'improve': ['To improve, ', 'For improvement, '],
+            'scenario': ['In this scenario, ', 'Given the scenario, '],
+            'purchase': ['For this purchase, ', 'Regarding buying, '],
+            'service': ['About the service, ', 'For the service, '],
+        }
+
+        for keyword, intros in topic_intros.items():
+            if keyword in question_lower or any(kw == keyword for kw in keywords):
+                intro = random.choice(intros)
+                if not response.lower().startswith(intro.lower().split()[0]):
+                    response = intro + response[0].lower() + response[1:]
+                break
+
+        # Add condition-specific context
+        condition_lower = condition.lower() if condition else ""
+        if 'ai' in condition_lower and 'no ai' not in condition_lower:
+            ai_phrases = [
+                " The AI aspect was interesting.",
+                " Considering the AI involvement.",
+                "",  # Sometimes no addition
+            ]
+            if random.random() < 0.3:
+                response += random.choice(ai_phrases)
+        elif 'hedonic' in condition_lower:
+            if random.random() < 0.3:
+                response += " The enjoyment factor was notable."
+        elif 'utilitarian' in condition_lower:
+            if random.random() < 0.3:
+                response += " The practical aspects mattered."
 
         return response
 
@@ -4406,36 +4497,74 @@ class ComprehensiveResponseGenerator:
         return response
 
     def _extend(self, response: str, domain: StudyDomain, sentiment: str) -> str:
-        """Extend a response for high-verbosity personas."""
-        extensions = {
+        """Extend a response for high-verbosity personas with domain awareness."""
+        # Domain-specific extensions
+        domain_extensions = {
+            StudyDomain.DICTATOR_GAME: {
+                "positive": [" Fairness is important to me.", " I tried to be reasonable."],
+                "negative": [" The situation felt unfair.", " I wasn't sure what was right."],
+            },
+            StudyDomain.RISK_PREFERENCE: {
+                "positive": [" I'm comfortable with some uncertainty.", " Risk doesn't bother me much."],
+                "negative": [" I prefer to play it safe.", " Too much uncertainty makes me nervous."],
+            },
+            StudyDomain.TRUST_GAME: {
+                "positive": [" I generally try to give people the benefit of the doubt."],
+                "negative": [" Trust has to be earned.", " I'm cautious about trusting others."],
+            },
+            StudyDomain.CONSUMER_BEHAVIOR: {
+                "positive": [" I enjoy shopping for things like this.", " Quality matters to me."],
+                "negative": [" I'm picky about what I buy.", " Value for money is important."],
+            },
+            StudyDomain.AI_ATTITUDES: {
+                "positive": [" Technology can be really helpful.", " I'm open to new approaches."],
+                "negative": [" I prefer human judgment.", " AI isn't always the answer."],
+            },
+        }
+
+        # General extensions
+        general_extensions = {
             "very_positive": [
-                " I really appreciate this opportunity to share my thoughts.",
-                " This is something I feel strongly about.",
-                " I hope this feedback is helpful.",
+                " I feel good about this overall.",
+                " This was a positive experience.",
+                " I'm glad to share my perspective.",
+                " This resonated with me.",
             ],
             "positive": [
-                " I think this is a reasonable approach overall.",
-                " That's my general perspective on this.",
-                " I believe this captures my view well.",
+                " That's my take on it.",
+                " I think that covers the main points.",
+                " Hopefully that makes sense.",
+                " That's how I see it anyway.",
             ],
             "neutral": [
-                " I don't have particularly strong feelings about this.",
-                " It's hard to say definitively one way or the other.",
-                " I can see merit in different approaches.",
+                " I could go either way on this.",
+                " It's hard to say for certain.",
+                " I see both sides.",
+                " There are trade-offs.",
             ],
             "negative": [
-                " I hope this can be improved in the future.",
-                " There's definitely room for change here.",
-                " I think this needs more consideration.",
+                " There's room for improvement.",
+                " I expected better.",
+                " This could be handled differently.",
+                " Something needs to change.",
             ],
             "very_negative": [
-                " This is genuinely concerning to me.",
-                " I feel strongly that this needs to change.",
-                " I can't overstate my concerns here.",
+                " This really bothered me.",
+                " I have serious concerns.",
+                " This was frustrating.",
+                " I'm disappointed.",
             ],
         }
 
-        extension_list = extensions.get(sentiment, extensions["neutral"])
+        # Try domain-specific extension first
+        if domain in domain_extensions:
+            sentiment_key = "positive" if sentiment in ["very_positive", "positive"] else "negative"
+            domain_ext = domain_extensions[domain].get(sentiment_key, [])
+            if domain_ext and random.random() < 0.5:
+                return response + random.choice(domain_ext)
+
+        # Fall back to general extensions
+        extension_list = general_extensions.get(sentiment, general_extensions["neutral"])
         return response + random.choice(extension_list)
 
 
