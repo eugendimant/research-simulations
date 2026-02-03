@@ -1,6 +1,6 @@
 # Behavioral Experiment Simulation Tool — Methods Summary
 
-**Version 2.1** | Created by Dr. [Eugen Dimant](https://eugendimant.github.io/)
+**Version 2.2** | Created by Dr. [Eugen Dimant](https://eugendimant.github.io/)
 
 ---
 
@@ -18,7 +18,7 @@ This tool is designed for **educational and pilot testing purposes**—it does n
 
 ---
 
-## Key Features (v2.1)
+## Key Features (v2.2)
 
 ### Automatic Survey Parsing
 Upload your Qualtrics QSF file and the tool automatically:
@@ -28,12 +28,83 @@ Upload your Qualtrics QSF file and the tool automatically:
 - Infers factorial design structure (2×2, 2×3, etc.)
 - Detects attention checks and manipulation checks
 
-### Mandatory Scale Verification
-To prevent data-reality mismatches, the tool now requires users to:
-- Review all detected scales before simulation
-- Verify that scale point ranges match the actual Qualtrics survey
-- Explicitly confirm scale configurations (blocking requirement)
-- Edit scales if automatic detection was incorrect
+### Enhanced Scale Detection
+The tool now detects four types of scales from QSF files:
+- **Matrix scales**: Likert-type matrix questions with multiple items
+- **Numbered items**: Questions with _1, _2, _3 suffixes (e.g., WTP_1, WTP_2)
+- **Single-choice Likert**: Individual MC questions grouped by variable prefix
+- **Slider scales**: Visual analog and slider-type questions (0-100 range)
+
+### Visual Factorial Design Table
+For experiments with multiple independent factors:
+- **Intuitive table interface** to assign detected conditions to factors
+- **Visual crossing display** showing all condition combinations
+- **Automatic condition generation** (e.g., "Dictator game + Match with Hater")
+- Supports 2-factor and 3-factor designs
+- State persistence when navigating between steps
+
+Example for a 2×3 design:
+| Game Type | Match with Hater | Match with Lover | Match with Unknown |
+|-----------|------------------|------------------|-------------------|
+| **Dictator game** | ✓ | ✓ | ✓ |
+| **PGG** | ✓ | ✓ | ✓ |
+
+This generates 6 properly crossed conditions automatically.
+
+### 175+ Research Domains
+Context-aware response generation across 24 categories:
+
+**Behavioral Economics (12 domains)**
+- Dictator game, ultimatum, trust game, public goods, risk preferences
+- Time preferences, loss aversion, fairness, reciprocity, cooperation
+
+**Social Psychology (15 domains)**
+- Intergroup relations, social identity, norms, conformity, prosocial behavior
+- Prejudice, stereotypes, attitude change, persuasion, self-concept
+
+**Political Science (10 domains)**
+- Polarization, partisanship, voting behavior, media effects, policy attitudes
+- Political trust, civic engagement, democracy, ideology
+
+**Consumer/Marketing (10 domains)**
+- Brand attitudes, advertising effectiveness, pricing psychology
+- Purchase intentions, customer satisfaction, product evaluation
+
+**Organizational Behavior (8 domains)**
+- Leadership, teamwork, motivation, job satisfaction
+- Organizational commitment, work engagement, performance
+
+**Technology & AI (8 domains)**
+- AI attitudes, automation anxiety, human-robot interaction
+- Privacy concerns, technology adoption, digital trust
+
+**Additional Categories**
+- Health Psychology, Education, Environmental, Ethics & Morality
+- Cognitive Psychology, Communication, Development, and more
+
+### 30 Question Type Handlers
+Comprehensive open-ended response generation:
+
+**Explanatory Questions**
+- Explanation, justification, reasoning, causation, motivation
+
+**Descriptive Questions**
+- Description, narration, elaboration, detail
+
+**Evaluative Questions**
+- Evaluation, assessment, comparison, critique, rating explanation
+
+**Reflective Questions**
+- Reflection, introspection, self-assessment
+
+**Opinion/Attitude Questions**
+- Opinion, attitude, preference, belief
+
+**Forward-Looking Questions**
+- Prediction, intention, expectation, recommendation
+
+**Feedback Questions**
+- Feedback, suggestion, complaint, compliment
 
 ### Attention & Manipulation Check Management
 Users can now:
@@ -146,6 +217,16 @@ Open-ended text responses are generated using a multi-layer approach:
 2. **Persona Voice**: Language style reflects the assigned persona
 3. **Topic Relevance**: Responses address the study topic appropriately
 4. **Natural Variation**: Hedging, fillers, and varied sentence structures
+5. **Domain Awareness**: Responses reflect the 175+ supported research domains
+
+### Response Variation for Large Samples
+
+To ensure uniqueness across thousands of data points, the system applies:
+- **Synonym substitution** for word-level variation
+- **Filler phrase insertion/removal** based on persona verbosity
+- **Punctuation style variation** (periods, ellipses, exclamation marks)
+- **Realistic typos** for low-attention respondents
+- **Trailing phrase additions** for conversational variation
 
 ### Response Characteristics by Persona
 
@@ -346,7 +427,7 @@ The tool includes clear labeling in all outputs indicating data is simulated.
 
 If you use this tool in your research or teaching, please cite:
 
-> Dimant, E. (2025). Behavioral Experiment Simulation Tool (Version 2.1). University of Pennsylvania.
+> Dimant, E. (2025). Behavioral Experiment Simulation Tool (Version 2.2). University of Pennsylvania.
 
 ---
 
