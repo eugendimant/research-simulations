@@ -2,24 +2,27 @@
 """
 Utility modules for the Behavioral Experiment Simulation Tool.
 
-Version: 2.2.2
+Version: 2.2.4
 Changes:
+    - 225+ research domains with comprehensive response templates
+    - 40 question type handlers for open-ended responses
+    - 200+ trash/unused block exclusion patterns
+    - Enhanced factorial design table with visual feedback
+    - State persistence across step navigation
     - Comprehensive DV detection (matrix, slider, single-item, numeric input, constant sum)
     - Improved page scroll behavior when navigating between steps
     - Enhanced DV/scale UI with clear labeling and easy add/remove
-    - 175+ research domains with comprehensive response templates
-    - 45+ QSF randomization pattern detection
-    - Enhanced condition identification with 30 variable roles
+    - Enhanced condition detection with comprehensive filtering
     - Robust QSF parsing with multi-format support
 
 Modules:
     - qsf_parser: Parse Qualtrics Survey Format (.qsf) files
-    - qsf_preview: Interactive QSF preview with 45+ pattern detection
+    - qsf_preview: Interactive QSF preview with 200+ exclusion patterns
     - simulation_engine: Core simulation logic with persona-based generation
     - enhanced_simulation_engine: Advanced simulation with effect sizes and personas
     - persona_library: Comprehensive behavioral persona library (50+ archetypes)
-    - response_library: 175+ domain-specific response templates
-    - text_generator: Free open-ended text response generation (20+ question types)
+    - response_library: 225+ domain-specific response templates
+    - text_generator: Free open-ended text response generation (40 question types)
     - condition_identifier: Enhanced condition identification (30 variable roles)
     - instructor_report: Comprehensive instructor-only analysis reports
     - schema_validator: Data validation with 10+ quality checks
