@@ -159,7 +159,7 @@ Based on recent LLM simulation research:
 """
 
 # Version identifier to help track deployed code
-__version__ = "2.2.8"  # FULL DOMAIN CALIBRATION - All personas across all research domains calibrated
+__version__ = "2.2.9"  # Synchronized with semantic condition effects fix
 
 import hashlib
 import random
