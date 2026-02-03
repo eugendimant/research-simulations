@@ -1,6 +1,6 @@
 # Behavioral Experiment Simulation Tool
 
-**Version 2.2.3** | A Streamlit application for generating realistic synthetic behavioral experiment data using theory-grounded persona-driven simulation.
+**Version 2.2.4** | A Streamlit application for generating realistic synthetic behavioral experiment data using theory-grounded persona-driven simulation.
 
 ## What This Tool Does
 
@@ -18,7 +18,7 @@
 - **Verify survey logic** and variable coding
 - **Develop R/Python scripts** on properly structured data
 
-## Features (v2.2.3)
+## Features (v2.2.4)
 
 ### Comprehensive DV Detection
 - **Automatic DV identification** from QSF survey structure
@@ -30,15 +30,28 @@
 ### Automatic Survey Parsing
 - Extracts conditions, factors, and scales from Qualtrics QSF
 - **Enhanced scale detection**: Matrix, numbered items, Likert-type, slider, and numeric input
-- **175+ research domains** for context-aware response generation
-- **30 question type handlers** for open-ended responses
+- **225+ research domains** for context-aware response generation
+- **40 question type handlers** for open-ended responses
+- **200+ trash/unused block exclusion patterns** for clean condition detection
+
+### Enhanced Condition Detection
+- **Comprehensive filtering** of non-condition blocks (trash, admin, structural)
+- **Pattern-based exclusion** prevents false positives from unused blocks
+- **Embedded data extraction** for randomization-based conditions
+- **Smart deduplication** preserves condition order
+
+### State Persistence
+- **Cross-step state saving** ensures selections persist when navigating
+- **Automatic state restoration** when returning to previous steps
+- **Session-based persistence** for complete workflow continuity
 
 ### Visual Factorial Design Table
 For factorial experiments (2×2, 2×3, 3×3, etc.):
-- **Intuitive table interface** to assign conditions to factors
+- **Enhanced table interface** with design type selector and examples
 - **Visual crossing display** showing all condition combinations
-- **Automatic condition generation** (e.g., "Dictator game + Match with Hater")
-- Supports 2-factor and 3-factor designs
+- **Numbered cell display** in design table for easy reference
+- **Expandable condition list** showing all crossed combinations
+- Supports 2-factor and 3-factor designs with clear visual feedback
 
 ### Theory-Grounded Personas
 Response styles based on survey methodology literature:

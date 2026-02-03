@@ -33,7 +33,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Union
 
 # Version identifier to help track deployed code
-__version__ = "2.2.2"  # Enhanced: Comprehensive DV detection, single-item DVs, numeric inputs
+__version__ = "2.2.4"  # Enhanced: 200+ exclusions, comprehensive DV detection, improved filtering
 
 
 # ============================================================================
@@ -155,87 +155,129 @@ class QSFPreviewParser:
     # These are common structural/admin block names in Qualtrics surveys
     # Comprehensive list of block names that are NEVER experimental conditions
     # These include all variations of trash, unused, default, and administrative blocks
+    # EXPANDED TO 200+ PATTERNS for maximum exclusion coverage
     EXCLUDED_BLOCK_NAMES = {
         # ========== TRASH / UNUSED (CRITICAL - NEVER USE) ==========
         'trash', 'trash / unused questions', 'trash/unused questions',
-        'unused', 'unused questions', 'deleted', 'archived',
-        'old', 'old questions', 'deprecated', 'removed',
-        'do not use', 'ignore', 'hidden', 'disabled',
+        'trash questions', 'trash block', 'trashed', 'trashed questions',
+        'unused', 'unused questions', 'unused block', 'unused items',
+        'deleted', 'deleted questions', 'deleted block', 'deleted items',
+        'archived', 'archived questions', 'archived block', 'archive',
+        'old', 'old questions', 'old block', 'old items', 'outdated',
+        'deprecated', 'deprecated questions', 'removed', 'removed questions',
+        'do not use', 'dont use', "don't use", 'not in use', 'not used',
+        'ignore', 'ignored', 'hidden', 'disabled', 'inactive', 'obsolete',
+        'discarded', 'scrapped', 'backup', 'backup questions', 'spare',
+        'temp', 'temporary', 'test', 'testing', 'draft', 'wip',
 
         # ========== GENERIC BLOCK NAMES ==========
         'block', 'block 1', 'block 2', 'block 3', 'block 4', 'block 5',
         'block 6', 'block 7', 'block 8', 'block 9', 'block 10',
-        'default question block', 'default', 'standard', 'main',
-        'new block', 'untitled', 'unnamed', 'copy', 'duplicate',
+        'block 11', 'block 12', 'block 13', 'block 14', 'block 15',
+        'block1', 'block2', 'block3', 'block4', 'block5',
+        'default question block', 'default', 'standard', 'main', 'main block',
+        'new block', 'untitled', 'unnamed', 'copy', 'duplicate', 'copy of',
+        'blank', 'empty', 'placeholder', 'template', 'skeleton',
 
         # ========== INTRODUCTION / WELCOME ==========
-        'intro', 'introduction', 'welcome', 'welcome screen',
+        'intro', 'introduction', 'welcome', 'welcome screen', 'welcome message',
         'landing', 'landing page', 'start', 'beginning', 'overview',
-        'study intro', 'study introduction', 'survey intro',
+        'study intro', 'study introduction', 'survey intro', 'survey introduction',
+        'opening', 'opening screen', 'opening page', 'initial', 'initial screen',
+        'preamble', 'preface', 'preliminary', 'pre-survey', 'pre survey',
 
         # ========== INSTRUCTIONS ==========
         'instructions', 'general instructions', 'task instructions',
         'game instructions', 'study instructions', 'survey instructions',
         'directions', 'guidelines', 'rules', 'procedure', 'how to',
+        'how-to', 'step by step', 'explanation', 'explainer', 'tutorial',
+        'briefing', 'brief', 'orientation', 'introduction instructions',
 
         # ========== CONSENT ==========
         'consent', 'informed consent', 'consent form', 'agreement',
         'irb', 'eligibility', 'screening', 'qualification', 'terms',
         'age verification', 'age check', 'participant agreement',
+        'privacy', 'privacy notice', 'data protection', 'gdpr',
+        'terms and conditions', 'tos', 'legal', 'disclaimer',
+        'participant consent', 'study consent', 'research consent',
 
         # ========== QUALITY CONTROL ==========
-        'captcha', 'bot check', 'recaptcha', 'verification',
-        'attention check', 'attention checks', 'quality check',
+        'captcha', 'bot check', 'recaptcha', 'verification', 'verify',
+        'attention check', 'attention checks', 'quality check', 'quality control',
         'manipulation check', 'manipulation checks', 'mc', 'ac',
         'comprehension check', 'comprehension', 'understanding check',
-        'instructed response', 'imc', 'trap question', 'screener',
+        'instructed response', 'imc', 'trap question', 'screener', 'screen',
+        'attention', 'trap', 'check question', 'vigilance', 'vigilance check',
+        'data quality', 'response quality', 'validity check', 'validity',
 
         # ========== DEMOGRAPHICS ==========
         'demographics', 'demographic info', 'demographic information',
         'demographic questions', 'background', 'background info',
-        'personal info', 'personal information', 'about you',
+        'personal info', 'personal information', 'about you', 'about yourself',
         'profile', 'participant info', 'respondent info', 'covariates',
+        'sociodemographics', 'sociodemographic', 'participant demographics',
+        'basic info', 'basic information', 'personal details', 'your info',
+        'age gender', 'gender age', 'bio', 'biographical',
 
         # ========== END / DEBRIEF ==========
         'end', 'end of survey', 'end of games', 'ending', 'finish',
         'completion', 'complete', 'done', 'final', 'conclusion',
         'debrief', 'debriefing', 'debrief form', 'debriefing form',
-        'thank you', 'thanks', 'thank you screen', 'thankyou',
-        'redirect', 'exit', 'goodbye', 'end message',
+        'thank you', 'thanks', 'thank you screen', 'thankyou', 'ty',
+        'redirect', 'exit', 'goodbye', 'end message', 'closing',
+        'wrap up', 'wrapup', 'wrap-up', 'final screen', 'last page',
+        'survey end', 'study end', 'experiment end', 'game end',
+        'post-survey', 'post survey', 'post-experiment', 'post experiment',
 
         # ========== FEEDBACK ==========
         'feedback', 'comments', 'feedback on the survey', 'final feedback',
         'survey feedback', 'general feedback', 'final thoughts',
         'additional comments', 'other comments', 'open feedback',
+        'closing feedback', 'participant feedback', 'user feedback',
+        'suggestions', 'your thoughts', 'any thoughts', 'thoughts',
 
         # ========== OPEN-ENDED ==========
         'open-ended', 'open ended', 'free response', 'free text',
         'open text', 'text entry', 'essay', 'written response',
+        'write-in', 'write in', 'open response', 'free form',
 
         # ========== PRACTICE / TRAINING ==========
         'practice', 'practice trial', 'practice trials', 'practice round',
         'training', 'training trial', 'tutorial', 'warmup', 'warm up',
-        'example', 'sample', 'demo', 'demonstration',
+        'example', 'sample', 'demo', 'demonstration', 'dry run',
+        'practice questions', 'practice block', 'training block',
+        'trial run', 'test run', 'familiarization', 'practice session',
 
         # ========== STRUCTURAL ==========
-        'game', 'task', 'main task', 'primary task',
-        'pairing', 'pairing prompt', 'pair', 'matching',
+        'game', 'task', 'main task', 'primary task', 'core task',
+        'pairing', 'pairing prompt', 'pair', 'matching', 'match',
         'question', 'questions', 'items', 'measures', 'scales',
-        'survey', 'questionnaire', 'assessment', 'test',
+        'survey', 'questionnaire', 'assessment', 'test', 'exam',
+        'section', 'part', 'module', 'component', 'segment',
 
         # ========== TIMING / PROGRESS ==========
-        'timer', 'timing', 'duration', 'progress',
+        'timer', 'timing', 'duration', 'progress', 'progress bar',
         'page break', 'break', 'intermission', 'pause', 'wait',
+        'loading', 'transition', 'next', 'continue', 'proceed',
 
         # ========== PAYMENT / COMPENSATION ==========
         'payment', 'compensation', 'reward', 'bonus', 'payment info',
         'mturk', 'prolific', 'completion code', 'code', 'survey code',
+        'prolific code', 'mturk code', 'amazon', 'crowdsourcing',
+        'payout', 'pay', 'incentive', 'raffle', 'lottery', 'prize',
+        'compensation info', 'payment details', 'bonus info',
+
+        # ========== RANDOMIZATION ARTIFACTS ==========
+        'randomizer', 'randomization', 'random', 'assignment',
+        'branch', 'branching', 'skip logic', 'display logic',
+        'quota', 'quotas', 'quota check', 'embedded data',
+        'flow', 'survey flow', 'logic', 'conditional',
     }
 
     # Block type keywords that indicate non-condition blocks (case-insensitive)
-    EXCLUDED_BLOCK_TYPES = {'Trash', 'Default', 'Standard', 'trash', 'default'}
+    EXCLUDED_BLOCK_TYPES = {'Trash', 'Default', 'Standard', 'trash', 'default', 'standard'}
 
-    # Patterns that definitively indicate a block should be excluded
+    # Patterns that definitively indicate a block should be excluded (200+ coverage)
     EXCLUDED_BLOCK_PATTERNS = [
         r'^block\s*\d*$',  # "Block 1", "Block2", etc.
         r'^b\d+$',  # "B1", "B2", etc.
@@ -246,6 +288,24 @@ class QSFPreviewParser:
         r'old\s*(?:questions?)?$',  # "old", "old questions"
         r'(?:do\s*)?not\s*use',  # "do not use", "not use"
         r'^\s*$',  # Empty or whitespace only
+        r'^copy\s*(?:of\s*)?',  # "copy of X"
+        r'^\d+$',  # Just numbers
+        r'^untitled',  # "Untitled" anything
+        r'^unnamed',  # "Unnamed" anything
+        r'default',  # Any block containing "default"
+        r'placeholder',  # Any block containing "placeholder"
+        r'template',  # Any block containing "template"
+        r'backup',  # Any block containing "backup"
+        r'^\s*test\s*$',  # Just "test"
+        r'^\s*draft\s*$',  # Just "draft"
+        r'wip$',  # Ends with "wip"
+        r'^temp\b',  # Starts with "temp"
+        r'obsolete',  # Contains "obsolete"
+        r'discarded',  # Contains "discarded"
+        r'deprecated',  # Contains "deprecated"
+        r'hidden',  # Contains "hidden"
+        r'disabled',  # Contains "disabled"
+        r'inactive',  # Contains "inactive"
     ]
 
     def __init__(self):

@@ -3,12 +3,12 @@ Comprehensive Response Library for Open-Ended Survey Questions
 ==============================================================
 
 This module provides LLM-quality text generation for survey responses across
-175+ research domains with dynamic context adaptation. Generates responses
+225+ research domains with dynamic context adaptation. Generates responses
 that are indistinguishable from real human participants.
 
 Features:
-- 175+ domain-specific template sets covering all major research areas
-- 30 question type handlers for comprehensive question coverage
+- 225+ domain-specific template sets covering all major research areas
+- 40 question type handlers for comprehensive question coverage
 - Dynamic context detection from QSF content and survey structure
 - Persona-aware response generation with 12 persona dimensions
 - Markov chain text generation with domain-specific corpora
@@ -18,7 +18,7 @@ Features:
 - Cross-cultural response style variations
 - Variation generation for 1000s of unique responses
 
-Supported Research Domains (175+):
+Supported Research Domains (225+):
 - Behavioral Economics (12): dictator, ultimatum, trust, public goods, risk, time...
 - Social Psychology (15): intergroup, identity, norms, conformity, prosocial...
 - Political Science (10): polarization, partisanship, voting, media, policy...
@@ -43,17 +43,27 @@ Supported Research Domains (175+):
 - Positive Psychology (5): gratitude, resilience, flourishing, satisfaction...
 - Gender/Sexuality (4): roles, attitudes, LGBTQ experience...
 - Relationships (4): attachment, romantic, social support...
+- Financial Psychology (6): literacy, investment, debt, retirement, stress...
+- Personality Psychology (6): big five, narcissism, dark triad, self-concept...
+- Gaming/Entertainment (6): esports, gambling, streaming, virtual reality...
+- Social Media Research (6): online identity, influencer, communities...
+- Workplace Behavior (6): remote work, diversity, burnout, career...
+- Decision Science (6): choice architecture, nudge, defaults, regret...
+- Trust & Credibility (5): institutional, expert, source, science, media...
+- Innovation & Creativity (5): entrepreneurship, idea generation, process...
+- Risk & Safety (5): perception, attitudes, hazards, disaster preparedness...
 
-Question Types (30): explanation, justification, reasoning, causation, motivation,
-description, narration, elaboration, detail, evaluation, assessment, comparison,
-critique, rating_explanation, reflection, introspection, memory, experience,
-opinion, belief, preference, attitude, value, prediction, intention, suggestion,
-recommendation, association, impression, feedback, comment, general
+Question Types (40): explanation, justification, reasoning, causation, motivation,
+description, narration, elaboration, detail, context, evaluation, assessment,
+comparison, critique, rating_explanation, judgment, appraisal, reflection,
+introspection, memory, experience, recall, opinion, belief, preference, attitude,
+value, worldview, prediction, intention, suggestion, recommendation, advice,
+association, impression, perception, feedback, comment, observation, general
 
-Version: 2.2.1 - Major expansion with 175+ domains, 30 question types
+Version: 2.2.3 - Major expansion with 225+ domains, 40 question types
 """
 
-__version__ = "2.2.1"
+__version__ = "2.2.3"
 
 import random
 import re
@@ -63,7 +73,7 @@ from enum import Enum
 
 
 class QuestionType(Enum):
-    """Types of open-ended questions in surveys (30 types for comprehensive coverage).
+    """Types of open-ended questions in surveys (40 types for comprehensive coverage).
 
     This extensive taxonomy covers all common open-ended question formats found
     in behavioral science, marketing, psychology, and social science research.
@@ -81,6 +91,7 @@ class QuestionType(Enum):
     NARRATION = "narration"               # "Tell us about a time..."
     ELABORATION = "elaboration"           # "Please elaborate on..."
     DETAIL = "detail"                     # "Provide more details about..."
+    CONTEXT = "context"                   # "Provide context for..."
 
     # ========== EVALUATIVE QUESTIONS ==========
     EVALUATION = "evaluation"             # "How would you evaluate..."
@@ -88,12 +99,15 @@ class QuestionType(Enum):
     COMPARISON = "comparison"             # "Compare X and Y..."
     CRITIQUE = "critique"                 # "What are the pros and cons..."
     RATING_EXPLANATION = "rating_explanation"  # "Why did you give this rating..."
+    JUDGMENT = "judgment"                 # "What is your judgment of..."
+    APPRAISAL = "appraisal"               # "How do you appraise..."
 
     # ========== REFLECTIVE QUESTIONS ==========
     REFLECTION = "reflection"             # "Reflect on how you felt..."
     INTROSPECTION = "introspection"       # "What were you thinking when..."
     MEMORY = "memory"                     # "Recall a time when..."
     EXPERIENCE = "experience"             # "Share your experience with..."
+    RECALL = "recall"                     # "What do you remember about..."
 
     # ========== OPINION/ATTITUDE QUESTIONS ==========
     OPINION = "opinion"                   # "What is your opinion on..."
@@ -101,20 +115,24 @@ class QuestionType(Enum):
     PREFERENCE = "preference"             # "Why do you prefer..."
     ATTITUDE = "attitude"                 # "How do you feel about..."
     VALUE = "value"                       # "What values guided your..."
+    WORLDVIEW = "worldview"               # "How does this fit your worldview..."
 
     # ========== FORWARD-LOOKING QUESTIONS ==========
     PREDICTION = "prediction"             # "What do you think will happen..."
     INTENTION = "intention"               # "What do you plan to do..."
     SUGGESTION = "suggestion"             # "How could we improve..."
     RECOMMENDATION = "recommendation"     # "What would you recommend..."
+    ADVICE = "advice"                     # "What advice would you give..."
 
     # ========== ASSOCIATIVE QUESTIONS ==========
     ASSOCIATION = "association"           # "What comes to mind when..."
     IMPRESSION = "impression"             # "What was your first impression..."
+    PERCEPTION = "perception"             # "How do you perceive..."
 
     # ========== FEEDBACK QUESTIONS ==========
     FEEDBACK = "feedback"                 # "Any feedback about the survey?"
     COMMENT = "comment"                   # "Any additional comments..."
+    OBSERVATION = "observation"           # "What did you observe..."
 
     # ========== CATCH-ALL ==========
     GENERAL = "general"                   # Catch-all for unclassified questions
@@ -384,6 +402,77 @@ class StudyDomain(Enum):
     ATTACHMENT = "attachment"
     ROMANTIC_RELATIONSHIPS = "romantic_relationships"
     SOCIAL_SUPPORT = "social_support"
+
+    # ========== ADDITIONAL DOMAINS (50+ NEW - Expanding to 225+) ==========
+
+    # Financial Psychology (6 domains)
+    FINANCIAL_PSYCHOLOGY = "financial_psychology"
+    FINANCIAL_LITERACY = "financial_literacy"
+    INVESTMENT_BEHAVIOR = "investment_behavior"
+    DEBT_ATTITUDES = "debt_attitudes"
+    RETIREMENT_PLANNING = "retirement_planning"
+    FINANCIAL_STRESS = "financial_stress"
+
+    # Personality Psychology (6 domains)
+    PERSONALITY = "personality"
+    BIG_FIVE = "big_five"
+    NARCISSISM = "narcissism"
+    DARK_TRIAD = "dark_triad"
+    TRAIT_ASSESSMENT = "trait_assessment"
+    SELF_CONCEPT = "self_concept"
+
+    # Gaming/Entertainment (6 domains)
+    GAMING_PSYCHOLOGY = "gaming_psychology"
+    ESPORTS = "esports"
+    GAMBLING = "gambling"
+    ENTERTAINMENT_MEDIA = "entertainment_media"
+    STREAMING_BEHAVIOR = "streaming_behavior"
+    VIRTUAL_REALITY = "virtual_reality"
+
+    # Social Media Research (6 domains)
+    SOCIAL_MEDIA_USE = "social_media_use"
+    ONLINE_IDENTITY = "online_identity"
+    DIGITAL_COMMUNICATION = "digital_communication"
+    INFLUENCER_MARKETING = "influencer_marketing"
+    ONLINE_COMMUNITIES = "online_communities"
+    SOCIAL_COMPARISON = "social_comparison"
+
+    # Workplace Behavior (6 domains)
+    REMOTE_WORK = "remote_work"
+    WORKPLACE_DIVERSITY = "workplace_diversity"
+    BURNOUT = "burnout"
+    CAREER_DEVELOPMENT = "career_development"
+    WORKPLACE_CONFLICT = "workplace_conflict"
+    ORGANIZATIONAL_JUSTICE = "organizational_justice"
+
+    # Decision Science (6 domains)
+    DECISION_SCIENCE = "decision_science"
+    CHOICE_ARCHITECTURE = "choice_architecture"
+    NUDGE = "nudge"
+    DEFAULT_EFFECTS = "default_effects"
+    INFORMATION_OVERLOAD = "information_overload"
+    REGRET = "regret"
+
+    # Trust & Credibility (5 domains)
+    INSTITUTIONAL_TRUST = "institutional_trust"
+    EXPERT_CREDIBILITY = "expert_credibility"
+    SOURCE_CREDIBILITY = "source_credibility"
+    SCIENCE_TRUST = "science_trust"
+    MEDIA_TRUST = "media_trust"
+
+    # Innovation & Creativity (5 domains)
+    INNOVATION = "innovation"
+    CREATIVITY = "creativity"
+    ENTREPRENEURSHIP = "entrepreneurship"
+    IDEA_GENERATION = "idea_generation"
+    CREATIVE_PROCESS = "creative_process"
+
+    # Risk & Safety (5 domains)
+    RISK_PERCEPTION = "risk_perception"
+    SAFETY_ATTITUDES = "safety_attitudes"
+    HAZARD_PERCEPTION = "hazard_perception"
+    DISASTER_PREPAREDNESS = "disaster_preparedness"
+    RISK_COMMUNICATION = "risk_communication"
 
 
 # ============================================================================
