@@ -153,35 +153,100 @@ class QSFPreviewParser:
 
     # Block names that are NEVER experimental conditions
     # These are common structural/admin block names in Qualtrics surveys
+    # Comprehensive list of block names that are NEVER experimental conditions
+    # These include all variations of trash, unused, default, and administrative blocks
     EXCLUDED_BLOCK_NAMES = {
-        # Generic block names
+        # ========== TRASH / UNUSED (CRITICAL - NEVER USE) ==========
+        'trash', 'trash / unused questions', 'trash/unused questions',
+        'unused', 'unused questions', 'deleted', 'archived',
+        'old', 'old questions', 'deprecated', 'removed',
+        'do not use', 'ignore', 'hidden', 'disabled',
+
+        # ========== GENERIC BLOCK NAMES ==========
         'block', 'block 1', 'block 2', 'block 3', 'block 4', 'block 5',
-        'default question block', 'default', 'standard',
-        # Structural/admin blocks
-        'trash', 'trash / unused questions', 'unused',
-        'intro', 'introduction', 'welcome',
-        'instructions', 'general instructions',
-        'consent', 'informed consent',
-        'captcha', 'bot check',
-        'end', 'end of survey', 'end of games', 'ending', 'debrief',
-        'thank you', 'thanks',
-        # Demographic/covariate blocks
-        'demographics', 'demographic info', 'demographic information',
-        'background', 'background info',
-        # Quality control blocks
+        'block 6', 'block 7', 'block 8', 'block 9', 'block 10',
+        'default question block', 'default', 'standard', 'main',
+        'new block', 'untitled', 'unnamed', 'copy', 'duplicate',
+
+        # ========== INTRODUCTION / WELCOME ==========
+        'intro', 'introduction', 'welcome', 'welcome screen',
+        'landing', 'landing page', 'start', 'beginning', 'overview',
+        'study intro', 'study introduction', 'survey intro',
+
+        # ========== INSTRUCTIONS ==========
+        'instructions', 'general instructions', 'task instructions',
+        'game instructions', 'study instructions', 'survey instructions',
+        'directions', 'guidelines', 'rules', 'procedure', 'how to',
+
+        # ========== CONSENT ==========
+        'consent', 'informed consent', 'consent form', 'agreement',
+        'irb', 'eligibility', 'screening', 'qualification', 'terms',
+        'age verification', 'age check', 'participant agreement',
+
+        # ========== QUALITY CONTROL ==========
+        'captcha', 'bot check', 'recaptcha', 'verification',
         'attention check', 'attention checks', 'quality check',
-        'manipulation check', 'manipulation checks',
-        # Feedback blocks
-        'feedback', 'comments', 'feedback on the survey',
-        'open-ended', 'open ended', 'free response',
-        # Game/task specific (but not conditions)
-        'game', 'task', 'main task',
-        'pairing', 'pairing prompt', 'pair',
-        'question', 'questions',
+        'manipulation check', 'manipulation checks', 'mc', 'ac',
+        'comprehension check', 'comprehension', 'understanding check',
+        'instructed response', 'imc', 'trap question', 'screener',
+
+        # ========== DEMOGRAPHICS ==========
+        'demographics', 'demographic info', 'demographic information',
+        'demographic questions', 'background', 'background info',
+        'personal info', 'personal information', 'about you',
+        'profile', 'participant info', 'respondent info', 'covariates',
+
+        # ========== END / DEBRIEF ==========
+        'end', 'end of survey', 'end of games', 'ending', 'finish',
+        'completion', 'complete', 'done', 'final', 'conclusion',
+        'debrief', 'debriefing', 'debrief form', 'debriefing form',
+        'thank you', 'thanks', 'thank you screen', 'thankyou',
+        'redirect', 'exit', 'goodbye', 'end message',
+
+        # ========== FEEDBACK ==========
+        'feedback', 'comments', 'feedback on the survey', 'final feedback',
+        'survey feedback', 'general feedback', 'final thoughts',
+        'additional comments', 'other comments', 'open feedback',
+
+        # ========== OPEN-ENDED ==========
+        'open-ended', 'open ended', 'free response', 'free text',
+        'open text', 'text entry', 'essay', 'written response',
+
+        # ========== PRACTICE / TRAINING ==========
+        'practice', 'practice trial', 'practice trials', 'practice round',
+        'training', 'training trial', 'tutorial', 'warmup', 'warm up',
+        'example', 'sample', 'demo', 'demonstration',
+
+        # ========== STRUCTURAL ==========
+        'game', 'task', 'main task', 'primary task',
+        'pairing', 'pairing prompt', 'pair', 'matching',
+        'question', 'questions', 'items', 'measures', 'scales',
+        'survey', 'questionnaire', 'assessment', 'test',
+
+        # ========== TIMING / PROGRESS ==========
+        'timer', 'timing', 'duration', 'progress',
+        'page break', 'break', 'intermission', 'pause', 'wait',
+
+        # ========== PAYMENT / COMPENSATION ==========
+        'payment', 'compensation', 'reward', 'bonus', 'payment info',
+        'mturk', 'prolific', 'completion code', 'code', 'survey code',
     }
 
-    # Block type keywords that indicate non-condition blocks
-    EXCLUDED_BLOCK_TYPES = {'Trash', 'Default'}
+    # Block type keywords that indicate non-condition blocks (case-insensitive)
+    EXCLUDED_BLOCK_TYPES = {'Trash', 'Default', 'Standard', 'trash', 'default'}
+
+    # Patterns that definitively indicate a block should be excluded
+    EXCLUDED_BLOCK_PATTERNS = [
+        r'^block\s*\d*$',  # "Block 1", "Block2", etc.
+        r'^b\d+$',  # "B1", "B2", etc.
+        r'trash',  # Any block containing "trash"
+        r'unused',  # Any block containing "unused"
+        r'deleted?',  # "delete" or "deleted"
+        r'archived?',  # "archive" or "archived"
+        r'old\s*(?:questions?)?$',  # "old", "old questions"
+        r'(?:do\s*)?not\s*use',  # "do not use", "not use"
+        r'^\s*$',  # Empty or whitespace only
+    ]
 
     def __init__(self):
         self.log_entries: List[LogEntry] = []
@@ -813,17 +878,56 @@ class QSFPreviewParser:
 
         return blocks
 
-    def _is_excluded_block_name(self, block_name: str) -> bool:
-        """Check if a block name is in the exclusion list."""
-        if not block_name:
+    def _is_excluded_block_name(self, block_name: str, block_type: str = "") -> bool:
+        """Check if a block name should be excluded from condition detection.
+
+        This comprehensive check ensures trash, unused, and administrative blocks
+        are NEVER considered as experimental conditions.
+
+        Args:
+            block_name: The name/description of the block
+            block_type: The block type field (e.g., 'Trash', 'Default', 'Standard')
+
+        Returns:
+            True if the block should be excluded, False otherwise
+        """
+        # Empty or whitespace-only names are always excluded
+        if not block_name or not block_name.strip():
             return True
+
         normalized = block_name.lower().strip()
-        # Check exact match
+
+        # Check block type first (highest priority exclusion)
+        if block_type:
+            if block_type in self.EXCLUDED_BLOCK_TYPES:
+                return True
+            if block_type.lower() in {'trash', 'default', 'standard'}:
+                return True
+
+        # Check exact match against exclusion list
         if normalized in self.EXCLUDED_BLOCK_NAMES:
             return True
-        # Check if it starts with "block" followed by only numbers/spaces
+
+        # Check against exclusion patterns (catches variations)
+        for pattern in self.EXCLUDED_BLOCK_PATTERNS:
+            if re.search(pattern, normalized, re.IGNORECASE):
+                return True
+
+        # Additional checks for common variations
+        # Catch "Block N" patterns more broadly
         if re.match(r'^block\s*\d*$', normalized):
             return True
+        if re.match(r'^bl?k?\s*\d+$', normalized):  # B1, Blk1, etc.
+            return True
+
+        # Catch blocks that contain "trash" or "unused" anywhere
+        if 'trash' in normalized or 'unused' in normalized:
+            return True
+
+        # Catch "(copy)" or "(new)" suffixes that indicate duplicates
+        if re.search(r'\((?:copy|new|duplicate)\)', normalized):
+            return True
+
         return False
 
     def _detect_conditions(

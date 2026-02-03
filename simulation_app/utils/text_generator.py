@@ -3,7 +3,7 @@ from __future__ import annotations
 Free Open-Ended Text Response Generator
 =======================================
 
-Version 2.2.0 - Comprehensive improvements with 25 iterations of enhancements
+Version 2.2.1 - Comprehensive improvements with 175+ domains, 30 question types
 
 Generates realistic open-ended survey responses without requiring paid APIs.
 Supports 100+ research domains and 20+ question types with sophisticated
@@ -35,7 +35,7 @@ This provides LLM-like text generation quality for free.
 """
 
 # Version identifier to help track deployed code
-__version__ = "2.2.0"  # Major: 25 iterations of comprehensive improvements
+__version__ = "2.2.1"  # Enhanced: 175+ domains, 30 question types, robust variation generation
 
 import random
 import re
@@ -1048,8 +1048,63 @@ class OpenEndedTextGenerator:
         return response
 
     def _add_variation(self, response: str, traits: PersonaTextTraits) -> str:
-        """Add final variations for uniqueness."""
-        # Occasionally add typos for realism (based on detail_orientation)
+        """Add final variations for uniqueness.
+
+        This method applies multiple variation techniques to ensure responses
+        are unique even when generating thousands of data points:
+        1. Word substitution with synonyms
+        2. Sentence structure variation
+        3. Punctuation style variation
+        4. Realistic typos (for low-attention respondents)
+        5. Filler phrase insertion/removal
+        6. Capitalization patterns
+        """
+        # 1. Word substitution with common synonyms
+        synonym_map = {
+            'good': ['nice', 'great', 'fine', 'decent', 'solid'],
+            'bad': ['poor', 'terrible', 'awful', 'negative', 'disappointing'],
+            'very': ['really', 'quite', 'extremely', 'particularly', 'especially'],
+            'think': ['believe', 'feel', 'consider', 'find', 'reckon'],
+            'like': ['enjoy', 'appreciate', 'prefer', 'favor', 'am fond of'],
+            'want': ['would like', 'prefer', 'wish', 'desire', 'hope'],
+            'because': ['since', 'as', 'given that', 'due to the fact that', 'considering'],
+            'important': ['significant', 'crucial', 'key', 'essential', 'vital'],
+            'overall': ['in general', 'generally', 'on the whole', 'all in all', 'broadly'],
+            'maybe': ['perhaps', 'possibly', 'might be', 'could be', 'potentially'],
+        }
+        if random.random() < 0.4:  # 40% chance of synonym substitution
+            for word, synonyms in synonym_map.items():
+                if word in response.lower():
+                    replacement = random.choice(synonyms)
+                    # Preserve case
+                    if response.find(word.capitalize()) >= 0:
+                        response = response.replace(word.capitalize(), replacement.capitalize(), 1)
+                    else:
+                        response = response.replace(word, replacement, 1)
+                    break  # Only substitute once per response
+
+        # 2. Sentence structure variation - add filler phrases
+        filler_phrases = [
+            'I would say', 'In my view,', 'Honestly,', 'To be frank,',
+            'From my perspective,', 'As I see it,', 'In my experience,',
+            'Looking back,', 'All things considered,', 'When I think about it,',
+            'I suppose', 'I guess', 'I mean,', 'You know,', 'Basically,',
+        ]
+        if random.random() < 0.25 and traits.verbosity > 0.4:
+            filler = random.choice(filler_phrases)
+            if not response.startswith(tuple(filler_phrases)):
+                response = f"{filler} {response[0].lower()}{response[1:]}"
+
+        # 3. Punctuation style variation
+        if random.random() < 0.15:
+            # Sometimes use ellipsis instead of period
+            if traits.enthusiasm < 0.5:
+                response = response.rstrip('.') + '...'
+        if random.random() < 0.1 and traits.enthusiasm > 0.6:
+            # Add exclamation for enthusiastic responders
+            response = response.rstrip('.!') + '!'
+
+        # 4. Realistic typos for low-attention respondents
         if traits.detail_orientation < 0.3 and random.random() < 0.1:
             words = response.split()
             if len(words) > 3:
@@ -1062,9 +1117,23 @@ class OpenEndedTextGenerator:
                     words[idx] = word
             response = ' '.join(words)
 
-        # Vary punctuation
-        if random.random() < 0.1:
-            response = response.replace('...', '.').replace('..', '.')
+        # 5. Remove filler words for concise responders
+        if traits.verbosity < 0.3 and random.random() < 0.3:
+            removable = ['just', 'really', 'actually', 'basically', 'simply', 'quite']
+            for word in removable:
+                if f' {word} ' in response.lower():
+                    response = response.replace(f' {word} ', ' ', 1)
+                    break
+
+        # 6. Add trailing phrases for variation
+        trailing_phrases = [
+            ' That\'s my take.', ' Just my opinion.', ' That\'s how I see it.',
+            ' Hope that helps.', ' If that makes sense.', '',  # Empty for no addition
+        ]
+        if random.random() < 0.15 and traits.verbosity > 0.5:
+            trailing = random.choice(trailing_phrases)
+            if trailing and not response.endswith(trailing.strip()):
+                response = response.rstrip('.!?') + '.' + trailing
 
         return response
 
