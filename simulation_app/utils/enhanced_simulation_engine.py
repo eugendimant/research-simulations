@@ -4,7 +4,7 @@ from __future__ import annotations
 Enhanced Simulation Engine for Behavioral Experiment Simulation Tool
 =============================================================================
 
-Version 2.2.0 - Comprehensive improvements with 25 iterations of enhancements
+Version 2.2.1 - Comprehensive improvements with 175+ domains, 30 question types
 
 Advanced simulation engine with:
 - Theory-grounded persona library integration (7 persona dimensions)
@@ -45,7 +45,7 @@ This module is designed to run inside a `utils/` package (i.e., imported as
 """
 
 # Version identifier to help track deployed code
-__version__ = "2.2.0"  # Major: 25 iterations of comprehensive improvements
+__version__ = "2.2.1"  # Enhanced: 175+ domains, 30 question types, robust variable handling
 
 from dataclasses import dataclass
 from datetime import datetime
