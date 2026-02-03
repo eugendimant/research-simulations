@@ -44,8 +44,8 @@ import streamlit as st
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "2.2.0"
-BUILD_ID = "20260202-v220-comprehensive-update"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "2.2.1"
+BUILD_ID = "20260203-v221-enhanced-ui"  # Change this to force cache invalidation
 
 def _verify_and_reload_utils():
     """Verify utils modules are at correct version, force reload if needed.
@@ -98,7 +98,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF"
-APP_VERSION = "2.2.0"  # Comprehensive update: 150+ domains, 35+ QSF patterns, enhanced detection
+APP_VERSION = "2.2.1"  # Enhanced: 175+ domains, 45+ patterns, better UI, improved reports
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -1556,11 +1556,25 @@ st.caption(f"Version {APP_VERSION} · Build {APP_BUILD_TIMESTAMP}")
 
 STEP_LABELS = ["Study Info", "Upload Files", "Design Setup", "Generate"]
 STEP_DESCRIPTIONS = [
-    "Basic study details",
-    "Upload your QSF",
-    "Configure design",
-    "Run simulation"
+    "Enter study title, description & sample size",
+    "Upload your Qualtrics QSF survey file",
+    "Review conditions, factors & outcome variables",
+    "Generate simulated data package"
 ]
+
+# User guidance messages for better UX
+UI_GUIDANCE = {
+    "study_info_complete": "Study information complete. Proceed to upload your QSF file.",
+    "study_info_incomplete": "Please fill in all required study information fields.",
+    "qsf_upload_success": "QSF file parsed successfully. Review detected conditions below.",
+    "qsf_upload_needed": "Upload your Qualtrics survey file (.qsf) to continue.",
+    "design_ready": "Design configuration complete. Ready to generate simulated data.",
+    "design_needs_conditions": "Please select or define at least one experimental condition.",
+    "design_needs_outcome": "Please identify at least one primary outcome variable.",
+    "generation_ready": "All requirements met. Click 'Generate Simulation' to create your data package.",
+    "no_conditions_detected": "No experimental conditions detected. Define conditions manually below.",
+    "conditions_detected": "Experimental conditions detected from your survey flow.",
+}
 
 
 def _get_step_completion() -> Dict[str, bool]:

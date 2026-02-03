@@ -2,30 +2,34 @@
 """
 Utility modules for the Behavioral Experiment Simulation Tool.
 
-Version: 2.2.0
+Version: 2.2.1
 Changes:
-    - GUARANTEED visualizations - reports ALWAYS contain charts
-    - Pure SVG chart generators (no matplotlib dependency)
-    - Multiple fallback layers: matplotlib -> SVG module -> inline SVG
-    - Bar charts, distribution plots, histograms, means comparison
+    - 175+ research domains with comprehensive response templates
+    - 45+ QSF randomization pattern detection
+    - Enhanced condition identification with 30 variable roles
+    - Improved effect size interpretation (6 effect types)
+    - Better UI guidance messages and user feedback
+    - Robust QSF parsing with multi-format support
+    - Enhanced report generation with practical significance
 
 Modules:
     - qsf_parser: Parse Qualtrics Survey Format (.qsf) files
+    - qsf_preview: Interactive QSF preview with 45+ pattern detection
     - simulation_engine: Core simulation logic with persona-based generation
     - enhanced_simulation_engine: Advanced simulation with effect sizes and personas
-    - persona_library: Comprehensive behavioral persona library
+    - persona_library: Comprehensive behavioral persona library (50+ archetypes)
+    - response_library: 175+ domain-specific response templates
+    - text_generator: Free open-ended text response generation (20+ question types)
+    - condition_identifier: Enhanced condition identification (30 variable roles)
+    - instructor_report: Comprehensive instructor-only analysis reports
+    - schema_validator: Data validation with 10+ quality checks
     - pdf_generator: Generate tamper-proof audit log PDFs
-    - schema_validator: Validate and summarize generated data schemas
-    - qsf_preview: Interactive QSF preview with error logging
-    - instructor_report: Generate instructor-only analysis reports
     - group_management: Student group registration and usage tracking
-    - condition_identifier: Enhanced condition and variable identification
-    - text_generator: Free open-ended text response generation
-    - svg_charts: Pure SVG chart generators (guaranteed fallback visualizations)
+    - svg_charts: Pure SVG chart generators (guaranteed visualizations)
 """
 
 # Package version - should match all module versions
-__version__ = "2.2.0"
+__version__ = "2.2.1"
 
 from .qsf_parser import parse_qsf_file, extract_survey_structure, generate_qsf_summary
 from .simulation_engine import SimulationEngine

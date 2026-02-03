@@ -267,12 +267,54 @@ class EnhancedConditionIdentifier:
     # Block type keywords that indicate non-condition blocks
     EXCLUDED_BLOCK_TYPES = {'Trash', 'Default', 'Standard', 'Question'}
 
-    # Keywords that indicate experimental condition blocks
+    # Keywords that indicate experimental condition blocks (expanded)
     CONDITION_BLOCK_KEYWORDS = {
+        # Primary condition indicators
         'condition', 'treatment', 'experimental', 'manipulation',
         'stimulus', 'scenario', 'version', 'group', 'arm',
+        # Level indicators
         'high', 'low', 'control', 'placebo', 'active',
         'positive', 'negative', 'neutral', 'baseline',
+        # Comparison indicators
+        'test', 'comparison', 'intervention', 'exposure',
+        'prime', 'priming', 'induction', 'manipulation',
+        # Design indicators
+        'cell', 'factor', 'level', 'variant', 'alternative',
+    }
+
+    # Patterns that suggest manipulation/treatment text
+    MANIPULATION_TEXT_PATTERNS = [
+        r'imagine\s+(?:that\s+)?you',
+        r'suppose\s+(?:that\s+)?you',
+        r'consider\s+the\s+following\s+scenario',
+        r'please\s+read\s+the\s+following',
+        r'you\s+(?:have\s+)?(?:just\s+)?(?:been|are)\s+(?:assigned|selected)',
+        r'in\s+this\s+(?:scenario|situation|condition)',
+        r'you\s+will\s+(?:see|read|view)',
+        r'the\s+(?:following|next)\s+(?:passage|text|scenario)',
+    ]
+
+    # Patterns that suggest DV/outcome measures
+    OUTCOME_MEASURE_PATTERNS = [
+        r'how\s+(?:much|likely|willing|satisfied)',
+        r'to\s+what\s+extent',
+        r'rate\s+(?:your|the|how)',
+        r'indicate\s+(?:your|the|how)',
+        r'on\s+a\s+scale\s+(?:of|from)',
+        r'please\s+(?:rate|indicate|evaluate)',
+        r'how\s+(?:do\s+you\s+)?feel',
+    ]
+
+    # Common scale name patterns for detecting DVs
+    SCALE_NAME_PATTERNS = {
+        'satisfaction': ['satisf', 'happy', 'pleased'],
+        'trust': ['trust', 'reliable', 'honest', 'credib'],
+        'intention': ['intent', 'likely', 'willing', 'plan to'],
+        'attitude': ['attitude', 'favor', 'support', 'approve'],
+        'emotion': ['feel', 'emotion', 'affect', 'mood'],
+        'evaluation': ['evaluat', 'assess', 'judge', 'rate'],
+        'preference': ['prefer', 'like', 'choose', 'select'],
+        'perception': ['perceiv', 'view', 'see', 'think about'],
     }
 
     def __init__(self):
