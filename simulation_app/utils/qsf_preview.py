@@ -33,7 +33,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Union
 
 # Version identifier to help track deployed code
-__version__ = "2.4.4"  # v2.4.4: Open-ended verification, scroll fix, instructor report enhancements
+__version__ = "2.4.5"  # v2.4.5: Enhanced DV detection, cultural personas, new domains, export formats
 
 
 # ============================================================================
@@ -1691,6 +1691,85 @@ class QSFPreviewParser:
                         'detected_from_qsf': True
                     })
                     self._log(LogLevel.INFO, "SCALE", f"Detected constant sum DV: {q_id}")
+                continue
+
+            # 3a. Rank Order questions (v2.4.5: NEW)
+            if 'Rank Order' in q_info.question_type or 'RO' in q_info.question_type:
+                scale_name = q_info.question_text[:50].strip() or q_id
+                name_key = q_id.lower()
+                if name_key not in seen_scale_names:
+                    seen_scale_names.add(name_key)
+                    num_items = len(q_info.choices) if q_info.choices else 1
+                    scales.append({
+                        'name': scale_name,
+                        'variable_name': q_id,
+                        'question_id': q_id,
+                        'question_text': q_info.question_text[:100],
+                        'items': num_items,
+                        'scale_points': num_items,  # Rank order scale = number of items
+                        'type': 'rank_order',
+                        'detected_from_qsf': True
+                    })
+                    self._log(LogLevel.INFO, "SCALE", f"Detected rank order DV: {q_id}")
+                continue
+
+            # 3b. Pick, Group, and Rank (MaxDiff/Best-Worst) questions (v2.4.5: NEW)
+            if 'Pick' in q_info.question_type and 'Rank' in q_info.question_type:
+                scale_name = q_info.question_text[:50].strip() or q_id
+                name_key = q_id.lower()
+                if name_key not in seen_scale_names:
+                    seen_scale_names.add(name_key)
+                    num_items = len(q_info.choices) if q_info.choices else 1
+                    scales.append({
+                        'name': scale_name,
+                        'variable_name': q_id,
+                        'question_id': q_id,
+                        'question_text': q_info.question_text[:100],
+                        'items': num_items,
+                        'scale_points': num_items,
+                        'type': 'best_worst',
+                        'detected_from_qsf': True
+                    })
+                    self._log(LogLevel.INFO, "SCALE", f"Detected best-worst (MaxDiff) DV: {q_id}")
+                continue
+
+            # 3c. Paired Comparison / Side by Side questions (v2.4.5: NEW)
+            if 'Side by Side' in q_info.question_type or 'SBS' in q_info.question_type:
+                scale_name = q_info.question_text[:50].strip() or q_id
+                name_key = q_id.lower()
+                if name_key not in seen_scale_names:
+                    seen_scale_names.add(name_key)
+                    num_items = len(q_info.sub_questions) if q_info.sub_questions else 2
+                    scales.append({
+                        'name': scale_name,
+                        'variable_name': q_id,
+                        'question_id': q_id,
+                        'question_text': q_info.question_text[:100],
+                        'items': num_items,
+                        'scale_points': 2,  # Binary comparison
+                        'type': 'paired_comparison',
+                        'detected_from_qsf': True
+                    })
+                    self._log(LogLevel.INFO, "SCALE", f"Detected paired comparison DV: {q_id}")
+                continue
+
+            # 3d. Hot Spot / Heat Map questions (v2.4.5: NEW)
+            if 'Hot Spot' in q_info.question_type or 'Heat Map' in q_info.question_type:
+                scale_name = q_info.question_text[:50].strip() or q_id
+                name_key = q_id.lower()
+                if name_key not in seen_scale_names:
+                    seen_scale_names.add(name_key)
+                    scales.append({
+                        'name': scale_name,
+                        'variable_name': q_id,
+                        'question_id': q_id,
+                        'question_text': q_info.question_text[:100],
+                        'items': 1,
+                        'scale_points': None,  # Coordinates, not fixed scale
+                        'type': 'hot_spot',
+                        'detected_from_qsf': True
+                    })
+                    self._log(LogLevel.INFO, "SCALE", f"Detected hot spot DV: {q_id}")
                 continue
 
             # 4. Check for numbered pattern (e.g., WTP_1, WTP_2)
