@@ -60,10 +60,10 @@ introspection, memory, experience, recall, opinion, belief, preference, attitude
 value, worldview, prediction, intention, suggestion, recommendation, advice,
 association, impression, perception, feedback, comment, observation, general
 
-Version: 2.2.9 - Synchronized with semantic condition effects fix
+Version: 2.3.0 - All manipulation types grounded in published literature
 """
 
-__version__ = "2.2.9"
+__version__ = "2.3.0"
 
 import random
 import re

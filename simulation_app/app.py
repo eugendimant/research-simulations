@@ -43,8 +43,8 @@ import streamlit as st
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "2.2.9"
-BUILD_ID = "20260203-v229-semantic-effects"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "2.3.0"
+BUILD_ID = "20260203-v230-literature-grounded"  # Change this to force cache invalidation
 
 def _verify_and_reload_utils():
     """Verify utils modules are at correct version, force reload if needed.
@@ -97,7 +97,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF"
-APP_VERSION = "2.2.9"  # CRITICAL FIX: Semantic condition effects - removed position bias
+APP_VERSION = "2.3.0"  # COMPREHENSIVE: All manipulation types grounded in published literature
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
