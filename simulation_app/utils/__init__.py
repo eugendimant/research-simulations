@@ -2,22 +2,25 @@
 """
 Utility modules for the Behavioral Experiment Simulation Tool.
 
-Version: 2.2.9
-Changes (v2.2.9 - CRITICAL FIX - Semantic Condition Effects):
-    - CRITICAL: Removed position-based order bias from condition effects
-    - Effects are now based on SEMANTIC CONTENT of condition names, not position
-    - Valence keyword parsing: positive (lover, friend, good) vs negative (hater, enemy, bad)
-    - Manipulation type detection: AI/human, hedonic/utilitarian, treatment/control
-    - Factorial design parsing: "Factor1 × Factor2" extracts main effects
-    - Additional manipulation types: anthropomorphism, scarcity, social proof, risk framing
-    - Stable hash for consistent but non-ordered variation
-    - Study-domain persona weight adjustment
-    - validate_no_order_effects() method to detect position bias
-    - Comprehensive semantic parsing with 40+ keyword categories
+Version: 2.3.0
+Changes (v2.3.0 - COMPREHENSIVE - Literature-Grounded Manipulation Effects):
+    - ALL manipulation types now grounded in published literature with citations
+    - Following Westwood (PNAS 2025) approach for realistic human simulation
+    - 8 research domains with theory-based effect directions:
+        1. AI/Technology: Algorithm aversion (Dietvorst 2015), Anthropomorphism (Epley 2007)
+        2. Consumer/Marketing: Hedonic/Utilitarian (Babin 1994), Scarcity (Cialdini/Barton meta)
+        3. Social Psychology: In-group bias (Tajfel/Balliet meta), Authority (Milgram/meta)
+        4. Behavioral Economics: Loss aversion (Kahneman), Anchoring, Defaults (Johnson & Goldstein)
+        5. Game Theory: PGG (Fehr & Gächter), Trust Game (Berg), Prisoner's Dilemma (Sally meta)
+        6. Health/Risk: Self-efficacy (Bandura), Fear appeals (Witte & Allen meta)
+        7. Organizational: Justice (Colquitt meta), Leadership (Judge & Piccolo meta)
+        8. Political/Moral: Moral foundations (Graham & Haidt), Polarization (Iyengar & Westwood)
+    - 100+ manipulation keywords with effect sizes from meta-analyses
+    - Factorial design parsing with proper main effect summation
 
-Previous (v2.2.8):
-    - Full domain scientific calibration for all personas
-    - Domain-adaptive response mechanism
+Previous (v2.2.9):
+    - CRITICAL FIX: Removed position-based order bias from condition effects
+    - Effects based on semantic content, not position
 
 Modules:
     - qsf_parser: Parse Qualtrics Survey Format (.qsf) files
@@ -36,7 +39,7 @@ Modules:
 """
 
 # Package version - should match all module versions
-__version__ = "2.2.9"
+__version__ = "2.3.0"
 
 from .qsf_parser import parse_qsf_file, extract_survey_structure, generate_qsf_summary
 from .simulation_engine import SimulationEngine

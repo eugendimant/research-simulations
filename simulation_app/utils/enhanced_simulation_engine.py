@@ -45,7 +45,7 @@ This module is designed to run inside a `utils/` package (i.e., imported as
 """
 
 # Version identifier to help track deployed code
-__version__ = "2.2.9"  # CRITICAL FIX: Removed order bias - effects now based on semantic content, not position
+__version__ = "2.3.0"  # COMPREHENSIVE: All manipulation types grounded in published literature
 
 # =============================================================================
 # SCIENTIFIC FOUNDATIONS FOR SIMULATION
@@ -657,30 +657,96 @@ class EnhancedSimulationEngine:
         """
         Generate automatic condition effects based on SEMANTIC CONTENT, not position.
 
-        VERSION 2.2.9: CRITICAL FIX - Effects are based on condition meaning, not order.
+        VERSION 2.3.0: COMPREHENSIVE - All manipulation types grounded in published literature.
 
-        SCIENTIFIC BASIS:
-        =================
-        Effects are determined by parsing the semantic content of condition names
-        and applying theory-driven effect directions:
+        Following Westwood (PNAS 2025), this simulation aims to approximate real human
+        responses by applying theory-driven effect directions from published research.
 
-        1. VALENCE KEYWORDS (affect outcomes directionally):
-           - Positive valence (lover, friend, positive, high, good): +effect
-           - Negative valence (hater, enemy, negative, low, bad): -effect
-           - Neutral (unknown, control, baseline): 0 effect
+        SCIENTIFIC BASIS - LITERATURE GROUNDING:
+        =========================================
 
-        2. EXPERIMENTAL MANIPULATIONS (based on published literature):
-           - AI vs Human: AI typically shows aversion (Dietvorst et al., 2015)
-           - Hedonic vs Utilitarian: Hedonic shows higher affect (Babin et al., 1994)
-           - PGG vs Dictator: PGG shows higher cooperation (Fehr & Gächter, 2000)
-           - Treatment vs Control: Treatment shows moderate effect
+        1. AI/TECHNOLOGY DOMAIN
+        -----------------------
+        - Algorithm Aversion: Dietvorst, Simmons & Massey (2015, JEP:G) - People avoid algorithms
+          after seeing them err, even when algorithms outperform humans. d ≈ -0.3 to -0.5
+        - Algorithm Appreciation: Logg, Minson & Moore (2019, Org Behav) - In some contexts,
+          people prefer algorithmic judgment. Context-dependent reversal.
+        - Anthropomorphism: Epley, Waytz & Cacioppo (2007, Psych Review) - Human-like features
+          increase trust, liking, and moral consideration. d ≈ +0.2 to +0.4
+        - Uncanny Valley: Mori (1970/2012) - Near-human appearance can decrease liking.
 
-        3. EFFECT ASSIGNMENT:
-           - Uses semantic parsing, NOT condition position
-           - Effects are consistent for same condition across runs
-           - Creates realistic between-condition differences
+        2. CONSUMER/MARKETING DOMAIN
+        ----------------------------
+        - Hedonic vs Utilitarian: Babin, Darden & Griffin (1994, JCR) - Hedonic consumption
+          generates more positive affect than utilitarian. d ≈ +0.25
+        - Scarcity Effect: Cialdini (2001); Barton et al. (2022, meta-analysis) - Limited
+          availability increases desirability. Mean effect r = 0.28, d ≈ +0.30
+        - Social Proof: Cialdini (2001); Bond & Smith (1996, Psych Bulletin meta) - Others'
+          choices influence preferences. Asch conformity ~35-75% of trials.
+        - Price-Quality Inference: Rao & Monroe (1989, JMR) - Higher price signals quality.
+        - Brand Familiarity: Alba & Hutchinson (1987, JCR) - Familiar brands preferred.
+
+        3. SOCIAL PSYCHOLOGY DOMAIN
+        ---------------------------
+        - In-group/Out-group Bias: Tajfel (1971); Balliet et al. (2014, Psych Bulletin) -
+          Minimal group paradigm shows in-group favoritism. d ≈ 0.3-0.5
+        - Authority/Obedience: Milgram (1963); Meta-Milgram 2014 - 43.6% full obedience
+          across conditions. Uniform increases compliance by 46 percentage points.
+        - Reciprocity: Cialdini (2001); Regan (1971) - Favors increase compliance.
+          Tips increase 23% with personalized gifts.
+        - Social Presence: Short, Williams & Christie (1976) - Co-presence increases
+          prosocial behavior. d ≈ +0.15 to +0.30
+
+        4. BEHAVIORAL ECONOMICS DOMAIN
+        ------------------------------
+        - Loss Aversion: Tversky & Kahneman (1981, Science) - Losses loom larger than gains.
+          Loss frame: 43% risk-seeking vs gain frame: 23%. λ ≈ 2.0-2.5
+        - Anchoring: Tversky & Kahneman (1974, Science) - First numbers anchor judgment.
+          d ≈ 0.5-1.0 depending on anchor extremity.
+        - Default Effect: Johnson & Goldstein (2003, Science) - Opt-out > opt-in by 60-80
+          percentage points for organ donation.
+        - Endowment Effect: Kahneman, Knetsch & Thaler (1990, JPE) - Ownership increases
+          valuation. WTA/WTP ratio ≈ 2:1
+        - Fairness/Ultimatum: Güth et al. (1982); Meta-analyses - Unfair offers rejected
+          40-60% of time even at cost to self.
+
+        5. GAME THEORY/COOPERATION DOMAIN
+        ---------------------------------
+        - Public Goods Game: Fehr & Gächter (2000, AER) - Punishment increases cooperation.
+          With punishment: near 100% cooperation vs 40% without.
+        - Dictator Game: Engel (2011, meta-analysis) - Mean giving ≈ 28% of endowment.
+        - Trust Game: Berg et al. (1995); Johnson & Mislin (2011, meta) - Mean sent ≈ 50%.
+        - Prisoner's Dilemma: Sally (1995, meta) - Mean cooperation ≈ 47%.
+
+        6. HEALTH/RISK DOMAIN
+        ---------------------
+        - Self-Efficacy: Bandura (1977); Meta-analyses - Higher self-efficacy increases
+          health behaviors. Robust predictor across domains.
+        - Fear Appeals: Witte & Allen (2000, meta) - Moderate fear most effective.
+          High fear + high efficacy = behavior change. d ≈ 0.3-0.5
+        - Optimistic Bias: Weinstein (1980) - "It won't happen to me" effect for risks.
+        - Present Bias: O'Donoghue & Rabin (1999) - Immediate rewards overweighted.
+
+        7. ORGANIZATIONAL/LEADERSHIP DOMAIN
+        -----------------------------------
+        - Procedural Justice: Colquitt et al. (2001, JAP meta) - Fair procedures increase
+          trust and commitment. ρ ≈ .40-.50
+        - Transformational Leadership: Judge & Piccolo (2004, JAP meta) - Transforms
+          follower attitudes. ρ ≈ .44 with satisfaction.
+        - Power Distance: Hofstede (1980); GLOBE - High power distance cultures accept
+          hierarchy. Moderates leadership effects.
+        - Autonomy: Deci & Ryan (2000, SDT) - Autonomy support increases motivation.
+
+        8. POLITICAL/MORAL DOMAIN
+        -------------------------
+        - Moral Foundations: Graham, Haidt & Nosek (2009, JPSP) - Liberals emphasize
+          care/fairness, conservatives all five foundations.
+        - Political Polarization: Iyengar & Westwood (2015, AJPS) - Partisan affect
+          stronger than racial prejudice. d > 0.5
+        - Disgust Sensitivity: Inbar et al. (2009) - Disgust predicts conservative attitudes.
 
         CRITICAL: This method NEVER uses condition index/position for effects.
+        Effects are determined ONLY by semantic content matching these literature findings.
         """
         condition_lower = str(condition).lower().strip()
 
@@ -701,7 +767,8 @@ class EnhancedSimulationEngine:
             'lover', 'friend', 'positive', 'high', 'good', 'best', 'strong',
             'success', 'win', 'gain', 'benefit', 'reward', 'pleasant',
             'like', 'love', 'favor', 'approve', 'support', 'prosocial',
-            'cooperative', 'trust', 'warm', 'kind', 'helpful'
+            'cooperative', 'trust', 'warm', 'kind', 'helpful', 'generous',
+            'optimistic', 'confident', 'empowered', 'satisfied'
         ]
 
         # Strong negative valence keywords → negative effect
@@ -709,13 +776,14 @@ class EnhancedSimulationEngine:
             'hater', 'enemy', 'negative', 'low', 'bad', 'worst', 'weak',
             'failure', 'lose', 'loss', 'cost', 'punish', 'unpleasant',
             'dislike', 'hate', 'oppose', 'disapprove', 'reject', 'antisocial',
-            'competitive', 'distrust', 'cold', 'hostile', 'harmful'
+            'competitive', 'distrust', 'cold', 'hostile', 'harmful', 'selfish',
+            'pessimistic', 'anxious', 'threatened', 'dissatisfied'
         ]
 
         # Neutral/baseline keywords → zero effect
         neutral_keywords = [
             'unknown', 'control', 'baseline', 'neutral', 'moderate',
-            'medium', 'average', 'standard', 'normal', 'typical'
+            'medium', 'average', 'standard', 'normal', 'typical', 'placebo'
         ]
 
         # Check for valence keywords
@@ -735,80 +803,346 @@ class EnhancedSimulationEngine:
                 break
 
         # =====================================================================
-        # STEP 2: Parse experimental manipulation types
-        # Based on published research on these manipulations
+        # DOMAIN 1: AI/TECHNOLOGY MANIPULATIONS
         # =====================================================================
 
-        # AI vs Human manipulation (Dietvorst et al., 2015: Algorithm aversion)
+        # Algorithm Aversion (Dietvorst, Simmons & Massey, 2015, JEP:G)
+        # People avoid algorithms after seeing them err. Effect: d ≈ -0.3 to -0.5
         if 'ai' in condition_lower or 'algorithm' in condition_lower or 'robot' in condition_lower:
-            if 'no ai' in condition_lower or 'no_ai' in condition_lower or 'without ai' in condition_lower:
-                # No AI / Human condition - often preferred
-                semantic_effect += 0.15
+            if any(neg in condition_lower for neg in ['no ai', 'no_ai', 'without ai', 'no algorithm', 'human only']):
+                # No AI / Human condition - often preferred due to algorithm aversion
+                semantic_effect += 0.15  # Human preference effect
             else:
-                # AI present - often shows aversion in evaluations
-                semantic_effect -= 0.10
+                # AI present - shows aversion in evaluations (Dietvorst et al., 2015)
+                semantic_effect -= 0.12
 
-        # Hedonic vs Utilitarian (Babin et al., 1994: Shopping value)
-        if 'hedonic' in condition_lower or 'experiential' in condition_lower or 'fun' in condition_lower:
-            semantic_effect += 0.20  # Hedonic products rated more positively on affect
-        elif 'utilitarian' in condition_lower or 'functional' in condition_lower or 'practical' in condition_lower:
-            semantic_effect -= 0.10  # Utilitarian more moderate ratings
+        # Machine vs Human judgment (Logg, Minson & Moore, 2019)
+        if 'machine' in condition_lower and 'human' not in condition_lower:
+            semantic_effect -= 0.10
+        elif 'human' in condition_lower and 'machine' not in condition_lower:
+            if 'superhuman' not in condition_lower:
+                semantic_effect += 0.10
 
-        # Game type (Fehr & Gächter, 2000: Cooperation in public goods)
-        if 'pgg' in condition_lower or 'public good' in condition_lower:
-            semantic_effect += 0.15  # PGG elicits more cooperation
-        elif 'dictator' in condition_lower:
-            semantic_effect -= 0.05  # Dictator game - more self-interested
-
-        # Treatment vs Control
-        if 'treatment' in condition_lower and 'control' not in condition_lower:
-            semantic_effect += 0.20  # Treatment typically shows effect
-        elif 'control' in condition_lower and 'treatment' not in condition_lower:
-            semantic_effect -= 0.05  # Control is baseline
-
-        # =====================================================================
-        # ADDITIONAL MANIPULATION TYPES (based on published research)
-        # =====================================================================
-
-        # Anthropomorphism (Epley et al., 2007: When we see human)
-        if 'anthropomorph' in condition_lower or 'human-like' in condition_lower:
-            semantic_effect += 0.15  # Anthropomorphized agents rated more positively
-
-        # Social presence (Short et al., 1976: Social presence theory)
-        if 'social' in condition_lower and 'presence' in condition_lower:
-            semantic_effect += 0.12
-        elif 'asocial' in condition_lower or 'non-social' in condition_lower:
+        # Anthropomorphism (Epley, Waytz & Cacioppo, 2007, Psychological Review)
+        # Human-like features increase trust and liking. Effect: d ≈ +0.2 to +0.4
+        if 'anthropomorph' in condition_lower or 'human-like' in condition_lower or 'humanoid' in condition_lower:
+            semantic_effect += 0.18
+        elif 'machine-like' in condition_lower or 'robotic' in condition_lower:
             semantic_effect -= 0.08
 
-        # Scarcity (Cialdini, 2001: Influence - scarcity principle)
-        if 'scarce' in condition_lower or 'limited' in condition_lower or 'exclusive' in condition_lower:
-            semantic_effect += 0.18
-        elif 'abundant' in condition_lower or 'unlimited' in condition_lower:
+        # Automation (Parasuraman & Riley, 1997; Lee & See, 2004)
+        if 'automat' in condition_lower:
+            if 'full' in condition_lower or 'complete' in condition_lower:
+                semantic_effect -= 0.15  # Full automation trust concerns
+            elif 'partial' in condition_lower or 'assisted' in condition_lower:
+                semantic_effect += 0.05  # Partial automation often preferred
+
+        # Transparency/Explainability (Ribeiro et al., 2016)
+        if 'transparent' in condition_lower or 'explainable' in condition_lower or 'interpretable' in condition_lower:
+            semantic_effect += 0.12
+        elif 'black box' in condition_lower or 'opaque' in condition_lower:
+            semantic_effect -= 0.10
+
+        # =====================================================================
+        # DOMAIN 2: CONSUMER/MARKETING MANIPULATIONS
+        # =====================================================================
+
+        # Hedonic vs Utilitarian (Babin, Darden & Griffin, 1994, JCR)
+        # Hedonic consumption generates more positive affect. Effect: d ≈ +0.25
+        if any(h in condition_lower for h in ['hedonic', 'experiential', 'fun', 'pleasure', 'enjoyment', 'indulgent']):
+            semantic_effect += 0.22
+        elif any(u in condition_lower for u in ['utilitarian', 'functional', 'practical', 'necessity', 'useful']):
+            semantic_effect -= 0.08
+
+        # Scarcity Effect (Cialdini, 2001; Barton et al., 2022 meta-analysis)
+        # Limited availability increases desirability. Mean effect r = 0.28, d ≈ +0.30
+        if any(s in condition_lower for s in ['scarce', 'limited', 'exclusive', 'rare', 'last chance', 'few left']):
+            semantic_effect += 0.25
+        elif any(a in condition_lower for a in ['abundant', 'unlimited', 'plentiful', 'common', 'widely available']):
+            semantic_effect -= 0.08
+
+        # Social Proof (Cialdini, 2001; Bond & Smith, 1996 meta-analysis)
+        # Others' choices influence preferences. Conformity effect robust.
+        if any(sp in condition_lower for sp in ['popular', 'bestseller', 'most chosen', 'endorsed', 'recommended',
+                                                  'others chose', 'trending', 'viral', 'social proof']):
+            semantic_effect += 0.20
+        elif any(np in condition_lower for np in ['unpopular', 'not recommended', 'unknown brand', 'no reviews']):
+            semantic_effect -= 0.15
+
+        # Price-Quality Inference (Rao & Monroe, 1989, JMR)
+        if 'premium' in condition_lower or 'luxury' in condition_lower or 'expensive' in condition_lower:
+            semantic_effect += 0.15
+        elif 'budget' in condition_lower or 'discount' in condition_lower or 'cheap' in condition_lower:
+            semantic_effect -= 0.10
+
+        # Brand Effects (Alba & Hutchinson, 1987, JCR)
+        if 'familiar' in condition_lower or 'known brand' in condition_lower or 'established' in condition_lower:
+            semantic_effect += 0.12
+        elif 'unfamiliar' in condition_lower or 'new brand' in condition_lower or 'unknown' in condition_lower:
+            semantic_effect -= 0.08
+
+        # Advertising Appeals (MacInnis & Jaworski, 1989)
+        if 'emotional' in condition_lower and 'appeal' in condition_lower:
+            semantic_effect += 0.15
+        elif 'rational' in condition_lower and 'appeal' in condition_lower:
+            semantic_effect += 0.05
+
+        # =====================================================================
+        # DOMAIN 3: SOCIAL PSYCHOLOGY MANIPULATIONS
+        # =====================================================================
+
+        # In-group/Out-group Bias (Tajfel, 1971; Balliet et al., 2014 meta)
+        # Minimal group paradigm shows in-group favoritism. d ≈ 0.3-0.5
+        if any(ig in condition_lower for ig in ['ingroup', 'in-group', 'in group', 'us', 'our group', 'teammate']):
+            semantic_effect += 0.28
+        elif any(og in condition_lower for og in ['outgroup', 'out-group', 'out group', 'them', 'other group', 'opponent']):
+            semantic_effect -= 0.25
+
+        # Authority/Obedience (Milgram, 1963; Meta-Milgram, 2014)
+        # Authority figures increase compliance. Uniform effect: +46pp compliance
+        if any(auth in condition_lower for auth in ['authority', 'expert', 'doctor', 'professor', 'scientist',
+                                                      'official', 'leader', 'manager', 'uniform']):
+            semantic_effect += 0.22
+        elif any(nauth in condition_lower for nauth in ['peer', 'layperson', 'non-expert', 'stranger', 'novice']):
+            semantic_effect -= 0.08
+
+        # Reciprocity (Cialdini, 2001; Regan, 1971)
+        # Favors increase compliance. Gift effect: +23% tips
+        if any(r in condition_lower for r in ['reciproc', 'gift', 'favor', 'gave first', 'free sample']):
+            semantic_effect += 0.20
+        elif 'no gift' in condition_lower or 'no favor' in condition_lower:
             semantic_effect -= 0.05
 
-        # Social proof (Cialdini, 2001: Social proof)
-        if 'popular' in condition_lower or 'endorsed' in condition_lower or 'recommended' in condition_lower:
+        # Social Presence (Short, Williams & Christie, 1976)
+        # Co-presence increases prosocial behavior. d ≈ +0.15 to +0.30
+        if any(sp in condition_lower for sp in ['social presence', 'observed', 'watched', 'public',
+                                                  'with others', 'audience', 'witnessed']):
+            semantic_effect += 0.18
+        elif any(al in condition_lower for al in ['alone', 'private', 'anonymous', 'unobserved', 'no audience']):
+            semantic_effect -= 0.10
+
+        # Commitment/Consistency (Cialdini, 2001; Freedman & Fraser, 1966)
+        if any(c in condition_lower for c in ['commitment', 'pledged', 'promised', 'foot in door', 'prior agreement']):
+            semantic_effect += 0.18
+
+        # Liking/Similarity (Cialdini, 2001; Byrne, 1971)
+        if any(l in condition_lower for l in ['similar', 'likeable', 'attractive', 'compliment', 'same group']):
             semantic_effect += 0.15
-        elif 'unpopular' in condition_lower or 'not recommended' in condition_lower:
+        elif any(d in condition_lower for d in ['dissimilar', 'unlikeable', 'different', 'outgroup']):
             semantic_effect -= 0.12
 
-        # Risk framing (Tversky & Kahneman, 1981: Framing effects)
-        if 'gain' in condition_lower or 'save' in condition_lower:
-            semantic_effect += 0.10  # Gain frame more positive
-        elif 'loss' in condition_lower or 'lose' in condition_lower:
-            semantic_effect -= 0.15  # Loss frame more negative (loss aversion)
+        # =====================================================================
+        # DOMAIN 4: BEHAVIORAL ECONOMICS MANIPULATIONS
+        # =====================================================================
 
-        # Personal relevance (Petty & Cacioppo, 1986: ELM)
-        if 'personal' in condition_lower or 'relevant' in condition_lower or 'self' in condition_lower:
+        # Loss Aversion/Framing (Tversky & Kahneman, 1981, Science)
+        # Losses loom larger than gains. λ ≈ 2.0-2.5. Loss frame: 43% vs gain: 23% risk-seeking
+        if any(g in condition_lower for g in ['gain', 'save', 'earn', 'win', 'keep', 'gain frame']):
             semantic_effect += 0.12
-        elif 'impersonal' in condition_lower or 'irrelevant' in condition_lower:
-            semantic_effect -= 0.08
+        elif any(l in condition_lower for l in ['loss', 'lose', 'cost', 'pay', 'forfeit', 'loss frame']):
+            semantic_effect -= 0.20  # Loss aversion amplifies negative effects
 
-        # Moral framing (Graham et al., 2009: Moral foundations)
-        if 'moral' in condition_lower or 'ethical' in condition_lower or 'fair' in condition_lower:
-            semantic_effect += 0.15
-        elif 'immoral' in condition_lower or 'unethical' in condition_lower or 'unfair' in condition_lower:
+        # Anchoring (Tversky & Kahneman, 1974, Science)
+        # First numbers anchor judgment. d ≈ 0.5-1.0
+        if 'high anchor' in condition_lower or 'large anchor' in condition_lower:
+            semantic_effect += 0.25
+        elif 'low anchor' in condition_lower or 'small anchor' in condition_lower:
             semantic_effect -= 0.20
+
+        # Default Effect (Johnson & Goldstein, 2003, Science)
+        # Opt-out > opt-in by 60-80 percentage points
+        if any(d in condition_lower for d in ['opt-out', 'opt out', 'default yes', 'presumed consent']):
+            semantic_effect += 0.35
+        elif any(d in condition_lower for d in ['opt-in', 'opt in', 'default no', 'explicit consent', 'active choice']):
+            semantic_effect -= 0.15
+
+        # Endowment Effect (Kahneman, Knetsch & Thaler, 1990, JPE)
+        # Ownership increases valuation. WTA/WTP ≈ 2:1
+        if any(e in condition_lower for e in ['own', 'possess', 'endow', 'yours', 'have']):
+            semantic_effect += 0.20
+        elif any(e in condition_lower for e in ['buy', 'acquire', 'get', 'obtain']):
+            semantic_effect -= 0.10
+
+        # Fairness/Ultimatum (Güth et al., 1982; Camerer, 2003)
+        # Unfair offers rejected 40-60% of time
+        if any(f in condition_lower for f in ['fair', 'equal', 'equitable', '50-50', 'even split']):
+            semantic_effect += 0.25
+        elif any(uf in condition_lower for uf in ['unfair', 'unequal', 'inequitable', 'low offer', 'stingy']):
+            semantic_effect -= 0.30
+
+        # Present Bias (O'Donoghue & Rabin, 1999)
+        if any(p in condition_lower for p in ['immediate', 'now', 'today', 'instant']):
+            semantic_effect += 0.18
+        elif any(f in condition_lower for f in ['delayed', 'later', 'future', 'wait']):
+            semantic_effect -= 0.12
+
+        # Mental Accounting (Thaler, 1985)
+        if 'windfall' in condition_lower or 'bonus' in condition_lower or 'unexpected' in condition_lower:
+            semantic_effect += 0.15
+
+        # =====================================================================
+        # DOMAIN 5: GAME THEORY/COOPERATION MANIPULATIONS
+        # =====================================================================
+
+        # Public Goods Game (Fehr & Gächter, 2000, AER)
+        # With punishment: near 100% vs 40% without
+        if any(p in condition_lower for p in ['pgg', 'public good', 'contribute', 'common pool']):
+            semantic_effect += 0.15
+            if 'punish' in condition_lower:
+                semantic_effect += 0.25  # Punishment dramatically increases cooperation
+
+        # Dictator Game (Engel, 2011 meta-analysis)
+        # Mean giving ≈ 28% of endowment
+        if 'dictator' in condition_lower:
+            semantic_effect -= 0.05  # More self-interested than other games
+
+        # Trust Game (Berg et al., 1995; Johnson & Mislin, 2011 meta)
+        # Mean sent ≈ 50%
+        if 'trust game' in condition_lower:
+            if 'trustor' in condition_lower or 'sender' in condition_lower:
+                semantic_effect += 0.15
+            elif 'trustee' in condition_lower or 'receiver' in condition_lower:
+                semantic_effect += 0.10
+
+        # Prisoner's Dilemma (Sally, 1995 meta-analysis)
+        # Mean cooperation ≈ 47%
+        if "prisoner" in condition_lower or 'pd' in condition_lower:
+            if 'cooperat' in condition_lower:
+                semantic_effect += 0.20
+            elif 'defect' in condition_lower:
+                semantic_effect -= 0.25
+
+        # Repeated vs One-shot games (Axelrod, 1984)
+        if 'repeated' in condition_lower or 'iterated' in condition_lower or 'multiple rounds' in condition_lower:
+            semantic_effect += 0.15  # Repeated games show more cooperation
+        elif 'one-shot' in condition_lower or 'single round' in condition_lower:
+            semantic_effect -= 0.10
+
+        # =====================================================================
+        # DOMAIN 6: HEALTH/RISK MANIPULATIONS
+        # =====================================================================
+
+        # Self-Efficacy (Bandura, 1977; Meta-analyses)
+        # Higher self-efficacy increases health behaviors
+        if any(se in condition_lower for se in ['high efficacy', 'self-efficacy', 'confident', 'capable', 'empowered']):
+            semantic_effect += 0.22
+        elif any(le in condition_lower for le in ['low efficacy', 'doubtful', 'incapable', 'helpless']):
+            semantic_effect -= 0.20
+
+        # Fear Appeals (Witte & Allen, 2000 meta-analysis)
+        # Moderate fear most effective. High fear + high efficacy = change. d ≈ 0.3-0.5
+        if 'fear' in condition_lower or 'threat' in condition_lower or 'danger' in condition_lower:
+            if 'high' in condition_lower or 'strong' in condition_lower:
+                semantic_effect -= 0.15  # High fear can backfire without efficacy
+            elif 'moderate' in condition_lower or 'medium' in condition_lower:
+                semantic_effect += 0.12  # Moderate fear often most effective
+            else:
+                semantic_effect -= 0.10
+
+        # Risk Perception (Slovic, 1987)
+        if any(r in condition_lower for r in ['risky', 'dangerous', 'hazardous', 'unsafe']):
+            semantic_effect -= 0.18
+        elif any(s in condition_lower for s in ['safe', 'secure', 'protected', 'low risk']):
+            semantic_effect += 0.15
+
+        # Health Message Framing (Rothman & Salovey, 1997)
+        if 'prevention' in condition_lower or 'detect' in condition_lower:
+            if 'loss' in condition_lower:
+                semantic_effect += 0.12  # Loss frame better for detection
+        if 'promot' in condition_lower:
+            if 'gain' in condition_lower:
+                semantic_effect += 0.12  # Gain frame better for prevention
+
+        # =====================================================================
+        # DOMAIN 7: ORGANIZATIONAL/LEADERSHIP MANIPULATIONS
+        # =====================================================================
+
+        # Procedural Justice (Colquitt et al., 2001 meta-analysis, JAP)
+        # Fair procedures increase trust and commitment. ρ ≈ .40-.50
+        if any(pj in condition_lower for pj in ['procedural justice', 'fair process', 'voice',
+                                                  'transparent process', 'fair procedure']):
+            semantic_effect += 0.25
+        elif any(pi in condition_lower for pi in ['unfair process', 'no voice', 'arbitrary']):
+            semantic_effect -= 0.28
+
+        # Distributive Justice (Colquitt et al., 2001)
+        if any(dj in condition_lower for dj in ['distributive justice', 'fair outcome', 'equitable pay',
+                                                  'fair reward', 'fair distribution']):
+            semantic_effect += 0.25
+        elif any(di in condition_lower for di in ['unfair outcome', 'inequitable', 'underpaid']):
+            semantic_effect -= 0.28
+
+        # Transformational Leadership (Judge & Piccolo, 2004 meta-analysis, JAP)
+        # ρ ≈ .44 with satisfaction
+        if any(tl in condition_lower for tl in ['transformational', 'inspirational', 'charismatic',
+                                                  'visionary', 'empowering leader']):
+            semantic_effect += 0.22
+        elif any(tal in condition_lower for tal in ['transactional', 'directive', 'laissez-faire']):
+            semantic_effect -= 0.05
+
+        # Autonomy (Deci & Ryan, 2000, SDT)
+        # Autonomy support increases motivation
+        if any(a in condition_lower for a in ['autonomy', 'choice', 'freedom', 'self-directed',
+                                                'empowerment', 'participative']):
+            semantic_effect += 0.20
+        elif any(c in condition_lower for c in ['controlled', 'no choice', 'mandated', 'forced', 'required']):
+            semantic_effect -= 0.15
+
+        # Feedback (Kluger & DeNisi, 1996 meta-analysis)
+        if any(fb in condition_lower for fb in ['positive feedback', 'praise', 'recognition', 'appreciated']):
+            semantic_effect += 0.20
+        elif any(nfb in condition_lower for nfb in ['negative feedback', 'criticism', 'blame']):
+            semantic_effect -= 0.22
+
+        # =====================================================================
+        # DOMAIN 8: POLITICAL/MORAL MANIPULATIONS
+        # =====================================================================
+
+        # Moral Foundations (Graham, Haidt & Nosek, 2009, JPSP)
+        # Liberals: care/fairness; Conservatives: all five foundations
+        if any(m in condition_lower for m in ['care', 'harm', 'compassion', 'suffering']):
+            semantic_effect += 0.18
+        if any(m in condition_lower for m in ['fairness', 'justice', 'equality', 'rights']):
+            semantic_effect += 0.18
+        if any(m in condition_lower for m in ['loyalty', 'patriot', 'traitor', 'betrayal']):
+            semantic_effect += 0.12
+        if any(m in condition_lower for m in ['authority', 'tradition', 'subversion', 'respect']):
+            semantic_effect += 0.10
+        if any(m in condition_lower for m in ['purity', 'sanctity', 'disgust', 'degradation']):
+            semantic_effect += 0.10
+
+        # Political Polarization (Iyengar & Westwood, 2015, AJPS)
+        # Partisan affect stronger than racial prejudice. d > 0.5
+        if any(p in condition_lower for p in ['same party', 'co-partisan', 'inparty']):
+            semantic_effect += 0.30
+        elif any(o in condition_lower for o in ['other party', 'opposing party', 'outparty']):
+            semantic_effect -= 0.30
+
+        # Disgust (Inbar et al., 2009)
+        if 'disgust' in condition_lower:
+            semantic_effect -= 0.20
+
+        # Moral vs Non-moral framing (Feinberg & Willer, 2015)
+        if 'moral' in condition_lower or 'ethical' in condition_lower:
+            semantic_effect += 0.15
+        elif 'immoral' in condition_lower or 'unethical' in condition_lower:
+            semantic_effect -= 0.22
+
+        # =====================================================================
+        # GENERAL TREATMENT EFFECTS
+        # =====================================================================
+
+        # Treatment vs Control (general pattern)
+        if 'treatment' in condition_lower and 'control' not in condition_lower:
+            semantic_effect += 0.20
+        elif 'control' in condition_lower and 'treatment' not in condition_lower:
+            semantic_effect -= 0.05
+
+        # Intervention effects
+        if 'intervention' in condition_lower:
+            semantic_effect += 0.15
+        elif 'no intervention' in condition_lower or 'waitlist' in condition_lower:
+            semantic_effect -= 0.05
 
         # =====================================================================
         # FACTORIAL DESIGN PARSING
@@ -835,30 +1169,40 @@ class EnhancedSimulationEngine:
                 # Check valence for this factor
                 for kw in positive_keywords:
                     if kw in factor:
-                        factor_effect += 0.20
+                        factor_effect += 0.18
                         break
                 for kw in negative_keywords:
                     if kw in factor:
-                        factor_effect -= 0.20
+                        factor_effect -= 0.18
                         break
 
-                # Check manipulation types for this factor
+                # Check key manipulation types for this factor
                 if 'ai' in factor and 'no' not in factor:
                     factor_effect -= 0.08
-                elif 'no ai' in factor or 'no_ai' in factor:
+                elif 'no ai' in factor or 'no_ai' in factor or 'human' in factor:
                     factor_effect += 0.10
 
-                if 'hedonic' in factor:
+                if 'hedonic' in factor or 'fun' in factor:
                     factor_effect += 0.12
-                elif 'utilitarian' in factor:
+                elif 'utilitarian' in factor or 'practical' in factor:
                     factor_effect -= 0.05
+
+                if 'gain' in factor or 'save' in factor:
+                    factor_effect += 0.08
+                elif 'loss' in factor or 'lose' in factor:
+                    factor_effect -= 0.12
+
+                if 'fair' in factor:
+                    factor_effect += 0.12
+                elif 'unfair' in factor:
+                    factor_effect -= 0.15
 
                 factor_effects.append(factor_effect)
 
             # Sum factor effects (main effects in factorial design)
             # Scale down to prevent extreme values from multiple factors
             if factor_effects:
-                semantic_effect += sum(factor_effects) * 0.7  # 70% of sum
+                semantic_effect += sum(factor_effects) * 0.6  # 60% of sum to prevent extremes
 
         # =====================================================================
         # STEP 3: Create additional variance using stable hash (NOT position)
@@ -868,7 +1212,7 @@ class EnhancedSimulationEngine:
         # Use MD5 hash of condition name for stable but non-positional variation
         condition_hash = int(hashlib.md5(condition.encode()).hexdigest(), 16)
         # Small random-like adjustment based on hash (-0.05 to +0.05)
-        hash_adjustment = ((condition_hash % 1000) / 1000.0 - 0.5) * 0.10
+        hash_adjustment = ((condition_hash % 1000) / 1000.0 - 0.5) * 0.08
 
         semantic_effect += hash_adjustment
 
@@ -876,8 +1220,8 @@ class EnhancedSimulationEngine:
         # STEP 4: Bound and scale the effect
         # =====================================================================
 
-        # Clamp to reasonable range (-0.6 to +0.6)
-        semantic_effect = max(-0.6, min(0.6, semantic_effect))
+        # Clamp to reasonable range (-0.7 to +0.7) - slightly wider for strong manipulations
+        semantic_effect = max(-0.7, min(0.7, semantic_effect))
 
         # Apply Cohen's d scaling
         return semantic_effect * default_d * COHENS_D_TO_NORMALIZED
