@@ -60,10 +60,10 @@ introspection, memory, experience, recall, opinion, belief, preference, attitude
 value, worldview, prediction, intention, suggestion, recommendation, advice,
 association, impression, perception, feedback, comment, observation, general
 
-Version: 2.4.2 - Enhanced detection from QSF training on 5 real surveys
+Version: 2.4.3 - ENHANCED: QSF training on 6 real surveys - comprehensive pattern detection
 """
 
-__version__ = "2.4.2"
+__version__ = "2.4.3"
 
 import random
 import re
