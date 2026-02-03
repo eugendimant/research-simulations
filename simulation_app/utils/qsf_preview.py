@@ -33,7 +33,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Union
 
 # Version identifier to help track deployed code
-__version__ = "2.4.3"  # ENHANCED: QSF training on 6 files - slider config, validation details, choice randomization
+__version__ = "2.4.4"  # v2.4.4: Open-ended verification, scroll fix, instructor report enhancements
 
 
 # ============================================================================
