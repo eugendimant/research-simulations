@@ -14,7 +14,7 @@ The Behavioral Experiment Simulation Tool generates realistic synthetic pilot da
 - Develop analysis scripts on realistic data structures
 - Learn to interpret statistical outputs on data with known properties
 
-This tool is designed for **educational and pilot testing purposes**—it does not replace actual human subjects research but provides a rigorous training ground for developing analytical skills.
+This tool is designed for **educational and pilot testing purposes**; it does not replace actual human subjects research but provides a rigorous training ground for developing analytical skills.
 
 ---
 
@@ -434,7 +434,7 @@ The tool includes clear labeling in all outputs indicating data is simulated.
 
 If you use this tool in your research or teaching, please cite:
 
-> Dimant, E. (2025). Behavioral Experiment Simulation Tool (Version 2.4). University of Pennsylvania.
+> Dimant, E. (2026). Behavioral Experiment Simulation Tool (Version 2.4). University of Pennsylvania.
 
 ---
 
@@ -443,4 +443,3 @@ If you use this tool in your research or teaching, please cite:
 For questions, issues, or feature requests:
 - **Website:** [https://eugendimant.github.io/](https://eugendimant.github.io/)
 - **Email:** edimant@sas.upenn.edu
-- **Issues:** [GitHub Repository](https://github.com/eugendimant/research-simulations)
