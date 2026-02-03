@@ -896,7 +896,8 @@ class QSFPreviewParser:
                     if isinstance(custom_val, dict):
                         # Check for regex in custom validation message or logic
                         message = custom_val.get('Message', '')
-                        if 'email' in message.lower() or 'valid' in message.lower():
+                        # Ensure message is a string before calling .lower() (QSF can have dicts here)
+                        if isinstance(message, str) and ('email' in message.lower() or 'valid' in message.lower()):
                             # Common email regex pattern
                             validation_regex = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
 
