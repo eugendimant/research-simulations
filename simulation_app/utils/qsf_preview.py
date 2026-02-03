@@ -3,6 +3,26 @@ Interactive QSF Preview with Error Logging
 ==========================================
 Module for parsing, previewing, and validating Qualtrics Survey Format (QSF) files
 with comprehensive error detection and logging for instructor review.
+
+Key Features:
+- Parses QSF JSON structure with robust error handling
+- Detects 45+ randomization patterns across 6 categories
+- Extracts experimental conditions from flow, blocks, and embedded data
+- Identifies scales, attention checks, and manipulation checks
+- Provides detailed logging for debugging and review
+- Supports multiple QSF format variants (old and new Qualtrics exports)
+
+Error Handling:
+- Graceful degradation when optional fields are missing
+- Detailed error messages with context for debugging
+- Validation of critical structures before processing
+- Recovery from malformed JSON sections
+
+Supported QSF Formats:
+- Qualtrics Research Suite exports
+- Qualtrics Core XM exports
+- Legacy Qualtrics format
+- UTF-8 and UTF-16 encoded files
 """
 
 import json
@@ -10,10 +30,10 @@ import re
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 # Version identifier to help track deployed code
-__version__ = "2.2.0"  # Major: 25+ randomization patterns, comprehensive condition detection
+__version__ = "2.2.1"  # Enhanced: 45+ patterns, robust error handling, multi-format support
 
 
 # ============================================================================

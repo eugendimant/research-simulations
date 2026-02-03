@@ -4,10 +4,27 @@ Schema Validator for Behavioral Experiment Simulation Tool
 Validates generated data schemas and provides summary reports
 following the "FILE READ OK" and "SCHEMA LOCKED" format from the
 simulation methodology.
+
+Validation Checks Performed:
+1. Sample Size - Verifies actual N matches expected N (with 5% tolerance)
+2. Required Columns - Checks for PARTICIPANT_ID, CONDITION columns
+3. Condition Coverage - Validates all expected conditions are present
+4. Condition Balance - Checks for balanced allocation (within 10%)
+5. Scale Columns - Verifies scale items exist with correct ranges
+6. Missing Values - Reports columns with missing data
+7. Data Types - Ensures numeric columns are properly typed
+8. Response Ranges - Validates Likert scale responses within bounds
+9. Exclusion Flags - Verifies exclusion recommendation columns
+10. Data Quality Flags - Checks attention, speeding, straightlining flags
+
+Error Levels:
+- errors: Critical issues that invalidate the data (mark valid=False)
+- warnings: Non-critical issues that should be reviewed
+- info: Informational messages about the data
 """
 
 # Version identifier to help track deployed code
-__version__ = "2.2.0"  # Comprehensive update - enhanced validation
+__version__ = "2.2.1"  # Enhanced validation with 10+ checks
 
 from datetime import datetime
 from typing import Any, Dict, List

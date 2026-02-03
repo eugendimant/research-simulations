@@ -737,14 +737,35 @@ class InstructorReportGenerator:
 class ComprehensiveInstructorReport:
     """
     Generates a detailed, comprehensive report for instructors ONLY.
-    This report includes statistical analyses, visualizations (as text/tables),
-    hypothesis testing based on preregistration, and data quality diagnostics.
+
+    This report includes:
+    - Statistical analyses with full interpretation (t-tests, ANOVA, effect sizes)
+    - Data quality diagnostics (attention checks, completion times, exclusions)
+    - Visualizations with automatic chart interpretation
+    - Hypothesis testing based on preregistration information
+    - Descriptive statistics by condition
+    - Recommendations for student grading
 
     This is NOT shared with students - they should practice these analyses themselves.
+
+    Report Sections:
+    1. Data Quality Summary - Exclusions, attention, completion times
+    2. Experimental Design Check - Condition balance, randomization
+    3. Descriptive Statistics - By condition and overall
+    4. Inferential Statistics - t-tests, ANOVA, effect sizes
+    5. Visualization Gallery - Charts with interpretation
+    6. Recommendations - Grading guidance for instructors
+
+    Version: 2.2.1 - Enhanced interpretations and practical significance
     """
 
+    # Report formatting constants
+    SECTION_SEPARATOR = "=" * 80
+    SUBSECTION_SEPARATOR = "-" * 80
+
     def __init__(self):
-        pass
+        self._warnings: List[str] = []
+        self._insights: List[str] = []
 
     def generate_comprehensive_report(
         self,
@@ -1804,27 +1825,96 @@ class ComprehensiveInstructorReport:
         return results
 
     def _interpret_cohens_d(self, d: float) -> str:
-        """Interpret Cohen's d effect size."""
+        """Interpret Cohen's d effect size with detailed thresholds."""
         abs_d = abs(d)
-        if abs_d < 0.2:
+        if abs_d < 0.1:
             return "negligible"
+        elif abs_d < 0.2:
+            return "very small"
         elif abs_d < 0.5:
             return "small"
         elif abs_d < 0.8:
             return "medium"
-        else:
+        elif abs_d < 1.2:
             return "large"
+        else:
+            return "very large"
 
     def _interpret_eta_squared(self, eta2: float) -> str:
-        """Interpret eta-squared effect size."""
+        """Interpret eta-squared effect size with detailed thresholds."""
         if eta2 < 0.01:
             return "negligible"
+        elif eta2 < 0.02:
+            return "very small"
         elif eta2 < 0.06:
             return "small"
         elif eta2 < 0.14:
             return "medium"
+        elif eta2 < 0.26:
+            return "large"
+        else:
+            return "very large"
+
+    def _interpret_omega_squared(self, omega2: float) -> str:
+        """Interpret omega-squared effect size (less biased than eta-squared)."""
+        if omega2 < 0.01:
+            return "negligible"
+        elif omega2 < 0.06:
+            return "small"
+        elif omega2 < 0.14:
+            return "medium"
         else:
             return "large"
+
+    def _interpret_r_squared(self, r2: float) -> str:
+        """Interpret R-squared (coefficient of determination)."""
+        if r2 < 0.02:
+            return "negligible"
+        elif r2 < 0.13:
+            return "small"
+        elif r2 < 0.26:
+            return "medium"
+        else:
+            return "large"
+
+    def _interpret_correlation(self, r: float) -> str:
+        """Interpret Pearson correlation coefficient."""
+        abs_r = abs(r)
+        if abs_r < 0.1:
+            return "negligible"
+        elif abs_r < 0.3:
+            return "weak"
+        elif abs_r < 0.5:
+            return "moderate"
+        elif abs_r < 0.7:
+            return "strong"
+        else:
+            return "very strong"
+
+    def _get_practical_significance(self, effect_size: float, effect_type: str) -> str:
+        """Generate practical significance statement based on effect size."""
+        if effect_type == "cohens_d":
+            interpretation = self._interpret_cohens_d(effect_size)
+        elif effect_type == "eta_squared":
+            interpretation = self._interpret_eta_squared(effect_size)
+        elif effect_type == "r":
+            interpretation = self._interpret_correlation(effect_size)
+        else:
+            interpretation = "unknown"
+
+        significance_statements = {
+            "negligible": "This effect is too small to have practical importance.",
+            "very small": "This effect is minimal and unlikely to be noticeable in practice.",
+            "small": "This effect is small but may be meaningful in some contexts.",
+            "weak": "This relationship is weak and has limited practical value.",
+            "moderate": "This effect is moderate and likely meaningful in practice.",
+            "medium": "This effect is of medium magnitude and practically meaningful.",
+            "strong": "This effect is strong and has clear practical implications.",
+            "large": "This effect is large and has substantial practical importance.",
+            "very strong": "This effect is very strong with major practical implications.",
+            "very large": "This effect is very large and highly practically significant.",
+        }
+        return significance_statements.get(interpretation, "")
 
     def _generate_chart_interpretation(
         self,
