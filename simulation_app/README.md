@@ -1,6 +1,6 @@
 # Behavioral Experiment Simulation Tool
 
-**Version 2.2** | A Streamlit application for generating realistic synthetic behavioral experiment data using theory-grounded persona-driven simulation.
+**Version 2.2.3** | A Streamlit application for generating realistic synthetic behavioral experiment data using theory-grounded persona-driven simulation.
 
 ## What This Tool Does
 
@@ -18,11 +18,18 @@
 - **Verify survey logic** and variable coding
 - **Develop R/Python scripts** on properly structured data
 
-## Features (v2.2)
+## Features (v2.2.3)
+
+### Comprehensive DV Detection
+- **Automatic DV identification** from QSF survey structure
+- **6 DV types supported**: Matrix scales, Likert scales, sliders, single-item DVs, numeric inputs, constant sum
+- **Question text display** for easy verification of detected DVs
+- **Easy add/remove** with one-click removal buttons
+- **Type badges** showing DV category (Matrix, Slider, Single Item, etc.)
 
 ### Automatic Survey Parsing
 - Extracts conditions, factors, and scales from Qualtrics QSF
-- **Enhanced scale detection**: Matrix, numbered items, Likert-type, and slider scales
+- **Enhanced scale detection**: Matrix, numbered items, Likert-type, slider, and numeric input
 - **175+ research domains** for context-aware response generation
 - **30 question type handlers** for open-ended responses
 

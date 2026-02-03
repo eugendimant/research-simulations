@@ -33,7 +33,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Union
 
 # Version identifier to help track deployed code
-__version__ = "2.2.1"  # Enhanced: 45+ patterns, robust error handling, multi-format support
+__version__ = "2.2.2"  # Enhanced: Comprehensive DV detection, single-item DVs, numeric inputs
 
 
 # ============================================================================
@@ -1243,24 +1243,27 @@ class QSFPreviewParser:
         return unique
 
     def _detect_scales(self, questions_map: Dict) -> List[Dict[str, Any]]:
-        """Detect multi-item scales from question patterns.
+        """Detect all potential dependent variables (DVs) from question patterns.
 
-        IMPORTANT: Only detects scales from QSF structure. Does NOT add default scales.
+        IMPORTANT: Only detects DVs from QSF structure. Does NOT add default scales.
         Default scales should only be added at the app layer if user hasn't specified DVs.
 
         Enhanced detection covers:
         - Matrix questions (Likert Scale Matrix)
         - Numbered items (e.g., "Ownership_1", "Ownership_2")
-        - Single choice Likert-type questions
+        - Single choice Likert-type questions (grouped and standalone)
         - Slider/visual analog scales
-        - Questions with similar variable prefixes
+        - Constant sum questions
+        - Single-item rating questions (standalone DVs)
+        - Numeric input questions
 
         Returns scales with:
         - name: Display name for the scale
         - variable_name: Variable prefix for export
-        - items: Number of items in the scale
+        - question_text: The question text (for user reference)
+        - items: Number of items in the scale (1 for single-item DVs)
         - scale_points: Number of response options (MUST be from QSF, not assumed)
-        - type: 'matrix', 'numbered_items', 'likert', or 'slider'
+        - type: 'matrix', 'numbered_items', 'likert', 'slider', 'single_item', 'constant_sum'
         """
         scales = []
         scale_patterns = {}
@@ -1273,9 +1276,15 @@ class QSFPreviewParser:
 
         # Track single-choice Likert questions for grouping
         likert_questions = {}
+        # Track potential single-item DVs (questions with scale responses but no numbering)
+        single_item_dvs = []
 
         for q_id, q_info in questions_map.items():
-            # 1. Matrix questions are scales
+            # Skip descriptive text, instructions, etc.
+            if q_info.question_type in ['Descriptive Text', 'DB ()', 'Timing']:
+                continue
+
+            # 1. Matrix questions are scales (multi-item)
             if q_info.is_matrix or q_info.question_type == 'Likert Scale Matrix':
                 scale_name = q_info.question_text[:50].strip() or q_id
                 variable_name = q_id
@@ -1292,13 +1301,57 @@ class QSFPreviewParser:
                     'name': scale_name,
                     'variable_name': variable_name,
                     'question_id': q_id,
+                    'question_text': q_info.question_text[:100],
                     'items': num_items,
                     'scale_points': scale_pts,
-                    'type': 'matrix'
+                    'type': 'matrix',
+                    'detected_from_qsf': True
                 })
                 self._log(LogLevel.INFO, "SCALE", f"Detected matrix scale: {variable_name} ({num_items} items)")
+                continue
 
-            # 2. Check for numbered pattern (e.g., WTP_1, WTP_2)
+            # 2. Slider/Visual Analog scales
+            if q_info.question_type in ['Slider', 'Visual Analog', 'VAS', 'Slider ()']:
+                scale_name = q_info.question_text[:50].strip() or q_id
+                name_key = q_id.lower()
+                if name_key not in seen_scale_names:
+                    seen_scale_names.add(name_key)
+                    # Get actual slider range if available
+                    slider_pts = q_info.scale_points if q_info.scale_points else 101  # 0-100
+                    scales.append({
+                        'name': scale_name,
+                        'variable_name': q_id,
+                        'question_id': q_id,
+                        'question_text': q_info.question_text[:100],
+                        'items': 1,
+                        'scale_points': slider_pts,
+                        'type': 'slider',
+                        'detected_from_qsf': True
+                    })
+                    self._log(LogLevel.INFO, "SCALE", f"Detected slider DV: {q_id}")
+                continue
+
+            # 3. Constant Sum questions (allocation tasks)
+            if 'Constant Sum' in q_info.question_type or 'CS' in q_info.question_type:
+                scale_name = q_info.question_text[:50].strip() or q_id
+                name_key = q_id.lower()
+                if name_key not in seen_scale_names:
+                    seen_scale_names.add(name_key)
+                    num_items = len(q_info.choices) if q_info.choices else 1
+                    scales.append({
+                        'name': scale_name,
+                        'variable_name': q_id,
+                        'question_id': q_id,
+                        'question_text': q_info.question_text[:100],
+                        'items': num_items,
+                        'scale_points': 100,  # Constant sum typically 100
+                        'type': 'constant_sum',
+                        'detected_from_qsf': True
+                    })
+                    self._log(LogLevel.INFO, "SCALE", f"Detected constant sum DV: {q_id}")
+                continue
+
+            # 4. Check for numbered pattern (e.g., WTP_1, WTP_2)
             match = re.match(r'^(.+?)[-_]?(\d+)$', q_id)
             if match:
                 base_name = match.group(1).rstrip('_-')
@@ -1308,46 +1361,65 @@ class QSFPreviewParser:
                 scale_patterns[base_name].append({
                     'item_num': item_num,
                     'scale_points': q_info.scale_points,
-                    'question_id': q_id
+                    'question_id': q_id,
+                    'question_text': q_info.question_text
                 })
+                continue
 
-            # 3. Single choice Likert-type questions (MC with scale responses)
-            elif q_info.question_type in ['Single Choice (Radio)', 'Single Choice', 'MC']:
-                # Check if choices suggest a Likert scale
+            # 5. Single choice Likert-type questions (MC with scale responses)
+            if q_info.question_type in ['Single Choice (Radio)', 'Single Choice', 'MC', 'Multiple Choice']:
                 choices = q_info.choices if q_info.choices else []
                 if 2 <= len(choices) <= 11:  # Typical Likert range
-                    # Group by similar question text prefix or structure
-                    q_text_lower = q_info.question_text.lower()
-                    # Extract potential scale name from question ID
-                    q_prefix = re.sub(r'[-_]?\d+$', '', q_id)
-                    if q_prefix:
-                        if q_prefix not in likert_questions:
-                            likert_questions[q_prefix] = []
-                        likert_questions[q_prefix].append({
+                    # Check if this looks like a scale question
+                    if self._looks_like_scale_choices(choices):
+                        # Extract potential scale name from question ID
+                        q_prefix = re.sub(r'[-_]?\d+$', '', q_id)
+                        if q_prefix and q_prefix != q_id:
+                            # Has numbering pattern - group it
+                            if q_prefix not in likert_questions:
+                                likert_questions[q_prefix] = []
+                            likert_questions[q_prefix].append({
+                                'question_id': q_id,
+                                'scale_points': len(choices),
+                                'question_text': q_info.question_text
+                            })
+                        else:
+                            # Standalone single-item DV
+                            single_item_dvs.append({
+                                'question_id': q_id,
+                                'question_text': q_info.question_text,
+                                'scale_points': len(choices),
+                                'choices': choices
+                            })
+                continue
+
+            # 6. Numeric input questions (could be DVs like "willingness to pay")
+            if 'Text Entry' in q_info.question_type:
+                q_text_lower = q_info.question_text.lower()
+                # Check if it's likely a numeric DV
+                numeric_keywords = ['how much', 'how many', 'amount', 'price', 'cost',
+                                    'willing to pay', 'wtp', 'bid', 'offer', 'payment',
+                                    'rating', 'score', 'number', 'percentage', '%']
+                if any(kw in q_text_lower for kw in numeric_keywords):
+                    name_key = q_id.lower()
+                    if name_key not in seen_scale_names:
+                        seen_scale_names.add(name_key)
+                        scale_name = q_info.question_text[:50].strip() or q_id
+                        scales.append({
+                            'name': scale_name,
+                            'variable_name': q_id,
                             'question_id': q_id,
-                            'scale_points': len(choices),
-                            'question_text': q_info.question_text
+                            'question_text': q_info.question_text[:100],
+                            'items': 1,
+                            'scale_points': None,  # Numeric input has no fixed points
+                            'type': 'numeric_input',
+                            'detected_from_qsf': True
                         })
+                        self._log(LogLevel.INFO, "SCALE", f"Detected numeric input DV: {q_id}")
 
-            # 4. Slider/Visual Analog scales
-            elif q_info.question_type in ['Slider', 'Visual Analog', 'VAS']:
-                scale_name = q_info.question_text[:50].strip() or q_id
-                name_key = q_id.lower()
-                if name_key not in seen_scale_names:
-                    seen_scale_names.add(name_key)
-                    scales.append({
-                        'name': scale_name,
-                        'variable_name': q_id,
-                        'question_id': q_id,
-                        'items': 1,
-                        'scale_points': 100,  # Sliders typically 0-100
-                        'type': 'slider'
-                    })
-                    self._log(LogLevel.INFO, "SCALE", f"Detected slider scale: {q_id}")
-
-        # Consolidate numbered scales
+        # Consolidate numbered scales (multi-item scales with _1, _2, etc.)
         for base_name, items in scale_patterns.items():
-            if len(items) >= 2:  # At least 2 items = scale
+            if len(items) >= 2:  # At least 2 items = multi-item scale
                 name_key = base_name.lower()
                 if name_key in seen_scale_names:
                     continue
@@ -1356,14 +1428,30 @@ class QSFPreviewParser:
                 valid_points = [i['scale_points'] for i in items if i['scale_points'] is not None]
                 scale_pts = max(set(valid_points), key=valid_points.count) if valid_points else None
 
+                # Get first question text as reference
+                first_text = items[0].get('question_text', '')[:100] if items else ''
+
                 scales.append({
                     'name': base_name,
                     'variable_name': base_name,
+                    'question_text': first_text,
                     'items': len(items),
                     'scale_points': scale_pts,
-                    'type': 'numbered_items'
+                    'type': 'numbered_items',
+                    'detected_from_qsf': True
                 })
                 self._log(LogLevel.INFO, "SCALE", f"Detected numbered scale: {base_name} ({len(items)} items)")
+            elif len(items) == 1:
+                # Single numbered item - might still be a DV
+                item = items[0]
+                name_key = item['question_id'].lower()
+                if name_key not in seen_scale_names:
+                    single_item_dvs.append({
+                        'question_id': item['question_id'],
+                        'question_text': item.get('question_text', ''),
+                        'scale_points': item.get('scale_points'),
+                        'choices': []
+                    })
 
         # Consolidate grouped Likert questions
         for prefix, items in likert_questions.items():
@@ -1375,15 +1463,48 @@ class QSFPreviewParser:
 
                 valid_points = [i['scale_points'] for i in items if i['scale_points'] is not None]
                 scale_pts = max(set(valid_points), key=valid_points.count) if valid_points else None
+                first_text = items[0].get('question_text', '')[:100] if items else ''
 
                 scales.append({
                     'name': prefix,
                     'variable_name': prefix,
+                    'question_text': first_text,
                     'items': len(items),
                     'scale_points': scale_pts,
-                    'type': 'likert'
+                    'type': 'likert',
+                    'detected_from_qsf': True
                 })
                 self._log(LogLevel.INFO, "SCALE", f"Detected Likert scale: {prefix} ({len(items)} items)")
+            elif len(items) == 1:
+                # Single item in a group - add as single-item DV
+                item = items[0]
+                single_item_dvs.append({
+                    'question_id': item['question_id'],
+                    'question_text': item.get('question_text', ''),
+                    'scale_points': item.get('scale_points'),
+                    'choices': []
+                })
+
+        # Add single-item DVs (standalone scale questions)
+        for dv in single_item_dvs:
+            q_id = dv['question_id']
+            name_key = q_id.lower()
+            if name_key in seen_scale_names:
+                continue
+            seen_scale_names.add(name_key)
+
+            scale_name = dv['question_text'][:50].strip() or q_id
+            scales.append({
+                'name': scale_name,
+                'variable_name': q_id,
+                'question_id': q_id,
+                'question_text': dv['question_text'][:100] if dv['question_text'] else '',
+                'items': 1,
+                'scale_points': dv['scale_points'],
+                'type': 'single_item',
+                'detected_from_qsf': True
+            })
+            self._log(LogLevel.INFO, "SCALE", f"Detected single-item DV: {q_id}")
 
         return scales
 

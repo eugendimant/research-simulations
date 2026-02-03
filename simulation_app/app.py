@@ -44,8 +44,8 @@ import streamlit as st
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "2.2.1"
-BUILD_ID = "20260203-v222-streamlined-ui"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "2.2.2"
+BUILD_ID = "20260203-v223-enhanced-dv-detection"  # Change this to force cache invalidation
 
 def _verify_and_reload_utils():
     """Verify utils modules are at correct version, force reload if needed.
@@ -98,7 +98,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF"
-APP_VERSION = "2.2.1"  # Enhanced: 175+ domains, 45+ patterns, better UI, improved reports
+APP_VERSION = "2.2.3"  # Enhanced: Better DV detection, scroll fix, improved UI
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -1727,8 +1727,30 @@ def _get_step_completion() -> Dict[str, bool]:
 
 
 def _go_to_step(step_index: int) -> None:
+    """Navigate to a specific step with scroll-to-top."""
     st.session_state["active_step"] = max(0, min(step_index, len(STEP_LABELS) - 1))
+    st.session_state["_scroll_to_top"] = True  # Flag to trigger scroll on next render
     st.rerun()
+
+
+def _inject_scroll_to_top():
+    """Inject JavaScript to scroll the page to the top.
+
+    Call this at the beginning of each step to ensure the view starts at the top
+    when navigating between steps.
+    """
+    if st.session_state.get("_scroll_to_top", False):
+        # Clear the flag first
+        st.session_state["_scroll_to_top"] = False
+        # Inject JavaScript to scroll to top
+        st.markdown(
+            """
+            <script>
+                window.parent.document.querySelector('section.main').scrollTo(0, 0);
+            </script>
+            """,
+            unsafe_allow_html=True
+        )
 
 
 with st.expander("What this tool delivers", expanded=True):
@@ -2243,6 +2265,7 @@ def _render_status_panel():
 # Step 1: Study Info (required basics)
 # -----------------------------
 if active_step == 0:
+    _inject_scroll_to_top()  # Scroll to top when navigating to this step
     # Step header with status
     completion = _get_step_completion()
     step1_done = completion["study_title"] and completion["study_description"]
@@ -2307,6 +2330,7 @@ if active_step == 0:
 # Step 2: Upload Files (QSF + Study Design Info)
 # -----------------------------
 if active_step == 1:
+    _inject_scroll_to_top()  # Scroll to top when navigating to this step
     # Check if Step 1 is complete
     completion = _get_step_completion()
     step1_done = completion["study_title"] and completion["study_description"]
@@ -2760,6 +2784,7 @@ if active_step == 1:
 # Step 3: Design Setup (conditions, factors, scales)
 # -----------------------------
 if active_step == 2:
+    _inject_scroll_to_top()  # Scroll to top when navigating to this step
     preview: Optional[QSFPreviewResult] = st.session_state.get("qsf_preview", None)
     enhanced_analysis: Optional[DesignAnalysisResult] = st.session_state.get("enhanced_analysis", None)
 
@@ -3404,137 +3429,199 @@ if active_step == 2:
         scales = [{"name": "Main_DV", "num_items": 5, "scale_points": 7}]
 
     # ========================================
-    # STEP 4: SCALE CONFIRMATION (MANDATORY)
+    # STEP 4: DEPENDENT VARIABLES (DVs)
     # ========================================
     st.markdown("---")
-    st.markdown("### Dependent Variables (Scales)")
-    st.caption("Verify these scales match your survey. Adjust the 'Points' column if needed.")
+    st.markdown("### 4. Dependent Variables (DVs)")
+    st.caption("These are the outcome measures in your study. Verify each DV matches your QSF survey.")
 
-    # Show scale instructions
-    with st.expander("❓ How to verify your scales", expanded=False):
+    # Show DV help in collapsed expander
+    with st.expander("What are DVs and how to verify them?", expanded=False):
         st.markdown("""
-        **Why this matters:** If your Qualtrics survey uses a 1-10 scale but we simulate 1-7, your data will be wrong.
+**Dependent Variables (DVs)** are what you measure as outcomes in your experiment.
 
-        **How to check:**
-        1. Open your Qualtrics survey in edit mode
-        2. Look at each scale question's response options
-        3. Count the number of options (e.g., 1-10 has 10 points, 1-7 has 7 points)
-        4. Update the "Points" column below to match
+**Types of DVs detected:**
+- **Matrix scales** - Multi-item Likert scales (e.g., Trust Scale with 5 items)
+- **Single-item DVs** - Individual rating questions
+- **Sliders** - Visual analog scales (0-100)
+- **Numeric inputs** - Open-ended numeric responses (e.g., willingness to pay)
 
-        **Common scale types:**
-        - 5-point Likert: 1-5 (Strongly Disagree to Strongly Agree)
-        - 7-point Likert: 1-7
-        - 10-point scale: 1-10
-        - 4-point: 1-4 (Never, Rarely, Sometimes, Always)
-        - 11-point NPS: 0-10 (use 11 points)
+**How to verify:**
+1. Check the variable name matches your QSF question ID
+2. Verify the scale points (e.g., 7 for a 1-7 scale)
+3. Remove any DVs that aren't actual outcome measures
+4. Add any missing DVs using the button below
         """)
 
-    # Initialize scale confirmation state
+    # Initialize DV state - use a version counter to handle deletions
+    dv_version = st.session_state.get("_dv_version", 0)
+
     if "confirmed_scales" not in st.session_state:
         st.session_state["confirmed_scales"] = scales.copy()
+        st.session_state["_dv_version"] = 0
     if "scales_confirmed" not in st.session_state:
         st.session_state["scales_confirmed"] = False
 
-    # Show detected scales with edit options
-    st.markdown("**Your Scales (edit as needed):**")
-    st.caption("👆 **Adjust the 'Points' column to match your actual Qualtrics scale ranges**")
-
-    # Create editable scale list
+    # Get current confirmed DVs
     confirmed_scales = st.session_state.get("confirmed_scales", scales.copy())
 
-    # Display each scale with edit capability
+    # Type badge colors
+    type_badges = {
+        'matrix': '🔢 Matrix Scale',
+        'numbered_items': '📊 Multi-Item Scale',
+        'likert': '📈 Likert Scale',
+        'slider': '🎚️ Slider',
+        'single_item': '📍 Single Item',
+        'numeric_input': '🔣 Numeric Input',
+        'constant_sum': '➕ Constant Sum',
+    }
+
+    # Display each DV with edit and remove options
     updated_scales = []
-    for i, scale in enumerate(confirmed_scales):
-        with st.container():
-            col1, col2, col3, col4 = st.columns([3, 1, 1, 1])
+    scales_to_remove = []
 
-            with col1:
-                scale_name = st.text_input(
-                    f"Scale {i+1} Name",
-                    value=scale.get("name", f"Scale_{i+1}"),
-                    key=f"scale_name_{i}",
-                    label_visibility="collapsed"
-                )
+    if confirmed_scales:
+        st.markdown(f"**{len(confirmed_scales)} DV(s) detected from your QSF:**")
 
-            with col2:
-                num_items = st.number_input(
-                    "Items",
-                    min_value=1,
-                    max_value=50,
-                    value=int(scale.get("num_items", 5)),
-                    key=f"scale_items_{i}",
-                    help="Number of items in this scale"
-                )
+        for i, scale in enumerate(confirmed_scales):
+            dv_type = scale.get("type", "likert")
+            type_badge = type_badges.get(dv_type, "📊 Scale")
 
-            with col3:
-                # Get scale points safely with validation
-                scale_points_options = [2, 3, 4, 5, 6, 7, 9, 10, 11]
-                try:
-                    current_scale_points = int(scale.get("scale_points", 7))
-                    if current_scale_points in scale_points_options:
-                        default_index = scale_points_options.index(current_scale_points)
+            with st.container():
+                # Main row: Name, Items, Points, Type, Remove
+                col1, col2, col3, col4, col5 = st.columns([3, 1, 1, 2, 0.5])
+
+                with col1:
+                    scale_name = st.text_input(
+                        f"DV {i+1} Name",
+                        value=scale.get("name", f"DV_{i+1}"),
+                        key=f"dv_name_v{dv_version}_{i}",
+                        label_visibility="collapsed",
+                        help=f"Variable: {scale.get('variable_name', scale.get('name', ''))}"
+                    )
+
+                with col2:
+                    # Get items value, handle both 'items' and 'num_items' keys
+                    items_val = scale.get("items", scale.get("num_items", 1))
+                    num_items = st.number_input(
+                        "Items",
+                        min_value=1,
+                        max_value=50,
+                        value=int(items_val) if items_val else 1,
+                        key=f"dv_items_v{dv_version}_{i}",
+                        help="Number of items/questions in this DV"
+                    )
+
+                with col3:
+                    # Get scale points with better handling of None and slider types
+                    scale_points_options = [2, 3, 4, 5, 6, 7, 9, 10, 11, 100, 101]
+                    current_pts = scale.get("scale_points")
+
+                    if current_pts is None or dv_type == 'numeric_input':
+                        # Numeric input - show text input instead
+                        scale_points = st.text_input(
+                            "Range",
+                            value="Open" if dv_type == 'numeric_input' else "7",
+                            key=f"dv_points_v{dv_version}_{i}",
+                            help="Response range (Open = any number)"
+                        )
+                        if scale_points == "Open":
+                            scale_points = None
+                        else:
+                            try:
+                                scale_points = int(scale_points)
+                            except ValueError:
+                                scale_points = 7
                     else:
-                        default_index = scale_points_options.index(7)  # Default to 7-point
-                except (ValueError, TypeError):
-                    default_index = scale_points_options.index(7)  # Default to 7-point
+                        try:
+                            current_pts = int(current_pts)
+                            if current_pts not in scale_points_options:
+                                scale_points_options.append(current_pts)
+                                scale_points_options.sort()
+                            default_idx = scale_points_options.index(current_pts)
+                        except (ValueError, TypeError):
+                            default_idx = scale_points_options.index(7)
 
-                scale_points = st.selectbox(
-                    "Points",
-                    options=scale_points_options,
-                    index=default_index,
-                    key=f"scale_points_{i}",
-                    help="Number of response options (e.g., 7 for 7-point Likert)"
-                )
+                        scale_points = st.selectbox(
+                            "Points",
+                            options=scale_points_options,
+                            index=default_idx,
+                            key=f"dv_points_v{dv_version}_{i}",
+                            help="Number of response options"
+                        )
 
-            with col4:
-                # Source indicator
-                if scale.get("detected_from_qsf", True):
-                    st.markdown("✓ *From QSF*")
-                else:
-                    st.markdown("⚙️ *Manual*")
+                with col4:
+                    # Type badge (read-only display)
+                    st.markdown(f"<small>{type_badge}</small>", unsafe_allow_html=True)
+                    if scale.get("detected_from_qsf", True):
+                        st.caption("*From QSF*")
 
-            if scale_name.strip():
+                with col5:
+                    # Remove button
+                    if st.button("✕", key=f"rm_dv_v{dv_version}_{i}", help="Remove this DV"):
+                        scales_to_remove.append(i)
+
+                # Show question text if available (collapsed)
+                q_text = scale.get("question_text", "")
+                if q_text:
+                    st.caption(f"*\"{q_text[:80]}{'...' if len(q_text) > 80 else ''}\"*")
+
+            if scale_name.strip() and i not in scales_to_remove:
                 updated_scales.append({
                     "name": scale_name.strip(),
                     "variable_name": scale.get("variable_name", scale_name.strip().replace(" ", "_")),
-                    "num_items": num_items,
+                    "question_text": scale.get("question_text", ""),
+                    "items": num_items,
+                    "num_items": num_items,  # Keep both for compatibility
                     "scale_points": scale_points,
+                    "type": dv_type,
                     "reverse_items": scale.get("reverse_items", []),
                     "detected_from_qsf": scale.get("detected_from_qsf", True),
                 })
+    else:
+        st.info("No DVs detected from QSF. Add your dependent variables below.")
 
-    # Add new scale button
+    # Handle removals
+    if scales_to_remove:
+        st.session_state["confirmed_scales"] = updated_scales
+        st.session_state["_dv_version"] = dv_version + 1
+        st.rerun()
+
+    # Add new DV button
+    st.markdown("---")
     col_add, col_spacer = st.columns([1, 3])
     with col_add:
-        if st.button("➕ Add Scale", key="add_scale_btn"):
-            new_scale = {
-                "name": f"New_Scale_{len(confirmed_scales)+1}",
-                "variable_name": f"New_Scale_{len(confirmed_scales)+1}",
-                "num_items": 5,
+        if st.button("➕ Add DV", key=f"add_dv_btn_v{dv_version}"):
+            new_dv = {
+                "name": f"New_DV_{len(confirmed_scales)+1}",
+                "variable_name": f"New_DV_{len(confirmed_scales)+1}",
+                "question_text": "",
+                "items": 1,
+                "num_items": 1,
                 "scale_points": 7,
+                "type": "single_item",
                 "reverse_items": [],
                 "detected_from_qsf": False,
             }
-            confirmed_scales.append(new_scale)
+            confirmed_scales.append(new_dv)
             st.session_state["confirmed_scales"] = confirmed_scales
+            st.session_state["_dv_version"] = dv_version + 1
             st.rerun()
 
-    # Update session state with edited scales
+    # Update session state with edited DVs
     st.session_state["confirmed_scales"] = updated_scales
-
-    # Update session state with edited scales
     scales = updated_scales if updated_scales else scales
 
     # Confirmation checkbox
     scales_confirmed = st.checkbox(
-        "I confirm the scales above match my survey",
+        "I confirm these DVs match my survey",
         value=st.session_state.get("scales_confirmed", False),
-        key="scales_confirm_checkbox",
+        key=f"dv_confirm_checkbox_v{dv_version}",
     )
     st.session_state["scales_confirmed"] = scales_confirmed
 
-    if not scales_confirmed:
-        st.caption("Please confirm scales are correct to proceed.")
+    if not scales_confirmed and updated_scales:
+        st.caption("Confirm your DVs are correct to proceed.")
 
     # ========================================
     # ATTENTION & MANIPULATION CHECKS REVIEW
@@ -3734,6 +3821,7 @@ if active_step == 2:
 # Step 4: Generate (standard defaults; advanced controls optional)
 # -----------------------------
 if active_step == 3:
+    _inject_scroll_to_top()  # Scroll to top when navigating to this step
     inferred = st.session_state.get("inferred_design", None)
     preview: Optional[QSFPreviewResult] = st.session_state.get("qsf_preview", None)
 
