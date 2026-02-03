@@ -33,7 +33,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Union
 
 # Version identifier to help track deployed code
-__version__ = "2.4.1"  # ENHANCED: Complete open-ended detection including MC text entries
+__version__ = "2.4.2"  # IMPROVED: Enhanced scale/DV detection, condition detection, FORM fields, forced response tracking
 
 
 # ============================================================================
@@ -99,14 +99,22 @@ class QuestionInfo:
     is_matrix: bool = False
     sub_questions: List[str] = field(default_factory=list)
     validation_issues: List[str] = field(default_factory=list)
-    # NEW: Track text entry choices in MC questions (e.g., "Other: ____")
+    # Track text entry choices in MC questions (e.g., "Other: ____")
     text_entry_choices: List[Dict[str, str]] = field(default_factory=list)
-    # NEW: Track if this question has ForceResponse validation
+    # Track if this question has ForceResponse validation
     force_response: bool = False
-    # NEW: Track the export tag (variable name in data)
+    # Track the export tag (variable name in data)
     export_tag: str = ""
-    # NEW: Raw payload for advanced parsing
+    # Raw payload for advanced parsing
     raw_payload: Dict = field(default_factory=dict)
+    # v2.4.2: Track selector type for precise detection (SL, ML, ESTB, FORM, etc.)
+    selector: str = ""
+    # v2.4.2: Track form fields for FORM questions (multiple text inputs)
+    form_fields: List[Dict[str, str]] = field(default_factory=list)
+    # v2.4.2: Track if this is a comprehension check (CustomValidation with expected answer)
+    is_comprehension_check: bool = False
+    # v2.4.2: Track expected answer for comprehension checks
+    comprehension_expected: Optional[str] = None
 
 
 @dataclass
@@ -145,6 +153,10 @@ class QSFPreviewResult:
     study_context: Dict[str, Any] = field(default_factory=dict)
     # Embedded data conditions (for surveys using EmbeddedData for randomization)
     embedded_data_conditions: List[Dict[str, Any]] = field(default_factory=list)
+    # v2.4.2: Questions with ForceResponse validation (MUST be filled)
+    forced_response_questions: List[Dict[str, Any]] = field(default_factory=list)
+    # v2.4.2: Comprehension checks with expected answers
+    comprehension_checks: List[Dict[str, Any]] = field(default_factory=list)
 
 
 class QSFPreviewParser:
@@ -493,12 +505,16 @@ class QSFPreviewParser:
         # Detect embedded data conditions (for surveys using EmbeddedData for randomization)
         embedded_data_conditions = self._detect_embedded_data_conditions(flow_data)
 
+        # v2.4.2: Extract forced response questions and comprehension checks
+        forced_response_questions = self._extract_forced_response_questions(questions_map)
+        comprehension_checks = self._extract_comprehension_checks(questions_map)
+
         # Validate structure
         self._validate_structure(blocks, questions_map, detected_conditions)
 
         self._log(
             LogLevel.INFO, "PARSE_COMPLETE",
-            f"Parsing complete. {len(self.errors)} errors, {len(self.warnings)} warnings"
+            f"Parsing complete. {len(self.errors)} errors, {len(self.warnings)} warnings, {len(forced_response_questions)} forced response Qs, {len(comprehension_checks)} comprehension checks"
         )
 
         return QSFPreviewResult(
@@ -526,6 +542,8 @@ class QSFPreviewParser:
             open_ended_details=open_ended_details,
             study_context=study_context,
             embedded_data_conditions=embedded_data_conditions,
+            forced_response_questions=forced_response_questions,
+            comprehension_checks=comprehension_checks,
         )
 
     def _parse_blocks(self, element: Dict, blocks_map: Dict):
@@ -723,7 +741,7 @@ class QSFPreviewParser:
                                 f"Found text entry in choice {choice_id} of {q_id}: {choice_text[:30]}..."
                             )
 
-            # NEW: Check for ForceResponse validation
+            # Check for ForceResponse validation
             force_response = False
             validation = payload.get('Validation', {})
             if isinstance(validation, dict):
@@ -735,6 +753,56 @@ class QSFPreviewParser:
                     force_type = settings.get('ForceResponseType')
                     if force_type in ['ON', 'Force', 'ForceAll']:
                         force_response = True
+
+            # v2.4.2: Track selector for precise question type detection
+            selector_str = selector if selector else ''
+
+            # v2.4.2: Extract FORM fields (TE/FORM questions have multiple text inputs)
+            form_fields = []
+            if question_type == 'TE' and selector == 'FORM':
+                for choice_id, choice_data in (choices_data.items() if isinstance(choices_data, dict) else []):
+                    if isinstance(choice_data, dict):
+                        field_label = choice_data.get('Display', '')
+                        # Clean HTML from label
+                        field_label = re.sub(r'<[^>]+>', '', str(field_label)).strip()
+                        has_text_entry = choice_data.get('TextEntry') in ['on', 'ON', True, 'true', '1', 1]
+                        if has_text_entry or selector == 'FORM':
+                            form_fields.append({
+                                'field_id': str(choice_id),
+                                'label': field_label,
+                                'variable_name': f"{data_export_tag}_{choice_id}" if data_export_tag else f"{q_id}_{choice_id}"
+                            })
+                if form_fields:
+                    self._log(
+                        LogLevel.INFO, "FORM_FIELDS",
+                        f"Detected {len(form_fields)} FORM fields in {q_id}: {[f['label'][:30] for f in form_fields]}"
+                    )
+
+            # v2.4.2: Detect comprehension checks (CustomValidation with expected answer)
+            is_comprehension_check = False
+            comprehension_expected = None
+            if isinstance(validation, dict):
+                settings = validation.get('Settings', {})
+                if isinstance(settings, dict):
+                    custom_val = settings.get('CustomValidation', {})
+                    if isinstance(custom_val, dict) and 'Logic' in custom_val:
+                        is_comprehension_check = True
+                        # Try to extract expected answer from logic
+                        logic = custom_val.get('Logic', {})
+                        if isinstance(logic, dict):
+                            for _, condition_group in logic.items():
+                                if isinstance(condition_group, dict):
+                                    for _, condition in condition_group.items():
+                                        if isinstance(condition, dict):
+                                            right_operand = condition.get('RightOperand')
+                                            if right_operand:
+                                                comprehension_expected = str(right_operand)
+                                                break
+                        if is_comprehension_check:
+                            self._log(
+                                LogLevel.INFO, "COMPREHENSION_CHECK",
+                                f"Detected comprehension check: {q_id} (expected: {comprehension_expected})"
+                            )
 
             questions_map[q_id] = QuestionInfo(
                 question_id=q_id,
@@ -748,12 +816,16 @@ class QSFPreviewParser:
                 text_entry_choices=text_entry_choices,
                 force_response=force_response,
                 export_tag=data_export_tag,
-                raw_payload=payload
+                raw_payload=payload,
+                selector=selector_str,
+                form_fields=form_fields,
+                is_comprehension_check=is_comprehension_check,
+                comprehension_expected=comprehension_expected
             )
 
             self._log(
                 LogLevel.INFO, "QUESTION",
-                f"Parsed question {q_id}: {category} (scale_points={scale_points}, force={force_response}, text_entries={len(text_entry_choices)})",
+                f"Parsed question {q_id}: {category} (selector={selector_str}, scale_points={scale_points}, force={force_response}, text_entries={len(text_entry_choices)}, form_fields={len(form_fields)})",
                 {'text_preview': question_text[:100], 'data_export_tag': data_export_tag}
             )
         except Exception as e:
@@ -1614,11 +1686,12 @@ class QSFPreviewParser:
     def _detect_open_ended(self, questions_map: Dict) -> List[str]:
         """Detect ALL open-ended text entry questions including MC with text entry.
 
-        v2.4.1: ENHANCED detection to capture:
-        1. Standalone TE (Text Entry) questions
+        v2.4.2: IMPROVED detection to capture:
+        1. Standalone TE (Text Entry) questions with all selectors (SL, ML, ESTB)
         2. MC questions with TextEntry choices (e.g., "Other: ____")
         3. Matrix questions with TextEntry columns
-        4. Form fields with text entry
+        4. FORM fields with multiple text entry inputs
+        5. Skip comprehension checks (they have specific expected answers)
         """
         open_ended = []
         # Safety check - ensure questions_map is a dict
@@ -1626,15 +1699,24 @@ class QSFPreviewParser:
             return open_ended
 
         for q_id, q_info in questions_map.items():
+            # Skip comprehension checks - they require specific answers
+            if q_info.is_comprehension_check:
+                self._log(
+                    LogLevel.INFO, "OPEN_ENDED_SKIP",
+                    f"Skipping comprehension check: {q_id}"
+                )
+                continue
+
             # Type 1: Standalone Text Entry questions
             if q_info.question_type == 'Text Entry':
                 # Use export_tag if available, otherwise q_id
                 var_name = q_info.export_tag if q_info.export_tag else q_id
-                open_ended.append(var_name)
-                self._log(
-                    LogLevel.INFO, "OPEN_ENDED",
-                    f"Detected text entry question: {var_name}"
-                )
+                if var_name not in open_ended:
+                    open_ended.append(var_name)
+                    self._log(
+                        LogLevel.INFO, "OPEN_ENDED",
+                        f"Detected text entry question: {var_name} (selector={q_info.selector})"
+                    )
 
             # Type 2: MC questions with TextEntry choices
             if q_info.text_entry_choices:
@@ -1647,13 +1729,24 @@ class QSFPreviewParser:
                             f"Detected MC text entry choice: {var_name}"
                         )
 
-            # Type 3: Check raw payload for additional text entry patterns
+            # Type 3: FORM fields (multiple text inputs in one question)
+            if q_info.form_fields:
+                for form_field in q_info.form_fields:
+                    var_name = form_field.get('variable_name', f"{q_id}_{form_field.get('field_id', '')}")
+                    if var_name not in open_ended:
+                        open_ended.append(var_name)
+                        self._log(
+                            LogLevel.INFO, "OPEN_ENDED",
+                            f"Detected FORM field: {var_name} (label: {form_field.get('label', '')[:30]})"
+                        )
+
+            # Type 4: Check raw payload for additional text entry patterns
             if q_info.raw_payload:
                 payload = q_info.raw_payload
 
                 # Check for Essay Box selector (common for text entry)
                 selector = payload.get('Selector', '')
-                if selector in ['ESTB', 'ML', 'SL', 'FORM']:  # Essay, Multi-line, Single-line, Form
+                if selector in ['ESTB', 'ML', 'SL']:  # Essay, Multi-line, Single-line
                     var_name = q_info.export_tag if q_info.export_tag else q_id
                     if var_name not in open_ended:
                         open_ended.append(var_name)
@@ -1980,6 +2073,42 @@ class QSFPreviewParser:
 
                                 open_ended_details.append(detail)
 
+            # TYPE 5: FORM fields (v2.4.2) - multiple text inputs in one question
+            if q_info.form_fields:
+                for form_field in q_info.form_fields:
+                    var_name = form_field.get('variable_name', f"{q_id}_{form_field.get('field_id', '')}")
+                    var_name = var_name.replace(' ', '_')
+
+                    if var_name not in seen_variables:
+                        seen_variables.add(var_name)
+
+                        field_label = form_field.get('label', '')
+                        combined_text = f"{q_info.question_text} - {field_label}" if field_label else q_info.question_text
+
+                        # Classify based on field label
+                        context_type = self._classify_open_ended_type(field_label) if field_label else 'general'
+
+                        detail = {
+                            'question_id': q_id,
+                            'variable_name': var_name,
+                            'name': var_name,
+                            'question_text': combined_text,
+                            'block_name': q_info.block_name,
+                            'context_type': context_type,
+                            'preceding_questions': [],
+                            'force_response': q_info.force_response,
+                            'source_type': 'form_field',
+                            'parent_question': q_info.question_text,
+                            'field_label': field_label
+                        }
+
+                        open_ended_details.append(detail)
+
+                        self._log(
+                            LogLevel.INFO, "OPEN_ENDED_DETAIL",
+                            f"Extracted FORM field: {var_name} (label: {field_label[:30]})"
+                        )
+
         self._log(
             LogLevel.INFO, "OPEN_ENDED_DETAILS_TOTAL",
             f"Total open-ended details extracted: {len(open_ended_details)}"
@@ -2121,6 +2250,71 @@ class QSFPreviewParser:
         )
 
         return context
+
+    def _extract_forced_response_questions(self, questions_map: Dict) -> List[Dict[str, Any]]:
+        """Extract all questions with ForceResponse validation.
+
+        v2.4.2: These questions MUST be filled in simulation output.
+        Returns list of dicts with question details for validation.
+        """
+        forced_questions = []
+
+        if not isinstance(questions_map, dict):
+            return forced_questions
+
+        for q_id, q_info in questions_map.items():
+            if q_info.force_response:
+                forced_questions.append({
+                    'question_id': q_id,
+                    'export_tag': q_info.export_tag or q_id,
+                    'question_type': q_info.question_type,
+                    'question_text': q_info.question_text[:100],
+                    'block_name': q_info.block_name,
+                    'has_scale': q_info.scale_points is not None,
+                    'scale_points': q_info.scale_points,
+                    'selector': q_info.selector,
+                    'is_text_entry': q_info.question_type == 'Text Entry' or q_info.selector in ['ESTB', 'ML', 'SL', 'FORM'],
+                    'form_fields': q_info.form_fields if q_info.form_fields else [],
+                })
+
+        if forced_questions:
+            self._log(
+                LogLevel.INFO, "FORCED_RESPONSE",
+                f"Found {len(forced_questions)} questions with ForceResponse validation"
+            )
+
+        return forced_questions
+
+    def _extract_comprehension_checks(self, questions_map: Dict) -> List[Dict[str, Any]]:
+        """Extract comprehension check questions with their expected answers.
+
+        v2.4.2: These questions require specific correct answers for validation.
+        Used to ensure participants understand the task correctly.
+        """
+        comprehension_checks = []
+
+        if not isinstance(questions_map, dict):
+            return comprehension_checks
+
+        for q_id, q_info in questions_map.items():
+            if q_info.is_comprehension_check:
+                comprehension_checks.append({
+                    'question_id': q_id,
+                    'export_tag': q_info.export_tag or q_id,
+                    'question_type': q_info.question_type,
+                    'question_text': q_info.question_text[:150],
+                    'block_name': q_info.block_name,
+                    'expected_answer': q_info.comprehension_expected,
+                    'selector': q_info.selector,
+                })
+
+        if comprehension_checks:
+            self._log(
+                LogLevel.INFO, "COMPREHENSION_CHECKS",
+                f"Found {len(comprehension_checks)} comprehension check questions"
+            )
+
+        return comprehension_checks
 
     def _detect_embedded_data_conditions(self, flow_data: Optional[Any]) -> List[Dict[str, Any]]:
         """Detect experimental conditions set via EmbeddedData randomization.

@@ -2,22 +2,24 @@
 """
 Utility modules for the Behavioral Experiment Simulation Tool.
 
-Version: 2.4.1
-Changes (v2.4.1 - EXPANDED - 100+ Manipulation Types from 75+ Sources):
+Version: 2.4.2
+Changes (v2.4.2 - IMPROVED - Enhanced Detection from QSF Analysis):
+    - IMPROVED: Enhanced scale/DV detection from QSF files
+    - IMPROVED: Better condition detection with BlockRandomizer groups
+    - IMPROVED: FORM field detection (multiple text inputs per question)
+    - IMPROVED: Comprehension check detection with expected answers
+    - IMPROVED: ForceResponse tracking for mandatory fields
+    - NEW: Added selector tracking for precise question type detection
+    - NEW: Added form_fields attribute to QuestionInfo dataclass
+    - NEW: Added is_comprehension_check and comprehension_expected fields
+    - NEW: Added forced_response_questions to QSFPreviewResult
+    - NEW: Added comprehension_checks to QSFPreviewResult
+    - Trained on 5 real QSF files for pattern improvement
+
+Previous (v2.4.1):
     - EXPANDED: 100+ manipulation types grounded in 75+ published sources
     - Following Westwood (PNAS 2025) for realistic human simulation
-    - 16 research domains with theory-based effect directions:
-        1-8: AI/Tech, Consumer, Social Psych, Behavioral Econ, Game Theory, Health, Org, Political
-        9. Cognitive/Decision: Choice overload (Iyengar), Sunk cost (Staw), CLT (Trope/Liberman)
-        10. Communication: Source credibility (Hovland), Inoculation (McGuire), Narratives (Allen)
-        11. Learning/Memory: Testing effect (Roediger), Spacing effect (Cepeda meta)
-        12. Social Identity: Contact hypothesis (Pettigrew meta), Common identity (Gaertner)
-        13. Motivation: Implementation intentions (Gollwitzer meta d=0.65), Mindset (Dweck)
-        14. Environmental: Temperature (Anderson), Nature (Berman), Crowding (Baum)
-        15. Embodiment: Facial feedback (Strack/Coles replication), Power posing (contested)
-        16. Temporal: Time pressure (Dror), Circadian effects (Sievertsen)
-    - Feedback/bug report system added to all pages
-    - QSF files now stored in example_files folder
+    - 16 research domains with theory-based effect directions
 
 Previous (v2.3.0):
     - COMPREHENSIVE: All manipulation types grounded in published literature
@@ -39,7 +41,7 @@ Modules:
 """
 
 # Package version - should match all module versions
-__version__ = "2.4.1"
+__version__ = "2.4.2"
 
 from .qsf_parser import parse_qsf_file, extract_survey_structure, generate_qsf_summary
 from .simulation_engine import SimulationEngine
