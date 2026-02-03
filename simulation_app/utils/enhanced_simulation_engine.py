@@ -45,7 +45,7 @@ This module is designed to run inside a `utils/` package (i.e., imported as
 """
 
 # Version identifier to help track deployed code
-__version__ = "2.2.8"  # FULL DOMAIN: All personas calibrated with domain-adaptive response mechanisms
+__version__ = "2.2.9"  # CRITICAL FIX: Removed order bias - effects now based on semantic content, not position
 
 # =============================================================================
 # SCIENTIFIC FOUNDATIONS FOR SIMULATION
@@ -159,10 +159,13 @@ STEP 4: Base Response Tendency
 - response = tendency × scale_range + scale_min
 - Produces realistic mean ≈ 4.0-5.2 on 7-point scales
 
-STEP 5: Condition Effect Application
-- effect = Cohen's d × pooled_SD × 0.40 (amplification factor)
-- Ensures statistically detectable between-condition differences
-- Auto-generated if not specified: d = 0.4-0.6
+STEP 5: Condition Effect Application (v2.2.9 CRITICAL UPDATE)
+- Effects are determined by SEMANTIC CONTENT of condition names, NOT position
+- Valence keywords parsed: positive (lover, friend, good) vs negative (hater, enemy, bad)
+- Manipulation types detected: AI/human, hedonic/utilitarian, treatment/control
+- Factorial designs parsed: "Factor1 × Factor2" main effects summed
+- Uses stable hash for consistent but non-ordered variation
+- NEVER uses condition index/position for effect assignment
 
 STEP 6: Reverse-Coded Item Handling
 - Inversion: response = max - (response - min)
@@ -408,9 +411,21 @@ class EnhancedSimulationEngine:
         self.detected_domains = self.persona_library.detect_domains(
             self.study_description, self.study_title
         )
+        # Also detect domains from condition names for better persona matching
+        condition_text = " ".join(str(c) for c in self.conditions)
+        condition_domains = self.persona_library.detect_domains(
+            condition_text, ""
+        )
+        # Merge detected domains
+        all_domains = list(set(self.detected_domains + condition_domains))
+        self.detected_domains = all_domains if all_domains else self.detected_domains
+
         self.available_personas = self.persona_library.get_personas_for_domains(
             self.detected_domains
         )
+
+        # Adjust persona weights based on study characteristics
+        self._adjust_persona_weights_for_study()
 
         if custom_persona_weights:
             for name, weight in custom_persona_weights.items():
@@ -436,6 +451,77 @@ class EnhancedSimulationEngine:
 
         self.column_info: List[Tuple[str, str]] = []
         self.validation_log: List[str] = []
+
+    def _adjust_persona_weights_for_study(self) -> None:
+        """
+        Adjust persona weights based on detected study domain and conditions.
+
+        SCIENTIFIC BASIS:
+        =================
+        Different study types attract different participant populations.
+        This method adjusts persona weights to better reflect likely sample
+        characteristics based on study context.
+
+        References:
+        - Buhrmester et al. (2011): MTurk sample characteristics
+        - Peer et al. (2017): Online panel composition
+        """
+        study_text = f"{self.study_description} {self.study_title}".lower()
+        condition_text = " ".join(str(c) for c in self.conditions).lower()
+        all_text = f"{study_text} {condition_text}"
+
+        # =====================================================================
+        # Domain-based persona weight adjustments
+        # =====================================================================
+
+        # AI/Technology studies - increase tech-related personas
+        if any(kw in all_text for kw in ['ai', 'algorithm', 'robot', 'automation', 'technology']):
+            for name, persona in self.available_personas.items():
+                if 'tech' in name.lower() or 'ai' in name.lower():
+                    persona.weight *= 1.3  # Boost tech personas
+                if persona.category == 'technology':
+                    persona.weight *= 1.2
+
+        # Consumer/Marketing studies - increase consumer personas
+        if any(kw in all_text for kw in ['consumer', 'brand', 'purchase', 'product', 'marketing']):
+            for name, persona in self.available_personas.items():
+                if persona.category == 'consumer':
+                    persona.weight *= 1.3
+                if 'consumer' in name.lower() or 'brand' in name.lower():
+                    persona.weight *= 1.2
+
+        # Organizational studies - increase org behavior personas
+        if any(kw in all_text for kw in ['employee', 'workplace', 'job', 'organization', 'leadership']):
+            for name, persona in self.available_personas.items():
+                if persona.category == 'organizational':
+                    persona.weight *= 1.4
+                if 'employee' in name.lower() or 'leader' in name.lower():
+                    persona.weight *= 1.2
+
+        # Social psychology studies - increase social personas
+        if any(kw in all_text for kw in ['cooperation', 'prosocial', 'trust', 'fairness', 'social dilemma']):
+            for name, persona in self.available_personas.items():
+                if persona.category == 'social':
+                    persona.weight *= 1.3
+                if 'prosocial' in name.lower() or 'individualist' in name.lower():
+                    persona.weight *= 1.2
+
+        # Health studies - increase health personas
+        if any(kw in all_text for kw in ['health', 'wellness', 'exercise', 'diet', 'medical']):
+            for name, persona in self.available_personas.items():
+                if persona.category == 'health':
+                    persona.weight *= 1.4
+
+        # Environmental studies - increase environmental personas
+        if any(kw in all_text for kw in ['environment', 'sustainability', 'climate', 'green', 'eco']):
+            for name, persona in self.available_personas.items():
+                if persona.category == 'environmental':
+                    persona.weight *= 1.4
+
+        # Normalize weights
+        total_weight = sum(p.weight for p in self.available_personas.values()) or 1.0
+        for persona in self.available_personas.values():
+            persona.weight = persona.weight / total_weight
 
     def _normalize_scales(self, scales: List[Any]) -> List[Dict[str, Any]]:
         """Normalize scales to ensure they're all properly formatted dicts.
@@ -569,70 +655,232 @@ class EnhancedSimulationEngine:
 
     def _get_automatic_condition_effect(self, condition: str, variable: str) -> float:
         """
-        Generate automatic condition effects when no explicit effect sizes are configured.
+        Generate automatic condition effects based on SEMANTIC CONTENT, not position.
 
-        This ensures that different conditions produce meaningfully different response
-        patterns, even without user-specified effect sizes.
+        VERSION 2.2.9: CRITICAL FIX - Effects are based on condition meaning, not order.
 
-        Uses condition index to create systematic differences:
-        - First condition: baseline (no shift)
-        - Second condition: +0.15 shift (positive effect)
-        - Third condition: -0.10 shift (negative effect)
-        - And so on with alternating patterns
+        SCIENTIFIC BASIS:
+        =================
+        Effects are determined by parsing the semantic content of condition names
+        and applying theory-driven effect directions:
 
-        This creates detectable between-group differences while maintaining
-        realistic within-group variance.
+        1. VALENCE KEYWORDS (affect outcomes directionally):
+           - Positive valence (lover, friend, positive, high, good): +effect
+           - Negative valence (hater, enemy, negative, low, bad): -effect
+           - Neutral (unknown, control, baseline): 0 effect
+
+        2. EXPERIMENTAL MANIPULATIONS (based on published literature):
+           - AI vs Human: AI typically shows aversion (Dietvorst et al., 2015)
+           - Hedonic vs Utilitarian: Hedonic shows higher affect (Babin et al., 1994)
+           - PGG vs Dictator: PGG shows higher cooperation (Fehr & Gächter, 2000)
+           - Treatment vs Control: Treatment shows moderate effect
+
+        3. EFFECT ASSIGNMENT:
+           - Uses semantic parsing, NOT condition position
+           - Effects are consistent for same condition across runs
+           - Creates realistic between-condition differences
+
+        CRITICAL: This method NEVER uses condition index/position for effects.
         """
-        if len(self.conditions) <= 1:
-            return 0.0
-
-        # Find condition index
         condition_lower = str(condition).lower().strip()
-        cond_index = -1
-        for i, c in enumerate(self.conditions):
-            if str(c).lower().strip() == condition_lower:
-                cond_index = i
-                break
 
-        if cond_index < 0:
-            # Try partial matching
-            for i, c in enumerate(self.conditions):
-                if condition_lower in str(c).lower() or str(c).lower() in condition_lower:
-                    cond_index = i
-                    break
-
-        if cond_index < 0:
-            return 0.0
-
-        # Create systematic effects based on condition position
-        # This creates a "spread" of condition means
-        n_conditions = len(self.conditions)
-
-        # Use a default medium effect size (d=0.5) spread across conditions
+        # Default medium effect size parameters
         default_d = 0.5
         COHENS_D_TO_NORMALIZED = 0.40
 
-        if n_conditions == 2:
-            # Two conditions: one high, one low
-            effect_pattern = [-0.5, 0.5]
-        elif n_conditions == 3:
-            # Three conditions: low, middle, high
-            effect_pattern = [-0.5, 0.0, 0.5]
-        elif n_conditions == 4:
-            # Four conditions (2x2 factorial): create main effects
-            effect_pattern = [-0.3, -0.1, 0.1, 0.3]
-        else:
-            # General case: spread conditions evenly
-            effect_pattern = []
-            for i in range(n_conditions):
-                # Range from -0.5 to +0.5
-                effect = -0.5 + (i / (n_conditions - 1)) if n_conditions > 1 else 0.0
-                effect_pattern.append(effect)
+        # Initialize base effect at 0 (neutral)
+        semantic_effect = 0.0
 
-        if cond_index < len(effect_pattern):
-            return effect_pattern[cond_index] * default_d * COHENS_D_TO_NORMALIZED
+        # =====================================================================
+        # STEP 1: Parse valence keywords (directional effects)
+        # Based on affective meaning of condition labels
+        # =====================================================================
 
-        return 0.0
+        # Strong positive valence keywords → positive effect
+        positive_keywords = [
+            'lover', 'friend', 'positive', 'high', 'good', 'best', 'strong',
+            'success', 'win', 'gain', 'benefit', 'reward', 'pleasant',
+            'like', 'love', 'favor', 'approve', 'support', 'prosocial',
+            'cooperative', 'trust', 'warm', 'kind', 'helpful'
+        ]
+
+        # Strong negative valence keywords → negative effect
+        negative_keywords = [
+            'hater', 'enemy', 'negative', 'low', 'bad', 'worst', 'weak',
+            'failure', 'lose', 'loss', 'cost', 'punish', 'unpleasant',
+            'dislike', 'hate', 'oppose', 'disapprove', 'reject', 'antisocial',
+            'competitive', 'distrust', 'cold', 'hostile', 'harmful'
+        ]
+
+        # Neutral/baseline keywords → zero effect
+        neutral_keywords = [
+            'unknown', 'control', 'baseline', 'neutral', 'moderate',
+            'medium', 'average', 'standard', 'normal', 'typical'
+        ]
+
+        # Check for valence keywords
+        for keyword in positive_keywords:
+            if keyword in condition_lower:
+                semantic_effect += 0.35  # Moderate positive shift
+                break
+
+        for keyword in negative_keywords:
+            if keyword in condition_lower:
+                semantic_effect -= 0.35  # Moderate negative shift
+                break
+
+        for keyword in neutral_keywords:
+            if keyword in condition_lower:
+                semantic_effect *= 0.3  # Reduce effect toward neutral
+                break
+
+        # =====================================================================
+        # STEP 2: Parse experimental manipulation types
+        # Based on published research on these manipulations
+        # =====================================================================
+
+        # AI vs Human manipulation (Dietvorst et al., 2015: Algorithm aversion)
+        if 'ai' in condition_lower or 'algorithm' in condition_lower or 'robot' in condition_lower:
+            if 'no ai' in condition_lower or 'no_ai' in condition_lower or 'without ai' in condition_lower:
+                # No AI / Human condition - often preferred
+                semantic_effect += 0.15
+            else:
+                # AI present - often shows aversion in evaluations
+                semantic_effect -= 0.10
+
+        # Hedonic vs Utilitarian (Babin et al., 1994: Shopping value)
+        if 'hedonic' in condition_lower or 'experiential' in condition_lower or 'fun' in condition_lower:
+            semantic_effect += 0.20  # Hedonic products rated more positively on affect
+        elif 'utilitarian' in condition_lower or 'functional' in condition_lower or 'practical' in condition_lower:
+            semantic_effect -= 0.10  # Utilitarian more moderate ratings
+
+        # Game type (Fehr & Gächter, 2000: Cooperation in public goods)
+        if 'pgg' in condition_lower or 'public good' in condition_lower:
+            semantic_effect += 0.15  # PGG elicits more cooperation
+        elif 'dictator' in condition_lower:
+            semantic_effect -= 0.05  # Dictator game - more self-interested
+
+        # Treatment vs Control
+        if 'treatment' in condition_lower and 'control' not in condition_lower:
+            semantic_effect += 0.20  # Treatment typically shows effect
+        elif 'control' in condition_lower and 'treatment' not in condition_lower:
+            semantic_effect -= 0.05  # Control is baseline
+
+        # =====================================================================
+        # ADDITIONAL MANIPULATION TYPES (based on published research)
+        # =====================================================================
+
+        # Anthropomorphism (Epley et al., 2007: When we see human)
+        if 'anthropomorph' in condition_lower or 'human-like' in condition_lower:
+            semantic_effect += 0.15  # Anthropomorphized agents rated more positively
+
+        # Social presence (Short et al., 1976: Social presence theory)
+        if 'social' in condition_lower and 'presence' in condition_lower:
+            semantic_effect += 0.12
+        elif 'asocial' in condition_lower or 'non-social' in condition_lower:
+            semantic_effect -= 0.08
+
+        # Scarcity (Cialdini, 2001: Influence - scarcity principle)
+        if 'scarce' in condition_lower or 'limited' in condition_lower or 'exclusive' in condition_lower:
+            semantic_effect += 0.18
+        elif 'abundant' in condition_lower or 'unlimited' in condition_lower:
+            semantic_effect -= 0.05
+
+        # Social proof (Cialdini, 2001: Social proof)
+        if 'popular' in condition_lower or 'endorsed' in condition_lower or 'recommended' in condition_lower:
+            semantic_effect += 0.15
+        elif 'unpopular' in condition_lower or 'not recommended' in condition_lower:
+            semantic_effect -= 0.12
+
+        # Risk framing (Tversky & Kahneman, 1981: Framing effects)
+        if 'gain' in condition_lower or 'save' in condition_lower:
+            semantic_effect += 0.10  # Gain frame more positive
+        elif 'loss' in condition_lower or 'lose' in condition_lower:
+            semantic_effect -= 0.15  # Loss frame more negative (loss aversion)
+
+        # Personal relevance (Petty & Cacioppo, 1986: ELM)
+        if 'personal' in condition_lower or 'relevant' in condition_lower or 'self' in condition_lower:
+            semantic_effect += 0.12
+        elif 'impersonal' in condition_lower or 'irrelevant' in condition_lower:
+            semantic_effect -= 0.08
+
+        # Moral framing (Graham et al., 2009: Moral foundations)
+        if 'moral' in condition_lower or 'ethical' in condition_lower or 'fair' in condition_lower:
+            semantic_effect += 0.15
+        elif 'immoral' in condition_lower or 'unethical' in condition_lower or 'unfair' in condition_lower:
+            semantic_effect -= 0.20
+
+        # =====================================================================
+        # FACTORIAL DESIGN PARSING
+        # For conditions like "No AI × Utilitarian" or "AI x Hedonic"
+        # Parse each factor and sum main effects
+        # =====================================================================
+
+        # Detect factorial separators (×, x, +, &, *, /)
+        factorial_separators = ['×', ' x ', ' + ', ' & ', ' * ', ' / ']
+        is_factorial = any(sep in condition_lower for sep in factorial_separators)
+
+        if is_factorial:
+            # Split by any separator and process each factor
+            factors_text = condition_lower
+            for sep in factorial_separators:
+                factors_text = factors_text.replace(sep, '|')
+            factors = [f.strip() for f in factors_text.split('|') if f.strip()]
+
+            # Add effects for each factor (but with reduced magnitude to avoid stacking)
+            factor_effects = []
+            for factor in factors:
+                factor_effect = 0.0
+
+                # Check valence for this factor
+                for kw in positive_keywords:
+                    if kw in factor:
+                        factor_effect += 0.20
+                        break
+                for kw in negative_keywords:
+                    if kw in factor:
+                        factor_effect -= 0.20
+                        break
+
+                # Check manipulation types for this factor
+                if 'ai' in factor and 'no' not in factor:
+                    factor_effect -= 0.08
+                elif 'no ai' in factor or 'no_ai' in factor:
+                    factor_effect += 0.10
+
+                if 'hedonic' in factor:
+                    factor_effect += 0.12
+                elif 'utilitarian' in factor:
+                    factor_effect -= 0.05
+
+                factor_effects.append(factor_effect)
+
+            # Sum factor effects (main effects in factorial design)
+            # Scale down to prevent extreme values from multiple factors
+            if factor_effects:
+                semantic_effect += sum(factor_effects) * 0.7  # 70% of sum
+
+        # =====================================================================
+        # STEP 3: Create additional variance using stable hash (NOT position)
+        # This ensures conditions with similar meanings have slight differences
+        # =====================================================================
+
+        # Use MD5 hash of condition name for stable but non-positional variation
+        condition_hash = int(hashlib.md5(condition.encode()).hexdigest(), 16)
+        # Small random-like adjustment based on hash (-0.05 to +0.05)
+        hash_adjustment = ((condition_hash % 1000) / 1000.0 - 0.5) * 0.10
+
+        semantic_effect += hash_adjustment
+
+        # =====================================================================
+        # STEP 4: Bound and scale the effect
+        # =====================================================================
+
+        # Clamp to reasonable range (-0.6 to +0.6)
+        semantic_effect = max(-0.6, min(0.6, semantic_effect))
+
+        # Apply Cohen's d scaling
+        return semantic_effect * default_d * COHENS_D_TO_NORMALIZED
 
     def _get_condition_trait_modifier(self, condition: str) -> Dict[str, float]:
         """
@@ -1626,6 +1874,73 @@ class EnhancedSimulationEngine:
                         })
 
         return observed_effects
+
+    def validate_no_order_effects(self, df: pd.DataFrame) -> Dict[str, Any]:
+        """
+        Validate that there are NO systematic order effects in the generated data.
+
+        VERSION 2.2.9: Critical validation to ensure condition position does not
+        predict response means.
+
+        This method computes the correlation between condition position (index)
+        and condition means. A significant correlation would indicate an order
+        effect bug that needs to be fixed.
+
+        Returns:
+            Dict containing validation results:
+            - order_correlation: Pearson r between position and mean
+            - is_problematic: True if |r| > 0.7 (strong order effect)
+            - condition_means: Dict of condition -> mean
+            - warning: Warning message if order effect detected
+        """
+        result = {
+            "order_correlation": 0.0,
+            "is_problematic": False,
+            "condition_means": {},
+            "warning": None,
+        }
+
+        if "CONDITION" not in df.columns or len(self.conditions) < 3:
+            return result
+
+        # Find numeric columns (DVs)
+        numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+        dv_cols = [c for c in numeric_cols if not c.startswith(('PARTICIPANT', 'Flag_', 'Exclude_', 'Completion_', 'Attention_', 'Max_', 'SIMULATION_'))]
+
+        if not dv_cols:
+            return result
+
+        # Compute mean across DVs for each condition
+        condition_grand_means = {}
+        for i, cond in enumerate(self.conditions):
+            cond_data = df[df["CONDITION"] == cond][dv_cols]
+            if len(cond_data) > 0:
+                grand_mean = cond_data.mean().mean()
+                condition_grand_means[cond] = grand_mean
+
+        result["condition_means"] = {k: round(v, 3) for k, v in condition_grand_means.items()}
+
+        # Compute correlation between position and mean
+        if len(condition_grand_means) >= 3:
+            positions = list(range(len(self.conditions)))
+            means = [condition_grand_means.get(c, 0) for c in self.conditions]
+
+            # Pearson correlation
+            if len(positions) > 2 and np.std(means) > 0:
+                correlation = np.corrcoef(positions, means)[0, 1]
+                result["order_correlation"] = round(correlation, 3) if not np.isnan(correlation) else 0.0
+
+                # Flag if strong order effect (|r| > 0.7)
+                if abs(result["order_correlation"]) > 0.7:
+                    result["is_problematic"] = True
+                    result["warning"] = (
+                        f"WARNING: Strong order effect detected (r={result['order_correlation']:.2f}). "
+                        "Condition position is highly correlated with response means. "
+                        "This suggests a bug in effect assignment - effects should be "
+                        "based on semantic content, not position."
+                    )
+
+        return result
 
     def generate_explainer(self) -> str:
         lines = [

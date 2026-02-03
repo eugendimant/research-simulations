@@ -2,23 +2,22 @@
 """
 Utility modules for the Behavioral Experiment Simulation Tool.
 
-Version: 2.2.8
-Changes (v2.2.8 - FULL DOMAIN Scientific Calibration):
-    - ALL domain-specific personas now have response_tendency and extremity traits
-    - Consumer personas: Brand Loyalist, Deal Seeker, Impulse Buyer, etc.
-    - Technology personas: Tech Enthusiast, Tech Skeptic, AI Pragmatist, etc.
-    - Behavioral economics personas: Loss Averse, Present Biased, Rational Deliberator
-    - Organizational personas: High Performer, Disengaged Employee, Transformational Leader
-    - Social psychology personas: Prosocial Individual, Individualist, Conformist
-    - Health/Environmental personas: Health Conscious, Eco Warrior, etc.
-    - Domain-adaptive response mechanism based on variable names (Oliver, Slovic, Mayer)
-    - Scale-type calibration for Likert, slider, WTP (Krosnick & Fabrigar, 1997)
-    - Comprehensive SCIENTIFIC_METHODS_DOCUMENTATION constant
-    - generate_methods_writeup() for publication-ready methods sections
+Version: 2.2.9
+Changes (v2.2.9 - CRITICAL FIX - Semantic Condition Effects):
+    - CRITICAL: Removed position-based order bias from condition effects
+    - Effects are now based on SEMANTIC CONTENT of condition names, not position
+    - Valence keyword parsing: positive (lover, friend, good) vs negative (hater, enemy, bad)
+    - Manipulation type detection: AI/human, hedonic/utilitarian, treatment/control
+    - Factorial design parsing: "Factor1 × Factor2" extracts main effects
+    - Additional manipulation types: anthropomorphism, scarcity, social proof, risk framing
+    - Stable hash for consistent but non-ordered variation
+    - Study-domain persona weight adjustment
+    - validate_no_order_effects() method to detect position bias
+    - Comprehensive semantic parsing with 40+ keyword categories
 
-Previous (v2.2.7):
-    - Core response style personas calibrated from published research
-    - Krosnick (1991), Greenleaf (1992), Paulhus (1991), Meade & Craig (2012)
+Previous (v2.2.8):
+    - Full domain scientific calibration for all personas
+    - Domain-adaptive response mechanism
 
 Modules:
     - qsf_parser: Parse Qualtrics Survey Format (.qsf) files
@@ -37,7 +36,7 @@ Modules:
 """
 
 # Package version - should match all module versions
-__version__ = "2.2.8"
+__version__ = "2.2.9"
 
 from .qsf_parser import parse_qsf_file, extract_survey_structure, generate_qsf_summary
 from .simulation_engine import SimulationEngine
