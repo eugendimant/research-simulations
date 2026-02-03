@@ -33,7 +33,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Union
 
 # Version identifier to help track deployed code
-__version__ = "2.4.2"  # IMPROVED: Enhanced scale/DV detection, condition detection, FORM fields, forced response tracking
+__version__ = "2.4.3"  # ENHANCED: QSF training on 6 files - slider config, validation details, choice randomization
 
 
 # ============================================================================
@@ -115,6 +115,25 @@ class QuestionInfo:
     is_comprehension_check: bool = False
     # v2.4.2: Track expected answer for comprehension checks
     comprehension_expected: Optional[str] = None
+    # v2.4.3: Enhanced validation tracking from QSF training
+    min_chars: Optional[int] = None  # Minimum character requirement for text entry
+    max_chars: Optional[int] = None  # Maximum character requirement
+    validation_regex: Optional[str] = None  # Regex pattern for validation (email, etc.)
+    number_min: Optional[float] = None  # Minimum value for number validation
+    number_max: Optional[float] = None  # Maximum value for number validation
+    content_type: Optional[str] = None  # ValidNumber, ValidZip, ValidEmail, etc.
+    # v2.4.3: Slider configuration details
+    slider_min: Optional[float] = None  # Slider minimum value
+    slider_max: Optional[float] = None  # Slider maximum value
+    slider_grid_lines: Optional[int] = None  # Number of grid lines
+    slider_snap_to_grid: bool = False  # Whether slider snaps to grid
+    slider_labels: Dict[str, str] = field(default_factory=dict)  # Position labels
+    # v2.4.3: Skip/display logic tracking
+    has_skip_logic: bool = False
+    has_display_logic: bool = False
+    # v2.4.3: Randomization tracking
+    choice_randomization: bool = False  # Whether choices are randomized
+    fixed_choices: List[str] = field(default_factory=list)  # Choices fixed at end
 
 
 @dataclass
@@ -157,6 +176,10 @@ class QSFPreviewResult:
     forced_response_questions: List[Dict[str, Any]] = field(default_factory=list)
     # v2.4.2: Comprehension checks with expected answers
     comprehension_checks: List[Dict[str, Any]] = field(default_factory=list)
+    # v2.4.3: Slider questions with full configuration for accurate simulation
+    slider_questions: List[Dict[str, Any]] = field(default_factory=list)
+    # v2.4.3: Text entry questions with validation requirements
+    text_entry_questions: List[Dict[str, Any]] = field(default_factory=list)
 
 
 class QSFPreviewParser:
@@ -509,12 +532,16 @@ class QSFPreviewParser:
         forced_response_questions = self._extract_forced_response_questions(questions_map)
         comprehension_checks = self._extract_comprehension_checks(questions_map)
 
+        # v2.4.3: Extract slider and text entry questions with full config
+        slider_questions = self._extract_slider_questions(questions_map)
+        text_entry_questions = self._extract_text_entry_questions(questions_map)
+
         # Validate structure
         self._validate_structure(blocks, questions_map, detected_conditions)
 
         self._log(
             LogLevel.INFO, "PARSE_COMPLETE",
-            f"Parsing complete. {len(self.errors)} errors, {len(self.warnings)} warnings, {len(forced_response_questions)} forced response Qs, {len(comprehension_checks)} comprehension checks"
+            f"Parsing complete. {len(self.errors)} errors, {len(self.warnings)} warnings, {len(forced_response_questions)} forced Qs, {len(slider_questions)} sliders, {len(text_entry_questions)} text entries"
         )
 
         return QSFPreviewResult(
@@ -544,6 +571,8 @@ class QSFPreviewParser:
             embedded_data_conditions=embedded_data_conditions,
             forced_response_questions=forced_response_questions,
             comprehension_checks=comprehension_checks,
+            slider_questions=slider_questions,
+            text_entry_questions=text_entry_questions,
         )
 
     def _parse_blocks(self, element: Dict, blocks_map: Dict):
@@ -804,6 +833,97 @@ class QSFPreviewParser:
                                 f"Detected comprehension check: {q_id} (expected: {comprehension_expected})"
                             )
 
+            # v2.4.3: Extract enhanced validation details from QSF training
+            min_chars = None
+            max_chars = None
+            validation_regex = None
+            number_min = None
+            number_max = None
+            content_type = None
+            if isinstance(validation, dict):
+                settings = validation.get('Settings', {})
+                if isinstance(settings, dict):
+                    # MinChars/MaxChars for text entry
+                    if 'MinChars' in settings:
+                        try:
+                            min_chars = int(settings['MinChars'])
+                        except (ValueError, TypeError):
+                            pass
+                    if 'MaxChars' in settings:
+                        try:
+                            max_chars = int(settings['MaxChars'])
+                        except (ValueError, TypeError):
+                            pass
+                    # Content type validation (ValidNumber, ValidZip, etc.)
+                    content_type = settings.get('ContentType')
+                    # Number range validation
+                    if 'Min' in settings:
+                        try:
+                            number_min = float(settings['Min'])
+                        except (ValueError, TypeError):
+                            pass
+                    if 'Max' in settings:
+                        try:
+                            number_max = float(settings['Max'])
+                        except (ValueError, TypeError):
+                            pass
+                    # Regex validation pattern
+                    custom_val = settings.get('CustomValidation', {})
+                    if isinstance(custom_val, dict):
+                        # Check for regex in custom validation message or logic
+                        message = custom_val.get('Message', '')
+                        if 'email' in message.lower() or 'valid' in message.lower():
+                            # Common email regex pattern
+                            validation_regex = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+
+            # v2.4.3: Extract slider configuration
+            slider_min_val = None
+            slider_max_val = None
+            slider_grid_lines = None
+            slider_snap_to_grid = False
+            slider_labels = {}
+            config = payload.get('Configuration', {})
+            if isinstance(config, dict) and question_type == 'Slider':
+                if 'CSSliderMin' in config:
+                    try:
+                        slider_min_val = float(config['CSSliderMin'])
+                    except (ValueError, TypeError):
+                        pass
+                if 'CSSliderMax' in config:
+                    try:
+                        slider_max_val = float(config['CSSliderMax'])
+                    except (ValueError, TypeError):
+                        pass
+                if 'GridLines' in config:
+                    try:
+                        slider_grid_lines = int(config['GridLines'])
+                    except (ValueError, TypeError):
+                        pass
+                slider_snap_to_grid = config.get('SnapToGrid', False) in [True, 'true', 'True', 1, '1']
+                # Extract slider labels
+                labels = config.get('Labels', {})
+                if isinstance(labels, dict):
+                    slider_labels = {str(k): str(v) for k, v in labels.items()}
+
+            # v2.4.3: Detect skip/display logic
+            has_skip_logic = 'SkipLogic' in payload or 'BranchLogic' in payload
+            has_display_logic = 'DisplayLogic' in payload
+
+            # v2.4.3: Detect choice randomization
+            choice_randomization = False
+            fixed_choices = []
+            randomization = payload.get('Randomization', {})
+            if isinstance(randomization, dict):
+                choice_randomization = randomization.get('Advanced', {}).get('Randomize', False)
+                # Get fixed choices (usually "Other" or "No preference" at end)
+                fixed_positions = randomization.get('Advanced', {}).get('FixedOrder', [])
+                if fixed_positions and isinstance(choices_data, dict):
+                    for pos in fixed_positions:
+                        if str(pos) in choices_data:
+                            choice_data = choices_data[str(pos)]
+                            if isinstance(choice_data, dict):
+                                fixed_choices.append(choice_data.get('Display', ''))
+
             questions_map[q_id] = QuestionInfo(
                 question_id=q_id,
                 question_text=question_text[:200] + ('...' if len(question_text) > 200 else ''),
@@ -820,12 +940,27 @@ class QSFPreviewParser:
                 selector=selector_str,
                 form_fields=form_fields,
                 is_comprehension_check=is_comprehension_check,
-                comprehension_expected=comprehension_expected
+                comprehension_expected=comprehension_expected,
+                min_chars=min_chars,
+                max_chars=max_chars,
+                validation_regex=validation_regex,
+                number_min=number_min,
+                number_max=number_max,
+                content_type=content_type,
+                slider_min=slider_min_val,
+                slider_max=slider_max_val,
+                slider_grid_lines=slider_grid_lines,
+                slider_snap_to_grid=slider_snap_to_grid,
+                slider_labels=slider_labels,
+                has_skip_logic=has_skip_logic,
+                has_display_logic=has_display_logic,
+                choice_randomization=choice_randomization,
+                fixed_choices=fixed_choices
             )
 
             self._log(
                 LogLevel.INFO, "QUESTION",
-                f"Parsed question {q_id}: {category} (selector={selector_str}, scale_points={scale_points}, force={force_response}, text_entries={len(text_entry_choices)}, form_fields={len(form_fields)})",
+                f"Parsed question {q_id}: {category} (selector={selector_str}, scale_points={scale_points}, force={force_response}, min_chars={min_chars})",
                 {'text_preview': question_text[:100], 'data_export_tag': data_export_tag}
             )
         except Exception as e:
@@ -961,22 +1096,54 @@ class QSFPreviewParser:
         return anchor_count >= 2
 
     def _categorize_question(self, q_type: str, selector: str) -> str:
-        """Categorize question type."""
+        """Categorize question type with enhanced selector support.
+
+        v2.4.3: Enhanced to handle more selector types from QSF analysis:
+        - SAVR: Single Answer Vertical Rows (standard radio)
+        - SAHR: Single Answer Horizontal Rows
+        - DL: Dropdown Likert (matrix dropdown)
+        - GRB: Graphic Block (images/stimuli)
+        - TB: Text Block (instructions)
+        - ESTB: Extended Single Text Box
+        - SL: Single Line text
+        - ML: Multi-Line text
+        - FORM: Form with labeled rows
+        """
         if q_type == 'Matrix':
+            if selector == 'DL':
+                return 'Matrix Dropdown'
+            elif selector == 'Profile':
+                return 'Matrix Profile'
             return 'Likert Scale Matrix'
         elif q_type == 'MC':
             if selector in ['Likert', 'SAVR']:
                 return 'Single Choice (Radio)'
+            elif selector == 'SAHR':
+                return 'Single Choice (Horizontal)'
             elif selector in ['MAVR', 'MACOL']:
                 return 'Multiple Choice'
+            elif selector == 'DL':
+                return 'Dropdown'
             else:
                 return 'Multiple Choice'
         elif q_type == 'TE':
+            if selector == 'ESTB':
+                return 'Text Entry (Essay)'
+            elif selector == 'ML':
+                return 'Text Entry (Multi-line)'
+            elif selector == 'FORM':
+                return 'Text Entry (Form)'
             return 'Text Entry'
         elif q_type == 'Slider':
             return 'Slider'
         elif q_type == 'DB':
+            if selector == 'GRB':
+                return 'Graphic Block'
             return 'Descriptive Text'
+        elif q_type == 'Timing':
+            return 'Timing'
+        elif q_type == 'Captcha':
+            return 'Captcha'
         else:
             return f'{q_type} ({selector})'
 
@@ -2254,8 +2421,8 @@ class QSFPreviewParser:
     def _extract_forced_response_questions(self, questions_map: Dict) -> List[Dict[str, Any]]:
         """Extract all questions with ForceResponse validation.
 
-        v2.4.2: These questions MUST be filled in simulation output.
-        Returns list of dicts with question details for validation.
+        v2.4.3: ENHANCED - These questions MUST be filled in simulation output.
+        Now includes all validation details for proper response generation.
         """
         forced_questions = []
 
@@ -2273,8 +2440,20 @@ class QSFPreviewParser:
                     'has_scale': q_info.scale_points is not None,
                     'scale_points': q_info.scale_points,
                     'selector': q_info.selector,
-                    'is_text_entry': q_info.question_type == 'Text Entry' or q_info.selector in ['ESTB', 'ML', 'SL', 'FORM'],
+                    'is_text_entry': q_info.question_type in ['Text Entry', 'Text Entry (Essay)', 'Text Entry (Multi-line)', 'Text Entry (Form)'] or q_info.selector in ['ESTB', 'ML', 'SL', 'FORM'],
                     'form_fields': q_info.form_fields if q_info.form_fields else [],
+                    # v2.4.3: Enhanced validation details
+                    'min_chars': q_info.min_chars,
+                    'max_chars': q_info.max_chars,
+                    'content_type': q_info.content_type,
+                    'number_min': q_info.number_min,
+                    'number_max': q_info.number_max,
+                    'validation_regex': q_info.validation_regex,
+                    # v2.4.3: Slider details
+                    'is_slider': q_info.question_type == 'Slider',
+                    'slider_min': q_info.slider_min,
+                    'slider_max': q_info.slider_max,
+                    'slider_snap_to_grid': q_info.slider_snap_to_grid,
                 })
 
         if forced_questions:
@@ -2284,6 +2463,80 @@ class QSFPreviewParser:
             )
 
         return forced_questions
+
+    def _extract_slider_questions(self, questions_map: Dict) -> List[Dict[str, Any]]:
+        """Extract all slider questions with their configuration.
+
+        v2.4.3: NEW - Provides detailed slider config for accurate simulation.
+        """
+        sliders = []
+
+        if not isinstance(questions_map, dict):
+            return sliders
+
+        for q_id, q_info in questions_map.items():
+            if q_info.question_type == 'Slider':
+                sliders.append({
+                    'question_id': q_id,
+                    'export_tag': q_info.export_tag or q_id,
+                    'question_text': q_info.question_text[:100],
+                    'block_name': q_info.block_name,
+                    'force_response': q_info.force_response,
+                    'slider_min': q_info.slider_min,
+                    'slider_max': q_info.slider_max,
+                    'slider_grid_lines': q_info.slider_grid_lines,
+                    'slider_snap_to_grid': q_info.slider_snap_to_grid,
+                    'slider_labels': q_info.slider_labels,
+                    'scale_points': q_info.scale_points,
+                })
+
+        if sliders:
+            self._log(
+                LogLevel.INFO, "SLIDERS",
+                f"Found {len(sliders)} slider questions"
+            )
+
+        return sliders
+
+    def _extract_text_entry_questions(self, questions_map: Dict) -> List[Dict[str, Any]]:
+        """Extract all text entry questions with their validation requirements.
+
+        v2.4.3: NEW - Provides detailed text entry config for accurate simulation.
+        Includes min/max chars, content type validation, regex patterns, etc.
+        """
+        text_entries = []
+
+        if not isinstance(questions_map, dict):
+            return text_entries
+
+        text_entry_types = ['Text Entry', 'Text Entry (Essay)', 'Text Entry (Multi-line)', 'Text Entry (Form)']
+
+        for q_id, q_info in questions_map.items():
+            if q_info.question_type in text_entry_types or q_info.selector in ['ESTB', 'ML', 'SL', 'FORM']:
+                text_entries.append({
+                    'question_id': q_id,
+                    'export_tag': q_info.export_tag or q_id,
+                    'question_text': q_info.question_text[:150],
+                    'block_name': q_info.block_name,
+                    'selector': q_info.selector,
+                    'force_response': q_info.force_response,
+                    'min_chars': q_info.min_chars,
+                    'max_chars': q_info.max_chars,
+                    'content_type': q_info.content_type,
+                    'number_min': q_info.number_min,
+                    'number_max': q_info.number_max,
+                    'validation_regex': q_info.validation_regex,
+                    'form_fields': q_info.form_fields if q_info.form_fields else [],
+                    'is_comprehension_check': q_info.is_comprehension_check,
+                })
+
+        if text_entries:
+            self._log(
+                LogLevel.INFO, "TEXT_ENTRIES",
+                f"Found {len(text_entries)} text entry questions"
+            )
+
+        return text_entries
 
     def _extract_comprehension_checks(self, questions_map: Dict) -> List[Dict[str, Any]]:
         """Extract comprehension check questions with their expected answers.

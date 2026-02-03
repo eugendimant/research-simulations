@@ -2,24 +2,26 @@
 """
 Utility modules for the Behavioral Experiment Simulation Tool.
 
-Version: 2.4.2
-Changes (v2.4.2 - IMPROVED - Enhanced Detection from QSF Analysis):
-    - IMPROVED: Enhanced scale/DV detection from QSF files
-    - IMPROVED: Better condition detection with BlockRandomizer groups
-    - IMPROVED: FORM field detection (multiple text inputs per question)
-    - IMPROVED: Comprehension check detection with expected answers
-    - IMPROVED: ForceResponse tracking for mandatory fields
-    - NEW: Added selector tracking for precise question type detection
-    - NEW: Added form_fields attribute to QuestionInfo dataclass
-    - NEW: Added is_comprehension_check and comprehension_expected fields
-    - NEW: Added forced_response_questions to QSFPreviewResult
-    - NEW: Added comprehension_checks to QSFPreviewResult
-    - Trained on 5 real QSF files for pattern improvement
+Version: 2.4.3
+Changes (v2.4.3 - ENHANCED - QSF Training on 6 Real Surveys):
+    - ENHANCED: Trained on 6 real QSF files for comprehensive pattern coverage
+    - ENHANCED: Question type detection with 15+ selector types (SAVR, SAHR, DL, GRB, ESTB, etc.)
+    - ENHANCED: Slider configuration extraction (min/max, grid lines, snap-to-grid, labels)
+    - ENHANCED: Text entry validation (MinChars, MaxChars, regex, number ranges, content types)
+    - ENHANCED: Choice randomization detection with fixed position tracking
+    - NEW: Added slider_questions to QSFPreviewResult with full slider config
+    - NEW: Added text_entry_questions to QSFPreviewResult with validation details
+    - NEW: Added validation tracking (min_chars, max_chars, validation_regex, number_min/max)
+    - NEW: Added slider tracking (slider_min/max, grid_lines, snap_to_grid, labels)
+    - NEW: Added skip/display logic detection
+    - Files trained on: Capstone_Project, Emoji_Pilot, Final_Version_for_BDS_5010,
+      Group_15_Experiment, Group_1_Final_Qualtrics, Hate_Trumps_Love
+
+Previous (v2.4.2):
+    - Enhanced detection from QSF analysis, FORM fields, ForceResponse tracking
 
 Previous (v2.4.1):
-    - EXPANDED: 100+ manipulation types grounded in 75+ published sources
-    - Following Westwood (PNAS 2025) for realistic human simulation
-    - 16 research domains with theory-based effect directions
+    - 100+ manipulation types grounded in 75+ published sources
 
 Previous (v2.3.0):
     - COMPREHENSIVE: All manipulation types grounded in published literature
@@ -41,7 +43,7 @@ Modules:
 """
 
 # Package version - should match all module versions
-__version__ = "2.4.2"
+__version__ = "2.4.3"
 
 from .qsf_parser import parse_qsf_file, extract_survey_structure, generate_qsf_summary
 from .simulation_engine import SimulationEngine
