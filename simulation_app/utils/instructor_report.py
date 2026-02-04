@@ -880,6 +880,11 @@ class ComprehensiveInstructorReport:
         lines.append(f"**Generated:** {metadata.get('generation_timestamp', datetime.now().isoformat())}")
         lines.append(f"**Run ID:** `{metadata.get('run_id', 'N/A')}`")
         lines.append(f"**Mode:** {metadata.get('simulation_mode', 'pilot').title()}")
+
+        # Internal usage counter (for instructor tracking)
+        usage_stats = metadata.get('usage_stats', {})
+        total_simulations = usage_stats.get('total_simulations', 'N/A')
+        lines.append(f"**Total Simulations Run (all time):** {total_simulations}")
         lines.append("")
 
         # =============================================================
@@ -3233,6 +3238,11 @@ class ComprehensiveInstructorReport:
         html_parts.append(f"<p><strong>Generated:</strong> {metadata.get('generation_timestamp', datetime.now().isoformat())}</p>")
         html_parts.append(f"<p><strong>Run ID:</strong> <code>{metadata.get('run_id', 'N/A')}</code></p>")
         html_parts.append(f"<p><strong>Mode:</strong> {metadata.get('simulation_mode', 'pilot').title()}</p>")
+
+        # Internal usage counter (for instructor tracking)
+        usage_stats = metadata.get('usage_stats', {})
+        total_simulations = usage_stats.get('total_simulations', 'N/A')
+        html_parts.append(f"<p><strong>Total Simulations Run (all time):</strong> {total_simulations}</p>")
 
         # Summary metrics
         n_total = len(df)
