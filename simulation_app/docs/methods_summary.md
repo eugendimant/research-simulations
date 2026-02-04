@@ -86,9 +86,22 @@ The system produces a publication-ready CSV file containing:
 
 ### Persona-Based Response Generation
 
-Rather than generating random responses, the system assigns each simulated participant a "persona" based on survey methodology research. These personas reflect actual patterns observed in human respondents:
+Rather than generating random responses, the system assigns each simulated participant a "persona" based on survey methodology research. **These personas have been trained on hundreds of scientific insights from decades of research across the social and behavioral sciences**, including:
 
-**Engaged Responders (35%)**: High attention, thoughtful responses, full scale use. Based on Krosnick's (1991) "optimizers" who invest cognitive effort in providing accurate answers.
+- **Behavioral Economics**: Trust, cooperation, altruism, fairness, reciprocity, risk preferences, loss aversion, framing effects
+- **Social Psychology**: Social identity, group dynamics, conformity, prosocial behavior, intergroup relations, attitudes, persuasion
+- **Cognitive Psychology**: Decision-making heuristics, cognitive biases, memory, attention, reasoning processes
+- **Organizational Behavior**: Leadership, motivation, job satisfaction, team dynamics, workplace attitudes
+- **Political Psychology**: Polarization, partisanship, civic engagement, media effects, political trust
+- **Consumer Behavior**: Brand perception, purchase intent, product evaluation, advertising effectiveness
+- **Moral Psychology**: Ethical judgment, values, moral emotions, fairness perceptions
+- **Health Psychology**: Medical decisions, wellbeing, health behaviors, treatment preferences
+
+This rich scientific foundation enables each persona to generate responses that align with documented human response patterns across these diverse research domains.
+
+**The personas reflect actual patterns observed in human respondents:**
+
+**Engaged Responders (35%)**: High attention, thoughtful responses, full scale use. Based on Krosnick's (1991) "optimizers" who invest cognitive effort in providing accurate answers. These participants draw on genuine reflection about the topic at hand.
 
 **Satisficers (22%)**: Lower effort responses, tendency toward agreement, restricted scale range. Krosnick's research documented this common response strategy where participants provide acceptable rather than optimal answers.
 

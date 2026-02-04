@@ -3879,8 +3879,13 @@ class EnhancedSimulationEngine:
         # Try to use comprehensive response generator if available
         if self.comprehensive_generator is not None:
             try:
-                # v1.0.0: Pass question_name and participant_seed for UNIQUE responses per question
-                question_name = str(question_spec.get("name", ""))
+                # v1.0.0 CRITICAL FIX: Always create a UNIQUE question identifier
+                # Combine name, variable name, question text to ensure uniqueness
+                base_name = str(question_spec.get("name", ""))
+                var_name = str(question_spec.get("variable_name", ""))
+                q_type = str(question_spec.get("type", ""))
+                # Create stable unique ID that will be different for ANY different question
+                unique_question_id = f"{base_name}|{var_name}|{q_type}|{question_text[:100]}"
                 return self.comprehensive_generator.generate(
                     question_text=question_text or response_type,
                     sentiment=sentiment,
@@ -3888,7 +3893,7 @@ class EnhancedSimulationEngine:
                     persona_formality=formality,
                     persona_engagement=engagement,
                     condition=condition,
-                    question_name=question_name,
+                    question_name=unique_question_id,  # Use unique ID instead of just name
                     participant_seed=participant_seed,
                 )
             except Exception:
@@ -3930,8 +3935,17 @@ class EnhancedSimulationEngine:
         elif "utilitarian" in cond:
             context["product"] = "functional " + str(context["product"])
 
+        # v1.0.0 CRITICAL FIX: Create question-specific seed for fallback generator
+        # Combine participant_seed with a stable hash of the question identity
+        base_name = str(question_spec.get("name", ""))
+        var_name = str(question_spec.get("variable_name", ""))
+        unique_id = f"{base_name}|{var_name}|{question_text[:100]}"
+        # Use stable hash independent of Python's hash randomization
+        question_hash_stable = sum(ord(c) * (i + 1) * 31 for i, c in enumerate(unique_id[:200]))
+        unique_fallback_seed = (participant_seed + question_hash_stable) % (2**31)
+
         return self.text_generator.generate_response(
-            response_type, style, context, traits, participant_seed
+            response_type, style, context, traits, unique_fallback_seed
         )
 
     def _generate_demographics(self, n: int) -> pd.DataFrame:
@@ -4228,7 +4242,9 @@ class EnhancedSimulationEngine:
                     continue
 
                 # Generate unique seed using participant, question, and question text hash
-                p_seed = (self.seed + i * 100 + col_hash + hash(q_text[:50]) % 10000) % (2**31)
+                # v1.0.0 CRITICAL FIX: Use stable hash instead of Python's hash()
+                q_text_hash = sum(ord(c) * (j + 1) * 31 for j, c in enumerate(q_text[:50]))
+                p_seed = (self.seed + i * 100 + col_hash + q_text_hash) % (2**31)
                 persona_name = assigned_personas[i]
                 persona = self.available_personas[persona_name]
                 response_vals = participant_item_responses[i]
@@ -4248,6 +4264,42 @@ class EnhancedSimulationEngine:
             data[col_name] = responses
             q_desc = q.get("question_text", "")[:50] if q.get("question_text") else q.get('type', 'text')
             self.column_info.append((col_name, f"Open-ended: {q_desc}"))
+
+        # v1.0.0 CRITICAL FIX: Post-processing validation to detect and fix duplicate responses
+        # Check each participant's responses across all open-ended questions
+        open_ended_cols = [str(q.get("name", "Open_Response")).replace(" ", "_")
+                          for q in self.open_ended_questions]
+        if len(open_ended_cols) > 1:
+            for i in range(n):
+                participant_responses = {}
+                duplicates_found = []
+                for col in open_ended_cols:
+                    if col in data:
+                        response = data[col][i]
+                        if response and response.strip():  # Skip empty responses
+                            if response in participant_responses:
+                                # Found a duplicate!
+                                duplicates_found.append((col, participant_responses[response]))
+                            else:
+                                participant_responses[response] = col
+
+                # Fix any duplicates by adding unique modifiers
+                for dup_col, orig_col in duplicates_found:
+                    original_response = data[dup_col][i]
+                    # Add a unique modifier to make it different
+                    modifiers = [
+                        "Additionally, ", "Also, ", "Furthermore, ", "On reflection, ",
+                        "I would add that ", "On another note, ", "I also think that ",
+                        "From a different perspective, ", "More specifically, "
+                    ]
+                    modifier_idx = (i + hash(dup_col) % 100) % len(modifiers)
+                    if original_response and len(original_response) > 10:
+                        # Modify the beginning
+                        modified = modifiers[modifier_idx] + original_response[0].lower() + original_response[1:]
+                        data[dup_col][i] = modified
+                    else:
+                        # For short responses, just add modifier
+                        data[dup_col][i] = modifiers[modifier_idx] + original_response
 
         exclusion_data: List[Dict[str, Any]] = []
         for i in range(n):

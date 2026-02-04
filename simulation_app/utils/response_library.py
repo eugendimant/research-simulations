@@ -4343,10 +4343,16 @@ class ComprehensiveResponseGenerator:
         Returns:
             Generated response text
         """
-        # v1.0.0: Create a UNIQUE seed for this specific question-participant combination
-        # This ensures different questions get different responses even for the same participant
-        question_hash = hash(question_name + question_text) % (2**31) if question_name else hash(question_text) % (2**31)
-        unique_seed = (participant_seed + question_hash) % (2**31)
+        # v1.0.0 CRITICAL FIX: Create a UNIQUE seed using STABLE hash
+        # Python's hash() can vary between runs due to hash randomization
+        # Use a deterministic hash based on character ordinals
+        combined_id = f"{question_name}|{question_text}"
+        if combined_id:
+            # Stable hash that will be the same across Python runs
+            question_hash_stable = sum(ord(c) * (i + 1) * 31 for i, c in enumerate(combined_id[:200]))
+        else:
+            question_hash_stable = 0
+        unique_seed = (participant_seed + question_hash_stable) % (2**31)
 
         # Create a LOCAL random generator for this specific question
         # This is CRITICAL - we do NOT use the global random module
