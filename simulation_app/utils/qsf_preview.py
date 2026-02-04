@@ -2397,7 +2397,8 @@ class QSFPreviewParser:
 
             # Check for specific instructed responses in choices
             if not is_attention and q_info.choices:
-                choices_text = ' '.join(c.lower() for c in q_info.choices if c)
+                # Convert all choices to strings before calling lower() (choices can be int/dict/etc)
+                choices_text = ' '.join(str(c).lower() for c in q_info.choices if c)
                 if 'please select this' in choices_text or 'choose this option' in choices_text:
                     is_attention = True
 
