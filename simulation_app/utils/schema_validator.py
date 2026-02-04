@@ -107,11 +107,14 @@ def validate_schema(
 
         # Check balanced allocation
         condition_counts = df['CONDITION'].value_counts()
-        expected_per_condition = expected_n // len(expected_conditions)
+        # v1.0.0: Guard against division by zero when no expected conditions
+        n_expected_conditions = max(len(expected_conditions), 1)
+        expected_per_condition = expected_n // n_expected_conditions
 
         unbalanced = []
         for cond, count in condition_counts.items():
-            deviation = abs(count - expected_per_condition) / expected_per_condition
+            # v1.0.0: Guard against division by zero
+            deviation = abs(count - expected_per_condition) / max(expected_per_condition, 1)
             if deviation > 0.1:  # More than 10% deviation
                 unbalanced.append(f"{cond}: {count} (expected ~{expected_per_condition})")
 
@@ -417,8 +420,11 @@ def check_data_quality(df: pd.DataFrame) -> Dict[str, Any]:
     # Check balanced conditions
     if 'CONDITION' in df.columns:
         condition_counts = df['CONDITION'].value_counts()
-        expected_per = len(df) / len(condition_counts)
-        max_deviation = max(abs(c - expected_per) / expected_per for c in condition_counts.values)
+        # v1.0.0: Guard against division by zero
+        n_conditions = max(len(condition_counts), 1)
+        expected_per = len(df) / n_conditions
+        expected_per_safe = max(expected_per, 1)
+        max_deviation = max((abs(c - expected_per) / expected_per_safe for c in condition_counts.values), default=0)
 
         quality['metrics']['condition_balance'] = 1 - max_deviation
 

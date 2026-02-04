@@ -262,8 +262,12 @@ def _numpy_shapiro(data: np.ndarray) -> Tuple[float, float]:
 
     # D'Agostino-Pearson test approximation
     # Combine skewness and kurtosis into a test statistic
-    z_skew = skew * math.sqrt((n + 1) * (n + 3) / (6 * (n - 2)))
-    z_kurt = kurt / math.sqrt(24 * n * (n - 2) * (n - 3) / ((n + 1)**2 * (n + 3) * (n + 5)))
+    # v1.0.0: Guard against division issues with small samples
+    skew_denom = 6 * max(n - 2, 1)
+    z_skew = skew * math.sqrt((n + 1) * (n + 3) / skew_denom)
+    kurt_denom = (n + 1)**2 * (n + 3) * (n + 5)
+    kurt_numer = 24 * n * max(n - 2, 1) * max(n - 3, 1)
+    z_kurt = kurt / math.sqrt(kurt_numer / max(kurt_denom, 1)) if kurt_denom > 0 else 0
 
     k2 = z_skew**2 + z_kurt**2
     p_value = 1 - _chi2_cdf(k2, 2)
