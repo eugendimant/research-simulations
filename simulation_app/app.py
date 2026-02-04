@@ -1730,7 +1730,7 @@ SYSTEM INFO:
 - Study Title: {st.session_state.get('study_title', 'N/A')}
 """
 
-                # Try to send via SendGrid if configured
+                # Try to send via SMTP
                 ok, msg = _send_email(
                     to_email=FEEDBACK_EMAIL,
                     subject=subject,
@@ -6039,14 +6039,17 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
             # Get usage stats for internal tracking
             usage_summary = _get_usage_summary()
 
-            # Check if SendGrid is configured before attempting to send
-            api_key = st.secrets.get("SENDGRID_API_KEY", "")
-            from_email_configured = st.secrets.get("SENDGRID_FROM_EMAIL", "")
+            # Check if SMTP email is configured before attempting to send
+            smtp_configured = (
+                st.secrets.get("SMTP_SERVER", "") and
+                st.secrets.get("SMTP_USERNAME", "") and
+                st.secrets.get("SMTP_PASSWORD", "")
+            )
 
-            if not api_key or not from_email_configured:
-                st.warning(
-                    f"Email notification to instructor ({instructor_email}) skipped: SendGrid not configured. "
-                    "To enable automatic emails, configure SENDGRID_API_KEY and SENDGRID_FROM_EMAIL in Streamlit secrets."
+            if not smtp_configured:
+                st.info(
+                    f"Email notification skipped: SMTP not configured. "
+                    "Download the ZIP file manually."
                 )
             else:
                 body = (
@@ -6099,12 +6102,6 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
                     st.success(f"Instructor auto-email sent to {instructor_email}.")
                 else:
                     st.error(f"Instructor auto-email failed: {msg}")
-                    # Show diagnostic info to help debug
-                    with st.expander("Email troubleshooting"):
-                        st.markdown(f"- **To:** {instructor_email}")
-                        st.markdown(f"- **From:** {from_email_configured[:20]}...")
-                        st.markdown(f"- **Error:** {msg}")
-                        st.markdown("Check SendGrid dashboard for delivery status and any bounces.")
 
             progress_bar.progress(100, text="Simulation ready.")
             status_placeholder.success("Simulation complete.")
