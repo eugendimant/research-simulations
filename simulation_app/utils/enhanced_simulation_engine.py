@@ -755,6 +755,991 @@ def _validate_survey_flow(
     }
 
 
+# =============================================================================
+# ITERATION 1: CONDITION SEMANTIC PARSING
+# =============================================================================
+# Parse condition names to extract semantic meaning for effect direction
+
+POSITIVE_VALENCE_KEYWORDS = {
+    'high', 'positive', 'good', 'love', 'lover', 'friend', 'prosocial',
+    'generous', 'kind', 'warm', 'trust', 'trusting', 'hedonic', 'pleasure',
+    'reward', 'gain', 'win', 'success', 'treatment', 'experimental', 'active',
+    'present', 'yes', 'true', 'included', 'with', 'pro', 'support', 'agree',
+    'accept', 'benefit', 'advantage', 'superior', 'enhanced', 'improved'
+}
+
+NEGATIVE_VALENCE_KEYWORDS = {
+    'low', 'negative', 'bad', 'hate', 'hater', 'enemy', 'antisocial',
+    'selfish', 'cruel', 'cold', 'distrust', 'distrusting', 'utilitarian',
+    'practical', 'loss', 'lose', 'failure', 'control', 'placebo', 'inactive',
+    'absent', 'no', 'false', 'excluded', 'without', 'anti', 'oppose', 'disagree',
+    'reject', 'cost', 'disadvantage', 'inferior', 'reduced', 'diminished'
+}
+
+NEUTRAL_KEYWORDS = {
+    'neutral', 'baseline', 'middle', 'moderate', 'average', 'standard',
+    'normal', 'typical', 'default', 'reference', 'comparison'
+}
+
+
+def _parse_condition_semantics(condition: str) -> Dict[str, Any]:
+    """
+    Parse semantic meaning from condition names.
+
+    Extracts:
+    - Valence direction (positive/negative/neutral)
+    - Factor levels for factorial designs
+    - Manipulation type (AI/human, hedonic/utilitarian, etc.)
+    - Intensity indicators (high/low, strong/weak)
+
+    Args:
+        condition: Condition name string
+
+    Returns:
+        Dict with semantic properties
+    """
+    cond_lower = condition.lower()
+    cond_parts = cond_lower.replace('×', ' ').replace('_', ' ').replace('-', ' ').split()
+
+    semantics = {
+        'original': condition,
+        'valence': 0.0,  # -1 to +1 scale
+        'factors': [],
+        'manipulation_type': None,
+        'intensity': 0.5,  # 0 to 1 scale
+        'is_control': False,
+        'is_treatment': False,
+        'keywords_found': []
+    }
+
+    # Check for positive/negative keywords
+    positive_count = 0
+    negative_count = 0
+
+    for part in cond_parts:
+        if part in POSITIVE_VALENCE_KEYWORDS:
+            positive_count += 1
+            semantics['keywords_found'].append((part, 'positive'))
+        elif part in NEGATIVE_VALENCE_KEYWORDS:
+            negative_count += 1
+            semantics['keywords_found'].append((part, 'negative'))
+        elif part in NEUTRAL_KEYWORDS:
+            semantics['keywords_found'].append((part, 'neutral'))
+
+    # Calculate valence
+    total = positive_count + negative_count
+    if total > 0:
+        semantics['valence'] = (positive_count - negative_count) / total
+
+    # Check for control/treatment
+    control_indicators = ['control', 'baseline', 'placebo', 'no', 'without', 'absent']
+    treatment_indicators = ['treatment', 'experimental', 'active', 'with', 'present']
+
+    semantics['is_control'] = any(ind in cond_lower for ind in control_indicators)
+    semantics['is_treatment'] = any(ind in cond_lower for ind in treatment_indicators)
+
+    # Detect manipulation type
+    manipulation_types = {
+        'ai_human': ['ai', 'algorithm', 'robot', 'human', 'person', 'manual'],
+        'hedonic_utilitarian': ['hedonic', 'utilitarian', 'pleasure', 'practical'],
+        'high_low': ['high', 'low', 'strong', 'weak'],
+        'gain_loss': ['gain', 'loss', 'reward', 'punishment'],
+        'individual_group': ['individual', 'personal', 'group', 'collective'],
+        'political': ['trump', 'biden', 'democrat', 'republican', 'liberal', 'conservative']
+    }
+
+    for manip_type, keywords in manipulation_types.items():
+        if any(kw in cond_lower for kw in keywords):
+            semantics['manipulation_type'] = manip_type
+            break
+
+    # Parse factorial structure
+    separators = ['×', ' x ', '_x_', ' × ', ' vs ', ' vs. ']
+    for sep in separators:
+        if sep in cond_lower:
+            semantics['factors'] = [p.strip() for p in cond_lower.split(sep)]
+            break
+
+    if not semantics['factors']:
+        semantics['factors'] = [cond_lower]
+
+    return semantics
+
+
+# =============================================================================
+# ITERATION 2: SCALE RELIABILITY SIMULATION
+# =============================================================================
+# Simulate realistic scale reliability (Cronbach's alpha) through correlated items
+
+def _generate_correlated_items(
+    n_items: int,
+    base_response: float,
+    target_alpha: float,
+    scale_points: int,
+    reverse_items: List[int],
+    rng: np.random.RandomState
+) -> List[int]:
+    """
+    Generate correlated scale items to achieve target Cronbach's alpha.
+
+    Uses a factor model approach where items share common variance
+    determined by the target reliability.
+
+    Args:
+        n_items: Number of scale items
+        base_response: Base response tendency (0-1 scale)
+        target_alpha: Target Cronbach's alpha (typically 0.70-0.90)
+        scale_points: Number of scale points
+        reverse_items: List of 1-indexed item numbers that are reverse-coded
+        rng: Random number generator
+
+    Returns:
+        List of integer responses for each item
+    """
+    # Calculate factor loading from target alpha
+    # alpha = n * r_bar / (1 + (n-1) * r_bar)
+    # Solving for r_bar: r_bar = alpha / (n - alpha * (n-1))
+    if n_items <= 1:
+        response = int(np.clip(round(base_response * (scale_points - 1) + 1), 1, scale_points))
+        return [response]
+
+    # Average inter-item correlation needed
+    r_bar = target_alpha / (n_items - target_alpha * (n_items - 1))
+    r_bar = np.clip(r_bar, 0.1, 0.9)
+
+    # Factor loading (sqrt of shared variance)
+    factor_loading = np.sqrt(r_bar)
+    unique_loading = np.sqrt(1 - r_bar)
+
+    # Generate common factor score
+    common_factor = rng.normal(0, 1)
+
+    # Generate item responses
+    responses = []
+    for i in range(n_items):
+        # True score = common factor + unique variance
+        true_score = factor_loading * common_factor + unique_loading * rng.normal(0, 1)
+
+        # Transform to response scale
+        # Base response determines the mean
+        mean_response = base_response * (scale_points - 1) + 1
+        sd_response = (scale_points - 1) / 4  # Approximate SD
+
+        raw_response = mean_response + true_score * sd_response
+
+        # Handle reverse coding
+        item_num = i + 1
+        if item_num in reverse_items:
+            raw_response = (scale_points + 1) - raw_response
+
+        # Clip and round to valid scale point
+        response = int(np.clip(round(raw_response), 1, scale_points))
+        responses.append(response)
+
+    return responses
+
+
+# =============================================================================
+# ITERATION 3: CARELESS RESPONSE PATTERN DETECTION
+# =============================================================================
+# Detect and flag various careless response patterns
+
+def _detect_careless_patterns(
+    responses: List[int],
+    scale_points: int = 7
+) -> Dict[str, Any]:
+    """
+    Detect careless responding patterns in a set of responses.
+
+    Detects:
+    - Straight-lining (same response repeated)
+    - Alternating patterns (1-7-1-7 or similar)
+    - Midpoint responding (always choosing middle)
+    - Extreme responding (always choosing endpoints)
+    - Random responding (high variability with no consistency)
+
+    Args:
+        responses: List of scale responses
+        scale_points: Number of scale points
+
+    Returns:
+        Dict with pattern detection results and flags
+    """
+    if len(responses) < 3:
+        return {'careless_detected': False, 'patterns': [], 'confidence': 0.0}
+
+    patterns = []
+    confidence = 0.0
+
+    # 1. Straight-line detection
+    max_streak = 1
+    current_streak = 1
+    for i in range(1, len(responses)):
+        if responses[i] == responses[i-1]:
+            current_streak += 1
+            max_streak = max(max_streak, current_streak)
+        else:
+            current_streak = 1
+
+    straight_line_ratio = max_streak / len(responses)
+    if max_streak >= 5 or straight_line_ratio > 0.7:
+        patterns.append('straight_line')
+        confidence = max(confidence, straight_line_ratio)
+
+    # 2. Alternating pattern detection
+    alternating_count = 0
+    for i in range(2, len(responses)):
+        if responses[i] == responses[i-2] and responses[i] != responses[i-1]:
+            alternating_count += 1
+
+    alternating_ratio = alternating_count / max(len(responses) - 2, 1)
+    if alternating_ratio > 0.6:
+        patterns.append('alternating')
+        confidence = max(confidence, alternating_ratio)
+
+    # 3. Midpoint responding
+    midpoint = (scale_points + 1) / 2
+    midpoint_count = sum(1 for r in responses if abs(r - midpoint) < 0.6)
+    midpoint_ratio = midpoint_count / len(responses)
+    if midpoint_ratio > 0.8:
+        patterns.append('midpoint')
+        confidence = max(confidence, midpoint_ratio)
+
+    # 4. Extreme responding
+    extreme_count = sum(1 for r in responses if r in [1, scale_points])
+    extreme_ratio = extreme_count / len(responses)
+    if extreme_ratio > 0.7:
+        patterns.append('extreme')
+        confidence = max(confidence, extreme_ratio)
+
+    # 5. Random responding (low consistency)
+    if len(responses) >= 4:
+        variance = np.var(responses)
+        expected_variance = ((scale_points - 1) ** 2) / 12  # Uniform distribution variance
+        if variance > expected_variance * 1.5:
+            # High variance might indicate random responding
+            # But we need additional checks
+            pass
+
+    return {
+        'careless_detected': len(patterns) > 0,
+        'patterns': patterns,
+        'confidence': confidence,
+        'max_straight_line': max_streak,
+        'alternating_ratio': alternating_ratio,
+        'midpoint_ratio': midpoint_ratio,
+        'extreme_ratio': extreme_ratio
+    }
+
+
+# =============================================================================
+# ITERATION 4: EFFECT SIZE CALIBRATION VALIDATION
+# =============================================================================
+# Validate that generated data achieves target effect sizes
+
+def _validate_effect_sizes(
+    data: pd.DataFrame,
+    conditions: List[str],
+    target_d: float,
+    dv_columns: List[str]
+) -> Dict[str, Any]:
+    """
+    Validate that generated data achieves target Cohen's d effect sizes.
+
+    Args:
+        data: Generated DataFrame
+        conditions: List of condition names
+        target_d: Target Cohen's d
+        dv_columns: Columns containing dependent variables
+
+    Returns:
+        Validation results with actual vs target effect sizes
+    """
+    results = {
+        'target_d': target_d,
+        'achieved_effects': {},
+        'within_tolerance': True,
+        'tolerance': 0.15  # Acceptable deviation
+    }
+
+    if len(conditions) < 2 or 'CONDITION' not in data.columns:
+        return results
+
+    # Compare first two conditions (or treatment vs control)
+    cond1, cond2 = conditions[0], conditions[1]
+
+    for col in dv_columns:
+        if col not in data.columns:
+            continue
+
+        try:
+            group1 = data[data['CONDITION'] == cond1][col].dropna().astype(float)
+            group2 = data[data['CONDITION'] == cond2][col].dropna().astype(float)
+
+            if len(group1) < 2 or len(group2) < 2:
+                continue
+
+            # Calculate Cohen's d
+            mean1, mean2 = group1.mean(), group2.mean()
+            sd_pooled = np.sqrt(((len(group1)-1)*group1.var() + (len(group2)-1)*group2.var()) /
+                               (len(group1) + len(group2) - 2))
+
+            if sd_pooled > 0:
+                achieved_d = abs(mean1 - mean2) / sd_pooled
+                results['achieved_effects'][col] = {
+                    'achieved_d': round(achieved_d, 3),
+                    'target_d': target_d,
+                    'deviation': round(abs(achieved_d - target_d), 3),
+                    'mean_diff': round(mean1 - mean2, 3),
+                    'within_tolerance': abs(achieved_d - target_d) <= results['tolerance']
+                }
+
+                if not results['achieved_effects'][col]['within_tolerance']:
+                    results['within_tolerance'] = False
+
+        except Exception:
+            continue
+
+    return results
+
+
+# =============================================================================
+# ITERATION 5: CROSS-CULTURAL RESPONSE STYLE MODELING
+# =============================================================================
+# Model cultural differences in response styles
+
+CULTURAL_RESPONSE_STYLES = {
+    'western_individualist': {
+        'description': 'Western individualist cultures (US, UK, Australia)',
+        'acquiescence_bias': 0.52,  # Slight agreement bias
+        'extreme_responding': 0.35,  # Moderate extreme responding
+        'midpoint_avoidance': 0.40,  # Tend to avoid midpoint
+        'social_desirability': 0.45,
+        'response_elaboration': 0.60  # Longer open-ended responses
+    },
+    'east_asian': {
+        'description': 'East Asian cultures (China, Japan, Korea)',
+        'acquiescence_bias': 0.48,  # Less acquiescence
+        'extreme_responding': 0.20,  # Lower extreme responding
+        'midpoint_avoidance': 0.25,  # More likely to use midpoint
+        'social_desirability': 0.60,  # Higher social desirability
+        'response_elaboration': 0.40  # More concise responses
+    },
+    'latin_american': {
+        'description': 'Latin American cultures (Mexico, Brazil, Argentina)',
+        'acquiescence_bias': 0.58,  # Higher agreement bias
+        'extreme_responding': 0.50,  # Higher extreme responding
+        'midpoint_avoidance': 0.50,
+        'social_desirability': 0.55,
+        'response_elaboration': 0.70  # More elaborate responses
+    },
+    'middle_eastern': {
+        'description': 'Middle Eastern cultures (UAE, Saudi Arabia, Egypt)',
+        'acquiescence_bias': 0.55,
+        'extreme_responding': 0.45,
+        'midpoint_avoidance': 0.45,
+        'social_desirability': 0.65,
+        'response_elaboration': 0.55
+    }
+}
+
+
+def _apply_cultural_response_style(
+    base_response: float,
+    scale_points: int,
+    cultural_style: str,
+    rng: np.random.RandomState
+) -> int:
+    """
+    Apply cultural response style adjustments to a base response.
+
+    Args:
+        base_response: Base response (0-1 scale)
+        scale_points: Number of scale points
+        cultural_style: Key from CULTURAL_RESPONSE_STYLES
+        rng: Random number generator
+
+    Returns:
+        Adjusted response as integer scale point
+    """
+    style = CULTURAL_RESPONSE_STYLES.get(cultural_style, CULTURAL_RESPONSE_STYLES['western_individualist'])
+
+    # Transform base response to scale
+    raw = base_response * (scale_points - 1) + 1
+
+    # Apply acquiescence bias (shift toward agreement/positive)
+    acquiescence_shift = (style['acquiescence_bias'] - 0.5) * (scale_points - 1) * 0.2
+    raw += acquiescence_shift
+
+    # Apply extreme responding tendency
+    midpoint = (scale_points + 1) / 2
+    if rng.random() < style['extreme_responding']:
+        # Push toward extremes
+        if raw > midpoint:
+            raw = raw + (scale_points - raw) * 0.4
+        else:
+            raw = raw - (raw - 1) * 0.4
+
+    # Apply midpoint avoidance
+    if style['midpoint_avoidance'] > 0.5 and abs(raw - midpoint) < 0.5:
+        if rng.random() < style['midpoint_avoidance'] - 0.5:
+            # Shift away from midpoint
+            raw += rng.choice([-0.5, 0.5])
+
+    return int(np.clip(round(raw), 1, scale_points))
+
+
+# =============================================================================
+# ITERATION 6: OPEN-ENDED RESPONSE DIVERSITY ENHANCEMENT
+# =============================================================================
+# Generate more diverse and unique open-ended responses
+
+RESPONSE_TEMPLATES_BY_DOMAIN = {
+    'ai_technology': {
+        'positive': [
+            "I found the AI-generated recommendations to be {adjective}. The system seemed to {verb} my preferences well.",
+            "The algorithm {verb} relevant suggestions. I appreciated how it {action}.",
+            "Overall, I'm {sentiment} with how the technology {verb} my needs. It felt {adjective}.",
+        ],
+        'negative': [
+            "I was {sentiment} by the AI's recommendations. They seemed {adjective} and didn't {verb} what I was looking for.",
+            "The algorithm felt {adjective}. I wished it could have {action} better.",
+            "I found the technology to be {adjective}. It {verb} my actual preferences.",
+        ],
+        'neutral': [
+            "The AI recommendations were {adjective}. Some were helpful while others {verb} the mark.",
+            "I had mixed feelings about the algorithm. It {verb} in some areas but {action} in others.",
+        ]
+    },
+    'consumer_behavior': {
+        'positive': [
+            "I {verb} the product. It {adjective} exceeded my expectations in terms of {quality}.",
+            "The {product_aspect} was {adjective}. I would {action} this to others.",
+            "Overall, a {adjective} experience. The {quality} really stood out.",
+        ],
+        'negative': [
+            "I was {sentiment} with the product. The {quality} was {adjective}.",
+            "The {product_aspect} {verb} to meet my expectations. It felt {adjective}.",
+            "Not {adjective} overall. The {quality} needs improvement.",
+        ],
+        'neutral': [
+            "The product was {adjective}. It {verb} its purpose but nothing {adjective}.",
+            "Mixed feelings - the {quality} was fine but the {product_aspect} could be {adjective}.",
+        ]
+    },
+    'social_psychology': {
+        'positive': [
+            "I felt {adjective} about the interaction. The other person seemed {trait}.",
+            "The experience was {adjective}. It made me feel {emotion}.",
+            "I {verb} the social aspect. People appeared {adjective} and {trait}.",
+        ],
+        'negative': [
+            "I felt {emotion} during the interaction. The situation seemed {adjective}.",
+            "The experience was {adjective}. It left me feeling {emotion}.",
+            "I {verb} uncomfortable. The atmosphere felt {adjective}.",
+        ],
+        'neutral': [
+            "The interaction was {adjective}. I didn't feel strongly either way.",
+            "A {adjective} experience overall. Nothing particularly {trait}.",
+        ]
+    },
+    'political': {
+        'positive': [
+            "I {verb} with this perspective. It seems {adjective} and {trait}.",
+            "The position is {adjective}. I appreciate how it {action}.",
+            "I find this view {adjective}. It {verb} with my values.",
+        ],
+        'negative': [
+            "I {verb} with this perspective. It seems {adjective} and fails to {action}.",
+            "This position is {adjective}. It doesn't {verb} the real issues.",
+            "I find this view {adjective} and {trait}.",
+        ],
+        'neutral': [
+            "I have mixed feelings about this. Some points are {adjective} while others {verb} consideration.",
+            "This perspective has both {adjective} and {adjective} aspects.",
+        ]
+    }
+}
+
+WORD_BANKS = {
+    'adjective_positive': ['excellent', 'impressive', 'helpful', 'intuitive', 'effective', 'valuable',
+                          'thoughtful', 'accurate', 'responsive', 'innovative', 'reliable', 'satisfying'],
+    'adjective_negative': ['disappointing', 'frustrating', 'confusing', 'inaccurate', 'unhelpful',
+                          'limited', 'generic', 'impersonal', 'unreliable', 'underwhelming'],
+    'adjective_neutral': ['adequate', 'acceptable', 'standard', 'typical', 'moderate', 'ordinary'],
+    'verb_positive': ['understood', 'captured', 'addressed', 'enhanced', 'improved', 'recognized'],
+    'verb_negative': ['missed', 'ignored', 'failed', 'overlooked', 'misunderstood', 'neglected'],
+    'verb_neutral': ['met', 'served', 'provided', 'delivered', 'offered', 'presented'],
+    'emotion_positive': ['satisfied', 'pleased', 'impressed', 'confident', 'comfortable', 'optimistic'],
+    'emotion_negative': ['frustrated', 'disappointed', 'concerned', 'uncomfortable', 'skeptical'],
+    'trait_positive': ['genuine', 'trustworthy', 'competent', 'approachable', 'transparent'],
+    'trait_negative': ['dismissive', 'insincere', 'unreliable', 'distant', 'opaque']
+}
+
+
+def _generate_diverse_open_ended(
+    question_text: str,
+    domain: str,
+    valence: str,
+    persona_traits: Dict[str, float],
+    condition: str,
+    rng: np.random.RandomState
+) -> str:
+    """
+    Generate diverse, contextually appropriate open-ended responses.
+
+    Args:
+        question_text: The question being answered
+        domain: Study domain (ai_technology, consumer_behavior, etc.)
+        valence: Response valence (positive, negative, neutral)
+        persona_traits: Persona characteristics
+        condition: Current experimental condition
+        rng: Random number generator
+
+    Returns:
+        Generated response text
+    """
+    # Select appropriate template set
+    templates = RESPONSE_TEMPLATES_BY_DOMAIN.get(
+        domain,
+        RESPONSE_TEMPLATES_BY_DOMAIN['social_psychology']
+    ).get(valence, [])
+
+    if not templates:
+        templates = ["I found this to be an interesting experience."]
+
+    # Select template
+    template = rng.choice(templates)
+
+    # Fill in template with appropriate words
+    verbosity = persona_traits.get('verbosity', 0.5)
+
+    def get_word(category, sentiment):
+        if sentiment == 'positive':
+            words = WORD_BANKS.get(f'{category}_positive', WORD_BANKS.get(category, ['good']))
+        elif sentiment == 'negative':
+            words = WORD_BANKS.get(f'{category}_negative', WORD_BANKS.get(category, ['poor']))
+        else:
+            words = WORD_BANKS.get(f'{category}_neutral', WORD_BANKS.get(category, ['okay']))
+        return rng.choice(words)
+
+    # Replace placeholders
+    response = template
+    response = response.replace('{adjective}', get_word('adjective', valence))
+    response = response.replace('{verb}', get_word('verb', valence))
+    response = response.replace('{emotion}', get_word('emotion', valence))
+    response = response.replace('{trait}', get_word('trait', valence))
+    response = response.replace('{sentiment}', get_word('emotion', valence))
+    response = response.replace('{action}', get_word('verb', valence))
+    response = response.replace('{quality}', rng.choice(['quality', 'functionality', 'design', 'performance']))
+    response = response.replace('{product_aspect}', rng.choice(['overall experience', 'main features', 'user interface']))
+
+    # Add elaboration based on verbosity
+    if verbosity > 0.7:
+        elaborations = [
+            f" I think this is particularly relevant given {condition.lower()}.",
+            " This aligns with my expectations.",
+            " I would be interested to see how this develops.",
+        ]
+        response += rng.choice(elaborations)
+
+    return response
+
+
+# =============================================================================
+# ITERATION 7: ENHANCED FACTORIAL DESIGN SUPPORT
+# =============================================================================
+# Better support for complex factorial designs (2x2, 2x3, 3x3, etc.)
+
+def _parse_factorial_design(conditions: List[str]) -> Dict[str, Any]:
+    """
+    Parse factorial design structure from condition names.
+
+    Detects and extracts:
+    - Number of factors
+    - Levels per factor
+    - Main effects
+    - Interaction structure
+
+    Args:
+        conditions: List of condition names
+
+    Returns:
+        Factorial design specification
+    """
+    design = {
+        'is_factorial': False,
+        'factors': {},
+        'n_factors': 0,
+        'design_string': '',
+        'cell_structure': {},
+        'main_effect_conditions': {},
+        'interaction_cells': []
+    }
+
+    # Common factorial separators
+    separators = ['×', ' x ', '_x_', ' × ', ' X ']
+
+    # Try to parse each condition
+    all_factors = {}
+    cells = []
+
+    for cond in conditions:
+        parts = None
+        used_sep = None
+        for sep in separators:
+            if sep in cond.lower():
+                parts = [p.strip() for p in cond.split(sep)]
+                used_sep = sep
+                break
+
+        if parts and len(parts) >= 2:
+            cells.append({
+                'condition': cond,
+                'factors': parts
+            })
+
+            for i, part in enumerate(parts):
+                factor_name = f'Factor_{i+1}'
+                if factor_name not in all_factors:
+                    all_factors[factor_name] = set()
+                all_factors[factor_name].add(part.lower())
+
+    if len(all_factors) >= 2:
+        design['is_factorial'] = True
+        design['factors'] = {k: list(v) for k, v in all_factors.items()}
+        design['n_factors'] = len(all_factors)
+
+        # Create design string (e.g., "2x2", "2x3")
+        levels = [len(v) for v in all_factors.values()]
+        design['design_string'] = 'x'.join(str(l) for l in levels)
+
+        # Structure cells
+        for cell in cells:
+            cell_key = tuple(f.lower() for f in cell['factors'])
+            design['cell_structure'][cell_key] = cell['condition']
+
+        # Identify main effect conditions (vary only one factor)
+        for factor_name, levels in design['factors'].items():
+            design['main_effect_conditions'][factor_name] = []
+            for level in levels:
+                matching = [c for c in conditions if level in c.lower()]
+                design['main_effect_conditions'][factor_name].extend(matching)
+
+    return design
+
+
+def _compute_factorial_effects(
+    data: pd.DataFrame,
+    factorial_design: Dict[str, Any],
+    dv_column: str
+) -> Dict[str, Any]:
+    """
+    Compute main effects and interactions for factorial design.
+
+    Args:
+        data: DataFrame with CONDITION column and DV
+        factorial_design: Parsed factorial structure
+        dv_column: Name of dependent variable column
+
+    Returns:
+        Effect estimates for main effects and interactions
+    """
+    effects = {
+        'main_effects': {},
+        'interactions': {},
+        'cell_means': {}
+    }
+
+    if not factorial_design['is_factorial'] or dv_column not in data.columns:
+        return effects
+
+    # Calculate cell means
+    for cond in data['CONDITION'].unique():
+        cell_data = data[data['CONDITION'] == cond][dv_column].dropna()
+        if len(cell_data) > 0:
+            effects['cell_means'][cond] = {
+                'mean': round(cell_data.mean(), 3),
+                'sd': round(cell_data.std(), 3),
+                'n': len(cell_data)
+            }
+
+    # Calculate main effects
+    for factor_name, levels in factorial_design['factors'].items():
+        if len(levels) >= 2:
+            level_means = []
+            for level in levels:
+                matching_conds = [c for c in data['CONDITION'].unique()
+                                 if level in c.lower()]
+                level_data = data[data['CONDITION'].isin(matching_conds)][dv_column].dropna()
+                if len(level_data) > 0:
+                    level_means.append((level, level_data.mean()))
+
+            if len(level_means) >= 2:
+                effects['main_effects'][factor_name] = {
+                    'level_means': {l: round(m, 3) for l, m in level_means},
+                    'effect_size': round(abs(level_means[0][1] - level_means[1][1]), 3)
+                }
+
+    return effects
+
+
+# =============================================================================
+# ITERATION 8: RESPONSE CONSISTENCY MODELING
+# =============================================================================
+# Model within-person consistency across similar items
+
+def _generate_consistent_responses(
+    n_items: int,
+    base_tendency: float,
+    consistency_level: float,
+    scale_points: int,
+    item_similarities: Optional[List[List[float]]],
+    rng: np.random.RandomState
+) -> List[int]:
+    """
+    Generate responses with realistic within-person consistency.
+
+    Similar items should have correlated responses. This models the
+    fact that people tend to respond consistently to items measuring
+    the same construct.
+
+    Args:
+        n_items: Number of items
+        base_tendency: Base response tendency (0-1)
+        consistency_level: How consistent responses should be (0-1)
+        scale_points: Number of scale points
+        item_similarities: Optional NxN matrix of item similarities
+        rng: Random number generator
+
+    Returns:
+        List of integer responses
+    """
+    if n_items <= 0:
+        return []
+
+    # Generate latent person-level trait
+    trait = rng.normal(base_tendency, 0.15)
+
+    # Generate item-specific deviations
+    # High consistency = low item-specific variance
+    item_variance = (1 - consistency_level) * 0.3
+
+    responses = []
+    previous_response = None
+
+    for i in range(n_items):
+        # Base response from trait
+        item_tendency = trait
+
+        # Add item-specific deviation
+        item_tendency += rng.normal(0, item_variance)
+
+        # If there are item similarities, incorporate those
+        if item_similarities and previous_response is not None and i > 0:
+            # Pull toward previous response based on similarity
+            similarity = item_similarities[i-1][i] if i < len(item_similarities) else 0.5
+            prev_normalized = (previous_response - 1) / (scale_points - 1)
+            item_tendency = item_tendency * (1 - similarity * 0.3) + prev_normalized * similarity * 0.3
+
+        # Convert to scale response
+        raw = item_tendency * (scale_points - 1) + 1
+        response = int(np.clip(round(raw), 1, scale_points))
+        responses.append(response)
+        previous_response = response
+
+    return responses
+
+
+# =============================================================================
+# ITERATION 9: HEATMAP AND SPECIAL QUESTION TYPE HANDLING
+# =============================================================================
+# Handle special question types found in QSF analysis: HeatMap, RO, FileUpload
+
+def _generate_heatmap_response(
+    image_width: int,
+    image_height: int,
+    n_clicks: int,
+    attention_level: float,
+    condition_focus: Optional[str],
+    rng: np.random.RandomState
+) -> List[Dict[str, int]]:
+    """
+    Generate simulated heatmap click coordinates.
+
+    Args:
+        image_width: Width of image in pixels
+        image_height: Height of image in pixels
+        n_clicks: Number of clicks to generate
+        attention_level: Participant attention (affects click spread)
+        condition_focus: Optional area of focus (e.g., 'center', 'left', 'product')
+        rng: Random number generator
+
+    Returns:
+        List of {x, y} coordinate dictionaries
+    """
+    clicks = []
+
+    # Determine focus area
+    if condition_focus == 'center':
+        center_x, center_y = image_width / 2, image_height / 2
+        spread_x, spread_y = image_width * 0.3, image_height * 0.3
+    elif condition_focus == 'left':
+        center_x, center_y = image_width * 0.25, image_height / 2
+        spread_x, spread_y = image_width * 0.2, image_height * 0.4
+    elif condition_focus == 'right':
+        center_x, center_y = image_width * 0.75, image_height / 2
+        spread_x, spread_y = image_width * 0.2, image_height * 0.4
+    else:
+        # Default: slightly center-biased
+        center_x, center_y = image_width / 2, image_height / 2
+        spread_x, spread_y = image_width * 0.35, image_height * 0.35
+
+    # Attention affects spread (lower attention = more random)
+    spread_multiplier = 1.5 - attention_level
+
+    for _ in range(n_clicks):
+        x = rng.normal(center_x, spread_x * spread_multiplier)
+        y = rng.normal(center_y, spread_y * spread_multiplier)
+
+        # Clip to image bounds
+        x = int(np.clip(x, 0, image_width - 1))
+        y = int(np.clip(y, 0, image_height - 1))
+
+        clicks.append({'x': x, 'y': y})
+
+    return clicks
+
+
+def _generate_rank_order_response(
+    items: List[str],
+    preferences: Dict[str, float],
+    attention_level: float,
+    rng: np.random.RandomState
+) -> List[str]:
+    """
+    Generate rank ordering of items based on preferences.
+
+    Args:
+        items: List of items to rank
+        preferences: Dict mapping item -> preference score (0-1)
+        attention_level: Affects ranking consistency
+        rng: Random number generator
+
+    Returns:
+        Items in ranked order (first = most preferred)
+    """
+    if not items:
+        return []
+
+    # Get preference scores with noise
+    scored_items = []
+    for item in items:
+        base_score = preferences.get(item, 0.5)
+        # Add noise inversely proportional to attention
+        noise = rng.normal(0, 0.2 * (1 - attention_level))
+        scored_items.append((item, base_score + noise))
+
+    # Sort by score (descending)
+    scored_items.sort(key=lambda x: x[1], reverse=True)
+
+    return [item for item, score in scored_items]
+
+
+# =============================================================================
+# ITERATION 10: COMPREHENSIVE DATA QUALITY METRICS
+# =============================================================================
+# Generate comprehensive data quality metrics for validation
+
+def _compute_data_quality_metrics(
+    data: pd.DataFrame,
+    scale_columns: List[str],
+    conditions: List[str]
+) -> Dict[str, Any]:
+    """
+    Compute comprehensive data quality metrics.
+
+    Includes:
+    - Response distribution statistics
+    - Scale reliability estimates
+    - Careless responding rates
+    - Condition balance
+    - Missing data patterns
+
+    Args:
+        data: Generated DataFrame
+        scale_columns: Columns containing scale items
+        conditions: List of condition names
+
+    Returns:
+        Comprehensive quality metrics
+    """
+    metrics = {
+        'n_participants': len(data),
+        'n_conditions': len(conditions),
+        'response_distributions': {},
+        'reliability_estimates': {},
+        'careless_rates': {},
+        'condition_balance': {},
+        'missing_data': {},
+        'overall_quality_score': 0.0
+    }
+
+    # 1. Condition balance
+    if 'CONDITION' in data.columns:
+        cond_counts = data['CONDITION'].value_counts()
+        expected = len(data) / len(conditions)
+        balance_scores = []
+        for cond in conditions:
+            actual = cond_counts.get(cond, 0)
+            deviation = abs(actual - expected) / expected if expected > 0 else 0
+            metrics['condition_balance'][cond] = {
+                'count': int(actual),
+                'expected': round(expected, 1),
+                'deviation': round(deviation, 3)
+            }
+            balance_scores.append(1 - min(deviation, 1))
+        metrics['balance_score'] = round(np.mean(balance_scores), 3)
+
+    # 2. Response distributions for scale columns
+    for col in scale_columns:
+        if col not in data.columns:
+            continue
+        try:
+            values = data[col].dropna().astype(float)
+            if len(values) > 0:
+                metrics['response_distributions'][col] = {
+                    'mean': round(values.mean(), 3),
+                    'sd': round(values.std(), 3),
+                    'min': round(values.min(), 3),
+                    'max': round(values.max(), 3),
+                    'skewness': round(float(values.skew()), 3) if len(values) > 2 else 0
+                }
+        except Exception:
+            continue
+
+    # 3. Missing data
+    total_cells = len(data) * len(data.columns)
+    missing_cells = data.isna().sum().sum()
+    metrics['missing_data'] = {
+        'total_missing': int(missing_cells),
+        'missing_rate': round(missing_cells / total_cells, 4) if total_cells > 0 else 0
+    }
+
+    # 4. Overall quality score (0-1)
+    quality_components = []
+    if 'balance_score' in metrics:
+        quality_components.append(metrics['balance_score'])
+    if metrics['missing_data']['missing_rate'] < 0.05:
+        quality_components.append(1.0)
+    else:
+        quality_components.append(max(0, 1 - metrics['missing_data']['missing_rate'] * 10))
+
+    metrics['overall_quality_score'] = round(np.mean(quality_components) if quality_components else 0.5, 3)
+
+    return metrics
+
+
 class SurveyFlowHandler:
     """
     Handler for survey flow logic - determines which questions participants see
