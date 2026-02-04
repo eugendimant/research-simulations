@@ -30,7 +30,7 @@ import re
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 # Version identifier to help track deployed code
 __version__ = "1.0.0"  # v1.0.0 OFFICIAL RELEASE: Enhanced scale detection, skip logic, difficulty levels, mediation, pre-reg checker
@@ -204,6 +204,15 @@ class QSFPreviewResult:
     recognized_scales: List[Dict[str, Any]] = field(default_factory=list)  # Well-known scales (Big Five, PANAS, etc.)
     # v1.0.0: Scale validation and quality metrics
     scale_quality_scores: Dict[str, Dict[str, Any]] = field(default_factory=dict)  # scale_name -> quality metrics
+    # v1.0.0: Condition-to-question visibility mapping (CRITICAL for simulation)
+    # Maps each condition to the set of questions that condition's participants would see
+    condition_visibility_map: Dict[str, Dict[str, bool]] = field(default_factory=dict)  # condition -> {question_id: visible}
+    # v1.0.0: Condition-to-block mapping
+    condition_blocks: Dict[str, List[str]] = field(default_factory=dict)  # condition -> list of block_ids
+    # v1.0.0: Block-to-questions mapping
+    block_questions: Dict[str, List[str]] = field(default_factory=dict)  # block_id -> list of question_ids
+    # v1.0.0: Questions that ALL conditions see (shared questions like demographics)
+    shared_questions: List[str] = field(default_factory=list)  # question_ids visible to all conditions
 
 
 class QSFPreviewParser:
@@ -761,6 +770,11 @@ class QSFPreviewParser:
         slider_questions = self._extract_slider_questions(questions_map)
         text_entry_questions = self._extract_text_entry_questions(questions_map)
 
+        # v1.0.0: Build condition visibility map (CRITICAL for simulation)
+        visibility_result = self._build_condition_visibility_map(
+            detected_conditions, blocks, questions_map, flow_data
+        )
+
         # Validate structure
         self._validate_structure(blocks, questions_map, detected_conditions)
 
@@ -798,6 +812,11 @@ class QSFPreviewParser:
             comprehension_checks=comprehension_checks,
             slider_questions=slider_questions,
             text_entry_questions=text_entry_questions,
+            # v1.0.0: Condition visibility mapping (CRITICAL for simulation)
+            condition_visibility_map=visibility_result.get('condition_visibility_map', {}),
+            condition_blocks=visibility_result.get('condition_blocks', {}),
+            block_questions=visibility_result.get('block_questions', {}),
+            shared_questions=visibility_result.get('shared_questions', []),
         )
 
     def _parse_blocks(self, element: Dict, blocks_map: Dict):
@@ -1803,6 +1822,59 @@ class QSFPreviewParser:
 
         return False
 
+    def _is_trash_block_name(self, block_name: str) -> bool:
+        """Check if a block name indicates trash/unused content.
+
+        v1.0.0: Minimal check for use inside BlockRandomizers where blocks
+        are conditions by definition. Only excludes obviously trash blocks.
+
+        This is LESS aggressive than _is_excluded_block_name() because
+        blocks inside a BlockRandomizer ARE conditions, even if they have
+        generic names like "Block A" or "Block DB".
+
+        Args:
+            block_name: The name/description of the block
+
+        Returns:
+            True if the block is clearly trash/unused, False otherwise
+        """
+        if not block_name or not block_name.strip():
+            return True
+
+        normalized = block_name.lower().strip()
+
+        # Only exclude blocks with explicit trash/unused indicators
+        trash_indicators = [
+            'trash', 'unused', 'delete', 'remove', 'deprecated',
+            'archive', 'old version', 'do not use', 'donotuse',
+            'ignore', 'hidden', 'disabled', 'inactive'
+        ]
+
+        for indicator in trash_indicators:
+            if indicator in normalized:
+                return True
+
+        # Check for explicit trash patterns
+        trash_patterns = [
+            r'^\s*trash\s*',
+            r'\btrash\b',
+            r'\bunused\b',
+            r'\bdelete\b',
+            r'\bremove\b',
+            r'\(delete\)',
+            r'\(unused\)',
+            r'\(old\)',
+            r'_old$',
+            r'_trash$',
+            r'_unused$',
+        ]
+
+        for pattern in trash_patterns:
+            if re.search(pattern, normalized):
+                return True
+
+        return False
+
     def _has_condition_keywords(self, block_name: str) -> bool:
         """Check if a block name contains positive condition indicators.
 
@@ -1944,12 +2016,15 @@ class QSFPreviewParser:
                 self._log(LogLevel.INFO, "PATTERN_DETECT", message, details)
 
             detector = RandomizationPatternDetector(logger_callback=log_callback)
+            # v1.0.0: Use _is_trash_block_name for blocks inside randomizers
+            # because blocks inside BlockRandomizer ARE conditions by definition,
+            # only obvious trash blocks should be excluded (not generic patterns)
             result = detector.detect_all_patterns(
                 flow_data=flow_data,
                 blocks_by_id=blocks_by_id,
                 normalize_flow_func=self._normalize_flow,
                 extract_payload_func=self._extract_flow_payload,
-                excluded_func=self._is_excluded_block_name,
+                excluded_func=self._is_trash_block_name,
             )
 
             # Get conditions from detector
@@ -1974,8 +2049,9 @@ class QSFPreviewParser:
                     f"Found {len(result['embedded_conditions'])} embedded data conditions"
                 )
 
-        # Filter out excluded blocks from conditions
-        conditions = [c for c in conditions if not self._is_excluded_block_name(c)]
+        # v1.0.0: Filter out only truly trash blocks from conditions
+        # Use less aggressive filter since conditions from randomizers are valid
+        conditions = [c for c in conditions if not self._is_trash_block_name(c)]
 
         # Fallback: use block names that look like conditions (STRICT mode).
         # Only use if no conditions were found from pattern detection
@@ -2071,6 +2147,8 @@ class QSFPreviewParser:
                     )
 
                     # Collect blocks in this randomizer
+                    # v1.0.0: Blocks inside BlockRandomizer ARE conditions by definition,
+                    # only exclude obvious trash/unused blocks (not generic "block X" names)
                     sub_flow = item.get('Flow', [])
                     sub_flow = self._normalize_flow(sub_flow)
                     randomizer_conditions = []
@@ -2082,7 +2160,10 @@ class QSFPreviewParser:
                                 block_id = sub_item.get('ID', '')
                                 if block_id:
                                     block_name = blocks_by_id.get(block_id, block_id)
-                                    if not self._is_excluded_block_name(block_name):
+                                    # v1.0.0: Inside BlockRandomizer, only exclude truly trash blocks
+                                    # (containing "trash", "unused", "delete", etc.)
+                                    # NOT generic patterns like "block X" - those are likely conditions
+                                    if not self._is_trash_block_name(block_name):
                                         randomizer_conditions.append(block_name)
 
                     # Only add as conditions if:
@@ -2206,14 +2287,362 @@ class QSFPreviewParser:
         conditions.append(normalized)
         self._log(LogLevel.INFO, "CONDITION", f"Detected potential condition: {normalized}")
 
+    def _build_condition_visibility_map(
+        self,
+        conditions: List[str],
+        blocks: List[BlockInfo],
+        questions_map: Dict[str, QuestionInfo],
+        flow_data: Any
+    ) -> Dict[str, Any]:
+        """Build comprehensive condition-to-question visibility mapping.
+
+        v1.0.0: CRITICAL for simulation - determines which questions each condition sees.
+
+        This method analyzes:
+        1. BlockRandomizer structure to determine which blocks each condition sees
+        2. DisplayLogic on individual questions
+        3. BranchLogic in survey flow
+        4. Shared blocks (outside randomizers) that all conditions see
+
+        Returns:
+            Dict with keys:
+            - condition_visibility_map: {condition: {question_id: True/False}}
+            - condition_blocks: {condition: [block_ids]}
+            - block_questions: {block_id: [question_ids]}
+            - shared_questions: [question_ids visible to all]
+        """
+        # Initialize structures
+        condition_visibility_map: Dict[str, Dict[str, bool]] = {c: {} for c in conditions}
+        condition_blocks: Dict[str, List[str]] = {c: [] for c in conditions}
+        block_questions: Dict[str, List[str]] = {}
+        all_question_ids = list(questions_map.keys())
+
+        # v1.0.0: Deduplicate blocks by name (same block can have BL_xxx and numeric IDs)
+        # Build unique blocks map by name to avoid duplicates
+        unique_blocks_by_name: Dict[str, BlockInfo] = {}
+        block_id_to_canonical: Dict[str, str] = {}  # Map any ID format to canonical ID
+
+        for block in blocks:
+            block_name = block.block_name or block.block_id
+            if block_name not in unique_blocks_by_name:
+                unique_blocks_by_name[block_name] = block
+                block_id_to_canonical[block.block_id] = block.block_id
+            else:
+                # This is a duplicate block with different ID format
+                # Map this ID to the canonical ID we already have
+                canonical_block = unique_blocks_by_name[block_name]
+                block_id_to_canonical[block.block_id] = canonical_block.block_id
+
+        # Build block -> questions mapping using canonical IDs only
+        for block_name, block in unique_blocks_by_name.items():
+            block_questions[block.block_id] = []
+            for q in block.questions:
+                block_questions[block.block_id].append(q.question_id)
+
+        # Track blocks in randomizers (condition-specific) vs shared
+        randomizer_block_ids: Set[str] = set()
+        shared_block_ids: Set[str] = set()
+
+        # Analyze flow to find randomizer structure
+        if flow_data:
+            flow = self._extract_flow_payload(flow_data)
+            self._analyze_flow_for_visibility(
+                flow, conditions, condition_blocks, randomizer_block_ids,
+                {b.block_id: b.block_name for b in unique_blocks_by_name.values()},
+                block_id_to_canonical
+            )
+
+        # All unique blocks not in randomizers are shared
+        all_block_ids = set(b.block_id for b in unique_blocks_by_name.values())
+        shared_block_ids = all_block_ids - randomizer_block_ids
+
+        self._log(
+            LogLevel.INFO, "VISIBILITY",
+            f"Block deduplication: {len(blocks)} total -> {len(unique_blocks_by_name)} unique, "
+            f"{len(randomizer_block_ids)} in randomizers, {len(shared_block_ids)} shared"
+        )
+
+        # Get shared questions (from non-randomizer blocks)
+        shared_questions = []
+        for block_id in shared_block_ids:
+            shared_questions.extend(block_questions.get(block_id, []))
+
+        # Build visibility map for each condition
+        for condition in conditions:
+            # Start with shared questions visible to all
+            for q_id in shared_questions:
+                condition_visibility_map[condition][q_id] = True
+
+            # Add questions from condition-specific blocks
+            for block_id in condition_blocks.get(condition, []):
+                for q_id in block_questions.get(block_id, []):
+                    condition_visibility_map[condition][q_id] = True
+
+            # Questions in OTHER conditions' blocks are NOT visible
+            for other_cond, other_blocks in condition_blocks.items():
+                if other_cond != condition:
+                    for block_id in other_blocks:
+                        for q_id in block_questions.get(block_id, []):
+                            if q_id not in condition_visibility_map[condition]:
+                                condition_visibility_map[condition][q_id] = False
+
+        # Apply question-level DisplayLogic
+        for q_id, q_info in questions_map.items():
+            # Get display_logic from raw_payload if available
+            display_logic = q_info.raw_payload.get('DisplayLogic', {}) if q_info.raw_payload else {}
+            if display_logic:
+                self._apply_question_display_logic(
+                    q_id, display_logic, conditions, condition_visibility_map
+                )
+
+        self._log(
+            LogLevel.INFO, "VISIBILITY",
+            f"Built visibility map: {len(conditions)} conditions, "
+            f"{len(shared_questions)} shared questions, "
+            f"{len(randomizer_block_ids)} condition-specific blocks"
+        )
+
+        return {
+            'condition_visibility_map': condition_visibility_map,
+            'condition_blocks': condition_blocks,
+            'block_questions': block_questions,
+            'shared_questions': shared_questions
+        }
+
+    def _analyze_flow_for_visibility(
+        self,
+        flow: List[Dict],
+        conditions: List[str],
+        condition_blocks: Dict[str, List[str]],
+        randomizer_block_ids: Set[str],
+        blocks_by_id: Dict[str, str],
+        block_id_to_canonical: Dict[str, str],
+        parent_condition: str = None
+    ):
+        """Recursively analyze flow to map conditions to their blocks.
+
+        Args:
+            flow: Survey flow items
+            conditions: List of condition names
+            condition_blocks: Dict to populate with condition -> block mappings
+            randomizer_block_ids: Set to populate with blocks inside randomizers
+            blocks_by_id: Mapping of block_id -> block_name
+            block_id_to_canonical: Mapping of any block_id format -> canonical ID
+            parent_condition: If we're inside a condition-specific branch
+        """
+        for item in flow:
+            if not isinstance(item, dict):
+                continue
+
+            flow_type = item.get('Type', '')
+
+            if flow_type == 'BlockRandomizer':
+                # This is the key structure for between-subjects designs
+                # Each child (block or group) in the randomizer represents a condition
+                # v1.0.0: SubSet can be int, str, or list - get Flow if it's a count value
+                subset = item.get('SubSet', item.get('Flow', []))
+                if not isinstance(subset, list):
+                    # SubSet is the count (int or str like "1"), get the actual Flow
+                    subset = item.get('Flow', [])
+
+                for sub_item in subset if isinstance(subset, list) else []:
+                    if not isinstance(sub_item, dict):
+                        continue
+
+                    sub_type = sub_item.get('Type', '')
+
+                    if sub_type == 'Group':
+                        # Group represents a condition
+                        group_name = sub_item.get('Description', '')
+                        # Match group name to conditions
+                        matched_condition = self._match_to_condition(group_name, conditions)
+                        if matched_condition:
+                            # Get all blocks inside this group
+                            group_flow = sub_item.get('Flow', [])
+                            for group_item in self._normalize_flow(group_flow):
+                                if group_item.get('Type') in ('Standard', 'Block'):
+                                    raw_block_id = group_item.get('ID', '')
+                                    if raw_block_id:
+                                        # Normalize to canonical ID
+                                        block_id = block_id_to_canonical.get(str(raw_block_id), str(raw_block_id))
+                                        condition_blocks[matched_condition].append(block_id)
+                                        randomizer_block_ids.add(block_id)
+
+                    elif sub_type in ('Standard', 'Block'):
+                        # Direct block in randomizer - block name IS the condition
+                        raw_block_id = sub_item.get('ID', '')
+                        if raw_block_id:
+                            # Normalize to canonical ID
+                            block_id = block_id_to_canonical.get(str(raw_block_id), str(raw_block_id))
+                            block_name = blocks_by_id.get(block_id, block_id)
+                            matched_condition = self._match_to_condition(block_name, conditions)
+                            if matched_condition:
+                                condition_blocks[matched_condition].append(block_id)
+                            randomizer_block_ids.add(block_id)
+
+            elif flow_type == 'Randomizer':
+                # Similar to BlockRandomizer
+                sub_flow = item.get('Flow', [])
+                for sub_item in self._normalize_flow(sub_flow):
+                    if sub_item.get('Type') in ('Standard', 'Block'):
+                        raw_block_id = sub_item.get('ID', '')
+                        if raw_block_id:
+                            block_id = block_id_to_canonical.get(str(raw_block_id), str(raw_block_id))
+                            block_name = blocks_by_id.get(block_id, block_id)
+                            matched_condition = self._match_to_condition(block_name, conditions)
+                            if matched_condition:
+                                condition_blocks[matched_condition].append(block_id)
+                            randomizer_block_ids.add(block_id)
+                    elif sub_item.get('Type') == 'Group':
+                        group_name = sub_item.get('Description', '')
+                        matched_condition = self._match_to_condition(group_name, conditions)
+                        if matched_condition:
+                            group_flow = sub_item.get('Flow', [])
+                            for group_item in self._normalize_flow(group_flow):
+                                if group_item.get('Type') in ('Standard', 'Block'):
+                                    raw_block_id = group_item.get('ID', '')
+                                    if raw_block_id:
+                                        block_id = block_id_to_canonical.get(str(raw_block_id), str(raw_block_id))
+                                        condition_blocks[matched_condition].append(block_id)
+                                        randomizer_block_ids.add(block_id)
+
+            # Recurse into nested flows
+            if 'Flow' in item and flow_type not in ('BlockRandomizer', 'Randomizer'):
+                self._analyze_flow_for_visibility(
+                    self._normalize_flow(item['Flow']),
+                    conditions, condition_blocks, randomizer_block_ids, blocks_by_id,
+                    block_id_to_canonical, parent_condition
+                )
+
+    def _match_to_condition(self, label: str, conditions: List[str]) -> Optional[str]:
+        """Match a block/group name to a condition.
+
+        Returns the condition that best matches the label, or None if no match.
+        v1.0.0: Normalizes all whitespace (including non-breaking spaces) for matching.
+        """
+        if not label:
+            return None
+
+        # Normalize whitespace (including \xa0 non-breaking spaces) to regular spaces
+        def normalize_ws(s: str) -> str:
+            return re.sub(r'\s+', ' ', s.replace('\xa0', ' ')).lower().strip()
+
+        label_norm = normalize_ws(label)
+
+        # Direct match (exact after normalization)
+        for cond in conditions:
+            if normalize_ws(cond) == label_norm:
+                return cond
+
+        # Partial match - label contains condition or vice versa
+        for cond in conditions:
+            cond_norm = normalize_ws(cond)
+            if cond_norm in label_norm or label_norm in cond_norm:
+                return cond
+
+        # Match by extracting key words (ignoring word boundaries for non-ASCII)
+        label_parts = set(re.findall(r'\b\w+\b', label_norm))
+        best_match = None
+        best_overlap = 0
+        for cond in conditions:
+            cond_parts = set(re.findall(r'\b\w+\b', normalize_ws(cond)))
+            overlap = label_parts & cond_parts
+            # Prefer matches with more overlap, require at least 2 words or exact single word
+            if len(overlap) > best_overlap and (len(overlap) >= 2 or (len(overlap) == 1 and len(cond_parts) == 1)):
+                best_match = cond
+                best_overlap = len(overlap)
+
+        return best_match
+
+    def _apply_question_display_logic(
+        self,
+        question_id: str,
+        display_logic: Dict[str, Any],
+        conditions: List[str],
+        visibility_map: Dict[str, Dict[str, bool]]
+    ):
+        """Apply question-level DisplayLogic to visibility map.
+
+        Handles patterns like:
+        - EmbeddedField checks (e.g., Condition = "AI")
+        - Question response checks (e.g., Q1 = "Yes")
+        """
+        # Parse the display logic structure
+        for key, value in display_logic.items():
+            if not isinstance(value, dict):
+                continue
+
+            for sub_key, logic_item in value.items():
+                if not isinstance(logic_item, dict):
+                    continue
+
+                logic_type = logic_item.get('LogicType', '')
+                operator = logic_item.get('Operator', '').lower()
+                left_operand = str(logic_item.get('LeftOperand', '')).lower()
+                right_operand = str(logic_item.get('RightOperand', '')).lower()
+
+                if logic_type == 'EmbeddedField':
+                    # Check if this is a condition-based display logic
+                    # e.g., Show if Condition = "AI"
+                    if 'condition' in left_operand or 'group' in left_operand or 'treatment' in left_operand:
+                        # Find which condition this matches
+                        for cond in conditions:
+                            cond_lower = cond.lower()
+                            cond_parts = set(re.findall(r'\b\w+\b', cond_lower))
+
+                            # Check if right_operand matches this condition
+                            if right_operand in cond_lower or cond_lower in right_operand:
+                                # This condition should see this question
+                                if operator in ['equalto', 'selected', 'is', '=']:
+                                    visibility_map[cond][question_id] = True
+                                    # Other conditions should NOT see it
+                                    for other_cond in conditions:
+                                        if other_cond != cond and question_id not in visibility_map[other_cond]:
+                                            visibility_map[other_cond][question_id] = False
+                            elif any(part in right_operand for part in cond_parts if len(part) > 2):
+                                if operator in ['equalto', 'selected', 'is', '=']:
+                                    visibility_map[cond][question_id] = True
+                                    for other_cond in conditions:
+                                        if other_cond != cond and question_id not in visibility_map[other_cond]:
+                                            visibility_map[other_cond][question_id] = False
+
     def _dedupe_conditions(self, conditions: List[str]) -> List[str]:
+        """Deduplicate conditions and filter out invalid entries.
+
+        v1.0.0: Enhanced to filter out embedded data placeholders and piped text.
+        """
         seen = set()
         unique: List[str] = []
+
+        # Patterns that indicate embedded data/piped text, NOT conditions
+        invalid_patterns = [
+            r'\$\{',  # ${e://Field/...} or ${rand://...}
+            r'\$e://',  # $e://Field/...
+            r'rand://int',  # Random number placeholders
+            r'^\d+$',  # Just a number
+            r'^[A-Za-z]_\d+$',  # Single letter with number like Q_1
+        ]
+
         for cond in conditions:
             key = cond.lower().strip()
-            if key and key not in seen:
+            if not key or key in seen:
+                continue
+
+            # Skip if matches invalid pattern
+            is_invalid = False
+            for pattern in invalid_patterns:
+                if re.search(pattern, cond, re.IGNORECASE):
+                    is_invalid = True
+                    self._log(
+                        LogLevel.INFO, "CONDITION_FILTER",
+                        f"Filtered out invalid condition: {cond}"
+                    )
+                    break
+
+            if not is_invalid:
                 seen.add(key)
                 unique.append(cond)
+
         return unique
 
     def _detect_scales(self, questions_map: Dict) -> List[Dict[str, Any]]:
