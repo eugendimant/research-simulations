@@ -1,74 +1,49 @@
-# Email Setup Guide (Free SMTP)
+# Email Setup Guide (Free)
 
-This guide explains how to configure email delivery using free SMTP.
+## Recommended: Use a Personal Gmail to Send
 
-## For Google Workspace (University Email like @sas.upenn.edu)
+Since university Google Workspace often has restrictions, the simplest solution is:
+1. Create/use a **personal Gmail account** to SEND emails
+2. Emails are delivered TO your university address (edimant@sas.upenn.edu)
 
-University email accounts that run through Google Workspace require an **App Password**.
+### Step 1: Set Up a Personal Gmail
 
-### Step 1: Create an App Password
+Use any personal Gmail account (e.g., `yourgmail@gmail.com`).
 
-1. Go to [https://myaccount.google.com/](https://myaccount.google.com/) (sign in with your university account)
-2. Click **Security** in the left sidebar
-3. Under "Signing in to Google", find **2-Step Verification**
-   - If not enabled, enable it first (required for App Passwords)
-4. After 2-Step Verification is enabled, go back to Security
-5. Click **App passwords** (may be under "2-Step Verification" section)
-6. Select app: **Mail**
-7. Select device: **Other** → name it "Simulation Tool"
-8. Click **Generate**
-9. **Copy the 16-character password** (spaces are optional)
+### Step 2: Enable 2-Step Verification
 
-**Note:** If you don't see "App passwords", your university IT may have disabled it. Contact them or use a personal Gmail instead.
+1. Go to [https://myaccount.google.com/security](https://myaccount.google.com/security)
+2. Click **2-Step Verification** → Enable it
 
-### Step 2: Configure Streamlit Secrets
+### Step 3: Create App Password
 
-Add to `.streamlit/secrets.toml`:
+1. Go to [https://myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords)
+2. Select app: **Mail**
+3. Select device: **Other** → "Simulation Tool"
+4. Click **Generate**
+5. Copy the 16-character password
+
+### Step 4: Configure Streamlit Secrets
 
 ```toml
 SMTP_SERVER = "smtp.gmail.com"
 SMTP_PORT = 587
-SMTP_USERNAME = "edimant@sas.upenn.edu"
-SMTP_PASSWORD = "xxxx xxxx xxxx xxxx"
-SMTP_FROM_EMAIL = "edimant@sas.upenn.edu"
+SMTP_USERNAME = "yourgmail@gmail.com"
+SMTP_PASSWORD = "abcd efgh ijkl mnop"
+SMTP_FROM_EMAIL = "yourgmail@gmail.com"
 INSTRUCTOR_NOTIFICATION_EMAIL = "edimant@sas.upenn.edu"
 ```
 
-Replace `xxxx xxxx xxxx xxxx` with your 16-character App Password.
-
----
-
-## For Personal Gmail
-
-Same process as above, but use your @gmail.com address.
+**Result:** Emails are sent FROM your personal Gmail TO your university email.
 
 ---
 
 ## Troubleshooting
 
-### "Authentication failed"
-- You must use an **App Password**, not your regular password
+**"App passwords" not visible?**
 - 2-Step Verification must be enabled first
-- Check that SMTP_USERNAME matches the account that created the App Password
+- Direct link: [https://myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords)
 
-### "App passwords not available"
-- Your organization may have disabled App Passwords
-- Use a personal Gmail account instead
-- Contact IT to request App Password access
-
-### Email not received
-- Check spam/junk folder
-- Verify the recipient email is correct
-- Gmail has a 500 email/day limit
-
----
-
-## Configuration Reference
-
-| Setting | Value |
-|---------|-------|
-| SMTP_SERVER | `smtp.gmail.com` |
-| SMTP_PORT | `587` |
-| SMTP_USERNAME | Your full email address |
-| SMTP_PASSWORD | 16-character App Password |
-| SMTP_FROM_EMAIL | Same as username |
+**Still not working?**
+- Make sure you're using the App Password (16 chars), not your regular Gmail password
+- Check that SMTP_USERNAME matches the Gmail account that generated the App Password
