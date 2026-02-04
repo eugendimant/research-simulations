@@ -11,12 +11,20 @@ Deployment:
 - This file is intended to be used as `simulation_app/app.py` on Streamlit Cloud.
 - The `utils/` directory must be a Python package (must contain __init__.py).
 
-Email:
-- If you want automatic email delivery, set Streamlit secrets:
-  - SENDGRID_API_KEY
-  - SENDGRID_FROM_EMAIL
-  - (optional) SENDGRID_FROM_NAME
+Email (Free SMTP - Gmail, Outlook, etc.):
+- For automatic email delivery, set these Streamlit secrets:
+  - SMTP_SERVER (e.g., "smtp.gmail.com")
+  - SMTP_PORT (e.g., 587)
+  - SMTP_USERNAME (your email address)
+  - SMTP_PASSWORD (app password for Gmail)
+  - SMTP_FROM_EMAIL (sender email)
   - (optional) INSTRUCTOR_NOTIFICATION_EMAIL
+
+Gmail Setup:
+1. Go to Google Account > Security > 2-Step Verification (enable if not already)
+2. Go to Google Account > Security > App passwords
+3. Create a new app password for "Mail"
+4. Use that 16-character password as SMTP_PASSWORD
 """
 
 from __future__ import annotations
@@ -1723,7 +1731,7 @@ SYSTEM INFO:
 """
 
                 # Try to send via SendGrid if configured
-                ok, msg = _send_email_with_sendgrid(
+                ok, msg = _send_email(
                     to_email=FEEDBACK_EMAIL,
                     subject=subject,
                     body_text=body,
@@ -1748,96 +1756,154 @@ SYSTEM INFO:
         st.caption(f"Feedback is sent to Dr. Eugen Dimant ({FEEDBACK_EMAIL})")
 
 
-def _send_email_with_sendgrid(
+def _send_email_with_smtp(
     to_email: str,
     subject: str,
     body_text: str,
     attachments: Optional[List[Tuple[str, bytes]]] = None,
 ) -> Tuple[bool, str]:
     """
-    Send an email using SendGrid.
+    Send an email using SMTP (free alternative to SendGrid).
+
+    Supports Gmail, Outlook, university email servers, or any SMTP provider.
+
+    Required Streamlit secrets:
+        - SMTP_SERVER (e.g., "smtp.gmail.com")
+        - SMTP_PORT (e.g., 587)
+        - SMTP_USERNAME (your email address)
+        - SMTP_PASSWORD (app password for Gmail, or regular password)
+        - SMTP_FROM_EMAIL (sender email, usually same as username)
+
+    Optional:
+        - SMTP_FROM_NAME (display name, defaults to "Behavioral Experiment Simulation Tool")
+        - SMTP_USE_TLS (default True)
 
     Returns: (ok, message)
     """
-    api_key = st.secrets.get("SENDGRID_API_KEY", "")
-    from_email = st.secrets.get("SENDGRID_FROM_EMAIL", "")
-    from_name = st.secrets.get("SENDGRID_FROM_NAME", "Behavioral Experiment Simulation Tool")
+    import smtplib
+    from email.mime.text import MIMEText
+    from email.mime.multipart import MIMEMultipart
+    from email.mime.base import MIMEBase
+    from email import encoders
 
-    if not api_key or not from_email:
-        return False, "Missing SENDGRID_API_KEY or SENDGRID_FROM_EMAIL in Streamlit secrets."
+    # Get SMTP configuration from secrets
+    smtp_server = st.secrets.get("SMTP_SERVER", "")
+    smtp_port = int(st.secrets.get("SMTP_PORT", 587))
+    smtp_username = st.secrets.get("SMTP_USERNAME", "")
+    smtp_password = st.secrets.get("SMTP_PASSWORD", "")
+    from_email = st.secrets.get("SMTP_FROM_EMAIL", smtp_username)
+    from_name = st.secrets.get("SMTP_FROM_NAME", "Behavioral Experiment Simulation Tool")
+    use_tls = st.secrets.get("SMTP_USE_TLS", True)
 
-    try:
-        from sendgrid import SendGridAPIClient
-        from sendgrid.helpers.mail import (
-            Mail,
-            Email,
-            To,
-            Content,
-            Attachment,
-            FileContent,
-            FileName,
-            FileType,
-            Disposition,
-        )
-    except Exception as e:
-        return False, f"SendGrid library import failed: {e}"
-
-    mail = Mail(
-        from_email=Email(from_email, from_name),
-        to_emails=To(to_email),
-        subject=subject,
-        plain_text_content=Content("text/plain", body_text),
-    )
-
-    if attachments:
-        for filename, data in attachments:
-            encoded = base64.b64encode(data).decode("utf-8")
-            att = Attachment(
-                FileContent(encoded),
-                FileName(filename),
-                FileType("application/octet-stream"),
-                Disposition("attachment"),
-            )
-            mail.add_attachment(att)
+    if not smtp_server or not smtp_username or not smtp_password:
+        return False, "Missing SMTP configuration in Streamlit secrets. See email setup instructions."
 
     try:
-        sg = SendGridAPIClient(api_key)
-        resp = sg.send(mail)
-        status_code = getattr(resp, "status_code", 0)
-        if 200 <= int(status_code) < 300:
-            return True, f"Sent (status {status_code})."
-        return False, f"SendGrid error (status {status_code})."
+        # Create the email message
+        msg = MIMEMultipart()
+        msg['From'] = f"{from_name} <{from_email}>" if from_name else from_email
+        msg['To'] = to_email
+        msg['Subject'] = subject
+
+        # Attach body text
+        msg.attach(MIMEText(body_text, 'plain'))
+
+        # Attach files if provided
+        if attachments:
+            for filename, data in attachments:
+                part = MIMEBase('application', 'octet-stream')
+                part.set_payload(data)
+                encoders.encode_base64(part)
+                part.add_header('Content-Disposition', f'attachment; filename="{filename}"')
+                msg.attach(part)
+
+        # Connect and send
+        if smtp_port == 465:
+            # SSL connection
+            server = smtplib.SMTP_SSL(smtp_server, smtp_port, timeout=30)
+        else:
+            # TLS connection (most common)
+            server = smtplib.SMTP(smtp_server, smtp_port, timeout=30)
+            if use_tls:
+                server.starttls()
+
+        server.login(smtp_username, smtp_password)
+        server.send_message(msg)
+        server.quit()
+
+        return True, "Email sent successfully!"
+
+    except smtplib.SMTPAuthenticationError:
+        return False, "SMTP authentication failed. Check your username and password (use App Password for Gmail)."
+    except smtplib.SMTPConnectError:
+        return False, f"Could not connect to SMTP server {smtp_server}:{smtp_port}."
     except Exception as e:
-        return False, f"SendGrid send failed: {e}"
+        return False, f"Email send failed: {str(e)}"
+
+
+def _send_email(
+    to_email: str,
+    subject: str,
+    body_text: str,
+    attachments: Optional[List[Tuple[str, bytes]]] = None,
+) -> Tuple[bool, str]:
+    """
+    Send an email using the configured method (SMTP).
+
+    This is the main email function that should be called throughout the app.
+    It uses free SMTP (Gmail, Outlook, etc.) instead of paid services.
+
+    Returns: (ok, message)
+    """
+    return _send_email_with_smtp(to_email, subject, body_text, attachments)
 
 
 def _render_email_setup_diagnostics() -> None:
-    api_key = st.secrets.get("SENDGRID_API_KEY", "")
-    from_email = st.secrets.get("SENDGRID_FROM_EMAIL", "")
-    from_name = st.secrets.get("SENDGRID_FROM_NAME", "")
+    smtp_server = st.secrets.get("SMTP_SERVER", "")
+    smtp_port = st.secrets.get("SMTP_PORT", "")
+    smtp_username = st.secrets.get("SMTP_USERNAME", "")
+    smtp_password = st.secrets.get("SMTP_PASSWORD", "")
+    from_email = st.secrets.get("SMTP_FROM_EMAIL", "")
+    from_name = st.secrets.get("SMTP_FROM_NAME", "")
     instructor_email = st.secrets.get("INSTRUCTOR_NOTIFICATION_EMAIL", "")
 
     with st.expander("Email setup diagnostics"):
-        st.markdown("**SendGrid configuration**")
+        st.markdown("**SMTP Email Configuration (Free)**")
         st.markdown(
             "\n".join(
                 [
-                    f"- API key: {'✅ configured' if api_key else '❌ missing'}",
-                    f"- From email: {'✅ configured' if from_email else '❌ missing'}",
-                    f"- From name: {'✅ configured' if from_name else 'ℹ️ optional'}",
-                    f"- Instructor notification email: {'✅ configured' if instructor_email else 'ℹ️ optional'}",
+                    f"- SMTP Server: {'✅ ' + smtp_server if smtp_server else '❌ missing'}",
+                    f"- SMTP Port: {'✅ ' + str(smtp_port) if smtp_port else '❌ missing'}",
+                    f"- SMTP Username: {'✅ configured' if smtp_username else '❌ missing'}",
+                    f"- SMTP Password: {'✅ configured' if smtp_password else '❌ missing'}",
+                    f"- From email: {'✅ ' + from_email if from_email else 'ℹ️ optional (uses username)'}",
+                    f"- From name: {'✅ ' + from_name if from_name else 'ℹ️ optional'}",
+                    f"- Instructor notification email: {'✅ ' + instructor_email if instructor_email else 'ℹ️ optional'}",
                 ]
             )
         )
-        if api_key and not from_email:
-            st.warning(
-                "SendGrid API key is set, but the sender email is missing. "
-                "Add SENDGRID_FROM_EMAIL in Streamlit secrets using a verified sender address."
-            )
-        elif not api_key:
-            st.warning("SendGrid API key is missing. Add SENDGRID_API_KEY in Streamlit secrets.")
+
+        # Show setup instructions
+        st.markdown("---")
+        st.markdown("**Quick Setup (Gmail - Free)**")
+        st.code("""
+# Add to .streamlit/secrets.toml:
+SMTP_SERVER = "smtp.gmail.com"
+SMTP_PORT = 587
+SMTP_USERNAME = "your.email@gmail.com"
+SMTP_PASSWORD = "your-app-password"
+SMTP_FROM_EMAIL = "your.email@gmail.com"
+INSTRUCTOR_NOTIFICATION_EMAIL = "edimant@sas.upenn.edu"
+        """, language="toml")
+
+        # Check configuration status
+        if smtp_server and smtp_username and smtp_password:
+            st.success("✅ SMTP email is configured and ready!")
         else:
-            st.success("SendGrid basics look configured.")
+            st.warning(
+                "Email is not configured. Add the SMTP settings above to enable automatic email delivery. "
+                "See the setup guide below."
+            )
 
 
 def _clean_condition_name(condition: str) -> str:
@@ -6053,7 +6119,7 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
                 # Log the email attempt for debugging
                 status_placeholder.info(f"Sending instructor notification to {instructor_email}...")
 
-                ok, msg = _send_email_with_sendgrid(
+                ok, msg = _send_email(
                     to_email=instructor_email,
                     subject=subject,
                     body_text=body,
@@ -6123,7 +6189,7 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
                         "Attached is the simulation output ZIP (Simulated.csv, metadata, R prep script).\n\n"
                         f"Generated: {datetime.now().isoformat(timespec='seconds')}\n"
                     )
-                    ok, msg = _send_email_with_sendgrid(
+                    ok, msg = _send_email(
                         to_email=to_email,
                         subject=subject,
                         body_text=body,
@@ -6145,7 +6211,7 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
                         f"Study: {st.session_state.get('study_title','')}\n"
                         f"Generated: {datetime.now().isoformat(timespec='seconds')}\n"
                     )
-                    ok, msg = _send_email_with_sendgrid(
+                    ok, msg = _send_email(
                         to_email=instructor_email,
                         subject=subject,
                         body_text=body,
