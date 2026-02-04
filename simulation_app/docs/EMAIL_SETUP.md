@@ -1,49 +1,35 @@
-# Email Setup Guide (Free)
+# Email Setup Guide (Free SMTP)
 
-## Recommended: Use a Personal Gmail to Send
+## Configuration for edimant@sas.upenn.edu
 
-Since university Google Workspace often has restrictions, the simplest solution is:
-1. Create/use a **personal Gmail account** to SEND emails
-2. Emails are delivered TO your university address (edimant@sas.upenn.edu)
-
-### Step 1: Set Up a Personal Gmail
-
-Use any personal Gmail account (e.g., `yourgmail@gmail.com`).
-
-### Step 2: Enable 2-Step Verification
-
-1. Go to [https://myaccount.google.com/security](https://myaccount.google.com/security)
-2. Click **2-Step Verification** → Enable it
-
-### Step 3: Create App Password
-
-1. Go to [https://myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords)
-2. Select app: **Mail**
-3. Select device: **Other** → "Simulation Tool"
-4. Click **Generate**
-5. Copy the 16-character password
-
-### Step 4: Configure Streamlit Secrets
+### Streamlit Secrets
 
 ```toml
 SMTP_SERVER = "smtp.gmail.com"
 SMTP_PORT = 587
-SMTP_USERNAME = "yourgmail@gmail.com"
-SMTP_PASSWORD = "abcd efgh ijkl mnop"
-SMTP_FROM_EMAIL = "yourgmail@gmail.com"
+SMTP_USERNAME = "edimant@sas.upenn.edu"
+SMTP_PASSWORD = "your-16-char-app-password"
+SMTP_FROM_EMAIL = "edimant@sas.upenn.edu"
 INSTRUCTOR_NOTIFICATION_EMAIL = "edimant@sas.upenn.edu"
 ```
 
-**Result:** Emails are sent FROM your personal Gmail TO your university email.
+### Getting the App Password
+
+1. Sign into [https://myaccount.google.com/](https://myaccount.google.com/) with `edimant@sas.upenn.edu`
+2. Go to **Security** → **2-Step Verification** (enable if needed)
+3. Go to **App passwords**: [https://myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords)
+4. Create: App = **Mail**, Device = **Other** → "Simulation Tool"
+5. Copy the 16-character password (use as SMTP_PASSWORD)
 
 ---
 
 ## Troubleshooting
 
-**"App passwords" not visible?**
-- 2-Step Verification must be enabled first
-- Direct link: [https://myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords)
+**"App passwords" not available?**
+- University IT may have disabled this feature
+- Contact UPenn IT to request access, or use a personal Gmail as sender
 
-**Still not working?**
-- Make sure you're using the App Password (16 chars), not your regular Gmail password
-- Check that SMTP_USERNAME matches the Gmail account that generated the App Password
+**Authentication failed?**
+- Must use App Password, not regular password
+- 2-Step Verification must be enabled first
+- Password should be 16 characters (spaces optional)
