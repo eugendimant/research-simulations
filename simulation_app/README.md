@@ -240,10 +240,12 @@ simulation_app/
 ### Email Delivery (Optional)
 
 Set these Streamlit secrets for email functionality:
-- `SENDGRID_API_KEY`
-- `SENDGRID_FROM_EMAIL`
-- `SENDGRID_FROM_NAME` (optional)
-- `INSTRUCTOR_NOTIFICATION_EMAIL` (optional)
+- `SMTP_SERVER` (e.g., "smtp.gmail.com")
+- `SMTP_PORT` (e.g., 587)
+- `SMTP_USERNAME` (your email address)
+- `SMTP_PASSWORD` (app password)
+- `SMTP_FROM_EMAIL` (sender email)
+- `INSTRUCTOR_NOTIFICATION_EMAIL` (where to send reports)
 
 ## Credits
 
