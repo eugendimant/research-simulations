@@ -5878,6 +5878,9 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
             # Increment internal usage counter (admin tracking)
             usage_stats = _increment_usage_counter()
 
+            # Add usage stats to metadata for instructor report
+            metadata["usage_stats"] = usage_stats
+
             progress_bar.progress(60, text="Packaging downloads...")
             status_placeholder.info("Packaging downloads and reports...")
             explainer = engine.generate_explainer()
