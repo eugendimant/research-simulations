@@ -4252,20 +4252,24 @@ FORMAL_MODIFIERS = [
 ]
 
 
-def add_variation(response: str, persona_verbosity: float, persona_formality: float) -> str:
-    """Add natural variation to a response based on persona traits."""
+def add_variation(response: str, persona_verbosity: float, persona_formality: float, local_rng: random.Random = None) -> str:
+    """Add natural variation to a response based on persona traits.
+
+    v1.0.0: Uses local RNG for deterministic, question-specific variation.
+    """
+    rng = local_rng or random.Random()
     result = response
 
     # Add hedging for less confident personas
-    if random.random() < (1 - persona_verbosity) * 0.4:
-        hedge = random.choice(HEDGING_PHRASES)
+    if rng.random() < (1 - persona_verbosity) * 0.4:
+        hedge = rng.choice(HEDGING_PHRASES)
         if not result.startswith(('I ', 'My ')):
             result = hedge + result[0].lower() + result[1:]
 
     # Add connector for verbose personas
-    if persona_verbosity > 0.6 and random.random() < 0.3:
-        connector = random.choice(CONNECTORS)
-        result += connector + random.choice([
+    if persona_verbosity > 0.6 and rng.random() < 0.3:
+        connector = rng.choice(CONNECTORS)
+        result += connector + rng.choice([
             "this is how I see it.",
             "that's my perspective.",
             "I feel fairly strongly about this.",
@@ -4273,17 +4277,17 @@ def add_variation(response: str, persona_verbosity: float, persona_formality: fl
         ])
 
     # Add casual modifiers for informal personas
-    if persona_formality < 0.4 and random.random() < 0.3:
-        modifier = random.choice(CASUAL_MODIFIERS)
+    if persona_formality < 0.4 and rng.random() < 0.3:
+        modifier = rng.choice(CASUAL_MODIFIERS)
         words = result.split()
         if len(words) > 3:
-            insert_pos = random.randint(1, min(3, len(words)-1))
+            insert_pos = rng.randint(1, min(3, len(words)-1))
             words.insert(insert_pos, modifier)
             result = ' '.join(words)
 
     # Add concluding phrase occasionally
-    if random.random() < 0.2 and not result.endswith(('.', '!', '?')):
-        result += random.choice(CONCLUDING_PHRASES)
+    if rng.random() < 0.2 and not result.endswith(('.', '!', '?')):
+        result += rng.choice(CONCLUDING_PHRASES)
 
     return result
 
@@ -4316,12 +4320,15 @@ class ComprehensiveResponseGenerator:
         persona_formality: float = 0.5,
         persona_engagement: float = 0.5,
         condition: str = "",
+        question_name: str = "",
+        participant_seed: int = 0,
     ) -> str:
         """
         Generate a context-appropriate response to an open-ended question.
 
-        v1.0.0: Enhanced to generate unique responses per question by extracting
-        and using question-specific keywords and context.
+        v1.0.0: CRITICAL FIX - Each question now gets a unique response using
+        a per-question seeded RNG. This ensures the same participant gives
+        DIFFERENT responses to DIFFERENT questions.
 
         Args:
             question_text: The question being answered
@@ -4330,10 +4337,21 @@ class ComprehensiveResponseGenerator:
             persona_formality: How formal the persona is (0-1)
             persona_engagement: How engaged the persona is (0-1)
             condition: Experimental condition (for context)
+            question_name: Unique identifier for the question (CRITICAL for uniqueness)
+            participant_seed: Base random seed for this participant
 
         Returns:
             Generated response text
         """
+        # v1.0.0: Create a UNIQUE seed for this specific question-participant combination
+        # This ensures different questions get different responses even for the same participant
+        question_hash = hash(question_name + question_text) % (2**31) if question_name else hash(question_text) % (2**31)
+        unique_seed = (participant_seed + question_hash) % (2**31)
+
+        # Create a LOCAL random generator for this specific question
+        # This is CRITICAL - we do NOT use the global random module
+        local_rng = random.Random(unique_seed)
+
         # Detect question type and domain
         q_type = detect_question_type(question_text)
         domain = detect_study_domain(self.study_context, question_text)
@@ -4341,24 +4359,24 @@ class ComprehensiveResponseGenerator:
         # Extract keywords from the question text for unique response generation
         question_keywords = self._extract_question_keywords(question_text)
 
-        # Get appropriate template
-        response = self._get_template_response(domain, q_type, sentiment)
+        # Get appropriate template (using local RNG)
+        response = self._get_template_response(domain, q_type, sentiment, local_rng)
 
-        # Personalize response based on question content
-        response = self._personalize_for_question(response, question_text, question_keywords, condition)
+        # Personalize response based on question content (using local RNG)
+        response = self._personalize_for_question(response, question_text, question_keywords, condition, local_rng)
 
         # Handle disengaged/careless personas
         if persona_engagement < 0.3:
-            response = self._make_careless(response, persona_engagement)
+            response = self._make_careless(response, persona_engagement, local_rng)
 
-        # Add variation
-        response = add_variation(response, persona_verbosity, persona_formality)
+        # Add variation (using local RNG)
+        response = add_variation(response, persona_verbosity, persona_formality, local_rng)
 
         # Adjust length based on verbosity
         if persona_verbosity < 0.3:
-            response = self._shorten(response)
+            response = self._shorten(response, local_rng)
         elif persona_verbosity > 0.7:
-            response = self._extend(response, domain, sentiment)
+            response = self._extend(response, domain, sentiment, local_rng)
 
         return response
 
@@ -4392,14 +4410,19 @@ class ComprehensiveResponseGenerator:
         response: str,
         question_text: str,
         keywords: List[str],
-        condition: str
+        condition: str,
+        local_rng: random.Random = None
     ) -> str:
-        """Personalize the response based on question content and condition."""
+        """Personalize the response based on question content and condition.
+
+        v1.0.0: Uses local RNG for deterministic, question-specific personalization.
+        """
+        rng = local_rng or random.Random()
+
         if not keywords and not condition:
             return response
 
         # Build context-specific phrases based on question keywords
-        context_phrases = []
         question_lower = question_text.lower() if question_text else ""
 
         # Add topic-specific introductions based on keywords
@@ -4420,7 +4443,7 @@ class ComprehensiveResponseGenerator:
 
         for keyword, intros in topic_intros.items():
             if keyword in question_lower or any(kw == keyword for kw in keywords):
-                intro = random.choice(intros)
+                intro = rng.choice(intros)
                 if not response.lower().startswith(intro.lower().split()[0]):
                     response = intro + response[0].lower() + response[1:]
                 break
@@ -4433,13 +4456,13 @@ class ComprehensiveResponseGenerator:
                 " Considering the AI involvement.",
                 "",  # Sometimes no addition
             ]
-            if random.random() < 0.3:
-                response += random.choice(ai_phrases)
+            if rng.random() < 0.3:
+                response += rng.choice(ai_phrases)
         elif 'hedonic' in condition_lower:
-            if random.random() < 0.3:
+            if rng.random() < 0.3:
                 response += " The enjoyment factor was notable."
         elif 'utilitarian' in condition_lower:
-            if random.random() < 0.3:
+            if rng.random() < 0.3:
                 response += " The practical aspects mattered."
 
         return response
@@ -4448,9 +4471,14 @@ class ComprehensiveResponseGenerator:
         self,
         domain: StudyDomain,
         q_type: QuestionType,
-        sentiment: str
+        sentiment: str,
+        local_rng: random.Random = None
     ) -> str:
-        """Get a template response for the given domain and sentiment."""
+        """Get a template response for the given domain and sentiment.
+
+        v1.0.0: Uses local RNG for deterministic, question-specific selection.
+        """
+        rng = local_rng or random.Random()
         domain_key = domain.value
 
         # Try to find domain-specific templates
@@ -4459,19 +4487,23 @@ class ComprehensiveResponseGenerator:
             if "explanation" in templates:  # Most common question type
                 sentiment_templates = templates["explanation"].get(sentiment, templates["explanation"].get("neutral", []))
                 if sentiment_templates:
-                    return random.choice(sentiment_templates)
+                    return rng.choice(sentiment_templates)
 
         # Fall back to general templates
         if "general" in DOMAIN_TEMPLATES:
             templates = DOMAIN_TEMPLATES["general"]["explanation"]
             sentiment_templates = templates.get(sentiment, templates.get("neutral", []))
             if sentiment_templates:
-                return random.choice(sentiment_templates)
+                return rng.choice(sentiment_templates)
 
         return "No specific comment."
 
-    def _make_careless(self, response: str, engagement: float) -> str:
-        """Transform response to reflect careless/disengaged responding."""
+    def _make_careless(self, response: str, engagement: float, local_rng: random.Random = None) -> str:
+        """Transform response to reflect careless/disengaged responding.
+
+        v1.0.0: Uses local RNG for deterministic selection.
+        """
+        rng = local_rng or random.Random()
         careless_responses = [
             "ok", "fine", "idk", "whatever", "no reason",
             "just because", "not sure", "dont know", "didnt think about it",
@@ -4479,15 +4511,18 @@ class ComprehensiveResponseGenerator:
         ]
 
         if engagement < 0.2:
-            return random.choice(careless_responses)
+            return rng.choice(careless_responses)
         elif engagement < 0.3:
             # Very short version
             words = response.split()[:3]
             return ' '.join(words).rstrip('.,!?') + '.'
         return response
 
-    def _shorten(self, response: str) -> str:
-        """Shorten a response for low-verbosity personas."""
+    def _shorten(self, response: str, local_rng: random.Random = None) -> str:
+        """Shorten a response for low-verbosity personas.
+
+        v1.0.0: Added local_rng parameter for consistency (unused but keeps interface uniform).
+        """
         sentences = response.split('.')
         if len(sentences) > 1:
             return sentences[0].strip() + '.'
@@ -4496,8 +4531,13 @@ class ComprehensiveResponseGenerator:
             return ' '.join(words[:8]).rstrip('.,!?') + '.'
         return response
 
-    def _extend(self, response: str, domain: StudyDomain, sentiment: str) -> str:
-        """Extend a response for high-verbosity personas with domain awareness."""
+    def _extend(self, response: str, domain: StudyDomain, sentiment: str, local_rng: random.Random = None) -> str:
+        """Extend a response for high-verbosity personas with domain awareness.
+
+        v1.0.0: Uses local RNG for deterministic, question-specific extensions.
+        """
+        rng = local_rng or random.Random()
+
         # Domain-specific extensions
         domain_extensions = {
             StudyDomain.DICTATOR_GAME: {
@@ -4560,12 +4600,12 @@ class ComprehensiveResponseGenerator:
         if domain in domain_extensions:
             sentiment_key = "positive" if sentiment in ["very_positive", "positive"] else "negative"
             domain_ext = domain_extensions[domain].get(sentiment_key, [])
-            if domain_ext and random.random() < 0.5:
-                return response + random.choice(domain_ext)
+            if domain_ext and rng.random() < 0.5:
+                return response + rng.choice(domain_ext)
 
         # Fall back to general extensions
         extension_list = general_extensions.get(sentiment, general_extensions["neutral"])
-        return response + random.choice(extension_list)
+        return response + rng.choice(extension_list)
 
 
 # ============================================================================
