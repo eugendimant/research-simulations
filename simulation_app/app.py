@@ -1765,22 +1765,23 @@ def _send_email_with_smtp(
     """
     Send an email using SMTP (free alternative to SendGrid).
 
-    Supports Gmail, Outlook, university email servers, or any SMTP provider.
+    Supports Gmail, Google Workspace, Outlook, or any SMTP provider.
 
     Required Streamlit secrets:
         - SMTP_SERVER (e.g., "smtp.gmail.com")
         - SMTP_PORT (e.g., 587)
         - SMTP_USERNAME (your email address)
-        - SMTP_PASSWORD (app password for Gmail, or regular password)
+        - SMTP_PASSWORD (app password for Gmail/Google Workspace)
         - SMTP_FROM_EMAIL (sender email, usually same as username)
 
     Optional:
-        - SMTP_FROM_NAME (display name, defaults to "Behavioral Experiment Simulation Tool")
+        - SMTP_FROM_NAME (display name)
         - SMTP_USE_TLS (default True)
 
     Returns: (ok, message)
     """
     import smtplib
+    import ssl
     from email.mime.text import MIMEText
     from email.mime.multipart import MIMEMultipart
     from email.mime.base import MIMEBase
@@ -1796,7 +1797,7 @@ def _send_email_with_smtp(
     use_tls = st.secrets.get("SMTP_USE_TLS", True)
 
     if not smtp_server or not smtp_username or not smtp_password:
-        return False, "Missing SMTP configuration in Streamlit secrets. See email setup instructions."
+        return False, "Email not configured. Contact the administrator."
 
     try:
         # Create the email message
@@ -1817,15 +1818,20 @@ def _send_email_with_smtp(
                 part.add_header('Content-Disposition', f'attachment; filename="{filename}"')
                 msg.attach(part)
 
+        # Create SSL context for secure connection
+        context = ssl.create_default_context()
+
         # Connect and send
         if smtp_port == 465:
-            # SSL connection
-            server = smtplib.SMTP_SSL(smtp_server, smtp_port, timeout=30)
+            # SSL connection (less common)
+            server = smtplib.SMTP_SSL(smtp_server, smtp_port, timeout=30, context=context)
         else:
-            # TLS connection (most common)
+            # TLS connection (most common - Gmail, Google Workspace, Outlook)
             server = smtplib.SMTP(smtp_server, smtp_port, timeout=30)
+            server.ehlo()
             if use_tls:
-                server.starttls()
+                server.starttls(context=context)
+                server.ehlo()
 
         server.login(smtp_username, smtp_password)
         server.send_message(msg)
@@ -1833,12 +1839,19 @@ def _send_email_with_smtp(
 
         return True, "Email sent successfully!"
 
-    except smtplib.SMTPAuthenticationError:
-        return False, "SMTP authentication failed. Check your username and password (use App Password for Gmail)."
+    except smtplib.SMTPAuthenticationError as e:
+        error_msg = str(e)
+        if "Username and Password not accepted" in error_msg or "535" in error_msg:
+            return False, "Authentication failed. For Gmail/Google Workspace: use an App Password (not your regular password). Go to Google Account > Security > App passwords."
+        return False, f"Authentication failed: {error_msg}"
     except smtplib.SMTPConnectError:
-        return False, f"Could not connect to SMTP server {smtp_server}:{smtp_port}."
+        return False, f"Could not connect to {smtp_server}:{smtp_port}. Check server settings."
+    except smtplib.SMTPRecipientsRefused:
+        return False, f"Recipient address rejected: {to_email}"
+    except ssl.SSLError as e:
+        return False, f"SSL/TLS error: {str(e)}. Try changing SMTP_PORT to 465."
     except Exception as e:
-        return False, f"Email send failed: {str(e)}"
+        return False, f"Email failed: {str(e)}"
 
 
 def _send_email(
@@ -1856,54 +1869,6 @@ def _send_email(
     Returns: (ok, message)
     """
     return _send_email_with_smtp(to_email, subject, body_text, attachments)
-
-
-def _render_email_setup_diagnostics() -> None:
-    smtp_server = st.secrets.get("SMTP_SERVER", "")
-    smtp_port = st.secrets.get("SMTP_PORT", "")
-    smtp_username = st.secrets.get("SMTP_USERNAME", "")
-    smtp_password = st.secrets.get("SMTP_PASSWORD", "")
-    from_email = st.secrets.get("SMTP_FROM_EMAIL", "")
-    from_name = st.secrets.get("SMTP_FROM_NAME", "")
-    instructor_email = st.secrets.get("INSTRUCTOR_NOTIFICATION_EMAIL", "")
-
-    with st.expander("Email setup diagnostics"):
-        st.markdown("**SMTP Email Configuration (Free)**")
-        st.markdown(
-            "\n".join(
-                [
-                    f"- SMTP Server: {'✅ ' + smtp_server if smtp_server else '❌ missing'}",
-                    f"- SMTP Port: {'✅ ' + str(smtp_port) if smtp_port else '❌ missing'}",
-                    f"- SMTP Username: {'✅ configured' if smtp_username else '❌ missing'}",
-                    f"- SMTP Password: {'✅ configured' if smtp_password else '❌ missing'}",
-                    f"- From email: {'✅ ' + from_email if from_email else 'ℹ️ optional (uses username)'}",
-                    f"- From name: {'✅ ' + from_name if from_name else 'ℹ️ optional'}",
-                    f"- Instructor notification email: {'✅ ' + instructor_email if instructor_email else 'ℹ️ optional'}",
-                ]
-            )
-        )
-
-        # Show setup instructions
-        st.markdown("---")
-        st.markdown("**Quick Setup (Gmail - Free)**")
-        st.code("""
-# Add to .streamlit/secrets.toml:
-SMTP_SERVER = "smtp.gmail.com"
-SMTP_PORT = 587
-SMTP_USERNAME = "your.email@gmail.com"
-SMTP_PASSWORD = "your-app-password"
-SMTP_FROM_EMAIL = "your.email@gmail.com"
-INSTRUCTOR_NOTIFICATION_EMAIL = "edimant@sas.upenn.edu"
-        """, language="toml")
-
-        # Check configuration status
-        if smtp_server and smtp_username and smtp_password:
-            st.success("✅ SMTP email is configured and ready!")
-        else:
-            st.warning(
-                "Email is not configured. Add the SMTP settings above to enable automatic email delivery. "
-                "See the setup guide below."
-            )
 
 
 def _clean_condition_name(condition: str) -> str:
@@ -6173,7 +6138,6 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
 
         st.divider()
         st.subheader("Email (optional)")
-        _render_email_setup_diagnostics()
 
         to_email = st.text_input("Send to email", value=st.session_state.get("send_to_email", ""))
         st.session_state["send_to_email"] = to_email
