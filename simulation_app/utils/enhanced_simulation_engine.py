@@ -2165,6 +2165,9 @@ class EnhancedSimulationEngine:
         seed: Optional[int] = None,
         # Mode
         mode: str = "pilot",  # "pilot" or "final"
+        # v1.0.0: Pre-computed visibility map from QSF parser
+        # Format: {condition: {question_id: True/False}}
+        precomputed_visibility: Optional[Dict[str, Dict[str, bool]]] = None,
     ):
         self.study_title = str(study_title or "").strip()
         self.study_description = str(study_description or "").strip()
@@ -2184,6 +2187,7 @@ class EnhancedSimulationEngine:
         self.study_context = study_context or {}
         self.stimulus_evaluations = stimulus_evaluations or []
         self.condition_allocation = condition_allocation  # Dict[condition_name, percentage 0-100]
+        self.precomputed_visibility = precomputed_visibility or {}  # v1.0.0: From QSF parser
         self.mode = (mode or "pilot").strip().lower()
         if self.mode not in ("pilot", "final"):
             self.mode = "pilot"
@@ -2251,9 +2255,11 @@ class EnhancedSimulationEngine:
 
         # Initialize survey flow handler for condition-based question visibility
         # This ensures participants only get responses for questions they would see
+        # v1.0.0: Pass pre-computed visibility from QSF parser for accurate block-level visibility
         self.survey_flow_handler = SurveyFlowHandler(
             conditions=self.conditions,
-            open_ended_questions=self.open_ended_questions
+            open_ended_questions=self.open_ended_questions,
+            precomputed_visibility=self.precomputed_visibility
         )
 
         self.column_info: List[Tuple[str, str]] = []
@@ -3849,6 +3855,8 @@ class EnhancedSimulationEngine:
         # Try to use comprehensive response generator if available
         if self.comprehensive_generator is not None:
             try:
+                # v1.0.0: Pass question_name and participant_seed for UNIQUE responses per question
+                question_name = str(question_spec.get("name", ""))
                 return self.comprehensive_generator.generate(
                     question_text=question_text or response_type,
                     sentiment=sentiment,
@@ -3856,6 +3864,8 @@ class EnhancedSimulationEngine:
                     persona_formality=formality,
                     persona_engagement=engagement,
                     condition=condition,
+                    question_name=question_name,
+                    participant_seed=participant_seed,
                 )
             except Exception:
                 # Fall back to basic generator on any error

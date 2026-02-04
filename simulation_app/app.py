@@ -5030,12 +5030,19 @@ if active_step == 2:
         }
         final_rand_level = rand_mapping.get(rand_level, "Participant-level")
 
+        # v1.0.0: Get pre-computed visibility map from QSF parser for accurate simulation
+        qsf_preview = st.session_state.get("qsf_preview")
+        visibility_map = {}
+        if qsf_preview and hasattr(qsf_preview, 'condition_visibility_map'):
+            visibility_map = qsf_preview.condition_visibility_map or {}
+
         st.session_state["inferred_design"] = {
             "conditions": final_conditions,
             "factors": final_factors,
             "scales": final_scales,
             "open_ended_questions": final_open_ended,
             "randomization_level": final_rand_level,
+            "condition_visibility_map": visibility_map,  # v1.0.0: For accurate condition-specific simulation
         }
         st.session_state["randomization_level"] = final_rand_level
 
@@ -5136,9 +5143,11 @@ if active_step == 2:
                 if len(scales) > 3:
                     st.markdown(f"  - _+{len(scales) - 3} more_")
 
-            # Effect size preview
-            effect_size = st.session_state.get("effect_size", 0.5)
-            st.markdown(f"**Effect Size:** d = {effect_size:.2f}")
+            # v1.0.0: Only show effect size if user has explicitly configured one
+            # Don't show default 0.5 as it's misleading when no hypothesis specified
+            if st.session_state.get("add_effect_checkbox", False):
+                effect_size = st.session_state.get("effect_size", 0.5)
+                st.markdown(f"**Effect Size:** d = {effect_size:.2f}")
 
         # Design type detection
         design_type = "Between-subjects"
@@ -5514,6 +5523,86 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
         custom_persona_weights = None
 
     # ========================================
+    # v1.0.0: FINAL DESIGN SUMMARY
+    # Complete overview of what will be simulated
+    # ========================================
+    st.markdown("---")
+    st.markdown("### Final Design Summary")
+    st.caption("Please review your experimental design before generating data.")
+
+    # Get all relevant design info
+    display_conditions = conditions
+    if st.session_state.get("use_crossed_conditions") and st.session_state.get("factorial_crossed_conditions"):
+        display_conditions = st.session_state["factorial_crossed_conditions"]
+
+    confirmed_oe = st.session_state.get("confirmed_open_ended", [])
+    oe_count = len(confirmed_oe)
+
+    # Design metrics row
+    summary_cols = st.columns(5)
+    summary_cols[0].metric("Conditions", len(display_conditions))
+    summary_cols[1].metric("Factors", len(factors))
+    summary_cols[2].metric("DVs", len(scales))
+    summary_cols[3].metric("Open-Ended", oe_count)
+
+    # Determine design type for display
+    n_conds = len(display_conditions)
+    if n_conds == 1:
+        design_type_str = "Single group"
+    elif n_conds == 2:
+        design_type_str = "2-group"
+    elif n_conds == 4:
+        design_type_str = "2×2 factorial"
+    elif n_conds == 6:
+        design_type_str = "2×3 factorial"
+    elif n_conds == 9:
+        design_type_str = "3×3 factorial"
+    else:
+        design_type_str = f"{n_conds}-cell"
+    summary_cols[4].metric("Design", design_type_str)
+
+    # Detailed breakdown
+    detail_col1, detail_col2 = st.columns(2)
+
+    with detail_col1:
+        clean_cond_names = [_clean_condition_name(c) for c in display_conditions]
+        if st.session_state.get("use_crossed_conditions"):
+            st.markdown(f"**Factorial Conditions:** {', '.join(clean_cond_names[:6])}")
+            if len(clean_cond_names) > 6:
+                st.markdown(f"  _{len(clean_cond_names) - 6} more..._")
+        else:
+            st.markdown(f"**Conditions:** {', '.join(clean_cond_names[:6])}")
+            if len(clean_cond_names) > 6:
+                st.markdown(f"  _{len(clean_cond_names) - 6} more..._")
+
+        # DVs
+        dv_names = [s.get('name', 'Unknown') for s in scales if s.get('name')]
+        st.markdown(f"**DVs:** {', '.join(dv_names[:5]) if dv_names else 'Main_DV (default)'}")
+        if len(dv_names) > 5:
+            st.markdown(f"  _{len(dv_names) - 5} more..._")
+
+    with detail_col2:
+        # Open-ended questions
+        if oe_count > 0:
+            oe_names = [oe.get('variable_name', oe.get('name', '')) for oe in confirmed_oe[:5]]
+            oe_display = ', '.join(oe_names)
+            st.markdown(f"**Open-Ended:** {oe_display}")
+            if oe_count > 5:
+                st.markdown(f"  _{oe_count - 5} more..._")
+        else:
+            st.markdown("**Open-Ended:** None configured")
+
+        # Sample info
+        N = st.session_state.get("sample_size", 200)
+        n_per_cell = N // max(1, len(display_conditions))
+        st.markdown(f"**Sample:** {N} total (~{n_per_cell} per condition)")
+
+        # Effect size only if user specified
+        if st.session_state.get("add_effect_checkbox", False):
+            effect_d = st.session_state.get("effect_cohens_d", 0.5)
+            st.markdown(f"**Effect Size:** d = {effect_d:.2f}")
+
+    # ========================================
     # GENERATE BUTTON - with proper state management
     # ========================================
     st.markdown("---")
@@ -5661,6 +5750,8 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
             condition_allocation=condition_allocation,
             seed=None,
             mode="pilot" if not st.session_state.get("advanced_mode", False) else "final",
+            # v1.0.0: Pass pre-computed visibility map for accurate survey flow simulation
+            precomputed_visibility=inferred.get("condition_visibility_map", {}),
         )
 
         try:
@@ -5825,58 +5916,79 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
             else:
                 st.info("Schema validation passed.")
 
+            # v1.0.0: Enhanced instructor email notification with better diagnostics
             instructor_email = st.secrets.get("INSTRUCTOR_NOTIFICATION_EMAIL", "edimant@sas.upenn.edu")
             subject = f"[Behavioral Simulation] Output ({metadata.get('simulation_mode', 'pilot')}) - {title}"
 
             # Get usage stats for internal tracking
             usage_summary = _get_usage_summary()
 
-            body = (
-                "COMPREHENSIVE INSTRUCTOR ANALYSIS ATTACHED\n"
-                "=========================================\n\n"
-                "This email includes detailed statistical analysis that students do NOT receive.\n"
-                "Students get Study_Summary.md and Study_Summary.html (browser-viewable) in their download ZIP.\n\n"
-                "INSTRUCTOR ATTACHMENTS:\n"
-                "- INSTRUCTOR_Statistical_Report.html - Full visual report with charts, t-tests,\n"
-                "  ANOVA, Mann-Whitney, chi-squared, regression analysis, and effect sizes.\n"
-                "  Open in any web browser for best viewing.\n"
-                "- INSTRUCTOR_Detailed_Analysis.md - Text-based analysis (Markdown format)\n"
-                "- Student_Study_Summary.md - What students receive (for reference)\n\n"
-                f"Team: {st.session_state.get('team_name','')}\n"
-                f"Members:\n{st.session_state.get('team_members_raw','')}\n\n"
-                f"Study: {title}\n"
-                f"Sample Size: N={metadata.get('sample_size', 'N/A')}\n"
-                f"Conditions: {len(metadata.get('conditions', []))}\n"
-                f"Generated: {metadata.get('generation_timestamp','')}\n"
-                f"Run ID: {metadata.get('run_id','')}\n\n"
-                "Files in ZIP (what students see):\n"
-                "- Simulated_Data.csv (the data)\n"
-                "- Data_Codebook_Handbook.txt (variable coding)\n"
-                "- Study_Summary.md (basic summary in Markdown)\n"
-                "- Study_Summary.html (same summary - opens in any browser)\n"
-                "- R_Prepare_Data.R (R script)\n"
-                "- Python_Prepare_Data.py (Python/pandas script)\n"
-                "- Julia_Prepare_Data.jl (Julia/DataFrames script)\n"
-                "- SPSS_Prepare_Data.sps (SPSS syntax)\n"
-                "- Stata_Prepare_Data.do (Stata do-file)\n"
-                "- Metadata.json, Schema_Validation.json\n"
-                f"\n{usage_summary}\n"
-            )
-            ok, msg = _send_email_with_sendgrid(
-                to_email=instructor_email,
-                subject=subject,
-                body_text=body,
-                attachments=[
-                    ("simulation_output.zip", zip_bytes),
-                    ("INSTRUCTOR_Statistical_Report.html", comprehensive_html_bytes),  # HTML report with visualizations
-                    ("INSTRUCTOR_Detailed_Analysis.md", comprehensive_bytes),  # Markdown fallback
-                    ("Student_Study_Summary.md", instructor_bytes),  # What students see (for reference)
-                ],
-            )
-            if ok:
-                st.info(f"Instructor auto-email sent to {instructor_email}.")
+            # Check if SendGrid is configured before attempting to send
+            api_key = st.secrets.get("SENDGRID_API_KEY", "")
+            from_email_configured = st.secrets.get("SENDGRID_FROM_EMAIL", "")
+
+            if not api_key or not from_email_configured:
+                st.warning(
+                    f"Email notification to instructor ({instructor_email}) skipped: SendGrid not configured. "
+                    "To enable automatic emails, configure SENDGRID_API_KEY and SENDGRID_FROM_EMAIL in Streamlit secrets."
+                )
             else:
-                st.error(f"Instructor auto-email failed: {msg}")
+                body = (
+                    "COMPREHENSIVE INSTRUCTOR ANALYSIS ATTACHED\n"
+                    "=========================================\n\n"
+                    "This email includes detailed statistical analysis that students do NOT receive.\n"
+                    "Students get Study_Summary.md and Study_Summary.html (browser-viewable) in their download ZIP.\n\n"
+                    "INSTRUCTOR ATTACHMENTS:\n"
+                    "- INSTRUCTOR_Statistical_Report.html - Full visual report with charts, t-tests,\n"
+                    "  ANOVA, Mann-Whitney, chi-squared, regression analysis, and effect sizes.\n"
+                    "  Open in any web browser for best viewing.\n"
+                    "- INSTRUCTOR_Detailed_Analysis.md - Text-based analysis (Markdown format)\n"
+                    "- Student_Study_Summary.md - What students receive (for reference)\n\n"
+                    f"Team: {st.session_state.get('team_name','')}\n"
+                    f"Members:\n{st.session_state.get('team_members_raw','')}\n\n"
+                    f"Study: {title}\n"
+                    f"Sample Size: N={metadata.get('sample_size', 'N/A')}\n"
+                    f"Conditions: {len(metadata.get('conditions', []))}\n"
+                    f"Generated: {metadata.get('generation_timestamp','')}\n"
+                    f"Run ID: {metadata.get('run_id','')}\n\n"
+                    "Files in ZIP (what students see):\n"
+                    "- Simulated_Data.csv (the data)\n"
+                    "- Data_Codebook_Handbook.txt (variable coding)\n"
+                    "- Study_Summary.md (basic summary in Markdown)\n"
+                    "- Study_Summary.html (same summary - opens in any browser)\n"
+                    "- R_Prepare_Data.R (R script)\n"
+                    "- Python_Prepare_Data.py (Python/pandas script)\n"
+                    "- Julia_Prepare_Data.jl (Julia/DataFrames script)\n"
+                    "- SPSS_Prepare_Data.sps (SPSS syntax)\n"
+                    "- Stata_Prepare_Data.do (Stata do-file)\n"
+                    "- Metadata.json, Schema_Validation.json\n"
+                    f"\n{usage_summary}\n"
+                )
+
+                # Log the email attempt for debugging
+                status_placeholder.info(f"Sending instructor notification to {instructor_email}...")
+
+                ok, msg = _send_email_with_sendgrid(
+                    to_email=instructor_email,
+                    subject=subject,
+                    body_text=body,
+                    attachments=[
+                        ("simulation_output.zip", zip_bytes),
+                        ("INSTRUCTOR_Statistical_Report.html", comprehensive_html_bytes),  # HTML report with visualizations
+                        ("INSTRUCTOR_Detailed_Analysis.md", comprehensive_bytes),  # Markdown fallback
+                        ("Student_Study_Summary.md", instructor_bytes),  # What students see (for reference)
+                    ],
+                )
+                if ok:
+                    st.success(f"Instructor auto-email sent to {instructor_email}.")
+                else:
+                    st.error(f"Instructor auto-email failed: {msg}")
+                    # Show diagnostic info to help debug
+                    with st.expander("Email troubleshooting"):
+                        st.markdown(f"- **To:** {instructor_email}")
+                        st.markdown(f"- **From:** {from_email_configured[:20]}...")
+                        st.markdown(f"- **Error:** {msg}")
+                        st.markdown("Check SendGrid dashboard for delivery status and any bounces.")
 
             progress_bar.progress(100, text="Simulation ready.")
             status_placeholder.success("Simulation complete.")
