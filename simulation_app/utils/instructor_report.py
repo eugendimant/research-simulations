@@ -790,19 +790,97 @@ class ComprehensiveInstructorReport:
         lines.append("**This report is for instructor review only. Students receive a simpler version.**")
         lines.append("")
 
-        # Basic info
-        lines.append(f"**Study:** {metadata.get('study_title', 'Untitled')}")
+        # =============================================================
+        # STUDY OVERVIEW SECTION (NEW - All first page info)
+        # =============================================================
+        lines.append("-" * 80)
+        lines.append("## STUDY OVERVIEW")
+        lines.append("-" * 80)
+        lines.append("")
+
+        # Study Title
+        study_title = metadata.get('study_title', 'Untitled Study')
+        lines.append(f"### {study_title}")
+        lines.append("")
+
+        # Team Information
+        if team_info:
+            team_name = team_info.get('team_name', '')
+            team_members = team_info.get('team_members', '')
+            if team_name:
+                lines.append(f"**Team:** {team_name}")
+            if team_members:
+                # Format members nicely (handle newlines)
+                members_formatted = team_members.replace('\n', ', ').replace(',,', ',').strip(', ')
+                lines.append(f"**Team Members:** {members_formatted}")
+            lines.append("")
+
+        # Study Description / Abstract
+        study_description = metadata.get('study_description', '')
+        if study_description:
+            lines.append("### Abstract / Study Description")
+            lines.append("")
+            lines.append(study_description)
+            lines.append("")
+
+        # Experimental Design
+        lines.append("### Experimental Design")
+        lines.append("")
+
+        # Conditions
+        conditions = metadata.get('conditions', [])
+        if conditions:
+            lines.append(f"**Conditions ({len(conditions)}):**")
+            for i, cond in enumerate(conditions, 1):
+                lines.append(f"  {i}. {cond}")
+            lines.append("")
+
+        # Factors (if factorial design)
+        factors = metadata.get('factors', [])
+        if factors:
+            lines.append(f"**Factors ({len(factors)}):**")
+            for factor in factors:
+                factor_name = factor.get('name', 'Factor')
+                levels = factor.get('levels', [])
+                lines.append(f"  - {factor_name}: {', '.join(levels)}")
+            lines.append("")
+
+        # Scales / DVs
+        scales = metadata.get('scales', [])
+        if scales:
+            lines.append(f"**Dependent Variables / Scales ({len(scales)}):**")
+            for scale in scales:
+                scale_name = scale.get('name', 'Scale')
+                scale_points = scale.get('scale_points', 7)
+                num_items = scale.get('num_items', 1)
+                lines.append(f"  - {scale_name} ({num_items} item{'s' if num_items > 1 else ''}, {scale_points}-point scale)")
+            lines.append("")
+
+        # Effect Sizes (hypotheses)
+        effect_sizes = metadata.get('effect_sizes_configured', [])
+        if effect_sizes:
+            lines.append("**Hypothesized Effects:**")
+            for effect in effect_sizes:
+                var = effect.get('variable', '')
+                factor = effect.get('factor', '')
+                d = effect.get('cohens_d', 0)
+                direction = effect.get('direction', 'higher')
+                if d > 0:
+                    lines.append(f"  - {var}: d = {d:.2f} ({direction} in treatment)")
+            lines.append("")
+
+        # Sample Size
+        sample_size = metadata.get('sample_size', 0)
+        lines.append(f"**Sample Size:** N = {sample_size}")
+        lines.append("")
+
+        # Generation Info
+        lines.append("### Generation Details")
+        lines.append("")
         lines.append(f"**Generated:** {metadata.get('generation_timestamp', datetime.now().isoformat())}")
         lines.append(f"**Run ID:** `{metadata.get('run_id', 'N/A')}`")
         lines.append(f"**Mode:** {metadata.get('simulation_mode', 'pilot').title()}")
         lines.append("")
-
-        if team_info:
-            lines.append(f"**Team:** {team_info.get('team_name', 'N/A')}")
-            members = team_info.get('team_members', '')
-            if members:
-                lines.append(f"**Members:** {members.replace(chr(10), ', ')}")
-            lines.append("")
 
         # =============================================================
         # SECTION 1: DATA QUALITY SUMMARY
@@ -3072,12 +3150,89 @@ class ComprehensiveInstructorReport:
         # Header
         html_parts.append("<span class='confidential'>CONFIDENTIAL - INSTRUCTOR ONLY</span>")
         html_parts.append(f"<h1>Comprehensive Statistical Report</h1>")
-        html_parts.append(f"<p><strong>Study:</strong> {metadata.get('study_title', 'Untitled')}</p>")
+
+        # =============================================================
+        # STUDY OVERVIEW SECTION (All first page info)
+        # =============================================================
+        html_parts.append("<div class='stat-box'>")
+        html_parts.append("<h2>Study Overview</h2>")
+
+        # Study Title
+        study_title = metadata.get('study_title', 'Untitled Study')
+        html_parts.append(f"<h3>{study_title}</h3>")
+
+        # Team Information
+        if team_info:
+            team_name = team_info.get('team_name', '')
+            team_members = team_info.get('team_members', '')
+            if team_name:
+                html_parts.append(f"<p><strong>Team:</strong> {team_name}</p>")
+            if team_members:
+                members_formatted = team_members.replace('\n', ', ').replace(',,', ',').strip(', ')
+                html_parts.append(f"<p><strong>Team Members:</strong> {members_formatted}</p>")
+
+        # Study Description / Abstract
+        study_description = metadata.get('study_description', '')
+        if study_description:
+            html_parts.append(f"<p><strong>Abstract:</strong> {study_description}</p>")
+
+        html_parts.append("</div>")
+
+        # Experimental Design Box
+        html_parts.append("<div class='stat-box'>")
+        html_parts.append("<h3>Experimental Design</h3>")
+
+        # Conditions
+        conditions = metadata.get('conditions', [])
+        if conditions:
+            html_parts.append(f"<p><strong>Conditions ({len(conditions)}):</strong></p>")
+            html_parts.append("<ul>")
+            for cond in conditions:
+                html_parts.append(f"<li>{cond}</li>")
+            html_parts.append("</ul>")
+
+        # Factors
+        factors = metadata.get('factors', [])
+        if factors:
+            html_parts.append(f"<p><strong>Factors ({len(factors)}):</strong></p>")
+            html_parts.append("<ul>")
+            for factor in factors:
+                factor_name = factor.get('name', 'Factor')
+                levels = factor.get('levels', [])
+                html_parts.append(f"<li>{factor_name}: {', '.join(levels)}</li>")
+            html_parts.append("</ul>")
+
+        # Scales / DVs
+        scales_meta = metadata.get('scales', [])
+        if scales_meta:
+            html_parts.append(f"<p><strong>Dependent Variables ({len(scales_meta)}):</strong></p>")
+            html_parts.append("<ul>")
+            for scale in scales_meta:
+                scale_name = scale.get('name', 'Scale')
+                scale_points = scale.get('scale_points', 7)
+                num_items = scale.get('num_items', 1)
+                html_parts.append(f"<li>{scale_name} ({num_items} item{'s' if num_items > 1 else ''}, {scale_points}-point)</li>")
+            html_parts.append("</ul>")
+
+        # Effect Sizes
+        effect_sizes = metadata.get('effect_sizes_configured', [])
+        if effect_sizes and any(e.get('cohens_d', 0) > 0 for e in effect_sizes):
+            html_parts.append("<p><strong>Hypothesized Effects:</strong></p>")
+            html_parts.append("<ul>")
+            for effect in effect_sizes:
+                d = effect.get('cohens_d', 0)
+                if d > 0:
+                    var = effect.get('variable', '')
+                    direction = effect.get('direction', 'higher')
+                    html_parts.append(f"<li>{var}: d = {d:.2f} ({direction} in treatment)</li>")
+            html_parts.append("</ul>")
+
+        html_parts.append("</div>")
+
+        # Generation Details
         html_parts.append(f"<p><strong>Generated:</strong> {metadata.get('generation_timestamp', datetime.now().isoformat())}</p>")
         html_parts.append(f"<p><strong>Run ID:</strong> <code>{metadata.get('run_id', 'N/A')}</code></p>")
-
-        if team_info:
-            html_parts.append(f"<p><strong>Team:</strong> {team_info.get('team_name', 'N/A')}</p>")
+        html_parts.append(f"<p><strong>Mode:</strong> {metadata.get('simulation_mode', 'pilot').title()}</p>")
 
         # Summary metrics
         n_total = len(df)
