@@ -1,179 +1,237 @@
-# Technical Methods
+# Technical Methods Documentation
 
 **Behavioral Experiment Simulation Tool v1.0.0**
 
----
-
-## Response Generation Model
-
-### Persona System
-
-The simulation generates individual differences by assigning each simulated participant a "persona" that determines their response patterns throughout the survey.
-
-**Persona Distribution** (based on published estimates):
-
-| Persona | Weight | Source |
-|---------|--------|--------|
-| Engaged Responder | 30-35% | Krosnick (1991) "optimizers" |
-| Satisficer | 20-25% | Krosnick (1991) satisficing theory |
-| Extreme Responder | 8-12% | Greenleaf (1992) ERS prevalence |
-| Acquiescent | 6-8% | Billiet & McClendon (2000) |
-| Careless | 3-8% | Meade & Craig (2012) online samples |
-| Socially Desirable | 10-15% | Paulhus (1991) |
-
-Each persona specifies probability distributions for traits like response tendency, extremity, acquiescence, and attention. Individual participants sample from these distributions, so there's variation within personas too.
-
-### Likert Scale Algorithm
-
-Scale responses go through nine steps:
-
-1. **Base tendency**: Start from persona's preferred scale region
-2. **Domain calibration**: Adjust for construct norms (satisfaction runs high, anxiety runs low)
-3. **Condition effect**: Apply experimental effect based on semantic parsing of condition name
-4. **Reverse coding**: Handle reverse-coded items, with acquiescence artifacts
-5. **Within-person variance**: Add noise based on persona consistency trait
-6. **Extreme responding**: Probabilistically shift to endpoints based on ERS trait
-7. **Acquiescence bias**: Inflate responses based on acquiescence trait
-8. **Social desirability**: Further adjustment for self-presentation
-9. **Boundary enforcement**: Round and clamp to valid scale range
-
-The result: realistic means (4.0-5.2 on 7-point scales), realistic SDs (1.2-1.8), realistic distributions.
-
-### Effect Size Implementation
-
-When you configure an effect, the simulation applies it based on the semantic content of condition names—not their order. The algorithm parses condition names for valence keywords:
-
-- Positive keywords: "high", "good", "positive", "friend", "reward"
-- Negative keywords: "low", "bad", "negative", "enemy", "punishment"
-- Domain-specific: "AI" triggers algorithm aversion adjustment
-
-For factorial designs (e.g., "AI × Hedonic"), each factor's contribution is parsed and combined.
-
-Effect magnitudes follow Cohen (1988):
-- Small: d = 0.20
-- Medium: d = 0.50
-- Large: d = 0.80
-
-The meta-analytic average for social psychology is d = 0.43 (Richard et al., 2003), so "medium" effects are realistic for most studies.
+**Proprietary Software** | Dr. Eugen Dimant, University of Pennsylvania
 
 ---
 
-## Survey Flow Logic
+## 1. Response Generation Framework
 
-### Question Visibility
+### 1.1 Persona-Based Modeling
 
-The simulation respects survey branching. If a question only appears for certain conditions, participants in other conditions get blank responses.
+The simulation employs a persona-based approach to model individual differences in survey responding. Each simulated participant is assigned to a response persona that determines their behavioral patterns throughout the survey.
 
-**Detection methods**:
-1. Explicit condition restrictions in question metadata
-2. DisplayLogic parsing from QSF
-3. Block name analysis (e.g., "AI_Block" → only AI conditions see it)
-4. Question text hints (e.g., "For those who saw the AI recommendation...")
-5. Factor-level matching for factorial designs
+**Persona Distribution Parameters**
 
-For factorial designs, the handler parses crossed conditions (e.g., "AI × Hedonic") and handles partial visibility correctly—if a question is for "AI" participants, both "AI × Hedonic" and "AI × Utilitarian" participants see it.
+| Persona | Base Weight | Empirical Source |
+|---------|-------------|------------------|
+| Engaged Responder | 0.30-0.35 | Krosnick (1991) |
+| Satisficer | 0.20-0.25 | Krosnick (1991) |
+| Extreme Responder | 0.08-0.12 | Greenleaf (1992) |
+| Acquiescent Responder | 0.06-0.08 | Billiet & McClendon (2000) |
+| Careless Responder | 0.03-0.08 | Meade & Craig (2012) |
+| Socially Desirable Responder | 0.10-0.15 | Paulhus (1991) |
 
-### DisplayLogic Parsing
+Persona weights are adjusted based on study context. For instance, technology-focused studies increase the weight of tech-related personas; consumer studies adjust for relevant demographic patterns.
 
-The system parses Qualtrics DisplayLogic structures to extract:
-- Logic type (BooleanExpression, etc.)
-- Conditions that must be met
-- Question dependencies (which questions must be answered first)
+### 1.2 Trait Sampling
 
-This information determines which simulated participants would actually see each question.
+Each persona specifies probability distributions for response traits:
 
----
+- **Response tendency** (0-1): Base position on response scales
+- **Extremity** (0-1): Probability of endpoint usage
+- **Acquiescence** (0-1): Agreement bias magnitude
+- **Attention level** (0-1): Probability of careful question reading
+- **Consistency** (0-1): Within-person response stability
+- **Verbosity** (0-1): Open-ended response length tendency
 
-## Open-Ended Response Generation
-
-### Method
-
-Text responses use template-based generation with:
-1. **Domain detection**: 175+ research domains identified by keyword matching
-2. **Question type classification**: 30+ types (explanation, evaluation, feedback, etc.)
-3. **Sentiment alignment**: Response valence matches participant's overall scale responses
-4. **Persona modulation**: Verbosity, formality, and engagement adjust output
-5. **Question-specific personalization**: Keywords from question text shape the response
-
-### Persona Effects on Text
-
-| Persona | Text Characteristics |
-|---------|----------------------|
-| Engaged | Multi-sentence, detailed, on-topic |
-| Satisficer | Short, minimal effort, generic |
-| Careless | Very short, typos, sometimes off-topic |
-| Extreme | Strong language, emphatic |
-| Acquiescent | Agreeable tone, positive framing |
-
-### Uniqueness
-
-Each question gets different responses because:
-- Question text is parsed for keywords that modify the template
-- Question type determines response structure
-- Participant seed combines with question hash for reproducible variation
-- Domain detection may differ per question
+Individual participants sample trait values from persona-specific distributions, producing realistic within-persona variation.
 
 ---
 
-## Exclusion Criteria Simulation
+## 2. Likert Scale Response Algorithm
+
+Scale responses are generated through a multi-stage process:
+
+**Stage 1: Base Response**
+```
+base = response_tendency × (scale_max - scale_min) + scale_min
+```
+
+**Stage 2: Domain Calibration**
+
+Adjustments based on construct-specific norms:
+- Satisfaction measures: +0.08 (Oliver, 1980)
+- Anxiety measures: -0.05 (typical negative affect distributions)
+- Trust measures: +0.04 (Mayer et al., 1995)
+
+**Stage 3: Experimental Effect Application**
+
+Condition effects are applied based on semantic parsing of condition names:
+```
+effect = semantic_effect × configured_d × SCALE_FACTOR
+```
+
+The semantic parser identifies valence from condition labels (e.g., "high" vs. "low", "positive" vs. "negative") and applies effects accordingly.
+
+**Stage 4: Reverse Coding Handling**
+
+For reverse-coded items:
+```
+response = scale_max - (response - scale_min)
+acquiescence_artifact = acquiescence × 0.25 × scale_range
+```
+
+**Stage 5: Within-Person Variance**
+```
+SD = (scale_range / 4) × consistency_trait
+response += N(0, SD)
+```
+
+**Stage 6: Extreme Response Style**
+```
+if U(0,1) < extremity × 0.45:
+    response = endpoint (min or max based on current value)
+```
+
+**Stage 7: Acquiescence Bias**
+```
+response += (acquiescence - 0.5) × scale_range × 0.20
+```
+
+**Stage 8: Social Desirability**
+```
+response += (SD_trait - 0.5) × scale_range × 0.12  [for positive items]
+```
+
+**Stage 9: Boundary Enforcement**
+```
+response = round(clamp(response, scale_min, scale_max))
+```
+
+**Target Distributional Properties:**
+- Means: 4.0-5.2 on 7-point scales (reflecting positivity bias)
+- Standard deviations: 1.2-1.8
+- Distributions: Approximately normal with slight negative skew
+
+---
+
+## 3. Effect Size Implementation
+
+### 3.1 Semantic Condition Parsing
+
+Effect direction is determined by parsing condition names for semantic content:
+
+**Positive valence indicators:** high, good, positive, friend, reward, benefit, gain, success, win, advantage
+
+**Negative valence indicators:** low, bad, negative, enemy, punishment, cost, loss, failure, disadvantage
+
+**Domain-specific adjustments:**
+- AI/algorithm conditions: -0.08 (algorithm aversion; Dietvorst et al., 2015)
+- Hedonic conditions: +0.05 (hedonic consumption premium)
+- Risk conditions: -0.03 (risk aversion baseline)
+
+### 3.2 Effect Magnitude Calibration
+
+Effect sizes follow Cohen's (1988) conventions with empirical calibration:
+
+| Category | Cohen's d | Scale Points (7-pt) |
+|----------|-----------|---------------------|
+| Small | 0.20 | ~0.3 points |
+| Medium | 0.50 | ~0.7 points |
+| Large | 0.80 | ~1.1 points |
+
+The meta-analytic average for social psychology experiments is d = 0.43 (Richard et al., 2003), suggesting that "medium" effects represent typical experimental findings.
+
+---
+
+## 4. Survey Flow Logic
+
+### 4.1 Question Visibility Determination
+
+The simulation respects the survey's programmed logic. Questions are only presented to participants whose condition assignment would make those questions visible.
+
+**Detection Methods:**
+
+1. **Explicit condition restrictions**: Question metadata specifies visible conditions
+2. **DisplayLogic parsing**: Qualtrics display logic structures are parsed to extract visibility rules
+3. **Block name analysis**: Block names containing condition keywords indicate condition-specific content
+4. **Question text analysis**: Phrases such as "for those who saw..." indicate conditional questions
+5. **Factor-level matching**: For factorial designs, partial factor matches are handled appropriately
+
+### 4.2 Factorial Design Support
+
+For crossed factorial designs (e.g., "AI × Hedonic"), the system:
+- Parses condition names into constituent factors
+- Determines which questions apply to which factor levels
+- Ensures participants in "AI × Hedonic" see both AI-specific and Hedonic-specific questions
+
+---
+
+## 5. Open-Ended Response Generation
+
+### 5.1 Generation Pipeline
+
+1. **Question type classification**: 30+ types identified via regex patterns
+2. **Domain detection**: 175+ research domains via keyword matching
+3. **Template selection**: Domain × sentiment × question-type specific templates
+4. **Personalization**: Question-specific keywords modify template content
+5. **Persona modulation**: Verbosity, formality, and engagement adjustments
+6. **Condition context**: Condition-specific elements incorporated
+
+### 5.2 Response Characteristics by Persona
+
+| Persona | Typical Length | Style | Quality |
+|---------|----------------|-------|---------|
+| Engaged | 2-4 sentences | Detailed, thoughtful | High |
+| Satisficer | 1 sentence | Brief, generic | Adequate |
+| Careless | 1-3 words | Minimal, off-topic | Poor |
+| Extreme | 1-2 sentences | Emphatic | Moderate |
+
+---
+
+## 6. Exclusion Criteria Simulation
 
 The simulation generates realistic exclusion flags:
 
-| Flag | Basis |
-|------|-------|
-| Completion time | Too fast or too slow based on persona attention |
-| Attention check failures | Careless and satisficer personas fail at higher rates |
-| Straight-lining | Low-consistency personas produce more straight-line patterns |
+| Criterion | Implementation |
+|-----------|----------------|
+| Completion time | Based on attention level; careless = fast, engaged = moderate |
+| Attention check failures | Probability = 1 - attention_level |
+| Straight-lining | Consecutive identical responses based on consistency trait |
 
-Flags can be combined into an overall "exclude recommended" flag based on configurable thresholds.
-
----
-
-## Reproducibility
-
-The simulation uses seeded random number generation throughout:
-- Main seed: Timestamp + study hash if not specified
-- Participant seeds: Main seed + participant index
-- Column seeds: Main seed + column hash
-
-Same seed + same parameters = identical output across runs.
-
-Hashes use MD5 (not Python's `hash()`) for cross-platform stability.
+Flags combine into an overall exclusion recommendation based on configurable thresholds.
 
 ---
 
-## Validation
+## 7. Reproducibility
 
-### Effect Recovery
+### 7.1 Seeding Strategy
 
-The simulation includes diagnostic checks that compare configured effect sizes to observed effects in generated data. Strong order effects (correlation > 0.7 between condition position and means) trigger warnings—effects should come from semantic content, not position.
+All random elements use seeded generators:
+- **Main seed**: User-specified or timestamp + hash
+- **Participant seed**: main_seed + participant_index × 100
+- **Column seed**: main_seed + participant_index × 100 + MD5(column_name)
 
-### Distributional Checks
+### 7.2 Cross-Platform Consistency
 
-Generated data should match:
-- Likert means: 4.0-5.2 on 7-point scales
-- Likert SDs: 1.2-1.8
-- Attention pass rates: 85-95% depending on difficulty
-- Careless responder rate: 3-10%
+MD5 hashing (rather than Python's native `hash()`) ensures identical results across platforms and sessions.
 
 ---
 
-## References
+## 8. References
 
-Billiet, J. B., & McClendon, M. J. (2000). Modeling acquiescence in measurement models for two balanced sets of items. *Structural Equation Modeling, 7*(4), 608-628.
+Billiet, J. B., & McClendon, M. J. (2000). Modeling acquiescence in measurement models. *Structural Equation Modeling, 7*(4), 608-628.
 
-Cohen, J. (1988). *Statistical Power Analysis for the Behavioral Sciences* (2nd ed.). Erlbaum.
+Cohen, J. (1988). *Statistical Power Analysis for the Behavioral Sciences* (2nd ed.). Lawrence Erlbaum.
+
+Dietvorst, B. J., Simmons, J. P., & Massey, C. (2015). Algorithm aversion. *Journal of Experimental Psychology: General, 144*(1), 114-126.
 
 Greenleaf, E. A. (1992). Measuring extreme response style. *Public Opinion Quarterly, 56*(3), 328-351.
 
-Krosnick, J. A. (1991). Response strategies for coping with the cognitive demands of attitude measures in surveys. *Applied Cognitive Psychology, 5*(3), 213-236.
+Krosnick, J. A. (1991). Response strategies for coping with the cognitive demands of attitude measures. *Applied Cognitive Psychology, 5*(3), 213-236.
+
+Mayer, R. C., Davis, J. H., & Schoorman, F. D. (1995). An integrative model of organizational trust. *Academy of Management Review, 20*(3), 709-734.
 
 Meade, A. W., & Craig, S. B. (2012). Identifying careless responses in survey data. *Psychological Methods, 17*(3), 437-455.
 
-Paulhus, D. L. (1991). Measurement and control of response bias. *Measures of Personality and Social Psychological Attitudes*, 17-59.
+Oliver, R. L. (1980). A cognitive model of the antecedents and consequences of satisfaction decisions. *Journal of Marketing Research, 17*(4), 460-469.
 
-Richard, F. D., Bond Jr, C. F., & Stokes-Zoota, J. J. (2003). One hundred years of social psychology quantitatively described. *Review of General Psychology, 7*(4), 331-363.
+Paulhus, D. L. (1991). Measurement and control of response bias. In J. P. Robinson et al. (Eds.), *Measures of Personality and Social Psychological Attitudes* (pp. 17-59). Academic Press.
+
+Richard, F. D., Bond, C. F., & Stokes-Zoota, J. J. (2003). One hundred years of social psychology quantitatively described. *Review of General Psychology, 7*(4), 331-363.
 
 ---
 
-*© 2026 Dr. Eugen Dimant. Proprietary.*
+*© 2026 Dr. Eugen Dimant. All rights reserved. Proprietary and confidential.*

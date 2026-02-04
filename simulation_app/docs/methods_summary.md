@@ -1,124 +1,129 @@
 # Behavioral Experiment Simulation Tool
 
-**Version 1.0.0** | Dr. Eugen Dimant | [eugendimant.github.io](https://eugendimant.github.io/)
+**Version 1.0.0** | Proprietary Software
+
+**Developer**: Dr. Eugen Dimant, University of Pennsylvania
 
 ---
 
-## What This Actually Is
+## Overview
 
-This tool creates fake survey data that looks real. Not random numbers—actual data that behaves the way human responses behave, with all the messiness and individual variation you'd see in a real sample.
+The Behavioral Experiment Simulation Tool is a proprietary software system that generates high-fidelity synthetic behavioral data for experimental research. The tool produces datasets that accurately replicate the statistical properties, individual differences, and response patterns observed in human subjects research.
 
-Why would you want fake data? Because analyzing real data is high-stakes. You collect once, you analyze once, and if you screwed something up—wrong coding, bad exclusion logic, broken analysis script—you might not find out until a reviewer points it out. That's a disaster.
-
-With simulated data, you can run your entire analysis pipeline a hundred times before you touch real data. Find the bugs when they're cheap to fix.
+This software addresses a critical gap in research methodology: the need to validate analysis pipelines, test pre-registrations, and train students on realistic data before committing resources to actual data collection.
 
 ---
 
-## Who Uses This
+## Core Capabilities
 
-**Researchers** upload their Qualtrics survey, configure their experimental conditions, and get realistic pilot data. They test their analysis scripts, check their variable coding, verify their pre-registration actually matches their measures. All before spending a dime on data collection.
+### Synthetic Data Generation
 
-**Students** get practice datasets for coursework. The data has known properties—I know exactly what effects are in there—so I can check whether students' analyses found them correctly. They learn on data that teaches something, not data that just frustrates them.
+The tool generates synthetic survey responses that exhibit the same distributional properties as real behavioral data:
 
-**Methods instructors** can generate datasets at different difficulty levels. Easy mode: clean data, obvious effects. Hard mode: realistic attention check failures, careless responders, noisy effects. Students learn to handle real-world data quality problems.
+- Realistic means and standard deviations for Likert-type scales
+- Appropriate inter-item correlations within multi-item measures
+- Naturalistic variation in attention and engagement across participants
+- Authentic patterns of careless responding and satisficing behavior
 
----
+### Survey Structure Fidelity
 
-## How the Simulation Works
+When a Qualtrics survey file (QSF) is uploaded, the simulation engine:
 
-### Personas, Not Random Numbers
+- Parses the complete survey structure including all question types
+- Identifies experimental conditions from randomization elements
+- Detects dependent variables, manipulation checks, and attention checks
+- Respects display logic and skip patterns in the original survey
 
-Real survey respondents are different from each other. Some read carefully and think hard about every question. Some rush through and satisfice. Some always agree with things. Some always use extreme responses.
+The output dataset maps precisely onto the programmed experiment—every variable, every condition, every branching path is reflected accurately in the synthetic data.
 
-The simulation models this. Each simulated participant gets assigned a persona—engaged responder, satisficer, extreme responder, acquiescent responder, careless responder. Their responses then follow that persona's patterns across the whole survey.
+### Persona-Based Response Modeling
 
-The persona weights come from published research:
-- About 30% of respondents are genuinely engaged (Krosnick's "optimizers")
-- About 20-25% are satisficers (good enough responding)
-- About 8-12% show extreme response style (Greenleaf's research)
-- About 5-8% are careless responders (Meade & Craig's estimates)
+Rather than generating responses from a single distribution, the tool models participant heterogeneity through empirically-grounded response personas:
 
-This means your simulated data has the same heterogeneity as real data. The standard deviations are realistic. The attention check fail rates are realistic. The straight-lining patterns are realistic.
+| Persona Type | Prevalence | Theoretical Basis |
+|--------------|------------|-------------------|
+| Engaged Responder | 30-35% | Krosnick's (1991) "optimizing" response mode |
+| Satisficer | 20-25% | Krosnick's (1991) satisficing theory |
+| Extreme Responder | 8-12% | Greenleaf's (1992) extreme response style |
+| Acquiescent Responder | 6-8% | Billiet & McClendon (2000) |
+| Careless Responder | 3-8% | Meade & Craig (2012) |
 
-### Effect Sizes That Make Sense
-
-When you configure an experimental effect, the simulation uses effect size benchmarks from meta-analyses. A "medium" effect is Cohen's d = 0.5, which matches what most experimental studies actually find (Richard et al., 2003 meta-analysis: average social psychology effect is d = 0.43).
-
-The simulation also understands your conditions semantically. If your conditions are "AI Recommendation" vs "Human Recommendation," it knows AI conditions typically show algorithm aversion effects. If your conditions are "High Trust" vs "Low Trust," it knows the direction. You don't have to manually specify which condition should score higher—it figures it out from the names.
-
-### Open-Ended Responses
-
-The simulator generates text for open-ended questions. Not random words—actual sentences that reflect the question being asked, the participant's overall sentiment (based on their scale responses), and their persona's verbosity.
-
-A satisficer writes "It was fine." An engaged responder writes three sentences explaining their reasoning. A careless responder writes "idk" or something off-topic.
-
-The text varies by question content. Different questions get different responses, even for the same participant. This matters when you're testing how your text coding scheme handles variation.
+Each simulated participant is assigned a persona, and their responses across all measures reflect that persona's characteristic patterns.
 
 ---
 
-## What You Actually Get
+## Applications
 
-Upload your QSF file, configure your study parameters, run the simulation. You get:
+### Pre-Data Collection Validation
 
-| File | What's In It |
-|------|--------------|
-| CSV data | Complete simulated dataset, properly formatted |
-| Metadata | JSON with all simulation parameters |
-| R script | Analysis-ready code for your specific variables |
-| Python script | Same, but Python |
-| Codebook | Variable descriptions for documentation |
+Researchers can test their complete analysis pipeline on synthetic data structured identically to their planned study. This identifies coding errors, variable miscalculations, and logical flaws before they compromise actual research.
 
-The data looks like Qualtrics export format because it's meant to drop into your existing workflow.
+### Pre-Registration Verification
 
----
+The tool compares uploaded pre-registration documents against the survey structure, flagging discrepancies between registered measures and implemented variables.
 
-## Survey Logic Awareness
+### Methods Training
 
-The tool parses your survey's display logic and skip logic. If certain questions only appear for certain conditions, simulated participants in other conditions get blank responses for those questions—just like real data.
+Instructors can generate synthetic datasets with known properties for coursework. Difficulty levels control data quality characteristics:
 
-This matters when your survey has branching. You don't want fake data where everyone answered everything regardless of condition assignment. The simulation respects your survey structure.
+| Level | Attention Pass Rate | Careless Responders | Data Quality |
+|-------|---------------------|---------------------|--------------|
+| Easy | 98% | Minimal | Clean |
+| Medium | 92% | Some | Moderate noise |
+| Hard | 85% | Realistic | MTurk-typical |
+| Expert | 75% | High | Extensive cleaning required |
 
----
+Students learn to identify and handle data quality issues on datasets where the ground truth is known.
 
-## Difficulty Levels
+### Power Analysis Validation
 
-For teaching purposes, you can set difficulty:
-
-| Level | What It Means |
-|-------|---------------|
-| Easy | 98% attention pass rate, minimal noise, clear effects |
-| Medium | 92% attention pass rate, some careless responders |
-| Hard | 85% attention pass rate, realistic MTurk-quality data |
-| Expert | 75% attention pass rate, extensive cleaning required |
-
-Students can progress from clean data to messy data as they develop skills.
+By generating synthetic data with specified effect sizes, researchers can verify that their planned sample sizes provide adequate power for the anticipated effects.
 
 ---
 
-## Pre-Registration Checking
+## Technical Foundation
 
-Upload a pre-registration PDF (OSF, AEA, AsPredicted formats). The tool compares your pre-registered IVs and DVs against what's actually in your survey. Catches discrepancies before they become problems.
+### Effect Size Calibration
+
+Experimental effects are calibrated to published meta-analytic benchmarks:
+
+- Small effects: Cohen's d = 0.20
+- Medium effects: Cohen's d = 0.50 (consistent with Richard et al., 2003 meta-analytic mean)
+- Large effects: Cohen's d = 0.80
+
+Effect direction is determined by semantic analysis of condition names, ensuring that effects follow the logical structure of the experimental design rather than arbitrary ordering.
+
+### Open-Ended Response Generation
+
+Text responses for open-ended questions are generated using domain-specific templates spanning 175+ research areas. Responses reflect:
+
+- Question content and type
+- Participant's overall response sentiment
+- Persona-appropriate verbosity and formality
+- Condition-specific contextual elements
+
+### Reproducibility
+
+All stochastic elements use seeded random number generation. Identical parameters produce identical outputs across sessions and platforms.
 
 ---
 
-## Technical Details
+## Output Files
 
-The simulation engine uses:
-- MD5-based stable hashing for reproducibility
-- Condition-semantic parsing for effect direction
-- Multi-factor persona trait sampling
-- Domain detection (175+ research domains) for appropriate response calibration
-- Template-based text generation with persona modulation
-
-Full technical documentation available in `technical_methods.md`.
+| File | Description |
+|------|-------------|
+| `Simulated_Data.csv` | Complete synthetic dataset |
+| `Study_Summary.md` | Documentation of study parameters |
+| `Metadata.json` | Full simulation configuration |
+| `Analysis_Script.R` | R code for data preparation |
+| `Analysis_Script.py` | Python code for data preparation |
+| `Codebook.md` | Variable descriptions |
 
 ---
 
-## Limitations
+## Proprietary Notice
 
-This is simulated data. It's useful for testing, training, and verification. It's not a substitute for actual human subjects research, and it shouldn't be represented as real data.
-
-The personas are based on published research but are still approximations. Real human behavior is more complex. The simulation captures major patterns, not every nuance.
+This software is the proprietary intellectual property of Dr. Eugen Dimant. Unauthorized reproduction, distribution, or derivative works are prohibited.
 
 ---
 
@@ -131,4 +136,4 @@ edimant@sas.upenn.edu
 
 ---
 
-*© 2026 Dr. Eugen Dimant. Proprietary software.*
+*© 2026 Dr. Eugen Dimant. All rights reserved.*
