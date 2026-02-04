@@ -1756,10 +1756,24 @@ class SurveyFlowHandler:
     5. Factor-level matching for factorial designs
     """
 
-    def __init__(self, conditions: List[str], open_ended_questions: List[Dict[str, Any]]):
+    def __init__(
+        self,
+        conditions: List[str],
+        open_ended_questions: List[Dict[str, Any]],
+        precomputed_visibility: Optional[Dict[str, Dict[str, bool]]] = None
+    ):
+        """Initialize the survey flow handler.
+
+        Args:
+            conditions: List of condition names
+            open_ended_questions: List of question info dicts
+            precomputed_visibility: v1.0.0 - Optional pre-computed visibility map from QSF parser
+                Format: {condition: {question_id: True/False}}
+        """
         self.conditions = [str(c).lower().strip() for c in conditions]
         self.condition_map = {c.lower().strip(): c for c in conditions}
         self.questions = open_ended_questions
+        self.precomputed_visibility = precomputed_visibility or {}
         # Parse conditions into factors for factorial designs
         self.factor_levels = self._extract_factor_levels()
         self.visibility_map = self._build_visibility_map()
@@ -1788,40 +1802,67 @@ class SurveyFlowHandler:
         return factor_levels
 
     def _build_visibility_map(self) -> Dict[str, Dict[str, bool]]:
-        """Build map of question -> condition -> visibility."""
+        """Build map of question -> condition -> visibility.
+
+        v1.0.0: Enhanced to use pre-computed visibility from QSF parser when available.
+        The pre-computed visibility is based on comprehensive block-level analysis
+        of the survey flow structure (BlockRandomizers, display logic, etc.).
+        """
         visibility = {}
 
         for q in self.questions:
             q_name = str(q.get("name", "")).strip()
+            q_id = str(q.get("question_id", q.get("qid", q_name))).strip()
             if not q_name:
                 continue
 
-            # Get various sources of visibility info
-            display_logic = q.get("display_logic") or q.get("display_logic_details") or {}
-            condition_restriction = q.get("condition") or q.get("visible_conditions") or []
-            block_name = str(q.get("block_name", "")).lower()
-            question_text = str(q.get("question_text", "")).lower()
-
-            # Initialize all conditions as visible by default
-            q_visibility = {c: True for c in self.conditions}
-
-            # Method 1: Explicit condition restrictions
-            if condition_restriction:
-                if isinstance(condition_restriction, str):
-                    condition_restriction = [condition_restriction]
-                allowed = [str(c).lower().strip() for c in condition_restriction]
+            # v1.0.0: First check pre-computed visibility from QSF parser
+            # This is more accurate as it's based on actual block-level flow analysis
+            precomputed_used = False
+            if self.precomputed_visibility:
+                q_visibility = {}
                 for cond in self.conditions:
-                    q_visibility[cond] = self._condition_matches_any(cond, allowed)
+                    # Find matching condition in precomputed (case-insensitive)
+                    for pc_cond, pc_vis in self.precomputed_visibility.items():
+                        if pc_cond.lower().strip() == cond:
+                            # Check if question is in this condition's visibility
+                            # Try both q_name and q_id
+                            if q_id in pc_vis:
+                                q_visibility[cond] = pc_vis[q_id]
+                                precomputed_used = True
+                            elif q_name in pc_vis:
+                                q_visibility[cond] = pc_vis[q_name]
+                                precomputed_used = True
+                            break
 
-            # Method 2: Display logic parsing
-            if display_logic and isinstance(display_logic, dict):
-                self._apply_display_logic(q_visibility, display_logic)
+            # Fall back to building visibility from question metadata
+            if not precomputed_used:
+                # Get various sources of visibility info
+                display_logic = q.get("display_logic") or q.get("display_logic_details") or {}
+                condition_restriction = q.get("condition") or q.get("visible_conditions") or []
+                block_name = str(q.get("block_name", "")).lower()
+                question_text = str(q.get("question_text", "")).lower()
 
-            # Method 3: Block name analysis
-            self._apply_block_name_logic(q_visibility, block_name)
+                # Initialize all conditions as visible by default
+                q_visibility = {c: True for c in self.conditions}
 
-            # Method 4: Question text hints (e.g., "For AI condition participants...")
-            self._apply_question_text_hints(q_visibility, question_text)
+                # Method 1: Explicit condition restrictions
+                if condition_restriction:
+                    if isinstance(condition_restriction, str):
+                        condition_restriction = [condition_restriction]
+                    allowed = [str(c).lower().strip() for c in condition_restriction]
+                    for cond in self.conditions:
+                        q_visibility[cond] = self._condition_matches_any(cond, allowed)
+
+                # Method 2: Display logic parsing
+                if display_logic and isinstance(display_logic, dict):
+                    self._apply_display_logic(q_visibility, display_logic)
+
+                # Method 3: Block name analysis
+                self._apply_block_name_logic(q_visibility, block_name)
+
+                # Method 4: Question text hints (e.g., "For AI condition participants...")
+                self._apply_question_text_hints(q_visibility, question_text)
 
             visibility[q_name] = q_visibility
 
