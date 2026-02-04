@@ -165,6 +165,68 @@ For a question "What did you think about the AI recommendations?":
 
 ---
 
+## Research Domain Coverage: 225+ Scientific Areas
+
+The response generation system has been trained on **hundreds of scientific insights** drawn from decades of research across the social and behavioral sciences. This extensive knowledge base enables the tool to generate contextually appropriate responses for virtually any research topic you might study.
+
+### Major Research Fields
+
+The system covers **33 major research categories** with over **225 specialized domains**:
+
+| Field | Domains | Example Topics |
+|-------|---------|----------------|
+| **Behavioral Economics** | 12 | Trust games, dictator games, ultimatum games, public goods, risk preferences, time preferences, loss aversion, framing effects, anchoring, sunk cost fallacy |
+| **Social Psychology** | 15 | Intergroup relations, social identity, norms, conformity, prosocial behavior, cooperation, fairness, social influence, attribution, stereotypes, prejudice, empathy |
+| **Political Science** | 10 | Polarization, partisanship, voting behavior, media effects, policy attitudes, civic engagement, political trust, ideology, misinformation |
+| **Consumer/Marketing** | 10 | Brand perception, advertising effectiveness, purchase intent, brand loyalty, price perception, service quality, customer satisfaction, word-of-mouth |
+| **Organizational Behavior** | 10 | Leadership, teamwork, motivation, job satisfaction, organizational commitment, work-life balance, employee engagement, organizational culture |
+| **Technology & AI** | 10 | AI attitudes, privacy concerns, automation, algorithm aversion, technology adoption, social media, digital wellbeing, human-AI interaction |
+| **Health Psychology** | 10 | Medical decision-making, wellbeing, health behaviors, mental health, vaccination attitudes, pain management, patient-provider communication |
+| **Ethics & Moral Psychology** | 8 | Moral judgment, ethical dilemmas, moral emotions, values, ethical leadership, corporate ethics, research ethics |
+| **Environmental Psychology** | 8 | Sustainability, climate attitudes, pro-environmental behavior, green consumption, conservation, energy behavior |
+| **Cognitive Psychology** | 8 | Decision-making, memory, attention, reasoning, problem-solving, cognitive biases, metacognition |
+
+### Additional Specialized Domains
+
+The system also covers:
+
+- **Education** (8 domains): Learning, academic motivation, teaching effectiveness, online learning, educational technology
+- **Developmental Psychology** (6 domains): Parenting, childhood development, aging, life transitions
+- **Clinical Psychology** (6 domains): Anxiety, depression, coping strategies, therapy attitudes, stress
+- **Communication** (6 domains): Persuasion, media effects, interpersonal communication, narrative processing
+- **Neuroeconomics** (6 domains): Reward processing, impulse control, emotional regulation, cognitive load
+- **Sports Psychology** (6 domains): Athletic motivation, team dynamics, performance anxiety, fan behavior
+- **Legal Psychology** (6 domains): Jury decision-making, witness memory, procedural justice
+- **Food Psychology** (6 domains): Eating behavior, food choice, nutrition knowledge, body image
+- **Human Factors** (6 domains): User experience, interface design, safety behavior, human error
+- **Cross-Cultural** (5 domains): Cultural values, acculturation, cultural identity
+- **Positive Psychology** (5 domains): Gratitude, resilience, flourishing, life satisfaction
+- **Financial Psychology** (6 domains): Financial literacy, investment behavior, retirement planning
+- **Personality Psychology** (6 domains): Big Five traits, narcissism, dark triad, self-concept
+- **Social Media Research** (6 domains): Online identity, digital communication, influencer effects
+
+### Topic-Specific Response Generation
+
+For each research domain, the system maintains specialized knowledge about:
+
+1. **Key constructs and terminology** used in that field
+2. **Typical response patterns** observed in empirical studies
+3. **Common participant concerns and attitudes** documented in the literature
+4. **Domain-specific language and phrasing** that real participants use
+
+This means when you study cooperation in public goods games, the system generates responses that reference concepts like "contribution," "free-riding," "collective benefit," and "reciprocity"—just as real participants would. Similarly, for AI trust research, responses naturally mention "algorithmic recommendations," "automation," "reliability," and "transparency."
+
+### Scientific Foundation
+
+The domain knowledge is built on insights from:
+
+- **Classic experiments**: Kahneman & Tversky's prospect theory work, Milgram's obedience studies, Asch's conformity experiments
+- **Meta-analyses**: Aggregated findings from hundreds of studies in each domain
+- **Replication projects**: Many Labs, Psychological Science Accelerator, and other large-scale replication efforts
+- **Contemporary research**: Recent publications in top journals (JPSP, Psychological Science, JEP:G, Management Science, etc.)
+
+---
+
 ## Data Quality Features
 
 ### Attention Check Simulation

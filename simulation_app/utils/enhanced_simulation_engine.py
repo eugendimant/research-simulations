@@ -240,7 +240,12 @@ except ImportError:
 
 
 def _stable_int_hash(s: str) -> int:
-    """Stable, cross-run integer hash for strings."""
+    """Stable, cross-run integer hash for strings.
+
+    v1.0.0: Added guard for empty/None input strings.
+    """
+    if not s:
+        return 0
     return int(hashlib.md5(s.encode("utf-8")).hexdigest()[:8], 16)
 
 
@@ -1539,7 +1544,9 @@ def _generate_consistent_responses(
         if item_similarities and previous_response is not None and i > 0:
             # Pull toward previous response based on similarity
             similarity = item_similarities[i-1][i] if i < len(item_similarities) else 0.5
-            prev_normalized = (previous_response - 1) / (scale_points - 1)
+            # v1.0.0: Guard against division by zero when scale_points <= 1
+            scale_range = max(scale_points - 1, 1)
+            prev_normalized = (previous_response - 1) / scale_range
             item_tendency = item_tendency * (1 - similarity * 0.3) + prev_normalized * similarity * 0.3
 
         # Convert to scale response
@@ -1686,8 +1693,9 @@ def _compute_data_quality_metrics(
     }
 
     # 1. Condition balance
-    if 'CONDITION' in data.columns:
+    if 'CONDITION' in data.columns and len(conditions) > 0:
         cond_counts = data['CONDITION'].value_counts()
+        # v1.0.0: Guard against division by zero
         expected = len(data) / len(conditions)
         balance_scores = []
         for cond in conditions:
@@ -2408,6 +2416,18 @@ class EnhancedSimulationEngine:
 
     def _assign_persona(self, participant_id: int) -> Tuple[str, Persona]:
         persona_names = list(self.available_personas.keys())
+
+        # v1.0.0: Guard against empty persona list
+        if not persona_names:
+            # Fallback to default engaged persona
+            default_persona = Persona(
+                name="engaged",
+                description="Default engaged responder",
+                weight=1.0,
+                traits={"response_tendency": 0.65, "variance": 0.3}
+            )
+            return "engaged", default_persona
+
         weights = [self.available_personas[n].weight for n in persona_names]
 
         p_seed = (self.seed + participant_id * 7919) % (2**31)
@@ -3348,8 +3368,12 @@ class EnhancedSimulationEngine:
         # This ensures conditions with similar meanings have slight differences
         # =====================================================================
 
-        # Use MD5 hash of condition name for stable but non-positional variation
-        condition_hash = int(hashlib.md5(condition.encode()).hexdigest(), 16)
+        # v1.0.0: Guard against empty condition string
+        if not condition:
+            condition_hash = 0
+        else:
+            # Use MD5 hash of condition name for stable but non-positional variation
+            condition_hash = int(hashlib.md5(condition.encode()).hexdigest(), 16)
         # Small random-like adjustment based on hash (-0.05 to +0.05)
         hash_adjustment = ((condition_hash % 1000) / 1000.0 - 0.5) * 0.08
 
@@ -4469,7 +4493,8 @@ class EnhancedSimulationEngine:
             lines.append("")
 
         lines.extend(["-" * 70, "EXPERIMENTAL CONDITIONS", "-" * 70, ""])
-        n_per = self.sample_size // len(self.conditions)
+        # v1.0.0: Guard against division by zero when no conditions
+        n_per = self.sample_size // max(len(self.conditions), 1)
         for cond in self.conditions:
             lines.append(f"  - {cond} (target n = {n_per})")
 

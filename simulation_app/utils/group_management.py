@@ -87,7 +87,10 @@ class GroupManager:
                 self._groups = {}
 
     def _save(self):
-        """Save groups to storage file."""
+        """Save groups to storage file.
+
+        v1.0.0: Added exception handling for write failures.
+        """
         data = {
             'groups': {},
             'last_updated': datetime.now().isoformat()
@@ -96,8 +99,11 @@ class GroupManager:
             group_dict = asdict(group)
             data['groups'][str(group_num)] = group_dict
 
-        with open(self.storage_path, 'w') as f:
-            json.dump(data, f, indent=2)
+        try:
+            with open(self.storage_path, 'w') as f:
+                json.dump(data, f, indent=2)
+        except (IOError, OSError) as e:
+            print(f"Warning: Could not save groups file: {e}")
 
     def register_group(
         self,

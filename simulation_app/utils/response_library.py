@@ -4378,6 +4378,17 @@ class ComprehensiveResponseGenerator:
         elif persona_verbosity > 0.7:
             response = self._extend(response, domain, sentiment, local_rng)
 
+        # v1.0.0: Ensure we never return an empty response
+        if not response or not response.strip():
+            fallback_responses = [
+                "I found this interesting to consider.",
+                "This made me think about my experience.",
+                "I had some thoughts about this.",
+                "Overall, it was a reasonable experience.",
+                "I appreciated the opportunity to reflect on this.",
+            ]
+            response = local_rng.choice(fallback_responses)
+
         return response
 
     def _extract_question_keywords(self, question_text: str) -> List[str]:
