@@ -209,10 +209,11 @@ Richard, F. D., et al. (2003). One hundred years of social psychology. RGP.
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Set
 
 import hashlib
 import random
+import re
 
 import numpy as np
 import pandas as pd
@@ -306,6 +307,452 @@ def _normalize_open_ended(open_ended: Optional[List[Any]]) -> List[Dict[str, Any
                     normalized_item["question_text"] = name
                 normalized.append(normalized_item)
     return normalized
+
+
+def _substitute_embedded_fields(text: str, condition: str, embedded_data: Optional[Dict[str, Any]] = None) -> str:
+    """
+    Substitute embedded data field references in question text.
+
+    Handles Qualtrics piping patterns like ${e://Field/StimulusText}
+    which are used to dynamically insert condition-specific content.
+
+    Args:
+        text: Question text potentially containing field references
+        condition: Current condition name (used for default values)
+        embedded_data: Optional dict of field name -> value mappings
+
+    Returns:
+        Text with field references replaced by actual values
+    """
+    if not text or '${' not in text:
+        return text
+
+    embedded_data = embedded_data or {}
+
+    # Pattern for Qualtrics embedded data: ${e://Field/FieldName}
+    pattern = r'\$\{e://Field/([^}]+)\}'
+
+    def replace_field(match):
+        field_name = match.group(1)
+        # Check if we have a value for this field
+        if field_name in embedded_data:
+            return str(embedded_data[field_name])
+        # Try case-insensitive match
+        for key, value in embedded_data.items():
+            if key.lower() == field_name.lower():
+                return str(value)
+        # Default: extract value from condition name if possible
+        # e.g., condition "AI × Hedonic" could provide "AI" for "AI_Condition" field
+        condition_parts = condition.replace('×', ' ').replace('_', ' ').split()
+        for part in condition_parts:
+            if part.lower() in field_name.lower():
+                return part
+        # Last resort: return field name as placeholder
+        return f"[{field_name}]"
+
+    return re.sub(pattern, replace_field, text)
+
+
+def _detect_question_visibility_from_text(question_text: str, conditions: List[str]) -> Dict[str, bool]:
+    """
+    Detect which conditions should see a question based on its text.
+
+    Handles patterns like:
+    - "For those who saw the AI recommendation..."
+    - "In the high trust condition..."
+    - "If you were in the control group..."
+
+    Args:
+        question_text: The question text to analyze
+        conditions: List of all condition names
+
+    Returns:
+        Dict mapping condition name -> visibility (True/False)
+    """
+    visibility = {c.lower(): True for c in conditions}
+
+    if not question_text:
+        return visibility
+
+    text_lower = question_text.lower()
+
+    # Patterns indicating condition-specific questions
+    condition_patterns = [
+        (r'for those (?:who|in the)', True),
+        (r'if you (?:were|are) in the', True),
+        (r'in the .+ condition', True),
+        (r'for .+ participants', True),
+        (r'those who (?:saw|received|experienced)', True),
+    ]
+
+    # Check if question mentions specific conditions
+    for pattern, _ in condition_patterns:
+        if re.search(pattern, text_lower):
+            # Try to identify which condition is referenced
+            for cond in conditions:
+                cond_lower = cond.lower()
+                cond_parts = cond_lower.replace('×', ' ').replace('_', ' ').split()
+                for part in cond_parts:
+                    if len(part) > 2 and part in text_lower:
+                        # This condition is explicitly mentioned
+                        # Check if it's a negative reference ("not in the AI condition")
+                        not_pattern = rf'(?:not|didn\'t|did not|weren\'t|were not)\s+(?:in|see|receive).*{re.escape(part)}'
+                        if re.search(not_pattern, text_lower):
+                            # Negated - this condition should NOT see the question
+                            visibility[cond_lower] = False
+                        else:
+                            # Positive reference - only this condition sees it
+                            for other_cond in conditions:
+                                other_lower = other_cond.lower()
+                                if part not in other_lower:
+                                    visibility[other_lower] = False
+                        break
+
+    return visibility
+
+
+def _generate_timing_data(
+    participant_seed: int,
+    attention_level: float,
+    num_questions: int,
+    base_time_per_question: float = 15.0
+) -> Dict[str, Any]:
+    """
+    Generate realistic timing data for a participant.
+
+    Based on research showing attention level correlates with response time
+    and reading patterns.
+
+    Args:
+        participant_seed: Seed for reproducibility
+        attention_level: Participant's attention trait (0-1)
+        num_questions: Number of questions in survey
+        base_time_per_question: Average seconds per question
+
+    Returns:
+        Dict with timing metrics
+    """
+    rng = np.random.RandomState(participant_seed)
+
+    # Engaged responders spend more time, careless responders rush
+    time_multiplier = 0.5 + attention_level * 1.0  # 0.5x to 1.5x
+
+    # Calculate per-page times with variation
+    page_times = []
+    for i in range(num_questions):
+        base = base_time_per_question * time_multiplier
+        # Add random variation (±30%)
+        variation = rng.uniform(0.7, 1.3)
+        page_times.append(base * variation)
+
+    total_time = sum(page_times)
+
+    # Generate click patterns
+    clicks_per_page = [max(1, int(rng.normal(3, 1))) for _ in range(num_questions)]
+
+    return {
+        'total_seconds': int(total_time),
+        'avg_seconds_per_question': total_time / max(1, num_questions),
+        'first_click_delay': rng.uniform(1, 5) if attention_level > 0.5 else rng.uniform(0.5, 2),
+        'total_clicks': sum(clicks_per_page),
+        'page_times': page_times,
+    }
+
+
+def _evaluate_branch_logic(
+    logic: Dict[str, Any],
+    participant_responses: Dict[str, Any],
+    condition: str,
+    embedded_data: Optional[Dict[str, Any]] = None
+) -> bool:
+    """
+    Evaluate branching logic to determine if a branch should be taken.
+
+    Supports response-based branching (e.g., "If Q1 = Yes, show Q2")
+    and embedded data checks (e.g., "If Condition = AI, show Q3").
+
+    Args:
+        logic: Branch logic definition from QSF
+        participant_responses: Dict of question_id -> response value
+        condition: Current condition name
+        embedded_data: Optional embedded data values
+
+    Returns:
+        True if the branch condition is satisfied
+    """
+    if not logic:
+        return True  # No logic = always visible
+
+    logic_type = logic.get('Type', '').lower()
+    conditions_list = logic.get('conditions', [])
+
+    if not conditions_list:
+        return True
+
+    # Evaluate each condition in the logic
+    results = []
+    for cond in conditions_list:
+        if not isinstance(cond, dict):
+            continue
+
+        operator = cond.get('operator', '').lower()
+        question_id = cond.get('question_id', '')
+        choice_locator = cond.get('choice_locator', '')
+        value = cond.get('value', '')
+
+        # Check if this is an embedded data check
+        if 'embedded' in question_id.lower() or 'condition' in question_id.lower():
+            embedded_data = embedded_data or {}
+            # Check embedded data values
+            for key, val in embedded_data.items():
+                if key.lower() in question_id.lower():
+                    if operator in ['equalto', 'is', '=', '==']:
+                        results.append(str(val).lower() == str(value).lower())
+                    elif operator in ['notequalto', 'isnot', '!=', '<>']:
+                        results.append(str(val).lower() != str(value).lower())
+                    break
+            else:
+                # Check condition name
+                if 'condition' in question_id.lower():
+                    cond_lower = condition.lower()
+                    if operator in ['equalto', 'is', '=', '==']:
+                        results.append(value.lower() in cond_lower)
+                    elif operator in ['notequalto', 'isnot', '!=', '<>']:
+                        results.append(value.lower() not in cond_lower)
+
+        # Check if this is a response-based check
+        elif question_id and question_id in participant_responses:
+            response = participant_responses[question_id]
+            if operator in ['selected', 'equalto', 'is']:
+                results.append(str(response).lower() == str(value).lower())
+            elif operator in ['notselected', 'notequalto', 'isnot']:
+                results.append(str(response).lower() != str(value).lower())
+            elif operator in ['greaterthan', '>']:
+                try:
+                    results.append(float(response) > float(value))
+                except (ValueError, TypeError):
+                    results.append(False)
+            elif operator in ['lessthan', '<']:
+                try:
+                    results.append(float(response) < float(value))
+                except (ValueError, TypeError):
+                    results.append(False)
+
+    # Combine results based on logic type (AND/OR)
+    if not results:
+        return True
+
+    if logic_type in ['and', 'all', 'booleanand']:
+        return all(results)
+    else:  # OR is default
+        return any(results)
+
+
+def _validate_condition_assignment(
+    conditions: List[str],
+    assignments: List[str],
+    allocation: Optional[Dict[str, float]] = None,
+    tolerance: float = 0.05
+) -> Dict[str, Any]:
+    """
+    Validate that condition assignments match expected allocation.
+
+    Args:
+        conditions: List of condition names
+        assignments: List of assigned conditions for each participant
+        allocation: Expected allocation percentages (or None for equal)
+        tolerance: Acceptable deviation from expected percentage
+
+    Returns:
+        Dict with validation results
+    """
+    n = len(assignments)
+    if n == 0:
+        return {'valid': False, 'error': 'No assignments'}
+
+    # Count assignments
+    counts = {}
+    for cond in conditions:
+        counts[cond] = assignments.count(cond)
+
+    # Calculate expected counts
+    expected = {}
+    if allocation:
+        for cond in conditions:
+            pct = allocation.get(cond, 100 / len(conditions))
+            expected[cond] = n * pct / 100
+    else:
+        for cond in conditions:
+            expected[cond] = n / len(conditions)
+
+    # Check deviations
+    deviations = {}
+    valid = True
+    for cond in conditions:
+        actual = counts.get(cond, 0)
+        exp = expected.get(cond, 0)
+        if exp > 0:
+            deviation = abs(actual - exp) / exp
+            deviations[cond] = {
+                'actual': actual,
+                'expected': round(exp, 1),
+                'deviation': round(deviation, 3)
+            }
+            if deviation > tolerance:
+                valid = False
+
+    return {
+        'valid': valid,
+        'counts': counts,
+        'expected': {k: round(v, 1) for k, v in expected.items()},
+        'deviations': deviations,
+        'total_assigned': n
+    }
+
+
+def _parse_matrix_choices(
+    choices: Dict[str, Any],
+    answers: Optional[Dict[str, Any]] = None
+) -> Dict[str, Any]:
+    """
+    Parse complex matrix question choice hierarchies.
+
+    Handles nested choice structures like:
+    - Choices with sub-choices
+    - Answer columns for matrix tables
+    - Recode values for analysis
+
+    Args:
+        choices: Choice dictionary from QSF
+        answers: Answer columns for matrix questions
+
+    Returns:
+        Parsed choice structure
+    """
+    parsed = {
+        'rows': [],
+        'columns': [],
+        'recode_map': {},
+        'display_map': {}
+    }
+
+    if not choices:
+        return parsed
+
+    # Parse row choices
+    for choice_id, choice_data in choices.items():
+        if isinstance(choice_data, dict):
+            display = choice_data.get('Display', str(choice_id))
+            recode = choice_data.get('RecodeValue', choice_id)
+            parsed['rows'].append({
+                'id': choice_id,
+                'display': display,
+                'recode': recode
+            })
+            parsed['recode_map'][choice_id] = recode
+            parsed['display_map'][choice_id] = display
+        elif isinstance(choice_data, str):
+            parsed['rows'].append({
+                'id': choice_id,
+                'display': choice_data,
+                'recode': choice_id
+            })
+
+    # Parse answer columns if present (for matrix tables)
+    if answers:
+        for answer_id, answer_data in answers.items():
+            if isinstance(answer_data, dict):
+                display = answer_data.get('Display', str(answer_id))
+                recode = answer_data.get('RecodeValue', answer_id)
+                parsed['columns'].append({
+                    'id': answer_id,
+                    'display': display,
+                    'recode': recode
+                })
+            elif isinstance(answer_data, str):
+                parsed['columns'].append({
+                    'id': answer_id,
+                    'display': answer_data,
+                    'recode': answer_id
+                })
+
+    return parsed
+
+
+def _validate_survey_flow(
+    flow_elements: List[Dict[str, Any]],
+    questions: List[Dict[str, Any]],
+    conditions: List[str]
+) -> Dict[str, Any]:
+    """
+    Validate survey flow for consistency and completeness.
+
+    Checks:
+    - All referenced questions exist
+    - No circular dependencies
+    - All conditions have valid paths
+    - Skip logic doesn't create dead ends
+
+    Args:
+        flow_elements: Survey flow structure
+        questions: List of all questions
+        conditions: List of condition names
+
+    Returns:
+        Validation results with any issues found
+    """
+    issues = []
+    warnings = []
+
+    question_ids = {q.get('question_id', q.get('name', '')) for q in questions}
+
+    # Track which questions are reachable
+    reachable = set()
+
+    def check_flow_item(item, path=None):
+        path = path or []
+        if not isinstance(item, dict):
+            return
+
+        item_type = item.get('Type', '')
+        item_id = item.get('ID', item.get('BlockID', ''))
+
+        # Check for circular references
+        if item_id and item_id in path:
+            issues.append(f"Circular reference detected: {' -> '.join(path + [item_id])}")
+            return
+
+        # Track reachable items
+        if item_type in ['Block', 'Standard']:
+            reachable.add(item_id)
+
+        # Check skip logic references
+        skip_to = item.get('SkipTo', '')
+        if skip_to and skip_to not in question_ids and skip_to not in reachable:
+            warnings.append(f"Skip logic references unknown target: {skip_to}")
+
+        # Recurse into nested flow
+        for sub_item in item.get('Flow', []):
+            check_flow_item(sub_item, path + [item_id] if item_id else path)
+
+    # Check each flow element
+    for element in flow_elements:
+        check_flow_item(element)
+
+    # Check for unreachable questions
+    for q in questions:
+        q_id = q.get('question_id', q.get('name', ''))
+        block = q.get('block_name', '')
+        if block and block not in reachable and q_id not in reachable:
+            # This might be OK if it's in a conditional block
+            pass  # Don't flag as issue, just note
+
+    return {
+        'valid': len(issues) == 0,
+        'issues': issues,
+        'warnings': warnings,
+        'reachable_blocks': list(reachable)
+    }
 
 
 class SurveyFlowHandler:
@@ -418,31 +865,95 @@ class SurveyFlowHandler:
         return False
 
     def _apply_display_logic(self, q_visibility: Dict[str, bool], display_logic: Dict[str, Any]):
-        """Apply display logic rules to visibility map."""
+        """Apply display logic rules to visibility map.
+
+        Enhanced to handle multiple Qualtrics display logic patterns:
+        - Embedded data field checks (e.g., Condition = "AI")
+        - Question response checks (e.g., Q1 = "Yes")
+        - Multiple condition combinations (AND/OR logic)
+        - Choice locator patterns (e.g., q://QID123/SelectableChoice/1)
+        """
+        logic_type = display_logic.get("Type", "").lower()
         logic_conditions = display_logic.get("conditions", [])
+
+        # Also check for 'Condition' field directly in display_logic
+        if display_logic.get("Condition"):
+            direct_conditions = display_logic.get("Condition", [])
+            if isinstance(direct_conditions, list):
+                logic_conditions.extend(direct_conditions)
+
+        condition_results = {}  # Track which conditions satisfy each logic rule
 
         for logic_cond in logic_conditions:
             if not isinstance(logic_cond, dict):
                 continue
 
-            choice_locator = str(logic_cond.get("choice_locator", "")).lower()
-            question_id = str(logic_cond.get("question_id", "")).lower()
-            operator = str(logic_cond.get("operator", "")).lower()
+            choice_locator = str(logic_cond.get("choice_locator", logic_cond.get("ChoiceLocator", ""))).lower()
+            question_id = str(logic_cond.get("question_id", logic_cond.get("QuestionID", ""))).lower()
+            operator = str(logic_cond.get("operator", logic_cond.get("Operator", ""))).lower()
+            left_operand = str(logic_cond.get("LeftOperand", "")).lower()
+            right_operand = str(logic_cond.get("RightOperand", "")).lower()
 
-            # Check for condition-related locators
-            if "condition" in choice_locator or "condition" in question_id:
-                # Extract condition value from locator
-                # Format often: q://QID123/SelectableChoice/1
-                # or contains embedded data field names
+            # Check for embedded data references
+            is_embedded_check = (
+                "embedded" in left_operand or
+                "embedded" in question_id or
+                "ed://" in choice_locator or
+                "condition" in choice_locator or
+                "condition" in question_id
+            )
+
+            if is_embedded_check:
+                # This is an embedded data check - likely checking condition
+                # Extract the value being checked
+                check_value = right_operand or choice_locator
+
                 for cond in self.conditions:
-                    cond_parts = cond.replace('×', ' ').replace('_', ' ').split()
-                    # If the locator contains references to specific conditions
-                    matches = any(p in choice_locator for p in cond_parts if len(p) > 2)
-                    if matches and operator in ["selected", "equalto", "is"]:
-                        # This question is only for this condition
-                        for other_cond in self.conditions:
-                            if other_cond != cond:
-                                q_visibility[other_cond] = False
+                    cond_parts = cond.replace('×', ' ').replace('_', ' ').lower().split()
+
+                    # Check if any condition part matches the check value
+                    for part in cond_parts:
+                        if len(part) >= 2:
+                            part_in_check = part in check_value
+                            part_in_locator = part in choice_locator
+
+                            if part_in_check or part_in_locator:
+                                if operator in ["selected", "equalto", "is", "="]:
+                                    # This condition satisfies the display logic
+                                    if cond not in condition_results:
+                                        condition_results[cond] = []
+                                    condition_results[cond].append(True)
+                                elif operator in ["notselected", "notequalto", "isnot", "!="]:
+                                    # This condition does NOT satisfy
+                                    if cond not in condition_results:
+                                        condition_results[cond] = []
+                                    condition_results[cond].append(False)
+
+            # Check for direct condition value in locator (e.g., q://QID123/SelectableChoice/AI)
+            else:
+                for cond in self.conditions:
+                    cond_parts = cond.replace('×', ' ').replace('_', ' ').lower().split()
+                    for part in cond_parts:
+                        if len(part) >= 2 and (part in choice_locator or part in right_operand):
+                            if operator in ["selected", "equalto", "is", "="]:
+                                if cond not in condition_results:
+                                    condition_results[cond] = []
+                                condition_results[cond].append(True)
+
+        # Apply results based on logic type (AND requires all true, OR requires any true)
+        if condition_results:
+            for cond in self.conditions:
+                results = condition_results.get(cond, [])
+                if results:
+                    if logic_type in ["and", "booleanand"]:
+                        q_visibility[cond] = all(results)
+                    else:  # OR or default
+                        q_visibility[cond] = any(results)
+                else:
+                    # No explicit match - check if other conditions matched
+                    # If ANY condition explicitly matched, non-matching conditions don't see it
+                    if any(condition_results.values()):
+                        q_visibility[cond] = False
 
     def _apply_block_name_logic(self, q_visibility: Dict[str, bool], block_name: str):
         """Apply visibility rules based on block name."""
