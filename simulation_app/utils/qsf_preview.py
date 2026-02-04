@@ -222,7 +222,7 @@ class QSFPreviewParser:
     # These are common structural/admin block names in Qualtrics surveys
     # Comprehensive list of block names that are NEVER experimental conditions
     # These include all variations of trash, unused, default, and administrative blocks
-    # EXPANDED TO 200+ PATTERNS for maximum exclusion coverage
+    # EXPANDED TO 400+ PATTERNS for maximum exclusion coverage (v1.0.0 training on 210 QSF files)
     EXCLUDED_BLOCK_NAMES = {
         # ========== TRASH / UNUSED (CRITICAL - NEVER USE) ==========
         'trash', 'trash / unused questions', 'trash/unused questions',
@@ -236,15 +236,19 @@ class QSFPreviewParser:
         'ignore', 'ignored', 'hidden', 'disabled', 'inactive', 'obsolete',
         'discarded', 'scrapped', 'backup', 'backup questions', 'spare',
         'temp', 'temporary', 'test', 'testing', 'draft', 'wip',
+        '(only for pre test) feedback',  # v1.0.0: From QSF training
 
         # ========== GENERIC BLOCK NAMES ==========
         'block', 'block 1', 'block 2', 'block 3', 'block 4', 'block 5',
         'block 6', 'block 7', 'block 8', 'block 9', 'block 10',
         'block 11', 'block 12', 'block 13', 'block 14', 'block 15',
+        'block 16', 'block 17', 'block 18', 'block 21', 'block 23',  # v1.0.0: From QSF training
         'block1', 'block2', 'block3', 'block4', 'block5',
+        'block db', 'block ds', 'block sb', 'block ss',  # v1.0.0: From QSF training
         'default question block', 'default', 'standard', 'main', 'main block',
         'new block', 'untitled', 'unnamed', 'copy', 'duplicate', 'copy of',
         'blank', 'empty', 'placeholder', 'template', 'skeleton',
+        'untitled group',  # v1.0.0: From QSF training
 
         # ========== INTRODUCTION / WELCOME ==========
         'intro', 'introduction', 'welcome', 'welcome screen', 'welcome message',
@@ -252,6 +256,10 @@ class QSFPreviewParser:
         'study intro', 'study introduction', 'survey intro', 'survey introduction',
         'opening', 'opening screen', 'opening page', 'initial', 'initial screen',
         'preamble', 'preface', 'preliminary', 'pre-survey', 'pre survey',
+        'opening pages', 'intro block', 'introduction block',  # v1.0.0: From QSF training
+        'b1_intro', 'survey intro', 'begin study: information sheet and directions',
+        'bds 5010: start', 'intro & consent', 'intro questions', 'start (everyone)',
+        'intake', 'pre-experiment',  # v1.0.0: From QSF training
 
         # ========== INSTRUCTIONS ==========
         'instructions', 'general instructions', 'task instructions',
@@ -259,6 +267,11 @@ class QSFPreviewParser:
         'directions', 'guidelines', 'rules', 'procedure', 'how to',
         'how-to', 'step by step', 'explanation', 'explainer', 'tutorial',
         'briefing', 'brief', 'orientation', 'introduction instructions',
+        'task overview instructions', 'overall instructions', 'game explanation',  # v1.0.0
+        'explanation of trust game', 'explanation of die-rolling task',
+        'pgg instructions', 'dictator game instructions', 'game structure explanation',
+        'experiment walkthrough', 'game start', 'game intro',  # v1.0.0: From QSF training
+        'instruction and background', 'instructions_kw', 'instructions_nd', 'instructions_p',
 
         # ========== CONSENT ==========
         'consent', 'informed consent', 'consent form', 'agreement',
@@ -267,6 +280,8 @@ class QSFPreviewParser:
         'privacy', 'privacy notice', 'data protection', 'gdpr',
         'terms and conditions', 'tos', 'legal', 'disclaimer',
         'participant consent', 'study consent', 'research consent',
+        '1. consent form', 'captcha & consent form', 'constent',  # v1.0.0: From QSF training
+        'informed consent block + quick demographic', 'intro_consent_block',
 
         # ========== QUALITY CONTROL ==========
         'captcha', 'bot check', 'recaptcha', 'verification', 'verify',
@@ -276,6 +291,15 @@ class QSFPreviewParser:
         'instructed response', 'imc', 'trap question', 'screener', 'screen',
         'attention', 'trap', 'check question', 'vigilance', 'vigilance check',
         'data quality', 'response quality', 'validity check', 'validity',
+        'attention check 1', 'attention check 2', 'captcha 1', 'captcha 2',  # v1.0.0
+        'captcha verification', 'captcha + attention check', 'final attention check',
+        'attention/comprehension check', 'attention checks', 'attention check 2 + quality',
+        'attention check with current solution', 'attention question',
+        'attention_check_1_block', 'comprehension_check_block', 'manipulation_check_block',
+        'comprehension 1', 'comprehension 2', 'comprehension questions', 'comprehension checks',
+        'b2_conceptcheck', 'check', 'checkquestions', 'crt',  # v1.0.0: From QSF training
+        'eligibilitycheck1', 'eligibilitycheck2', 'elibilitycheck1',
+        'knowledge check', 'validation', 'validation check',
 
         # ========== DEMOGRAPHICS ==========
         'demographics', 'demographic info', 'demographic information',
@@ -285,6 +309,13 @@ class QSFPreviewParser:
         'sociodemographics', 'sociodemographic', 'participant demographics',
         'basic info', 'basic information', 'personal details', 'your info',
         'age gender', 'gender age', 'bio', 'biographical',
+        'demographic', 'demographic block', 'demographic question',  # v1.0.0
+        'demographic survey questions', 'demographics 1', 'demographics final',
+        'demographics & others', 'demographics  employment', 'demography questions',
+        'demographic info and conclusion', 'demographic information question',
+        'b4_demographics', 'demo_block', 'questions_age', 'questions_education',
+        'questions_gender', 'questions_ratio', 'education', 'health',  # v1.0.0: From QSF training
+        'bds 5010: financial background', 'income',
 
         # ========== END / DEBRIEF ==========
         'end', 'end of survey', 'end of games', 'ending', 'finish',
@@ -295,6 +326,9 @@ class QSFPreviewParser:
         'wrap up', 'wrapup', 'wrap-up', 'final screen', 'last page',
         'survey end', 'study end', 'experiment end', 'game end',
         'post-survey', 'post survey', 'post-experiment', 'post experiment',
+        'closing block', 'thank-you ', '7. respondent codes',  # v1.0.0
+        'post-experimental questionnaire', 'post-exprimental questionnaire',
+        'purpose/feedback', 'purpose of survey', 'study about', 'survey details',
 
         # ========== FEEDBACK ==========
         'feedback', 'comments', 'feedback on the survey', 'final feedback',
@@ -302,11 +336,13 @@ class QSFPreviewParser:
         'additional comments', 'other comments', 'open feedback',
         'closing feedback', 'participant feedback', 'user feedback',
         'suggestions', 'your thoughts', 'any thoughts', 'thoughts',
+        'pilot feedback', 'pilot questions', 'comment',  # v1.0.0: From QSF training
 
         # ========== OPEN-ENDED ==========
         'open-ended', 'open ended', 'free response', 'free text',
         'open text', 'text entry', 'essay', 'written response',
         'write-in', 'write in', 'open response', 'free form',
+        'open-ended questions', 'open',  # v1.0.0: From QSF training
 
         # ========== PRACTICE / TRAINING ==========
         'practice', 'practice trial', 'practice trials', 'practice round',
@@ -314,18 +350,22 @@ class QSFPreviewParser:
         'example', 'sample', 'demo', 'demonstration', 'dry run',
         'practice questions', 'practice block', 'training block',
         'trial run', 'test run', 'familiarization', 'practice session',
+        'round 1 (practice)', 'sample question',  # v1.0.0: From QSF training
 
-        # ========== STRUCTURAL ==========
+        # ========== STRUCTURAL (NON-CONDITION) ==========
         'game', 'task', 'main task', 'primary task', 'core task',
         'pairing', 'pairing prompt', 'pair', 'matching', 'match',
         'question', 'questions', 'items', 'measures', 'scales',
         'survey', 'questionnaire', 'assessment', 'test', 'exam',
         'section', 'part', 'module', 'component', 'segment',
+        'questionaire', 'questionnaire ',  # v1.0.0: From QSF training (with typo)
+        'b3_experiment', 'experiment', 'pilot',  # v1.0.0
 
         # ========== TIMING / PROGRESS ==========
         'timer', 'timing', 'duration', 'progress', 'progress bar',
         'page break', 'break', 'intermission', 'pause', 'wait',
         'loading', 'transition', 'next', 'continue', 'proceed',
+        'transitionpage', 'waiting', 'pairing....',  # v1.0.0: From QSF training
 
         # ========== PAYMENT / COMPENSATION ==========
         'payment', 'compensation', 'reward', 'bonus', 'payment info',
@@ -333,33 +373,105 @@ class QSFPreviewParser:
         'prolific code', 'mturk code', 'amazon', 'crowdsourcing',
         'payout', 'pay', 'incentive', 'raffle', 'lottery', 'prize',
         'compensation info', 'payment details', 'bonus info',
+        'mturk id', 'mturk id input', 'mturk ids', 'mturkid',  # v1.0.0
+        'participant id assignment', 'participant id input', 'worker',
+        'random id', 'random id generation', 'randomid', 'romdom id',
+        'respondent id generation', 'survey and mturk id', 'mturk participant',
+        'bonus pay', 'payout1', 'payout2', 'payment/verification',
+        'completion', 'id', 'survey id',  # v1.0.0: From QSF training
 
         # ========== RANDOMIZATION ARTIFACTS ==========
         'randomizer', 'randomization', 'random', 'assignment',
         'branch', 'branching', 'skip logic', 'display logic',
         'quota', 'quotas', 'quota check', 'embedded data',
         'flow', 'survey flow', 'logic', 'conditional',
+        'random and workerid', 'condition assignment ', 'random number generator',
+
+        # ========== ECONOMIC GAME STRUCTURAL (NOT CONDITIONS) ==========
+        # These are structural elements of games, not experimental conditions
+        'dictator game', 'trust game', 'public goods game', 'pgg',  # v1.0.0
+        'dg', 'dg activity', 'dg check', 'pgg activity', 'pgg check', 'pgg intro',
+        'dictator choice', 'dictator choice 2', 'dice roll', 'dice roll summary',
+        'die-rolling task pg 2', 'dieresult', 'dieroll', 'earnings update',
+        'economic game', 'game abc', 'game bca', 'game cab',
+        'linear pgg', 'lottery game 2', 'power-to-take game 2',
+        'result', 'reward structure', 'risk', 'take-or-give',
+        'trading block', 'trading simulation block', 'trust_sat',
+        'trustee decision', 'trustee decision 2', 'trustee feedback', 'trustee intro',
+        'trustor feedback', 'trustor feedback 1', 'trustor feedback 2',
+        'social value orientation', 'social value orientation question 1',
+        'social value orientation question 2', 'social value orientation question 3',
+        'social value orientation question 4', 'social value orientation question 5',
+        'social value orientation question 6',  # v1.0.0: From QSF training
+
+        # ========== ROUND/TRIAL STRUCTURAL (NOT CONDITIONS) ==========
+        # Numbered rounds/trials are structural, not experimental conditions
+        'round 1', 'round 2', 'round 3', 'round 4', 'round 5',  # v1.0.0
+        'round 6', 'round 7', 'round 8', 'round 9', 'round 10',
+        'round 11', 'round 12', 'round 13', 'round 14', 'round 15',
+        'round 16', 'round 17', 'round 18', 'round 19', 'round 20',
+        'round 1 game', 'round 2 game', 'round 2 questions',
+        'round 3 - consequences', 'round 6 - consequences', 'round 12 - consequences',
+        'convoround_1', 'convoround_2', 'convoround_3',
+        'ego network 1', 'ego network 2', 'ego network 3', 'ego network follow up',
+
+        # ========== BELIEF/NORM ELICITATION STRUCTURAL ==========
+        # These are measurement blocks, not experimental conditions
+        'elicitation of beliefs', 'elicitation of beliefs - announcement',  # v1.0.0
+        'gather beliefs', 'beliefs', 'instructions beliefs',
+        'norm elicitation (intro)', 'norm elicitation (dg)', 'norm elicitation (outro)',
+        'norm elicitation (disclosure)', 'norm elicitation (handshaking)',
+
+        # ========== VIGNETTE STRUCTURAL (NOT CONDITIONS) ==========
+        'first scenario', 'scenario 2', 'scenario question',  # v1.0.0
+        'vignette ', 'case file', 'new situation',
+
+        # ========== MISCELLANEOUS STRUCTURAL ==========
+        'ads', 'advertisement', 'collect email', 'device', 'use mobile',  # v1.0.0
+        'networks', 'reference network question', 'own skills',
+        'impressions', 'opinion', 'mediators', 'deviance credit',
+        'moral foundations task', 'moral opposition question',
+        'oneness scale', 'empathy questionnaire', 'fairness questions',
+        'uncertainty questions', 'attitudes to lying', 'attitudes/norms',
+        'attitudinal 1', 'attitudinal 2', 'awareness/media',
+        'product page', 't-shirt picture', 'warm glow photo',
+        'stimulus_warning', 'summary screen', 'calculation',
+        'confirm wealth', 'hypothetical decision', 'investment scenario',
+        'logistical questions', 'plan', 'prompt', 'revise',
+        'relationship and household composition', 'tournament thoughts',
     }
 
     # Block type keywords that indicate non-condition blocks (case-insensitive)
     EXCLUDED_BLOCK_TYPES = {'Trash', 'Default', 'Standard', 'trash', 'default', 'standard'}
 
-    # Patterns that definitively indicate a block should be excluded (200+ coverage)
+    # Patterns that definitively indicate a block should be excluded (v1.0.0: 50+ patterns from 210 QSF training)
     EXCLUDED_BLOCK_PATTERNS = [
+        # ========== GENERIC BLOCK PATTERNS ==========
         r'^block\s*\d*$',  # "Block 1", "Block2", etc.
         r'^b\d+$',  # "B1", "B2", etc.
+        r'^blk?\s*\d+$',  # "Blk1", "Bl 2", etc.
+        r'^\d+$',  # Just numbers
+        r'^\s*$',  # Empty or whitespace only
+        r'^untitled',  # "Untitled" anything
+        r'^unnamed',  # "Unnamed" anything
+        r'^copy\s*(?:of\s*)?',  # "copy of X"
+        r'\(copy\)',  # Contains "(copy)"
+        r'_copy$',  # Ends with "_copy"
+
+        # ========== TRASH / UNUSED PATTERNS ==========
         r'trash',  # Any block containing "trash"
         r'unused',  # Any block containing "unused"
         r'deleted?',  # "delete" or "deleted"
         r'archived?',  # "archive" or "archived"
         r'old\s*(?:questions?)?$',  # "old", "old questions"
         r'(?:do\s*)?not\s*use',  # "do not use", "not use"
-        r'^\s*$',  # Empty or whitespace only
-        r'^copy\s*(?:of\s*)?',  # "copy of X"
-        r'^\d+$',  # Just numbers
-        r'^untitled',  # "Untitled" anything
-        r'^unnamed',  # "Unnamed" anything
-        r'default',  # Any block containing "default"
+        r'donotuse',  # "DONOTUSE" without spaces
+        r'obsolete',  # Contains "obsolete"
+        r'discarded',  # Contains "discarded"
+        r'deprecated',  # Contains "deprecated"
+        r'hidden',  # Contains "hidden"
+        r'disabled',  # Contains "disabled"
+        r'inactive',  # Contains "inactive"
         r'placeholder',  # Any block containing "placeholder"
         r'template',  # Any block containing "template"
         r'backup',  # Any block containing "backup"
@@ -367,13 +479,102 @@ class QSFPreviewParser:
         r'^\s*draft\s*$',  # Just "draft"
         r'wip$',  # Ends with "wip"
         r'^temp\b',  # Starts with "temp"
-        r'obsolete',  # Contains "obsolete"
-        r'discarded',  # Contains "discarded"
-        r'deprecated',  # Contains "deprecated"
-        r'hidden',  # Contains "hidden"
-        r'disabled',  # Contains "disabled"
-        r'inactive',  # Contains "inactive"
+
+        # ========== ROUND/TRIAL PATTERNS (v1.0.0) ==========
+        r'^round\s*\d+',  # "Round 1", "Round 2", etc.
+        r'^trial\s*\d+',  # "Trial 1", etc.
+        r'^punisher\s*\d+$',  # "Punisher 1", "Punisher 99" - numbered iterations
+
+        # ========== STRUCTURAL PATTERNS (v1.0.0) ==========
+        r'^et_\d+$',  # "ET_1", "ET_2", etc.
+        r'^y\d+$',  # "Y1", "Y2", etc. (numbered labels)
+        r'^convoround_\d+$',  # "ConvoRound_1", etc.
+        r'^explanation[a-z]_\d+',  # "ExplanationA_1", "ExplanationB_2", etc.
+        r'^lt_',  # Lottery task blocks (LT_DieRoll, LT_Reporting, etc.)
+        r'^runfunction_\d+$',  # "runFunction_1", etc.
+        r'^wtp_\d+$',  # "WTP_1", "WTP_2" (willingness to pay structural)
+
+        # ========== QUALITY CHECK PATTERNS (v1.0.0) ==========
+        r'attention.?check',  # attention_check, attention check, attentioncheck
+        r'manipulation.?check',  # manipulation_check, manipulation check
+        r'comprehension.?check',  # comprehension_check, comprehension check
+        r'eligibility.?check',  # eligibilitycheck, eligibility check
+        r'^captcha',  # Starts with captcha
+        r'^crt$',  # Cognitive Reflection Test (structural)
+        r'^check$',  # Just "check"
+
+        # ========== ADMIN/CONSENT PATTERNS (v1.0.0) ==========
+        r'^consent',  # Starts with consent
+        r'^informed\s*consent',  # "Informed Consent"
+        r'^irb\b',  # IRB-related
+        r'^\d+\.\s*consent',  # "1. Consent Form"
+
+        # ========== DEMOGRAPHIC PATTERNS (v1.0.0) ==========
+        r'^demo(?:graphic)?s?\b',  # demographics, demographic, demo
+        r'^questions_(?:age|gender|education|ratio)',  # questions_age, etc.
+        r'financial\s*background',  # Financial background questions
+
+        # ========== INSTRUCTION PATTERNS (v1.0.0) ==========
+        r'^instructions?$',  # Just "Instructions" or "Instruction"
+        r'^instructions_',  # "instructions_kw", "instructions_nd", etc.
+        r'^game\s*instruction',  # "Game Instructions"
+        r'^pgg\s*instruction',  # "PGG Instructions"
+        r'explanation$',  # Ends with "explanation"
+
+        # ========== PAYMENT/ID PATTERNS (v1.0.0) ==========
+        r'mturk',  # Contains "mturk"
+        r'^prolific',  # Starts with "prolific"
+        r'^random\s*id',  # "Random ID", "RandomID"
+        r'worker\s*id',  # "Worker ID"
+        r'^participant\s*id',  # "Participant ID"
+        r'^survey\s*(?:and\s*)?mturk',  # "Survey and MTurk ID"
+        r'completion\s*code',  # "Completion Code"
+        r'^payout\d*$',  # "Payout", "Payout1", "Payout2"
+
+        # ========== GAME STRUCTURAL PATTERNS (v1.0.0) ==========
+        r'^dg\s*(?:activity|check)?$',  # "DG", "DG activity", "DG check"
+        r'^pgg\s*(?:activity|check|intro)?$',  # "PGG", "PGG activity", etc.
+        r'^dice\s*(?:roll|q\d|game)',  # "Dice Roll", "Dice Q1", "Dice Game"
+        r'^game\s*(?:abc|bca|cab|start)$',  # Game ordering variants
+        r'^trustee?\s*(?:decision|feedback|intro)',  # Trustee/Trustor blocks
+        r'^trustor\s*(?:decision|feedback)',  # Trustor blocks
+        r'^social\s*value\s*orientation',  # SVO blocks
+
+        # ========== NETWORK/EGO PATTERNS (v1.0.0) ==========
+        r'^ego\s*network\s*\d+',  # "Ego network 1", etc.
+
+        # ========== VIGNETTE CHECK PATTERNS (v1.0.0) ==========
+        r'^vignette_check\d+_scenario',  # "Vignette_Check1_Scenario1_Equity", etc.
+
+        # ========== DEFAULT/STANDARD PATTERNS ==========
+        r'default',  # Any block containing "default"
     ]
+
+    # v1.0.0: Keywords that indicate a block IS a condition (positive indicators)
+    CONDITION_POSITIVE_KEYWORDS = {
+        'treatment', 'control', 'condition', 'group', 'arm',
+        'experimental', 'intervention', 'manipulation',
+        'high', 'low', 'positive', 'negative',
+        'ai', 'human', 'robot', 'automated', 'manual',
+        'hedonic', 'utilitarian', 'deontology', 'utilitarianism',
+        'empirical', 'normative', 'injunctive', 'descriptive',
+        'honest', 'dishonest', 'fair', 'unfair',
+        'male', 'female', 'gender',
+        'rich', 'poor', 'wealthy', 'scarce', 'abundant',
+        'priming', 'prime', 'primed',
+        'frame', 'framing', 'framed',
+        'message', 'nudge', 'default',
+        'ingroup', 'outgroup', 'ingroup', 'minimal group',
+        'prosocial', 'antisocial', 'altruistic', 'selfish',
+        'cooperative', 'competitive',
+        'punishment', 'reward',
+        'transparent', 'opaque', 'secret', 'public',
+        'individual', 'collective', 'team', 'solo',
+        'anchoring', 'anchor',
+        'accurate', 'inaccurate',
+        'norm', 'norms',
+        'equity', 'inequity',
+    }
 
     def __init__(self):
         self.log_entries: List[LogEntry] = []
@@ -1544,6 +1745,8 @@ class QSFPreviewParser:
         This comprehensive check ensures trash, unused, and administrative blocks
         are NEVER considered as experimental conditions.
 
+        v1.0.0: Enhanced with training from 210 QSF files.
+
         Args:
             block_name: The name/description of the block
             block_type: The block type field (e.g., 'Trash', 'Default', 'Standard')
@@ -1584,11 +1787,122 @@ class QSFPreviewParser:
         if 'trash' in normalized or 'unused' in normalized:
             return True
 
-        # Catch "(copy)" or "(new)" suffixes that indicate duplicates
-        if re.search(r'\((?:copy|new|duplicate)\)', normalized):
+        # Catch "(copy)" or "(duplicate)" suffixes that indicate duplicates
+        # Note: "(new)" is kept as it's often used for revised condition blocks
+        if re.search(r'\((?:copy|duplicate)\)', normalized):
+            return True
+
+        # v1.0.0: Catch "old" suffix patterns (e.g., "Coach Condition Old")
+        if re.search(r'\bold\b', normalized):
+            return True
+
+        # v1.0.0: Catch numbered structural blocks that aren't conditions
+        # e.g., "Punisher 45", "Y1", "ET_3"
+        if re.match(r'^(?:punisher|y|et_?)\s*\d+$', normalized):
             return True
 
         return False
+
+    def _has_condition_keywords(self, block_name: str) -> bool:
+        """Check if a block name contains positive condition indicators.
+
+        v1.0.0: Added to improve condition detection by recognizing
+        common experimental condition naming patterns.
+
+        Args:
+            block_name: The name/description of the block
+
+        Returns:
+            True if the block name contains condition keywords
+        """
+        if not block_name:
+            return False
+
+        normalized = block_name.lower()
+        words = set(re.findall(r'\b\w+\b', normalized))
+
+        # Check for positive condition keywords
+        for keyword in self.CONDITION_POSITIVE_KEYWORDS:
+            if keyword in words or keyword in normalized:
+                return True
+
+        # Check for condition-like patterns
+        condition_patterns = [
+            r'condition\s*\d+',  # "Condition 1", "Condition 2"
+            r'treatment\s*\d*',  # "Treatment", "Treatment 1"
+            r'group\s*\d+',  # "Group 1", "Group 2"
+            r'arm\s*[a-z\d]+',  # "Arm A", "Arm 1"
+            r'(?:high|low)\s+\w+',  # "High Risk", "Low Effort"
+            r'\w+\s+(?:vs?\.?|×|x)\s+\w+',  # "AI vs Human", "Male × Female"
+            r'(?:ai|human)[_\s/]',  # "AI/", "Human_", "AI "
+            r'(?:positive|negative)\s+\w+',  # "Positive Frame"
+            r'(?:empirical|normative)\s*\w*',  # "Empirical Norm"
+            r'(?:control|treatment)\s*(?:group|condition)?',  # "Control Group"
+        ]
+
+        for pattern in condition_patterns:
+            if re.search(pattern, normalized):
+                return True
+
+        return False
+
+    def _score_condition_likelihood(self, block_name: str) -> float:
+        """Score how likely a block name represents an experimental condition.
+
+        v1.0.0: Added for improved condition detection ranking.
+
+        Args:
+            block_name: The name/description of the block
+
+        Returns:
+            Score from 0.0 (unlikely condition) to 1.0 (definitely condition)
+        """
+        if not block_name:
+            return 0.0
+
+        # Start with base score
+        score = 0.0
+        normalized = block_name.lower()
+
+        # Strong positive indicators (+0.3 each)
+        strong_positives = [
+            r'\bcondition\s*\d+',
+            r'\btreatment\s*\d*\b',
+            r'\bcontrol\s*(?:group|condition)?\b',
+            r'\b(?:ai|human)\s*[×x/]\s*(?:ai|human|\w+)',
+            r'\b(?:high|low)\s*(?:ses|stakes|urgency|performance)',
+        ]
+        for pattern in strong_positives:
+            if re.search(pattern, normalized):
+                score += 0.3
+
+        # Moderate positive indicators (+0.2 each)
+        moderate_positives = [
+            r'\b(?:empirical|normative|injunctive|descriptive)\b',
+            r'\b(?:prosocial|antisocial)\b',
+            r'\b(?:honest|dishonest)\b',
+            r'\b(?:male|female)\s*(?:treatment|condition)?',
+            r'\b(?:accurate|inaccurate)\s*(?:ai|human)',
+            r'\b(?:positive|negative)\s*(?:frame|message|default)',
+        ]
+        for pattern in moderate_positives:
+            if re.search(pattern, normalized):
+                score += 0.2
+
+        # Weak positive indicators (+0.1 each)
+        weak_positives = [
+            r'\b(?:hedonic|utilitarian)\b',
+            r'\b(?:priming|prime|primed)\b',
+            r'\b(?:frame|framing)\b',
+            r'\b(?:nudge|default)\b',
+            r'\bmessage\s*\d*\b',
+        ]
+        for pattern in weak_positives:
+            if re.search(pattern, normalized):
+                score += 0.1
+
+        # Cap at 1.0
+        return min(score, 1.0)
 
     def _detect_conditions(
         self,

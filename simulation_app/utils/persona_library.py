@@ -1474,22 +1474,29 @@ class PersonaLibrary:
         return personas
 
     def _build_domain_keywords(self) -> Dict[str, List[str]]:
-        """Build keyword mappings for automatic domain detection."""
+        """Build keyword mappings for automatic domain detection.
+
+        v1.0.0: Expanded with 30+ domains based on training on 210 QSF files.
+        """
         return {
             'consumer_behavior': [
                 'consumer', 'purchase', 'buying', 'shopping', 'product', 'brand',
                 'retail', 'e-commerce', 'customer', 'consumption', 'wtp', 'willingness to pay',
-                'shopping cart', 'checkout', 'price', 'promotion', 'discount'
+                'shopping cart', 'checkout', 'price', 'promotion', 'discount',
+                'sweater', 'coffee shop', 'loyalty program', 't-shirt'  # v1.0.0: From QSF training
             ],
             'marketing': [
                 'marketing', 'advertising', 'ad', 'promotion', 'branding', 'brand',
                 'campaign', 'persuasion', 'message', 'appeal', 'endorsement',
-                'influencer', 'social media marketing'
+                'influencer', 'social media marketing', 'woke', 'woke-washed',  # v1.0.0
+                'advertisement', 'pitch', 'scientific pitch'
             ],
             'ai': [
                 'ai', 'artificial intelligence', 'algorithm', 'machine learning',
                 'automation', 'robot', 'chatbot', 'recommendation system', 'personalization',
-                'ai-generated', 'ai recommendation', 'algorithm aversion', 'algorithm appreciation'
+                'ai-generated', 'ai recommendation', 'algorithm aversion', 'algorithm appreciation',
+                'ai tutor', 'ai doctor', 'ai manager', 'ai service', 'ai friend',  # v1.0.0: From QSF training
+                'human vs ai', 'ai vs human', 'ai disclosure', 'ai trust', 'ai told'
             ],
             'technology': [
                 'technology', 'tech', 'digital', 'online', 'app', 'software',
@@ -1498,17 +1505,81 @@ class PersonaLibrary:
             'behavioral_economics': [
                 'decision', 'choice', 'risk', 'loss', 'gain', 'framing', 'nudge',
                 'bias', 'heuristic', 'prospect theory', 'time preference', 'discount',
-                'intertemporal', 'self-control', 'commitment', 'default'
+                'intertemporal', 'self-control', 'commitment', 'default',
+                'default nudge', 'scarcity priming', 'abundance priming',  # v1.0.0
+                'debt priming', 'powerlessness priming', 'anchoring effect'
             ],
             'organizational_behavior': [
                 'employee', 'workplace', 'job', 'organization', 'manager', 'leader',
                 'leadership', 'team', 'motivation', 'engagement', 'satisfaction',
-                'turnover', 'commitment', 'performance', 'hr', 'human resources'
+                'turnover', 'commitment', 'performance', 'hr', 'human resources',
+                'subordinate', 'coach', 'organizer', 'teammate', 'gossip at work',  # v1.0.0
+                'strategic silence', 'politeness', 'rudeness', 'backlash'
             ],
             'social_psychology': [
                 'social', 'group', 'norm', 'conformity', 'influence', 'persuasion',
                 'cooperation', 'competition', 'trust', 'fairness', 'reciprocity',
-                'prosocial', 'altruism', 'helping', 'identity'
+                'prosocial', 'altruism', 'helping', 'identity',
+                'minimal group paradigm', 'ingroup', 'outgroup', 'social proof',  # v1.0.0
+                'deviance credit', 'social value orientation', 'oneness'
+            ],
+            # v1.0.0: NEW DOMAINS FROM QSF TRAINING
+            'economic_games': [
+                'dictator game', 'trust game', 'public goods game', 'ultimatum',
+                'dg', 'pgg', 'contribution', 'endowment', 'allocation', 'transfer',
+                'sender', 'receiver', 'trustor', 'trustee', 'player a', 'player b',
+                'investment', 'earnings', 'payoff', 'payout', 'purse'
+            ],
+            'norm_elicitation': [
+                'norm', 'norms', 'empirical norm', 'normative expectations',
+                'injunctive norm', 'descriptive norm', 'norm elicitation',
+                'norm message', 'norm violation', 'appropriate', 'inappropriate',
+                'social norm', 'personal normative beliefs'
+            ],
+            'political_psychology': [
+                'political', 'trump', 'biden', 'democrat', 'republican',
+                'partisan', 'liberal', 'conservative', 'ideology', 'voting',
+                'hate', 'love', 'polarization', 'political identity'
+            ],
+            'dishonesty': [
+                'dishonesty', 'honesty', 'lying', 'liar', 'cheating', 'fraud',
+                'deception', 'truth', 'overclaiming', 'die roll', 'dice',
+                'reporting', 'misreporting', 'ethical', 'unethical'
+            ],
+            'punishment': [
+                'punishment', 'punisher', 'sanction', 'penalty', 'fine',
+                'third-party punishment', 'costly punishment', 'deterrence',
+                'norm enforcement', 'retribution', 'justice'
+            ],
+            'gender': [
+                'gender', 'male', 'female', 'men', 'women', 'sex differences',
+                'masculinity', 'femininity', 'backlash', 'stereotype'
+            ],
+            'power_status': [
+                'power', 'status', 'hierarchy', 'dominance', 'authority',
+                'high power', 'low power', 'ses', 'socioeconomic status',
+                'wealth', 'income', 'class'
+            ],
+            'charitable_giving': [
+                'charity', 'donation', 'giving', 'charitable', 'philanthropy',
+                'warm glow', 'altruism', 'overhead', 'nonprofit', 'ngo',
+                'effective altruism', 'prosocial'
+            ],
+            'covid': [
+                'covid', 'coronavirus', 'pandemic', 'vaccine', 'vaccination',
+                'mask', 'social distancing', 'lockdown', 'health behavior'
+            ],
+            'emotions': [
+                'emotion', 'affect', 'mood', 'sadness', 'happiness', 'anger',
+                'fear', 'anxiety', 'urgency', 'intensity', 'arousal'
+            ],
+            'deontology_utilitarianism': [
+                'deontology', 'utilitarianism', 'moral', 'ethics', 'ethical',
+                'trolley', 'consequentialist', 'deontological', 'moral foundations'
+            ],
+            'accuracy_misinformation': [
+                'accuracy', 'accurate', 'inaccurate', 'misinformation',
+                'conspiracy', 'fact check', 'belief', 'truth discernment'
             ],
             'psychological_ownership': [
                 'ownership', 'psychological ownership', 'mine', 'possess', 'territory',
@@ -1520,7 +1591,8 @@ class PersonaLibrary:
             ],
             'environmental': [
                 'environment', 'sustainability', 'green', 'eco', 'climate', 'carbon',
-                'recycling', 'waste', 'pollution', 'conservation', 'renewable'
+                'recycling', 'waste', 'pollution', 'conservation', 'renewable',
+                'sustainable default', 'unsustainable', 'environmental', 'humanitarian'  # v1.0.0
             ],
             'pricing': [
                 'price', 'pricing', 'cost', 'value', 'premium', 'discount',
@@ -1540,7 +1612,21 @@ class PersonaLibrary:
             ],
             'fairness': [
                 'fairness', 'justice', 'equality', 'equity', 'distribution',
-                'procedural', 'distributive', 'inequality', 'bias'
+                'procedural', 'distributive', 'inequality', 'bias',
+                'unequal', 'systemic', 'agent', 'favored', 'unfavored'  # v1.0.0
+            ],
+            # v1.0.0: More domains from QSF training
+            'negotiation': [
+                'negotiation', 'bargaining', 'offer', 'counteroffer', 'deal',
+                'agreement', 'compromise', 'concession'
+            ],
+            'personalization': [
+                'personalized', 'personalization', 'tailored', 'customized',
+                'recommendation', 'preference', 'gift'
+            ],
+            'education': [
+                'education', 'learning', 'student', 'teacher', 'tutor',
+                'academic', 'school', 'course', 'knowledge'
             ]
         }
 
