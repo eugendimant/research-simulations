@@ -1,241 +1,276 @@
-# Internal Architecture
+# Internal Architecture Documentation
 
-**CONFIDENTIAL** — Implementation details for v1.0.0
+**Behavioral Experiment Simulation Tool v1.0.0**
+
+**CONFIDENTIAL** | Proprietary Implementation Details
 
 ---
 
-## File Structure
+## System Overview
+
+This document contains proprietary implementation details for the Behavioral Experiment Simulation Tool. It is intended for internal development and maintenance purposes only.
+
+---
+
+## 1. Module Architecture
 
 ```
 simulation_app/
-├── app.py                      # Streamlit UI, ~3000 lines
+├── app.py                              # Streamlit application (~3000 lines)
 ├── utils/
-│   ├── __init__.py             # Version: must match app.py REQUIRED_UTILS_VERSION
-│   ├── enhanced_simulation_engine.py   # Core generation engine
-│   ├── qsf_preview.py          # QSF parsing, block detection, scale detection
-│   ├── qsf_parser.py           # Low-level QSF structure parsing
-│   ├── persona_library.py      # Persona definitions, text generation fallback
-│   ├── response_library.py     # 175+ domain templates for open-ended responses
-│   ├── text_generator.py       # Basic text generation utilities
-│   ├── condition_identifier.py # Extracts conditions from QSF
-│   └── instructor_report.py    # Statistical summaries
+│   ├── __init__.py                     # Package initialization, version control
+│   ├── enhanced_simulation_engine.py   # Core data generation engine
+│   ├── qsf_preview.py                  # QSF parsing, scale detection
+│   ├── qsf_parser.py                   # Low-level QSF structure parsing
+│   ├── persona_library.py              # Persona definitions, trait distributions
+│   ├── response_library.py             # Domain templates for open-ended responses
+│   ├── text_generator.py               # Text generation utilities
+│   ├── condition_identifier.py         # Experimental condition extraction
+│   └── instructor_report.py            # Statistical report generation
+└── docs/
+    ├── methods_summary.md              # Public documentation
+    ├── technical_methods.md            # Scientific methods documentation
+    └── internal_architecture.md        # This document
 ```
 
 ---
 
-## Version Sync
+## 2. Version Management
 
-These must all match when you release:
-1. `app.py`: `REQUIRED_UTILS_VERSION` (line ~46), `APP_VERSION` (line ~100)
-2. `utils/__init__.py`: `__version__`
-3. `utils/qsf_preview.py`: `__version__`
-4. `utils/response_library.py`: `__version__`
-5. `utils/enhanced_simulation_engine.py`: `__version__`
+**Critical**: These version identifiers must be synchronized on every release:
 
-The app checks on startup. Mismatch triggers a warning.
+| Location | Variable |
+|----------|----------|
+| `app.py` | `REQUIRED_UTILS_VERSION` (line ~46) |
+| `app.py` | `APP_VERSION` (line ~100) |
+| `app.py` | `BUILD_ID` (line ~47) |
+| `utils/__init__.py` | `__version__` |
+| `utils/qsf_preview.py` | `__version__` |
+| `utils/response_library.py` | `__version__` |
+| `utils/enhanced_simulation_engine.py` | `__version__` |
+
+The application performs a version check at startup. Mismatches trigger a user-visible warning.
 
 ---
 
-## EnhancedSimulationEngine
+## 3. EnhancedSimulationEngine
 
 **Location**: `enhanced_simulation_engine.py`
 
-### Constructor
-
-Takes:
-- `study_title`, `study_description`, `sample_size`
-- `conditions`: list of condition names
-- `factors`: list of {name, levels} dicts
-- `scales`: list of {name, num_items, scale_points, reverse_items}
-- `open_ended_questions`: list of question specs
-- `effect_sizes`: list of EffectSizeSpec
-- `exclusion_criteria`: ExclusionCriteria dataclass
-- `seed`: optional, uses timestamp+hash if not provided
-
-### Key Methods
-
-`generate() -> (DataFrame, Dict)`: Main entry point. Returns data + metadata.
-
-`_generate_scale_response(min, max, traits, is_reverse, condition, variable_name, seed)`: Single item.
-
-`_generate_open_response(question_spec, persona, traits, condition, seed, response_mean)`: Text response.
-
-`_compute_semantic_condition_effect(condition, variable_name, default_d)`: Parses condition name for effect direction.
-
-### Semantic Parsing
-
-The key insight: effects should come from condition *meaning*, not condition *position*.
+### 3.1 Constructor Parameters
 
 ```python
-# BAD: First condition gets higher scores
-# GOOD: "High Trust" gets higher scores than "Low Trust" because of semantics
-
-positive_keywords = ['high', 'good', 'positive', 'friend', 'reward', ...]
-negative_keywords = ['low', 'bad', 'negative', 'enemy', 'punishment', ...]
+EnhancedSimulationEngine(
+    study_title: str,
+    study_description: str,
+    sample_size: int,
+    conditions: List[str],
+    factors: List[Dict[str, Any]],
+    scales: List[Dict[str, Any]],
+    additional_vars: List[Dict[str, Any]],
+    demographics: Dict[str, Any],
+    attention_rate: float = 0.95,
+    random_responder_rate: float = 0.05,
+    effect_sizes: Optional[List[EffectSizeSpec]] = None,
+    exclusion_criteria: Optional[ExclusionCriteria] = None,
+    open_ended_questions: Optional[List[Dict[str, Any]]] = None,
+    study_context: Optional[Dict[str, Any]] = None,
+    condition_allocation: Optional[Dict[str, float]] = None,
+    seed: Optional[int] = None,
+    mode: str = "pilot"
+)
 ```
 
-The algorithm:
-1. Parse condition name for keywords
-2. Compute net valence (positive keywords - negative keywords)
-3. Add domain-specific adjustments (e.g., AI → algorithm aversion)
-4. Scale by configured effect size
+### 3.2 Key Methods
+
+| Method | Purpose |
+|--------|---------|
+| `generate()` | Main entry point; returns (DataFrame, metadata_dict) |
+| `_generate_scale_response()` | Produces single Likert item value |
+| `_generate_open_response()` | Produces open-ended text response |
+| `_compute_semantic_condition_effect()` | Parses condition semantics for effect direction |
+| `_generate_condition_assignment()` | Allocates participants to conditions |
+
+### 3.3 Semantic Effect Parsing
+
+The system determines effect direction from condition name semantics:
+
+```python
+positive_keywords = ['high', 'good', 'positive', 'friend', 'reward', ...]
+negative_keywords = ['low', 'bad', 'negative', 'enemy', 'punishment', ...]
+
+# Domain-specific adjustments
+if 'ai' in condition.lower():
+    effect -= 0.08  # Algorithm aversion
+```
+
+This ensures effects follow logical design structure rather than arbitrary condition ordering.
 
 ---
 
-## SurveyFlowHandler
+## 4. SurveyFlowHandler
 
 **Location**: `enhanced_simulation_engine.py` (lines 311-545)
 
-Determines which questions each participant sees based on their condition.
+### 4.1 Purpose
 
-### Detection Methods
+Determines which questions each participant sees based on their experimental condition, ensuring synthetic data respects the survey's programmed logic.
 
-1. **Explicit restrictions**: Question spec includes `condition` or `visible_conditions`
-2. **DisplayLogic**: Parse Qualtrics logic structures
-3. **Block name matching**: "AI_Block" → only AI conditions
-4. **Question text hints**: "For those who saw the AI..." → restrict visibility
-5. **Factor-level matching**: For "AI × Hedonic", questions for "AI" are visible to both "AI × Hedonic" and "AI × Utilitarian"
+### 4.2 Detection Methods
 
-### Usage
+1. **Explicit restrictions**: `condition` or `visible_conditions` in question spec
+2. **DisplayLogic parsing**: Extract Qualtrics logic structures
+3. **Block name analysis**: Condition keywords in block names
+4. **Question text analysis**: Conditional phrases in question text
+5. **Factor-level matching**: Partial matches for factorial designs
+
+### 4.3 Implementation
 
 ```python
-self.survey_flow_handler = SurveyFlowHandler(conditions, open_ended_questions)
+class SurveyFlowHandler:
+    def __init__(self, conditions, open_ended_questions):
+        self.visibility_map = self._build_visibility_map()
 
-# In generate loop:
-if not self.survey_flow_handler.is_question_visible(question_name, participant_condition):
-    responses.append("")  # NA
-    continue
-# else generate response
+    def is_question_visible(self, question_name, condition) -> bool:
+        # Returns True if participant in this condition would see the question
+
+    def get_visible_questions(self, condition) -> List[Dict]:
+        # Returns all questions visible for this condition
 ```
 
 ---
 
-## QSF Parsing
+## 5. QSF Parsing
 
 **Location**: `qsf_preview.py`
 
-### Block Exclusion
+### 5.1 Block Exclusion Patterns
 
-200+ patterns for blocks that shouldn't be treated as conditions:
-- Prefixes: `trash_`, `unused_`, `old_`, `test_`, `copy_`
-- Suffixes: `_old`, `_copy`, `_backup`, `_v1`
-- Names: `consent`, `demographics`, `debrief`, `instructions`
+The system excludes 200+ patterns from condition detection:
 
-Both exact matches (`EXCLUDED_BLOCK_NAMES` set) and regex patterns (`EXCLUDED_BLOCK_PATTERNS` list).
+**Prefixes**: `trash_`, `unused_`, `old_`, `test_`, `copy_`, `delete_`, `archive_`
 
-### Scale Detection
+**Suffixes**: `_old`, `_copy`, `_backup`, `_unused`, `_v1`, `_v2`, `_DONOTUSE`
 
-Six types:
+**Names**: `consent`, `demographics`, `debrief`, `instructions`, `attention_check`, `manipulation_check`
+
+### 5.2 Scale Detection
+
+Six detection types:
 1. Matrix scales (multi-item Likert)
 2. Numbered items (Scale_1, Scale_2, ...)
 3. Likert scales (grouped single-choice)
 4. Sliders (visual analog)
 5. Single-item DVs
-6. Numeric inputs (WTP, etc.)
+6. Numeric inputs
 
-Detection uses question type, selector, and name patterns.
-
-### DisplayLogic Parsing
+### 5.3 DisplayLogic Parsing
 
 ```python
 def _parse_display_logic(self, display_logic: Dict) -> Dict:
-    # Returns:
-    # {
-    #     'type': 'BooleanExpression',
-    #     'conditions': [...],
-    #     'depends_on': ['QID123', ...]
-    # }
+    return {
+        'type': display_logic.get('Type', 'Unknown'),
+        'conditions': [...],
+        'depends_on': [question_ids...]
+    }
 ```
 
 ---
 
-## Response Library
+## 6. Response Library
 
 **Location**: `response_library.py`
 
-### Domain Templates
+### 6.1 Domain Coverage
 
-175+ domains organized by category:
-- Behavioral Economics (dictator, ultimatum, trust, public goods, risk, time)
-- Social Psychology (intergroup, identity, norms, conformity)
-- Consumer (product feedback, brand perception)
-- etc.
+175+ domains organized by research area:
+- Behavioral Economics (12 domains)
+- Social Psychology (15 domains)
+- Consumer Behavior (10 domains)
+- Technology/AI (10 domains)
+- And 26 additional categories
 
-Each domain has templates for each sentiment level.
-
-### Question Type Detection
-
-30+ types detected by regex patterns:
-- Explanatory (why, explain, reason)
-- Evaluative (rate, assess, compare)
-- Reflective (remember, recall, experience)
-- etc.
-
-### Generation Flow
+### 6.2 Generation Pipeline
 
 ```python
-def generate(question_text, sentiment, persona_verbosity, persona_formality, persona_engagement, condition):
+def generate(question_text, sentiment, persona_traits, condition):
     q_type = detect_question_type(question_text)
-    domain = detect_study_domain(self.study_context, question_text)
-    response = self._get_template_response(domain, q_type, sentiment)
-    response = self._personalize_for_question(response, question_text, keywords, condition)
-    # Apply persona modifiers...
+    domain = detect_study_domain(study_context, question_text)
+    response = _get_template_response(domain, q_type, sentiment)
+    response = _personalize_for_question(response, question_text, keywords, condition)
+    response = apply_persona_modulation(response, persona_traits)
     return response
 ```
 
 ---
 
-## Seeding Strategy
+## 7. Seeding Strategy
 
-Everything uses deterministic seeds for reproducibility:
+All stochastic elements use deterministic seeding:
 
 ```python
-self.seed = base_seed  # Or timestamp + hash if None
+self.seed = base_seed  # Or timestamp + MD5(study_title) if None
 participant_seed = (self.seed + i * 100) % (2**31)
 column_seed = (self.seed + i * 100 + _stable_int_hash(column_name)) % (2**31)
 ```
 
-`_stable_int_hash` uses MD5, not Python's `hash()`, for cross-platform reproducibility.
+`_stable_int_hash` uses MD5 for cross-platform reproducibility.
 
 ---
 
-## Common Gotchas
+## 8. Common Implementation Issues
 
-### Type Safety in QSF Parsing
+### 8.1 Type Safety in QSF Parsing
 
-QSF files can have unexpected structures. Always check types:
+QSF files may contain unexpected data structures. Always validate types:
 
 ```python
-# BAD
+# Incorrect:
 message = custom_val.get('Message', '')
 if 'email' in message.lower():  # Fails if message is dict
 
-# GOOD
+# Correct:
 message = custom_val.get('Message', '')
 if isinstance(message, str) and 'email' in message.lower():
 ```
 
-### Version Mismatch
+### 8.2 Effect Order Artifacts
 
-If versions don't match, Streamlit's module caching can cause weird behavior. The app warns but doesn't crash. Fix by updating all version constants.
+If effects correlate with condition position rather than semantics:
+1. Verify semantic parser detects keywords correctly
+2. Check EffectSizeSpec has correct level_high/level_low
+3. Ensure condition names contain meaningful content
 
-### Effect Order
+### 8.3 Version Mismatch
 
-If effects seem to follow condition order rather than meaning, check:
-1. Semantic parsing is detecting keywords correctly
-2. Effect specification has correct level_high/level_low
-3. Condition names have meaningful content
-
----
-
-## Testing
-
-Key things to verify:
-1. **Effect recovery**: Observed effects approximate configured values
-2. **Survey flow**: NA values appear for non-visible questions
-3. **Text uniqueness**: Different questions get different responses
-4. **Reproducibility**: Same seed → same output
+Streamlit caches modules aggressively. Version mismatches cause unpredictable behavior. Always update BUILD_ID when deploying changes.
 
 ---
 
-*Internal use only. Do not distribute.*
+## 9. Quality Assurance
+
+### 9.1 Validation Checks
+
+| Check | Target |
+|-------|--------|
+| Effect recovery | Observed d within 0.1 of configured d |
+| Mean Likert response | 4.0-5.2 on 7-point scales |
+| Within-condition SD | 1.2-1.8 |
+| Attention pass rate | 85-95% (depending on difficulty) |
+| Survey flow | NA values for non-visible questions |
+
+### 9.2 Reproducibility Testing
+
+```python
+engine1 = EnhancedSimulationEngine(..., seed=12345)
+engine2 = EnhancedSimulationEngine(..., seed=12345)
+df1, _ = engine1.generate()
+df2, _ = engine2.generate()
+assert df1.equals(df2)
+```
+
+---
+
+*CONFIDENTIAL — Internal use only. Do not distribute.*
+
+*© 2026 Dr. Eugen Dimant. All rights reserved.*

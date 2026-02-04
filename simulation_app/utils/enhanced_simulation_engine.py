@@ -449,33 +449,54 @@ class SurveyFlowHandler:
         if not block_name:
             return
 
-        # Common block name patterns indicating condition-specific blocks
-        condition_keywords_in_block = []
+        block_lower = block_name.lower()
 
+        # Check for explicit negation patterns in block name
+        # e.g., "no_ai_block", "non_ai", "without_ai"
+        negation_patterns = ['no_', 'no ', 'non_', 'non ', 'without_', 'without ']
+        has_negation = any(neg in block_lower for neg in negation_patterns)
+
+        # Find which factor level(s) the block name refers to
+        block_keywords = []
         for cond in self.conditions:
-            # Split condition into parts for factorial matching
             cond_parts = cond.replace('×', ' ').replace('_', ' ').lower().split()
-
             for part in cond_parts:
-                if len(part) > 2 and part in block_name:
-                    condition_keywords_in_block.append((cond, part))
+                # Skip common words and negations
+                if part in ['no', 'non', 'without', 'and', 'or', 'the', 'a']:
+                    continue
+                # Include 2+ character keywords (e.g., "ai")
+                if len(part) >= 2 and part in block_lower:
+                    block_keywords.append(part)
 
-        # If block name contains specific condition keywords
-        if condition_keywords_in_block:
-            # Find the most specific match
-            best_match = max(condition_keywords_in_block, key=lambda x: len(x[1]))
-            matching_cond = best_match[0]
+        if not block_keywords:
+            return
 
-            # Only this condition sees questions in this block
-            for cond in self.conditions:
-                if cond != matching_cond:
-                    # Check if they share a factor level
-                    matching_parts = set(matching_cond.replace('×', ' ').split())
-                    cond_parts = set(cond.replace('×', ' ').split())
-                    shared = matching_parts & cond_parts
-                    # If they share a factor level, both see it
-                    if not shared:
-                        q_visibility[cond] = False
+        # Get the primary keyword (longest match)
+        primary_keyword = max(set(block_keywords), key=len)
+
+        # Determine which conditions should see this block
+        for cond in self.conditions:
+            cond_lower = cond.lower()
+
+            # Check if this condition has the keyword
+            has_keyword = primary_keyword in cond_lower.replace('×', ' ').replace('_', ' ')
+
+            # Check if this condition has negation of the keyword
+            cond_has_negation = any(
+                f"{neg}{primary_keyword}" in cond_lower.replace('×', ' ').replace('_', ' ')
+                or f"{neg} {primary_keyword}" in cond_lower.replace('×', ' ')
+                for neg in ['no', 'non', 'without']
+            )
+
+            # Block has "AI" without negation -> only conditions with "AI" (not "No AI") see it
+            # Block has "No AI" -> only conditions with "No AI" see it
+            if has_negation:
+                # Block is for negated conditions (e.g., "no_ai_block")
+                q_visibility[cond] = cond_has_negation
+            else:
+                # Block is for positive conditions (e.g., "ai_block")
+                # Conditions with "No AI" should NOT see it
+                q_visibility[cond] = has_keyword and not cond_has_negation
 
     def _apply_question_text_hints(self, q_visibility: Dict[str, bool], question_text: str):
         """Check question text for condition-specific language."""
