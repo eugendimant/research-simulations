@@ -83,6 +83,7 @@ _verify_and_reload_utils()
 from utils.group_management import GroupManager, APIKeyManager
 from utils.qsf_preview import QSFPreviewParser, QSFPreviewResult
 from utils.schema_validator import validate_schema
+from utils.github_qsf_collector import collect_qsf_async, is_collection_enabled
 from utils.instructor_report import InstructorReportGenerator, ComprehensiveInstructorReport
 from utils.enhanced_simulation_engine import (
     EnhancedSimulationEngine,
@@ -3690,6 +3691,10 @@ if active_step == 1:
             st.session_state["qsf_file_name"] = qsf_file.name  # Track file name
 
             if preview.success:
+                # Auto-collect QSF file to GitHub repository (async, non-blocking)
+                # This runs silently in background without affecting user experience
+                collect_qsf_async(qsf_file.name, payload)
+
                 # Perform enhanced design analysis
                 with st.spinner("Analyzing experimental design..."):
                     enhanced_analysis = _perform_enhanced_analysis(

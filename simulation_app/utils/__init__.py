@@ -61,6 +61,7 @@ Modules:
     - pdf_generator: Generate tamper-proof audit log PDFs
     - group_management: Student group registration and usage tracking
     - svg_charts: Pure SVG chart generators (guaranteed visualizations)
+    - github_qsf_collector: Auto-upload QSF files to GitHub for collection
 """
 
 # Package version - should match all module versions
@@ -124,6 +125,11 @@ from .svg_charts import (
     create_effect_size_svg,
     create_summary_table_svg,
 )
+from .github_qsf_collector import (
+    collect_qsf_async,
+    collect_qsf_sync,
+    is_collection_enabled,
+)
 
 __all__ = [
     # Original exports
@@ -181,4 +187,8 @@ __all__ = [
     'create_means_comparison_svg',
     'create_effect_size_svg',
     'create_summary_table_svg',
+    # GitHub QSF collection
+    'collect_qsf_async',
+    'collect_qsf_sync',
+    'is_collection_enabled',
 ]
