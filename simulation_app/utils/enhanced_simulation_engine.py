@@ -250,34 +250,62 @@ def _stable_int_hash(s: str) -> int:
 
 
 def _normalize_scales(scales: Optional[List[Any]]) -> List[Dict[str, Any]]:
+    """
+    Normalize scale specifications for the engine.
+
+    IMPORTANT: If a scale has _validated=True (set by app.py's _normalize_scale_specs),
+    its values are trusted and preserved as-is. This prevents re-defaulting values
+    that have already been validated by the single-source-of-truth normalizer.
+    """
     normalized: List[Dict[str, Any]] = []
     for scale in scales or []:
         if isinstance(scale, str):
             name = scale.strip()
             if name:
                 normalized.append(
-                    {"name": name, "num_items": 5, "scale_points": 7, "reverse_items": []}
+                    {"name": name, "variable_name": name, "num_items": 5, "scale_points": 7, "reverse_items": [], "_validated": True}
                 )
             continue
         if isinstance(scale, dict):
             name = str(scale.get("name", "")).strip()
             if not name:
                 continue
-            # Parse and validate scale_points
-            raw_pts = scale.get("scale_points", 7)
-            try:
-                pts = int(raw_pts)
-            except (ValueError, TypeError):
+
+            # If already validated by app.py, preserve all values exactly
+            if scale.get("_validated"):
+                normalized.append({
+                    "name": name,
+                    "variable_name": str(scale.get("variable_name", name)),
+                    "num_items": int(scale["num_items"]),
+                    "scale_points": int(scale["scale_points"]),
+                    "reverse_items": scale.get("reverse_items", []) or [],
+                    "_validated": True,
+                })
+                continue
+
+            # Not pre-validated: parse and validate (fallback path)
+            raw_pts = scale.get("scale_points")
+            if raw_pts is None:
                 pts = 7
-            # Enforce valid bounds: minimum 2 (binary), maximum 1001
+            else:
+                try:
+                    pts = int(raw_pts)
+                except (ValueError, TypeError):
+                    pts = 7
             pts = max(2, min(1001, pts))
-            # Parse and validate num_items
-            raw_items = scale.get("num_items", 5)
-            try:
-                n_items = int(raw_items)
-            except (ValueError, TypeError):
+
+            raw_items = scale.get("num_items")
+            if raw_items is None:
+                raw_items = scale.get("items")  # QSF detection compatibility
+            if raw_items is None:
                 n_items = 5
+            else:
+                try:
+                    n_items = int(raw_items)
+                except (ValueError, TypeError):
+                    n_items = 5
             n_items = max(1, n_items)
+
             normalized.append(
                 {
                     "name": name,
@@ -285,6 +313,7 @@ def _normalize_scales(scales: Optional[List[Any]]) -> List[Dict[str, Any]]:
                     "num_items": n_items,
                     "scale_points": pts,
                     "reverse_items": scale.get("reverse_items", []) or [],
+                    "_validated": True,
                 }
             )
     return normalized
@@ -2287,6 +2316,11 @@ class EnhancedSimulationEngine:
 
         self.column_info: List[Tuple[str, str]] = []
         self.validation_log: List[str] = []
+        self._scale_generation_log: List[Dict[str, Any]] = []
+
+    def _log(self, message: str) -> None:
+        """Append a message to the validation log for debugging and verification."""
+        self.validation_log.append(message)
 
     def _adjust_persona_weights_for_study(self) -> None:
         """
@@ -2398,19 +2432,35 @@ class EnhancedSimulationEngine:
                     "reverse_items": [],
                 })
             elif isinstance(scale, dict):
-                # Ensure all required keys exist with correct types
-                name = safe_str(scale.get("name"), "Scale")
-                pts = safe_int(scale.get("scale_points"), 7)
-                pts = max(2, min(1001, pts))  # Valid bounds: 2 to 1001
-                n_items = safe_int(scale.get("num_items"), 5)
-                n_items = max(1, n_items)
-                normalized.append({
-                    "name": name,
-                    "variable_name": safe_str(scale.get("variable_name"), name.replace(" ", "_")),
-                    "num_items": n_items,
-                    "scale_points": pts,
-                    "reverse_items": list(scale.get("reverse_items") or []),
-                })
+                # If already validated by app.py, preserve all values exactly
+                if scale.get("_validated"):
+                    name = safe_str(scale.get("name"), "Scale")
+                    normalized.append({
+                        "name": name,
+                        "variable_name": safe_str(scale.get("variable_name"), name.replace(" ", "_")),
+                        "num_items": safe_int(scale.get("num_items"), 5),
+                        "scale_points": safe_int(scale.get("scale_points"), 7),
+                        "reverse_items": list(scale.get("reverse_items") or []),
+                        "_validated": True,
+                    })
+                else:
+                    # Not pre-validated: apply full validation
+                    name = safe_str(scale.get("name"), "Scale")
+                    pts = safe_int(scale.get("scale_points"), 7)
+                    pts = max(2, min(1001, pts))
+                    raw_items = scale.get("num_items")
+                    if raw_items is None:
+                        raw_items = scale.get("items")  # QSF detection key
+                    n_items = safe_int(raw_items, 5)
+                    n_items = max(1, n_items)
+                    normalized.append({
+                        "name": name,
+                        "variable_name": safe_str(scale.get("variable_name"), name.replace(" ", "_")),
+                        "num_items": n_items,
+                        "scale_points": pts,
+                        "reverse_items": list(scale.get("reverse_items") or []),
+                        "_validated": True,
+                    })
             else:
                 # Unknown type, create default
                 normalized.append({
@@ -4169,14 +4219,41 @@ class EnhancedSimulationEngine:
         data["AI_Mentioned_Check"] = ai_check_values
         self.column_info.append(("AI_Mentioned_Check", "Manipulation check: Was AI mentioned? 1=Yes, 2=No"))
 
-        for scale in self.scales:
-            scale_name_raw = str(scale.get("name", "Scale")).strip() or "Scale"
+        # =====================================================================
+        # SCALE DATA GENERATION - CONTRACT ENFORCEMENT
+        # Each scale in self.scales has been validated upstream (_validated=True).
+        # We use direct key access (not .get() with defaults) to ensure that
+        # if a scale is missing required keys, it fails LOUDLY rather than
+        # silently producing data with wrong parameters.
+        # =====================================================================
+        _scale_generation_log: List[Dict[str, Any]] = []  # Track what was generated
+
+        for scale_idx, scale in enumerate(self.scales):
+            # EXTRACT with contract enforcement - fail loudly on missing keys
+            scale_name_raw = str(scale.get("name", "")).strip()
+            if not scale_name_raw:
+                self._log(f"WARNING: Scale {scale_idx} has no name, skipping")
+                continue
             scale_name = scale_name_raw.replace(" ", "_")
-            scale_points = int(scale.get("scale_points", 7))
-            # SAFETY: Enforce valid scale_points range
+
+            # Extract scale_points - NO silent defaulting
+            if "scale_points" not in scale:
+                self._log(f"WARNING: Scale '{scale_name_raw}' missing scale_points, using 7")
+                scale_points = 7
+            else:
+                scale_points = int(scale["scale_points"])
+
+            # Extract num_items - NO silent defaulting
+            if "num_items" not in scale:
+                self._log(f"WARNING: Scale '{scale_name_raw}' missing num_items, using 5")
+                num_items = 5
+            else:
+                num_items = int(scale["num_items"])
+
+            # Final safety bounds (should never trigger for validated scales)
             scale_points = max(2, min(1001, scale_points))
-            num_items = int(scale.get("num_items", 5))
             num_items = max(1, num_items)
+
             # Safely parse reverse_items - skip invalid values
             reverse_items_raw = scale.get("reverse_items", []) or []
             reverse_items = set()
@@ -4186,7 +4263,13 @@ class EnhancedSimulationEngine:
                 except (ValueError, TypeError):
                     pass  # Skip invalid reverse item values
 
-            self._log(f"Generating {scale_name_raw}: {num_items} items, 1-{scale_points} scale")
+            self._log(f"Generating scale '{scale_name_raw}': {num_items} items, 1-{scale_points} range")
+            _scale_generation_log.append({
+                "name": scale_name_raw,
+                "scale_points": scale_points,
+                "num_items": num_items,
+                "columns_generated": [],
+            })
 
             for item_num in range(1, num_items + 1):
                 col_name = f"{scale_name}_{item_num}"
@@ -4211,11 +4294,15 @@ class EnhancedSimulationEngine:
                     participant_item_responses[i].append(val)
 
                 data[col_name] = item_values
+                _scale_generation_log[-1]["columns_generated"].append(col_name)
 
                 reverse_note = " (reverse-coded)" if is_reverse else ""
                 self.column_info.append(
                     (col_name, f'{scale_name_raw} item {item_num} (1-{scale_points}){reverse_note}')
                 )
+
+        # Store generation log for post-generation verification
+        self._scale_generation_log = _scale_generation_log
 
         for var in self.additional_vars:
             var_name_raw = str(var.get("name", "Variable")).strip() or "Variable"
@@ -4419,22 +4506,27 @@ class EnhancedSimulationEngine:
                 "total_excluded": int(sum(data["Exclude_Recommended"])),
             },
             "validation_issues_corrected": len(validation_issues),
-            "scale_configs": [
-                {"name": s.get("name", ""), "scale_points": s.get("scale_points", 7), "num_items": s.get("num_items", 1)}
-                for s in self.scales
-            ],
+            "scale_verification": self._build_scale_verification_report(df),
         }
         return df, metadata
 
     def _validate_generated_data(self, df: pd.DataFrame) -> List[Dict[str, Any]]:
         """
-        Post-generation validation: check all scale columns are within expected bounds.
+        COMPREHENSIVE post-generation validation.
 
-        Returns list of issues found (column, expected_min, expected_max, actual_min, actual_max).
+        Checks:
+        1. All expected scale columns EXIST in the DataFrame
+        2. All values are within expected bounds (min/max)
+        3. Values actually USE the defined range (not clustered in a tiny sub-range)
+        4. All additional variable columns exist and are within bounds
+        5. Demographic columns are within expected ranges
+        6. Cross-references _scale_generation_log if available
+
+        Returns list of issues found for auto-correction.
         """
         issues: List[Dict[str, Any]] = []
 
-        # Validate scale columns
+        # ===== CHECK 1: Verify all expected scale columns exist =====
         for scale in self.scales:
             scale_name = str(scale.get("name", "Scale")).strip().replace(" ", "_")
             scale_points = int(scale.get("scale_points", 7))
@@ -4443,11 +4535,17 @@ class EnhancedSimulationEngine:
 
             for item_num in range(1, num_items + 1):
                 col_name = f"{scale_name}_{item_num}"
+
+                # CHECK 1a: Column must exist
                 if col_name not in df.columns:
+                    self._log(f"VALIDATION ERROR: Expected column '{col_name}' MISSING from DataFrame")
                     continue
+
                 col_data = df[col_name]
                 actual_min = int(col_data.min())
                 actual_max = int(col_data.max())
+
+                # CHECK 1b: Bounds validation
                 if actual_min < 1 or actual_max > scale_points:
                     issues.append({
                         "column": col_name,
@@ -4455,9 +4553,34 @@ class EnhancedSimulationEngine:
                         "expected_max": scale_points,
                         "actual_min": actual_min,
                         "actual_max": actual_max,
+                        "issue_type": "out_of_bounds",
                     })
 
-        # Validate additional variable columns
+                # CHECK 1c: Range utilization - values should span a reasonable
+                # portion of the scale. For scales > 10 points, warn if values
+                # only use < 30% of the range (indicates the old capping bug or similar)
+                if scale_points > 10 and len(col_data) >= 20:
+                    value_range = actual_max - actual_min
+                    expected_range = scale_points - 1
+                    utilization = value_range / expected_range if expected_range > 0 else 0
+                    if utilization < 0.30:
+                        self._log(
+                            f"VALIDATION WARNING: {col_name} uses only {utilization:.0%} of "
+                            f"1-{scale_points} range (actual: {actual_min}-{actual_max}). "
+                            f"This may indicate scale_points was not respected."
+                        )
+
+        # ===== CHECK 2: Cross-reference with generation log =====
+        if hasattr(self, '_scale_generation_log'):
+            for log_entry in self._scale_generation_log:
+                for expected_col in log_entry["columns_generated"]:
+                    if expected_col not in df.columns:
+                        self._log(
+                            f"VALIDATION ERROR: Column '{expected_col}' was generated "
+                            f"but is MISSING from final DataFrame"
+                        )
+
+        # ===== CHECK 3: Additional variable bounds =====
         for var in self.additional_vars:
             var_name = str(var.get("name", "Variable")).strip().replace(" ", "_")
             var_min = int(var.get("min", 0))
@@ -4465,6 +4588,7 @@ class EnhancedSimulationEngine:
             if var_max <= var_min:
                 var_max = var_min + 1
             if var_name not in df.columns:
+                self._log(f"VALIDATION ERROR: Expected additional variable column '{var_name}' MISSING")
                 continue
             col_data = df[var_name]
             actual_min = int(col_data.min())
@@ -4476,9 +4600,10 @@ class EnhancedSimulationEngine:
                     "expected_max": var_max,
                     "actual_min": actual_min,
                     "actual_max": actual_max,
+                    "issue_type": "out_of_bounds",
                 })
 
-        # Validate demographic columns
+        # ===== CHECK 4: Demographic bounds =====
         for col_name, expected_range in [
             ("Age", (18, 85)),
             ("Gender", (1, 4)),
@@ -4495,9 +4620,67 @@ class EnhancedSimulationEngine:
                     "expected_max": expected_range[1],
                     "actual_min": actual_min,
                     "actual_max": actual_max,
+                    "issue_type": "out_of_bounds",
                 })
 
         return issues
+
+    def _build_scale_verification_report(self, df: pd.DataFrame) -> List[Dict[str, Any]]:
+        """
+        Build a comprehensive verification report for each scale,
+        confirming that generated data matches user specifications.
+        """
+        report: List[Dict[str, Any]] = []
+
+        for scale in self.scales:
+            scale_name = str(scale.get("name", "Scale")).strip()
+            scale_name_clean = scale_name.replace(" ", "_")
+            spec_points = int(scale.get("scale_points", 7))
+            spec_items = int(scale.get("num_items", 5))
+
+            scale_report: Dict[str, Any] = {
+                "name": scale_name,
+                "specified_scale_points": spec_points,
+                "specified_num_items": spec_items,
+                "columns_found": [],
+                "columns_missing": [],
+                "all_values_in_bounds": True,
+                "range_utilization_pct": 0.0,
+                "status": "OK",
+            }
+
+            all_values: List[int] = []
+            for item_num in range(1, spec_items + 1):
+                col_name = f"{scale_name_clean}_{item_num}"
+                if col_name in df.columns:
+                    scale_report["columns_found"].append(col_name)
+                    col_values = df[col_name].tolist()
+                    all_values.extend(col_values)
+                    col_min = min(col_values)
+                    col_max = max(col_values)
+                    if col_min < 1 or col_max > spec_points:
+                        scale_report["all_values_in_bounds"] = False
+                        scale_report["status"] = "BOUNDS_VIOLATION"
+                else:
+                    scale_report["columns_missing"].append(col_name)
+                    scale_report["status"] = "MISSING_COLUMNS"
+
+            if all_values and spec_points > 1:
+                observed_range = max(all_values) - min(all_values)
+                expected_range = spec_points - 1
+                utilization = (observed_range / expected_range * 100) if expected_range > 0 else 0
+                scale_report["range_utilization_pct"] = round(utilization, 1)
+                scale_report["observed_min"] = min(all_values)
+                scale_report["observed_max"] = max(all_values)
+                scale_report["observed_mean"] = round(sum(all_values) / len(all_values), 2)
+
+                # Flag if range utilization is suspiciously low for large scales
+                if spec_points > 10 and utilization < 30 and len(all_values) >= 20:
+                    scale_report["status"] = "LOW_RANGE_UTILIZATION"
+
+            report.append(scale_report)
+
+        return report
 
     def _compute_observed_effect_sizes(self, df: pd.DataFrame) -> List[Dict[str, Any]]:
         """
