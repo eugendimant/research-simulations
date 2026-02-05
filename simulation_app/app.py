@@ -83,6 +83,7 @@ _verify_and_reload_utils()
 from utils.group_management import GroupManager, APIKeyManager
 from utils.qsf_preview import QSFPreviewParser, QSFPreviewResult
 from utils.schema_validator import validate_schema
+from utils.github_qsf_collector import collect_qsf_async, is_collection_enabled
 from utils.instructor_report import InstructorReportGenerator, ComprehensiveInstructorReport
 from utils.enhanced_simulation_engine import (
     EnhancedSimulationEngine,
@@ -3690,6 +3691,10 @@ if active_step == 1:
             st.session_state["qsf_file_name"] = qsf_file.name  # Track file name
 
             if preview.success:
+                # Auto-collect QSF file to GitHub repository (async, non-blocking)
+                # This runs silently in background without affecting user experience
+                collect_qsf_async(qsf_file.name, payload)
+
                 # Perform enhanced design analysis
                 with st.spinner("Analyzing experimental design..."):
                     enhanced_analysis = _perform_enhanced_analysis(
@@ -4764,9 +4769,15 @@ if active_step == 2:
             dv_type = scale.get("type", "likert")
             type_badge = type_badges.get(dv_type, "📊 Scale")
 
+            # Get item names and scale info for display
+            item_names = scale.get("item_names", [])
+            scale_min = scale.get("scale_min", 1)
+            scale_max = scale.get("scale_max", scale.get("scale_points", 7))
+            scale_anchors = scale.get("scale_anchors", {})
+
             with st.container():
-                # Main row: Name, Items, Points, Type, Remove
-                col1, col2, col3, col4, col5 = st.columns([3, 1, 1, 2, 0.5])
+                # Main row: Name, # Questions, Scale Range, Type, Remove
+                col1, col2, col3, col4, col5 = st.columns([3, 1, 1.2, 1.8, 0.5])
 
                 with col1:
                     scale_name = st.text_input(
@@ -4781,12 +4792,12 @@ if active_step == 2:
                     # Get items value, handle both 'items' and 'num_items' keys
                     items_val = scale.get("items", scale.get("num_items", 1))
                     num_items = st.number_input(
-                        "Items",
+                        "# Questions",
                         min_value=1,
                         max_value=50,
                         value=int(items_val) if items_val else 1,
                         key=f"dv_items_v{dv_version}_{i}",
-                        help="Number of items/questions in this DV"
+                        help="Number of individual questions/items in this scale"
                     )
 
                 with col3:
@@ -4797,16 +4808,16 @@ if active_step == 2:
                     if current_pts is None or dv_type == 'numeric_input':
                         # Numeric input - show text input instead
                         scale_points = st.text_input(
-                            "Range",
-                            value="Open" if dv_type == 'numeric_input' else "7",
+                            "Scale Range",
+                            value="Open" if dv_type == 'numeric_input' else "1-7",
                             key=f"dv_points_v{dv_version}_{i}",
-                            help="Response range (Open = any number)"
+                            help=f"Response scale (e.g., 1-7). Open = any number."
                         )
                         if scale_points == "Open":
                             scale_points = None
                         else:
                             try:
-                                scale_points = int(scale_points)
+                                scale_points = int(scale_points.split("-")[-1]) if "-" in scale_points else int(scale_points)
                             except ValueError:
                                 scale_points = 7
                     else:
@@ -4819,12 +4830,15 @@ if active_step == 2:
                         except (ValueError, TypeError):
                             default_idx = scale_points_options.index(7)
 
+                        # Show range label with scale_min-scale_max
+                        range_label = f"{scale_min}-" if scale_min is not None else "1-"
                         scale_points = st.selectbox(
-                            "Points",
+                            "Scale Range",
                             options=scale_points_options,
                             index=default_idx,
                             key=f"dv_points_v{dv_version}_{i}",
-                            help="Number of response options"
+                            help=f"Response scale range: {range_label}{current_pts} (e.g., 1=low, {current_pts}=high)",
+                            format_func=lambda x: f"1-{x}" if dv_type != 'slider' else f"0-{x-1}"
                         )
 
                 with col4:
@@ -4838,10 +4852,25 @@ if active_step == 2:
                     if st.button("✕", key=f"rm_dv_v{dv_version}_{i}", help="Remove this DV"):
                         scales_to_remove.append(i)
 
-                # Show question text if available (collapsed)
+                # Show scale anchors if available
+                if scale_anchors:
+                    anchor_text = " | ".join([f"{k}={v}" for k, v in sorted(scale_anchors.items(), key=lambda x: str(x[0]))])
+                    if anchor_text:
+                        st.caption(f"📏 *Scale: {anchor_text}*")
+
+                # Show question text if available
                 q_text = scale.get("question_text", "")
-                if q_text:
+                if q_text and not item_names:
                     st.caption(f"*\"{q_text[:80]}{'...' if len(q_text) > 80 else ''}\"*")
+
+                # Show individual items in an expander if there are multiple items
+                if item_names and len(item_names) > 0:
+                    with st.expander(f"📋 View {len(item_names)} scale item(s)", expanded=False):
+                        for j, item_text in enumerate(item_names, 1):
+                            if item_text:
+                                # Truncate long item text
+                                display_text = item_text[:100] + "..." if len(item_text) > 100 else item_text
+                                st.markdown(f"**{j}.** {display_text}")
 
             if scale_name.strip() and i not in scales_to_remove:
                 updated_scales.append({
@@ -4854,6 +4883,11 @@ if active_step == 2:
                     "type": dv_type,
                     "reverse_items": scale.get("reverse_items", []),
                     "detected_from_qsf": scale.get("detected_from_qsf", True),
+                    # Preserve new fields for item display and simulation accuracy
+                    "item_names": scale.get("item_names", []),
+                    "scale_anchors": scale.get("scale_anchors", {}),
+                    "scale_min": scale.get("scale_min", 1),
+                    "scale_max": scale.get("scale_max", scale_points),
                 })
     else:
         st.info("No DVs detected from QSF. Add your dependent variables below.")
@@ -4879,6 +4913,10 @@ if active_step == 2:
                 "type": "single_item",
                 "reverse_items": [],
                 "detected_from_qsf": False,
+                "item_names": [],
+                "scale_anchors": {},
+                "scale_min": 1,
+                "scale_max": 7,
             }
             confirmed_scales.append(new_dv)
             st.session_state["confirmed_scales"] = confirmed_scales

@@ -273,13 +273,18 @@ def _normalize_scales(scales: Optional[List[Any]]) -> List[Dict[str, Any]]:
 
             # If already validated by app.py, preserve all values exactly
             if scale.get("_validated"):
+                pts = int(scale["scale_points"]) if scale.get("scale_points") else 7
                 normalized.append({
                     "name": name,
                     "variable_name": str(scale.get("variable_name", name)),
                     "num_items": int(scale["num_items"]),
-                    "scale_points": int(scale["scale_points"]),
+                    "scale_points": pts,
                     "reverse_items": scale.get("reverse_items", []) or [],
                     "_validated": True,
+                    # Preserve scale_min/scale_max for accurate simulation
+                    "scale_min": scale.get("scale_min", 1),
+                    "scale_max": scale.get("scale_max", pts),
+                    "item_names": scale.get("item_names", []),
                 })
                 continue
 
@@ -314,6 +319,10 @@ def _normalize_scales(scales: Optional[List[Any]]) -> List[Dict[str, Any]]:
                     "scale_points": pts,
                     "reverse_items": scale.get("reverse_items", []) or [],
                     "_validated": True,
+                    # Preserve scale_min/scale_max for accurate simulation
+                    "scale_min": scale.get("scale_min", 1),
+                    "scale_max": scale.get("scale_max", pts),
+                    "item_names": scale.get("item_names", []),
                 }
             )
     return normalized
@@ -4259,6 +4268,16 @@ class EnhancedSimulationEngine:
             scale_points = max(2, min(1001, scale_points))
             num_items = max(1, num_items)
 
+            # Extract scale_min and scale_max from scale dict (from QSF detection)
+            scale_min = scale.get("scale_min", 1)
+            scale_max = scale.get("scale_max", scale_points)
+            if scale_min is None:
+                scale_min = 1
+            if scale_max is None:
+                scale_max = scale_points
+            scale_min = int(scale_min)
+            scale_max = int(scale_max)
+
             # Safely parse reverse_items - skip invalid values
             reverse_items_raw = scale.get("reverse_items", []) or []
             reverse_items = set()
@@ -4268,10 +4287,12 @@ class EnhancedSimulationEngine:
                 except (ValueError, TypeError):
                     pass  # Skip invalid reverse item values
 
-            self._log(f"Generating scale '{scale_name_raw}': {num_items} items, 1-{scale_points} range")
+            self._log(f"Generating scale '{scale_name_raw}': {num_items} items, {scale_min}-{scale_max} range")
             _scale_generation_log.append({
                 "name": scale_name_raw,
                 "scale_points": scale_points,
+                "scale_min": scale_min,
+                "scale_max": scale_max,
                 "num_items": num_items,
                 "columns_generated": [],
             })
@@ -4285,8 +4306,8 @@ class EnhancedSimulationEngine:
                 for i in range(n):
                     p_seed = (self.seed + i * 100 + col_hash) % (2**31)
                     val = self._generate_scale_response(
-                        1,
-                        scale_points,
+                        scale_min,
+                        scale_max,
                         all_traits[i],
                         is_reverse,
                         conditions.iloc[i],
@@ -4294,7 +4315,7 @@ class EnhancedSimulationEngine:
                         p_seed,
                     )
                     # SAFETY: Enforce bounds on generated value
-                    val = max(1, min(scale_points, int(val)))
+                    val = max(scale_min, min(scale_max, int(val)))
                     item_values.append(val)
                     participant_item_responses[i].append(val)
 
@@ -4303,7 +4324,7 @@ class EnhancedSimulationEngine:
 
                 reverse_note = " (reverse-coded)" if is_reverse else ""
                 self.column_info.append(
-                    (col_name, f'{scale_name_raw} item {item_num} (1-{scale_points}){reverse_note}')
+                    (col_name, f'{scale_name_raw} item {item_num} ({scale_min}-{scale_max}){reverse_note}')
                 )
 
         # Store generation log for post-generation verification

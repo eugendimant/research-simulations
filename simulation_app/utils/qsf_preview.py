@@ -2738,7 +2738,11 @@ class QSFPreviewParser:
                     'items': num_items,
                     'scale_points': scale_pts,
                     'type': 'matrix',
-                    'detected_from_qsf': True
+                    'detected_from_qsf': True,
+                    'item_names': q_info.sub_questions or [],  # Actual item text from QSF
+                    'scale_anchors': q_info.scale_anchors or {},  # Scale endpoint labels
+                    'scale_min': 1,  # Default scale minimum
+                    'scale_max': scale_pts,  # Scale maximum
                 })
                 self._log(LogLevel.INFO, "SCALE", f"Detected matrix scale: {variable_name} ({num_items} items)")
                 continue
@@ -2751,6 +2755,9 @@ class QSFPreviewParser:
                     seen_scale_names.add(name_key)
                     # Get actual slider range if available
                     slider_pts = q_info.scale_points if q_info.scale_points else 101  # 0-100
+                    # Get slider min/max from QuestionInfo
+                    slider_min = q_info.slider_min if q_info.slider_min is not None else 0
+                    slider_max = q_info.slider_max if q_info.slider_max is not None else 100
                     scales.append({
                         'name': scale_name,
                         'variable_name': q_id,
@@ -2759,7 +2766,11 @@ class QSFPreviewParser:
                         'items': 1,
                         'scale_points': slider_pts,
                         'type': 'slider',
-                        'detected_from_qsf': True
+                        'detected_from_qsf': True,
+                        'item_names': [q_info.question_text[:80]] if q_info.question_text else [],
+                        'scale_anchors': q_info.slider_labels or q_info.scale_anchors or {},
+                        'scale_min': slider_min,
+                        'scale_max': slider_max,
                     })
                     self._log(LogLevel.INFO, "SCALE", f"Detected slider DV: {q_id}")
                 continue
@@ -2779,7 +2790,11 @@ class QSFPreviewParser:
                         'items': num_items,
                         'scale_points': 100,  # Constant sum typically 100
                         'type': 'constant_sum',
-                        'detected_from_qsf': True
+                        'detected_from_qsf': True,
+                        'item_names': q_info.choices or [],  # Allocation categories
+                        'scale_anchors': {},
+                        'scale_min': 0,
+                        'scale_max': 100,
                     })
                     self._log(LogLevel.INFO, "SCALE", f"Detected constant sum DV: {q_id}")
                 continue
@@ -2799,7 +2814,11 @@ class QSFPreviewParser:
                         'items': num_items,
                         'scale_points': num_items,  # Rank order scale = number of items
                         'type': 'rank_order',
-                        'detected_from_qsf': True
+                        'detected_from_qsf': True,
+                        'item_names': q_info.choices or [],  # Items to rank
+                        'scale_anchors': {'1': 'Most preferred', str(num_items): 'Least preferred'},
+                        'scale_min': 1,
+                        'scale_max': num_items,
                     })
                     self._log(LogLevel.INFO, "SCALE", f"Detected rank order DV: {q_id}")
                 continue
@@ -2819,7 +2838,11 @@ class QSFPreviewParser:
                         'items': num_items,
                         'scale_points': num_items,
                         'type': 'best_worst',
-                        'detected_from_qsf': True
+                        'detected_from_qsf': True,
+                        'item_names': q_info.choices or [],
+                        'scale_anchors': {'1': 'Best', str(num_items): 'Worst'},
+                        'scale_min': 1,
+                        'scale_max': num_items,
                     })
                     self._log(LogLevel.INFO, "SCALE", f"Detected best-worst (MaxDiff) DV: {q_id}")
                 continue
@@ -2839,7 +2862,11 @@ class QSFPreviewParser:
                         'items': num_items,
                         'scale_points': 2,  # Binary comparison
                         'type': 'paired_comparison',
-                        'detected_from_qsf': True
+                        'detected_from_qsf': True,
+                        'item_names': q_info.sub_questions or [],
+                        'scale_anchors': {'1': 'Option A', '2': 'Option B'},
+                        'scale_min': 1,
+                        'scale_max': 2,
                     })
                     self._log(LogLevel.INFO, "SCALE", f"Detected paired comparison DV: {q_id}")
                 continue
@@ -2858,7 +2885,11 @@ class QSFPreviewParser:
                         'items': 1,
                         'scale_points': None,  # Coordinates, not fixed scale
                         'type': 'hot_spot',
-                        'detected_from_qsf': True
+                        'detected_from_qsf': True,
+                        'item_names': [q_info.question_text[:80]] if q_info.question_text else [],
+                        'scale_anchors': {},
+                        'scale_min': None,
+                        'scale_max': None,
                     })
                     self._log(LogLevel.INFO, "SCALE", f"Detected hot spot DV: {q_id}")
                 continue
@@ -2917,6 +2948,9 @@ class QSFPreviewParser:
                     if name_key not in seen_scale_names:
                         seen_scale_names.add(name_key)
                         scale_name = q_info.question_text[:50].strip() or q_id
+                        # Get numeric range from validation if available
+                        num_min = q_info.number_min if q_info.number_min is not None else 0
+                        num_max = q_info.number_max if q_info.number_max is not None else 100
                         scales.append({
                             'name': scale_name,
                             'variable_name': q_id,
@@ -2925,7 +2959,11 @@ class QSFPreviewParser:
                             'items': 1,
                             'scale_points': None,  # Numeric input has no fixed points
                             'type': 'numeric_input',
-                            'detected_from_qsf': True
+                            'detected_from_qsf': True,
+                            'item_names': [q_info.question_text[:80]] if q_info.question_text else [],
+                            'scale_anchors': {},
+                            'scale_min': num_min,
+                            'scale_max': num_max,
                         })
                         self._log(LogLevel.INFO, "SCALE", f"Detected numeric input DV: {q_id}")
 
@@ -2943,6 +2981,8 @@ class QSFPreviewParser:
                 # Get first question text as reference
                 first_text = items[0].get('question_text', '')[:100] if items else ''
 
+                # Collect all item texts for item_names
+                item_names_list = [i.get('question_text', f'{base_name}_{i["item_num"]}')[:80] for i in sorted(items, key=lambda x: x['item_num'])]
                 scales.append({
                     'name': base_name,
                     'variable_name': base_name,
@@ -2950,7 +2990,11 @@ class QSFPreviewParser:
                     'items': len(items),
                     'scale_points': scale_pts,
                     'type': 'numbered_items',
-                    'detected_from_qsf': True
+                    'detected_from_qsf': True,
+                    'item_names': item_names_list,
+                    'scale_anchors': {},
+                    'scale_min': 1,
+                    'scale_max': scale_pts if scale_pts else 7,
                 })
                 self._log(LogLevel.INFO, "SCALE", f"Detected numbered scale: {base_name} ({len(items)} items)")
             elif len(items) == 1:
@@ -2977,6 +3021,8 @@ class QSFPreviewParser:
                 scale_pts = max(set(valid_points), key=valid_points.count) if valid_points else None
                 first_text = items[0].get('question_text', '')[:100] if items else ''
 
+                # Collect all item texts for item_names
+                item_names_list = [i.get('question_text', prefix)[:80] for i in items]
                 scales.append({
                     'name': prefix,
                     'variable_name': prefix,
@@ -2984,7 +3030,11 @@ class QSFPreviewParser:
                     'items': len(items),
                     'scale_points': scale_pts,
                     'type': 'likert',
-                    'detected_from_qsf': True
+                    'detected_from_qsf': True,
+                    'item_names': item_names_list,
+                    'scale_anchors': {},
+                    'scale_min': 1,
+                    'scale_max': scale_pts if scale_pts else 7,
                 })
                 self._log(LogLevel.INFO, "SCALE", f"Detected Likert scale: {prefix} ({len(items)} items)")
             elif len(items) == 1:
@@ -3006,15 +3056,20 @@ class QSFPreviewParser:
             seen_scale_names.add(name_key)
 
             scale_name = dv['question_text'][:50].strip() or q_id
+            scale_pts = dv['scale_points']
             scales.append({
                 'name': scale_name,
                 'variable_name': q_id,
                 'question_id': q_id,
                 'question_text': dv['question_text'][:100] if dv['question_text'] else '',
                 'items': 1,
-                'scale_points': dv['scale_points'],
+                'scale_points': scale_pts,
                 'type': 'single_item',
-                'detected_from_qsf': True
+                'detected_from_qsf': True,
+                'item_names': [dv['question_text'][:80]] if dv['question_text'] else [],
+                'scale_anchors': {},
+                'scale_min': 1,
+                'scale_max': scale_pts if scale_pts else 7,
             })
             self._log(LogLevel.INFO, "SCALE", f"Detected single-item DV: {q_id}")
 
