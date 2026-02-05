@@ -46,19 +46,26 @@ def _safe_int(val, default):
 
 def preview_to_engine_inputs(preview):
     """Replicate the app.py conversion from QSFPreviewResult to engine inputs."""
-    conditions = list(preview.detected_conditions or [])
+    conditions = [
+        str(c).replace('\xa0', ' ').strip()
+        for c in (preview.detected_conditions or [])
+        if str(c).replace('\xa0', ' ').strip()
+    ]
     if not conditions:
         conditions = ["Condition_A"]
 
     scales = []
-    seen = set()
+    seen_var = set()       # Deduplicate by variable_name
+    seen_display = set()   # Also deduplicate by display_name to prevent column collisions
     for s in (preview.detected_scales or []):
         name = str(s.get("variable_name", s.get("name", "Scale"))).strip() or "Scale"
         display_name = str(s.get("name", name)).strip() or name
         name_key = name.lower().replace(" ", "_").replace("-", "_")
-        if name_key in seen:
+        display_key = display_name.lower().replace(" ", "_").replace("-", "_")
+        if name_key in seen_var or display_key in seen_display:
             continue
-        seen.add(name_key)
+        seen_var.add(name_key)
+        seen_display.add(display_key)
 
         # Check both "num_items" and "items" keys
         raw_items = s.get("num_items")

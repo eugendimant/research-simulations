@@ -576,10 +576,12 @@ def _normalize_scale_specs(scales: List[Any]) -> List[Dict[str, Any]]:
       - _validated: True (contract flag - engine MUST NOT re-default these)
 
     Preserves scale_points from source (QSF or user input) - only defaults when missing.
-    Deduplicates by variable name to prevent extra DVs.
+    Deduplicates by variable name AND display name to prevent extra DVs
+    and column collisions.
     """
     normalized: List[Dict[str, Any]] = []
-    seen_names: set = set()  # Track to prevent duplicates
+    seen_names: set = set()  # Track to prevent duplicates by variable_name
+    seen_display: set = set()  # Track to prevent duplicates by display_name
 
     for scale in scales or []:
         if isinstance(scale, str):
@@ -587,9 +589,10 @@ def _normalize_scale_specs(scales: List[Any]) -> List[Dict[str, Any]]:
             if not name:
                 continue
             name_key = name.lower().replace(" ", "_").replace("-", "_")
-            if name_key in seen_names:
+            if name_key in seen_names or name_key in seen_display:
                 continue
             seen_names.add(name_key)
+            seen_display.add(name_key)
             normalized.append({
                 "name": name,
                 "variable_name": name.replace(" ", "_"),
@@ -605,12 +608,14 @@ def _normalize_scale_specs(scales: List[Any]) -> List[Dict[str, Any]]:
             if not name:
                 continue
 
-            # Deduplicate by variable name (more precise) or name
+            # Deduplicate by variable name AND display name to prevent column collisions
             var_name = str(scale.get("variable_name", name)).strip() or name
             name_key = var_name.lower().replace(" ", "_").replace("-", "_")
-            if name_key in seen_names:
+            display_key = name.lower().replace(" ", "_").replace("-", "_")
+            if name_key in seen_names or display_key in seen_display:
                 continue
             seen_names.add(name_key)
+            seen_display.add(display_key)
 
             # Carefully extract scale_points - preserve from source
             raw_points = scale.get("scale_points")

@@ -2224,7 +2224,12 @@ class EnhancedSimulationEngine:
         self.study_title = str(study_title or "").strip()
         self.study_description = str(study_description or "").strip()
         self.sample_size = int(sample_size)
-        self.conditions = [str(c).strip() for c in (conditions or []) if str(c).strip()]
+        # Normalize condition names: strip whitespace AND non-breaking spaces (\xa0)
+        self.conditions = [
+            str(c).replace('\xa0', ' ').strip()
+            for c in (conditions or [])
+            if str(c).replace('\xa0', ' ').strip()
+        ]
         if not self.conditions:
             self.conditions = ["Condition A"]
         self.factors = _normalize_factors(factors, self.conditions)
