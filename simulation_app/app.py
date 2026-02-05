@@ -564,7 +564,16 @@ def _split_comma_list(value: str) -> List[str]:
 
 def _normalize_scale_specs(scales: List[Any]) -> List[Dict[str, Any]]:
     """
-    Normalize scales to consistent format with deduplication.
+    SINGLE SOURCE OF TRUTH for scale normalization.
+
+    This is the ONE place where scale specs are validated and normalized.
+    After this function, every scale dict is guaranteed to have:
+      - name: str (non-empty)
+      - variable_name: str (non-empty, underscore-separated)
+      - num_items: int >= 1
+      - scale_points: int >= 2 and <= 1001
+      - reverse_items: list
+      - _validated: True (contract flag - engine MUST NOT re-default these)
 
     Preserves scale_points from source (QSF or user input) - only defaults when missing.
     Deduplicates by variable name to prevent extra DVs.
@@ -586,7 +595,8 @@ def _normalize_scale_specs(scales: List[Any]) -> List[Dict[str, Any]]:
                 "variable_name": name.replace(" ", "_"),
                 "num_items": 5,
                 "scale_points": 7,
-                "reverse_items": []
+                "reverse_items": [],
+                "_validated": True,
             })
             continue
 
@@ -612,8 +622,10 @@ def _normalize_scale_specs(scales: List[Any]) -> List[Dict[str, Any]]:
                 except (ValueError, TypeError):
                     scale_points = 7
 
-            # Same for num_items
+            # Extract num_items - check BOTH "num_items" and "items" keys for compatibility
             raw_items = scale.get("num_items")
+            if raw_items is None:
+                raw_items = scale.get("items")  # Fallback to QSF detection key
             if raw_items is None or (isinstance(raw_items, float) and np.isnan(raw_items)):
                 num_items = 5
             else:
@@ -627,8 +639,9 @@ def _normalize_scale_specs(scales: List[Any]) -> List[Dict[str, Any]]:
                     "name": name,
                     "variable_name": var_name.replace(" ", "_"),
                     "num_items": max(1, num_items),
-                    "scale_points": max(2, min(11, scale_points)),  # Reasonable bounds
+                    "scale_points": max(2, min(1001, scale_points)),
                     "reverse_items": scale.get("reverse_items", []) or [],
+                    "_validated": True,
                 }
             )
 
@@ -1052,11 +1065,18 @@ def _generate_preview_data(
     if conditions:
         preview_data['condition'] = [conditions[i % len(conditions)] for i in range(n_rows)]
 
-    # Add scale responses
+    # Add scale responses - use same defaults as actual generation
     for scale in scales[:5]:  # Limit to 5 scales for preview
         scale_name = scale.get('name', 'Scale')
         scale_points = scale.get('scale_points', 7)
-        items = scale.get('num_items', 1)
+        # Check both "num_items" and "items" for compatibility with QSF detection
+        items = scale.get('num_items')
+        if items is None:
+            items = scale.get('items', 5)
+        try:
+            items = int(items)
+        except (ValueError, TypeError):
+            items = 5
 
         if items == 1:
             # Single item
@@ -2620,35 +2640,44 @@ def _preview_to_engine_inputs(preview: QSFPreviewResult) -> Dict[str, Any]:
         seen_scale_names.add(name_key)
 
         # Use detected values, with reasonable defaults only when truly missing
-        num_items = s.get("items")
+        # Check BOTH "items" (QSF detection key) and "num_items" (engine key)
+        num_items = s.get("num_items")
+        if num_items is None:
+            num_items = s.get("items")  # QSF detection uses "items" key
         if num_items is None or (isinstance(num_items, float) and np.isnan(num_items)):
             num_items = 5  # Default only if truly not detected
         else:
-            num_items = int(num_items)
+            try:
+                num_items = int(num_items)
+            except (ValueError, TypeError):
+                num_items = 5
 
         scale_points = s.get("scale_points")
         if scale_points is None or (isinstance(scale_points, float) and np.isnan(scale_points)):
             # IMPORTANT: Default to 7 only when QSF doesn't specify
-            # This will be logged for transparency in instructor report
             scale_points = 7
         else:
-            scale_points = int(scale_points)
+            try:
+                scale_points = int(scale_points)
+            except (ValueError, TypeError):
+                scale_points = 7
 
         scales.append(
             {
                 "name": display_name,
                 "variable_name": name,
                 "num_items": max(1, num_items),
-                "scale_points": max(2, min(11, scale_points)),  # Reasonable bounds
+                "scale_points": max(2, min(1001, scale_points)),
                 "reverse_items": s.get("reverse_items", []) or [],
-                "detected_from_qsf": s.get("scale_points") is not None,  # Track source
+                "detected_from_qsf": s.get("scale_points") is not None,
+                "_validated": True,
             }
         )
 
     # Only add default if NO scales were detected at all
     # This prevents fabricating extra DVs
     if not scales:
-        scales = [{"name": "Main_DV", "variable_name": "Main_DV", "num_items": 5, "scale_points": 7, "reverse_items": [], "detected_from_qsf": False}]
+        scales = [{"name": "Main_DV", "variable_name": "Main_DV", "num_items": 5, "scale_points": 7, "reverse_items": [], "detected_from_qsf": False, "_validated": True}]
 
     open_ended = getattr(preview, "open_ended_questions", None) or []
 
@@ -5808,7 +5837,7 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
         # Additional validation: warn if no scales detected
         if not clean_scales:
             st.warning("⚠️ No scales detected or confirmed. A default scale will be used. Please verify your QSF file contains scale questions.")
-            clean_scales = [{"name": "Main_DV", "num_items": 5, "scale_points": 7, "reverse_items": []}]
+            clean_scales = [{"name": "Main_DV", "variable_name": "Main_DV", "num_items": 5, "scale_points": 7, "reverse_items": [], "_validated": True}]
 
         clean_factors = _normalize_factor_specs(inferred.get("factors", []), inferred.get("conditions", []))
 
