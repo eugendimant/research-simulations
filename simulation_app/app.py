@@ -627,7 +627,7 @@ def _normalize_scale_specs(scales: List[Any]) -> List[Dict[str, Any]]:
                     "name": name,
                     "variable_name": var_name.replace(" ", "_"),
                     "num_items": max(1, num_items),
-                    "scale_points": max(2, min(11, scale_points)),  # Reasonable bounds
+                    "scale_points": max(2, min(1001, scale_points)),  # Allow scales up to 1001 (e.g., 0-1000 or 1-100)
                     "reverse_items": scale.get("reverse_items", []) or [],
                 }
             )
@@ -2639,7 +2639,7 @@ def _preview_to_engine_inputs(preview: QSFPreviewResult) -> Dict[str, Any]:
                 "name": display_name,
                 "variable_name": name,
                 "num_items": max(1, num_items),
-                "scale_points": max(2, min(11, scale_points)),  # Reasonable bounds
+                "scale_points": max(2, min(1001, scale_points)),  # Allow scales up to 1001 (e.g., 0-1000 or 1-100)
                 "reverse_items": s.get("reverse_items", []) or [],
                 "detected_from_qsf": s.get("scale_points") is not None,  # Track source
             }

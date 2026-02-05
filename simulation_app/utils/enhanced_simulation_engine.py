@@ -263,12 +263,27 @@ def _normalize_scales(scales: Optional[List[Any]]) -> List[Dict[str, Any]]:
             name = str(scale.get("name", "")).strip()
             if not name:
                 continue
+            # Parse and validate scale_points
+            raw_pts = scale.get("scale_points", 7)
+            try:
+                pts = int(raw_pts)
+            except (ValueError, TypeError):
+                pts = 7
+            # Enforce valid bounds: minimum 2 (binary), maximum 1001
+            pts = max(2, min(1001, pts))
+            # Parse and validate num_items
+            raw_items = scale.get("num_items", 5)
+            try:
+                n_items = int(raw_items)
+            except (ValueError, TypeError):
+                n_items = 5
+            n_items = max(1, n_items)
             normalized.append(
                 {
                     "name": name,
                     "variable_name": str(scale.get("variable_name", name)),
-                    "num_items": int(scale.get("num_items", 5)),
-                    "scale_points": int(scale.get("scale_points", 7)),
+                    "num_items": n_items,
+                    "scale_points": pts,
                     "reverse_items": scale.get("reverse_items", []) or [],
                 }
             )
@@ -2385,11 +2400,15 @@ class EnhancedSimulationEngine:
             elif isinstance(scale, dict):
                 # Ensure all required keys exist with correct types
                 name = safe_str(scale.get("name"), "Scale")
+                pts = safe_int(scale.get("scale_points"), 7)
+                pts = max(2, min(1001, pts))  # Valid bounds: 2 to 1001
+                n_items = safe_int(scale.get("num_items"), 5)
+                n_items = max(1, n_items)
                 normalized.append({
                     "name": name,
                     "variable_name": safe_str(scale.get("variable_name"), name.replace(" ", "_")),
-                    "num_items": safe_int(scale.get("num_items"), 5),
-                    "scale_points": safe_int(scale.get("scale_points"), 7),
+                    "num_items": n_items,
+                    "scale_points": pts,
                     "reverse_items": list(scale.get("reverse_items") or []),
                 })
             else:
@@ -2443,7 +2462,7 @@ class EnhancedSimulationEngine:
             persona, participant_id, self.seed
         )
 
-    def _get_effect_for_condition(self, condition: str, variable: str, scale_range: int = 6) -> float:
+    def _get_effect_for_condition(self, condition: str, variable: str) -> float:
         """
         Convert Cohen's d effect size to a normalized effect shift that produces
         STATISTICALLY DETECTABLE differences between conditions.
@@ -3752,10 +3771,12 @@ class EnhancedSimulationEngine:
         extremity += scale_calibration['extremity_boost']
         extremity = float(np.clip(extremity, 0.0, 0.95))
         if rng.random() < extremity * 0.45:  # Calibrated to produce ~15-20% endpoints for ERS
+            # Use proportional noise near endpoints (scales to range)
+            endpoint_noise = max(0.5, scale_range * 0.02)  # 2% of range, min 0.5
             if response > (scale_min + scale_max) / 2.0:
-                response = scale_max - float(rng.uniform(0, 0.5))
+                response = scale_max - float(rng.uniform(0, endpoint_noise))
             else:
-                response = scale_min + float(rng.uniform(0, 0.5))
+                response = scale_min + float(rng.uniform(0, endpoint_noise))
 
         # =====================================================================
         # STEP 8: Apply acquiescence bias (Billiet & McClendon, 2000)
@@ -3779,7 +3800,16 @@ class EnhancedSimulationEngine:
 
         # Bound and round to valid scale value
         response = max(scale_min, min(scale_max, round(response)))
-        return int(response)
+        result = int(response)
+
+        # SAFETY CHECK: Final validation that result is within bounds
+        # This guards against any floating point edge cases
+        if result < scale_min:
+            result = scale_min
+        elif result > scale_max:
+            result = scale_max
+
+        return result
 
     def _generate_attention_check(
         self,
@@ -4143,7 +4173,10 @@ class EnhancedSimulationEngine:
             scale_name_raw = str(scale.get("name", "Scale")).strip() or "Scale"
             scale_name = scale_name_raw.replace(" ", "_")
             scale_points = int(scale.get("scale_points", 7))
+            # SAFETY: Enforce valid scale_points range
+            scale_points = max(2, min(1001, scale_points))
             num_items = int(scale.get("num_items", 5))
+            num_items = max(1, num_items)
             # Safely parse reverse_items - skip invalid values
             reverse_items_raw = scale.get("reverse_items", []) or []
             reverse_items = set()
@@ -4152,6 +4185,8 @@ class EnhancedSimulationEngine:
                     reverse_items.add(int(x))
                 except (ValueError, TypeError):
                     pass  # Skip invalid reverse item values
+
+            self._log(f"Generating {scale_name_raw}: {num_items} items, 1-{scale_points} scale")
 
             for item_num in range(1, num_items + 1):
                 col_name = f"{scale_name}_{item_num}"
@@ -4170,8 +4205,10 @@ class EnhancedSimulationEngine:
                         scale_name,
                         p_seed,
                     )
-                    item_values.append(int(val))
-                    participant_item_responses[i].append(int(val))
+                    # SAFETY: Enforce bounds on generated value
+                    val = max(1, min(scale_points, int(val)))
+                    item_values.append(val)
+                    participant_item_responses[i].append(val)
 
                 data[col_name] = item_values
 
@@ -4185,6 +4222,9 @@ class EnhancedSimulationEngine:
             var_name = var_name_raw.replace(" ", "_")
             var_min = int(var.get("min", 0))
             var_max = int(var.get("max", 10))
+            # SAFETY: Ensure min < max
+            if var_max <= var_min:
+                var_max = var_min + 1
 
             col_hash = _stable_int_hash(var_name)
             values: List[int] = []
@@ -4193,8 +4233,10 @@ class EnhancedSimulationEngine:
                 val = self._generate_scale_response(
                     var_min, var_max, all_traits[i], False, conditions.iloc[i], var_name, p_seed
                 )
-                values.append(int(val))
-                participant_item_responses[i].append(int(val))
+                # SAFETY: Enforce bounds on generated value
+                val = max(var_min, min(var_max, int(val)))
+                values.append(val)
+                participant_item_responses[i].append(val)
 
             data[var_name] = values
             self.column_info.append((var_name, f"{var_name_raw} ({var_min}-{var_max})"))
@@ -4334,6 +4376,18 @@ class EnhancedSimulationEngine:
 
         df = pd.DataFrame(data)
 
+        # POST-GENERATION VALIDATION: Verify all scale columns are within bounds
+        validation_issues = self._validate_generated_data(df)
+        if validation_issues:
+            self._log(f"POST-GENERATION VALIDATION: {len(validation_issues)} issue(s) found, auto-correcting")
+            for issue in validation_issues:
+                col = issue["column"]
+                col_min = issue["expected_min"]
+                col_max = issue["expected_max"]
+                # Auto-correct out-of-bounds values
+                df[col] = df[col].clip(lower=col_min, upper=col_max).astype(int)
+                self._log(f"  Corrected {col}: clipped to [{col_min}, {col_max}]")
+
         # Compute observed effect sizes to validate simulation quality
         observed_effects = self._compute_observed_effect_sizes(df)
 
@@ -4364,8 +4418,86 @@ class EnhancedSimulationEngine:
                 "flagged_straightline": int(sum(data["Flag_StraightLine"])),
                 "total_excluded": int(sum(data["Exclude_Recommended"])),
             },
+            "validation_issues_corrected": len(validation_issues),
+            "scale_configs": [
+                {"name": s.get("name", ""), "scale_points": s.get("scale_points", 7), "num_items": s.get("num_items", 1)}
+                for s in self.scales
+            ],
         }
         return df, metadata
+
+    def _validate_generated_data(self, df: pd.DataFrame) -> List[Dict[str, Any]]:
+        """
+        Post-generation validation: check all scale columns are within expected bounds.
+
+        Returns list of issues found (column, expected_min, expected_max, actual_min, actual_max).
+        """
+        issues: List[Dict[str, Any]] = []
+
+        # Validate scale columns
+        for scale in self.scales:
+            scale_name = str(scale.get("name", "Scale")).strip().replace(" ", "_")
+            scale_points = int(scale.get("scale_points", 7))
+            scale_points = max(2, min(1001, scale_points))
+            num_items = int(scale.get("num_items", 5))
+
+            for item_num in range(1, num_items + 1):
+                col_name = f"{scale_name}_{item_num}"
+                if col_name not in df.columns:
+                    continue
+                col_data = df[col_name]
+                actual_min = int(col_data.min())
+                actual_max = int(col_data.max())
+                if actual_min < 1 or actual_max > scale_points:
+                    issues.append({
+                        "column": col_name,
+                        "expected_min": 1,
+                        "expected_max": scale_points,
+                        "actual_min": actual_min,
+                        "actual_max": actual_max,
+                    })
+
+        # Validate additional variable columns
+        for var in self.additional_vars:
+            var_name = str(var.get("name", "Variable")).strip().replace(" ", "_")
+            var_min = int(var.get("min", 0))
+            var_max = int(var.get("max", 10))
+            if var_max <= var_min:
+                var_max = var_min + 1
+            if var_name not in df.columns:
+                continue
+            col_data = df[var_name]
+            actual_min = int(col_data.min())
+            actual_max = int(col_data.max())
+            if actual_min < var_min or actual_max > var_max:
+                issues.append({
+                    "column": var_name,
+                    "expected_min": var_min,
+                    "expected_max": var_max,
+                    "actual_min": actual_min,
+                    "actual_max": actual_max,
+                })
+
+        # Validate demographic columns
+        for col_name, expected_range in [
+            ("Age", (18, 85)),
+            ("Gender", (1, 4)),
+        ]:
+            if col_name not in df.columns:
+                continue
+            col_data = df[col_name]
+            actual_min = int(col_data.min())
+            actual_max = int(col_data.max())
+            if actual_min < expected_range[0] or actual_max > expected_range[1]:
+                issues.append({
+                    "column": col_name,
+                    "expected_min": expected_range[0],
+                    "expected_max": expected_range[1],
+                    "actual_min": actual_min,
+                    "actual_max": actual_max,
+                })
+
+        return issues
 
     def _compute_observed_effect_sizes(self, df: pd.DataFrame) -> List[Dict[str, Any]]:
         """
