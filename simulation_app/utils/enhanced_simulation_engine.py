@@ -4358,6 +4358,19 @@ class EnhancedSimulationEngine:
         # v1.0.0: Use survey flow handler to determine question visibility per condition
         for q in self.open_ended_questions:
             col_name = str(q.get("name", "Open_Response")).replace(" ", "_")
+
+            # v1.0.0 FIX: Prevent open-ended columns from overwriting existing columns
+            # (e.g., an OE question named "Age" must not overwrite the demographic "Age" column)
+            if col_name in data:
+                original_name = col_name
+                col_name = f"OE_{col_name}"
+                # If even the OE_ prefixed name exists, add a numeric suffix
+                suffix = 2
+                while col_name in data:
+                    col_name = f"OE_{original_name}_{suffix}"
+                    suffix += 1
+                self._log(f"Renamed open-ended column '{original_name}' -> '{col_name}' to avoid collision")
+
             q_text = str(q.get("question_text", col_name))
             col_hash = _stable_int_hash(col_name + q_text)  # Include question text for uniqueness
             responses: List[str] = []
@@ -4396,8 +4409,11 @@ class EnhancedSimulationEngine:
 
         # v1.0.0 CRITICAL FIX: Post-processing validation to detect and fix duplicate responses
         # Check each participant's responses across all open-ended questions
-        open_ended_cols = [str(q.get("name", "Open_Response")).replace(" ", "_")
-                          for q in self.open_ended_questions]
+        # Use actual column names from data (accounting for any renames due to collisions)
+        open_ended_cols = [col for col in data
+                          if isinstance(data[col], list)
+                          and len(data[col]) > 0
+                          and isinstance(data[col][0], str)]
         if len(open_ended_cols) > 1:
             for i in range(n):
                 participant_responses = {}
@@ -4542,6 +4558,12 @@ class EnhancedSimulationEngine:
                     continue
 
                 col_data = df[col_name]
+
+                # Safety: skip non-numeric columns (e.g., if an OE column overwrote a scale col)
+                if col_data.dtype == object or not np.issubdtype(col_data.dtype, np.number):
+                    self._log(f"VALIDATION WARNING: Column '{col_name}' has non-numeric dtype {col_data.dtype}, skipping bounds check")
+                    continue
+
                 actual_min = int(col_data.min())
                 actual_max = int(col_data.max())
 
@@ -4591,6 +4613,9 @@ class EnhancedSimulationEngine:
                 self._log(f"VALIDATION ERROR: Expected additional variable column '{var_name}' MISSING")
                 continue
             col_data = df[var_name]
+            if col_data.dtype == object or not np.issubdtype(col_data.dtype, np.number):
+                self._log(f"VALIDATION WARNING: Additional var '{var_name}' has non-numeric dtype, skipping")
+                continue
             actual_min = int(col_data.min())
             actual_max = int(col_data.max())
             if actual_min < var_min or actual_max > var_max:
@@ -4611,6 +4636,9 @@ class EnhancedSimulationEngine:
             if col_name not in df.columns:
                 continue
             col_data = df[col_name]
+            if col_data.dtype == object or not np.issubdtype(col_data.dtype, np.number):
+                self._log(f"VALIDATION WARNING: Demographic '{col_name}' has non-numeric dtype, skipping")
+                continue
             actual_min = int(col_data.min())
             actual_max = int(col_data.max())
             if actual_min < expected_range[0] or actual_max > expected_range[1]:
@@ -4653,6 +4681,10 @@ class EnhancedSimulationEngine:
             for item_num in range(1, spec_items + 1):
                 col_name = f"{scale_name_clean}_{item_num}"
                 if col_name in df.columns:
+                    # Safety: skip non-numeric columns
+                    if df[col_name].dtype == object or not np.issubdtype(df[col_name].dtype, np.number):
+                        scale_report["columns_missing"].append(col_name)
+                        continue
                     scale_report["columns_found"].append(col_name)
                     col_values = df[col_name].tolist()
                     all_values.extend(col_values)
