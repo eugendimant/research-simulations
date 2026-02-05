@@ -1847,7 +1847,8 @@ class QSFPreviewParser:
         trash_indicators = [
             'trash', 'unused', 'delete', 'remove', 'deprecated',
             'archive', 'old version', 'do not use', 'donotuse',
-            'ignore', 'hidden', 'disabled', 'inactive'
+            'ignore', 'hidden', 'disabled', 'inactive',
+            'pilot', 'practice', 'training', 'calibration',
         ]
 
         for indicator in trash_indicators:
@@ -2052,6 +2053,24 @@ class QSFPreviewParser:
         # v1.0.0: Filter out only truly trash blocks from conditions
         # Use less aggressive filter since conditions from randomizers are valid
         conditions = [c for c in conditions if not self._is_trash_block_name(c)]
+
+        # v1.0.0: Safety heuristic - if condition count is very high (>30),
+        # the parser likely picked up stimulus iterations / within-subjects
+        # blocks rather than between-subjects conditions.  Apply aggressive
+        # filter as secondary pass and keep only truly condition-like names.
+        if len(conditions) > 30:
+            aggressive_filtered = [
+                c for c in conditions if not self._is_excluded_block_name(c)
+            ]
+            # Only use aggressive filter if it leaves at least 2 conditions
+            if len(aggressive_filtered) >= 2:
+                self._log(
+                    LogLevel.INFO, "CONDITIONS",
+                    f"Reduced {len(conditions)} detected conditions to "
+                    f"{len(aggressive_filtered)} after aggressive filtering "
+                    f"(likely stimulus iteration blocks removed)"
+                )
+                conditions = aggressive_filtered
 
         # Fallback: use block names that look like conditions (STRICT mode).
         # Only use if no conditions were found from pattern detection
@@ -2685,6 +2704,17 @@ class QSFPreviewParser:
         for q_id, q_info in questions_map.items():
             # Skip descriptive text, instructions, etc.
             if q_info.question_type in ['Descriptive Text', 'DB ()', 'Timing']:
+                continue
+
+            # v1.0.0: Skip placeholder/template questions with generic text
+            q_text_lower = (q_info.question_text or "").strip().lower()
+            if q_text_lower in (
+                "click to write the question text",
+                "click to write the statement",
+                "click to write choice",
+                "default question block",
+                "",
+            ):
                 continue
 
             # 1. Matrix questions are scales (multi-item)
