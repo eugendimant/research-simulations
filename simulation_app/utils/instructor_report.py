@@ -6,7 +6,7 @@ Generates comprehensive instructor-facing reports for student simulations.
 """
 
 # Version identifier to help track deployed code
-__version__ = "1.3.1"  # v1.3.1: Comprehensive instructor report, methods docs update, e2e tests
+__version__ = "1.3.3"  # v1.3.3: Edge-case hardening, validation, 142 e2e tests
 
 from dataclasses import dataclass
 from datetime import datetime
@@ -5010,6 +5010,15 @@ class ComprehensiveInstructorReport:
                               f"<div class='metric-value'>{excl.get('total_excluded', 0)}</div>"
                               f"<div class='metric-label'>Total Excluded</div></div>")
             html_parts.append("</div>")
+
+        # ── Generation Warnings ────────────────────────────────────────
+        gen_warnings = metadata.get("generation_warnings", [])
+        if gen_warnings:
+            html_parts.append("<div class='warning-box' style='border-left:4px solid #f59e0b;background:#fffbeb;padding:15px;margin:20px 0;'>")
+            html_parts.append("<strong>Generation Warnings:</strong><ul>")
+            for gw in gen_warnings:
+                html_parts.append(f"<li>{gw}</li>")
+            html_parts.append("</ul></div>")
 
         # Footer - Notes for Instructors
         html_parts.append("<h2>Instructor Notes & Methodology</h2>")
