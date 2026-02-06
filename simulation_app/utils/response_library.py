@@ -60,10 +60,10 @@ introspection, memory, experience, recall, opinion, belief, preference, attitude
 value, worldview, prediction, intention, suggestion, recommendation, advice,
 association, impression, perception, feedback, comment, observation, general
 
-Version: 1.1.0 - Enhanced response uniqueness, topic detection, social science domains
+Version: 1.2.0 - Enhanced response uniqueness, topic detection, social science domains
 """
 
-__version__ = "1.1.0"
+__version__ = "1.2.0"
 
 import random
 import re

@@ -52,8 +52,8 @@ import streamlit as st
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.1.0"
-BUILD_ID = "20260206-v110-enhanced"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.2.0"
+BUILD_ID = "20260206-v120-scale-ui"  # Change this to force cache invalidation
 
 def _verify_and_reload_utils():
     """Verify utils modules are at correct version, force reload if needed.
@@ -107,7 +107,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF"
-APP_VERSION = "1.1.0"  # v1.1.0: Enhanced data quality, response uniqueness, topic detection, UI improvements, reports
+APP_VERSION = "1.2.0"  # v1.2.0: Flexible scale ranges, improved DV UI, progress indicators, GitHub token support
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -4810,6 +4810,21 @@ if active_step == 2:
     if confirmed_scales:
         st.markdown(f"**{len(confirmed_scales)} DV(s) detected from your QSF:**")
 
+        # v1.2.0: Column headers for clarity
+        hdr1, hdr2, hdr3a, hdr3b, hdr4, hdr5 = st.columns([2.5, 0.8, 0.6, 0.6, 1.5, 0.4])
+        with hdr1:
+            st.caption("**Variable Name** (from QSF)")
+        with hdr2:
+            st.caption("**Items**")
+        with hdr3a:
+            st.caption("**Min**")
+        with hdr3b:
+            st.caption("**Max**")
+        with hdr4:
+            st.caption("**Type**")
+        with hdr5:
+            st.caption("")
+
         for i, scale in enumerate(confirmed_scales):
             dv_type = scale.get("type", "likert")
             type_badge = type_badges.get(dv_type, "📊 Scale")
@@ -4821,70 +4836,94 @@ if active_step == 2:
             scale_anchors = scale.get("scale_anchors", {})
 
             with st.container():
-                # Main row: Name, # Questions, Scale Range, Type, Remove
-                col1, col2, col3, col4, col5 = st.columns([3, 1, 1.2, 1.8, 0.5])
+                # Main row: Name, # Items, Scale Min, Scale Max, Type, Remove
+                # v1.2.0: Improved layout with separate min/max for flexible scale ranges
+                col1, col2, col3a, col3b, col4, col5 = st.columns([2.5, 0.8, 0.6, 0.6, 1.5, 0.4])
+
+                # v1.2.0: Use variable_name from QSF as default, fall back to name
+                qsf_var_name = scale.get("variable_name", scale.get("name", f"DV_{i+1}"))
+                display_name = scale.get("name", qsf_var_name)
 
                 with col1:
                     scale_name = st.text_input(
                         f"DV {i+1} Name",
-                        value=scale.get("name", f"DV_{i+1}"),
+                        value=qsf_var_name,  # Use exact QSF variable name
                         key=f"dv_name_v{dv_version}_{i}",
                         label_visibility="collapsed",
-                        help=f"Variable: {scale.get('variable_name', scale.get('name', ''))}"
+                        help=f"QSF Variable: {qsf_var_name} | Question: {display_name[:50]}..."
                     )
 
                 with col2:
                     # Get items value, handle both 'items' and 'num_items' keys
                     items_val = scale.get("items", scale.get("num_items", 1))
+                    # v1.2.0: Clearer label based on DV type
+                    items_label = "Items" if dv_type in ['matrix', 'numbered_items'] else "Qs"
+                    items_help = {
+                        'matrix': "Number of items in this matrix/battery (e.g., 5-item attitude scale)",
+                        'numbered_items': "Number of numbered items (e.g., Scale_1 through Scale_5)",
+                        'likert': "Number of Likert-type questions grouped together",
+                        'slider': "Number of slider questions",
+                        'single_item': "Single question (always 1)",
+                        'numeric_input': "Number of numeric input fields",
+                    }.get(dv_type, "Number of questions/items in this scale")
                     num_items = st.number_input(
-                        "# Questions",
+                        items_label,
                         min_value=1,
                         max_value=50,
                         value=int(items_val) if items_val else 1,
                         key=f"dv_items_v{dv_version}_{i}",
-                        help="Number of individual questions/items in this scale"
+                        help=items_help
                     )
 
-                with col3:
-                    # Get scale points with better handling of None and slider types
-                    scale_points_options = [2, 3, 4, 5, 6, 7, 9, 10, 11, 100, 101]
-                    current_pts = scale.get("scale_points")
-
-                    if current_pts is None or dv_type == 'numeric_input':
-                        # Numeric input - show text input instead
-                        scale_points = st.text_input(
-                            "Scale Range",
-                            value="Open" if dv_type == 'numeric_input' else "1-7",
-                            key=f"dv_points_v{dv_version}_{i}",
-                            help=f"Response scale (e.g., 1-7). Open = any number."
+                # v1.2.0: Two separate inputs for min and max scale values (1-100 range)
+                with col3a:
+                    # Get current min, default to 1
+                    current_min = int(scale_min) if scale_min is not None else 1
+                    if dv_type == 'numeric_input':
+                        # Numeric inputs can have any range
+                        new_scale_min = st.number_input(
+                            "Min",
+                            min_value=0,
+                            max_value=1000,
+                            value=current_min,
+                            key=f"dv_min_v{dv_version}_{i}",
+                            help="Minimum value (e.g., 0 for slider, 1 for Likert)"
                         )
-                        if scale_points == "Open":
-                            scale_points = None
-                        else:
-                            try:
-                                scale_points = int(scale_points.split("-")[-1]) if "-" in scale_points else int(scale_points)
-                            except ValueError:
-                                scale_points = 7
                     else:
-                        try:
-                            current_pts = int(current_pts)
-                            if current_pts not in scale_points_options:
-                                scale_points_options.append(current_pts)
-                                scale_points_options.sort()
-                            default_idx = scale_points_options.index(current_pts)
-                        except (ValueError, TypeError):
-                            default_idx = scale_points_options.index(7)
-
-                        # Show range label with scale_min-scale_max
-                        range_label = f"{scale_min}-" if scale_min is not None else "1-"
-                        scale_points = st.selectbox(
-                            "Scale Range",
-                            options=scale_points_options,
-                            index=default_idx,
-                            key=f"dv_points_v{dv_version}_{i}",
-                            help=f"Response scale range: {range_label}{current_pts} (e.g., 1=low, {current_pts}=high)",
-                            format_func=lambda x: f"1-{x}" if dv_type != 'slider' else f"0-{x-1}"
+                        new_scale_min = st.number_input(
+                            "Min",
+                            min_value=0,
+                            max_value=100,
+                            value=current_min,
+                            key=f"dv_min_v{dv_version}_{i}",
+                            help="Minimum scale value (usually 0 or 1)"
                         )
+
+                with col3b:
+                    # Get current max from scale_max or scale_points
+                    current_max = int(scale_max) if scale_max is not None else (int(scale.get("scale_points", 7)) if scale.get("scale_points") else 7)
+                    if dv_type == 'numeric_input':
+                        # Numeric inputs can have any range
+                        new_scale_max = st.number_input(
+                            "Max",
+                            min_value=1,
+                            max_value=10000,
+                            value=current_max,
+                            key=f"dv_max_v{dv_version}_{i}",
+                            help="Maximum value (e.g., 100 for percentage, 1000 for WTP)"
+                        )
+                    else:
+                        new_scale_max = st.number_input(
+                            "Max",
+                            min_value=2,
+                            max_value=100,
+                            value=min(current_max, 100),  # Cap at 100 for display
+                            key=f"dv_max_v{dv_version}_{i}",
+                            help="Maximum scale value (e.g., 5, 7, 10, 100)"
+                        )
+
+                # Calculate scale_points from min/max for compatibility
+                scale_points = new_scale_max  # Used for data generation
 
                 with col4:
                     # Type badge (read-only display)
@@ -4920,19 +4959,20 @@ if active_step == 2:
             if scale_name.strip() and i not in scales_to_remove:
                 updated_scales.append({
                     "name": scale_name.strip(),
-                    "variable_name": scale.get("variable_name", scale_name.strip().replace(" ", "_")),
+                    "variable_name": scale_name.strip(),  # v1.2.0: Use user-entered name as variable name
                     "question_text": scale.get("question_text", ""),
                     "items": num_items,
                     "num_items": num_items,  # Keep both for compatibility
-                    "scale_points": scale_points,
+                    "scale_points": scale_points,  # Max value for data generation
                     "type": dv_type,
                     "reverse_items": scale.get("reverse_items", []),
                     "detected_from_qsf": scale.get("detected_from_qsf", True),
                     # Preserve new fields for item display and simulation accuracy
                     "item_names": scale.get("item_names", []),
                     "scale_anchors": scale.get("scale_anchors", {}),
-                    "scale_min": scale.get("scale_min", 1),
-                    "scale_max": scale.get("scale_max", scale_points),
+                    # v1.2.0: Save user-specified min/max for accurate simulation
+                    "scale_min": new_scale_min,
+                    "scale_max": new_scale_max,
                 })
     else:
         st.info("No DVs detected from QSF. Add your dependent variables below.")
@@ -5988,9 +6028,15 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
         )
 
         try:
-            progress_bar.progress(30, text="Generating simulated responses...")
-            status_placeholder.info("Generating simulated responses...")
-            df, metadata = engine.generate()
+            # v1.2.0: Enhanced progress indicator with spinner during generation
+            progress_bar.progress(10, text="Initializing simulation engine...")
+            status_placeholder.info("🔄 **Simulation in progress** - Generating realistic behavioral data...")
+
+            # Show animated spinner during the actual data generation
+            with st.spinner("🧠 Generating simulated responses... This may take a moment for large samples."):
+                progress_bar.progress(25, text="Generating participant responses...")
+                df, metadata = engine.generate()
+                progress_bar.progress(50, text="Responses generated successfully!")
 
             # Increment internal usage counter (admin tracking)
             usage_stats = _increment_usage_counter()
@@ -5998,8 +6044,8 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
             # Add usage stats to metadata for instructor report
             metadata["usage_stats"] = usage_stats
 
-            progress_bar.progress(60, text="Packaging downloads...")
-            status_placeholder.info("Packaging downloads and reports...")
+            progress_bar.progress(55, text="Packaging downloads...")
+            status_placeholder.info("📦 Packaging downloads and reports...")
             explainer = engine.generate_explainer()
             r_script = engine.generate_r_export(df)
             # v2.4.5: Generate additional analysis scripts for Python, Julia, SPSS, Stata
