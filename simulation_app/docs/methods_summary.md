@@ -45,32 +45,50 @@ Unlike simple random number generators, this system applies decades of survey me
 
 ## How It Works
 
-### Step 1: Upload Your Survey
+The tool offers **two input pathways** to accommodate different stages of the research process:
 
-Simply upload your Qualtrics survey file (.qsf format). The system automatically extracts:
+### Pathway A: Upload Your Qualtrics Survey (.qsf)
+
+If you already have a Qualtrics survey built, simply upload the .qsf file. The system automatically extracts:
 
 - Experimental conditions from your BlockRandomizer or branch logic
 - Dependent variables (Likert scales, sliders, matrices)
 - Open-ended questions and their visibility rules
 - Survey flow logic determining which questions each participant sees
 
-### Step 2: Confirm Your Design
+### Pathway B: Describe Your Experiment (Conversational Builder)
 
-Review the detected experimental structure:
+If you haven't built your survey yet — or prefer a faster setup — you can **describe your experiment in plain language**. The conversational builder guides you through:
 
-- Verify that conditions are correctly identified
-- Confirm which scales represent your dependent variables
-- Adjust factorial design specifications if needed
+1. **Study title and description**: What is your study about?
+2. **Conditions**: Describe your experimental design in natural language. The system automatically detects:
+   - Simple designs: `"Treatment vs Control"`
+   - Factorial designs: `"3 (Annotation: AI vs Human vs None) × 2 (Product: Hedonic vs Utilitarian)"`
+   - Numbered lists: `"1. Low dose, 2. Medium dose, 3. High dose"`
+   - Any N×M crossed design with automatic condition generation
+3. **Scales and DVs**: Describe your measures in paragraph or list format. The parser recognizes:
+   - Standard scale specifications: `"Trust scale (4 items, 1-7)"`
+   - Detailed academic format: `"Perceived Quality (PQ): 3 items (7-point Likert; 1=low, 7=high)"`
+   - Known validated instruments: `"BFI-10"`, `"PANAS"`, `"GAD-7"`, `"PHQ-9"`
+   - Numeric measures: `"Willingness to Pay (WTP): 1 item (open-ended numeric)"`
+   - Binary measures: `"Manipulation check (Yes/No)"`
+4. **Open-ended questions**: Simply list your qualitative questions
+5. **Research domain**: Select from 225+ research domains for persona-appropriate responses
+6. **Sample size and effect sizes**: Configure your simulation parameters
 
-### Step 3: Configure Parameters
+The builder outputs the same structured design specification used by the QSF pathway, ensuring identical simulation quality regardless of input method.
 
-Specify your simulation parameters:
+### Design Review
 
-- **Sample size**: How many participants to generate
-- **Effect size**: Target Cohen's d for treatment effects (0.2 = small, 0.5 = medium, 0.8 = large)
-- **Data quality**: Proportion of attentive vs. careless responders
+Regardless of input method, you review and adjust the detected design:
 
-### Step 4: Generate and Download
+- Verify conditions, scales, and open-ended questions
+- Edit names, scale ranges, and item counts inline
+- Add or remove measures as needed
+- Customize persona weights for domain-specific response patterns
+- Set expected effect sizes (Cohen's d) with visual condition selectors
+
+### Generate and Download
 
 The system produces a publication-ready CSV file containing:
 
@@ -79,6 +97,7 @@ The system produces a publication-ready CSV file containing:
 - Unique open-ended text responses
 - Demographics and metadata
 - Quality metrics and validation flags
+- A comprehensive instructor report with statistical analyses, persona breakdowns, and effect size verification
 
 ---
 
@@ -270,34 +289,45 @@ Generated datasets include quality metrics:
 
 ### Input Requirements
 
-- Qualtrics Survey Format (.qsf) file
+- **Option A**: Qualtrics Survey Format (.qsf) file — for researchers with existing surveys
+- **Option B**: Plain-language experiment description — for researchers at the design stage
 - Internet connection for web interface
 
 ### Output Format
 
-- CSV file compatible with R, SPSS, Stata, Python
-- Metadata JSON with simulation parameters
-- Optional quality report
+- **CSV file** compatible with R, SPSS, Stata, Python
+- **Instructor report** (HTML) with comprehensive statistical analyses, persona breakdowns, effect size verification, trait profiles by condition, and visualization
+- **Metadata** JSON with simulation parameters
+- **Analysis scripts** auto-generated for R, Python, SPSS, and Stata
 
 ### Supported Question Types
 
-| Type | Example |
-|------|---------|
-| Likert Scales | 7-point agreement scales |
-| Sliders | Visual analog scales (0-100) |
-| Matrix Tables | Multi-item scales with shared options |
-| Multiple Choice | Single selection questions |
-| Text Entry | Open-ended responses |
-| Numeric Input | Willingness to pay, quantities |
-| Rank Order | Preference rankings |
-| Heatmaps | Click coordinate data |
+| Type | Example | Input Methods |
+|------|---------|---------------|
+| Likert Scales | 7-point agreement scales | QSF, Builder |
+| Sliders | Visual analog scales (0-100) | QSF, Builder |
+| Matrix Tables | Multi-item scales with shared options | QSF, Builder |
+| Multiple Choice | Single selection questions | QSF |
+| Text Entry | Open-ended responses | QSF, Builder |
+| Numeric Input | Willingness to pay, quantities | QSF, Builder |
+| Semantic Differential | Bipolar adjective scales | QSF, Builder |
+| Binary | Yes/No, True/False | QSF, Builder |
+| Rank Order | Preference rankings | QSF |
+| Heatmaps | Click coordinate data | QSF |
 
 ### Supported Experimental Designs
 
-- Between-subjects (2+ conditions)
-- Factorial (2x2, 2x3, 3x3, etc.)
-- Mixed designs with between and within factors
-- Complex branching and skip logic
+| Design | Example | Detection |
+|--------|---------|-----------|
+| Between-subjects | Treatment vs Control | Automatic |
+| Factorial (2×2) | AI × Product Type | Automatic (NxM) |
+| Factorial (3×2) | Annotation × Product | Automatic |
+| Factorial (N×M) | Any crossed design | Automatic |
+| Multi-level | Low / Medium / High | Automatic |
+| Mixed designs | Between + within factors | QSF path |
+| Complex branching | Skip logic, visibility rules | QSF path |
+
+The conversational builder automatically detects factorial designs from natural language input and generates all crossed conditions. For example, entering `"3 (Source: AI vs Human vs None) × 2 (Product: Hedonic vs Utilitarian)"` produces 6 conditions with proper × notation.
 
 ---
 
@@ -333,6 +363,26 @@ The tool is optimized for behavioral science experiments with:
 
 It may not be suitable for purely exploratory surveys or complex longitudinal designs.
 
+### Do I need a Qualtrics survey file?
+
+No. As of version 1.3, you can describe your experiment in plain language using the **Conversational Builder**. The system parses your natural language description to extract conditions, scales, and open-ended questions. This is especially useful for:
+
+- Early-stage study design before building the actual survey
+- Quick pilot data generation
+- Teaching contexts where students describe hypothetical experiments
+- Power analysis before IRB submission
+
+### What factorial designs are supported?
+
+The system supports any N×M crossed factorial design:
+
+- **2×2**: `"AI (present, absent) × Trust (high, low)"`
+- **3×2**: `"3 (Source: AI vs Human vs None) × 2 (Product: Hedonic vs Utilitarian)"`
+- **2×2×2**: Three-factor designs with automatic crossing
+- **Custom**: Any combination using "vs", commas, or numbered lists
+
+The system automatically generates all crossed conditions and displays them in a design table.
+
 ### How are effect directions determined?
 
 The system parses condition names to determine which should produce higher/lower responses:
@@ -340,21 +390,43 @@ The system parses condition names to determine which should produce higher/lower
 - **Positive indicators**: "high", "treatment", "reward", "positive"
 - **Negative indicators**: "low", "control", "loss", "negative"
 
-For complex designs, effect direction can be specified manually.
+For complex designs, effect direction can be specified manually in the design review.
+
+### What does the instructor report contain?
+
+The comprehensive HTML report includes:
+
+- **Study overview**: Design, conditions, factors, scales, sample size
+- **Research context**: Domain, input method, participant characteristics, persona domains
+- **Statistical analysis**: Per-DV descriptive statistics, ANOVA/t-tests, effect sizes, visualizations
+- **Persona analysis**: Distribution table, per-condition persona counts, personality trait profiles
+- **Effect size verification**: Configured vs. observed effects with Cohen's d interpretation
+- **Data quality**: Exclusion breakdown (speed, attention, straight-lining), validation corrections
+- **Categorical analysis**: Condition × Gender cross-tabulation with chi-squared test
+- **Executive summary**: AI-generated synthesis of key findings
+- **Scientific references**: Full citations for the methodological foundations
 
 ---
 
 ## Getting Started
 
+### Option A: With a Qualtrics Survey
+
 1. **Export your Qualtrics survey** as a .qsf file (Survey > Tools > Import/Export > Export Survey)
-
 2. **Access the tool** at the provided URL
-
 3. **Upload your .qsf file** and review the detected structure
-
 4. **Configure parameters** for your specific needs
-
 5. **Generate and download** your synthetic dataset
+
+### Option B: With the Conversational Builder
+
+1. **Access the tool** and select "Describe my study" in the Study Input tab
+2. **Enter your study title** and a brief description
+3. **Describe your conditions** (the system detects simple, factorial, and multi-level designs)
+4. **Describe your scales/DVs** (supports standard abbreviations, paragraph format, and detailed specs)
+5. **Add open-ended questions** if applicable
+6. **Review and adjust** the auto-detected design in the Design tab
+7. **Generate and download** your synthetic dataset
 
 ---
 
@@ -380,7 +452,28 @@ The simulation algorithms are grounded in established survey methodology researc
 
 If you use this tool in your research or teaching, please acknowledge:
 
-> Dimant, E. (2024). Behavioral Experiment Simulation Tool (Version 1.0) [Computer software].
+> Dimant, E. (2024). Behavioral Experiment Simulation Tool (Version 1.3) [Computer software].
+
+---
+
+## Changelog Highlights
+
+### Version 1.3 (Latest)
+- **Conversational Builder**: Describe experiments in plain language — no QSF file required
+- **Automatic factorial detection**: Parses N×M designs from natural language (e.g., "3 × 2, between-subjects")
+- **Comprehensive instructor report**: Persona distribution tables, personality trait profiles by condition, effect size verification, exclusion breakdowns
+- **Scale auto-detection**: Recognizes detailed academic scale formats, validated instruments (BFI-10, PANAS, etc.), numeric inputs, binary measures
+- **Custom persona weights**: Adjust response style distributions for domain-specific realism
+- **Domain-specific personas**: 225+ research domains influence which persona archetypes are activated
+
+### Version 1.2
+- Enhanced persona system with 50+ behavioral archetypes across 15 research domains
+- Factorial design tables with visual cell numbering
+- Effect size specification with Cohen's d calibration
+- Auto-generated analysis scripts for R, Python, SPSS, and Stata
+
+### Version 1.0
+- Initial release with QSF upload, persona-based response generation, and basic instructor reports
 
 ---
 
@@ -390,6 +483,6 @@ For questions, feature requests, or collaboration inquiries, please contact thro
 
 ---
 
-*Version 1.0.0 | Proprietary Software | All Rights Reserved*
+*Version 1.3.0 | Proprietary Software | All Rights Reserved*
 
 *Developed by Dr. Eugen Dimant*

@@ -45,7 +45,7 @@ This module is designed to run inside a `utils/` package (i.e., imported as
 """
 
 # Version identifier to help track deployed code
-__version__ = "1.2.9"  # v1.2.9: Persona preview, domain dropdown, builder UX, custom persona weights
+__version__ = "1.3.1"  # v1.3.1: Comprehensive instructor report, methods docs update, e2e tests
 
 # =============================================================================
 # SCIENTIFIC FOUNDATIONS FOR SIMULATION
