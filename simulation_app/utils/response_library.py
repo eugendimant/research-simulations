@@ -4661,24 +4661,64 @@ class ComprehensiveResponseGenerator:
     _used_responses: set = set()
     _session_id: int = 0
 
-    # Sentence variation patterns for natural diversity
+    # Sentence variation patterns for natural diversity (v1.2.0: expanded for academic variety)
     SENTENCE_STARTERS = [
+        # Personal perspective starters
         "I think ", "I feel ", "In my view, ", "From my perspective, ",
         "I believe ", "It seems to me that ", "My sense is that ",
         "I'd say ", "Personally, ", "For me, ", "Looking at this, ",
         "Considering this, ", "Reflecting on this, ", "In my experience, ",
+        # Academic/thoughtful starters
+        "Upon consideration, ", "After thinking about it, ", "My impression is that ",
+        "Based on my understanding, ", "From what I can tell, ", "As I see it, ",
+        "To my mind, ", "In my estimation, ", "My view is that ",
+        "Having considered this, ", "On reflection, ", "My position is that ",
+        # Engaged/confident starters
+        "I'm fairly certain that ", "I would argue that ", "My take is that ",
+        "The way I see it, ", "Speaking from experience, ", "I've come to think that ",
+        "It's clear to me that ", "I've found that ", "What strikes me is that ",
+        # Tentative/hedged starters
+        "I suspect that ", "My initial thought is that ", "Tentatively, I'd say ",
+        "I'm inclined to think that ", "If I had to say, ", "My gut feeling is that ",
     ]
 
     TRANSITION_PHRASES = [
+        # Additive transitions
         "Also, ", "Additionally, ", "Moreover, ", "Furthermore, ",
         "On top of that, ", "What's more, ", "Beyond that, ",
         "Plus, ", "And ", "Not only that, but ", "Similarly, ",
+        # Elaborative transitions
+        "In addition to that, ", "Along the same lines, ", "Building on that, ",
+        "To elaborate, ", "To add to this, ", "Following from that, ",
+        "Equally important, ", "Another point is that ", "Related to this, ",
+        # Contrastive transitions
+        "That said, ", "However, ", "On the other hand, ", "At the same time, ",
+        "Yet, ", "Still, ", "Conversely, ", "Nevertheless, ",
+        # Causal/consequential transitions
+        "As a result, ", "Consequently, ", "Because of this, ", "For this reason, ",
+        "This means that ", "It follows that ", "Given that, ",
+        # Emphatic transitions
+        "Importantly, ", "Notably, ", "Significantly, ", "In particular, ",
+        "Especially, ", "What's particularly relevant is ", "Key to this is that ",
     ]
 
     CONCLUDING_PHRASES = [
+        # Casual conclusions
         "That's my take on it.", "That's how I see it.", "Those are my thoughts.",
         "That's what comes to mind.", "That's my perspective.",
         "That's where I stand.", "That sums up my view.",
+        # Academic/formal conclusions
+        "This reflects my overall assessment.", "That encapsulates my thinking on this.",
+        "This is the conclusion I've reached.", "That represents my considered view.",
+        "This summarizes my position.", "Those are my key observations.",
+        # Reflective conclusions
+        "That's what I've concluded after thinking it through.",
+        "This is where my reflection has led me.", "That's my honest assessment.",
+        "This captures my main impressions.", "Those are the points that stand out to me.",
+        # Open-ended conclusions
+        "There's more I could say, but those are the main points.",
+        "I think that covers my main thoughts.", "That's the gist of my perspective.",
+        "I believe that addresses the key aspects.", "That's what seems most relevant to me.",
     ]
 
     def __init__(self, seed: Optional[int] = None):
@@ -4875,43 +4915,116 @@ class ComprehensiveResponseGenerator:
         """Add topic-specific context to ensure response stays on-topic.
 
         v1.1.0: Ensures responses are always relevant to the survey topic.
+        v1.2.0: Enhanced with 80+ topic categories and academic phrasing.
         """
         if not keywords or local_rng.random() > 0.4:  # 40% chance to add context
             return response
 
-        # Build topic phrases based on extracted keywords
+        # Build topic phrases based on extracted keywords (v1.2.0: greatly expanded)
         topic_phrases = {
             # Research-related keywords
-            'study': ['in this study', 'for this research', 'in this survey'],
-            'research': ['from a research perspective', 'considering the research'],
-            'experiment': ['in this experiment', 'during the experiment'],
-            'survey': ['in this survey', 'for the survey'],
+            'study': ['in this study', 'for this research', 'in this survey', 'as part of this study', 'within this research context'],
+            'research': ['from a research perspective', 'considering the research', 'in this research setting', 'given the research focus'],
+            'experiment': ['in this experiment', 'during the experiment', 'within this experimental context', 'given the experimental setup'],
+            'survey': ['in this survey', 'for the survey', 'responding to this survey', 'in answering this survey'],
+            'question': ['regarding this question', 'in response to this', 'when considering this question', 'to address this'],
 
             # Decision-related keywords
-            'decision': ['regarding my decision', 'about choosing', 'when deciding'],
-            'choice': ['with this choice', 'in making this choice'],
-            'option': ['considering the options', 'between the options'],
+            'decision': ['regarding my decision', 'about choosing', 'when deciding', 'in the decision-making process', 'as I weighed the options'],
+            'choice': ['with this choice', 'in making this choice', 'when faced with this choice', 'considering my options'],
+            'option': ['considering the options', 'between the options', 'evaluating the alternatives', 'weighing the options presented'],
+            'tradeoff': ['considering the tradeoffs', 'balancing these factors', 'weighing the costs and benefits'],
+            'preference': ['based on my preferences', 'given what I prefer', 'considering my personal preferences'],
 
             # Evaluation keywords
-            'product': ['about this product', 'for this item', 'regarding what was shown'],
-            'service': ['about the service', 'regarding the service quality'],
-            'brand': ['about the brand', 'regarding this brand'],
+            'product': ['about this product', 'for this item', 'regarding what was shown', 'evaluating this product', 'concerning this offering'],
+            'service': ['about the service', 'regarding the service quality', 'in terms of service', 'evaluating the service provided'],
+            'brand': ['about the brand', 'regarding this brand', 'in terms of brand perception', 'considering brand attributes'],
+            'quality': ['in terms of quality', 'regarding quality aspects', 'considering the quality', 'evaluating quality'],
+            'value': ['in terms of value', 'considering the value proposition', 'regarding perceived value'],
+            'price': ['considering the price', 'given the cost', 'in terms of pricing', 'regarding the price point'],
+            'purchase': ['regarding this purchase', 'in terms of buying', 'considering a purchase', 'when thinking about buying'],
 
             # Experience keywords
-            'experience': ['from my experience', 'based on my experience'],
-            'scenario': ['in this scenario', 'given the situation'],
-            'situation': ['in this situation', 'given these circumstances'],
+            'experience': ['from my experience', 'based on my experience', 'drawing on my experience', 'reflecting on past experiences'],
+            'scenario': ['in this scenario', 'given the situation', 'under these circumstances', 'in this hypothetical situation'],
+            'situation': ['in this situation', 'given these circumstances', 'under these conditions', 'facing this situation'],
+            'context': ['in this context', 'given the context', 'within this particular context', 'considering the context'],
 
             # Social/behavioral keywords
-            'people': ['when thinking about others', 'considering other people'],
-            'trust': ['regarding trust', 'about trusting'],
-            'fair': ['about fairness', 'regarding what seems fair'],
-            'risk': ['considering the risk', 'about the uncertainty'],
+            'people': ['when thinking about others', 'considering other people', 'in social situations', 'regarding how people behave'],
+            'trust': ['regarding trust', 'about trusting', 'in terms of trustworthiness', 'when it comes to trust'],
+            'fair': ['about fairness', 'regarding what seems fair', 'in terms of equity', 'considering fairness'],
+            'risk': ['considering the risk', 'about the uncertainty', 'when evaluating risk', 'regarding potential risks'],
+            'social': ['in social terms', 'from a social perspective', 'considering social dynamics', 'regarding social aspects'],
+            'cooperation': ['regarding cooperation', 'in terms of working together', 'considering collaborative aspects'],
+            'norm': ['considering social norms', 'regarding expectations', 'in terms of what is expected'],
 
             # Technology keywords
-            'technology': ['about technology', 'regarding tech'],
-            'ai': ['about AI', 'regarding artificial intelligence'],
-            'algorithm': ['about algorithms', 'regarding automated systems'],
+            'technology': ['about technology', 'regarding tech', 'concerning technology use', 'in terms of technology'],
+            'ai': ['about AI', 'regarding artificial intelligence', 'concerning AI systems', 'when it comes to AI'],
+            'algorithm': ['about algorithms', 'regarding automated systems', 'concerning algorithmic decisions', 'in terms of automation'],
+            'privacy': ['regarding privacy', 'concerning data privacy', 'in terms of privacy protection', 'about personal information'],
+            'data': ['concerning data', 'regarding data use', 'in terms of information handling', 'about data practices'],
+            'online': ['in online contexts', 'regarding digital interactions', 'concerning online behavior'],
+            'digital': ['in the digital realm', 'regarding digital experiences', 'concerning digital platforms'],
+
+            # Health and wellbeing keywords
+            'health': ['regarding health', 'concerning wellbeing', 'in terms of health outcomes', 'about health-related matters'],
+            'wellbeing': ['concerning wellbeing', 'regarding quality of life', 'in terms of overall wellness'],
+            'stress': ['regarding stress', 'concerning anxiety levels', 'in terms of mental load', 'about stress management'],
+            'emotion': ['regarding emotions', 'concerning feelings', 'in emotional terms', 'about emotional responses'],
+            'feeling': ['about my feelings', 'regarding how I feel', 'in terms of emotional reactions'],
+
+            # Work and organizational keywords
+            'work': ['in the workplace', 'regarding work situations', 'concerning professional contexts', 'at work'],
+            'job': ['regarding my job', 'concerning work tasks', 'in terms of job responsibilities'],
+            'team': ['regarding team dynamics', 'concerning group work', 'in terms of collaboration'],
+            'leader': ['regarding leadership', 'concerning management', 'in terms of leadership qualities'],
+            'organization': ['within organizations', 'regarding organizational matters', 'in institutional contexts'],
+
+            # Environmental keywords
+            'environment': ['regarding the environment', 'concerning environmental issues', 'in environmental terms'],
+            'climate': ['concerning climate change', 'regarding climate issues', 'about environmental sustainability'],
+            'sustain': ['regarding sustainability', 'concerning sustainable practices', 'in terms of long-term impact'],
+
+            # Political/civic keywords
+            'politics': ['regarding political matters', 'concerning civic issues', 'in political terms'],
+            'policy': ['regarding policy', 'concerning this policy issue', 'in terms of policy implications'],
+            'government': ['regarding government', 'concerning public institutions', 'about governmental action'],
+            'vote': ['regarding voting', 'concerning electoral choices', 'in terms of political participation'],
+
+            # Education keywords
+            'learn': ['regarding learning', 'concerning education', 'in terms of knowledge acquisition'],
+            'education': ['concerning education', 'regarding educational experiences', 'in academic contexts'],
+            'student': ['as a learner', 'from a student perspective', 'regarding educational experiences'],
+
+            # Ethics and morality keywords
+            'moral': ['from a moral standpoint', 'regarding ethical considerations', 'in terms of what is right'],
+            'ethic': ['regarding ethics', 'concerning ethical principles', 'from an ethical perspective'],
+            'right': ['regarding what is right', 'concerning proper conduct', 'in terms of correctness'],
+            'wrong': ['regarding what seems wrong', 'concerning inappropriate actions', 'in terms of problematic aspects'],
+            'responsibility': ['regarding responsibility', 'concerning accountability', 'in terms of obligations'],
+
+            # Financial keywords
+            'money': ['regarding money', 'concerning financial matters', 'in financial terms'],
+            'finance': ['regarding finances', 'concerning financial decisions', 'in terms of monetary considerations'],
+            'invest': ['regarding investment', 'concerning financial planning', 'in terms of investing'],
+            'save': ['regarding savings', 'concerning financial security', 'in terms of saving money'],
+            'spend': ['regarding spending', 'concerning purchases', 'in terms of expenditure'],
+
+            # Relationship keywords
+            'relationship': ['regarding relationships', 'concerning interpersonal connections', 'in terms of relating to others'],
+            'friend': ['regarding friendship', 'concerning social bonds', 'in terms of friendly relations'],
+            'family': ['regarding family', 'concerning family matters', 'in terms of family relationships'],
+            'partner': ['regarding my partner', 'concerning romantic relationships', 'in terms of partnerships'],
+
+            # Identity and self keywords
+            'identity': ['regarding identity', 'concerning self-concept', 'in terms of who I am'],
+            'self': ['regarding myself', 'concerning personal aspects', 'in terms of self-perception'],
+            'personal': ['on a personal level', 'regarding personal matters', 'in terms of individual experience'],
+            'belief': ['regarding my beliefs', 'concerning what I believe', 'in terms of my convictions'],
+            'value': ['regarding my values', 'concerning what I value', 'in terms of personal principles'],
         }
 
         # Find matching topic phrase
