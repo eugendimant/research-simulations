@@ -33,7 +33,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 # Version identifier to help track deployed code
-__version__ = "1.2.7"  # v1.2.7: Survey builder enhancements, expanded scales, validation
+__version__ = "1.2.8"  # v1.2.8: Visual design tables, navigation polish, builder UX improvements
 
 
 # ============================================================================

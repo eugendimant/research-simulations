@@ -52,8 +52,8 @@ import streamlit as st
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.2.7"
-BUILD_ID = "20260206-v127-survey-builder-enhancements"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.2.8"
+BUILD_ID = "20260206-v128-visual-design-tables-nav-polish"  # Change this to force cache invalidation
 
 def _verify_and_reload_utils():
     """Verify utils modules are at correct version, force reload if needed.
@@ -85,7 +85,7 @@ from utils.qsf_preview import QSFPreviewParser, QSFPreviewResult
 from utils.schema_validator import validate_schema
 from utils.github_qsf_collector import collect_qsf_async, is_collection_enabled
 from utils.instructor_report import InstructorReportGenerator, ComprehensiveInstructorReport
-from utils.survey_builder import SurveyDescriptionParser, ParsedDesign
+from utils.survey_builder import SurveyDescriptionParser, ParsedDesign, KNOWN_SCALES
 from utils.enhanced_simulation_engine import (
     EnhancedSimulationEngine,
     EffectSizeSpec,
@@ -108,7 +108,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF"
-APP_VERSION = "1.2.7"  # v1.2.7: Survey builder enhancements, expanded scales, validation
+APP_VERSION = "1.2.8"  # v1.2.8: Visual design tables, navigation polish, builder UX improvements
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -2961,6 +2961,15 @@ def _render_conversational_builder() -> None:
         "Describe your study in plain language — we'll extract the technical details automatically."
     )
 
+    # Getting-started message when nothing has been filled in yet
+    _existing_conds = st.session_state.get("builder_conditions_text", "").strip()
+    _existing_scales = st.session_state.get("builder_scales_text", "").strip()
+    if not _existing_conds and not _existing_scales:
+        st.info(
+            "Start by describing your experimental conditions below, "
+            "then add your measures. Use the examples for inspiration!"
+        )
+
     # Example studies for inspiration
     with st.expander("Need inspiration? Click an example to auto-fill", expanded=False):
         examples = SurveyDescriptionParser.generate_example_descriptions()
@@ -3009,6 +3018,18 @@ def _render_conversational_builder() -> None:
         cond_names = [c.name for c in parsed_conditions]
         st.caption(f"Detected **{len(cond_names)}** conditions: {', '.join(cond_names)}")
 
+        # Feedback for unusual condition counts
+        if len(cond_names) == 1:
+            st.warning(
+                "Only 1 condition detected. An experiment needs at least 2 conditions "
+                "(e.g., control vs treatment)."
+            )
+        elif len(cond_names) > 10:
+            st.warning(
+                f"{len(cond_names)} conditions detected. This is unusually many "
+                "-- verify this is correct."
+            )
+
         # Check for factorial structure
         factors = parser.detect_factorial_structure(parsed_conditions)
         if factors:
@@ -3046,10 +3067,25 @@ def _render_conversational_builder() -> None:
     # Live parsing preview for scales
     parsed_scales = parser.parse_scales(scales_text) if scales_text.strip() else []
     if parsed_scales:
+        # Type badge mapping
+        _type_badges = {
+            "likert": "[Likert]",
+            "slider": "[Slider]",
+            "binary": "[Binary]",
+            "numeric": "[Numeric]",
+        }
         for s in parsed_scales:
+            badge = _type_badges.get(s.scale_type, f"[{s.scale_type.title()}]")
+            # Check if scale name matches a known validated instrument
+            _s_lower = s.name.lower().strip()
+            is_validated = any(
+                _s_lower == k or _s_lower == v.get("label", "").lower()
+                for k, v in KNOWN_SCALES.items()
+            )
+            validated_tag = " *(validated instrument)*" if is_validated else ""
             st.caption(
-                f"  **{s.name}**: {s.num_items} item(s), "
-                f"{s.scale_min}-{s.scale_max} ({s.scale_type})"
+                f"  {badge} **{s.name}**: {s.num_items} item(s), "
+                f"{s.scale_min}-{s.scale_max}{validated_tag}"
             )
 
     # ── Section 3: Open-Ended Questions (Optional) ─────────────────────
@@ -3172,16 +3208,20 @@ def _render_conversational_builder() -> None:
             st.markdown(f"**Sample size:** {builder_sample}")
             st.markdown(f"**Design:** {design_options[design_type]}")
 
-            # Detect domain
+            # Detect domain with visual badge
             title = st.session_state.get("study_title", "")
             desc = st.session_state.get("study_description", "")
             domain = parser.detect_research_domain(title, desc)
-            st.markdown(f"**Detected domain:** {domain}")
+            st.markdown(f"**Domain:** `{domain}`")
 
     for w in warnings:
         st.warning(w)
     for e in errors:
         st.error(e)
+
+    # Guidance when there are warnings but no blocking errors
+    if not errors and warnings:
+        st.info("There are warnings but no errors -- you can proceed if the warnings are acceptable.")
 
     # Submit button
     can_submit = len(errors) == 0 and len(parsed_conditions) >= 2 and len(parsed_scales) >= 1
@@ -3308,6 +3348,32 @@ def _render_builder_design_review() -> None:
         for f in factors:
             st.markdown(f"**{f['name']}**: {', '.join(f['levels'])}")
 
+        # Visual design table for 2-factor designs
+        if len(factors) == 2:
+            row_factor = factors[0]
+            col_factor = factors[1]
+            row_levels = row_factor.get("levels", [])
+            col_levels = col_factor.get("levels", [])
+            n_cells = len(row_levels) * len(col_levels)
+            per_cell = sample // n_cells if n_cells > 0 else 0
+
+            header = f"| | " + " | ".join(f"**{lv}**" for lv in col_levels) + " |"
+            separator = "|--" + "|".join("---" for _ in col_levels) + "|"
+            table_rows = [header, separator]
+            cell_num = 1
+            for rl in row_levels:
+                cells = []
+                for _ in col_levels:
+                    cells.append(f"Cell {cell_num} (n={per_cell})")
+                    cell_num += 1
+                row_str = f"| **{rl}** | " + " | ".join(cells) + " |"
+                table_rows.append(row_str)
+
+            st.markdown(
+                f"**Design Table** ({row_factor['name']} x {col_factor['name']}):"
+            )
+            st.markdown("\n".join(table_rows))
+
     # ── Scales / DVs ────────────────────────────────────────────────────
     st.markdown("---")
     st.markdown("#### Dependent Variables / Scales")
@@ -3417,7 +3483,17 @@ def _render_builder_design_review() -> None:
             alloc[cond] = round(100.0 * n / sample, 1)
         st.session_state["condition_allocation_n"] = alloc_n
         st.session_state["condition_allocation"] = alloc
-        st.caption(f"Equal allocation: {per_cond}-{per_cond + 1} participants per condition")
+
+        # Visual allocation display
+        n_conds = len(conditions)
+        cols_per_row = min(n_conds, 4)
+        alloc_cols = st.columns(cols_per_row)
+        for i, cond in enumerate(conditions):
+            with alloc_cols[i % cols_per_row]:
+                n_val = alloc_n[cond]
+                pct = alloc[cond]
+                st.metric(label=cond, value=f"{n_val}", delta=f"{pct}%")
+        st.caption("Equal allocation across conditions")
 
     # ── Difficulty Level ─────────────────────────────────────────────────
     st.markdown("---")
@@ -3494,6 +3570,15 @@ def _render_builder_design_review() -> None:
         )
     else:
         st.error("Design incomplete. Please go back and provide conditions and scales.")
+
+    # ── Proceed to Generate guidance ───────────────────────────────────
+    if conditions and scales:
+        st.markdown("---")
+        st.markdown("#### Ready to generate?")
+        st.markdown(
+            "Click the **Generate** tab above to simulate your data. "
+            "You can always come back here to adjust your design."
+        )
 
 
 def _get_step_completion() -> Dict[str, bool]:
