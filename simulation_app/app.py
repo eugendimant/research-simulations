@@ -52,8 +52,8 @@ import streamlit as st
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.3.1"
-BUILD_ID = "20260206-v131-report-methods-personas"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.3.2"
+BUILD_ID = "20260206-v132-nxm-factorial-fixes"  # Change this to force cache invalidation
 
 def _verify_and_reload_utils():
     """Verify utils modules are at correct version, force reload if needed.
@@ -109,7 +109,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF"
-APP_VERSION = "1.3.1"  # v1.3.1: Comprehensive instructor report, methods document, persona analysis
+APP_VERSION = "1.3.2"  # v1.3.2: NxM factorial support, engine fixes, 74 e2e tests
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -808,6 +808,42 @@ def _normalize_factor_specs(factors: List[Any], fallback_conditions: List[str]) 
                 levels_list = [str(lvl).strip() for lvl in (levels or []) if str(lvl).strip()]
             normalized.append({"name": name, "levels": levels_list or fallback_conditions})
     return normalized or [{"name": "Condition", "levels": fallback_conditions}]
+
+
+def _infer_factors_from_conditions(conditions: List[str]) -> List[Dict[str, Any]]:
+    """Infer factorial structure from condition names containing ' × ' separator.
+
+    If conditions look like 'A × B' crossed format, extracts factors and levels.
+    Returns empty list if conditions aren't factorial.
+    """
+    if not conditions or len(conditions) < 2:
+        return []
+
+    # Check if conditions use the × separator
+    sep = " × "
+    parts_list = [c.split(sep) for c in conditions]
+    n_factors = len(parts_list[0])
+
+    # All conditions must have the same number of factors
+    if n_factors < 2 or not all(len(p) == n_factors for p in parts_list):
+        return []
+
+    factors: List[Dict[str, Any]] = []
+    for i in range(n_factors):
+        # Collect unique levels for this factor position
+        levels = []
+        seen: set = set()
+        for parts in parts_list:
+            level = parts[i].strip()
+            # Handle "FactorName: Level" format
+            if ": " in level:
+                level = level.split(": ", 1)[1]
+            if level.lower() not in seen:
+                levels.append(level)
+                seen.add(level.lower())
+        factors.append({"name": f"Factor_{i+1}", "levels": levels})
+
+    return factors
 
 
 def _normalize_condition_label(label: str) -> str:
@@ -2696,7 +2732,7 @@ def _render_factorial_design_table(
     crossed_conditions = []
     if len(factors) >= 2:
         all_combos = list(itertools.product(*[f["levels"] for f in factors]))
-        crossed_conditions = [" + ".join(combo) for combo in all_combos]
+        crossed_conditions = [" × ".join(combo) for combo in all_combos]
 
         # Display the factorial design visualization
         st.markdown("---")
@@ -3000,8 +3036,10 @@ def _render_conversational_builder() -> None:
     conditions_placeholder = (
         "Examples:\n"
         "• Control, Treatment\n"
-        "• AI-generated message, Human-written message, No message\n"
-        "• 2x2 design with Trust (high/low) and Risk (high/low)"
+        "• AI-generated, Human-written, No message\n"
+        "• Trust (high, low) and Risk (high, low)\n"
+        "• 3 (Source: AI vs Human vs None) × 2 (Product: Hedonic vs Utilitarian)\n"
+        "• 2x2x2 with Frame (Gain/Loss), Source (Expert/Peer), Time (Immediate/Delayed)"
     )
 
     conditions_text = st.text_area(
@@ -3010,7 +3048,14 @@ def _render_conversational_builder() -> None:
         placeholder=conditions_placeholder,
         height=100,
         key="builder_conditions_input",
-        help="List your experimental conditions. Supports simple lists, numbered conditions, and factorial designs (e.g., 2x2).",
+        help=(
+            "Describe your experimental design. Supports:\n"
+            "- Simple lists: 'Control, Treatment A, Treatment B'\n"
+            "- Factorial notation: '2x2', '3×2', '2x2x2'\n"
+            "- Labeled factorial: '3 (Source: AI vs Human vs None) × 2 (Product: Hedonic vs Utilitarian)'\n"
+            "- Parenthetical: 'Trust (high, low) and Risk (high, low)'\n"
+            "Any NxM (and NxMxK, etc.) factorial is automatically detected and crossed."
+        ),
     )
     st.session_state["builder_conditions_text"] = conditions_text
 
@@ -3023,7 +3068,17 @@ def _render_conversational_builder() -> None:
         st.warning(cw)
     if parsed_conditions:
         cond_names = [c.name for c in parsed_conditions]
-        st.caption(f"Detected **{len(cond_names)}** conditions: {', '.join(cond_names)}")
+        # Detect if factorial (conditions contain ×)
+        _is_factorial = any(" × " in cn for cn in cond_names)
+        if _is_factorial:
+            # Count factors from first condition
+            _n_facs = len(cond_names[0].split(" × "))
+            st.caption(
+                f"Detected **{_n_facs}-factor factorial** design "
+                f"with **{len(cond_names)}** crossed conditions"
+            )
+        else:
+            st.caption(f"Detected **{len(cond_names)}** conditions: {', '.join(cond_names)}")
 
         # Feedback for unusual condition counts
         if len(cond_names) == 1:
@@ -3031,10 +3086,10 @@ def _render_conversational_builder() -> None:
                 "Only 1 condition detected. An experiment needs at least 2 conditions "
                 "(e.g., control vs treatment)."
             )
-        elif len(cond_names) > 10:
+        elif len(cond_names) > 16:
             st.warning(
                 f"{len(cond_names)} conditions detected. This is unusually many "
-                "-- verify this is correct."
+                "-- verify this is correct. Large designs need larger sample sizes."
             )
 
         # Check for factorial structure
@@ -3550,6 +3605,8 @@ def _render_builder_design_review() -> None:
         if cond_to_remove is not None:
             conditions.pop(cond_to_remove)
             inferred["conditions"] = conditions
+            # Recalculate factors from remaining conditions
+            inferred["factors"] = _infer_factors_from_conditions(conditions)
             st.session_state["inferred_design"] = inferred
             st.session_state["selected_conditions"] = conditions
             # Update allocation
@@ -3583,8 +3640,16 @@ def _render_builder_design_review() -> None:
                 _added += 1
         if _added > 0:
             inferred["conditions"] = conditions
+            # Recalculate factors from updated conditions
+            inferred["factors"] = _infer_factors_from_conditions(conditions)
             st.session_state["inferred_design"] = inferred
             st.session_state["selected_conditions"] = conditions
+            # Update allocation
+            _n = max(len(conditions), 1)
+            _samp = int(st.session_state.get("sample_size", 100))
+            _per = _samp // _n
+            st.session_state["condition_allocation_n"] = {c: _per for c in conditions}
+            st.session_state["condition_allocation"] = {c: round(100.0 / _n, 1) for c in conditions}
             st.rerun()
 
     # ── Factorial Structure ─────────────────────────────────────────────
@@ -3620,6 +3685,25 @@ def _render_builder_design_review() -> None:
             )
             st.markdown("\n".join(table_rows))
 
+        elif len(factors) >= 3:
+            # For 3+ factors, show a numbered list of all crossed conditions
+            import itertools as _iter3
+            n_cells = 1
+            for f in factors:
+                n_cells *= len(f.get("levels", []))
+            per_cell = sample // n_cells if n_cells > 0 else 0
+            dims_str = "×".join(str(len(f.get("levels", []))) for f in factors)
+            st.success(f"**{dims_str} Factorial Design = {n_cells} conditions** (~{per_cell} per cell)")
+            # Show as compact table
+            all_combos = list(_iter3.product(*[f["levels"] for f in factors]))
+            table_header = "| # | " + " | ".join(f"**{f['name']}**" for f in factors) + " |"
+            table_sep = "|--" + "|".join("---" for _ in factors) + "|"
+            rows = [table_header, table_sep]
+            for idx, combo in enumerate(all_combos, 1):
+                row = f"| {idx} | " + " | ".join(combo) + " |"
+                rows.append(row)
+            st.markdown("\n".join(rows))
+
     # ── Scales / DVs ────────────────────────────────────────────────────
     st.markdown("---")
     st.markdown("#### Dependent Variables / Scales")
@@ -3634,8 +3718,12 @@ def _render_builder_design_review() -> None:
                 if new_name.strip():
                     scale["name"] = new_name.strip()
                     # Regenerate variable name from updated name
-                    scale["variable_name"] = re.sub(r'[^a-zA-Z0-9\s]', '', new_name)
-                    scale["variable_name"] = re.sub(r'\s+', '_', scale["variable_name"].strip())[:30]
+                    _vn = re.sub(r'[^a-zA-Z0-9\s]', ' ', new_name)
+                    _vn = re.sub(r'\s+', ' ', _vn).strip()
+                    # Remove orphaned numbers (digits not part of a known abbreviation)
+                    _vn = re.sub(r'\b\d+\b', '', _vn).strip()
+                    _vn = re.sub(r'\s+', '_', _vn)[:30]
+                    scale["variable_name"] = _vn or "Scale"
                 else:
                     st.caption("Name cannot be empty")
             with col2:
@@ -3654,8 +3742,8 @@ def _render_builder_design_review() -> None:
                 )
                 scale["scale_min"] = new_min
             with col4:
-                # Ensure max > min
-                _min_for_max = max(new_min + 1, 1)
+                # Ensure max > min (allow 0-1 for binary scales)
+                _min_for_max = new_min + 1
                 _cur_max = scale.get("scale_max", 7)
                 _safe_max = max(_cur_max, _min_for_max)
                 new_max = st.number_input(
@@ -3663,7 +3751,12 @@ def _render_builder_design_review() -> None:
                     min_value=_min_for_max, max_value=1000, key=f"br_scale_max_{i}"
                 )
                 scale["scale_max"] = new_max
-                scale["scale_points"] = new_max
+                # scale_points: discrete count for likert/binary, raw max for numeric/slider
+                _stype = scale.get("type", "likert")
+                if _stype in ("numeric", "slider"):
+                    scale["scale_points"] = new_max
+                else:
+                    scale["scale_points"] = new_max - new_min + 1
             with col5:
                 st.markdown("<br>", unsafe_allow_html=True)
                 if st.button("Remove", key=f"br_remove_scale_{i}", help=f"Remove '{scale.get('name', 'scale')}'"):
@@ -6780,21 +6873,35 @@ with tab_generate:
         attention_rate = diff_settings['attention_rate']  # From difficulty level
         random_responder_rate = diff_settings['random_responder_rate']  # From difficulty level
         exclusion = ExclusionCriteria(**STANDARD_DEFAULTS["exclusion_criteria"])
-        # Use builder effect sizes if available
+        # Use builder effect sizes if available, validating against current conditions
         builder_effects = st.session_state.get("builder_effect_sizes", [])
         effect_sizes: List[EffectSizeSpec] = []
+        _current_conds = set(conditions)
+        _invalid_effects = []
         for be in builder_effects:
             try:
+                _hi = be["level_high"]
+                _lo = be["level_low"]
+                # Check that referenced conditions still exist
+                if _hi not in _current_conds or _lo not in _current_conds:
+                    _invalid_effects.append(f"{be.get('variable','?')}: '{_hi}' vs '{_lo}'")
+                    continue
                 effect_sizes.append(EffectSizeSpec(
                     variable=be["variable"],
                     factor=be.get("factor", "condition"),
-                    level_high=be["level_high"],
-                    level_low=be["level_low"],
+                    level_high=_hi,
+                    level_low=_lo,
                     cohens_d=float(be.get("cohens_d", 0.5)),
                     direction=be.get("direction", "positive"),
                 ))
             except (KeyError, ValueError):
                 pass
+        if _invalid_effects:
+            st.warning(
+                f"Some effect sizes reference conditions that no longer exist "
+                f"and were skipped: {', '.join(_invalid_effects)}. "
+                f"Go back to Design Review to reconfigure."
+            )
         custom_persona_weights = st.session_state.get("custom_persona_weights", None)
 
         # Store difficulty settings in session state for engine
@@ -6864,15 +6971,20 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
 
         effect_sizes = []
 
-        # Pre-populate from builder if available
+        # Pre-populate from builder if available, validating conditions
         builder_effects = st.session_state.get("builder_effect_sizes", [])
+        _adv_conds = set(conditions)
         for be in builder_effects:
             try:
+                _hi = be["level_high"]
+                _lo = be["level_low"]
+                if _hi not in _adv_conds or _lo not in _adv_conds:
+                    continue  # Skip stale effect sizes
                 effect_sizes.append(EffectSizeSpec(
                     variable=be["variable"],
                     factor=be.get("factor", "condition"),
-                    level_high=be["level_high"],
-                    level_low=be["level_low"],
+                    level_high=_hi,
+                    level_low=_lo,
                     cohens_d=float(be.get("cohens_d", 0.5)),
                     direction=be.get("direction", "positive"),
                 ))

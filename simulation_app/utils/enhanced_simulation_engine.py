@@ -45,7 +45,7 @@ This module is designed to run inside a `utils/` package (i.e., imported as
 """
 
 # Version identifier to help track deployed code
-__version__ = "1.3.1"  # v1.3.1: Comprehensive instructor report, methods docs update, e2e tests
+__version__ = "1.3.2"  # v1.3.2: NxM factorial support, engine fixes, 74 e2e tests
 
 # =============================================================================
 # SCIENTIFIC FOUNDATIONS FOR SIMULATION
@@ -1242,33 +1242,45 @@ def _validate_effect_sizes(
     if len(conditions) < 2 or 'CONDITION' not in data.columns:
         return results
 
-    # Compare first two conditions (or treatment vs control)
-    cond1, cond2 = conditions[0], conditions[1]
-
+    # Compare ALL condition pairs and report the maximum pairwise Cohen's d
     for col in dv_columns:
         if col not in data.columns:
             continue
 
+        best_d = 0.0
+        best_pair = ("", "")
+        best_mean_diff = 0.0
+
         try:
-            group1 = data[data['CONDITION'] == cond1][col].dropna().astype(float)
-            group2 = data[data['CONDITION'] == cond2][col].dropna().astype(float)
+            for i, cond1 in enumerate(conditions):
+                for cond2 in conditions[i + 1:]:
+                    group1 = data[data['CONDITION'] == cond1][col].dropna().astype(float)
+                    group2 = data[data['CONDITION'] == cond2][col].dropna().astype(float)
 
-            if len(group1) < 2 or len(group2) < 2:
-                continue
+                    if len(group1) < 2 or len(group2) < 2:
+                        continue
 
-            # Calculate Cohen's d
-            mean1, mean2 = group1.mean(), group2.mean()
-            sd_pooled = np.sqrt(((len(group1)-1)*group1.var() + (len(group2)-1)*group2.var()) /
-                               (len(group1) + len(group2) - 2))
+                    mean1, mean2 = group1.mean(), group2.mean()
+                    sd_pooled = np.sqrt(
+                        ((len(group1) - 1) * group1.var() + (len(group2) - 1) * group2.var())
+                        / (len(group1) + len(group2) - 2)
+                    )
 
-            if sd_pooled > 0:
-                achieved_d = abs(mean1 - mean2) / sd_pooled
+                    if sd_pooled > 0:
+                        pair_d = abs(mean1 - mean2) / sd_pooled
+                        if pair_d > best_d:
+                            best_d = pair_d
+                            best_pair = (cond1, cond2)
+                            best_mean_diff = mean1 - mean2
+
+            if best_d > 0:
                 results['achieved_effects'][col] = {
-                    'achieved_d': round(achieved_d, 3),
+                    'achieved_d': round(best_d, 3),
                     'target_d': target_d,
-                    'deviation': round(abs(achieved_d - target_d), 3),
-                    'mean_diff': round(mean1 - mean2, 3),
-                    'within_tolerance': abs(achieved_d - target_d) <= results['tolerance']
+                    'deviation': round(abs(best_d - target_d), 3),
+                    'mean_diff': round(best_mean_diff, 3),
+                    'pair': f"{best_pair[0]} vs {best_pair[1]}",
+                    'within_tolerance': abs(best_d - target_d) <= results['tolerance']
                 }
 
                 if not results['achieved_effects'][col]['within_tolerance']:
@@ -2672,17 +2684,22 @@ class EnhancedSimulationEngine:
         # d=0.5 → 0.20 shift (20% of scale range) = ~1.2 points on 7-point scale
         COHENS_D_TO_NORMALIZED = 0.40  # Increased from 0.25 for detectable effects
 
-        # First check explicit effect size specifications
+        # Check explicit effect size specifications — accumulate ALL matching effects
+        # for factorial designs where multiple effect specs may apply to one condition
+        matched_effects: list = []
+        condition_lower = str(condition).lower()
         for effect in self.effect_sizes:
             if effect.variable == variable or str(variable).startswith(effect.variable):
-                condition_lower = str(condition).lower()
-
                 if str(effect.level_high).lower() in condition_lower:
                     d = effect.cohens_d if effect.direction == "positive" else -effect.cohens_d
-                    return float(d) * COHENS_D_TO_NORMALIZED
-                if str(effect.level_low).lower() in condition_lower:
+                    matched_effects.append(float(d) * COHENS_D_TO_NORMALIZED)
+                elif str(effect.level_low).lower() in condition_lower:
                     d = -effect.cohens_d if effect.direction == "positive" else effect.cohens_d
-                    return float(d) * COHENS_D_TO_NORMALIZED
+                    matched_effects.append(float(d) * COHENS_D_TO_NORMALIZED)
+
+        if matched_effects:
+            # Average matched effects so they don't stack unreasonably
+            return sum(matched_effects) / len(matched_effects)
 
         # AUTO-GENERATE effect if no explicit specification
         # This ensures conditions ALWAYS produce different means
@@ -3561,9 +3578,11 @@ class EnhancedSimulationEngine:
                 factor_effects.append(factor_effect)
 
             # Sum factor effects (main effects in factorial design)
-            # Scale down to prevent extreme values from multiple factors
+            # Scale down proportionally to number of factors to prevent extreme stacking
             if factor_effects:
-                semantic_effect += sum(factor_effects) * 0.6  # 60% of sum to prevent extremes
+                n_fac = max(len(factor_effects), 1)
+                scale_factor = 0.6 / max(1, n_fac - 1) if n_fac > 1 else 0.6
+                semantic_effect += sum(factor_effects) * scale_factor
 
         # =====================================================================
         # STEP 3: Create additional variance using stable hash (NOT position)

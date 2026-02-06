@@ -6,7 +6,7 @@ Generates comprehensive instructor-facing reports for student simulations.
 """
 
 # Version identifier to help track deployed code
-__version__ = "1.3.1"  # v1.3.1: Comprehensive instructor report, methods docs update, e2e tests
+__version__ = "1.3.2"  # v1.3.2: NxM factorial support, engine fixes, 74 e2e tests
 
 from dataclasses import dataclass
 from datetime import datetime
