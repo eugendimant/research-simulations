@@ -33,7 +33,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 # Version identifier to help track deployed code
-__version__ = "1.2.0"  # v1.2.0: Flexible scale ranges, improved DV detection, better QSF variable naming
+__version__ = "1.2.1"  # v1.2.1: Fixed simulation error + improved scroll/progress
 
 
 # ============================================================================

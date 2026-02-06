@@ -52,8 +52,8 @@ import streamlit as st
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.2.0"
-BUILD_ID = "20260206-v120-scale-ui"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.2.1"
+BUILD_ID = "20260206-v121-fix-simulation"  # Change this to force cache invalidation
 
 def _verify_and_reload_utils():
     """Verify utils modules are at correct version, force reload if needed.
@@ -107,7 +107,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF"
-APP_VERSION = "1.2.0"  # v1.2.0: Flexible scale ranges, improved DV UI, progress indicators, GitHub token support
+APP_VERSION = "1.2.1"  # v1.2.1: Fixed simulation error + improved scroll/progress
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -2755,6 +2755,9 @@ def _get_qsf_preview_parser() -> QSFPreviewParser:
 # -----------------------------
 st.set_page_config(page_title=APP_TITLE, layout="wide")
 
+# v1.2.1: Add invisible anchor at the very top for scroll targeting
+st.markdown('<a id="page-top" name="page-top"></a>', unsafe_allow_html=True)
+
 st.title(APP_TITLE)
 st.caption(APP_SUBTITLE)
 st.markdown(
@@ -2986,12 +2989,26 @@ def _get_smart_defaults(study_description: str = "", preview: Any = None) -> Dic
 
 
 def _go_to_step(step_index: int) -> None:
-    """Navigate to a specific step with scroll-to-top and state persistence."""
+    """Navigate to a specific step with scroll-to-top and state persistence.
+
+    v1.2.1: Uses query params + navigation counter to force browser scroll reset.
+    """
     # Save current state before navigating
     _save_step_state()
     st.session_state["active_step"] = max(0, min(step_index, len(STEP_LABELS) - 1))
     st.session_state["_scroll_to_top"] = True  # Flag to trigger scroll on next render
     st.session_state["_scroll_attempts"] = 0  # Reset scroll attempts counter
+
+    # v1.2.1: Increment navigation counter for fresh URL
+    nav_counter = st.session_state.get("_nav_counter", 0) + 1
+    st.session_state["_nav_counter"] = nav_counter
+
+    # Set query param to force scroll reset (new URL = new scroll position)
+    try:
+        st.query_params["_nav"] = str(nav_counter)
+    except Exception:
+        pass  # Ignore if query_params not available
+
     st.rerun()
 
 
@@ -3001,65 +3018,79 @@ def _inject_scroll_to_top():
     Call this at the beginning of each step to ensure the view starts at the top
     when navigating between steps.
 
-    v1.2.1: Fixed scroll-to-top to work from ANY navigation source (top or bottom buttons).
-    Uses multiple aggressive strategies with repeated attempts.
+    v1.2.1: Multi-strategy scroll that targets all possible scrollable containers
+    including parent iframe, Streamlit containers, and uses anchor navigation.
     """
     if st.session_state.get("_scroll_to_top", False):
         # Clear the flag
         st.session_state["_scroll_to_top"] = False
 
-        # v1.2.1: Inject scroll script directly into page (not iframe) for maximum compatibility
+        # v1.2.1: Enhanced scroll script with anchor navigation and parent frame handling
         scroll_script = """
         <script>
-            // v1.2.1: Aggressive scroll-to-top that works regardless of navigation source
-            (function scrollToTop() {
-                // Function to perform the scroll
-                function doScroll() {
-                    // Strategy 1: Scroll the main Streamlit section
-                    var mainSection = document.querySelector('section.main');
-                    if (mainSection) {
-                        mainSection.scrollTop = 0;
-                        mainSection.scrollTo(0, 0);
+            (function() {
+                function scrollAllContainers() {
+                    // Target the page-top anchor we added at the very top
+                    var anchor = document.getElementById('page-top');
+                    if (anchor) {
+                        anchor.scrollIntoView({behavior: 'instant', block: 'start'});
                     }
 
-                    // Strategy 2: Scroll stApp container
-                    var stApp = document.querySelector('.stApp');
-                    if (stApp) {
-                        stApp.scrollTop = 0;
-                        stApp.scrollTo(0, 0);
-                    }
+                    // Scroll all possible Streamlit containers
+                    var selectors = [
+                        'section.main',
+                        '.stApp',
+                        '[data-testid="stAppViewBlockContainer"]',
+                        '[data-testid="stVerticalBlock"]',
+                        '.block-container',
+                        'main',
+                        '.main'
+                    ];
 
-                    // Strategy 3: Scroll the block container
-                    var blockContainer = document.querySelector('[data-testid="stAppViewBlockContainer"]');
-                    if (blockContainer) {
-                        blockContainer.scrollTop = 0;
-                    }
-
-                    // Strategy 4: Scroll window
-                    window.scrollTo(0, 0);
-
-                    // Strategy 5: Find any scrollable parent and scroll it
-                    var scrollables = document.querySelectorAll('[style*="overflow"]');
-                    scrollables.forEach(function(el) {
-                        el.scrollTop = 0;
+                    selectors.forEach(function(sel) {
+                        var elements = document.querySelectorAll(sel);
+                        elements.forEach(function(el) {
+                            if (el) {
+                                el.scrollTop = 0;
+                                try { el.scrollTo({top: 0, behavior: 'instant'}); } catch(e) {}
+                            }
+                        });
                     });
+
+                    // Scroll window and document
+                    window.scrollTo({top: 0, behavior: 'instant'});
+                    document.documentElement.scrollTop = 0;
+                    document.body.scrollTop = 0;
+
+                    // Try to scroll parent frame if we're in an iframe
+                    try {
+                        if (window.parent && window.parent !== window) {
+                            window.parent.scrollTo({top: 0, behavior: 'instant'});
+                            window.parent.document.documentElement.scrollTop = 0;
+                        }
+                    } catch(e) {
+                        // Cross-origin restriction, use postMessage
+                        try {
+                            window.parent.postMessage({type: 'scroll-to-top'}, '*');
+                        } catch(e2) {}
+                    }
                 }
 
-                // Execute immediately
-                doScroll();
+                // Execute immediately and repeatedly
+                scrollAllContainers();
+                setTimeout(scrollAllContainers, 10);
+                setTimeout(scrollAllContainers, 50);
+                setTimeout(scrollAllContainers, 100);
+                setTimeout(scrollAllContainers, 200);
+                setTimeout(scrollAllContainers, 400);
 
-                // Execute again after short delays to catch dynamic content
-                setTimeout(doScroll, 50);
-                setTimeout(doScroll, 150);
-                setTimeout(doScroll, 300);
-                setTimeout(doScroll, 500);
+                // Also try on DOM ready and load
+                if (document.readyState !== 'complete') {
+                    document.addEventListener('DOMContentLoaded', scrollAllContainers);
+                    window.addEventListener('load', scrollAllContainers);
+                }
             })();
         </script>
-        <style>
-            /* Temporary anchor to force scroll position */
-            #scroll-top-anchor { position: absolute; top: 0; }
-        </style>
-        <div id="scroll-top-anchor"></div>
         """
         st.markdown(scroll_script, unsafe_allow_html=True)
 

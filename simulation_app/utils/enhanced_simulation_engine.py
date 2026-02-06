@@ -4,7 +4,7 @@ from __future__ import annotations
 Enhanced Simulation Engine for Behavioral Experiment Simulation Tool
 =============================================================================
 
-Version 1.2.0 - Enhanced persona metadata with per-condition tracking
+Version 1.2.1 - Fixed float/dict error with safe trait value extraction
 
 Advanced simulation engine with:
 - Theory-grounded persona library integration (7 persona dimensions)
@@ -45,7 +45,7 @@ This module is designed to run inside a `utils/` package (i.e., imported as
 """
 
 # Version identifier to help track deployed code
-__version__ = "1.2.0"  # Enhanced persona metadata tracking with per-condition breakdowns
+__version__ = "1.2.1"  # Fixed float/dict error with safe trait value extraction
 
 # =============================================================================
 # SCIENTIFIC FOUNDATIONS FOR SIMULATION
@@ -247,6 +247,56 @@ def _stable_int_hash(s: str) -> int:
     if not s:
         return 0
     return int(hashlib.md5(s.encode("utf-8")).hexdigest()[:8], 16)
+
+
+def _safe_trait_value(value: Any, default: float = 0.5) -> float:
+    """
+    Safely extract a float value from a trait.
+
+    v1.2.1: Added to handle edge cases where trait values might be:
+    - PersonaTrait objects (extract base_mean)
+    - Dicts (extract 'value' or 'base_mean' key)
+    - None or NaN
+    - Already floats (pass through)
+
+    Args:
+        value: The trait value to extract
+        default: Default value if extraction fails
+
+    Returns:
+        Float value in 0-1 range
+    """
+    if value is None:
+        return default
+
+    # Already a number
+    if isinstance(value, (int, float)):
+        if isinstance(value, float) and np.isnan(value):
+            return default
+        return float(np.clip(value, 0.0, 1.0))
+
+    # Dict - extract value or base_mean
+    if isinstance(value, dict):
+        for key in ('value', 'base_mean', 'mean'):
+            if key in value:
+                try:
+                    return float(np.clip(value[key], 0.0, 1.0))
+                except (ValueError, TypeError):
+                    pass
+        return default
+
+    # Object with base_mean attribute (PersonaTrait)
+    if hasattr(value, 'base_mean'):
+        try:
+            return float(np.clip(value.base_mean, 0.0, 1.0))
+        except (ValueError, TypeError):
+            pass
+
+    # Try direct conversion
+    try:
+        return float(np.clip(float(value), 0.0, 1.0))
+    except (ValueError, TypeError):
+        return default
 
 
 def _normalize_scales(scales: Optional[List[Any]]) -> List[Dict[str, Any]]:
@@ -3794,7 +3844,8 @@ class EnhancedSimulationEngine:
         # Based on experimental manipulation research
         # =====================================================================
         condition_modifiers = self._get_condition_trait_modifier(condition)
-        modified_traits = dict(traits)
+        # v1.2.1: Use _safe_trait_value to handle dict/PersonaTrait values
+        modified_traits = {k: _safe_trait_value(v, 0.5) for k, v in traits.items()}
         for trait_name, modifier in condition_modifiers.items():
             if trait_name in modified_traits:
                 modified_traits[trait_name] = float(np.clip(
@@ -3817,10 +3868,11 @@ class EnhancedSimulationEngine:
         # STEP 3: Get base response tendency
         # Calibrated from Krosnick (1991) optimizing vs satisficing
         # =====================================================================
-        base_tendency = float(modified_traits.get(
-            "response_tendency",
-            modified_traits.get("scale_use_breadth", 0.58)  # Slight positivity (Diener)
-        ))
+        # v1.2.1: Safe trait access with fallback chain
+        base_tendency = modified_traits.get("response_tendency")
+        if base_tendency is None:
+            base_tendency = modified_traits.get("scale_use_breadth", 0.58)
+        base_tendency = _safe_trait_value(base_tendency, 0.58)
 
         # Apply domain-specific adjustments
         base_tendency += domain_calibration['mean_adjustment']
@@ -3848,7 +3900,7 @@ class EnhancedSimulationEngine:
         if is_reverse:
             center = scale_max - (center - scale_min)
             # Add extra noise for acquiescent responders on reverse items
-            acquiescence = float(modified_traits.get("acquiescence", 0.5))
+            acquiescence = _safe_trait_value(modified_traits.get("acquiescence"), 0.5)
             if acquiescence > 0.65:
                 # Acquiescers have trouble with reverse-coded items
                 center += (acquiescence - 0.5) * scale_range * 0.25
@@ -3857,10 +3909,11 @@ class EnhancedSimulationEngine:
         # STEP 6: Calculate within-person variance
         # Published norm: SD ≈ 1.2-1.8 on 7-point (Greenleaf, 1992)
         # =====================================================================
-        variance_trait = float(modified_traits.get(
-            "variance_tendency",
-            modified_traits.get("scale_use_breadth", 0.70)
-        ))
+        # v1.2.1: Safe trait access with fallback chain
+        variance_trait = modified_traits.get("variance_tendency")
+        if variance_trait is None:
+            variance_trait = modified_traits.get("scale_use_breadth", 0.70)
+        variance_trait = _safe_trait_value(variance_trait, 0.70)
         # Base SD = range/4 ≈ 1.5 for 7-point, modified by variance trait
         sd = (scale_range / 4.0) * variance_trait
         # Apply domain-specific variance adjustment
@@ -3877,7 +3930,7 @@ class EnhancedSimulationEngine:
         # STEP 7: Apply extreme response style (Greenleaf, 1992)
         # ERS respondents use endpoints 2-3x more than modal
         # =====================================================================
-        extremity = float(modified_traits.get("extremity", 0.18))
+        extremity = _safe_trait_value(modified_traits.get("extremity"), 0.18)
         # Apply scale-type extremity boost
         extremity += scale_calibration['extremity_boost']
         extremity = float(np.clip(extremity, 0.0, 0.95))
@@ -3893,7 +3946,7 @@ class EnhancedSimulationEngine:
         # STEP 8: Apply acquiescence bias (Billiet & McClendon, 2000)
         # High acquiescers: +0.5-1.0 point inflation on agreement items
         # =====================================================================
-        acquiescence = float(modified_traits.get("acquiescence", 0.50))
+        acquiescence = _safe_trait_value(modified_traits.get("acquiescence"), 0.50)
         if (not is_reverse) and acquiescence > 0.55 and scale_range > 0:
             # Billiet & McClendon: ~0.8 point inflation for strong acquiescers
             acq_effect = (acquiescence - 0.5) * scale_range * 0.20
@@ -3903,7 +3956,7 @@ class EnhancedSimulationEngine:
         # STEP 9: Apply social desirability bias (Paulhus, 1991)
         # High IM: +0.5-1.0 point inflation on socially desirable items
         # =====================================================================
-        social_des = float(modified_traits.get("social_desirability", 0.50))
+        social_des = _safe_trait_value(modified_traits.get("social_desirability"), 0.50)
         if social_des > 0.60 and scale_range > 0:
             # Paulhus (1991): ~0.8-1.2 point inflation for high IM
             sd_effect = (social_des - 0.5) * scale_range * 0.12
@@ -3931,7 +3984,8 @@ class EnhancedSimulationEngine:
     ) -> Tuple[int, bool]:
         rng = np.random.RandomState(participant_seed)
 
-        attention = float(traits.get("attention_level", 0.85))
+        # v1.2.1: Safe trait access
+        attention = _safe_trait_value(traits.get("attention_level"), 0.85)
         is_attentive = rng.random() < attention * self.attention_rate
 
         if check_type == "ai_manipulation":
@@ -4001,9 +4055,10 @@ class EnhancedSimulationEngine:
             sentiment = "neutral"
 
         # Extract persona traits for response generation
-        attention_level = float(traits.get("attention_level", 0.8))
-        verbosity = float(traits.get("verbosity", 0.5))
-        formality = float(traits.get("formality", 0.5))
+        # v1.2.1: Use safe trait value extraction
+        attention_level = _safe_trait_value(traits.get("attention_level"), 0.8)
+        verbosity = _safe_trait_value(traits.get("verbosity"), 0.5)
+        formality = _safe_trait_value(traits.get("formality"), 0.5)
 
         # Map persona to engagement level
         if attention_level < 0.5:
@@ -4157,7 +4212,8 @@ class EnhancedSimulationEngine:
         rng = np.random.RandomState(participant_seed)
 
         base_time = 300
-        attention = float(traits.get("attention_level", 0.8))
+        # v1.2.1: Safe trait value extraction
+        attention = _safe_trait_value(traits.get("attention_level"), 0.8)
 
         if attention < 0.5:
             completion_time = int(rng.uniform(45, 150))
