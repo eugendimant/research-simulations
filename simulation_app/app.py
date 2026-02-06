@@ -4806,22 +4806,37 @@ if active_step == 2:
     scales_to_remove = []
 
     if confirmed_scales:
-        st.markdown(f"**{len(confirmed_scales)} DV(s) detected from your QSF:**")
+        st.markdown(f"**{len(confirmed_scales)} DV(s) detected from your QSF.** Review and adjust as needed:")
 
-        # v1.2.0: Column headers for clarity
+        # v1.2.0: Column headers for clarity with tooltips
         hdr1, hdr2, hdr3a, hdr3b, hdr4, hdr5 = st.columns([2.5, 0.8, 0.6, 0.6, 1.5, 0.4])
         with hdr1:
-            st.caption("**Variable Name** (from QSF)")
+            st.markdown(
+                '<span title="The variable name as it appears in your QSF file. You can edit this to match your analysis script.">**Variable Name**</span>',
+                unsafe_allow_html=True
+            )
         with hdr2:
-            st.caption("**Items**")
+            st.markdown(
+                '<span title="Number of items/questions in this scale. Multi-item scales (e.g., 5-item attitude measure) will generate averaged composite scores.">**Items**</span>',
+                unsafe_allow_html=True
+            )
         with hdr3a:
-            st.caption("**Min**")
+            st.markdown(
+                '<span title="Minimum value on the response scale (e.g., 1 for a 1-7 scale, 0 for a 0-100 slider).">**Min**</span>',
+                unsafe_allow_html=True
+            )
         with hdr3b:
-            st.caption("**Max**")
+            st.markdown(
+                '<span title="Maximum value on the response scale (e.g., 7 for a 1-7 Likert scale, 100 for a 0-100 slider).">**Max**</span>',
+                unsafe_allow_html=True
+            )
         with hdr4:
-            st.caption("**Type**")
+            st.markdown(
+                '<span title="Detection type: Matrix=multi-item battery, Slider=visual analog scale, Single Item=standalone question, Numeric=open-ended number input.">**Type**</span>',
+                unsafe_allow_html=True
+            )
         with hdr5:
-            st.caption("")
+            st.caption("Del")
 
         for i, scale in enumerate(confirmed_scales):
             dv_type = scale.get("type", "likert")
@@ -4924,14 +4939,27 @@ if active_step == 2:
                 scale_points = new_scale_max  # Used for data generation
 
                 with col4:
-                    # Type badge (read-only display)
-                    st.markdown(f"<small>{type_badge}</small>", unsafe_allow_html=True)
+                    # Type badge with descriptive tooltip
+                    type_descriptions = {
+                        'matrix': 'Multi-item scale detected as a matrix (e.g., 5-item attitude battery)',
+                        'numbered_items': 'Scale detected from numbered items (e.g., Scale_1, Scale_2)',
+                        'likert': 'Likert-type scale with multiple response options',
+                        'slider': 'Visual analog scale or slider (typically 0-100)',
+                        'single_item': 'Single standalone question',
+                        'numeric_input': 'Open-ended numeric input (e.g., WTP, quantity)',
+                        'constant_sum': 'Constant sum allocation task',
+                    }
+                    type_desc = type_descriptions.get(dv_type, 'Scale type')
+                    st.markdown(
+                        f'<small title="{type_desc}">{type_badge}</small>',
+                        unsafe_allow_html=True
+                    )
                     if scale.get("detected_from_qsf", True):
-                        st.caption("*From QSF*")
+                        st.caption("*Auto-detected*")
 
                 with col5:
-                    # Remove button
-                    if st.button("✕", key=f"rm_dv_v{dv_version}_{i}", help="Remove this DV"):
+                    # Remove button with clear help text
+                    if st.button("✕", key=f"rm_dv_v{dv_version}_{i}", help="Remove this DV from the simulation. Click to delete."):
                         scales_to_remove.append(i)
 
                 # Show scale anchors if available
@@ -4973,7 +5001,10 @@ if active_step == 2:
                     "scale_max": new_scale_max,
                 })
     else:
-        st.info("No DVs detected from QSF. Add your dependent variables below.")
+        st.info(
+            "**No DVs detected from QSF.** This can happen if your survey uses unconventional question formats. "
+            "Click **Add DV** below to manually define your dependent variables."
+        )
 
     # Handle removals
     if scales_to_remove:
@@ -4981,45 +5012,50 @@ if active_step == 2:
         st.session_state["_dv_version"] = dv_version + 1
         st.rerun()
 
-    # Add new DV button
+    # Add new DV button with helpful context
     st.markdown("---")
-    col_add, col_spacer = st.columns([1, 3])
+    col_add, col_help = st.columns([1, 3])
     with col_add:
-        if st.button("➕ Add DV", key=f"add_dv_btn_v{dv_version}"):
-            new_dv = {
-                "name": f"New_DV_{len(confirmed_scales)+1}",
-                "variable_name": f"New_DV_{len(confirmed_scales)+1}",
-                "question_text": "",
-                "items": 1,
-                "num_items": 1,
-                "scale_points": 7,
-                "type": "single_item",
-                "reverse_items": [],
-                "detected_from_qsf": False,
-                "item_names": [],
-                "scale_anchors": {},
-                "scale_min": 1,
-                "scale_max": 7,
-            }
-            confirmed_scales.append(new_dv)
-            st.session_state["confirmed_scales"] = confirmed_scales
-            st.session_state["_dv_version"] = dv_version + 1
-            st.rerun()
+        add_clicked = st.button("➕ Add DV", key=f"add_dv_btn_v{dv_version}", help="Add a new dependent variable manually. Use this if automatic detection missed a scale or if you want to add custom measures.")
+    with col_help:
+        st.caption("DVs (dependent variables) are the outcomes you measure. The simulation will generate realistic responses for each DV based on your experimental conditions.")
+
+    if add_clicked:
+        new_dv = {
+            "name": f"New_DV_{len(confirmed_scales)+1}",
+            "variable_name": f"New_DV_{len(confirmed_scales)+1}",
+            "question_text": "",
+            "items": 1,
+            "num_items": 1,
+            "scale_points": 7,
+            "type": "single_item",
+            "reverse_items": [],
+            "detected_from_qsf": False,
+            "item_names": [],
+            "scale_anchors": {},
+            "scale_min": 1,
+            "scale_max": 7,
+        }
+        confirmed_scales.append(new_dv)
+        st.session_state["confirmed_scales"] = confirmed_scales
+        st.session_state["_dv_version"] = dv_version + 1
+        st.rerun()
 
     # Update session state with edited DVs
     st.session_state["confirmed_scales"] = updated_scales
     scales = updated_scales if updated_scales else scales
 
-    # Confirmation checkbox
+    # Confirmation checkbox with better help
     scales_confirmed = st.checkbox(
         "I confirm these DVs match my survey",
         value=st.session_state.get("scales_confirmed", False),
         key=f"dv_confirm_checkbox_v{dv_version}",
+        help="Check this box once you have verified that the variable names, item counts, and scale ranges match your actual Qualtrics survey."
     )
     st.session_state["scales_confirmed"] = scales_confirmed
 
     if not scales_confirmed and updated_scales:
-        st.caption("Confirm your DVs are correct to proceed.")
+        st.caption("Please verify the DVs above match your survey, then check the confirmation box to proceed.")
 
     # ========================================
     # STEP 5: OPEN-ENDED QUESTIONS
