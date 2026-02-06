@@ -52,8 +52,8 @@ import streamlit as st
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.2.8"
-BUILD_ID = "20260206-v128-visual-design-tables-nav-polish"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.2.9"
+BUILD_ID = "20260206-v129-persona-preview-builder-ux"  # Change this to force cache invalidation
 
 def _verify_and_reload_utils():
     """Verify utils modules are at correct version, force reload if needed.
@@ -85,7 +85,8 @@ from utils.qsf_preview import QSFPreviewParser, QSFPreviewResult
 from utils.schema_validator import validate_schema
 from utils.github_qsf_collector import collect_qsf_async, is_collection_enabled
 from utils.instructor_report import InstructorReportGenerator, ComprehensiveInstructorReport
-from utils.survey_builder import SurveyDescriptionParser, ParsedDesign, KNOWN_SCALES
+from utils.survey_builder import SurveyDescriptionParser, ParsedDesign, KNOWN_SCALES, AVAILABLE_DOMAINS
+from utils.persona_library import PersonaLibrary, Persona
 from utils.enhanced_simulation_engine import (
     EnhancedSimulationEngine,
     EffectSizeSpec,
@@ -108,7 +109,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF"
-APP_VERSION = "1.2.8"  # v1.2.8: Visual design tables, navigation polish, builder UX improvements
+APP_VERSION = "1.2.9"  # v1.2.9: Persona preview, domain dropdown, builder UX, custom persona weights
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -2961,6 +2962,12 @@ def _render_conversational_builder() -> None:
         "Describe your study in plain language — we'll extract the technical details automatically."
     )
 
+    # Progress indicator
+    _has_conds = bool(st.session_state.get("builder_conditions_text", "").strip())
+    _has_scales = bool(st.session_state.get("builder_scales_text", "").strip())
+    _filled_sections = sum([_has_conds, _has_scales])
+    st.progress(_filled_sections / 2, text=f"Core sections: {_filled_sections}/2 complete (conditions + scales required)")
+
     # Getting-started message when nothing has been filled in yet
     _existing_conds = st.session_state.get("builder_conditions_text", "").strip()
     _existing_scales = st.session_state.get("builder_scales_text", "").strip()
@@ -3038,6 +3045,26 @@ def _render_conversational_builder() -> None:
                 + " x ".join(f"{f['name']} ({', '.join(f['levels'])})" for f in factors)
             )
 
+    # Smart condition guidance (Iteration 7)
+    if not conditions_text.strip():
+        _builder_title = st.session_state.get("study_title", "")
+        _builder_desc = st.session_state.get("study_description", "")
+        if _builder_title or _builder_desc:
+            _combined = f"{_builder_title} {_builder_desc}".lower()
+            _condition_hints = []
+            if any(w in _combined for w in ["ai", "artificial", "algorithm", "chatbot"]):
+                _condition_hints.append("AI-generated vs Human-created vs No information")
+            if any(w in _combined for w in ["brand", "product", "marketing"]):
+                _condition_hints.append("Brand A vs Brand B vs Control")
+            if any(w in _combined for w in ["trust", "credibility"]):
+                _condition_hints.append("High Trust vs Low Trust")
+            if any(w in _combined for w in ["moral", "ethical", "dilemma"]):
+                _condition_hints.append("Moral frame vs Neutral frame")
+            if any(w in _combined for w in ["health", "medical", "wellness"]):
+                _condition_hints.append("Health intervention vs Standard care vs Control")
+            if _condition_hints:
+                st.info(f"Based on your study description, try: **{_condition_hints[0]}**")
+
     # ── Section 2: Dependent Variables / Scales ─────────────────────────
     st.markdown("---")
     st.markdown("#### 2. What Do You Measure?")
@@ -3087,6 +3114,22 @@ def _render_conversational_builder() -> None:
                 f"  {badge} **{s.name}**: {s.num_items} item(s), "
                 f"{s.scale_min}-{s.scale_max}{validated_tag}"
             )
+
+    # Smart scale suggestions based on domain (Iteration 6)
+    if parsed_conditions and not scales_text.strip():
+        _builder_title = st.session_state.get("study_title", "")
+        _builder_desc = st.session_state.get("study_description", "")
+        if _builder_title or _builder_desc:
+            _sug_domain = parser.detect_research_domain(
+                _builder_title, _builder_desc,
+                conditions_text=conditions_text,
+            )
+            _suggestions = parser.suggest_additional_measures(_sug_domain, [])
+            if _suggestions:
+                st.markdown("**Suggested scales for your domain:**")
+                for _sug in _suggestions[:3]:
+                    st.caption(f"- **{_sug['name']}** -- {_sug['description']}")
+                st.caption("_Copy a suggestion above into the text area to add it._")
 
     # ── Section 3: Open-Ended Questions (Optional) ─────────────────────
     st.markdown("---")
@@ -3173,6 +3216,33 @@ def _render_conversational_builder() -> None:
             "gender_quota": gender_pct,
         }
 
+    # ── Section 7: Participant Characteristics (Optional) ─────────────
+    st.markdown("---")
+    st.markdown("#### 7. Expected Participants (Optional)")
+    st.markdown(
+        "Describe the type of participants you expect. "
+        "This helps calibrate the simulation personas to match your sample."
+    )
+
+    participant_desc = st.text_area(
+        "Participant characteristics",
+        value=st.session_state.get("builder_participant_desc", ""),
+        placeholder=(
+            "Examples:\n"
+            "- College students taking introductory psychology\n"
+            "- Tech-savvy professionals familiar with AI tools\n"
+            "- Health-conscious consumers aged 25-45\n"
+            "- MTurk workers (general population)"
+        ),
+        height=80,
+        key="builder_participant_input",
+        help=(
+            "Describe who your participants are. This helps select appropriate "
+            "behavioral personas and calibrate response patterns."
+        ),
+    )
+    st.session_state["builder_participant_desc"] = participant_desc
+
     # ── Validation & Submission ─────────────────────────────────────────
     st.markdown("---")
     st.markdown("#### Review & Submit")
@@ -3248,6 +3318,7 @@ def _render_conversational_builder() -> None:
             research_domain=domain,
             study_title=title,
             study_description=desc,
+            participant_characteristics=participant_desc,
         )
 
         # Build the inferred_design dict (same format as QSF path)
@@ -3285,19 +3356,155 @@ def _render_builder_design_review() -> None:
     st.markdown("### Review Your Study Design")
     st.markdown("Review and edit the study specification extracted from your description.")
 
-    # ── Detected Research Domain (Issue #25) ─────────────────────────────
+    # ── Detected Research Domain (Iteration 2: dropdown) ──────────────
     detected_domain = inferred.get("study_context", {}).get("domain", "")
-    domain_override = st.text_input(
+
+    # Build options list: put detected domain first if valid
+    _domain_options = list(AVAILABLE_DOMAINS)
+    if detected_domain and detected_domain.lower().strip() not in [d.lower() for d in _domain_options]:
+        _domain_options.insert(0, detected_domain)  # Keep custom domain if not in standard list
+
+    _default_idx = 0
+    for _di, _dn in enumerate(_domain_options):
+        if _dn.lower().strip() == detected_domain.lower().strip():
+            _default_idx = _di
+            break
+
+    domain_override = st.selectbox(
         "Research Domain",
-        value=detected_domain if detected_domain else "",
+        options=_domain_options,
+        index=_default_idx,
         key="builder_review_domain",
-        help="The research domain detected from your study description. Edit to override.",
+        help=(
+            "The research domain determines which behavioral personas are included "
+            "in your simulation. Choose the domain that best matches your study."
+        ),
     )
     if domain_override.strip():
         if "study_context" not in inferred:
             inferred["study_context"] = {}
         inferred["study_context"]["domain"] = domain_override.strip()
+        inferred["study_context"]["study_domain"] = domain_override.strip()
         st.session_state["inferred_design"] = inferred
+
+    # ── Persona Preview (Iteration 1) ─────────────────────────────────
+    st.markdown("---")
+    st.markdown("#### Expected Participant Personas")
+    st.caption(
+        "Based on your research domain, these behavioral archetypes will be included "
+        "in the simulation. Each persona has unique response patterns grounded in "
+        "published behavioral science research."
+    )
+
+    # Get persona preview based on domain
+    try:
+        _persona_domains = SurveyDescriptionParser.get_persona_domain_keys(
+            domain_override.strip() if domain_override.strip() else detected_domain
+        )
+        _temp_library = PersonaLibrary(seed=42)
+        _preview_personas = _temp_library.get_personas_for_domains(_persona_domains)
+
+        if _preview_personas:
+            # Separate response style (universal) from domain-specific
+            _response_style = {k: v for k, v in _preview_personas.items() if v.category == "response_style"}
+            _domain_specific = {k: v for k, v in _preview_personas.items() if v.category != "response_style"}
+
+            col_rs, col_ds = st.columns(2)
+            with col_rs:
+                st.markdown("**Universal Response Styles**")
+                for _pname, _persona in sorted(_response_style.items(), key=lambda x: x[1].weight, reverse=True):
+                    _pct = _persona.weight * 100
+                    st.markdown(f"- **{_persona.name}** ({_pct:.0f}%)")
+            with col_ds:
+                st.markdown("**Domain-Specific Personas**")
+                if _domain_specific:
+                    for _pname, _persona in sorted(_domain_specific.items(), key=lambda x: x[1].weight, reverse=True)[:8]:
+                        _pct = _persona.weight * 100
+                        st.markdown(f"- **{_persona.name}** ({_pct:.0f}%)")
+                    if len(_domain_specific) > 8:
+                        st.caption(f"... and {len(_domain_specific) - 8} more")
+                else:
+                    st.caption("No domain-specific personas for this domain (universal styles will be used)")
+
+            st.caption(
+                f"Total: **{len(_preview_personas)}** personas active for "
+                f"domain '{domain_override.strip() if domain_override.strip() else detected_domain}'"
+            )
+
+            # Store for potential custom weights UI
+            st.session_state["_preview_persona_names"] = {
+                k: {"name": v.name, "weight": v.weight, "category": v.category, "description": v.description}
+                for k, v in _preview_personas.items()
+            }
+        else:
+            st.info("No domain-specific personas found. Universal response styles will be used.")
+    except Exception as _pe:
+        st.caption(f"Persona preview unavailable: {_pe}")
+
+    # ── Custom Persona Weights (Iteration 4) ──────────────────────────
+    _preview_info = st.session_state.get("_preview_persona_names", {})
+    if _preview_info:
+        with st.expander("Advanced: Customize Persona Distribution", expanded=False):
+            st.caption(
+                "Override the default persona proportions to simulate specific "
+                "sample compositions (e.g., more engaged responders, fewer satisficers)."
+            )
+
+            _custom_enabled = st.checkbox(
+                "Use custom persona weights",
+                value=bool(st.session_state.get("custom_persona_weights")),
+                key="enable_custom_persona_weights",
+            )
+
+            if _custom_enabled:
+                _custom_weights = {}
+                # Group by category
+                _rs_personas = {k: v for k, v in _preview_info.items() if v["category"] == "response_style"}
+                _ds_personas = {k: v for k, v in _preview_info.items() if v["category"] != "response_style"}
+
+                st.markdown("**Response Style Personas**")
+                _rs_cols = st.columns(min(len(_rs_personas), 3)) if _rs_personas else []
+                for _ci, (_pk, _pv) in enumerate(_rs_personas.items()):
+                    with _rs_cols[_ci % len(_rs_cols)] if _rs_cols else st.container():
+                        _w = st.number_input(
+                            _pv["name"],
+                            min_value=0,
+                            max_value=100,
+                            value=int(_pv["weight"] * 100),
+                            step=5,
+                            key=f"pw_{_pk}",
+                            help=_pv.get("description", "")[:200],
+                        )
+                        _custom_weights[_pk] = _w / 100.0
+
+                if _ds_personas:
+                    st.markdown("**Domain-Specific Personas**")
+                    _ds_cols = st.columns(min(len(_ds_personas), 3))
+                    for _ci, (_pk, _pv) in enumerate(list(_ds_personas.items())[:9]):
+                        with _ds_cols[_ci % len(_ds_cols)]:
+                            _w = st.number_input(
+                                _pv["name"],
+                                min_value=0,
+                                max_value=100,
+                                value=int(_pv["weight"] * 100),
+                                step=5,
+                                key=f"pw_{_pk}",
+                                help=_pv.get("description", "")[:200],
+                            )
+                            _custom_weights[_pk] = _w / 100.0
+
+                _total_w = sum(_custom_weights.values())
+                if abs(_total_w - 1.0) > 0.05 and _total_w > 0:
+                    st.warning(f"Weights sum to {_total_w*100:.0f}% (will be normalized to 100%)")
+                elif _total_w <= 0:
+                    st.error("At least one persona must have weight > 0")
+
+                # Normalize and store
+                if _total_w > 0:
+                    _normalized = {k: v / _total_w for k, v in _custom_weights.items()}
+                    st.session_state["custom_persona_weights"] = _normalized
+            else:
+                st.session_state["custom_persona_weights"] = None
 
     conditions = inferred.get("conditions", [])
     scales = inferred.get("scales", [])
@@ -3573,6 +3780,21 @@ def _render_builder_design_review() -> None:
 
     # ── Proceed to Generate guidance ───────────────────────────────────
     if conditions and scales:
+        # What happens next (Iteration 8)
+        with st.expander("What happens when you generate?", expanded=False):
+            _oe_line = f"4. Generate **{len(open_ended)}** open-ended text response(s)\n" if open_ended else ""
+            _fx_line = "5. Apply effect sizes to create condition differences\n" if st.session_state.get("builder_effect_sizes") else ""
+            st.markdown(
+                f"**Your simulation will:**\n"
+                f"1. Create **{sample}** virtual participants with realistic behavioral profiles\n"
+                f"2. Assign each to one of **{len(conditions)}** conditions\n"
+                f"3. Generate responses to **{len(scales)}** scale(s) based on persona traits\n"
+                f"{_oe_line}"
+                f"{_fx_line}\n"
+                f"**Personas** will be selected based on the '{domain_override}' research domain, "
+                f"producing realistic variation in attention, engagement, response styles, and more."
+            )
+
         st.markdown("---")
         st.markdown("#### Ready to generate?")
         st.markdown(
@@ -6516,7 +6738,7 @@ with tab_generate:
                 ))
             except (KeyError, ValueError):
                 pass
-        custom_persona_weights = None
+        custom_persona_weights = st.session_state.get("custom_persona_weights", None)
 
         # Store difficulty settings in session state for engine
         st.session_state['difficulty_settings'] = diff_settings
@@ -6704,7 +6926,7 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
                     "Please ensure your study has multiple conditions defined."
                 )
 
-        custom_persona_weights = None
+        custom_persona_weights = st.session_state.get("custom_persona_weights", None)
 
     # ========================================
     # v1.0.0: FINAL DESIGN SUMMARY

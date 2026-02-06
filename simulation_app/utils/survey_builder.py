@@ -19,7 +19,7 @@ import re
 from typing import Any, Dict, List, Optional, Tuple
 from dataclasses import dataclass, field
 
-__version__ = "1.2.8"
+__version__ = "1.2.9"
 
 
 # ─── Common scale anchors used in behavioral science ───────────────────────────
@@ -172,6 +172,31 @@ SCALE_ABBREVIATIONS: Dict[str, str] = {
     "imc": "imc",
 }
 
+# ─── Builder domain → Persona library domain mapping ────────────────────────
+# Maps display-friendly domain names (used in builder UI) to the internal
+# domain keys used by PersonaLibrary.detect_domains() and get_personas_for_domains()
+BUILDER_DOMAIN_TO_PERSONA_DOMAIN: Dict[str, List[str]] = {
+    "consumer behavior": ["consumer_behavior", "marketing"],
+    "social psychology": ["social_psychology"],
+    "behavioral economics": ["behavioral_economics", "economic_games"],
+    "organizational behavior": ["organizational_behavior"],
+    "health psychology": ["health_psychology"],
+    "political psychology": ["political_psychology"],
+    "cognitive psychology": ["cognitive_psychology"],
+    "developmental psychology": ["developmental_psychology"],
+    "environmental psychology": ["environmental"],
+    "educational psychology": ["educational_psychology"],
+    "moral psychology": ["deontology_utilitarianism"],
+    "technology & HCI": ["ai", "technology"],
+    "communication": ["accuracy_misinformation"],
+    "food & nutrition": ["consumer_behavior", "health_psychology"],
+    "prosocial behavior": ["charitable_giving", "social_psychology"],
+    "emotion research": ["emotions"],
+}
+
+# All available builder domains (for dropdown display)
+AVAILABLE_DOMAINS: List[str] = sorted(BUILDER_DOMAIN_TO_PERSONA_DOMAIN.keys())
+
 
 @dataclass
 class ParsedCondition:
@@ -217,6 +242,7 @@ class ParsedDesign:
     study_description: str = ""
     attention_checks: List[str] = field(default_factory=list)
     manipulation_checks: List[str] = field(default_factory=list)
+    participant_characteristics: str = ""  # Free-text description of expected participants
 
 
 class SurveyDescriptionParser:
@@ -687,6 +713,12 @@ class SurveyDescriptionParser:
                 "title": parsed.study_title,
                 "description": parsed.study_description,
                 "source": "conversational_builder",
+                "survey_name": parsed.study_title,
+                "participant_characteristics": parsed.participant_characteristics,
+                "persona_domains": BUILDER_DOMAIN_TO_PERSONA_DOMAIN.get(
+                    parsed.research_domain.lower().strip(),
+                    [parsed.research_domain.replace(" ", "_")],
+                ),
             },
         }
 
@@ -1138,6 +1170,23 @@ class SurveyDescriptionParser:
                 "domain": "behavioral economics",
             },
         ]
+
+    @staticmethod
+    def get_persona_domain_keys(builder_domain: str) -> List[str]:
+        """
+        Map a builder display domain to persona library internal domain keys.
+
+        Args:
+            builder_domain: The human-readable domain name from the builder UI
+                (e.g., 'consumer behavior').
+
+        Returns:
+            List of persona library domain keys (e.g., ['consumer_behavior', 'marketing']).
+        """
+        return BUILDER_DOMAIN_TO_PERSONA_DOMAIN.get(
+            builder_domain.lower().strip(),
+            [builder_domain.lower().strip().replace(" ", "_")],
+        )
 
     # ─── Private helper methods ────────────────────────────────────────────────
 
