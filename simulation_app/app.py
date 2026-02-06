@@ -52,8 +52,8 @@ import streamlit as st
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.2.1"
-BUILD_ID = "20260206-v121-fix-simulation"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.2.2"
+BUILD_ID = "20260206-v122-tab-ui"  # Change this to force cache invalidation
 
 def _verify_and_reload_utils():
     """Verify utils modules are at correct version, force reload if needed.
@@ -107,7 +107,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF"
-APP_VERSION = "1.2.1"  # v1.2.1: Fixed simulation error + improved scroll/progress
+APP_VERSION = "1.2.2"  # v1.2.2: New tab-based UI - no scroll issues, cleaner UX
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -2755,9 +2755,6 @@ def _get_qsf_preview_parser() -> QSFPreviewParser:
 # -----------------------------
 st.set_page_config(page_title=APP_TITLE, layout="wide")
 
-# v1.2.1: Add invisible anchor at the very top for scroll targeting
-st.markdown('<a id="page-top" name="page-top"></a>', unsafe_allow_html=True)
-
 st.title(APP_TITLE)
 st.caption(APP_SUBTITLE)
 st.markdown(
@@ -3422,11 +3419,22 @@ def _render_workflow_stepper():
                     _go_to_step(i)
 
 
-# Render the workflow stepper
-_render_workflow_stepper()
+# v1.2.2: NEW TAB-BASED UI - Replaces step wizard for better UX and no scroll issues
+# Tabs naturally handle scroll (each tab starts at top) - no JavaScript hacks needed
 
-# Show what's missing for current step
-st.markdown("---")
+# Show compact progress bar
+completion = _get_step_completion()
+progress_items = ["study_title", "study_description", "sample_size", "qsf_uploaded",
+                  "primary_outcome", "independent_var", "conditions_set"]
+completed_count = sum(1 for k in progress_items if completion.get(k, False))
+total_count = len(progress_items)
+progress_pct = int((completed_count / total_count) * 100)
+status_emoji = "🟢" if progress_pct == 100 else "🟡" if progress_pct >= 50 else "⚪"
+st.progress(completed_count / total_count, text=f"{status_emoji} Ready: {progress_pct}% ({completed_count}/{total_count})")
+
+# Create the main tabs
+TAB_LABELS = ["📋 Setup", "📁 Upload", "⚙️ Design", "🚀 Generate"]
+tab_setup, tab_upload, tab_design, tab_generate = st.tabs(TAB_LABELS)
 
 
 def _get_condition_candidates(
@@ -3663,57 +3671,49 @@ def _render_status_panel():
     col4.metric("QSF Status", "✓ Uploaded" if preview and preview.success else "Not uploaded")
 
 
-# -----------------------------
-# Step 1: Study Info (required basics)
-# -----------------------------
-if active_step == 0:
-    _inject_scroll_to_top()  # Scroll to top when navigating to this step
-    # Step header with status
+# =====================================================================
+# TAB 1: STUDY SETUP
+# =====================================================================
+with tab_setup:
+    # Compact status indicator
     completion = _get_step_completion()
     step1_done = completion["study_title"] and completion["study_description"]
 
-    st.markdown("### Step 1: Study Information")
-
     if step1_done:
-        st.success("All required fields complete. Click **Continue to Upload Files** below to proceed.")
+        st.success("✓ Study info complete — proceed to **Upload** tab")
     else:
-        missing = []
-        if not completion["study_title"]:
-            missing.append("Study title")
-        if not completion["study_description"]:
-            missing.append("Study description")
-        st.info(f"**Complete these fields to continue:** {', '.join(missing)}")
-
-    st.markdown("---")
+        st.info("Enter study title and description below")
 
     col1, col2 = st.columns([1, 1], gap="large")
 
     with col1:
-        st.markdown("### Study Details")
+        st.markdown("#### Study Details")
         study_title = st.text_input(
             "Study title *",
             value=st.session_state.get("study_title", ""),
             placeholder="e.g., Effect of AI Labels on Consumer Trust",
             help="Appears in the report and simulated data outputs.",
+            key="setup_study_title",
         )
         study_description = st.text_area(
             "Study description *",
             value=st.session_state.get("study_description", ""),
             height=150,
-            placeholder="Describe your study's purpose, manipulation, and main outcomes. This helps with domain detection and persona selection.",
-            help="Include your manipulation, population, and intended outcomes (helps domain detection).",
+            placeholder="Describe your study's purpose, manipulation, and main outcomes.",
+            help="Include your manipulation, population, and intended outcomes.",
+            key="setup_study_desc",
         )
-
         st.session_state["study_title"] = study_title
         st.session_state["study_description"] = study_description
 
     with col2:
-        st.markdown("### Team Information (optional)")
+        st.markdown("#### Team (optional)")
         team_name = st.text_input(
             "Team name",
             value=st.session_state.get("team_name", ""),
             placeholder="e.g., Team Alpha",
             help="Optional. Helps instructors identify your team.",
+            key="setup_team_name",
         )
         members = st.text_area(
             "Team members (one per line)",
@@ -3721,37 +3721,27 @@ if active_step == 0:
             height=100,
             placeholder="John Doe\nJane Smith",
             help="Optional. List team members for the report.",
+            key="setup_team_members",
         )
         st.session_state["team_name"] = team_name
         st.session_state["team_members_raw"] = members
 
-    _render_step_navigation(0, step1_done, "Upload Files")
 
-
-# -----------------------------
-# Step 2: Upload Files (QSF + Study Design Info)
-# -----------------------------
-if active_step == 1:
-    _inject_scroll_to_top()  # Scroll to top when navigating to this step
-    # Check if Step 1 is complete
+# =====================================================================
+# TAB 2: FILE UPLOAD
+# =====================================================================
+with tab_upload:
     completion = _get_step_completion()
     step1_done = completion["study_title"] and completion["study_description"]
     step2_done = completion["qsf_uploaded"]
 
-    st.markdown("### Step 2: Upload Files")
-
     if not step1_done:
-        st.error("Please complete **Step 1: Study Info** first before uploading files.")
-        if st.button("← Go to Step 1: Study Info", key="go_step1_from_step2", type="primary"):
-            _go_to_step(0)
-        st.stop()
+        st.warning("💡 Complete the **Setup** tab first (study title & description)")
 
     if step2_done:
-        st.success("QSF file uploaded successfully. Click **Continue to Design Setup** below to proceed.")
+        st.success("✓ QSF uploaded — proceed to **Design** tab")
     else:
-        st.info("**Upload your Qualtrics QSF file below to continue.**")
-
-    st.markdown("---")
+        st.info("Upload your Qualtrics QSF file below")
 
     # ========================================
     # REQUIRED: QSF FILE
@@ -4175,34 +4165,20 @@ if active_step == 1:
                         st.caption(f"Suggested fix: {w['fix_suggestion']}")
 
         if current_conditions:
-            st.success(f"Current conditions saved: {', '.join(current_conditions)}")
-        else:
-            st.info("No conditions selected yet. Configure them in **Design Setup**.")
-
-        # Navigation to next step
-        st.markdown("---")
-        st.success("**QSF parsed successfully!** Proceed to the **Design Setup** step to configure your experimental conditions.")
-
-    _render_step_navigation(1, step2_done, "Design Setup")
+            st.success(f"✓ Conditions: {', '.join(current_conditions)}")
 
 
-# -----------------------------
-# Step 3: Design Setup (conditions, factors, scales)
-# -----------------------------
-if active_step == 2:
-    _inject_scroll_to_top()  # Scroll to top when navigating to this step
-    _restore_step_state()  # Restore any saved state from previous navigation
+# =====================================================================
+# TAB 3: DESIGN CONFIGURATION
+# =====================================================================
+with tab_design:
+    _restore_step_state()  # Restore any saved state
     preview: Optional[QSFPreviewResult] = st.session_state.get("qsf_preview", None)
     enhanced_analysis: Optional[DesignAnalysisResult] = st.session_state.get("enhanced_analysis", None)
 
-    st.markdown("### Step 3: Design Setup")
-
     if not preview:
-        st.error("Please upload a QSF file first before configuring your design.")
-        if st.button("← Go to Step 2: Upload Files", key="go_step2_from_step3", type="primary"):
-            _go_to_step(1)
-        _render_step_navigation(2, False, "Generate")
-        st.stop()  # Don't continue rendering Step 3 if no preview
+        st.warning("💡 Upload a QSF file in the **Upload** tab first")
+        st.stop()
 
     # If we reach here, preview exists
     inferred = st.session_state.get("inferred_design", {})
@@ -5555,21 +5531,15 @@ if active_step == 2:
 
         st.info(f"**Design Type:** {design_type} · **Total Cells:** {len(all_conditions)} · **N per cell:** ~{sample_n // max(1, len(all_conditions))}")
 
-    # Navigation at bottom of Step 3 (outside expander)
-    _render_step_navigation(2, design_valid, "Generate")
 
-
-# -----------------------------
-# Step 4: Generate (standard defaults; advanced controls optional)
-# -----------------------------
-if active_step == 3:
-    _inject_scroll_to_top()  # Scroll to top when navigating to this step
+# =====================================================================
+# TAB 4: GENERATE SIMULATION
+# =====================================================================
+with tab_generate:
     inferred = st.session_state.get("inferred_design", None)
     preview: Optional[QSFPreviewResult] = st.session_state.get("qsf_preview", None)
 
-    st.markdown("### Step 4: Generate Simulation")
-
-    # Comprehensive pre-validation
+    # Pre-validation
     completion = _get_step_completion()
     all_required_complete = (
         completion["study_title"] and
@@ -5580,21 +5550,16 @@ if active_step == 3:
     )
 
     if not inferred:
-        st.error("Please complete the previous steps first to configure your design.")
-        if st.button("← Go to Step 3: Design Setup", key="go_step3_from_step4", type="primary"):
-            _go_to_step(2)
-        st.stop()  # Don't render rest of Step 4 if design not configured
+        st.warning("💡 Complete the **Design** tab first to configure your experiment")
+        st.stop()
 
-    # If we reach here, inferred exists
-    preview: Optional[QSFPreviewResult] = st.session_state.get("qsf_preview", None)
-
-    # Check for missing fields
+    # Show readiness checklist
     required_fields = {
         "Study title": bool(st.session_state.get("study_title", "").strip()),
         "Study description": bool(st.session_state.get("study_description", "").strip()),
-        "Pre-registered sample size": int(st.session_state.get("sample_size", 0)) >= 10,
+        "Sample size (≥10)": int(st.session_state.get("sample_size", 0)) >= 10,
         "QSF uploaded": bool(preview and preview.success),
-        "Design configured": bool(st.session_state.get("inferred_design")),
+        "Design configured": bool(inferred),
     }
     completed = sum(required_fields.values())
     total_required = len(required_fields)
@@ -6537,8 +6502,6 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
                         st.error(msg)
             else:
                 st.caption("Instructor email not configured in secrets (INSTRUCTOR_NOTIFICATION_EMAIL).")
-
-    _render_step_navigation(3, True, "Finish")
 
 # ========================================
 # FEEDBACK BUTTON (Shown on all pages)
