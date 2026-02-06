@@ -1,0 +1,1151 @@
+"""
+Conversational Survey Builder - Natural Language Study Specification Parser
+
+Version: 1.2.7
+Allows users to describe their experiment in words instead of uploading a QSF file.
+Parses natural language descriptions into structured survey specifications that
+feed directly into the EnhancedSimulationEngine.
+
+This module handles:
+- Parsing condition/group descriptions from free text
+- Extracting scale/DV specifications from measure descriptions
+- Detecting factorial designs from condition structure
+- Identifying open-ended questions from descriptions
+- Domain detection from study descriptions
+- Converting all parsed data into the same inferred_design format used by QSF upload
+"""
+
+import re
+from typing import Any, Dict, List, Optional, Tuple
+from dataclasses import dataclass, field
+
+__version__ = "1.2.7"
+
+
+# ─── Common scale anchors used in behavioral science ───────────────────────────
+COMMON_SCALE_ANCHORS = {
+    "likert_7": {"min": 1, "max": 7, "label": "1-7 Likert"},
+    "likert_5": {"min": 1, "max": 5, "label": "1-5 Likert"},
+    "likert_9": {"min": 1, "max": 9, "label": "1-9 Likert"},
+    "likert_10": {"min": 1, "max": 10, "label": "1-10 Likert"},
+    "slider": {"min": 0, "max": 100, "label": "0-100 Slider"},
+    "binary": {"min": 0, "max": 1, "label": "Yes/No (0-1)"},
+    "percentage": {"min": 0, "max": 100, "label": "0-100 Percentage"},
+    "wtp": {"min": 0, "max": 1000, "label": "Willingness to Pay ($)"},
+}
+
+# ─── Known scale names in behavioral science ───────────────────────────────────
+KNOWN_SCALES = {
+    # Attitudes & Satisfaction
+    "satisfaction": {"items": 5, "min": 1, "max": 7, "label": "Satisfaction Scale"},
+    "attitude": {"items": 4, "min": 1, "max": 7, "label": "Attitude Scale"},
+    "trust": {"items": 5, "min": 1, "max": 7, "label": "Trust Scale"},
+    "credibility": {"items": 4, "min": 1, "max": 7, "label": "Credibility Scale"},
+    "purchase intention": {"items": 3, "min": 1, "max": 7, "label": "Purchase Intention"},
+    "willingness to pay": {"items": 1, "min": 0, "max": 100, "label": "WTP"},
+    "behavioral intention": {"items": 3, "min": 1, "max": 7, "label": "Behavioral Intention"},
+    "risk perception": {"items": 4, "min": 1, "max": 7, "label": "Risk Perception"},
+    "perceived fairness": {"items": 3, "min": 1, "max": 7, "label": "Perceived Fairness"},
+    "moral judgment": {"items": 4, "min": 1, "max": 7, "label": "Moral Judgment"},
+    "emotional response": {"items": 6, "min": 1, "max": 7, "label": "Emotional Response"},
+    "self-efficacy": {"items": 5, "min": 1, "max": 7, "label": "Self-Efficacy"},
+    "perceived quality": {"items": 4, "min": 1, "max": 7, "label": "Perceived Quality"},
+    "brand attitude": {"items": 4, "min": 1, "max": 7, "label": "Brand Attitude"},
+
+    # Wellbeing & Personality
+    "well-being": {"items": 5, "min": 1, "max": 7, "label": "Subjective Well-Being"},
+    "life satisfaction": {"items": 5, "min": 1, "max": 7, "label": "Life Satisfaction (SWLS)"},
+    "anxiety": {"items": 7, "min": 1, "max": 4, "label": "Anxiety (GAD-7 style)"},
+    "stress": {"items": 10, "min": 1, "max": 5, "label": "Perceived Stress Scale"},
+    "self-esteem": {"items": 10, "min": 1, "max": 4, "label": "Rosenberg Self-Esteem"},
+    "motivation": {"items": 4, "min": 1, "max": 7, "label": "Motivation Scale"},
+    "empathy": {"items": 5, "min": 1, "max": 7, "label": "Empathy Scale"},
+
+    # Social Psychology
+    "social distance": {"items": 3, "min": 1, "max": 7, "label": "Social Distance"},
+    "perceived warmth": {"items": 3, "min": 1, "max": 7, "label": "Perceived Warmth"},
+    "perceived competence": {"items": 3, "min": 1, "max": 7, "label": "Perceived Competence"},
+    "identification": {"items": 4, "min": 1, "max": 7, "label": "Group Identification"},
+    "prejudice": {"items": 5, "min": 1, "max": 7, "label": "Prejudice Scale"},
+    "norm perception": {"items": 3, "min": 1, "max": 7, "label": "Social Norm Perception"},
+
+    # Consumer & Marketing
+    "ad effectiveness": {"items": 4, "min": 1, "max": 7, "label": "Ad Effectiveness"},
+    "product evaluation": {"items": 5, "min": 1, "max": 7, "label": "Product Evaluation"},
+    "perceived value": {"items": 3, "min": 1, "max": 7, "label": "Perceived Value"},
+    "loyalty": {"items": 4, "min": 1, "max": 7, "label": "Loyalty Scale"},
+
+    # Technology
+    "technology acceptance": {"items": 6, "min": 1, "max": 7, "label": "TAM Scale"},
+    "perceived usefulness": {"items": 4, "min": 1, "max": 7, "label": "Perceived Usefulness"},
+    "ease of use": {"items": 4, "min": 1, "max": 7, "label": "Ease of Use"},
+    "privacy concern": {"items": 5, "min": 1, "max": 7, "label": "Privacy Concern"},
+
+    # Validated Instruments (by abbreviation and full name)
+    "bfi-10": {"items": 10, "min": 1, "max": 5, "label": "Big Five Inventory-10"},
+    "big five inventory": {"items": 10, "min": 1, "max": 5, "label": "Big Five Inventory-10"},
+    "panas": {"items": 20, "min": 1, "max": 5, "label": "Positive and Negative Affect Schedule"},
+    "positive and negative affect": {"items": 20, "min": 1, "max": 5, "label": "PANAS"},
+    "tipi": {"items": 10, "min": 1, "max": 7, "label": "Ten-Item Personality Inventory"},
+    "ten-item personality": {"items": 10, "min": 1, "max": 7, "label": "TIPI"},
+    "swls": {"items": 5, "min": 1, "max": 7, "label": "Satisfaction with Life Scale"},
+    "satisfaction with life": {"items": 5, "min": 1, "max": 7, "label": "SWLS"},
+    "gad-7": {"items": 7, "min": 0, "max": 3, "label": "Generalized Anxiety Disorder-7"},
+    "generalized anxiety disorder": {"items": 7, "min": 0, "max": 3, "label": "GAD-7"},
+    "phq-9": {"items": 9, "min": 0, "max": 3, "label": "Patient Health Questionnaire-9"},
+    "patient health questionnaire": {"items": 9, "min": 0, "max": 3, "label": "PHQ-9"},
+    "rosenberg self-esteem": {"items": 10, "min": 1, "max": 4, "label": "Rosenberg Self-Esteem Scale"},
+    "rse": {"items": 10, "min": 1, "max": 4, "label": "Rosenberg Self-Esteem Scale"},
+    "ses": {"items": 3, "min": 1, "max": 10, "label": "Socioeconomic Status Scale"},
+    "socioeconomic status": {"items": 3, "min": 1, "max": 10, "label": "Socioeconomic Status Scale"},
+    "need for cognition": {"items": 18, "min": 1, "max": 5, "label": "Need for Cognition Scale"},
+    "nfc": {"items": 18, "min": 1, "max": 5, "label": "Need for Cognition Scale"},
+    "moral foundations": {"items": 20, "min": 1, "max": 6, "label": "Moral Foundations Questionnaire"},
+    "mfq": {"items": 20, "min": 1, "max": 6, "label": "Moral Foundations Questionnaire"},
+    "sense of belonging": {"items": 8, "min": 1, "max": 7, "label": "Sense of Belonging Scale"},
+    "belonging": {"items": 8, "min": 1, "max": 7, "label": "Sense of Belonging Scale"},
+}
+
+# ─── Scale abbreviation aliases → canonical KNOWN_SCALES key ──────────────────
+SCALE_ABBREVIATIONS: Dict[str, str] = {
+    "bfi": "bfi-10",
+    "bfi10": "bfi-10",
+    "bfi-10": "bfi-10",
+    "panas": "panas",
+    "ses": "ses",
+    "tipi": "tipi",
+    "swls": "swls",
+    "gad7": "gad-7",
+    "gad-7": "gad-7",
+    "phq9": "phq-9",
+    "phq-9": "phq-9",
+    "rse": "rse",
+    "nfc": "need for cognition",
+    "mfq": "mfq",
+}
+
+
+@dataclass
+class ParsedCondition:
+    """A condition extracted from user description."""
+    name: str
+    description: str = ""
+    is_control: bool = False
+
+
+@dataclass
+class ParsedScale:
+    """A scale/DV extracted from user description."""
+    name: str
+    variable_name: str = ""
+    num_items: int = 1
+    scale_min: int = 1
+    scale_max: int = 7
+    scale_type: str = "likert"  # likert, slider, numeric, binary
+    description: str = ""
+    reverse_items: List[int] = field(default_factory=list)
+    item_labels: List[str] = field(default_factory=list)
+
+
+@dataclass
+class ParsedOpenEnded:
+    """An open-ended question extracted from user description."""
+    variable_name: str
+    question_text: str
+    context_type: str = "general"
+
+
+@dataclass
+class ParsedDesign:
+    """Complete parsed study design from conversational input."""
+    conditions: List[ParsedCondition] = field(default_factory=list)
+    scales: List[ParsedScale] = field(default_factory=list)
+    open_ended: List[ParsedOpenEnded] = field(default_factory=list)
+    factors: List[Dict[str, Any]] = field(default_factory=list)
+    design_type: str = "between"  # between, within, mixed
+    sample_size: int = 100
+    research_domain: str = ""
+    study_title: str = ""
+    study_description: str = ""
+    attention_checks: List[str] = field(default_factory=list)
+    manipulation_checks: List[str] = field(default_factory=list)
+
+
+class SurveyDescriptionParser:
+    """
+    Parses natural language descriptions of experiments into structured
+    survey specifications compatible with the simulation engine.
+    """
+
+    def __init__(self) -> None:
+        self._condition_keywords = [
+            "control", "treatment", "experimental", "condition", "group",
+            "manipulation", "intervention", "placebo", "baseline",
+            "high", "low", "present", "absent", "positive", "negative",
+        ]
+        self._scale_keywords = [
+            "likert", "scale", "measure", "rate", "rating", "slider",
+            "score", "index", "items", "questionnaire", "inventory",
+            "subscale", "dimension", "factor", "battery",
+        ]
+        self._oe_keywords = [
+            "open-ended", "open ended", "free text", "free-text",
+            "write", "describe", "explain", "text response",
+            "essay", "narrative", "qualitative", "verbatim",
+        ]
+
+    def parse_conditions(self, text: str) -> Tuple[List[ParsedCondition], List[str]]:
+        """
+        Extract experimental conditions from a natural language description.
+
+        Returns a tuple of (conditions, warnings) where warnings contains any
+        non-fatal messages for the user (e.g., numbered-implicit patterns).
+
+        Handles formats like:
+        - "Control group and treatment group"
+        - "3 conditions: low, medium, high"
+        - "2x2 design with trust (high/low) and risk (high/low)"
+        - "Condition 1: AI-generated, Condition 2: Human-written, Condition 3: No information"
+        - "Trust (high, low) and Risk (high, low)" → 4 crossed conditions
+        - "High/Low Trust x High/Low Risk" → slash-separated factorial
+        - "Control vs Treatment" → vs-separated conditions
+        - "3 conditions" → warning about underspecification
+        """
+        conditions: List[ParsedCondition] = []
+        warnings: List[str] = []
+        text_clean = text.strip()
+
+        if not text_clean:
+            return conditions, warnings
+
+        # ── Pre-check: numbered implicit like "3 conditions" without names ──
+        implicit_match = re.search(
+            r'^(\d+)\s+(?:conditions?|groups?)\s*$',
+            text_clean.strip(), re.IGNORECASE
+        )
+        if implicit_match:
+            n = int(implicit_match.group(1))
+            warnings.append(
+                f"You specified {n} conditions but did not name them. "
+                f"Please provide explicit condition names (e.g., "
+                f"'Control, Treatment A, Treatment B') for better simulation results."
+            )
+            return conditions, warnings
+
+        # Pattern 1: Numbered conditions "Condition 1: Name, Condition 2: Name"
+        numbered = re.findall(
+            r'(?:condition|group|cond\.?)\s*(\d+)\s*[:\-–]\s*([^,\n;]+)',
+            text_clean, re.IGNORECASE
+        )
+        if numbered:
+            for _, name in numbered:
+                name = name.strip().rstrip('.')
+                if name:
+                    conditions.append(ParsedCondition(
+                        name=name,
+                        is_control=self._is_control_condition(name),
+                    ))
+            return conditions, warnings
+
+        # Pattern 2: Factorial "AxB" or "A x B" patterns
+        factorial_match = re.search(
+            r'(\d+)\s*[x×X]\s*(\d+)(?:\s*[x×X]\s*(\d+))?',
+            text_clean
+        )
+        if factorial_match:
+            # Extract factor levels from surrounding text
+            factors = self._extract_factorial_factors(text_clean, factorial_match)
+            if factors:
+                crossed = self._cross_factors(factors)
+                for combo_name in crossed:
+                    conditions.append(ParsedCondition(
+                        name=combo_name,
+                        is_control=False,
+                    ))
+                return conditions, warnings
+
+        # Pattern 2b: Parenthetical levels – "Trust (high, low) and Risk (high, low)"
+        paren_factors = re.findall(
+            r'(\w[\w\s]*?)\s*\(\s*([^)]+)\s*\)',
+            text_clean, re.IGNORECASE
+        )
+        if len(paren_factors) >= 2:
+            factors: List[Dict[str, Any]] = []
+            for factor_name, levels_str in paren_factors:
+                factor_name = factor_name.strip()
+                # Skip noise words that got captured
+                if factor_name.lower() in ('the', 'and', 'with', 'for', 'or', 'a', 'an'):
+                    continue
+                levels = self._parse_list_items(levels_str)
+                if len(levels) >= 2 and len(factor_name) > 1:
+                    factors.append({"name": factor_name, "levels": levels})
+            if len(factors) >= 2:
+                crossed = self._cross_factors(factors)
+                for combo_name in crossed:
+                    conditions.append(ParsedCondition(
+                        name=combo_name,
+                        is_control=False,
+                    ))
+                return conditions, warnings
+
+        # Pattern 2c: Slash-separated factorial – "High/Low Trust × High/Low Risk"
+        slash_factors = re.findall(
+            r'([\w]+(?:/[\w]+)+)\s+([\w]+(?:\s+[\w]+)?)',
+            text_clean
+        )
+        if len(slash_factors) >= 2:
+            factors = []
+            for levels_slash, factor_name in slash_factors:
+                factor_name = factor_name.strip()
+                levels = [l.strip() for l in levels_slash.split('/') if l.strip()]
+                if len(levels) >= 2 and factor_name.lower() not in (
+                    'x', 'and', 'by', 'the', 'with', 'for',
+                ):
+                    factors.append({"name": factor_name, "levels": levels})
+            if len(factors) >= 2:
+                crossed = self._cross_factors(factors)
+                for combo_name in crossed:
+                    conditions.append(ParsedCondition(
+                        name=combo_name,
+                        is_control=False,
+                    ))
+                return conditions, warnings
+
+        # Pattern 2d: "vs" pattern – "Control vs Treatment" or "A vs B vs C"
+        vs_match = re.split(r'\s+vs\.?\s+', text_clean, flags=re.IGNORECASE)
+        if len(vs_match) >= 2:
+            all_valid = all(
+                m.strip() and len(m.strip()) < 100 for m in vs_match
+            )
+            if all_valid:
+                for name in vs_match:
+                    name = name.strip().rstrip('.')
+                    if name:
+                        conditions.append(ParsedCondition(
+                            name=name,
+                            is_control=self._is_control_condition(name),
+                        ))
+                return conditions, warnings
+
+        # Pattern 3: Explicit list with commas, semicolons, or "and"
+        # "control, treatment A, treatment B"
+        list_patterns = [
+            r'(?:conditions?|groups?)\s*(?:are|include|:|=)\s*(.+)',
+            r'(?:between|across)\s+(?:the\s+)?(?:following\s+)?(?:conditions?|groups?)\s*[:\-]?\s*(.+)',
+        ]
+        for pattern in list_patterns:
+            match = re.search(pattern, text_clean, re.IGNORECASE)
+            if match:
+                items_text = match.group(1)
+                parsed = self._parse_list_items(items_text)
+                if len(parsed) >= 2:
+                    for name in parsed:
+                        conditions.append(ParsedCondition(
+                            name=name,
+                            is_control=self._is_control_condition(name),
+                        ))
+                    return conditions, warnings
+
+        # Pattern 4: Quoted items
+        quoted = re.findall(r'["""\']([^"""\']+)["""\']', text_clean)
+        if len(quoted) >= 2:
+            for name in quoted:
+                conditions.append(ParsedCondition(
+                    name=name.strip(),
+                    is_control=self._is_control_condition(name),
+                ))
+            return conditions, warnings
+
+        # Pattern 5: Line-by-line conditions
+        lines = [l.strip() for l in text_clean.split('\n') if l.strip()]
+        if len(lines) >= 2:
+            for line in lines:
+                # Remove numbering like "1.", "1)", "- "
+                clean = re.sub(r'^[\d]+[.)]\s*|^[-•]\s*', '', line).strip()
+                if clean and len(clean) < 80:
+                    conditions.append(ParsedCondition(
+                        name=clean,
+                        is_control=self._is_control_condition(clean),
+                    ))
+            if len(conditions) >= 2:
+                return conditions, warnings
+            conditions.clear()
+
+        # Pattern 6: Simple comma/and separated
+        parsed = self._parse_list_items(text_clean)
+        if len(parsed) >= 2:
+            for name in parsed:
+                conditions.append(ParsedCondition(
+                    name=name,
+                    is_control=self._is_control_condition(name),
+                ))
+            return conditions, warnings
+
+        return conditions, warnings
+
+    def parse_scales(self, text: str) -> List[ParsedScale]:
+        """
+        Extract scale/DV specifications from a natural language description.
+
+        Handles formats like:
+        - "7-point Likert scale measuring satisfaction (5 items)"
+        - "Trust scale (1-7, 4 items), Purchase intention (1-7, 3 items)"
+        - "We measure attitude on a 5-point scale and willingness to pay in dollars"
+        - "Slider from 0 to 100 for perceived risk"
+        """
+        scales: List[ParsedScale] = []
+        text_clean = text.strip()
+
+        if not text_clean:
+            return scales
+
+        # Split by common delimiters for multiple scales
+        segments = self._split_scale_segments(text_clean)
+
+        for segment in segments:
+            parsed_scale = self._parse_single_scale(segment)
+            if parsed_scale:
+                scales.append(parsed_scale)
+
+        # If no structured parsing worked, try known scale name matching
+        if not scales:
+            scales = self._match_known_scales(text_clean)
+
+        return scales
+
+    def parse_open_ended(self, text: str) -> List[ParsedOpenEnded]:
+        """
+        Extract open-ended questions from a description.
+
+        Handles formats like:
+        - "We ask participants to explain their reasoning"
+        - "Open-ended: Why did you choose this option?"
+        - "Free text question about their experience"
+        """
+        questions: List[ParsedOpenEnded] = []
+        text_clean = text.strip()
+
+        if not text_clean:
+            return questions
+
+        # Split by lines or sentences
+        segments = re.split(r'[\n;]|(?<=\?)\s+', text_clean)
+
+        for i, segment in enumerate(segments):
+            segment = segment.strip()
+            if not segment:
+                continue
+
+            # Extract the question text
+            q_text = segment
+            # Remove common prefixes
+            q_text = re.sub(
+                r'^(?:open[- ]?ended|free[- ]?text|qualitative|question)\s*[:\-]?\s*',
+                '', q_text, flags=re.IGNORECASE
+            ).strip()
+
+            if not q_text:
+                continue
+
+            # Generate variable name
+            var_name = self._generate_var_name(q_text, prefix="OE", index=i + 1)
+
+            # Detect context type
+            context = self._detect_oe_context(q_text)
+
+            questions.append(ParsedOpenEnded(
+                variable_name=var_name,
+                question_text=q_text,
+                context_type=context,
+            ))
+
+        return questions
+
+    def parse_design_type(self, text: str) -> str:
+        """Detect whether the design is between, within, or mixed."""
+        text_lower = text.lower()
+        if "within" in text_lower and "between" in text_lower:
+            return "mixed"
+        if "within" in text_lower or "repeated" in text_lower:
+            return "within"
+        return "between"
+
+    def parse_sample_size(self, text: str) -> int:
+        """Extract sample size from a description."""
+        # Pattern: "N = 200" or "200 participants" or "sample of 200"
+        patterns = [
+            r'[nN]\s*=\s*(\d+)',
+            r'(\d+)\s*(?:participants?|subjects?|respondents?|people)',
+            r'(?:sample|total)\s*(?:size|of|:)?\s*(?:of\s+)?(\d+)',
+            r'(?:need|want|require|collect)\s+(\d+)',
+        ]
+        for pattern in patterns:
+            match = re.search(pattern, text)
+            if match:
+                n = int(match.group(1))
+                if 5 <= n <= 100000:
+                    return n
+        return 100  # Default
+
+    def detect_factorial_structure(
+        self, conditions: List[ParsedCondition]
+    ) -> List[Dict[str, Any]]:
+        """
+        Detect factorial structure from condition names.
+        E.g., ["High_Trust_High_Risk", "High_Trust_Low_Risk", ...] → 2 factors
+        """
+        if len(conditions) < 4:
+            return []
+
+        names = [c.name for c in conditions]
+        # Try common separators
+        for sep in ['_', ' x ', ' × ', ' - ', ' + ', ' & ']:
+            parts = [n.split(sep) for n in names]
+            part_counts = [len(p) for p in parts]
+            if len(set(part_counts)) == 1 and part_counts[0] >= 2:
+                n_factors = part_counts[0]
+                factors = []
+                for fi in range(n_factors):
+                    levels = list(set(p[fi].strip() for p in parts))
+                    if len(levels) >= 2:
+                        factors.append({
+                            "name": f"Factor_{fi + 1}",
+                            "levels": sorted(levels),
+                        })
+                if len(factors) >= 2:
+                    return factors
+        return []
+
+    def detect_research_domain(self, title: str, description: str) -> str:
+        """Detect research domain from study title and description."""
+        combined = f"{title} {description}".lower()
+
+        domain_keywords = {
+            "consumer behavior": ["consumer", "purchase", "buying", "shopping", "brand", "product", "advertising", "marketing"],
+            "social psychology": ["social", "group", "conformity", "persuasion", "attitude", "stereotype", "prejudice", "discrimination"],
+            "behavioral economics": ["economic", "decision", "framing", "loss aversion", "nudge", "incentive", "willingness to pay", "wtp"],
+            "organizational behavior": ["organization", "workplace", "employee", "leadership", "team", "management", "job satisfaction"],
+            "health psychology": ["health", "medical", "patient", "wellness", "illness", "treatment", "therapy", "medication", "symptom"],
+            "political psychology": ["political", "voting", "election", "ideology", "partisan", "democrat", "republican", "policy"],
+            "cognitive psychology": ["cognitive", "memory", "attention", "perception", "reasoning", "judgment", "heuristic", "bias"],
+            "developmental psychology": ["child", "development", "adolescent", "aging", "lifespan", "parenting"],
+            "environmental psychology": ["environment", "climate", "sustainability", "green", "recycling", "carbon", "pollution"],
+            "educational psychology": ["education", "learning", "student", "teacher", "academic", "classroom", "instruction"],
+            "moral psychology": ["moral", "ethical", "fairness", "justice", "virtue", "dilemma", "right", "wrong"],
+            "technology & HCI": ["technology", "ai", "artificial intelligence", "robot", "app", "digital", "online", "interface", "ux"],
+            "communication": ["media", "news", "framing", "message", "communication", "misinformation", "fake news"],
+            "food & nutrition": ["food", "eating", "diet", "nutrition", "meal", "restaurant", "taste", "organic"],
+            "prosocial behavior": ["cooperation", "altruism", "helping", "charity", "donation", "volunteer", "prosocial"],
+            "emotion research": ["emotion", "affect", "mood", "happiness", "anger", "sadness", "fear", "disgust", "anxiety"],
+        }
+
+        best_domain = "social psychology"  # Default
+        best_score = 0
+
+        for domain, keywords in domain_keywords.items():
+            score = sum(1 for kw in keywords if kw in combined)
+            if score > best_score:
+                best_score = score
+                best_domain = domain
+
+        return best_domain
+
+    def build_inferred_design(self, parsed: ParsedDesign) -> Dict[str, Any]:
+        """
+        Convert a ParsedDesign into the same inferred_design dict format
+        used by the QSF upload pathway.
+        """
+        # Build conditions list
+        conditions = [c.name for c in parsed.conditions]
+
+        # Build scales list in engine format
+        scales = []
+        for s in parsed.scales:
+            var_name = s.variable_name or self._to_variable_name(s.name)
+            items = [f"{var_name}_{i+1}" for i in range(s.num_items)]
+            scale_dict = {
+                "name": s.name,
+                "variable_name": var_name,
+                "items": items,
+                "num_items": s.num_items,
+                "scale_min": s.scale_min,
+                "scale_max": s.scale_max,
+                "scale_points": s.scale_max,
+                "type": s.scale_type,
+                "reverse_items": s.reverse_items,
+                "reliability": 0.85,
+                "detected_from_qsf": False,
+                "description": s.description,
+            }
+            if s.item_labels:
+                scale_dict["item_names"] = s.item_labels
+            scales.append(scale_dict)
+
+        # Build open-ended list in engine format
+        open_ended = []
+        for oe in parsed.open_ended:
+            open_ended.append({
+                "variable_name": oe.variable_name,
+                "name": oe.question_text[:50],
+                "question_text": oe.question_text,
+                "source_type": "conversational_builder",
+                "force_response": True,
+                "context_type": oe.context_type,
+            })
+
+        # Build factors
+        factors = parsed.factors if parsed.factors else []
+
+        return {
+            "conditions": conditions,
+            "factors": factors,
+            "scales": scales,
+            "open_ended_questions": open_ended,
+            "randomization_level": "participant",
+            "condition_visibility_map": {},
+            "study_context": {
+                "domain": parsed.research_domain,
+                "title": parsed.study_title,
+                "description": parsed.study_description,
+                "source": "conversational_builder",
+            },
+        }
+
+    def validate_full_design(self, parsed: ParsedDesign) -> Dict[str, List[str]]:
+        """
+        Validate a complete parsed design and return errors and warnings.
+
+        Checks:
+        - At least 2 conditions
+        - At least 1 scale
+        - Sample size >= 10
+        - Scale ranges are valid (min < max)
+        - No duplicate condition names
+        - No duplicate scale names
+
+        Returns:
+            Dict with 'errors' (fatal) and 'warnings' (non-fatal) lists of strings.
+        """
+        errors: List[str] = []
+        warnings: List[str] = []
+
+        # ── Condition checks ─────────────────────────────────────────────
+        if len(parsed.conditions) < 2:
+            errors.append(
+                f"At least 2 conditions are required, but only "
+                f"{len(parsed.conditions)} provided."
+            )
+
+        # Duplicate condition names (case-insensitive)
+        cond_names_lower = [c.name.lower().strip() for c in parsed.conditions]
+        seen_conds: set = set()
+        for cn in cond_names_lower:
+            if cn in seen_conds:
+                errors.append(f"Duplicate condition name: '{cn}'.")
+            seen_conds.add(cn)
+
+        # Warn if no control condition detected
+        if parsed.conditions and not any(c.is_control for c in parsed.conditions):
+            warnings.append(
+                "No control/baseline condition detected. Consider adding one "
+                "for clearer experimental comparisons."
+            )
+
+        # ── Scale checks ─────────────────────────────────────────────────
+        if len(parsed.scales) < 1:
+            errors.append(
+                "At least 1 dependent variable (scale) is required."
+            )
+
+        # Duplicate scale names (case-insensitive)
+        scale_names_lower = [s.name.lower().strip() for s in parsed.scales]
+        seen_scales: set = set()
+        for sn in scale_names_lower:
+            if sn in seen_scales:
+                errors.append(f"Duplicate scale name: '{sn}'.")
+            seen_scales.add(sn)
+
+        # Scale range validity
+        for s in parsed.scales:
+            if s.scale_min >= s.scale_max:
+                errors.append(
+                    f"Scale '{s.name}' has invalid range: "
+                    f"min ({s.scale_min}) must be less than max ({s.scale_max})."
+                )
+            if s.num_items < 1:
+                errors.append(
+                    f"Scale '{s.name}' must have at least 1 item "
+                    f"(got {s.num_items})."
+                )
+            # Warn about very large scales
+            if s.num_items > 30:
+                warnings.append(
+                    f"Scale '{s.name}' has {s.num_items} items, which is "
+                    f"unusually high. Verify this is correct."
+                )
+            # Warn about reverse-coded items outside item range
+            for ri in s.reverse_items:
+                if ri < 1 or ri > s.num_items:
+                    warnings.append(
+                        f"Scale '{s.name}': reverse-coded item {ri} is "
+                        f"outside the item range (1-{s.num_items})."
+                    )
+
+        # ── Sample size check ────────────────────────────────────────────
+        if parsed.sample_size < 10:
+            errors.append(
+                f"Sample size must be at least 10, but got "
+                f"{parsed.sample_size}."
+            )
+        elif parsed.sample_size < 30:
+            warnings.append(
+                f"Sample size of {parsed.sample_size} is very small. "
+                f"Consider at least 30 per condition for reliable results."
+            )
+
+        # ── Per-cell sample check ────────────────────────────────────────
+        n_conditions = max(len(parsed.conditions), 1)
+        per_cell = parsed.sample_size // n_conditions
+        if per_cell < 5 and len(parsed.conditions) >= 2:
+            warnings.append(
+                f"With {parsed.sample_size} total participants across "
+                f"{n_conditions} conditions, each cell gets ~{per_cell} "
+                f"participants. Consider increasing sample size."
+            )
+
+        return {"errors": errors, "warnings": warnings}
+
+    @staticmethod
+    def generate_example_descriptions() -> List[Dict[str, str]]:
+        """
+        Return 3-5 example study descriptions that users can click to
+        auto-fill the survey builder for inspiration and guidance.
+
+        Each example includes:
+        - title: Short study title
+        - conditions: Natural-language condition description
+        - scales: Natural-language scale/DV description
+        - open_ended: Natural-language open-ended question description
+        - domain: Research domain
+        """
+        return [
+            {
+                "title": "AI vs Human Content Credibility",
+                "conditions": (
+                    "Condition 1: AI-generated article, "
+                    "Condition 2: Human-written article, "
+                    "Condition 3: No authorship information"
+                ),
+                "scales": (
+                    "Credibility scale (4 items, 1-7); "
+                    "Trust scale (5 items, 1-7); "
+                    "Willingness to share (slider 0-100)"
+                ),
+                "open_ended": (
+                    "Why did you rate the article's credibility the way you did?"
+                ),
+                "domain": "technology & HCI",
+            },
+            {
+                "title": "Moral Framing and Donation Behavior",
+                "conditions": (
+                    "Trust (high, low) and Moral Frame (care, fairness)"
+                ),
+                "scales": (
+                    "Moral Foundations Questionnaire (MFQ); "
+                    "Donation amount in dollars (WTP, 0-100); "
+                    "Empathy scale (5 items, 1-7)"
+                ),
+                "open_ended": (
+                    "Describe your reasoning when deciding how much to donate."
+                ),
+                "domain": "moral psychology",
+            },
+            {
+                "title": "Social Media and Well-Being",
+                "conditions": "Control vs Reduced Usage vs Complete Abstinence",
+                "scales": (
+                    "SWLS (Satisfaction with Life Scale); "
+                    "PANAS; "
+                    "PHQ-9; "
+                    "GAD-7"
+                ),
+                "open_ended": (
+                    "How did the social media intervention affect your "
+                    "daily routine?"
+                ),
+                "domain": "health psychology",
+            },
+            {
+                "title": "Brand Authenticity in Green Marketing",
+                "conditions": (
+                    "2x2 design: Brand Origin (local, global) x "
+                    "Green Claim (present, absent)"
+                ),
+                "scales": (
+                    "Brand attitude (4 items, 1-7); "
+                    "Purchase intention (3 items, 1-7); "
+                    "Perceived quality (4 items, 1-7, "
+                    "1=strongly disagree, 7=strongly agree)"
+                ),
+                "open_ended": (
+                    "What factors influenced your evaluation of this brand?"
+                ),
+                "domain": "consumer behavior",
+            },
+            {
+                "title": "Personality and Risk-Taking Under Uncertainty",
+                "conditions": (
+                    "High uncertainty vs Low uncertainty vs Ambiguous"
+                ),
+                "scales": (
+                    "BFI-10; "
+                    "Risk perception (4 items, 1-7); "
+                    "Need for Cognition (NFC); "
+                    "Behavioral intention (3 items, 1-7, "
+                    "items 2 and 3 are reverse-coded)"
+                ),
+                "open_ended": (
+                    "Explain why you chose the option you did in "
+                    "the decision task."
+                ),
+                "domain": "behavioral economics",
+            },
+        ]
+
+    # ─── Private helper methods ────────────────────────────────────────────────
+
+    def _is_control_condition(self, name: str) -> bool:
+        """Check if a condition name indicates a control group."""
+        control_words = ["control", "baseline", "placebo", "no treatment", "no intervention", "neutral"]
+        name_lower = name.lower().strip()
+        return any(w in name_lower for w in control_words)
+
+    def _extract_factorial_factors(
+        self, text: str, factorial_match: re.Match
+    ) -> List[Dict[str, Any]]:
+        """Extract factor names and levels from text surrounding a factorial pattern."""
+        factors: List[Dict[str, Any]] = []
+        dims = [int(factorial_match.group(1)), int(factorial_match.group(2))]
+        if factorial_match.group(3):
+            dims.append(int(factorial_match.group(3)))
+
+        # Try to find factor descriptions near the factorial notation
+        # Pattern: "Factor (level1/level2)" or "Factor: level1, level2"
+        factor_patterns = [
+            r'(\w[\w\s]*?)\s*\(([^)]+)\)',
+            r'(\w[\w\s]*?)\s*:\s*([^,;]+(?:,\s*[^,;]+)+)',
+        ]
+
+        text_after = text[factorial_match.end():]
+        text_before = text[:factorial_match.start()]
+        search_text = f"{text_before} {text_after}"
+
+        for pattern in factor_patterns:
+            matches = re.findall(pattern, search_text, re.IGNORECASE)
+            for name, levels_str in matches:
+                name = name.strip()
+                if len(name) > 2 and name.lower() not in ('the', 'and', 'with', 'for'):
+                    levels = self._parse_list_items(levels_str)
+                    if len(levels) >= 2:
+                        factors.append({"name": name, "levels": levels})
+
+        # If we couldn't extract names, use generic Factor_1, Factor_2
+        if len(factors) < len(dims):
+            factors = []
+            for i, dim in enumerate(dims):
+                factors.append({
+                    "name": f"Factor_{i+1}",
+                    "levels": [f"Level_{j+1}" for j in range(dim)],
+                })
+
+        return factors
+
+    def _cross_factors(self, factors: List[Dict[str, Any]]) -> List[str]:
+        """Generate crossed condition names from factors."""
+        if not factors:
+            return []
+
+        result = factors[0]["levels"][:]
+        for factor in factors[1:]:
+            new_result = []
+            for existing in result:
+                for level in factor["levels"]:
+                    new_result.append(f"{existing}_{level}")
+            result = new_result
+        return result
+
+    def _parse_list_items(self, text: str) -> List[str]:
+        """Parse a comma/and/semicolon-separated list of items."""
+        # Normalize separators
+        text = re.sub(r'\s*[;]\s*', ', ', text)
+        text = re.sub(r',?\s+and\s+', ', ', text, flags=re.IGNORECASE)
+        text = re.sub(r',?\s+or\s+', ', ', text, flags=re.IGNORECASE)
+        text = re.sub(r',?\s+vs\.?\s+', ', ', text, flags=re.IGNORECASE)
+
+        items = [item.strip().rstrip('.') for item in text.split(',')]
+        items = [item for item in items if item and len(item) < 100]
+        return items
+
+    def _split_scale_segments(self, text: str) -> List[str]:
+        """Split text into segments, each describing one scale."""
+        # Split by numbered items "1.", "2."
+        numbered = re.split(r'\n\s*\d+[.)]\s*', text)
+        if len(numbered) >= 2:
+            return [s.strip() for s in numbered if s.strip()]
+
+        # Split by bullet points
+        bulleted = re.split(r'\n\s*[-•]\s*', text)
+        if len(bulleted) >= 2:
+            return [s.strip() for s in bulleted if s.strip()]
+
+        # Split by semicolons
+        semis = text.split(';')
+        if len(semis) >= 2:
+            return [s.strip() for s in semis if s.strip()]
+
+        # Split by lines
+        lines = [l.strip() for l in text.split('\n') if l.strip()]
+        if len(lines) >= 2:
+            return lines
+
+        # Single segment
+        return [text]
+
+    def _parse_single_scale(self, text: str) -> Optional[ParsedScale]:
+        """
+        Parse a single scale description into a ParsedScale.
+
+        Supports:
+        - Scale abbreviations (BFI-10, PANAS, GAD-7, PHQ-9, etc.)
+        - Reverse-coded items ("items 3 and 5 are reverse-coded")
+        - Scale anchors ("1=strongly disagree, 7=strongly agree")
+        - Standard numeric specs (N-point, N items, range)
+        """
+        if not text or len(text) < 3:
+            return None
+
+        text_lower = text.lower()
+        name = ""
+        num_items = 1
+        scale_min = 1
+        scale_max = 7
+        scale_type = "likert"
+        reverse_items: List[int] = []
+        item_labels: List[str] = []
+
+        # ── Check abbreviation lookup first ──────────────────────────────
+        abbrev_matched = False
+        for abbrev, canonical_key in SCALE_ABBREVIATIONS.items():
+            # Match the abbreviation as a whole token (case-insensitive)
+            if re.search(r'(?<![a-zA-Z])' + re.escape(abbrev) + r'(?![a-zA-Z])', text_lower):
+                if canonical_key in KNOWN_SCALES:
+                    spec = KNOWN_SCALES[canonical_key]
+                    name = spec["label"]
+                    num_items = spec["items"]
+                    scale_min = spec["min"]
+                    scale_max = spec["max"]
+                    abbrev_matched = True
+                    break
+
+        # ── Extract scale anchors: "1=strongly disagree, 7=strongly agree" ──
+        anchor_matches = re.findall(
+            r'(\d+)\s*=\s*([^,;]+?)(?:\s*[,;]|\s*$)',
+            text
+        )
+        if anchor_matches:
+            for val_str, label in anchor_matches:
+                val = int(val_str)
+                item_labels.append(f"{val}={label.strip()}")
+            # Use anchor endpoints to infer scale range
+            anchor_vals = [int(m[0]) for m in anchor_matches]
+            if len(anchor_vals) >= 2:
+                scale_min = min(anchor_vals)
+                scale_max = max(anchor_vals)
+
+        # ── Extract reverse-coded items ──────────────────────────────────
+        rev_match = re.search(
+            r'(?:items?\s+)?([\d,\s]+(?:\s+and\s+\d+)?)\s+'
+            r'(?:are|is)\s+reverse[- ]?coded',
+            text_lower
+        )
+        if rev_match:
+            rev_text = rev_match.group(1)
+            reverse_items = [
+                int(n) for n in re.findall(r'\d+', rev_text)
+            ]
+        # Also handle "reverse-coded items: 3, 5, 8"
+        rev_match2 = re.search(
+            r'reverse[- ]?coded\s+items?\s*[:\-]?\s*([\d,\s]+(?:\s+and\s+\d+)?)',
+            text_lower
+        )
+        if rev_match2 and not reverse_items:
+            rev_text = rev_match2.group(1)
+            reverse_items = [
+                int(n) for n in re.findall(r'\d+', rev_text)
+            ]
+
+        # ── Standard extraction (only override if abbreviation didn't set) ──
+        if not abbrev_matched:
+            # Extract scale range: "1-7", "0-100", "1 to 5"
+            range_match = re.search(
+                r'(?:from\s+)?(\d+)\s*(?:to|-|–)\s*(\d+)(?:\s*(?:scale|point|range))?',
+                text
+            )
+            if range_match and not anchor_matches:
+                scale_min = int(range_match.group(1))
+                scale_max = int(range_match.group(2))
+
+            # Extract N-point scale: "7-point", "5 point"
+            npoint_match = re.search(r'(\d+)\s*[-–]?\s*point', text_lower)
+            if npoint_match:
+                scale_max = int(npoint_match.group(1))
+                scale_min = 1
+
+            # Extract number of items: "5 items", "(3 items)", "3-item"
+            items_match = re.search(r'(\d+)\s*[-–]?\s*items?', text_lower)
+            if items_match:
+                num_items = int(items_match.group(1))
+                num_items = max(1, min(num_items, 50))
+
+        # Detect scale type
+        if 'slider' in text_lower or 'visual analog' in text_lower or 'vas' in text_lower:
+            scale_type = "slider"
+            if scale_min == 1 and scale_max == 7:
+                scale_min = 0
+                scale_max = 100
+        elif 'binary' in text_lower or 'yes/no' in text_lower or 'yes or no' in text_lower:
+            scale_type = "binary"
+            scale_min = 0
+            scale_max = 1
+            num_items = 1
+        elif 'numeric' in text_lower or 'dollar' in text_lower or 'wtp' in text_lower or 'willingness to pay' in text_lower:
+            scale_type = "numeric"
+            if scale_min == 1 and scale_max == 7:
+                scale_min = 0
+                scale_max = 100
+
+        # Try to extract scale name (only if abbreviation didn't set it)
+        if not abbrev_matched:
+            # Remove range/items info to find the core name
+            name_text = text
+            name_text = re.sub(r'\d+\s*[-–]?\s*point\s*', '', name_text, flags=re.IGNORECASE)
+            name_text = re.sub(r'\(?\d+\s*[-–]?\s*items?\)?', '', name_text, flags=re.IGNORECASE)
+            name_text = re.sub(r'(?:from\s+)?\d+\s*(?:to|-|–)\s*\d+', '', name_text)
+            name_text = re.sub(r'(?:likert|scale|slider|measure|rating)\s*', '', name_text, flags=re.IGNORECASE)
+            # Remove anchor specs from name
+            name_text = re.sub(r'\d+\s*=\s*[^,;]+', '', name_text)
+            # Remove reverse-coded mention from name
+            name_text = re.sub(r'(?:items?\s+)?[\d,\s]+(?:and\s+\d+\s+)?(?:are|is)\s+reverse[- ]?coded', '', name_text, flags=re.IGNORECASE)
+            name_text = re.sub(r'reverse[- ]?coded\s+items?\s*[:\-]?\s*[\d,\s]+', '', name_text, flags=re.IGNORECASE)
+            name_text = re.sub(r'[,;:()]', ' ', name_text)
+            name_text = name_text.strip()
+
+            if name_text:
+                name = name_text.strip()
+                if len(name) > 60:
+                    name = name[:57] + "..."
+            else:
+                name = "Scale"
+
+            # Check against known scales for better defaults
+            for known_name, known_spec in KNOWN_SCALES.items():
+                if known_name in text_lower:
+                    name = name or known_name.title()
+                    if num_items == 1 and known_spec["items"] > 1:
+                        num_items = known_spec["items"]
+                    if scale_min == 1 and scale_max == 7:
+                        scale_min = known_spec["min"]
+                        scale_max = known_spec["max"]
+                    break
+
+        if not name:
+            return None
+
+        var_name = self._to_variable_name(name)
+
+        return ParsedScale(
+            name=name.strip(),
+            variable_name=var_name,
+            num_items=num_items,
+            scale_min=scale_min,
+            scale_max=scale_max,
+            scale_type=scale_type,
+            description=text.strip(),
+            reverse_items=reverse_items,
+            item_labels=item_labels,
+        )
+
+    def _match_known_scales(self, text: str) -> List[ParsedScale]:
+        """Try to match known scale names and abbreviations in the text."""
+        scales = []
+        text_lower = text.lower()
+        matched_keys: set = set()
+
+        # First try abbreviations for precise matching
+        for abbrev, canonical_key in SCALE_ABBREVIATIONS.items():
+            if re.search(r'(?<![a-zA-Z])' + re.escape(abbrev) + r'(?![a-zA-Z])', text_lower):
+                if canonical_key in KNOWN_SCALES and canonical_key not in matched_keys:
+                    spec = KNOWN_SCALES[canonical_key]
+                    var_name = self._to_variable_name(spec["label"])
+                    scales.append(ParsedScale(
+                        name=spec["label"],
+                        variable_name=var_name,
+                        num_items=spec["items"],
+                        scale_min=spec["min"],
+                        scale_max=spec["max"],
+                        scale_type="likert",
+                        description=spec["label"],
+                    ))
+                    matched_keys.add(canonical_key)
+
+        # Then try full known scale names
+        for known_name, spec in KNOWN_SCALES.items():
+            if known_name in text_lower and known_name not in matched_keys:
+                var_name = self._to_variable_name(known_name)
+                scales.append(ParsedScale(
+                    name=known_name.title(),
+                    variable_name=var_name,
+                    num_items=spec["items"],
+                    scale_min=spec["min"],
+                    scale_max=spec["max"],
+                    scale_type="likert",
+                    description=spec["label"],
+                ))
+                matched_keys.add(known_name)
+
+        return scales
+
+    def _to_variable_name(self, name: str) -> str:
+        """Convert a display name to a valid variable name."""
+        var = re.sub(r'[^a-zA-Z0-9\s]', '', name)
+        var = re.sub(r'\s+', '_', var.strip())
+        var = var[:30]  # Max length
+        if not var:
+            var = "var"
+        return var
+
+    def _generate_var_name(self, text: str, prefix: str = "Q", index: int = 1) -> str:
+        """Generate a variable name from question text."""
+        # Extract key words
+        words = re.findall(r'[a-zA-Z]+', text)
+        if words:
+            key_words = [w for w in words[:3] if len(w) > 2]
+            if key_words:
+                return '_'.join(key_words[:2]).lower()
+        return f"{prefix}_{index}"
+
+    def _detect_oe_context(self, text: str) -> str:
+        """Detect the context type of an open-ended question."""
+        text_lower = text.lower()
+        if any(w in text_lower for w in ['explain', 'why', 'reason', 'because']):
+            return "explanation"
+        if any(w in text_lower for w in ['feel', 'emotion', 'experience', 'reaction']):
+            return "experience"
+        if any(w in text_lower for w in ['think', 'opinion', 'believe', 'view']):
+            return "opinion"
+        if any(w in text_lower for w in ['suggest', 'recommend', 'improve', 'advice']):
+            return "recommendation"
+        if any(w in text_lower for w in ['describe', 'tell', 'share', 'narrative']):
+            return "narrative"
+        return "general"
