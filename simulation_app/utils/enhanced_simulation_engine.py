@@ -45,7 +45,7 @@ This module is designed to run inside a `utils/` package (i.e., imported as
 """
 
 # Version identifier to help track deployed code
-__version__ = "1.2.2"  # New tab-based UI + safe trait value extraction
+__version__ = "1.2.6"  # v1.2.6: Expanded domain calibration, _safe_numeric utility
 
 # =============================================================================
 # SCIENTIFIC FOUNDATIONS FOR SIMULATION
@@ -3728,12 +3728,92 @@ class EnhancedSimulationEngine:
             calibration['mean_adjustment'] = 0.04
             calibration['positivity_bias'] = 0.05
 
+        # ===== SOCIAL IDENTITY / INTERGROUP =====
+        # Tajfel & Turner (1979): High variance due to ingroup/outgroup polarization
+        # Social Identity Theory predicts strong ingroup favoritism and outgroup derogation
+        elif any(kw in var_lower for kw in ['identity', 'intergroup', 'ingroup', 'outgroup', 'discrimination']):
+            calibration['mean_adjustment'] = 0.03
+            calibration['positivity_bias'] = 0.04
+            calibration['variance_adjustment'] = 0.10
+
+        # ===== MORAL JUDGMENT =====
+        # Haidt (2001): Moral judgments elicit extreme responses, minimal positivity bias
+        # Moral foundations theory: intuitive, emotion-driven judgments cluster at endpoints
+        elif any(kw in var_lower for kw in ['moral', 'ethical', 'right', 'wrong', 'justice']):
+            calibration['mean_adjustment'] = -0.02
+            calibration['positivity_bias'] = 0.0
+            calibration['variance_adjustment'] = 0.12
+
+        # ===== POLITICAL ATTITUDES =====
+        # Iyengar & Westwood (2015): Maximal polarization in partisan attitudes
+        # Affective polarization produces bimodal distributions with high variance
+        elif any(kw in var_lower for kw in ['political', 'liberal', 'conservative', 'democrat', 'republican', 'partisan']):
+            calibration['mean_adjustment'] = 0.0
+            calibration['positivity_bias'] = 0.0
+            calibration['variance_adjustment'] = 0.15
+
+        # ===== SELF-EFFICACY / COMPETENCE =====
+        # Bandura (1997): Positive skew in self-assessments of capability
+        # Self-enhancement bias inflates competence ratings (M ≈ 5.0-5.5)
+        elif any(kw in var_lower for kw in ['efficacy', 'competence', 'confidence', 'capable', 'ability']):
+            calibration['mean_adjustment'] = 0.06
+            calibration['positivity_bias'] = 0.08
+
+        # ===== PROSOCIAL / ALTRUISM =====
+        # Social desirability inflates prosocial self-reports (M ≈ 5.2-5.8)
+        # Low variance: most respondents claim prosocial intentions
+        elif any(kw in var_lower for kw in ['prosocial', 'altruism', 'helping', 'donate', 'volunteer', 'charity']):
+            calibration['mean_adjustment'] = 0.07
+            calibration['positivity_bias'] = 0.10
+            calibration['variance_adjustment'] = 0.05
+
+        # ===== NOSTALGIA / MEMORY =====
+        # Mitchell et al. (1997): Rosy retrospection bias inflates positive valence of memories
+        # Nostalgia generates positively-tinted recall with high positivity bias
+        elif any(kw in var_lower for kw in ['nostalgia', 'remember', 'past', 'memory', 'childhood']):
+            calibration['mean_adjustment'] = 0.05
+            calibration['positivity_bias'] = 0.12
+
+        # ===== PRIVACY CONCERNS =====
+        # Westin (2003): Moderate negative valence in privacy concern ratings
+        # Privacy paradox: stated concerns exceed behavioral responses
+        elif any(kw in var_lower for kw in ['privacy', 'surveillance', 'tracking', 'data_collection']):
+            calibration['mean_adjustment'] = -0.04
+            calibration['variance_adjustment'] = 0.08
+
+        # ===== FOOD / CONSUMPTION =====
+        # Hedonic positivity bias: food evaluations skew positive (M ≈ 5.0-5.5)
+        # Koenig-Lewis & Palmer (2014): Consumption experiences rated favorably
+        elif any(kw in var_lower for kw in ['food', 'taste', 'meal', 'restaurant', 'eat']):
+            calibration['mean_adjustment'] = 0.06
+            calibration['positivity_bias'] = 0.08
+
+        # ===== EDUCATION / LEARNING =====
+        # Marsh (1987): Positive skew in course evaluations (M ≈ 5.0-5.5/7)
+        # Students' Evaluations of Educational Quality (SEEQ) norms
+        elif any(kw in var_lower for kw in ['learn', 'teach', 'education', 'classroom', 'student']):
+            calibration['mean_adjustment'] = 0.04
+            calibration['positivity_bias'] = 0.06
+
+        # ===== CREATIVITY / INNOVATION =====
+        # Positive self-assessment bias for creative ability, moderate variance
+        # Runco (2004): Self-reported creativity shows moderate positive skew
+        elif any(kw in var_lower for kw in ['creative', 'innovati', 'novel', 'idea', 'brainstorm']):
+            calibration['mean_adjustment'] = 0.04
+            calibration['variance_adjustment'] = 0.06
+
         # ===== CONDITION-BASED ADJUSTMENTS =====
-        # Adjust based on experimental condition
+        # Adjust based on experimental condition keywords
         if 'positive' in condition_lower or 'high' in condition_lower:
             calibration['mean_adjustment'] += 0.03
         elif 'negative' in condition_lower or 'low' in condition_lower:
             calibration['mean_adjustment'] -= 0.03
+        elif 'control' in condition_lower or 'neutral' in condition_lower:
+            pass  # No adjustment for control/neutral conditions
+
+        # Longoni et al. (2019): AI-related conditions produce slightly negative shift
+        if any(kw in condition_lower for kw in ['ai', 'algorithm', 'robot', 'automat', 'machine']):
+            calibration['mean_adjustment'] -= 0.02
 
         return calibration
 
