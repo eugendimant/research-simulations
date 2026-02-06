@@ -63,7 +63,7 @@ association, impression, perception, feedback, comment, observation, general
 Version: 1.2.2 - New tab-based UI
 """
 
-__version__ = "1.2.3"
+__version__ = "1.2.9"
 
 import random
 import re
@@ -4659,6 +4659,7 @@ class ComprehensiveResponseGenerator:
 
     # Class-level response fingerprint tracking for dataset uniqueness
     _used_responses: set = set()
+    _used_sentences: set = set()
     _session_id: int = 0
 
     # Sentence variation patterns for natural diversity (v1.2.0: expanded for academic variety)
@@ -4728,6 +4729,7 @@ class ComprehensiveResponseGenerator:
         # Initialize fresh session for uniqueness tracking
         ComprehensiveResponseGenerator._session_id += 1
         ComprehensiveResponseGenerator._used_responses = set()
+        ComprehensiveResponseGenerator._used_sentences = set()
 
     def set_study_context(self, context: Dict[str, Any]):
         """Set the study context for context-aware generation."""
@@ -4738,23 +4740,215 @@ class ComprehensiveResponseGenerator:
         # Normalize: lowercase, remove punctuation, collapse spaces
         normalized = re.sub(r'[^\w\s]', '', response.lower())
         normalized = re.sub(r'\s+', ' ', normalized).strip()
-        # Take first 50 chars as fingerprint (catches near-duplicates)
-        return normalized[:50]
+        # Take first 100 chars as fingerprint (catches near-duplicates without
+        # being too aggressive - 50 chars caused false positives on short responses)
+        return normalized[:100]
 
-    def _ensure_unique_response(self, response: str, local_rng: random.Random, max_attempts: int = 5) -> str:
-        """Ensure response is unique within the dataset by varying if needed."""
-        fingerprint = self._get_response_fingerprint(response)
+    def _split_into_sentences(self, text: str) -> List[str]:
+        """Split text into individual sentences for deduplication."""
+        # Split on sentence-ending punctuation followed by space or end of string
+        raw_sentences = re.split(r'(?<=[.!?])\s+', text.strip())
+        # Normalize each sentence and filter out empty/trivial ones
+        sentences = []
+        for s in raw_sentences:
+            s = s.strip()
+            if len(s) > 10:  # Skip very short fragments
+                sentences.append(s)
+        return sentences
 
-        if fingerprint not in ComprehensiveResponseGenerator._used_responses:
-            ComprehensiveResponseGenerator._used_responses.add(fingerprint)
+    def _normalize_sentence(self, sentence: str) -> str:
+        """Normalize a sentence for comparison (lowercase, no punctuation, collapsed spaces)."""
+        normalized = re.sub(r'[^\w\s]', '', sentence.lower())
+        return re.sub(r'\s+', ' ', normalized).strip()
+
+    def _has_high_sentence_overlap(self, response: str, threshold: float = 0.5) -> bool:
+        """Check if more than threshold fraction of sentences in response are duplicates.
+
+        Compares each sentence in the response against all previously used responses
+        stored in _used_responses fingerprints. Uses sentence-level normalized comparison
+        to detect near-duplicate paragraphs that differ only in starters/transitions.
+
+        Args:
+            response: The candidate response text to check.
+            threshold: Fraction of sentences that must be duplicates to flag (default 0.5).
+
+        Returns:
+            True if the response has too many duplicate sentences.
+        """
+        sentences = self._split_into_sentences(response)
+        if not sentences:
+            return False
+
+        duplicate_count = 0
+        for sentence in sentences:
+            norm = self._normalize_sentence(sentence)
+            if norm and norm in ComprehensiveResponseGenerator._used_sentences:
+                duplicate_count += 1
+
+        overlap_ratio = duplicate_count / len(sentences)
+        return overlap_ratio > threshold
+
+    def _vary_single_sentence(self, sentence: str, local_rng: random.Random) -> str:
+        """Apply variation to a single sentence to make it unique.
+
+        Tries multiple strategies: synonym substitution, starter change,
+        qualifier addition, and structural tweaks.
+
+        Args:
+            sentence: The sentence to vary.
+            local_rng: Seeded RNG for deterministic variation.
+
+        Returns:
+            A varied version of the sentence.
+        """
+        strategies = [0, 1, 2, 3]
+        local_rng.shuffle(strategies)
+
+        for strategy in strategies:
+            if strategy == 0:
+                # Add or change sentence starter
+                starter = local_rng.choice(self.SENTENCE_STARTERS)
+                # Remove existing starter if present
+                stripped = sentence
+                for existing_starter in self.SENTENCE_STARTERS:
+                    if sentence.lower().startswith(existing_starter.lower()):
+                        stripped = sentence[len(existing_starter):]
+                        break
+                if stripped:
+                    varied = starter + stripped[0].lower() + stripped[1:]
+                    norm = self._normalize_sentence(varied)
+                    if norm not in ComprehensiveResponseGenerator._used_sentences:
+                        return varied
+
+            elif strategy == 1:
+                # Add a qualifier prefix
+                qualifiers = [
+                    "Honestly, ", "In truth, ", "Frankly, ",
+                    "To be fair, ", "Realistically, ", "Genuinely, ",
+                ]
+                qualifier = local_rng.choice(qualifiers)
+                varied = qualifier + sentence[0].lower() + sentence[1:] if sentence else sentence
+                norm = self._normalize_sentence(varied)
+                if norm not in ComprehensiveResponseGenerator._used_sentences:
+                    return varied
+
+            elif strategy == 2:
+                # Synonym substitution within the sentence
+                synonym_map = {
+                    'good': ['fine', 'decent', 'solid'],
+                    'bad': ['poor', 'inadequate', 'subpar'],
+                    'very': ['quite', 'really', 'particularly'],
+                    'interesting': ['intriguing', 'noteworthy', 'compelling'],
+                    'important': ['significant', 'crucial', 'essential'],
+                }
+                varied = sentence
+                for word, synonyms in synonym_map.items():
+                    pattern = re.compile(r'\b' + re.escape(word) + r'\b', re.IGNORECASE)
+                    if pattern.search(varied):
+                        replacement = local_rng.choice(synonyms)
+                        varied = pattern.sub(replacement, varied, count=1)
+                        break
+                if varied != sentence:
+                    norm = self._normalize_sentence(varied)
+                    if norm not in ComprehensiveResponseGenerator._used_sentences:
+                        return varied
+
+            elif strategy == 3:
+                # Rephrase ending
+                suffixes = [
+                    ", I think", ", in my view", ", as I see it",
+                    ", from my perspective", ", to my mind",
+                ]
+                base = sentence.rstrip('.!?,;')
+                suffix = local_rng.choice(suffixes)
+                varied = base + suffix + '.'
+                norm = self._normalize_sentence(varied)
+                if norm not in ComprehensiveResponseGenerator._used_sentences:
+                    return varied
+
+        # Fallback: just prepend a unique hedge word
+        hedges = ["Essentially, ", "Basically, ", "Fundamentally, ", "Simply put, ", "Put simply, "]
+        hedge = local_rng.choice(hedges)
+        return hedge + sentence[0].lower() + sentence[1:] if sentence else sentence
+
+    def _enforce_sentence_uniqueness(self, response: str, local_rng: random.Random) -> str:
+        """Final pass: replace any sentence that has already been used in the dataset.
+
+        Splits the response into sentences, checks each against the class-level
+        _used_sentences set, and replaces duplicates with varied versions. This
+        is the KEY mechanism that prevents identical sentences from appearing
+        across different responses in the same dataset.
+
+        Args:
+            response: The full response text.
+            local_rng: Seeded RNG for deterministic variation.
+
+        Returns:
+            Response with all duplicate sentences replaced by unique variants.
+        """
+        sentences = self._split_into_sentences(response)
+        if not sentences:
             return response
 
-        # Response is a duplicate - vary it
+        result_sentences: List[str] = []
+        for sentence in sentences:
+            norm = self._normalize_sentence(sentence)
+            if norm and norm in ComprehensiveResponseGenerator._used_sentences:
+                # This sentence was already used - replace with a varied version
+                varied = self._vary_single_sentence(sentence, local_rng)
+                varied_norm = self._normalize_sentence(varied)
+                ComprehensiveResponseGenerator._used_sentences.add(varied_norm)
+                result_sentences.append(varied)
+            else:
+                # Sentence is unique - register it and keep as-is
+                if norm:
+                    ComprehensiveResponseGenerator._used_sentences.add(norm)
+                result_sentences.append(sentence)
+
+        return ' '.join(result_sentences)
+
+    def _ensure_unique_response(self, response: str, local_rng: random.Random, max_attempts: int = 8) -> str:
+        """Ensure response is unique within the dataset by varying if needed.
+
+        Uses two-tier deduplication:
+        1. Fingerprint check (first 100 chars normalized) for exact/near-exact duplicates
+        2. Sentence-level overlap check (>50% shared sentences) for paragraph-level duplicates
+
+        Args:
+            response: The candidate response text.
+            local_rng: Seeded RNG for deterministic variation.
+            max_attempts: Maximum variation attempts before fallback (default 8).
+
+        Returns:
+            A unique response string.
+        """
+        fingerprint = self._get_response_fingerprint(response)
+
+        # Check both fingerprint uniqueness AND sentence-level overlap
+        is_fingerprint_dup = fingerprint in ComprehensiveResponseGenerator._used_responses
+        is_sentence_dup = self._has_high_sentence_overlap(response)
+
+        if not is_fingerprint_dup and not is_sentence_dup:
+            ComprehensiveResponseGenerator._used_responses.add(fingerprint)
+            # Register individual sentences for future overlap checks
+            for sentence in self._split_into_sentences(response):
+                norm = self._normalize_sentence(sentence)
+                if norm:
+                    ComprehensiveResponseGenerator._used_sentences.add(norm)
+            return response
+
+        # Response is a duplicate (by fingerprint or sentence overlap) - vary it
         for attempt in range(max_attempts):
             varied = self._vary_response(response, local_rng, attempt)
             new_fingerprint = self._get_response_fingerprint(varied)
-            if new_fingerprint not in ComprehensiveResponseGenerator._used_responses:
+            new_is_fingerprint_dup = new_fingerprint in ComprehensiveResponseGenerator._used_responses
+            new_is_sentence_dup = self._has_high_sentence_overlap(varied)
+            if not new_is_fingerprint_dup and not new_is_sentence_dup:
                 ComprehensiveResponseGenerator._used_responses.add(new_fingerprint)
+                for sentence in self._split_into_sentences(varied):
+                    norm = self._normalize_sentence(sentence)
+                    if norm:
+                        ComprehensiveResponseGenerator._used_sentences.add(norm)
                 return varied
 
         # Fallback: add unique suffix
@@ -4765,6 +4959,10 @@ class ComprehensiveResponseGenerator:
         ])
         final = response.rstrip('.!?') + '.' + unique_suffix
         ComprehensiveResponseGenerator._used_responses.add(self._get_response_fingerprint(final))
+        for sentence in self._split_into_sentences(final):
+            norm = self._normalize_sentence(sentence)
+            if norm:
+                ComprehensiveResponseGenerator._used_sentences.add(norm)
         return final
 
     def _vary_response(self, response: str, local_rng: random.Random, variation_level: int = 0) -> str:
@@ -4804,12 +5002,90 @@ class ComprehensiveResponseGenerator:
                     return 'While ' + parts[1].rstrip('.') + ', ' + parts[0].lower()
 
         # Level 4: Add qualifier
-        else:
+        elif variation_level == 4:
             qualifiers = [
                 "To be honest, ", "Thinking about it, ", "Upon reflection, ",
                 "When I consider this, ", "Given the circumstances, ",
             ]
             return local_rng.choice(qualifiers) + response[0].lower() + response[1:]
+
+        # Level 5: Synonym substitution for common adjectives/adverbs
+        elif variation_level == 5:
+            synonym_map: Dict[str, List[str]] = {
+                'good': ['fine', 'decent', 'solid', 'positive'],
+                'bad': ['poor', 'inadequate', 'subpar', 'lacking'],
+                'very': ['quite', 'really', 'particularly', 'rather'],
+                'interesting': ['intriguing', 'noteworthy', 'thought-provoking', 'compelling'],
+                'important': ['significant', 'crucial', 'essential', 'key'],
+                'great': ['excellent', 'outstanding', 'remarkable', 'impressive'],
+                'difficult': ['challenging', 'tough', 'demanding', 'complex'],
+                'easy': ['straightforward', 'simple', 'manageable', 'uncomplicated'],
+                'big': ['large', 'substantial', 'considerable', 'major'],
+                'small': ['minor', 'slight', 'modest', 'limited'],
+            }
+            varied = response
+            for word, synonyms in synonym_map.items():
+                # Match whole words only (case-insensitive)
+                pattern = re.compile(r'\b' + re.escape(word) + r'\b', re.IGNORECASE)
+                if pattern.search(varied):
+                    replacement = local_rng.choice(synonyms)
+                    # Preserve original capitalization of first char
+                    def _replace_preserving_case(match: re.Match) -> str:
+                        original = match.group(0)
+                        if original[0].isupper():
+                            return replacement[0].upper() + replacement[1:]
+                        return replacement
+                    varied = pattern.sub(_replace_preserving_case, varied, count=1)
+            return varied
+
+        # Level 6: Add personal anecdote/experience reference phrase
+        elif variation_level == 6:
+            anecdote_phrases = [
+                "In my own experience with similar situations, ",
+                "This reminds me of when I encountered something like this. ",
+                "I've dealt with something like this before and ",
+                "From what I've personally gone through, ",
+                "Relating this to my own life, ",
+                "Having faced comparable circumstances, ",
+                "Drawing from my own experience, ",
+                "I can relate to this because ",
+            ]
+            phrase = local_rng.choice(anecdote_phrases)
+            # Insert at the beginning, adjusting case of the original start
+            if response:
+                return phrase + response[0].lower() + response[1:]
+            return response
+
+        # Level 7: Restructure sentences (split one into two, or combine two into one)
+        elif variation_level == 7:
+            sentences = self._split_into_sentences(response)
+            if len(sentences) == 1 and len(sentences[0]) > 40:
+                # Split a long sentence into two at a natural break point
+                text = sentences[0]
+                # Try splitting at conjunctions/commas
+                split_patterns = [', and ', ', but ', ', which ', ', so ', ', yet ']
+                for pattern in split_patterns:
+                    if pattern in text.lower():
+                        idx = text.lower().index(pattern)
+                        first_part = text[:idx].rstrip(',') + '.'
+                        second_part = text[idx + len(pattern):].strip()
+                        if second_part:
+                            second_part = second_part[0].upper() + second_part[1:]
+                            return first_part + ' ' + second_part
+                        break
+            elif len(sentences) >= 2:
+                # Combine first two short sentences into one compound sentence
+                s1 = sentences[0].rstrip('.!?')
+                s2 = sentences[1]
+                if s2:
+                    s2_lower = s2[0].lower() + s2[1:] if s2 else s2
+                    connectors = [', and ', ', and I think ', '. Moreover, ', ' - and furthermore, ']
+                    connector = local_rng.choice(connectors)
+                    combined = s1 + connector + s2_lower
+                    remaining = sentences[2:]
+                    if remaining:
+                        return combined + ' ' + ' '.join(remaining)
+                    return combined
 
         return response
 
@@ -4901,6 +5177,13 @@ class ComprehensiveResponseGenerator:
 
         # v1.1.0: Ensure response is unique within the dataset
         response = self._ensure_unique_response(response, local_rng)
+
+        # v1.3.0: Final sentence-level uniqueness check
+        # Split response into sentences. For each sentence already in
+        # _used_sentences, replace it with a varied version. This is the KEY
+        # improvement that prevents the exact same sentences from appearing
+        # across different responses in a dataset.
+        response = self._enforce_sentence_uniqueness(response, local_rng)
 
         return response
 

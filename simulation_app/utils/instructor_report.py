@@ -6,7 +6,7 @@ Generates comprehensive instructor-facing reports for student simulations.
 """
 
 # Version identifier to help track deployed code
-__version__ = "1.2.3"  # v1.2.3: Fix persona_distribution nested dict handling, add safe numeric conversions
+__version__ = "1.2.9"  # v1.2.9: Persona preview, domain dropdown, builder UX, custom persona weights
 
 from dataclasses import dataclass
 from datetime import datetime
@@ -1013,6 +1013,70 @@ class InstructorReportGenerator:
                 lines.append("_No scales/DVs listed in metadata. This may indicate a configuration issue._")
                 lines.append("")
 
+        # === v1.2.4: PRACTICAL DATA INTERPRETATION GUIDE ===
+        lines.append("## How to Work With This Data")
+        lines.append("")
+        lines.append("### Quick Start Checklist")
+        lines.append("")
+        lines.append("1. **Load the CSV** into your preferred analysis tool (R, Python, SPSS, Stata, Julia)")
+        lines.append("2. **Check the codebook** (Data_Codebook_Handbook.txt) for variable definitions")
+        lines.append("3. **Examine exclusion flags** — filter out flagged participants before analysis")
+        lines.append("4. **Verify your conditions** — check that CONDITION matches your expected groups")
+        lines.append("5. **Run descriptive statistics** before hypothesis testing")
+        lines.append("")
+
+        conditions = metadata.get("conditions", [])
+        if conditions and len(conditions) >= 2:
+            lines.append("### Suggested Analysis Approach")
+            lines.append("")
+            if len(conditions) == 2:
+                lines.append(f"With **2 conditions** ({', '.join(conditions)}), consider:")
+                lines.append("- **Independent samples t-test** for comparing condition means")
+                lines.append("- **Mann-Whitney U test** as a non-parametric alternative")
+                lines.append("- **Cohen's d** for effect size estimation")
+            elif len(conditions) <= 4:
+                lines.append(f"With **{len(conditions)} conditions** ({', '.join(conditions)}), consider:")
+                lines.append("- **One-way ANOVA** for comparing condition means")
+                lines.append("- **Kruskal-Wallis test** as a non-parametric alternative")
+                lines.append("- **Post-hoc pairwise comparisons** (Tukey HSD or Bonferroni)")
+                lines.append("- **Eta-squared (η²)** for effect size")
+            else:
+                lines.append(f"With **{len(conditions)} conditions**, consider a structured ANOVA approach")
+            lines.append("")
+
+            factors = metadata.get("factors", [])
+            if factors and len(factors) >= 2:
+                factor_names = [f.get("name", "Factor") for f in factors if isinstance(f, dict)]
+                if len(factor_names) >= 2:
+                    lines.append(f"Your **factorial design** ({' × '.join(factor_names)}) allows testing:")
+                    lines.append(f"- Main effect of {factor_names[0]}")
+                    lines.append(f"- Main effect of {factor_names[1]}")
+                    lines.append(f"- **Interaction** between {factor_names[0]} and {factor_names[1]}")
+                    lines.append("- Use **two-way ANOVA** (or factorial ANOVA) for this analysis")
+                    lines.append("")
+
+        exclusion_summary = metadata.get("exclusion_summary", {})
+        if exclusion_summary:
+            lines.append("### Data Cleaning Guide")
+            lines.append("")
+            lines.append("Your dataset includes these quality flags (use `Exclude_Recommended` for filtering):")
+            lines.append("")
+            n = metadata.get("sample_size", "N/A")
+            flagged_speed = exclusion_summary.get("flagged_speed", 0)
+            flagged_attention = exclusion_summary.get("flagged_attention", 0)
+            flagged_straight = exclusion_summary.get("flagged_straightline", 0)
+            total_excluded = exclusion_summary.get("total_excluded", 0)
+            lines.append(f"| Flag | Count | % of Sample | Action |")
+            lines.append(f"|------|-------|-------------|--------|")
+            if isinstance(n, (int, float)) and n > 0:
+                lines.append(f"| Speed flags | {flagged_speed} | {flagged_speed/n*100:.1f}% | Too fast/slow completion |")
+                lines.append(f"| Attention flags | {flagged_attention} | {flagged_attention/n*100:.1f}% | Failed attention checks |")
+                lines.append(f"| Straight-lining | {flagged_straight} | {flagged_straight/n*100:.1f}% | Identical responses in sequence |")
+                lines.append(f"| **Total excluded** | **{total_excluded}** | **{total_excluded/n*100:.1f}%** | **Recommended for removal** |")
+            lines.append("")
+            lines.append("**Tip:** Filter with `Exclude_Recommended == 0` to keep only clean responses.")
+            lines.append("")
+
         # v1.2.0: Enhanced Analysis Recommendations with statistical test recommendations and power analysis
         lines.append("## Analysis Recommendations")
         lines.append("")
@@ -1684,6 +1748,47 @@ class ComprehensiveInstructorReport:
         total_simulations = usage_stats.get('total_simulations', 'N/A')
         lines.append(f"**Total Simulations Run (all time):** {total_simulations}")
         lines.append("")
+
+        # === v1.2.5: DATA QUALITY ASSURANCE SECTION ===
+        lines.append("")
+        lines.append("-" * 80)
+        lines.append("## DATA QUALITY ASSURANCE")
+        lines.append("-" * 80)
+        lines.append("")
+        lines.append("### Automated Quality Checks")
+        lines.append("")
+
+        # Scale range verification
+        scales = metadata.get("scales", [])
+        if scales:
+            lines.append("| Scale | Items | Expected Range | Actual Range | Status |")
+            lines.append("|-------|-------|---------------|--------------|--------|")
+            for scale in scales:
+                s_name = str(scale.get("name", "Unknown")).strip().replace(" ", "_")
+                n_items = scale.get("num_items", 5)
+                s_min = scale.get("scale_min", 1)
+                s_max = scale.get("scale_max", 7)
+                cols = [c for c in df.columns if c.startswith(f"{s_name}_") and c[len(s_name)+1:].isdigit()]
+                if cols:
+                    actual_min = df[cols].min().min()
+                    actual_max = df[cols].max().max()
+                    status = "✅ Pass" if actual_min >= s_min and actual_max <= s_max else "⚠️ Review"
+                    lines.append(f"| {s_name} | {len(cols)} | [{s_min}-{s_max}] | [{actual_min}-{actual_max}] | {status} |")
+            lines.append("")
+
+        # Response uniqueness check for open-ended
+        oe_cols = [c for c in df.columns if df[c].dtype == object and c not in ['CONDITION', 'PARTICIPANT_ID', 'RUN_ID', 'SIMULATION_MODE', 'SIMULATION_SEED', 'Gender']]
+        if oe_cols:
+            lines.append("### Open-Ended Response Uniqueness")
+            lines.append("")
+            for col in oe_cols:
+                responses = df[col].dropna().tolist()
+                unique_responses = len(set(responses))
+                total = len(responses)
+                pct = (unique_responses / total * 100) if total > 0 else 0
+                status = "✅" if pct >= 95 else ("⚠️" if pct >= 80 else "❌")
+                lines.append(f"- {col}: {unique_responses}/{total} unique ({pct:.1f}%) {status}")
+            lines.append("")
 
         # =============================================================
         # SECTION 1: DATA QUALITY SUMMARY

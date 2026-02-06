@@ -52,8 +52,8 @@ import streamlit as st
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.2.3"
-BUILD_ID = "20260206-v123-fix-simulation"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.2.9"
+BUILD_ID = "20260206-v129-persona-preview-builder-ux"  # Change this to force cache invalidation
 
 def _verify_and_reload_utils():
     """Verify utils modules are at correct version, force reload if needed.
@@ -85,6 +85,8 @@ from utils.qsf_preview import QSFPreviewParser, QSFPreviewResult
 from utils.schema_validator import validate_schema
 from utils.github_qsf_collector import collect_qsf_async, is_collection_enabled
 from utils.instructor_report import InstructorReportGenerator, ComprehensiveInstructorReport
+from utils.survey_builder import SurveyDescriptionParser, ParsedDesign, KNOWN_SCALES, AVAILABLE_DOMAINS
+from utils.persona_library import PersonaLibrary, Persona
 from utils.enhanced_simulation_engine import (
     EnhancedSimulationEngine,
     EffectSizeSpec,
@@ -107,7 +109,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF"
-APP_VERSION = "1.2.3"  # v1.2.3: Fix simulation crash - persona_distribution, safe numeric conversions, report isolation
+APP_VERSION = "1.2.9"  # v1.2.9: Persona preview, domain dropdown, builder UX, custom persona weights
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -236,7 +238,7 @@ def _get_validation_summary(completion: Dict[str, bool]) -> Dict[str, Any]:
     if not completion.get("study_description"):
         missing_items.append({"field": "Study description", "step": 1, "priority": "required"})
     if not completion.get("qsf_uploaded"):
-        missing_items.append({"field": "QSF file", "step": 2, "priority": "required"})
+        missing_items.append({"field": "Study input (QSF or description)", "step": 2, "priority": "required"})
     if not completion.get("conditions_set"):
         missing_items.append({"field": "Conditions", "step": 3, "priority": "required"})
     if not completion.get("sample_size"):
@@ -331,7 +333,7 @@ def _render_readiness_checklist() -> Dict[str, bool]:
     checks = [
         ("Study title", completion.get("study_title", False)),
         ("Study description", completion.get("study_description", False)),
-        ("QSF file uploaded", completion.get("qsf_uploaded", False)),
+        ("Study input provided", completion.get("qsf_uploaded", False)),
         ("Conditions defined", completion.get("conditions_set", False)),
         ("Sample size set (≥10)", completion.get("sample_size", False)),
     ]
@@ -561,6 +563,113 @@ def _split_comma_list(value: str) -> List[str]:
     if not value:
         return []
     return [item.strip() for item in value.split(",") if item.strip()]
+
+
+def _validate_simulation_output(df: pd.DataFrame, metadata: dict, scales: list) -> Dict[str, Any]:
+    """
+    v1.2.4: Simulation quality validation gate.
+
+    This function MUST be called after every simulation to verify data quality.
+    It serves as the automated "self-improvement workflow" that ensures
+    simulations are never broken and data quality is maintained with every version.
+
+    Returns a dict with quality metrics and pass/fail status.
+    """
+    results = {
+        "passed": True,
+        "checks": [],
+        "warnings": [],
+        "errors": [],
+    }
+
+    # CHECK 1: DataFrame is not empty
+    if df is None or df.empty:
+        results["passed"] = False
+        results["errors"].append("DataFrame is empty - no data generated")
+        return results
+    results["checks"].append(f"✅ Data generated: {df.shape[0]} rows × {df.shape[1]} columns")
+
+    # CHECK 2: Expected columns exist
+    expected_cols = ["PARTICIPANT_ID", "CONDITION"]
+    for col in expected_cols:
+        if col in df.columns:
+            results["checks"].append(f"✅ Column '{col}' present")
+        else:
+            results["passed"] = False
+            results["errors"].append(f"❌ Missing required column: {col}")
+
+    # CHECK 3: Scale values within bounds
+    for scale in (scales or []):
+        s_name = str(scale.get("name", "")).strip().replace(" ", "_")
+        s_min = scale.get("scale_min", 1)
+        s_max = scale.get("scale_max", 7)
+        n_items = scale.get("num_items", 5)
+        try:
+            s_min = int(s_min) if not isinstance(s_min, dict) else 1
+            s_max = int(s_max) if not isinstance(s_max, dict) else 7
+            n_items = int(n_items) if not isinstance(n_items, dict) else 5
+        except (ValueError, TypeError):
+            continue
+
+        for item_num in range(1, n_items + 1):
+            col = f"{s_name}_{item_num}"
+            if col in df.columns:
+                try:
+                    actual_min = int(df[col].min())
+                    actual_max = int(df[col].max())
+                    if actual_min < s_min or actual_max > s_max:
+                        results["warnings"].append(
+                            f"⚠️ {col}: values [{actual_min}-{actual_max}] outside expected [{s_min}-{s_max}]"
+                        )
+                    else:
+                        results["checks"].append(f"✅ {col}: range [{actual_min}-{actual_max}] within bounds")
+                except Exception:
+                    pass
+
+    # CHECK 4: Open-ended response uniqueness (>= 90% unique)
+    oe_cols = [c for c in df.columns if df[c].dtype == object and c not in [
+        'CONDITION', 'PARTICIPANT_ID', 'RUN_ID', 'SIMULATION_MODE', 'SIMULATION_SEED', 'Gender'
+    ]]
+    for col in oe_cols:
+        responses = df[col].dropna().tolist()
+        if responses:
+            unique_pct = len(set(responses)) / len(responses) * 100
+            if unique_pct < 90:
+                results["warnings"].append(f"⚠️ {col}: only {unique_pct:.1f}% unique responses")
+            else:
+                results["checks"].append(f"✅ {col}: {unique_pct:.1f}% unique responses")
+
+    # CHECK 5: Condition balance
+    if "CONDITION" in df.columns:
+        condition_counts = df["CONDITION"].value_counts()
+        if len(condition_counts) > 1:
+            balance_ratio = condition_counts.min() / condition_counts.max()
+            if balance_ratio < 0.8:
+                results["warnings"].append(
+                    f"⚠️ Condition imbalance: ratio {balance_ratio:.2f} (counts: {dict(condition_counts)})"
+                )
+            else:
+                results["checks"].append(f"✅ Condition balance: ratio {balance_ratio:.2f}")
+
+    # CHECK 6: No NaN in scale columns
+    scale_cols = [c for c in df.columns if any(
+        c.startswith(str(s.get("name", "")).strip().replace(" ", "_") + "_")
+        for s in (scales or [])
+    )]
+    nan_count = df[scale_cols].isna().sum().sum() if scale_cols else 0
+    if nan_count > 0:
+        results["warnings"].append(f"⚠️ Found {nan_count} NaN values in scale columns")
+    else:
+        results["checks"].append(f"✅ No NaN values in scale columns")
+
+    # CHECK 7: Metadata integrity
+    if metadata:
+        if "persona_distribution" in metadata:
+            results["checks"].append("✅ Persona distribution recorded in metadata")
+        if "effect_sizes_observed" in metadata:
+            results["checks"].append("✅ Observed effect sizes recorded")
+
+    return results
 
 
 def _normalize_scale_specs(scales: List[Any]) -> List[Dict[str, Any]]:
@@ -2831,6 +2940,869 @@ UI_GUIDANCE = {
 }
 
 
+def _render_conversational_builder() -> None:
+    """
+    Render the conversational study builder interface.
+    Allows users to describe their experiment in natural language
+    instead of uploading a QSF file.
+    """
+    parser = SurveyDescriptionParser()
+
+    # Check if builder is already complete
+    if st.session_state.get("conversational_builder_complete"):
+        st.success("Study description complete — proceed to **Design** tab to review and generate")
+        if st.checkbox("Edit my study description", value=False, key="edit_builder"):
+            st.session_state["conversational_builder_complete"] = False
+            st.rerun()
+        return
+
+    st.markdown("### Describe Your Experiment")
+    st.markdown(
+        "Answer the questions below to set up your simulation. "
+        "Describe your study in plain language — we'll extract the technical details automatically."
+    )
+
+    # Progress indicator
+    _has_conds = bool(st.session_state.get("builder_conditions_text", "").strip())
+    _has_scales = bool(st.session_state.get("builder_scales_text", "").strip())
+    _filled_sections = sum([_has_conds, _has_scales])
+    st.progress(_filled_sections / 2, text=f"Core sections: {_filled_sections}/2 complete (conditions + scales required)")
+
+    # Getting-started message when nothing has been filled in yet
+    _existing_conds = st.session_state.get("builder_conditions_text", "").strip()
+    _existing_scales = st.session_state.get("builder_scales_text", "").strip()
+    if not _existing_conds and not _existing_scales:
+        st.info(
+            "Start by describing your experimental conditions below, "
+            "then add your measures. Use the examples for inspiration!"
+        )
+
+    # Example studies for inspiration
+    with st.expander("Need inspiration? Click an example to auto-fill", expanded=False):
+        examples = SurveyDescriptionParser.generate_example_descriptions()
+        for idx, ex in enumerate(examples):
+            if st.button(f"Load: {ex['title']}", key=f"example_btn_{idx}"):
+                st.session_state["builder_conditions_text"] = ex["conditions"]
+                st.session_state["builder_scales_text"] = ex["scales"]
+                st.session_state["builder_oe_text"] = ex.get("open_ended", "")
+                st.session_state["study_title"] = ex["title"]
+                st.session_state["study_description"] = f"Investigating {ex.get('domain', ex['title'].lower())}"
+                st.rerun()
+
+    # ── Section 1: Experimental Conditions ──────────────────────────────
+    st.markdown("---")
+    st.markdown("#### 1. Experimental Conditions")
+    st.markdown(
+        "What are the groups or conditions in your experiment? "
+        "List them separated by commas, or describe the design."
+    )
+
+    conditions_placeholder = (
+        "Examples:\n"
+        "• Control, Treatment\n"
+        "• AI-generated message, Human-written message, No message\n"
+        "• 2x2 design with Trust (high/low) and Risk (high/low)"
+    )
+
+    conditions_text = st.text_area(
+        "Conditions",
+        value=st.session_state.get("builder_conditions_text", ""),
+        placeholder=conditions_placeholder,
+        height=100,
+        key="builder_conditions_input",
+        help="List your experimental conditions. Supports simple lists, numbered conditions, and factorial designs (e.g., 2x2).",
+    )
+    st.session_state["builder_conditions_text"] = conditions_text
+
+    # Live parsing preview for conditions
+    if conditions_text.strip():
+        parsed_conditions, cond_warnings = parser.parse_conditions(conditions_text)
+    else:
+        parsed_conditions, cond_warnings = [], []
+    for cw in cond_warnings:
+        st.warning(cw)
+    if parsed_conditions:
+        cond_names = [c.name for c in parsed_conditions]
+        st.caption(f"Detected **{len(cond_names)}** conditions: {', '.join(cond_names)}")
+
+        # Feedback for unusual condition counts
+        if len(cond_names) == 1:
+            st.warning(
+                "Only 1 condition detected. An experiment needs at least 2 conditions "
+                "(e.g., control vs treatment)."
+            )
+        elif len(cond_names) > 10:
+            st.warning(
+                f"{len(cond_names)} conditions detected. This is unusually many "
+                "-- verify this is correct."
+            )
+
+        # Check for factorial structure
+        factors = parser.detect_factorial_structure(parsed_conditions)
+        if factors:
+            st.caption(
+                f"Factorial design detected: "
+                + " x ".join(f"{f['name']} ({', '.join(f['levels'])})" for f in factors)
+            )
+
+    # Smart condition guidance (Iteration 7)
+    if not conditions_text.strip():
+        _builder_title = st.session_state.get("study_title", "")
+        _builder_desc = st.session_state.get("study_description", "")
+        if _builder_title or _builder_desc:
+            _combined = f"{_builder_title} {_builder_desc}".lower()
+            _condition_hints = []
+            if any(w in _combined for w in ["ai", "artificial", "algorithm", "chatbot"]):
+                _condition_hints.append("AI-generated vs Human-created vs No information")
+            if any(w in _combined for w in ["brand", "product", "marketing"]):
+                _condition_hints.append("Brand A vs Brand B vs Control")
+            if any(w in _combined for w in ["trust", "credibility"]):
+                _condition_hints.append("High Trust vs Low Trust")
+            if any(w in _combined for w in ["moral", "ethical", "dilemma"]):
+                _condition_hints.append("Moral frame vs Neutral frame")
+            if any(w in _combined for w in ["health", "medical", "wellness"]):
+                _condition_hints.append("Health intervention vs Standard care vs Control")
+            if _condition_hints:
+                st.info(f"Based on your study description, try: **{_condition_hints[0]}**")
+
+    # ── Section 2: Dependent Variables / Scales ─────────────────────────
+    st.markdown("---")
+    st.markdown("#### 2. What Do You Measure?")
+    st.markdown(
+        "Describe the scales or measures in your study. "
+        "Include the name, number of items, and scale range if possible."
+    )
+
+    scales_placeholder = (
+        "Examples:\n"
+        "• Trust scale, 5 items, 1-7 Likert\n"
+        "• Purchase intention (3 items, 7-point scale)\n"
+        "• Willingness to pay in dollars (0-100)\n"
+        "• Satisfaction slider from 0 to 100"
+    )
+
+    scales_text = st.text_area(
+        "Scales / Dependent Variables",
+        value=st.session_state.get("builder_scales_text", ""),
+        placeholder=scales_placeholder,
+        height=120,
+        key="builder_scales_input",
+        help="Describe each scale on a new line or separated by semicolons. Include item count and range when possible.",
+    )
+    st.session_state["builder_scales_text"] = scales_text
+
+    # Live parsing preview for scales
+    parsed_scales = parser.parse_scales(scales_text) if scales_text.strip() else []
+    if parsed_scales:
+        # Type badge mapping
+        _type_badges = {
+            "likert": "[Likert]",
+            "slider": "[Slider]",
+            "binary": "[Binary]",
+            "numeric": "[Numeric]",
+        }
+        for s in parsed_scales:
+            badge = _type_badges.get(s.scale_type, f"[{s.scale_type.title()}]")
+            # Check if scale name matches a known validated instrument
+            _s_lower = s.name.lower().strip()
+            is_validated = any(
+                _s_lower == k or _s_lower == v.get("label", "").lower()
+                for k, v in KNOWN_SCALES.items()
+            )
+            validated_tag = " *(validated instrument)*" if is_validated else ""
+            st.caption(
+                f"  {badge} **{s.name}**: {s.num_items} item(s), "
+                f"{s.scale_min}-{s.scale_max}{validated_tag}"
+            )
+
+    # Smart scale suggestions based on domain (Iteration 6)
+    if parsed_conditions and not scales_text.strip():
+        _builder_title = st.session_state.get("study_title", "")
+        _builder_desc = st.session_state.get("study_description", "")
+        if _builder_title or _builder_desc:
+            _sug_domain = parser.detect_research_domain(
+                _builder_title, _builder_desc,
+                conditions_text=conditions_text,
+            )
+            _suggestions = parser.suggest_additional_measures(_sug_domain, [])
+            if _suggestions:
+                st.markdown("**Suggested scales for your domain:**")
+                for _sug in _suggestions[:3]:
+                    st.caption(f"- **{_sug['name']}** -- {_sug['description']}")
+                st.caption("_Copy a suggestion above into the text area to add it._")
+
+    # ── Section 3: Open-Ended Questions (Optional) ─────────────────────
+    st.markdown("---")
+    st.markdown("#### 3. Open-Ended Questions (Optional)")
+    st.markdown("Are there any open-ended or free-text questions in your study?")
+
+    oe_text = st.text_area(
+        "Open-ended questions",
+        value=st.session_state.get("builder_oe_text", ""),
+        placeholder=(
+            "Examples:\n"
+            "• Please explain why you made this choice\n"
+            "• Describe your experience with the product\n"
+            "• What are your thoughts on this policy?"
+        ),
+        height=100,
+        key="builder_oe_input",
+        help="Enter each open-ended question on a new line. Leave empty if none.",
+    )
+    st.session_state["builder_oe_text"] = oe_text
+
+    parsed_oe = parser.parse_open_ended(oe_text) if oe_text.strip() else []
+    if parsed_oe:
+        st.caption(f"Detected **{len(parsed_oe)}** open-ended question(s)")
+
+    # ── Section 4: Sample Size ──────────────────────────────────────────
+    st.markdown("---")
+    st.markdown("#### 4. Sample Size")
+
+    builder_sample = st.number_input(
+        "How many participants should be simulated?",
+        min_value=10,
+        max_value=10000,
+        value=int(st.session_state.get("builder_sample_size", 100)),
+        step=10,
+        key="builder_sample_input",
+        help="Total number of simulated participants across all conditions.",
+    )
+    st.session_state["builder_sample_size"] = builder_sample
+    st.session_state["sample_size"] = builder_sample
+
+    # ── Section 5: Design Type ──────────────────────────────────────────
+    st.markdown("---")
+    st.markdown("#### 5. Design Type")
+
+    design_options = {
+        "between": "Between-subjects (each participant sees one condition)",
+        "within": "Within-subjects (each participant sees all conditions)",
+        "mixed": "Mixed design (some factors between, some within)",
+    }
+    design_type = st.radio(
+        "What type of experimental design is this?",
+        options=list(design_options.keys()),
+        format_func=lambda x: design_options[x],
+        index=["between", "within", "mixed"].index(
+            st.session_state.get("builder_design_type", "between")
+        ),
+        key="builder_design_type_input",
+    )
+    st.session_state["builder_design_type"] = design_type
+
+    # ── Section 6: Demographics (Optional) ──────────────────────────────
+    with st.expander("6. Demographics Configuration (Optional)", expanded=False):
+        st.caption("Configure the demographics of your simulated sample.")
+        col_age, col_gender = st.columns(2)
+        with col_age:
+            age_mean = st.number_input(
+                "Mean age", min_value=18, max_value=80, value=35,
+                key="builder_age_mean",
+            )
+            age_sd = st.number_input(
+                "Age SD", min_value=1, max_value=30, value=12,
+                key="builder_age_sd",
+            )
+        with col_gender:
+            gender_pct = st.slider(
+                "Female %", min_value=0, max_value=100, value=50,
+                key="builder_gender_pct",
+                help="Percentage of female participants in the sample",
+            )
+        st.session_state["demographics_config"] = {
+            "age_mean": age_mean,
+            "age_sd": age_sd,
+            "gender_quota": gender_pct,
+        }
+
+    # ── Section 7: Participant Characteristics (Optional) ─────────────
+    st.markdown("---")
+    st.markdown("#### 7. Expected Participants (Optional)")
+    st.markdown(
+        "Describe the type of participants you expect. "
+        "This helps calibrate the simulation personas to match your sample."
+    )
+
+    participant_desc = st.text_area(
+        "Participant characteristics",
+        value=st.session_state.get("builder_participant_desc", ""),
+        placeholder=(
+            "Examples:\n"
+            "- College students taking introductory psychology\n"
+            "- Tech-savvy professionals familiar with AI tools\n"
+            "- Health-conscious consumers aged 25-45\n"
+            "- MTurk workers (general population)"
+        ),
+        height=80,
+        key="builder_participant_input",
+        help=(
+            "Describe who your participants are. This helps select appropriate "
+            "behavioral personas and calibrate response patterns."
+        ),
+    )
+    st.session_state["builder_participant_desc"] = participant_desc
+
+    # ── Validation & Submission ─────────────────────────────────────────
+    st.markdown("---")
+    st.markdown("#### Review & Submit")
+
+    # Build a preliminary ParsedDesign for validation
+    _pre_factors = parser.detect_factorial_structure(parsed_conditions) if parsed_conditions else []
+    _pre_design = ParsedDesign(
+        conditions=parsed_conditions,
+        scales=parsed_scales,
+        open_ended=parsed_oe,
+        factors=_pre_factors,
+        design_type=design_type,
+        sample_size=builder_sample,
+    )
+    validation = parser.validate_full_design(_pre_design)
+    errors = validation["errors"]
+    warnings = validation["warnings"]
+
+    if not parsed_oe:
+        warnings.append("No open-ended questions detected (this is fine if your study doesn't have any)")
+
+    # Show summary
+    if parsed_conditions and parsed_scales:
+        with st.expander("Study Summary Preview", expanded=True):
+            st.markdown(f"**Conditions ({len(parsed_conditions)}):** {', '.join(c.name for c in parsed_conditions)}")
+            st.markdown(f"**Scales ({len(parsed_scales)}):**")
+            for s in parsed_scales:
+                st.markdown(f"- {s.name}: {s.num_items} item(s), {s.scale_min}-{s.scale_max} ({s.scale_type})")
+            if parsed_oe:
+                st.markdown(f"**Open-ended questions ({len(parsed_oe)}):**")
+                for q in parsed_oe:
+                    st.markdown(f"- {q.question_text[:80]}...")
+            st.markdown(f"**Sample size:** {builder_sample}")
+            st.markdown(f"**Design:** {design_options[design_type]}")
+
+            # Detect domain with visual badge
+            title = st.session_state.get("study_title", "")
+            desc = st.session_state.get("study_description", "")
+            domain = parser.detect_research_domain(title, desc)
+            st.markdown(f"**Domain:** `{domain}`")
+
+    for w in warnings:
+        st.warning(w)
+    for e in errors:
+        st.error(e)
+
+    # Guidance when there are warnings but no blocking errors
+    if not errors and warnings:
+        st.info("There are warnings but no errors -- you can proceed if the warnings are acceptable.")
+
+    # Submit button
+    can_submit = len(errors) == 0 and len(parsed_conditions) >= 2 and len(parsed_scales) >= 1
+    if st.button(
+        "Build Study Specification",
+        type="primary",
+        disabled=not can_submit,
+        key="builder_submit_btn",
+    ):
+        # Build the parsed design
+        title = st.session_state.get("study_title", "")
+        desc = st.session_state.get("study_description", "")
+        domain = parser.detect_research_domain(title, desc)
+
+        factors = parser.detect_factorial_structure(parsed_conditions)
+
+        parsed_design = ParsedDesign(
+            conditions=parsed_conditions,
+            scales=parsed_scales,
+            open_ended=parsed_oe,
+            factors=factors,
+            design_type=design_type,
+            sample_size=builder_sample,
+            research_domain=domain,
+            study_title=title,
+            study_description=desc,
+            participant_characteristics=participant_desc,
+        )
+
+        # Build the inferred_design dict (same format as QSF path)
+        inferred = parser.build_inferred_design(parsed_design)
+        st.session_state["inferred_design"] = inferred
+        st.session_state["builder_parsed_design"] = parsed_design
+        st.session_state["conversational_builder_complete"] = True
+
+        # Set conditions for Step 3/4 compatibility
+        st.session_state["selected_conditions"] = [c.name for c in parsed_conditions]
+        st.session_state["confirmed_scales"] = inferred["scales"]
+        st.session_state["scales_confirmed"] = True
+        st.session_state["confirmed_open_ended"] = inferred.get("open_ended_questions", [])
+        st.session_state["open_ended_confirmed"] = True
+
+        st.success("Study specification built successfully! Proceed to the **Design** tab to review.")
+        st.rerun()
+
+
+def _render_builder_design_review() -> None:
+    """
+    Render a design review/edit interface for studies created with the conversational builder.
+    This replaces the QSF-based design configuration in Step 3.
+    """
+    inferred = st.session_state.get("inferred_design", {})
+    if not inferred:
+        st.warning("No study design found. Go back to the **Study Input** tab and describe your study.")
+        return
+
+    # ── Go back to edit button (Issue #19) ─────────────────────────────
+    if st.button("← Edit my study description", key="builder_go_back_edit"):
+        st.session_state["conversational_builder_complete"] = False
+        st.rerun()
+
+    st.markdown("### Review Your Study Design")
+    st.markdown("Review and edit the study specification extracted from your description.")
+
+    # ── Detected Research Domain (Iteration 2: dropdown) ──────────────
+    detected_domain = inferred.get("study_context", {}).get("domain", "")
+
+    # Build options list: put detected domain first if valid
+    _domain_options = list(AVAILABLE_DOMAINS)
+    if detected_domain and detected_domain.lower().strip() not in [d.lower() for d in _domain_options]:
+        _domain_options.insert(0, detected_domain)  # Keep custom domain if not in standard list
+
+    _default_idx = 0
+    for _di, _dn in enumerate(_domain_options):
+        if _dn.lower().strip() == detected_domain.lower().strip():
+            _default_idx = _di
+            break
+
+    domain_override = st.selectbox(
+        "Research Domain",
+        options=_domain_options,
+        index=_default_idx,
+        key="builder_review_domain",
+        help=(
+            "The research domain determines which behavioral personas are included "
+            "in your simulation. Choose the domain that best matches your study."
+        ),
+    )
+    if domain_override.strip():
+        if "study_context" not in inferred:
+            inferred["study_context"] = {}
+        inferred["study_context"]["domain"] = domain_override.strip()
+        inferred["study_context"]["study_domain"] = domain_override.strip()
+        st.session_state["inferred_design"] = inferred
+
+    # ── Persona Preview (Iteration 1) ─────────────────────────────────
+    st.markdown("---")
+    st.markdown("#### Expected Participant Personas")
+    st.caption(
+        "Based on your research domain, these behavioral archetypes will be included "
+        "in the simulation. Each persona has unique response patterns grounded in "
+        "published behavioral science research."
+    )
+
+    # Get persona preview based on domain
+    try:
+        _persona_domains = SurveyDescriptionParser.get_persona_domain_keys(
+            domain_override.strip() if domain_override.strip() else detected_domain
+        )
+        _temp_library = PersonaLibrary(seed=42)
+        _preview_personas = _temp_library.get_personas_for_domains(_persona_domains)
+
+        if _preview_personas:
+            # Separate response style (universal) from domain-specific
+            _response_style = {k: v for k, v in _preview_personas.items() if v.category == "response_style"}
+            _domain_specific = {k: v for k, v in _preview_personas.items() if v.category != "response_style"}
+
+            col_rs, col_ds = st.columns(2)
+            with col_rs:
+                st.markdown("**Universal Response Styles**")
+                for _pname, _persona in sorted(_response_style.items(), key=lambda x: x[1].weight, reverse=True):
+                    _pct = _persona.weight * 100
+                    st.markdown(f"- **{_persona.name}** ({_pct:.0f}%)")
+            with col_ds:
+                st.markdown("**Domain-Specific Personas**")
+                if _domain_specific:
+                    for _pname, _persona in sorted(_domain_specific.items(), key=lambda x: x[1].weight, reverse=True)[:8]:
+                        _pct = _persona.weight * 100
+                        st.markdown(f"- **{_persona.name}** ({_pct:.0f}%)")
+                    if len(_domain_specific) > 8:
+                        st.caption(f"... and {len(_domain_specific) - 8} more")
+                else:
+                    st.caption("No domain-specific personas for this domain (universal styles will be used)")
+
+            st.caption(
+                f"Total: **{len(_preview_personas)}** personas active for "
+                f"domain '{domain_override.strip() if domain_override.strip() else detected_domain}'"
+            )
+
+            # Store for potential custom weights UI
+            st.session_state["_preview_persona_names"] = {
+                k: {"name": v.name, "weight": v.weight, "category": v.category, "description": v.description}
+                for k, v in _preview_personas.items()
+            }
+        else:
+            st.info("No domain-specific personas found. Universal response styles will be used.")
+    except Exception as _pe:
+        st.caption(f"Persona preview unavailable: {_pe}")
+
+    # ── Custom Persona Weights (Iteration 4) ──────────────────────────
+    _preview_info = st.session_state.get("_preview_persona_names", {})
+    if _preview_info:
+        with st.expander("Advanced: Customize Persona Distribution", expanded=False):
+            st.caption(
+                "Override the default persona proportions to simulate specific "
+                "sample compositions (e.g., more engaged responders, fewer satisficers)."
+            )
+
+            _custom_enabled = st.checkbox(
+                "Use custom persona weights",
+                value=bool(st.session_state.get("custom_persona_weights")),
+                key="enable_custom_persona_weights",
+            )
+
+            if _custom_enabled:
+                _custom_weights = {}
+                # Group by category
+                _rs_personas = {k: v for k, v in _preview_info.items() if v["category"] == "response_style"}
+                _ds_personas = {k: v for k, v in _preview_info.items() if v["category"] != "response_style"}
+
+                st.markdown("**Response Style Personas**")
+                _rs_cols = st.columns(min(len(_rs_personas), 3)) if _rs_personas else []
+                for _ci, (_pk, _pv) in enumerate(_rs_personas.items()):
+                    with _rs_cols[_ci % len(_rs_cols)] if _rs_cols else st.container():
+                        _w = st.number_input(
+                            _pv["name"],
+                            min_value=0,
+                            max_value=100,
+                            value=int(_pv["weight"] * 100),
+                            step=5,
+                            key=f"pw_{_pk}",
+                            help=_pv.get("description", "")[:200],
+                        )
+                        _custom_weights[_pk] = _w / 100.0
+
+                if _ds_personas:
+                    st.markdown("**Domain-Specific Personas**")
+                    _ds_cols = st.columns(min(len(_ds_personas), 3))
+                    for _ci, (_pk, _pv) in enumerate(list(_ds_personas.items())[:9]):
+                        with _ds_cols[_ci % len(_ds_cols)]:
+                            _w = st.number_input(
+                                _pv["name"],
+                                min_value=0,
+                                max_value=100,
+                                value=int(_pv["weight"] * 100),
+                                step=5,
+                                key=f"pw_{_pk}",
+                                help=_pv.get("description", "")[:200],
+                            )
+                            _custom_weights[_pk] = _w / 100.0
+
+                _total_w = sum(_custom_weights.values())
+                if abs(_total_w - 1.0) > 0.05 and _total_w > 0:
+                    st.warning(f"Weights sum to {_total_w*100:.0f}% (will be normalized to 100%)")
+                elif _total_w <= 0:
+                    st.error("At least one persona must have weight > 0")
+
+                # Normalize and store
+                if _total_w > 0:
+                    _normalized = {k: v / _total_w for k, v in _custom_weights.items()}
+                    st.session_state["custom_persona_weights"] = _normalized
+            else:
+                st.session_state["custom_persona_weights"] = None
+
+    conditions = inferred.get("conditions", [])
+    scales = inferred.get("scales", [])
+    open_ended = inferred.get("open_ended_questions", [])
+    factors = inferred.get("factors", [])
+
+    # ── Conditions ──────────────────────────────────────────────────────
+    st.markdown("---")
+    st.markdown("#### Conditions")
+    if conditions:
+        cond_to_remove = None
+        for i, cond in enumerate(conditions):
+            cond_col, cond_btn_col = st.columns([8, 1])
+            with cond_col:
+                st.markdown(f"**{i+1}.** {cond}")
+            with cond_btn_col:
+                if len(conditions) > 1 and st.button("X", key=f"br_remove_cond_{i}", help=f"Remove '{cond}'"):
+                    cond_to_remove = i
+        if cond_to_remove is not None:
+            conditions.pop(cond_to_remove)
+            inferred["conditions"] = conditions
+            st.session_state["inferred_design"] = inferred
+            st.session_state["selected_conditions"] = conditions
+            st.rerun()
+    else:
+        st.warning("No conditions found")
+
+    # Allow adding custom conditions
+    extra_conds = st.text_input(
+        "Add more conditions (comma-separated)",
+        value="",
+        key="builder_review_extra_conds",
+        help="Add additional conditions not captured from your description.",
+    )
+    if extra_conds.strip():
+        new_conds = [c.strip() for c in extra_conds.split(",") if c.strip()]
+        for c in new_conds:
+            if c not in conditions:
+                conditions.append(c)
+        inferred["conditions"] = conditions
+        st.session_state["inferred_design"] = inferred
+        st.session_state["selected_conditions"] = conditions
+
+    # ── Factorial Structure ─────────────────────────────────────────────
+    if factors:
+        st.markdown("---")
+        st.markdown("#### Factorial Structure")
+        for f in factors:
+            st.markdown(f"**{f['name']}**: {', '.join(f['levels'])}")
+
+        # Visual design table for 2-factor designs
+        if len(factors) == 2:
+            row_factor = factors[0]
+            col_factor = factors[1]
+            row_levels = row_factor.get("levels", [])
+            col_levels = col_factor.get("levels", [])
+            n_cells = len(row_levels) * len(col_levels)
+            per_cell = sample // n_cells if n_cells > 0 else 0
+
+            header = f"| | " + " | ".join(f"**{lv}**" for lv in col_levels) + " |"
+            separator = "|--" + "|".join("---" for _ in col_levels) + "|"
+            table_rows = [header, separator]
+            cell_num = 1
+            for rl in row_levels:
+                cells = []
+                for _ in col_levels:
+                    cells.append(f"Cell {cell_num} (n={per_cell})")
+                    cell_num += 1
+                row_str = f"| **{rl}** | " + " | ".join(cells) + " |"
+                table_rows.append(row_str)
+
+            st.markdown(
+                f"**Design Table** ({row_factor['name']} x {col_factor['name']}):"
+            )
+            st.markdown("\n".join(table_rows))
+
+    # ── Scales / DVs ────────────────────────────────────────────────────
+    st.markdown("---")
+    st.markdown("#### Dependent Variables / Scales")
+    if scales:
+        scale_to_remove = None
+        for i, scale in enumerate(scales):
+            col1, col2, col3, col4, col5 = st.columns([3, 1, 1, 1, 0.5])
+            with col1:
+                new_name = st.text_input(
+                    "Name", value=scale.get("name", ""), key=f"br_scale_name_{i}"
+                )
+                scale["name"] = new_name
+            with col2:
+                new_items = st.number_input(
+                    "Items", value=scale.get("num_items", 1),
+                    min_value=1, max_value=50, key=f"br_scale_items_{i}"
+                )
+                scale["num_items"] = new_items
+                scale["items"] = [
+                    f"{scale.get('variable_name', 'var')}_{j+1}" for j in range(new_items)
+                ]
+            with col3:
+                new_min = st.number_input(
+                    "Min", value=scale.get("scale_min", 1),
+                    min_value=0, max_value=100, key=f"br_scale_min_{i}"
+                )
+                scale["scale_min"] = new_min
+            with col4:
+                new_max = st.number_input(
+                    "Max", value=scale.get("scale_max", 7),
+                    min_value=1, max_value=1000, key=f"br_scale_max_{i}"
+                )
+                scale["scale_max"] = new_max
+                scale["scale_points"] = new_max
+            with col5:
+                st.markdown("<br>", unsafe_allow_html=True)
+                if st.button("Remove", key=f"br_remove_scale_{i}", help=f"Remove '{scale.get('name', 'scale')}'"):
+                    scale_to_remove = i
+
+        if scale_to_remove is not None:
+            scales.pop(scale_to_remove)
+            inferred["scales"] = scales
+            st.session_state["inferred_design"] = inferred
+            st.session_state["confirmed_scales"] = scales
+            st.rerun()
+
+        inferred["scales"] = scales
+        st.session_state["inferred_design"] = inferred
+        st.session_state["confirmed_scales"] = scales
+    else:
+        st.warning("No scales detected")
+
+    # ── Open-Ended Questions ────────────────────────────────────────────
+    if open_ended:
+        st.markdown("---")
+        st.markdown("#### Open-Ended Questions")
+        oe_to_remove = None
+        for i, oe in enumerate(open_ended):
+            oe_col1, oe_col2 = st.columns([8, 1])
+            with oe_col1:
+                new_text = st.text_input(
+                    f"Question {i+1} (`{oe.get('variable_name', '')}`)",
+                    value=oe.get("question_text", ""),
+                    key=f"br_oe_text_{i}",
+                )
+                if new_text != oe.get("question_text", ""):
+                    oe["question_text"] = new_text
+            with oe_col2:
+                st.markdown("<br>", unsafe_allow_html=True)
+                if st.button("Remove", key=f"br_remove_oe_{i}", help=f"Remove question {i+1}"):
+                    oe_to_remove = i
+        if oe_to_remove is not None:
+            open_ended.pop(oe_to_remove)
+            inferred["open_ended_questions"] = open_ended
+            st.session_state["inferred_design"] = inferred
+            st.session_state["confirmed_open_ended"] = open_ended
+            st.rerun()
+        # Persist edits
+        inferred["open_ended_questions"] = open_ended
+        st.session_state["inferred_design"] = inferred
+        st.session_state["confirmed_open_ended"] = open_ended
+
+    # ── Sample Size ─────────────────────────────────────────────────────
+    st.markdown("---")
+    st.markdown("#### Sample Size")
+    sample = st.number_input(
+        "Total participants",
+        min_value=10,
+        max_value=10000,
+        value=int(st.session_state.get("sample_size", 100)),
+        step=10,
+        key="builder_review_sample",
+    )
+    st.session_state["sample_size"] = sample
+
+    # ── Condition Allocation ────────────────────────────────────────────
+    if conditions and len(conditions) >= 2:
+        st.markdown("---")
+        st.markdown("#### Condition Allocation")
+        per_cond = sample // len(conditions)
+        remainder = sample % len(conditions)
+        alloc = {}
+        alloc_n = {}
+        for i, cond in enumerate(conditions):
+            n = per_cond + (1 if i < remainder else 0)
+            alloc_n[cond] = n
+            alloc[cond] = round(100.0 * n / sample, 1)
+        st.session_state["condition_allocation_n"] = alloc_n
+        st.session_state["condition_allocation"] = alloc
+
+        # Visual allocation display
+        n_conds = len(conditions)
+        cols_per_row = min(n_conds, 4)
+        alloc_cols = st.columns(cols_per_row)
+        for i, cond in enumerate(conditions):
+            with alloc_cols[i % cols_per_row]:
+                n_val = alloc_n[cond]
+                pct = alloc[cond]
+                st.metric(label=cond, value=f"{n_val}", delta=f"{pct}%")
+        st.caption("Equal allocation across conditions")
+
+    # ── Difficulty Level ─────────────────────────────────────────────────
+    st.markdown("---")
+    st.markdown("#### Data Quality / Difficulty")
+    difficulty = st.select_slider(
+        "How 'messy' should the simulated data be?",
+        options=["easy", "medium", "hard", "expert"],
+        value=st.session_state.get("builder_difficulty_level", st.session_state.get("difficulty_level", "medium")),
+        key="builder_review_difficulty",
+        help="Easy = clean data with high attention. Hard = more noise, careless respondents, missing data.",
+    )
+    st.session_state["builder_difficulty_level"] = difficulty
+
+    # ── Effect Sizes (Optional) ─────────────────────────────────────────
+    if conditions and scales and len(conditions) >= 2:
+        with st.expander("Expected Effect Sizes (Optional)", expanded=False):
+            st.caption(
+                "Specify expected differences between conditions. "
+                "This makes the simulated data reflect realistic experimental effects."
+            )
+            add_effect = st.checkbox("Add an expected effect", key="builder_add_effect")
+            if add_effect:
+                effect_dv = st.selectbox(
+                    "Dependent variable",
+                    [s.get("name", "Unknown") for s in scales],
+                    key="builder_effect_dv",
+                )
+                col_hi, col_lo = st.columns(2)
+                with col_hi:
+                    level_high = st.selectbox(
+                        "Higher-scoring condition",
+                        conditions,
+                        key="builder_effect_high",
+                    )
+                with col_lo:
+                    remaining = [c for c in conditions if c != level_high]
+                    level_low = st.selectbox(
+                        "Lower-scoring condition",
+                        remaining if remaining else conditions,
+                        key="builder_effect_low",
+                    )
+                cohens_d = st.slider(
+                    "Cohen's d (effect size)",
+                    min_value=0.0, max_value=1.5, value=0.5, step=0.1,
+                    key="builder_cohens_d",
+                    help="0.2 = small, 0.5 = medium, 0.8 = large effect",
+                )
+                # Store the effect size spec
+                st.session_state["builder_effect_sizes"] = [
+                    {
+                        "variable": effect_dv,
+                        "factor": "condition",
+                        "level_high": level_high,
+                        "level_low": level_low,
+                        "cohens_d": cohens_d,
+                        "direction": "positive",
+                    }
+                ]
+                st.caption(
+                    f"Effect: **{effect_dv}** will be ~{cohens_d}d higher in "
+                    f"'{level_high}' than '{level_low}'"
+                )
+
+    # ── Confirmation ────────────────────────────────────────────────────
+    st.markdown("---")
+    if conditions and scales:
+        st.success(
+            f"Design ready: **{len(conditions)}** conditions, **{len(scales)}** scale(s), "
+            f"**{sample}** participants."
+        )
+        st.info(
+            "Your design is fully configured. You can proceed directly to the "
+            "**Generate** tab to simulate your data."
+        )
+    else:
+        st.error("Design incomplete. Please go back and provide conditions and scales.")
+
+    # ── Proceed to Generate guidance ───────────────────────────────────
+    if conditions and scales:
+        # What happens next (Iteration 8)
+        with st.expander("What happens when you generate?", expanded=False):
+            _oe_line = f"4. Generate **{len(open_ended)}** open-ended text response(s)\n" if open_ended else ""
+            _fx_line = "5. Apply effect sizes to create condition differences\n" if st.session_state.get("builder_effect_sizes") else ""
+            st.markdown(
+                f"**Your simulation will:**\n"
+                f"1. Create **{sample}** virtual participants with realistic behavioral profiles\n"
+                f"2. Assign each to one of **{len(conditions)}** conditions\n"
+                f"3. Generate responses to **{len(scales)}** scale(s) based on persona traits\n"
+                f"{_oe_line}"
+                f"{_fx_line}\n"
+                f"**Personas** will be selected based on the '{domain_override}' research domain, "
+                f"producing realistic variation in attention, engagement, response styles, and more."
+            )
+
+        st.markdown("---")
+        st.markdown("#### Ready to generate?")
+        st.markdown(
+            "Click the **Generate** tab above to simulate your data. "
+            "You can always come back here to adjust your design."
+        )
+
+
 def _get_step_completion() -> Dict[str, bool]:
     """Get completion status for each step."""
     preview = st.session_state.get("qsf_preview", None)
@@ -2844,7 +3816,7 @@ def _get_step_completion() -> Dict[str, bool]:
         "study_title": bool(st.session_state.get("study_title", "").strip()),
         "study_description": bool(st.session_state.get("study_description", "").strip()),
         "sample_size": int(st.session_state.get("sample_size", 0)) >= 10,
-        "qsf_uploaded": bool(preview and preview.success),
+        "qsf_uploaded": bool(preview and preview.success) or bool(st.session_state.get("conversational_builder_complete")),
         "conditions_set": bool(st.session_state.get("selected_conditions") or st.session_state.get("custom_conditions")),
         "primary_outcome": has_primary_outcome,
         "independent_var": has_independent_var,
@@ -2864,9 +3836,13 @@ def _save_step_state():
         # Step 1: Study Info
         "study_title", "study_description", "researcher_name", "researcher_email",
         "team_name", "team_members_raw",
-        # Step 2: Upload
+        # Step 2: Upload / Conversational Builder
         "qsf_preview", "enhanced_analysis", "inferred_design",
         "qsf_content", "qsf_filename",
+        "conversational_builder_complete", "study_input_mode",
+        "builder_conditions_text", "builder_scales_text", "builder_oe_text",
+        "builder_design_type", "builder_sample_size",
+        "builder_parsed_design",
         "prereg_text", "prereg_pdf_text", "prereg_files",
         "survey_pdf_content", "survey_pdf_name",
         # Step 3: Design Setup
@@ -3433,7 +4409,7 @@ status_emoji = "🟢" if progress_pct == 100 else "🟡" if progress_pct >= 50 e
 st.progress(completed_count / total_count, text=f"{status_emoji} Ready: {progress_pct}% ({completed_count}/{total_count})")
 
 # Create the main tabs
-TAB_LABELS = ["📋 Setup", "📁 Upload", "⚙️ Design", "🚀 Generate"]
+TAB_LABELS = ["📋 Setup", "📁 Study Input", "⚙️ Design", "🚀 Generate"]
 tab_setup, tab_upload, tab_design, tab_generate = st.tabs(TAB_LABELS)
 
 
@@ -3646,7 +4622,7 @@ def _render_status_panel():
     if not completion["sample_size"]:
         missing.append(("Sample size (minimum 10)", "Step 3"))
     if not completion["qsf_uploaded"]:
-        missing.append(("QSF file upload", "Step 2"))
+        missing.append(("Study input (QSF or description)", "Step 2"))
     if not completion["primary_outcome"]:
         missing.append(("Primary outcome variable", "Step 2"))
     if not completion["independent_var"]:
@@ -3680,7 +4656,7 @@ with tab_setup:
     step1_done = completion["study_title"] and completion["study_description"]
 
     if step1_done:
-        st.success("✓ Study info complete — proceed to **Upload** tab")
+        st.success("Study info complete — proceed to **Study Input** tab")
     else:
         st.info("Enter study title and description below")
 
@@ -3728,7 +4704,7 @@ with tab_setup:
 
 
 # =====================================================================
-# TAB 2: FILE UPLOAD
+# TAB 2: FILE UPLOAD / STUDY BUILDER
 # =====================================================================
 with tab_upload:
     completion = _get_step_completion()
@@ -3736,47 +4712,76 @@ with tab_upload:
     step2_done = completion["qsf_uploaded"]
 
     if not step1_done:
-        st.warning("💡 Complete the **Setup** tab first (study title & description)")
+        st.warning("Complete the **Setup** tab first (study title & description)")
 
     if step2_done:
-        st.success("✓ QSF uploaded — proceed to **Design** tab")
-    else:
+        st.success("Study input complete — proceed to **Design** tab")
+
+    # ========================================
+    # MODE SELECTOR: QSF Upload vs Conversational Builder
+    # ========================================
+    st.markdown("### How would you like to set up your study?")
+
+    input_mode = st.radio(
+        "Choose your input method",
+        options=["upload_qsf", "describe_study"],
+        format_func=lambda x: {
+            "upload_qsf": "Upload a Qualtrics QSF file",
+            "describe_study": "Describe my study in words (no QSF needed)",
+        }[x],
+        index=0 if st.session_state.get("study_input_mode", "upload_qsf") == "upload_qsf" else 1,
+        key="study_input_mode_radio",
+        horizontal=True,
+        help="Choose 'Describe my study' if you don't have a QSF file — just explain your experiment and we'll set up the simulation for you.",
+    )
+    st.session_state["study_input_mode"] = input_mode
+
+    # ========================================
+    # PATH A: CONVERSATIONAL STUDY BUILDER
+    # ========================================
+    if input_mode == "describe_study":
+        _render_conversational_builder()
+
+    # ========================================
+    # PATH B: QSF FILE UPLOAD (Original Flow)
+    # ========================================
+    _show_qsf_upload = (input_mode == "upload_qsf")
+
+    if _show_qsf_upload and not step2_done:
         st.info("Upload your Qualtrics QSF file below")
 
-    # ========================================
-    # REQUIRED: QSF FILE
-    # ========================================
-    st.markdown("### 1. Upload Qualtrics Survey File *")
+    if _show_qsf_upload:
+        st.markdown("### 1. Upload Qualtrics Survey File *")
 
-    # Check if we already have a file uploaded (persistence)
-    existing_qsf_name = st.session_state.get("qsf_file_name")
-    existing_qsf_content = st.session_state.get("qsf_raw_content")
+    # QSF file upload section (only shown in upload_qsf mode)
+    if _show_qsf_upload:
+        existing_qsf_name = st.session_state.get("qsf_file_name")
+        existing_qsf_content = st.session_state.get("qsf_raw_content")
 
-    col_qsf, col_help = st.columns([2, 1])
+        col_qsf, col_help = st.columns([2, 1])
 
-    with col_qsf:
-        # Show existing file info if available
-        if existing_qsf_name and existing_qsf_content:
-            st.success(f"✓ **{existing_qsf_name}** uploaded ({len(existing_qsf_content):,} bytes)")
-            change_qsf = st.checkbox("Upload a different QSF file", value=False, key="change_qsf")
-        else:
-            change_qsf = True  # No existing file, show uploader
+        with col_qsf:
+            if existing_qsf_name and existing_qsf_content:
+                st.success(f"**{existing_qsf_name}** uploaded ({len(existing_qsf_content):,} bytes)")
+                change_qsf = st.checkbox("Upload a different QSF file", value=False, key="change_qsf")
+            else:
+                change_qsf = True
 
-        if change_qsf or not existing_qsf_content:
-            qsf_file = st.file_uploader(
-                "QSF file",
-                type=["qsf", "zip", "json"],
-                help=(
-                    "Export from Qualtrics via Tools → Import/Export → Export Survey. "
-                    "Upload the .qsf (or .zip) here."
-                ),
-            )
-        else:
-            qsf_file = None  # Use existing
+            if change_qsf or not existing_qsf_content:
+                qsf_file = st.file_uploader(
+                    "QSF file",
+                    type=["qsf", "zip", "json"],
+                    help=(
+                        "Export from Qualtrics via Tools → Import/Export → Export Survey. "
+                        "Upload the .qsf (or .zip) here."
+                    ),
+                )
+            else:
+                qsf_file = None
 
-    with col_help:
-        with st.expander("How to export from Qualtrics", expanded=False):
-            st.markdown("""
+        with col_help:
+            with st.expander("How to export from Qualtrics", expanded=False):
+                st.markdown("""
 1. Open your survey in Qualtrics
 2. Click **Tools** → **Import/Export**
 3. Select **Export Survey**
@@ -3784,56 +4789,47 @@ with tab_upload:
 5. Upload it here
 """)
 
-    parser = _get_qsf_preview_parser()
+        parser = _get_qsf_preview_parser()
+        preview: Optional[QSFPreviewResult] = st.session_state.get("qsf_preview", None)
 
-    # Initialize preview variable for QSF processing
-    preview: Optional[QSFPreviewResult] = st.session_state.get("qsf_preview", None)
+        stored_preview = st.session_state.get("qsf_preview", None)
+        is_new_upload = qsf_file is not None and (
+            not stored_preview or
+            st.session_state.get("qsf_file_name") != qsf_file.name
+        )
 
-    # Check if this is a new file upload (different from what's already stored)
-    stored_preview = st.session_state.get("qsf_preview", None)
-    is_new_upload = qsf_file is not None and (
-        not stored_preview or
-        st.session_state.get("qsf_file_name") != qsf_file.name
-    )
+        if qsf_file is not None and is_new_upload:
+            try:
+                content = qsf_file.read()
+                payload, payload_name = _extract_qsf_payload(content)
+                preview = parser.parse(payload)
+                st.session_state["qsf_preview"] = preview
+                st.session_state["qsf_raw_content"] = payload
+                st.session_state["qsf_file_name"] = qsf_file.name
 
-    if qsf_file is not None and is_new_upload:
-        try:
-            content = qsf_file.read()
-            payload, payload_name = _extract_qsf_payload(content)
-            preview = parser.parse(payload)
-            st.session_state["qsf_preview"] = preview
-            st.session_state["qsf_raw_content"] = payload  # Store for enhanced analysis
-            st.session_state["qsf_file_name"] = qsf_file.name  # Track file name
-
-            if preview.success:
-                # Auto-collect QSF file to GitHub repository (async, non-blocking)
-                # This runs silently in background without affecting user experience
-                collect_qsf_async(qsf_file.name, payload)
-
-                # Perform enhanced design analysis
-                with st.spinner("Analyzing experimental design..."):
-                    enhanced_analysis = _perform_enhanced_analysis(
-                        qsf_content=payload,
-                        prereg_outcomes=st.session_state.get("prereg_outcomes", ""),
-                        prereg_iv=st.session_state.get("prereg_iv", ""),
-                        prereg_text=st.session_state.get("prereg_text_sanitized", ""),
-                        prereg_pdf_text=st.session_state.get("prereg_pdf_text", ""),
-                    )
-                    if enhanced_analysis:
-                        st.session_state["enhanced_analysis"] = enhanced_analysis
-
-                # Rerun to update navigation buttons with new completion status
-                st.rerun()
-            else:
-                st.error("QSF parsed but validation failed. See warnings below.")
-        except Exception as e:
-            import traceback
-            st.session_state["qsf_preview"] = None
-            st.session_state["enhanced_analysis"] = None
-            error_details = traceback.format_exc()
-            st.error(f"QSF parsing failed: {e}")
-            with st.expander("Error details (for debugging)"):
-                st.code(error_details)
+                if preview.success:
+                    collect_qsf_async(qsf_file.name, payload)
+                    with st.spinner("Analyzing experimental design..."):
+                        enhanced_analysis = _perform_enhanced_analysis(
+                            qsf_content=payload,
+                            prereg_outcomes=st.session_state.get("prereg_outcomes", ""),
+                            prereg_iv=st.session_state.get("prereg_iv", ""),
+                            prereg_text=st.session_state.get("prereg_text_sanitized", ""),
+                            prereg_pdf_text=st.session_state.get("prereg_pdf_text", ""),
+                        )
+                        if enhanced_analysis:
+                            st.session_state["enhanced_analysis"] = enhanced_analysis
+                    st.rerun()
+                else:
+                    st.error("QSF parsed but validation failed. See warnings below.")
+            except Exception as e:
+                import traceback
+                st.session_state["qsf_preview"] = None
+                st.session_state["enhanced_analysis"] = None
+                error_details = traceback.format_exc()
+                st.error(f"QSF parsing failed: {e}")
+                with st.expander("Error details (for debugging)"):
+                    st.code(error_details)
 
     preview: Optional[QSFPreviewResult] = st.session_state.get("qsf_preview", None)
 
@@ -4176,11 +5172,21 @@ with tab_design:
     preview: Optional[QSFPreviewResult] = st.session_state.get("qsf_preview", None)
     enhanced_analysis: Optional[DesignAnalysisResult] = st.session_state.get("enhanced_analysis", None)
 
-    if not preview:
-        st.warning("💡 Upload a QSF file in the **Upload** tab first")
+    _builder_complete = st.session_state.get("conversational_builder_complete", False)
+
+    if not preview and not _builder_complete:
+        st.warning("Upload a QSF file or describe your study in the **Study Input** tab first")
         st.stop()
 
-    # If we reach here, preview exists
+    # If coming from conversational builder, show review mode
+    if _builder_complete and not preview:
+        _render_builder_design_review()
+        # After builder review, check if inferred_design is set, then skip QSF-based config
+        if st.session_state.get("inferred_design"):
+            pass  # Design is configured, Step 4 can proceed
+        st.stop()  # Don't show QSF-based design configuration
+
+    # If we reach here, preview exists (QSF path)
     inferred = st.session_state.get("inferred_design", {})
 
     st.markdown("---")
@@ -5558,7 +6564,7 @@ with tab_generate:
         "Study title": bool(st.session_state.get("study_title", "").strip()),
         "Study description": bool(st.session_state.get("study_description", "").strip()),
         "Sample size (≥10)": int(st.session_state.get("sample_size", 0)) >= 10,
-        "QSF uploaded": bool(preview and preview.success),
+        "Study input provided": bool(preview and preview.success) or bool(st.session_state.get("conversational_builder_complete")),
         "Design configured": bool(inferred),
     }
     completed = sum(required_fields.values())
@@ -5595,13 +6601,19 @@ with tab_generate:
     st.markdown("---")
     st.markdown("### Data Quality Difficulty")
 
+    # Use builder_difficulty_level as fallback if set from design review
+    _diff_options = ['easy', 'medium', 'hard', 'expert']
+    _builder_diff = st.session_state.get("builder_difficulty_level", "")
+    _diff_default = _builder_diff if _builder_diff in _diff_options else "medium"
+    _diff_index = _diff_options.index(_diff_default)
+
     difficulty_col1, difficulty_col2 = st.columns([1, 2])
     with difficulty_col1:
         difficulty_level = st.selectbox(
             "Select difficulty level",
-            options=['easy', 'medium', 'hard', 'expert'],
+            options=_diff_options,
             format_func=lambda x: DIFFICULTY_LEVELS[x]['name'],
-            index=1,  # Default to 'medium'
+            index=_diff_index,
             key="difficulty_level",
             help="Controls the amount of noise and data quality issues in the simulated data"
         )
@@ -5698,12 +6710,35 @@ with tab_generate:
     if not st.session_state.get("advanced_mode", False):
         # v1.0.0: Use difficulty level settings
         diff_settings = _get_difficulty_settings(difficulty_level)
-        demographics = STANDARD_DEFAULTS["demographics"].copy()
+        # Use builder demographics if available, otherwise defaults
+        builder_demo = st.session_state.get("demographics_config")
+        if builder_demo and isinstance(builder_demo, dict):
+            demographics = {
+                "gender_quota": builder_demo.get("gender_quota", 50),
+                "age_mean": builder_demo.get("age_mean", 35),
+                "age_sd": builder_demo.get("age_sd", 12),
+            }
+        else:
+            demographics = STANDARD_DEFAULTS["demographics"].copy()
         attention_rate = diff_settings['attention_rate']  # From difficulty level
         random_responder_rate = diff_settings['random_responder_rate']  # From difficulty level
         exclusion = ExclusionCriteria(**STANDARD_DEFAULTS["exclusion_criteria"])
+        # Use builder effect sizes if available
+        builder_effects = st.session_state.get("builder_effect_sizes", [])
         effect_sizes: List[EffectSizeSpec] = []
-        custom_persona_weights = None
+        for be in builder_effects:
+            try:
+                effect_sizes.append(EffectSizeSpec(
+                    variable=be["variable"],
+                    factor=be.get("factor", "condition"),
+                    level_high=be["level_high"],
+                    level_low=be["level_low"],
+                    cohens_d=float(be.get("cohens_d", 0.5)),
+                    direction=be.get("direction", "positive"),
+                ))
+            except (KeyError, ValueError):
+                pass
+        custom_persona_weights = st.session_state.get("custom_persona_weights", None)
 
         # Store difficulty settings in session state for engine
         st.session_state['difficulty_settings'] = diff_settings
@@ -5767,6 +6802,21 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
         )
 
         effect_sizes = []
+
+        # Pre-populate from builder if available
+        builder_effects = st.session_state.get("builder_effect_sizes", [])
+        for be in builder_effects:
+            try:
+                effect_sizes.append(EffectSizeSpec(
+                    variable=be["variable"],
+                    factor=be.get("factor", "condition"),
+                    level_high=be["level_high"],
+                    level_low=be["level_low"],
+                    cohens_d=float(be.get("cohens_d", 0.5)),
+                    direction=be.get("direction", "positive"),
+                ))
+            except (KeyError, ValueError):
+                pass
 
         # Get available scales and factors for selection
         available_scales = [s.get("name", "Main_DV") for s in scales] if scales else ["Main_DV"]
@@ -5876,7 +6926,7 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
                     "Please ensure your study has multiple conditions defined."
                 )
 
-        custom_persona_weights = None
+        custom_persona_weights = st.session_state.get("custom_persona_weights", None)
 
     # ========================================
     # v1.0.0: FINAL DESIGN SUMMARY
@@ -6230,6 +7280,11 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
             precomputed_visibility=inferred.get("condition_visibility_map", {}),
         )
 
+        # v1.2.4: Show detected research domains
+        if hasattr(engine, 'detected_domains') and engine.detected_domains:
+            domain_text = ", ".join([d.replace("_", " ").title() for d in engine.detected_domains[:5]])
+            st.info(f"🔬 **Detected research domain(s):** {domain_text}")
+
         try:
             # v1.2.0: Enhanced progress indicator with prominent visual display
             # Clear the status placeholder and show progress bar
@@ -6253,6 +7308,37 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
                 progress_bar.progress(25, text="Creating simulated participants...")
                 df, metadata = engine.generate()
                 progress_bar.progress(50, text="✅ Responses generated successfully!")
+
+            # v1.2.4: Run simulation quality validation
+            validation_results = _validate_simulation_output(df, metadata, clean_scales)
+            st.session_state["_validation_results"] = validation_results
+            if not validation_results["passed"]:
+                for err in validation_results["errors"]:
+                    st.error(err)
+                st.warning("⚠️ Simulation validation found issues. Data may need review.")
+            for warn in validation_results.get("warnings", []):
+                st.warning(warn)
+
+            # v1.2.5: Show quick data quality summary
+            progress_bar.progress(50, text="Validating data quality...")
+            status_placeholder.info("🔍 Validating generated data...")
+            quality_checks = []
+            # Check scale ranges
+            for scale in clean_scales:
+                sname = str(scale.get("name", "")).strip().replace(" ", "_")
+                s_min = int(scale.get("scale_min", 1))
+                s_max = int(scale.get("scale_max", 7))
+                n_items = int(scale.get("num_items", 5))
+                for item_num in range(1, n_items + 1):
+                    col = f"{sname}_{item_num}"
+                    if col in df.columns:
+                        actual_min = df[col].min()
+                        actual_max = df[col].max()
+                        if actual_min >= s_min and actual_max <= s_max:
+                            quality_checks.append(f"✅ {col}: range [{actual_min}-{actual_max}] within [{s_min}-{s_max}]")
+                        else:
+                            quality_checks.append(f"⚠️ {col}: range [{actual_min}-{actual_max}] outside [{s_min}-{s_max}]")
+            st.session_state["_quality_checks"] = quality_checks
 
             # Increment internal usage counter (admin tracking)
             usage_stats = _increment_usage_counter()
@@ -6542,6 +7628,13 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
 
         with st.expander("Preview (first 20 rows)"):
             st.dataframe(df.head(20), use_container_width=True)
+
+        # v1.2.5: Data Quality Report expander
+        quality_checks = st.session_state.get("_quality_checks", [])
+        if quality_checks:
+            with st.expander("📊 Data Quality Report", expanded=False):
+                for check in quality_checks:
+                    st.markdown(check)
 
         st.divider()
         st.subheader("Email (optional)")
