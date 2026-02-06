@@ -4,7 +4,7 @@ GitHub QSF File Collector
 Automatically uploads new QSF files to a GitHub repository for collection purposes.
 Runs silently in the background without interrupting user workflow.
 
-Version: 1.0.0
+Version: 1.2.0
 
 Configuration via Streamlit secrets:
     GITHUB_TOKEN: Personal access token with repo write permissions
@@ -12,10 +12,25 @@ Configuration via Streamlit secrets:
     GITHUB_QSF_PATH: Path within repo for QSF files (default: "simulation_app/example_files")
     GITHUB_COLLECTION_ENABLED: Set to "true" to enable (default: disabled)
 
+Token Types Supported:
+    - Classic tokens (ghp_XXXXXX): Require 'repo' scope
+    - Fine-grained tokens (github_pat_XXXXXX): Require:
+        * Repository access: Read and Write for Contents
+        * Repository: Select the specific repo (e.g., eugendimant/research-simulations)
+
 To generate a GitHub token:
-    1. Go to GitHub Settings → Developer settings → Personal access tokens → Tokens (classic)
-    2. Generate new token with 'repo' scope
-    3. Copy token and add to Streamlit secrets as GITHUB_TOKEN
+    OPTION 1 - Classic Token (Recommended):
+        1. Go to GitHub Settings → Developer settings → Personal access tokens → Tokens (classic)
+        2. Generate new token with 'repo' scope (full control of private repositories)
+        3. Copy token (starts with 'ghp_') and add to Streamlit secrets as GITHUB_TOKEN
+
+    OPTION 2 - Fine-grained Token:
+        1. Go to GitHub Settings → Developer settings → Personal access tokens → Fine-grained tokens
+        2. Generate new token with:
+           - Resource owner: Your account
+           - Repository access: Only select repositories → select your repo
+           - Permissions → Repository permissions → Contents: Read and Write
+        3. Copy token (starts with 'github_pat_') and add to Streamlit secrets as GITHUB_TOKEN
 """
 
 import base64
@@ -28,7 +43,38 @@ from functools import lru_cache
 # Configure module logger
 logger = logging.getLogger(__name__)
 
-__version__ = "1.0.0"
+__version__ = "1.2.0"
+
+
+def _validate_token_format(token: str) -> Tuple[bool, str]:
+    """
+    Validate GitHub token format.
+
+    Returns:
+        Tuple of (is_valid, message)
+    """
+    if not token:
+        return False, "Token is empty"
+
+    token = token.strip()
+
+    # Classic tokens start with 'ghp_' and are ~40 chars
+    if token.startswith("ghp_"):
+        if len(token) >= 30:
+            return True, "Classic token (ghp_) detected"
+        return False, "Classic token appears too short"
+
+    # Fine-grained tokens start with 'github_pat_'
+    if token.startswith("github_pat_"):
+        if len(token) >= 30:
+            return True, "Fine-grained token (github_pat_) detected"
+        return False, "Fine-grained token appears too short"
+
+    # Old format tokens (deprecated but might still work)
+    if len(token) == 40 and token.isalnum():
+        return True, "Legacy token format detected (may be deprecated)"
+
+    return False, f"Unknown token format. Token should start with 'ghp_' (classic) or 'github_pat_' (fine-grained). Got: {token[:10]}..."
 
 
 def _get_config() -> dict:
@@ -49,6 +95,33 @@ def is_collection_enabled() -> bool:
     """Check if QSF collection is enabled and properly configured."""
     config = _get_config()
     return config["enabled"] and bool(config["token"]) and bool(config["repo"])
+
+
+def get_collection_status() -> dict:
+    """
+    Get detailed status of GitHub QSF collection configuration.
+
+    Returns a dict with:
+        - enabled: bool
+        - token_valid: bool
+        - token_message: str
+        - repo: str
+        - path: str
+        - ready: bool (all checks pass)
+    """
+    config = _get_config()
+
+    token = config.get("token", "")
+    token_valid, token_message = _validate_token_format(token)
+
+    return {
+        "enabled": config.get("enabled", False),
+        "token_valid": token_valid,
+        "token_message": token_message,
+        "repo": config.get("repo", ""),
+        "path": config.get("path", ""),
+        "ready": config.get("enabled", False) and token_valid and bool(config.get("repo")),
+    }
 
 
 def _sanitize_filename(filename: str) -> str:
@@ -105,8 +178,15 @@ def _upload_to_github(filename: str, content: bytes, config: dict) -> Tuple[bool
     try:
         import requests
 
+        # v1.2.0: Validate token format before attempting upload
+        token = config.get('token', '')
+        token_valid, token_msg = _validate_token_format(token)
+        if not token_valid:
+            logger.warning(f"GitHub token validation failed: {token_msg}")
+            return False, f"Token validation failed: {token_msg}"
+
         headers = {
-            "Authorization": f"token {config['token']}",
+            "Authorization": f"token {token}",
             "Accept": "application/vnd.github.v3+json",
         }
 
@@ -127,15 +207,36 @@ def _upload_to_github(filename: str, content: bytes, config: dict) -> Tuple[bool
             "branch": "main",  # Or could be configurable
         }
 
+        logger.info(f"Attempting GitHub upload: {filename} to {config['repo']}/{config['path']}")
         response = requests.put(url, headers=headers, json=payload, timeout=30)
 
         if response.status_code in (200, 201):
-            logger.info(f"Successfully uploaded {filename} to GitHub")
+            logger.info(f"Successfully uploaded {filename} to GitHub (status: {response.status_code})")
             return True, f"Uploaded {filename}"
         else:
-            error_msg = response.json().get("message", "Unknown error")
-            logger.warning(f"GitHub upload failed: {error_msg}")
-            return False, error_msg
+            # v1.2.0: More detailed error logging
+            try:
+                error_data = response.json()
+                error_msg = error_data.get("message", "Unknown error")
+                doc_url = error_data.get("documentation_url", "")
+            except Exception:
+                error_msg = f"HTTP {response.status_code}"
+                doc_url = ""
+
+            detailed_error = f"GitHub API error: {error_msg} (HTTP {response.status_code})"
+            if response.status_code == 401:
+                detailed_error += " - Token may be invalid or expired"
+            elif response.status_code == 403:
+                detailed_error += " - Token may lack required permissions (needs 'repo' scope or Contents write access)"
+            elif response.status_code == 404:
+                detailed_error += f" - Repository '{config['repo']}' or path '{config['path']}' not found"
+            elif response.status_code == 422:
+                detailed_error += " - File may already exist or content is invalid"
+
+            logger.warning(detailed_error)
+            if doc_url:
+                logger.debug(f"GitHub docs: {doc_url}")
+            return False, detailed_error
 
     except Exception as e:
         logger.warning(f"Error uploading to GitHub: {e}")

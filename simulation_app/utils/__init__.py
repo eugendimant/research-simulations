@@ -2,7 +2,7 @@
 """
 Utility modules for the Behavioral Experiment Simulation Tool.
 
-Version: 1.1.0 - Enhanced Data Quality & UI
+Version: 1.2.0 - Flexible Scale Ranges & Improved DV UI
 
 Changes (v1.0.0 - 20 Iterations of Comprehensive Improvements):
     === ENHANCED SCALE/MATRIX DETECTION ===
@@ -65,7 +65,7 @@ Modules:
 """
 
 # Package version - should match all module versions
-__version__ = "1.1.0"
+__version__ = "1.2.0"
 
 from .qsf_parser import parse_qsf_file, extract_survey_structure, generate_qsf_summary
 from .simulation_engine import SimulationEngine
@@ -129,6 +129,7 @@ from .github_qsf_collector import (
     collect_qsf_async,
     collect_qsf_sync,
     is_collection_enabled,
+    get_collection_status,  # v1.2.0: Added detailed status function
 )
 
 __all__ = [
@@ -191,4 +192,5 @@ __all__ = [
     'collect_qsf_async',
     'collect_qsf_sync',
     'is_collection_enabled',
+    'get_collection_status',  # v1.2.0
 ]
