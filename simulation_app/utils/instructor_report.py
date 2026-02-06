@@ -6,7 +6,7 @@ Generates comprehensive instructor-facing reports for student simulations.
 """
 
 # Version identifier to help track deployed code
-__version__ = "1.2.0"  # v1.2.0: Comprehensive Simulation Intelligence Report with domain analysis, persona rationale, effect strategy
+__version__ = "1.2.3"  # v1.2.3: Fix persona_distribution nested dict handling, add safe numeric conversions
 
 from dataclasses import dataclass
 from datetime import datetime
@@ -63,6 +63,75 @@ except ImportError:
         SVG_CHARTS_AVAILABLE = True
     except ImportError:
         SVG_CHARTS_AVAILABLE = False
+
+
+def _extract_persona_proportions(persona_dist: Any) -> Dict[str, float]:
+    """Extract a flat {persona_name: proportion} dict from persona_distribution metadata.
+
+    v1.2.3: The persona_distribution metadata was changed to a nested dict with
+    'counts', 'proportions', and 'total_participants' keys. This function handles
+    both the new nested format and the old flat format for backwards compatibility.
+
+    Args:
+        persona_dist: Either a flat dict {name: proportion} or nested dict with
+                      'proportions' key.
+
+    Returns:
+        Flat dict mapping persona names to float proportions (0-1 range).
+    """
+    if not persona_dist or not isinstance(persona_dist, dict):
+        return {}
+
+    # New nested format: {"counts": {...}, "proportions": {...}, "total_participants": N}
+    if "proportions" in persona_dist and isinstance(persona_dist["proportions"], dict):
+        raw = persona_dist["proportions"]
+        result = {}
+        for k, v in raw.items():
+            try:
+                result[str(k)] = float(v)
+            except (ValueError, TypeError):
+                pass
+        return result
+
+    # Old flat format: {"Engaged Responder": 0.35, "Satisficer": 0.22, ...}
+    # Check if values are numeric (not dicts/lists)
+    result = {}
+    for k, v in persona_dist.items():
+        if isinstance(v, (int, float)):
+            result[str(k)] = float(v)
+        elif isinstance(v, str):
+            try:
+                result[str(k)] = float(v)
+            except (ValueError, TypeError):
+                pass
+        # Skip dict/list values (sub-keys of new format without 'proportions')
+    return result
+
+
+def _safe_float(value: Any, default: float = 0.0) -> float:
+    """Safely convert a value to float, handling dicts, None, NaN, and other edge cases.
+
+    v1.2.3: Added to prevent float() crashes on unexpected types.
+    """
+    if value is None:
+        return default
+    if isinstance(value, (int, float)):
+        if isinstance(value, float) and (math.isnan(value) or math.isinf(value)):
+            return default
+        return float(value)
+    if isinstance(value, dict):
+        # Try to extract a numeric value from common dict structures
+        for key in ('value', 'proportion', 'mean', 'count'):
+            if key in value:
+                try:
+                    return float(value[key])
+                except (ValueError, TypeError):
+                    pass
+        return default
+    try:
+        return float(value)
+    except (ValueError, TypeError):
+        return default
 
 
 def _clean_condition_name(condition: str) -> str:
@@ -299,6 +368,9 @@ class InstructorReportConfig:
     include_persona_summary: bool = True
     include_variables: bool = True
     include_r_script: bool = True
+    include_python_script: bool = True  # v1.2.3: Added missing config field
+    include_spss_syntax: bool = True  # v1.2.3: Added missing config field
+    include_stata_script: bool = True  # v1.2.3: Added missing config field
 
 
 class InstructorReportGenerator:
@@ -546,7 +618,8 @@ class InstructorReportGenerator:
         lines.append("### Persona Selection Rationale")
         lines.append("")
 
-        persona_dist = metadata.get('persona_distribution', {})
+        persona_dist_raw = metadata.get('persona_distribution', {})
+        persona_dist = _extract_persona_proportions(persona_dist_raw)
         if persona_dist:
             # Explain why certain personas were chosen
             lines.append("The simulation assigned response style personas based on:")
@@ -569,7 +642,7 @@ class InstructorReportGenerator:
             lines.append("")
             lines.append("| Persona | Attention Level | Response Consistency | Endpoint Use |")
             lines.append("|---------|-----------------|---------------------|--------------|")
-            for persona, share in sorted(persona_dist.items(), key=lambda x: -float(x[1]))[:5]:
+            for persona, share in sorted(persona_dist.items(), key=lambda x: -_safe_float(x[1]))[:5]:
                 traits = persona_traits.get(persona.lower(), {'attention': 0.7, 'consistency': 0.6, 'extremity': 0.3})
                 att = traits['attention']
                 con = traits['consistency']
@@ -800,7 +873,8 @@ class InstructorReportGenerator:
             lines.append("3. **Realistic proportions**: The distribution aims to match what researchers typically observe in online panel data (e.g., ~5-15% satisficers, ~5% careless responders)")
             lines.append("")
 
-            dist = metadata.get("persona_distribution", {}) or {}
+            dist_raw = metadata.get("persona_distribution", {}) or {}
+            dist = _extract_persona_proportions(dist_raw)
             if dist:
                 lines.append("### Persona Breakdown for This Simulation")
                 lines.append("")
@@ -855,10 +929,11 @@ class InstructorReportGenerator:
                     },
                 }
 
-                for persona, share in sorted(dist.items(), key=lambda x: -float(x[1])):
+                for persona, share in sorted(dist.items(), key=lambda x: -_safe_float(x[1])):
                     persona_key = persona.lower()
                     info = persona_info.get(persona_key, {"desc": "Standard response pattern", "chars": "Typical survey behavior"})
-                    pct = float(share) * 100 if float(share) <= 1 else float(share)
+                    share_f = _safe_float(share)
+                    pct = share_f * 100 if share_f <= 1 else share_f
                     lines.append(f"| **{persona.title()}** | {info['desc']} | {info['chars']} | {pct:.1f}% |")
                 lines.append("")
 
@@ -868,8 +943,9 @@ class InstructorReportGenerator:
                 n_total = metadata.get("sample_size", len(df))
                 lines.append("| Persona | Approximate Count | Expected Impact |")
                 lines.append("|---------|-------------------|-----------------|")
-                for persona, share in sorted(dist.items(), key=lambda x: -float(x[1])):
-                    share_val = float(share) if float(share) <= 1 else float(share) / 100
+                for persona, share in sorted(dist.items(), key=lambda x: -_safe_float(x[1])):
+                    share_f = _safe_float(share)
+                    share_val = share_f if share_f <= 1 else share_f / 100
                     count = int(round(n_total * share_val))
                     # Describe expected impact
                     impact = self._get_persona_impact(persona.lower())
@@ -1844,12 +1920,14 @@ class ComprehensiveInstructorReport:
         lines.append("-" * 80)
         lines.append("")
 
-        dist = metadata.get("persona_distribution", {}) or {}
+        dist_raw = metadata.get("persona_distribution", {}) or {}
+        dist = _extract_persona_proportions(dist_raw)
         if dist:
             lines.append("| Persona | % | Expected N | Impact on Data |")
             lines.append("|---------|---|------------|----------------|")
-            for persona, share in sorted(dist.items(), key=lambda x: -float(x[1])):
-                share_val = float(share) if float(share) <= 1 else float(share) / 100
+            for persona, share in sorted(dist.items(), key=lambda x: -_safe_float(x[1])):
+                share_f = _safe_float(share)
+                share_val = share_f if share_f <= 1 else share_f / 100
                 pct = share_val * 100
                 count = int(round(n_total * share_val))
                 impact = self._get_detailed_impact(persona.lower())
@@ -1859,13 +1937,13 @@ class ComprehensiveInstructorReport:
             # Estimate impact on results
             lines.append("### Estimated Impact on Results")
             lines.append("")
-            acquiescent_share = float(dist.get("acquiescent", 0))
-            skeptic_share = float(dist.get("skeptic", 0))
+            acquiescent_share = _safe_float(dist.get("acquiescent", 0))
+            skeptic_share = _safe_float(dist.get("skeptic", 0))
             if acquiescent_share > 0.1:
                 lines.append(f"⚠️ High acquiescence ({acquiescent_share:.0%}) may inflate positive responses")
             if skeptic_share > 0.1:
                 lines.append(f"⚠️ High skepticism ({skeptic_share:.0%}) may deflate responses")
-            careless_share = float(dist.get("careless", 0)) + float(dist.get("random", 0))
+            careless_share = _safe_float(dist.get("careless", 0)) + _safe_float(dist.get("random", 0))
             if careless_share > 0.1:
                 lines.append(f"⚠️ Notable careless/random ({careless_share:.0%}) - verify exclusion criteria are working")
             lines.append("")
