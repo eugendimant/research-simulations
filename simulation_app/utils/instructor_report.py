@@ -6,7 +6,7 @@ Generates comprehensive instructor-facing reports for student simulations.
 """
 
 # Version identifier to help track deployed code
-__version__ = "1.2.6"  # v1.2.6: Quality assurance section, study summary, data cleaning guide
+__version__ = "1.2.7"  # v1.2.7: Conversational survey builder support
 
 from dataclasses import dataclass
 from datetime import datetime

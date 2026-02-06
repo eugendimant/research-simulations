@@ -45,7 +45,7 @@ This module is designed to run inside a `utils/` package (i.e., imported as
 """
 
 # Version identifier to help track deployed code
-__version__ = "1.2.6"  # v1.2.6: Expanded domain calibration, _safe_numeric utility
+__version__ = "1.2.7"  # v1.2.7: Conversational survey builder support
 
 # =============================================================================
 # SCIENTIFIC FOUNDATIONS FOR SIMULATION

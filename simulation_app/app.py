@@ -2961,6 +2961,16 @@ def _render_conversational_builder() -> None:
         "Describe your study in plain language — we'll extract the technical details automatically."
     )
 
+    # Example studies for inspiration
+    with st.expander("Need inspiration? Click an example to auto-fill", expanded=False):
+        examples = SurveyDescriptionParser.generate_example_descriptions()
+        for idx, ex in enumerate(examples):
+            if st.button(f"Load: {ex['title']}", key=f"example_btn_{idx}"):
+                st.session_state["builder_conditions_text"] = ex["conditions"]
+                st.session_state["builder_scales_text"] = ex["scales"]
+                st.session_state["builder_oe_text"] = ex.get("open_ended", "")
+                st.rerun()
+
     # ── Section 1: Experimental Conditions ──────────────────────────────
     st.markdown("---")
     st.markdown("#### 1. Experimental Conditions")
@@ -3100,29 +3110,48 @@ def _render_conversational_builder() -> None:
     )
     st.session_state["builder_design_type"] = design_type
 
+    # ── Section 6: Demographics (Optional) ──────────────────────────────
+    with st.expander("6. Demographics Configuration (Optional)", expanded=False):
+        st.caption("Configure the demographics of your simulated sample.")
+        col_age, col_gender = st.columns(2)
+        with col_age:
+            age_mean = st.number_input(
+                "Mean age", min_value=18, max_value=80, value=35,
+                key="builder_age_mean",
+            )
+            age_sd = st.number_input(
+                "Age SD", min_value=1, max_value=30, value=12,
+                key="builder_age_sd",
+            )
+        with col_gender:
+            gender_pct = st.slider(
+                "Female %", min_value=0, max_value=100, value=50,
+                key="builder_gender_pct",
+                help="Percentage of female participants in the sample",
+            )
+        st.session_state["demographics_config"] = {
+            "age_mean": age_mean,
+            "age_sd": age_sd,
+            "gender_quota": gender_pct,
+        }
+
     # ── Validation & Submission ─────────────────────────────────────────
     st.markdown("---")
     st.markdown("#### Review & Submit")
 
-    # Validate
-    errors: List[str] = []
-    warnings: List[str] = []
-
-    if not parsed_conditions:
-        errors.append("Please describe at least 2 experimental conditions")
-    elif len(parsed_conditions) < 2:
-        errors.append("You need at least 2 conditions for an experiment")
-
-    if not parsed_scales:
-        errors.append("Please describe at least one scale or dependent variable")
-
-    if builder_sample < 10:
-        errors.append("Sample size must be at least 10")
-    elif builder_sample < 30 * len(parsed_conditions):
-        warnings.append(
-            f"Sample size of {builder_sample} may be low for {len(parsed_conditions)} conditions. "
-            f"Consider at least {30 * len(parsed_conditions)} (30 per condition)."
-        )
+    # Build a preliminary ParsedDesign for validation
+    _pre_factors = parser.detect_factorial_structure(parsed_conditions) if parsed_conditions else []
+    _pre_design = ParsedDesign(
+        conditions=parsed_conditions,
+        scales=parsed_scales,
+        open_ended=parsed_oe,
+        factors=_pre_factors,
+        design_type=design_type,
+        sample_size=builder_sample,
+    )
+    validation = parser.validate_full_design(_pre_design)
+    errors = validation["errors"]
+    warnings = validation["warnings"]
 
     if not parsed_oe:
         warnings.append("No open-ended questions detected (this is fine if your study doesn't have any)")
@@ -3321,6 +3350,68 @@ def _render_builder_design_review() -> None:
         st.session_state["condition_allocation_n"] = alloc_n
         st.session_state["condition_allocation"] = alloc
         st.caption(f"Equal allocation: {per_cond}-{per_cond + 1} participants per condition")
+
+    # ── Difficulty Level ─────────────────────────────────────────────────
+    st.markdown("---")
+    st.markdown("#### Data Quality / Difficulty")
+    difficulty = st.select_slider(
+        "How 'messy' should the simulated data be?",
+        options=["easy", "medium", "hard", "expert"],
+        value=st.session_state.get("difficulty_level", "medium"),
+        key="builder_difficulty",
+        help="Easy = clean data with high attention. Hard = more noise, careless respondents, missing data.",
+    )
+    st.session_state["difficulty_level"] = difficulty
+
+    # ── Effect Sizes (Optional) ─────────────────────────────────────────
+    if conditions and scales and len(conditions) >= 2:
+        with st.expander("Expected Effect Sizes (Optional)", expanded=False):
+            st.caption(
+                "Specify expected differences between conditions. "
+                "This makes the simulated data reflect realistic experimental effects."
+            )
+            add_effect = st.checkbox("Add an expected effect", key="builder_add_effect")
+            if add_effect:
+                effect_dv = st.selectbox(
+                    "Dependent variable",
+                    [s.get("name", "Unknown") for s in scales],
+                    key="builder_effect_dv",
+                )
+                col_hi, col_lo = st.columns(2)
+                with col_hi:
+                    level_high = st.selectbox(
+                        "Higher-scoring condition",
+                        conditions,
+                        key="builder_effect_high",
+                    )
+                with col_lo:
+                    remaining = [c for c in conditions if c != level_high]
+                    level_low = st.selectbox(
+                        "Lower-scoring condition",
+                        remaining if remaining else conditions,
+                        key="builder_effect_low",
+                    )
+                cohens_d = st.slider(
+                    "Cohen's d (effect size)",
+                    min_value=0.0, max_value=1.5, value=0.5, step=0.1,
+                    key="builder_cohens_d",
+                    help="0.2 = small, 0.5 = medium, 0.8 = large effect",
+                )
+                # Store the effect size spec
+                st.session_state["builder_effect_sizes"] = [
+                    {
+                        "variable": effect_dv,
+                        "factor": "condition",
+                        "level_high": level_high,
+                        "level_low": level_low,
+                        "cohens_d": cohens_d,
+                        "direction": "positive",
+                    }
+                ]
+                st.caption(
+                    f"Effect: **{effect_dv}** will be ~{cohens_d}d higher in "
+                    f"'{level_high}' than '{level_low}'"
+                )
 
     # ── Confirmation ────────────────────────────────────────────────────
     st.markdown("---")
@@ -6303,6 +6394,21 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
         )
 
         effect_sizes = []
+
+        # Pre-populate from builder if available
+        builder_effects = st.session_state.get("builder_effect_sizes", [])
+        for be in builder_effects:
+            try:
+                effect_sizes.append(EffectSizeSpec(
+                    variable=be["variable"],
+                    factor=be.get("factor", "condition"),
+                    level_high=be["level_high"],
+                    level_low=be["level_low"],
+                    cohens_d=float(be.get("cohens_d", 0.5)),
+                    direction=be.get("direction", "positive"),
+                ))
+            except (KeyError, ValueError):
+                pass
 
         # Get available scales and factors for selection
         available_scales = [s.get("name", "Main_DV") for s in scales] if scales else ["Main_DV"]
