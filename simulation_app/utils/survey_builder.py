@@ -19,7 +19,7 @@ import re
 from typing import Any, Dict, List, Optional, Tuple
 from dataclasses import dataclass, field
 
-__version__ = "1.3.2"
+__version__ = "1.3.3"
 
 
 # ─── Common scale anchors used in behavioral science ───────────────────────────
@@ -345,12 +345,7 @@ class SurveyDescriptionParser:
                 expected_count = int(count_str)
                 levels = self._parse_list_items(levels_str)
                 if len(levels) >= 2 and factor_name:
-                    # Verify count matches if reasonable
-                    if expected_count == len(levels) or expected_count < 2:
-                        factors.append({"name": factor_name, "levels": levels})
-                    else:
-                        # Count mismatch but still use parsed levels
-                        factors.append({"name": factor_name, "levels": levels})
+                    factors.append({"name": factor_name, "levels": levels})
             if len(factors) >= 2:
                 crossed = self._cross_factors(factors)
                 for combo_name in crossed:
@@ -360,14 +355,11 @@ class SurveyDescriptionParser:
                     ))
                 return conditions, warnings
 
-        # Pattern 2: Factorial "AxB" or "A x B" patterns (supports 2-5 factors)
-        # Use findall to capture all dimension numbers: "2x3x2" → ['2','3','2']
-        factorial_dims = re.findall(r'(\d+)', re.search(
-            r'(\d+)(?:\s*[x×X]\s*(\d+))+', text_clean
-        ).group() if re.search(r'(\d+)(?:\s*[x×X]\s*(\d+))+', text_clean) else '')
-        factorial_match = re.search(
-            r'(\d+)(?:\s*[x×X]\s*\d+)+', text_clean
-        )
+        # Pattern 2: Factorial "AxB" or "A x B" patterns (supports 2-5+ factors)
+        factorial_match = re.search(r'(\d+)(?:\s*[x×X]\s*\d+)+', text_clean)
+        factorial_dims: list = []
+        if factorial_match:
+            factorial_dims = re.findall(r'\d+', factorial_match.group())
         if factorial_match and len(factorial_dims) >= 2:
             dims = [int(d) for d in factorial_dims]
             # Extract factor levels from surrounding text
@@ -1096,6 +1088,15 @@ class SurveyDescriptionParser:
                 "for clearer experimental comparisons."
             )
 
+        # Warn about very long condition names (e.g., from large factorials)
+        for c in parsed.conditions:
+            if len(c.name) > 100:
+                warnings.append(
+                    f"Condition name '{c.name[:50]}...' is very long ({len(c.name)} chars). "
+                    f"This may cause display issues in reports and CSV headers."
+                )
+                break  # Only warn once
+
         # ── Scale checks ─────────────────────────────────────────────────
         if len(parsed.scales) < 1:
             errors.append(
@@ -1168,7 +1169,7 @@ class SurveyDescriptionParser:
         if parsed.factors and len(parsed.factors) >= 2:
             expected_cells = 1
             for f in parsed.factors:
-                expected_cells *= len(f.get("levels", f.get("levels", []))) if isinstance(f, dict) else 1
+                expected_cells *= len(f.get("levels", [])) if isinstance(f, dict) else 1
             if expected_cells != n_conditions and expected_cells > 1:
                 warnings.append(
                     f"Factorial design expects {expected_cells} crossed conditions "
@@ -1385,10 +1386,10 @@ class SurveyDescriptionParser:
         """
         factors: List[Dict[str, Any]] = []
         if dims is None:
-            # Legacy fallback: extract from match groups
-            dims = [int(factorial_match.group(1)), int(factorial_match.group(2))]
-            if factorial_match.lastindex and factorial_match.lastindex >= 3 and factorial_match.group(3):
-                dims.append(int(factorial_match.group(3)))
+            # Fallback: extract all digits from the matched factorial pattern
+            dims = [int(d) for d in re.findall(r'\d+', factorial_match.group())]
+            if len(dims) < 2:
+                return []
 
         noise_words = {
             'the', 'and', 'with', 'for', 'or', 'a', 'an', 'in', 'on',
@@ -1734,8 +1735,12 @@ class SurveyDescriptionParser:
         elif 'numeric' in text_lower or 'dollar' in text_lower or 'wtp' in text_lower or 'willingness to pay' in text_lower:
             scale_type = "numeric"
             if scale_min == 1 and scale_max == 7:
+                # Default numeric range; use 0-500 for dollar/WTP, 0-100 otherwise
                 scale_min = 0
-                scale_max = 100
+                if 'dollar' in text_lower or 'wtp' in text_lower or 'willingness to pay' in text_lower:
+                    scale_max = 500
+                else:
+                    scale_max = 100
 
         # Try to extract scale name (only if abbreviation didn't set it)
         if not abbrev_matched:

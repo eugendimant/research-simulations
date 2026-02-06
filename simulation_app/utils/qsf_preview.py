@@ -33,7 +33,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 # Version identifier to help track deployed code
-__version__ = "1.3.2"  # v1.3.2: NxM factorial support, engine fixes, 74 e2e tests
+__version__ = "1.3.3"  # v1.3.3: Edge-case hardening, validation, 142 e2e tests
 
 
 # ============================================================================

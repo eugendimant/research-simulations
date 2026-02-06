@@ -52,8 +52,8 @@ import streamlit as st
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.3.2"
-BUILD_ID = "20260206-v132-nxm-factorial-fixes"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.3.3"
+BUILD_ID = "20260206-v133-edge-case-hardening"  # Change this to force cache invalidation
 
 def _verify_and_reload_utils():
     """Verify utils modules are at correct version, force reload if needed.
@@ -109,7 +109,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF"
-APP_VERSION = "1.3.2"  # v1.3.2: NxM factorial support, engine fixes, 74 e2e tests
+APP_VERSION = "1.3.3"  # v1.3.3: Edge-case hardening, validation, 142 e2e tests
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -810,42 +810,6 @@ def _normalize_factor_specs(factors: List[Any], fallback_conditions: List[str]) 
     return normalized or [{"name": "Condition", "levels": fallback_conditions}]
 
 
-def _infer_factors_from_conditions(conditions: List[str]) -> List[Dict[str, Any]]:
-    """Infer factorial structure from condition names containing ' × ' separator.
-
-    If conditions look like 'A × B' crossed format, extracts factors and levels.
-    Returns empty list if conditions aren't factorial.
-    """
-    if not conditions or len(conditions) < 2:
-        return []
-
-    # Check if conditions use the × separator
-    sep = " × "
-    parts_list = [c.split(sep) for c in conditions]
-    n_factors = len(parts_list[0])
-
-    # All conditions must have the same number of factors
-    if n_factors < 2 or not all(len(p) == n_factors for p in parts_list):
-        return []
-
-    factors: List[Dict[str, Any]] = []
-    for i in range(n_factors):
-        # Collect unique levels for this factor position
-        levels = []
-        seen: set = set()
-        for parts in parts_list:
-            level = parts[i].strip()
-            # Handle "FactorName: Level" format
-            if ": " in level:
-                level = level.split(": ", 1)[1]
-            if level.lower() not in seen:
-                levels.append(level)
-                seen.add(level.lower())
-        factors.append({"name": f"Factor_{i+1}", "levels": levels})
-
-    return factors
-
-
 def _normalize_condition_label(label: str) -> str:
     if not label:
         return ""
@@ -1103,7 +1067,11 @@ def _check_prereg_consistency(prereg_data: Dict[str, Any], design_data: Dict[str
     prereg_sample = prereg_data.get('sample_size')
     design_sample = design_data.get('sample_size')
     if prereg_sample and design_sample:
-        if abs(int(prereg_sample) - int(design_sample)) > 10:
+        try:
+            _ps, _ds = int(prereg_sample), int(design_sample)
+        except (ValueError, TypeError):
+            _ps, _ds = 0, 0
+        if _ps and _ds and abs(_ps - _ds) > 10:
             warnings.append({
                 'type': 'sample_size',
                 'severity': 'warning',
@@ -3405,7 +3373,11 @@ def _render_conversational_builder() -> None:
         _cond_names = [c.name for c in parsed_conditions]
         _n_conds = max(len(_cond_names), 1)
         _per_cell = builder_sample // _n_conds
-        st.session_state["condition_allocation_n"] = {c: _per_cell for c in _cond_names}
+        _remainder = builder_sample % _n_conds
+        st.session_state["condition_allocation_n"] = {
+            c: _per_cell + (1 if i < _remainder else 0)
+            for i, c in enumerate(_cond_names)
+        }
         st.session_state["builder_design_type"] = inferred.get("design_type", "between")
         st.session_state["builder_sample_size"] = builder_sample
 
@@ -3426,6 +3398,10 @@ def _render_builder_design_review() -> None:
     # ── Go back to edit button (Issue #19) ─────────────────────────────
     if st.button("← Edit my study description", key="builder_go_back_edit"):
         st.session_state["conversational_builder_complete"] = False
+        # Clear stale design data so user must re-submit
+        st.session_state.pop("inferred_design", None)
+        st.session_state.pop("builder_effect_sizes", None)
+        st.session_state.pop("builder_parsed_design", None)
         st.rerun()
 
     st.markdown("### Review Your Study Design")
@@ -3545,7 +3521,7 @@ def _render_builder_design_review() -> None:
                             _pv["name"],
                             min_value=0,
                             max_value=100,
-                            value=int(_pv["weight"] * 100),
+                            value=int(float(_pv.get("weight", 0)) * 100),
                             step=5,
                             key=f"pw_{_pk}",
                             help=_pv.get("description", "")[:200],
@@ -3561,7 +3537,7 @@ def _render_builder_design_review() -> None:
                                 _pv["name"],
                                 min_value=0,
                                 max_value=100,
-                                value=int(_pv["weight"] * 100),
+                                value=int(float(_pv.get("weight", 0)) * 100),
                                 step=5,
                                 key=f"pw_{_pk}",
                                 help=_pv.get("description", "")[:200],
@@ -3609,11 +3585,16 @@ def _render_builder_design_review() -> None:
             inferred["factors"] = _infer_factors_from_conditions(conditions)
             st.session_state["inferred_design"] = inferred
             st.session_state["selected_conditions"] = conditions
-            # Update allocation
+            # Clear stale effect sizes that may reference removed condition
+            st.session_state["builder_effect_sizes"] = []
+            # Update allocation with proper remainder distribution
             _n = max(len(conditions), 1)
             _samp = int(st.session_state.get("sample_size", 100))
             _per = _samp // _n
-            st.session_state["condition_allocation_n"] = {c: _per for c in conditions}
+            _rem = _samp % _n
+            st.session_state["condition_allocation_n"] = {
+                c: _per + (1 if i < _rem else 0) for i, c in enumerate(conditions)
+            }
             st.session_state["condition_allocation"] = {c: round(100.0 / _n, 1) for c in conditions}
             st.rerun()
     else:
@@ -3634,21 +3615,37 @@ def _render_builder_design_review() -> None:
     if _add_clicked and extra_conds.strip():
         new_conds = [c.strip() for c in extra_conds.split(",") if c.strip()]
         _added = 0
+        _skipped = []
         for c in new_conds:
-            if c not in conditions:
-                conditions.append(c)
-                _added += 1
+            # Skip if duplicate or contains factorial separator (would break factor parsing)
+            if c in conditions:
+                continue
+            if " × " in c or " x " in c.lower():
+                _skipped.append(c)
+                continue
+            if len(c) > 200:
+                _skipped.append(c[:50] + "... (too long)")
+                continue
+            conditions.append(c)
+            _added += 1
+        if _skipped:
+            st.warning(f"Skipped invalid conditions: {', '.join(_skipped)}")
         if _added > 0:
             inferred["conditions"] = conditions
             # Recalculate factors from updated conditions
             inferred["factors"] = _infer_factors_from_conditions(conditions)
             st.session_state["inferred_design"] = inferred
             st.session_state["selected_conditions"] = conditions
-            # Update allocation
+            # Clear stale effect sizes that may reference removed/added conditions
+            st.session_state["builder_effect_sizes"] = []
+            # Update allocation with proper remainder distribution
             _n = max(len(conditions), 1)
             _samp = int(st.session_state.get("sample_size", 100))
             _per = _samp // _n
-            st.session_state["condition_allocation_n"] = {c: _per for c in conditions}
+            _rem = _samp % _n
+            st.session_state["condition_allocation_n"] = {
+                c: _per + (1 if i < _rem else 0) for i, c in enumerate(conditions)
+            }
             st.session_state["condition_allocation"] = {c: round(100.0 / _n, 1) for c in conditions}
             st.rerun()
 
@@ -3657,7 +3654,7 @@ def _render_builder_design_review() -> None:
         st.markdown("---")
         st.markdown("#### Factorial Structure")
         for f in factors:
-            st.markdown(f"**{f['name']}**: {', '.join(f['levels'])}")
+            st.markdown(f"**{f.get('name', 'Factor')}**: {', '.join(f.get('levels', []))}")
 
         # Visual design table for 2-factor designs
         if len(factors) == 2:
@@ -3912,6 +3909,9 @@ def _render_builder_design_review() -> None:
                     f"Effect: **{effect_dv}** will be ~{cohens_d}d higher in "
                     f"'{level_high}' than '{level_low}'"
                 )
+            else:
+                # Clear stale effect sizes when checkbox is unchecked
+                st.session_state["builder_effect_sizes"] = []
 
     # ── Confirmation ────────────────────────────────────────────────────
     st.markdown("---")
@@ -7248,6 +7248,11 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
 
     if has_generated:
         st.success("Simulation complete! Download your files below.")
+        # Show generation warnings if any
+        _gen_meta = st.session_state.get("generated_metadata", {})
+        _gen_warns = _gen_meta.get("generation_warnings", []) if isinstance(_gen_meta, dict) else []
+        for _gw in _gen_warns:
+            st.warning(_gw)
 
     # Button: disabled if not ready, generating, or already generated
     can_generate = all_required_complete and not is_generating and not has_generated

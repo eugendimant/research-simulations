@@ -45,7 +45,7 @@ This module is designed to run inside a `utils/` package (i.e., imported as
 """
 
 # Version identifier to help track deployed code
-__version__ = "1.3.2"  # v1.3.2: NxM factorial support, engine fixes, 74 e2e tests
+__version__ = "1.3.3"  # v1.3.3: Edge-case hardening, validation, 142 e2e tests
 
 # =============================================================================
 # SCIENTIFIC FOUNDATIONS FOR SIMULATION
@@ -1081,7 +1081,8 @@ def _generate_correlated_items(
         return [response]
 
     # Average inter-item correlation needed
-    r_bar = target_alpha / (n_items - target_alpha * (n_items - 1))
+    _denom = n_items - target_alpha * (n_items - 1)
+    r_bar = target_alpha / _denom if abs(_denom) > 1e-9 else 0.5
     r_bar = np.clip(r_bar, 0.1, 0.9)
 
     # Factor loading (sqrt of shared variance)
@@ -1727,7 +1728,11 @@ def _generate_consistent_responses(
         # If there are item similarities, incorporate those
         if item_similarities and previous_response is not None and i > 0:
             # Pull toward previous response based on similarity
-            similarity = item_similarities[i-1][i] if i < len(item_similarities) else 0.5
+            similarity = (
+                item_similarities[i-1][i]
+                if i < len(item_similarities) and i < len(item_similarities[i-1])
+                else 0.5
+            )
             # v1.0.0: Guard against division by zero when scale_points <= 1
             scale_range = max(scale_points - 1, 1)
             prev_normalized = (previous_response - 1) / scale_range
@@ -4296,6 +4301,8 @@ class EnhancedSimulationEngine:
         pnts_pct = 0.015
 
         total = male_pct + female_pct + nonbinary_pct + pnts_pct
+        if total <= 0:
+            total = 1.0
         genders = rng.choice(
             [1, 2, 3, 4],
             size=int(n),
@@ -4399,7 +4406,9 @@ class EnhancedSimulationEngine:
         exclude_straightline = max_straight_line >= int(self.exclusion_criteria.straight_line_threshold)
 
         exclude_recommended = bool(exclude_time or exclude_attention or exclude_straightline)
-        if bool(self.exclusion_criteria.exclude_careless_responders):
+        # When exclude_careless_responders is True, flag only (don't recommend exclusion)
+        # — this lets instructors decide on exclusion rather than auto-excluding
+        if self.exclusion_criteria.exclude_careless_responders:
             exclude_recommended = False
 
         return {
@@ -4670,7 +4679,9 @@ class EnhancedSimulationEngine:
 
                 # Generate unique seed using participant, question, and question text hash
                 # v1.0.0 CRITICAL FIX: Use stable hash instead of Python's hash()
-                q_text_hash = sum(ord(c) * (j + 1) * 31 for j, c in enumerate(q_text[:50]))
+                # v1.3.3: Use MD5 of full text to avoid collisions on similar questions
+                _q_hash_input = (q_text + col_name).encode('utf-8', errors='replace')
+                q_text_hash = int(hashlib.md5(_q_hash_input).hexdigest()[:8], 16)
                 p_seed = (self.seed + i * 100 + col_hash + q_text_hash) % (2**31)
                 persona_name = assigned_personas[i]
                 persona = self.available_personas[persona_name]
@@ -4885,8 +4896,28 @@ class EnhancedSimulationEngine:
             },
             "validation_issues_corrected": len(validation_issues),
             "scale_verification": self._build_scale_verification_report(df),
+            "generation_warnings": self._check_generation_warnings(df),
         }
         return df, metadata
+
+    def _check_generation_warnings(self, df: pd.DataFrame) -> List[str]:
+        """Return any warnings about the generated data quality."""
+        warnings: List[str] = []
+        if "CONDITION" in df.columns and len(self.conditions) >= 2:
+            cell_counts = df["CONDITION"].value_counts()
+            min_cell = int(cell_counts.min()) if len(cell_counts) > 0 else 0
+            if min_cell < 5:
+                warnings.append(
+                    f"Smallest cell has only {min_cell} participants. "
+                    f"Statistical tests will be unreliable."
+                )
+            elif min_cell < 20 and len(self.conditions) >= 6:
+                warnings.append(
+                    f"Smallest cell has {min_cell} participants across "
+                    f"{len(self.conditions)} conditions. Consider increasing sample size "
+                    f"for more reliable statistics."
+                )
+        return warnings
 
     def _validate_generated_data(self, df: pd.DataFrame) -> List[Dict[str, Any]]:
         """
