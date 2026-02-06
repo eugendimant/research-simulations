@@ -52,8 +52,8 @@ import streamlit as st
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.2.3"
-BUILD_ID = "20260206-v123-fix-simulation"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.2.5"
+BUILD_ID = "20260206-v125-quality-assurance"  # Change this to force cache invalidation
 
 def _verify_and_reload_utils():
     """Verify utils modules are at correct version, force reload if needed.
@@ -107,7 +107,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF"
-APP_VERSION = "1.2.3"  # v1.2.3: Fix simulation crash - persona_distribution, safe numeric conversions, report isolation
+APP_VERSION = "1.2.5"  # v1.2.5: Data quality preview and quality assurance reporting
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -561,6 +561,113 @@ def _split_comma_list(value: str) -> List[str]:
     if not value:
         return []
     return [item.strip() for item in value.split(",") if item.strip()]
+
+
+def _validate_simulation_output(df: pd.DataFrame, metadata: dict, scales: list) -> Dict[str, Any]:
+    """
+    v1.2.4: Simulation quality validation gate.
+
+    This function MUST be called after every simulation to verify data quality.
+    It serves as the automated "self-improvement workflow" that ensures
+    simulations are never broken and data quality is maintained with every version.
+
+    Returns a dict with quality metrics and pass/fail status.
+    """
+    results = {
+        "passed": True,
+        "checks": [],
+        "warnings": [],
+        "errors": [],
+    }
+
+    # CHECK 1: DataFrame is not empty
+    if df is None or df.empty:
+        results["passed"] = False
+        results["errors"].append("DataFrame is empty - no data generated")
+        return results
+    results["checks"].append(f"✅ Data generated: {df.shape[0]} rows × {df.shape[1]} columns")
+
+    # CHECK 2: Expected columns exist
+    expected_cols = ["PARTICIPANT_ID", "CONDITION"]
+    for col in expected_cols:
+        if col in df.columns:
+            results["checks"].append(f"✅ Column '{col}' present")
+        else:
+            results["passed"] = False
+            results["errors"].append(f"❌ Missing required column: {col}")
+
+    # CHECK 3: Scale values within bounds
+    for scale in (scales or []):
+        s_name = str(scale.get("name", "")).strip().replace(" ", "_")
+        s_min = scale.get("scale_min", 1)
+        s_max = scale.get("scale_max", 7)
+        n_items = scale.get("num_items", 5)
+        try:
+            s_min = int(s_min) if not isinstance(s_min, dict) else 1
+            s_max = int(s_max) if not isinstance(s_max, dict) else 7
+            n_items = int(n_items) if not isinstance(n_items, dict) else 5
+        except (ValueError, TypeError):
+            continue
+
+        for item_num in range(1, n_items + 1):
+            col = f"{s_name}_{item_num}"
+            if col in df.columns:
+                try:
+                    actual_min = int(df[col].min())
+                    actual_max = int(df[col].max())
+                    if actual_min < s_min or actual_max > s_max:
+                        results["warnings"].append(
+                            f"⚠️ {col}: values [{actual_min}-{actual_max}] outside expected [{s_min}-{s_max}]"
+                        )
+                    else:
+                        results["checks"].append(f"✅ {col}: range [{actual_min}-{actual_max}] within bounds")
+                except Exception:
+                    pass
+
+    # CHECK 4: Open-ended response uniqueness (>= 90% unique)
+    oe_cols = [c for c in df.columns if df[c].dtype == object and c not in [
+        'CONDITION', 'PARTICIPANT_ID', 'RUN_ID', 'SIMULATION_MODE', 'SIMULATION_SEED', 'Gender'
+    ]]
+    for col in oe_cols:
+        responses = df[col].dropna().tolist()
+        if responses:
+            unique_pct = len(set(responses)) / len(responses) * 100
+            if unique_pct < 90:
+                results["warnings"].append(f"⚠️ {col}: only {unique_pct:.1f}% unique responses")
+            else:
+                results["checks"].append(f"✅ {col}: {unique_pct:.1f}% unique responses")
+
+    # CHECK 5: Condition balance
+    if "CONDITION" in df.columns:
+        condition_counts = df["CONDITION"].value_counts()
+        if len(condition_counts) > 1:
+            balance_ratio = condition_counts.min() / condition_counts.max()
+            if balance_ratio < 0.8:
+                results["warnings"].append(
+                    f"⚠️ Condition imbalance: ratio {balance_ratio:.2f} (counts: {dict(condition_counts)})"
+                )
+            else:
+                results["checks"].append(f"✅ Condition balance: ratio {balance_ratio:.2f}")
+
+    # CHECK 6: No NaN in scale columns
+    scale_cols = [c for c in df.columns if any(
+        c.startswith(str(s.get("name", "")).strip().replace(" ", "_") + "_")
+        for s in (scales or [])
+    )]
+    nan_count = df[scale_cols].isna().sum().sum() if scale_cols else 0
+    if nan_count > 0:
+        results["warnings"].append(f"⚠️ Found {nan_count} NaN values in scale columns")
+    else:
+        results["checks"].append(f"✅ No NaN values in scale columns")
+
+    # CHECK 7: Metadata integrity
+    if metadata:
+        if "persona_distribution" in metadata:
+            results["checks"].append("✅ Persona distribution recorded in metadata")
+        if "effect_sizes_observed" in metadata:
+            results["checks"].append("✅ Observed effect sizes recorded")
+
+    return results
 
 
 def _normalize_scale_specs(scales: List[Any]) -> List[Dict[str, Any]]:
@@ -6230,6 +6337,11 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
             precomputed_visibility=inferred.get("condition_visibility_map", {}),
         )
 
+        # v1.2.4: Show detected research domains
+        if hasattr(engine, 'detected_domains') and engine.detected_domains:
+            domain_text = ", ".join([d.replace("_", " ").title() for d in engine.detected_domains[:5]])
+            st.info(f"🔬 **Detected research domain(s):** {domain_text}")
+
         try:
             # v1.2.0: Enhanced progress indicator with prominent visual display
             # Clear the status placeholder and show progress bar
@@ -6253,6 +6365,37 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
                 progress_bar.progress(25, text="Creating simulated participants...")
                 df, metadata = engine.generate()
                 progress_bar.progress(50, text="✅ Responses generated successfully!")
+
+            # v1.2.4: Run simulation quality validation
+            validation_results = _validate_simulation_output(df, metadata, clean_scales)
+            st.session_state["_validation_results"] = validation_results
+            if not validation_results["passed"]:
+                for err in validation_results["errors"]:
+                    st.error(err)
+                st.warning("⚠️ Simulation validation found issues. Data may need review.")
+            for warn in validation_results.get("warnings", []):
+                st.warning(warn)
+
+            # v1.2.5: Show quick data quality summary
+            progress_bar.progress(50, text="Validating data quality...")
+            status_placeholder.info("🔍 Validating generated data...")
+            quality_checks = []
+            # Check scale ranges
+            for scale in clean_scales:
+                sname = str(scale.get("name", "")).strip().replace(" ", "_")
+                s_min = int(scale.get("scale_min", 1))
+                s_max = int(scale.get("scale_max", 7))
+                n_items = int(scale.get("num_items", 5))
+                for item_num in range(1, n_items + 1):
+                    col = f"{sname}_{item_num}"
+                    if col in df.columns:
+                        actual_min = df[col].min()
+                        actual_max = df[col].max()
+                        if actual_min >= s_min and actual_max <= s_max:
+                            quality_checks.append(f"✅ {col}: range [{actual_min}-{actual_max}] within [{s_min}-{s_max}]")
+                        else:
+                            quality_checks.append(f"⚠️ {col}: range [{actual_min}-{actual_max}] outside [{s_min}-{s_max}]")
+            st.session_state["_quality_checks"] = quality_checks
 
             # Increment internal usage counter (admin tracking)
             usage_stats = _increment_usage_counter()
@@ -6542,6 +6685,13 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
 
         with st.expander("Preview (first 20 rows)"):
             st.dataframe(df.head(20), use_container_width=True)
+
+        # v1.2.5: Data Quality Report expander
+        quality_checks = st.session_state.get("_quality_checks", [])
+        if quality_checks:
+            with st.expander("📊 Data Quality Report", expanded=False):
+                for check in quality_checks:
+                    st.markdown(check)
 
         st.divider()
         st.subheader("Email (optional)")
