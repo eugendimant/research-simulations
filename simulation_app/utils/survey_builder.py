@@ -19,7 +19,7 @@ import re
 from typing import Any, Dict, List, Optional, Tuple
 from dataclasses import dataclass, field
 
-__version__ = "1.2.9"
+__version__ = "1.3.0"
 
 
 # ─── Common scale anchors used in behavioral science ───────────────────────────
@@ -284,6 +284,7 @@ class SurveyDescriptionParser:
         - "High/Low Trust x High/Low Risk" → slash-separated factorial
         - "Control vs Treatment" → vs-separated conditions
         - "3 conditions" → warning about underspecification
+        - "3 (Annotation: AI vs Human vs None) × 2 (Product: Hedonic vs Utilitarian)" → 6 crossed
         """
         conditions: List[ParsedCondition] = []
         warnings: List[str] = []
@@ -291,6 +292,15 @@ class SurveyDescriptionParser:
 
         if not text_clean:
             return conditions, warnings
+
+        # ── Strip trailing design metadata ────────────────────────────────
+        # Remove ", between-subjects, random assignment." and similar suffixes
+        text_clean = re.sub(
+            r',?\s*(?:between[- ]subjects?|within[- ]subjects?|mixed[- ]design|'
+            r'random(?:ized)?\s+assignment|randomization|repeated[- ]measures)'
+            r'[\s.,;]*$',
+            '', text_clean, flags=re.IGNORECASE
+        ).strip().rstrip('.,;')
 
         # ── Pre-check: numbered implicit like "3 conditions" without names ──
         implicit_match = re.search(
@@ -321,7 +331,36 @@ class SurveyDescriptionParser:
                     ))
             return conditions, warnings
 
-        # Pattern 2: Factorial "AxB" or "A x B" patterns
+        # ── Pattern 1b: Labeled parenthetical factorial ───────────────────
+        # Format: "N (Name: level1 vs level2 vs level3) × N (Name: level1 vs level2)"
+        # or: "N (Name: level1, level2, level3) x N (Name: level1, level2)"
+        labeled_paren = re.findall(
+            r'(\d+)\s*\(\s*([^:)]+?)\s*:\s*([^)]+)\s*\)',
+            text_clean
+        )
+        if len(labeled_paren) >= 2:
+            factors: List[Dict[str, Any]] = []
+            for count_str, factor_name, levels_str in labeled_paren:
+                factor_name = factor_name.strip()
+                expected_count = int(count_str)
+                levels = self._parse_list_items(levels_str)
+                if len(levels) >= 2 and factor_name:
+                    # Verify count matches if reasonable
+                    if expected_count == len(levels) or expected_count < 2:
+                        factors.append({"name": factor_name, "levels": levels})
+                    else:
+                        # Count mismatch but still use parsed levels
+                        factors.append({"name": factor_name, "levels": levels})
+            if len(factors) >= 2:
+                crossed = self._cross_factors(factors)
+                for combo_name in crossed:
+                    conditions.append(ParsedCondition(
+                        name=combo_name,
+                        is_control=False,
+                    ))
+                return conditions, warnings
+
+        # Pattern 2: Factorial "AxB" or "A x B" patterns (adjacent digits)
         factorial_match = re.search(
             r'(\d+)\s*[x×X]\s*(\d+)(?:\s*[x×X]\s*(\d+))?',
             text_clean
@@ -338,6 +377,34 @@ class SurveyDescriptionParser:
                     ))
                 return conditions, warnings
 
+        # ── Pattern 2a+: Non-adjacent factorial with × between parenthetical groups
+        # "3 (...) × 2 (...)" where × separates groups with text between digits
+        nonadj_factorial = re.search(
+            r'(\d+)\s*\([^)]+\)\s*[x×X]\s*(\d+)\s*\([^)]+\)',
+            text_clean
+        )
+        if nonadj_factorial and not conditions:
+            # Already handled by Pattern 1b above if labeled, but handle
+            # unlabeled parenthetical: "3 (AI, Human, None) × 2 (Hedonic, Utilitarian)"
+            unlabeled_paren = re.findall(
+                r'(\d+)\s*\(\s*([^):]+)\s*\)',
+                text_clean
+            )
+            if len(unlabeled_paren) >= 2:
+                factors = []
+                for count_str, levels_str in unlabeled_paren:
+                    levels = self._parse_list_items(levels_str)
+                    if len(levels) >= 2:
+                        factors.append({"name": f"Factor_{len(factors)+1}", "levels": levels})
+                if len(factors) >= 2:
+                    crossed = self._cross_factors(factors)
+                    for combo_name in crossed:
+                        conditions.append(ParsedCondition(
+                            name=combo_name,
+                            is_control=False,
+                        ))
+                    return conditions, warnings
+
         # Pattern 2b: Parenthetical levels – "Trust (high, low) and Risk (high, low)"
         paren_factors = re.findall(
             r'(\w[\w\s]*?)\s*\(\s*([^)]+)\s*\)',
@@ -350,6 +417,16 @@ class SurveyDescriptionParser:
                 # Skip noise words that got captured
                 if factor_name.lower() in ('the', 'and', 'with', 'for', 'or', 'a', 'an'):
                     continue
+                # If factor_name is just a digit, the real name may be inside the parens
+                # e.g. "3 (Annotation: AI vs Human vs None)" — handled by Pattern 1b
+                if re.match(r'^\d+$', factor_name):
+                    # Check if levels_str has a colon (label:levels format)
+                    if ':' in levels_str:
+                        parts = levels_str.split(':', 1)
+                        factor_name = parts[0].strip()
+                        levels_str = parts[1].strip()
+                    else:
+                        continue  # Skip bare-digit factor names
                 levels = self._parse_list_items(levels_str)
                 if len(levels) >= 2 and len(factor_name) > 1:
                     factors.append({"name": factor_name, "levels": levels})
@@ -521,13 +598,19 @@ class SurveyDescriptionParser:
 
             # Extract the question text
             q_text = segment
-            # Remove common prefixes
+            # Remove numbered prefixes: "1.", "2)", "a.", etc.
+            q_text = re.sub(r'^\s*\d+[.)]\s*', '', q_text).strip()
+            q_text = re.sub(r'^\s*[a-zA-Z][.)]\s*', '', q_text).strip()
+            # Remove common textual prefixes
             q_text = re.sub(
                 r'^(?:open[- ]?ended|free[- ]?text|qualitative|question)\s*[:\-]?\s*',
                 '', q_text, flags=re.IGNORECASE
             ).strip()
+            # Remove surrounding quotes
+            if len(q_text) >= 2 and q_text[0] in ('"', '\u201c') and q_text[-1] in ('"', '\u201d'):
+                q_text = q_text[1:-1].strip()
 
-            if not q_text:
+            if not q_text or len(q_text) < 5:
                 continue
 
             # Generate variable name
@@ -1071,6 +1154,27 @@ class SurveyDescriptionParser:
                 f"alternatives where possible."
             )
 
+        # ── Variable name validity ────────────────────────────────────────
+        seen_vars: set = set()
+        for s in parsed.scales:
+            vn = s.variable_name
+            if vn and vn in seen_vars:
+                warnings.append(
+                    f"Duplicate variable name '{vn}' across scales. "
+                    f"These will be auto-suffixed to avoid collisions."
+                )
+            if vn:
+                seen_vars.add(vn)
+        for oe in parsed.open_ended:
+            vn = oe.variable_name
+            if vn and vn in seen_vars:
+                warnings.append(
+                    f"Open-ended variable '{vn}' conflicts with a scale variable. "
+                    f"Consider renaming for clarity."
+                )
+            if vn:
+                seen_vars.add(vn)
+
         return {"errors": errors, "warnings": warnings}
 
     @staticmethod
@@ -1169,6 +1273,27 @@ class SurveyDescriptionParser:
                 ),
                 "domain": "behavioral economics",
             },
+            {
+                "title": "Product Annotation and Consumer Perception",
+                "conditions": (
+                    "3 (Annotation: AI-generated vs Human-curated vs No source) "
+                    "× 2 (Product type: Hedonic vs Utilitarian), "
+                    "between-subjects, random assignment"
+                ),
+                "scales": (
+                    "Perceived Quality (PQ): 3 items (7-point Likert; "
+                    "1=extremely low quality, 7=extremely high quality)\n\n"
+                    "Purchase Intention (PI): 3 items (7-point Likert; "
+                    "1=strongly disagree, 7=strongly agree)\n\n"
+                    "Ad Credibility (AC): 3 items (7-point Likert; "
+                    "1=not at all credible, 7=extremely credible)"
+                ),
+                "open_ended": (
+                    "What influenced your perception of the product?\n"
+                    "Describe your overall impression of the product."
+                ),
+                "domain": "consumer behavior",
+            },
         ]
 
     @staticmethod
@@ -1252,12 +1377,16 @@ class SurveyDescriptionParser:
         return factors
 
     def _cross_factors(self, factors: List[Dict[str, Any]]) -> List[str]:
-        """Generate crossed condition names from factors with factor name prefixes."""
+        """Generate crossed condition names from factors with factor name prefixes.
+
+        Uses ' × ' as separator for crossed conditions to make them readable
+        and recognizable by the simulation engine's factorial detection.
+        """
         if not factors:
             return []
 
-        # Use abbreviated factor names for cleaner labels
-        # e.g., "Brand Origin" → "BrandOrigin" prefix removed if levels are descriptive
+        sep = " × "
+
         result = []
         for level in factors[0]["levels"]:
             result.append(f"{level}")
@@ -1266,16 +1395,11 @@ class SurveyDescriptionParser:
             new_result = []
             for existing in result:
                 for level in factor["levels"]:
-                    new_result.append(f"{existing}_{level}")
+                    new_result.append(f"{existing}{sep}{level}")
             result = new_result
 
-        # If crossed names are ambiguous (e.g., "high_high"), prefix with factor names
+        # If crossed names are ambiguous (e.g., "High × High"), prefix with factor names
         if len(factors) >= 2:
-            all_levels = set()
-            for f in factors:
-                for lv in f["levels"]:
-                    all_levels.add(lv.lower())
-            # Check if levels overlap across factors
             level_sets = [set(lv.lower() for lv in f["levels"]) for f in factors]
             has_overlap = False
             for i in range(len(level_sets)):
@@ -1288,14 +1412,14 @@ class SurveyDescriptionParser:
                 # Regenerate with factor name prefixes
                 result = []
                 for level in factors[0]["levels"]:
-                    short_name = factors[0]["name"].replace(" ", "")
-                    result.append(f"{short_name}_{level}")
+                    fname = factors[0]["name"]
+                    result.append(f"{fname}: {level}")
                 for factor in factors[1:]:
                     new_result = []
-                    short_name = factor["name"].replace(" ", "")
+                    fname = factor["name"]
                     for existing in result:
                         for level in factor["levels"]:
-                            new_result.append(f"{existing}_{short_name}_{level}")
+                            new_result.append(f"{existing}{sep}{fname}: {level}")
                     result = new_result
 
         return result
@@ -1323,24 +1447,95 @@ class SurveyDescriptionParser:
         return cleaned
 
     def _split_scale_segments(self, text: str) -> List[str]:
-        """Split text into segments, each describing one scale."""
-        # Split by numbered items "1.", "2."
+        """Split text into segments, each describing one scale.
+
+        Splitting priority:
+        1. Paragraph breaks (double newlines) — most reliable for multi-line input
+        2. Numbered items ("1.", "2.") — common structured format
+        3. Bullet points ("- ", "• ") — common list format
+        4. Lines starting with "Name:" pattern — colon-prefixed scale specs
+        5. Semicolons (only if no parentheses contain semicolons)
+        6. Individual non-empty lines
+        """
+        # ── 1. Paragraph breaks (double newlines) ────────────────────────
+        paragraphs = re.split(r'\n\s*\n', text)
+        if len(paragraphs) >= 2:
+            # Merge continuation lines within each paragraph
+            merged = []
+            for p in paragraphs:
+                p = p.strip()
+                if p:
+                    # Skip section headers like "Manipulation checks:" or "Covariates (optional):"
+                    # that don't contain item/scale specs
+                    if re.match(r'^[\w\s/]+:\s*$', p):
+                        continue
+                    merged.append(p)
+            if len(merged) >= 2:
+                return merged
+
+        # ── 2. Numbered items "1.", "2." ──────────────────────────────────
         numbered = re.split(r'\n\s*\d+[.)]\s*', text)
         if len(numbered) >= 2:
             return [s.strip() for s in numbered if s.strip()]
 
-        # Split by bullet points
+        # ── 3. Bullet points ──────────────────────────────────────────────
         bulleted = re.split(r'\n\s*[-•]\s*', text)
         if len(bulleted) >= 2:
             return [s.strip() for s in bulleted if s.strip()]
 
-        # Split by semicolons
-        semis = text.split(';')
-        if len(semis) >= 2:
-            return [s.strip() for s in semis if s.strip()]
-
-        # Split by lines
+        # ── 4. Lines starting with "Name:" pattern ────────────────────────
         lines = [l.strip() for l in text.split('\n') if l.strip()]
+        if len(lines) >= 2:
+            # Check if most lines look like "Scale Name: spec"
+            colon_lines = [l for l in lines if re.match(r'^[A-Z][\w\s/()-]+:', l)]
+            if len(colon_lines) >= 2:
+                # Re-split: each "Name:" line starts a new segment, continuation
+                # lines are appended to the previous segment
+                segments: List[str] = []
+                for l in lines:
+                    if re.match(r'^[A-Z][\w\s/()-]+:', l):
+                        segments.append(l)
+                    elif segments:
+                        segments[-1] += ' ' + l
+                    else:
+                        segments.append(l)
+                return [s.strip() for s in segments if s.strip()]
+
+        # ── 5. Semicolons (only at top level, not inside parentheses) ─────
+        # Count semicolons outside parentheses
+        _depth = 0
+        _top_level_semis = 0
+        for ch in text:
+            if ch == '(':
+                _depth += 1
+            elif ch == ')':
+                _depth = max(0, _depth - 1)
+            elif ch == ';' and _depth == 0:
+                _top_level_semis += 1
+        if _top_level_semis >= 1:
+            # Split only on top-level semicolons
+            parts: List[str] = []
+            current = []
+            _depth = 0
+            for ch in text:
+                if ch == '(':
+                    _depth += 1
+                    current.append(ch)
+                elif ch == ')':
+                    _depth = max(0, _depth - 1)
+                    current.append(ch)
+                elif ch == ';' and _depth == 0:
+                    parts.append(''.join(current).strip())
+                    current = []
+                else:
+                    current.append(ch)
+            if current:
+                parts.append(''.join(current).strip())
+            parts = [p for p in parts if p]
+            if len(parts) >= 2:
+                return parts
+
+        # ── 6. Individual non-empty lines ─────────────────────────────────
         if len(lines) >= 2:
             return lines
 
@@ -1462,19 +1657,47 @@ class SurveyDescriptionParser:
 
         # Try to extract scale name (only if abbreviation didn't set it)
         if not abbrev_matched:
-            # Remove range/items info to find the core name
-            name_text = text
-            name_text = re.sub(r'\d+\s*[-–]?\s*point\s*', '', name_text, flags=re.IGNORECASE)
-            name_text = re.sub(r'\(?\d+\s*[-–]?\s*items?\)?', '', name_text, flags=re.IGNORECASE)
-            name_text = re.sub(r'(?:from\s+)?\d+\s*(?:to|-|–)\s*\d+', '', name_text)
-            name_text = re.sub(r'(?:likert|scale|slider|measure|rating|binary|yes\s*/\s*no|yes\s+or\s+no)\s*', '', name_text, flags=re.IGNORECASE)
-            # Remove anchor specs from name
-            name_text = re.sub(r'\d+\s*=\s*[^,;]+', '', name_text)
-            # Remove reverse-coded/reverse-scored mention from name
-            name_text = re.sub(r'(?:items?\s+)?[\d,\s]+(?:and\s+\d+\s+)?(?:are|is)\s+reverse[- ]?(?:coded|scored)', '', name_text, flags=re.IGNORECASE)
-            name_text = re.sub(r'reverse[- ]?(?:coded|scored)\s+items?\s*[:\-]?\s*[\d,\s]+', '', name_text, flags=re.IGNORECASE)
-            name_text = re.sub(r'[,;:()]', ' ', name_text)
-            name_text = name_text.strip()
+            name_text = ""
+
+            # ── Priority 1: "Name (Abbreviation): spec" format ──────────
+            # Common academic format: "Perceived Quality (PQ): 3 items ..."
+            leading_name = re.match(
+                r'^([A-Z][\w\s]+?)\s*'         # Name starting with capital
+                r'(?:\([^)]{1,12}\)\s*)?'       # Optional short abbreviation
+                r'(?:\([^)]*(?:manipulation|covariate|check)[^)]*\)\s*)?'  # Optional role tag
+                r':\s',                         # Colon delimiter
+                text
+            )
+            if leading_name:
+                name_text = leading_name.group(1).strip()
+            else:
+                # Also try "Name / Alt Name: spec" or "Name: spec"
+                leading_simple = re.match(
+                    r'^([A-Z][\w\s/]+?)\s*:\s',
+                    text
+                )
+                if leading_simple:
+                    candidate = leading_simple.group(1).strip()
+                    # Only use if it looks like a name (not just "items" or numbers)
+                    if len(candidate) >= 3 and not re.match(r'^\d', candidate):
+                        name_text = candidate
+
+            # ── Priority 2: Generic cleanup (fallback) ──────────────────
+            if not name_text:
+                name_text = text
+                name_text = re.sub(r'\d+\s*[-–]?\s*point\s*', '', name_text, flags=re.IGNORECASE)
+                name_text = re.sub(r'\(?\d+\s*[-–]?\s*items?\)?', '', name_text, flags=re.IGNORECASE)
+                name_text = re.sub(r'(?:from\s+)?\d+\s*(?:to|-|–)\s*\d+', '', name_text)
+                name_text = re.sub(r'(?:likert|scale|slider|measure|rating|binary|yes\s*/\s*no|yes\s+or\s+no)\s*', '', name_text, flags=re.IGNORECASE)
+                # Remove anchor specs from name
+                name_text = re.sub(r'\d+\s*=\s*[^,;]+', '', name_text)
+                # Remove reverse-coded/reverse-scored mention from name
+                name_text = re.sub(r'(?:items?\s+)?[\d,\s]+(?:and\s+\d+\s+)?(?:are|is)\s+reverse[- ]?(?:coded|scored)', '', name_text, flags=re.IGNORECASE)
+                name_text = re.sub(r'reverse[- ]?(?:coded|scored)\s+items?\s*[:\-]?\s*[\d,\s]+', '', name_text, flags=re.IGNORECASE)
+                # Remove quoted item text
+                name_text = re.sub(r'"[^"]*"', '', name_text)
+                name_text = re.sub(r'[,;:()]', ' ', name_text)
+                name_text = name_text.strip()
 
             # Strip common noise words from beginning and end of name
             _noise_words = {
@@ -1623,6 +1846,9 @@ class SurveyDescriptionParser:
         """Convert a display name to a valid variable name."""
         var = re.sub(r'[^a-zA-Z0-9\s]', '', name)
         var = re.sub(r'\s+', '_', var.strip())
+        # Ensure no leading digit (invalid identifier)
+        if var and var[0].isdigit():
+            var = 'v_' + var
         var = var[:30]  # Max length
         if not var:
             var = "var"
@@ -1630,12 +1856,19 @@ class SurveyDescriptionParser:
 
     def _generate_var_name(self, text: str, prefix: str = "Q", index: int = 1) -> str:
         """Generate a variable name from question text."""
-        # Extract key words
+        # Stop words to skip when building variable names
+        _stop_words = {
+            'the', 'a', 'an', 'of', 'for', 'in', 'on', 'to', 'by', 'from',
+            'with', 'and', 'or', 'but', 'your', 'you', 'this', 'that', 'what',
+            'how', 'why', 'did', 'was', 'were', 'are', 'is', 'has', 'have',
+            'please', 'would', 'could', 'about', 'any', 'anything',
+        }
+        # Extract meaningful words
         words = re.findall(r'[a-zA-Z]+', text)
-        if words:
-            key_words = [w for w in words[:3] if len(w) > 2]
-            if key_words:
-                return '_'.join(key_words[:2]).lower()
+        key_words = [w.lower() for w in words if len(w) > 2 and w.lower() not in _stop_words]
+        if key_words:
+            # Take up to 3 meaningful words for context
+            return '_'.join(key_words[:3])[:30]
         return f"{prefix}_{index}"
 
     def _detect_oe_context(self, text: str) -> str:

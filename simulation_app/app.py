@@ -52,8 +52,8 @@ import streamlit as st
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.2.9"
-BUILD_ID = "20260206-v129-persona-preview-builder-ux"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.3.0"
+BUILD_ID = "20260206-v130-parser-fixes-generate-tab"  # Change this to force cache invalidation
 
 def _verify_and_reload_utils():
     """Verify utils modules are at correct version, force reload if needed.
@@ -109,7 +109,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF"
-APP_VERSION = "1.2.9"  # v1.2.9: Persona preview, domain dropdown, builder UX, custom persona weights
+APP_VERSION = "1.3.0"  # v1.3.0: Parser fixes, Generate tab fix, scale/condition parsing, UX improvements
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -3322,14 +3322,25 @@ def _render_conversational_builder() -> None:
         )
 
         # Build the inferred_design dict (same format as QSF path)
-        inferred = parser.build_inferred_design(parsed_design)
+        try:
+            inferred = parser.build_inferred_design(parsed_design)
+        except Exception as e:
+            st.error(f"Error building study design: {e}")
+            _log(f"build_inferred_design error: {e}", level="error")
+            return
+
+        # Validate minimum required keys
+        if not inferred.get("conditions"):
+            st.warning("No conditions detected. Please check your condition description.")
+            return
+
         st.session_state["inferred_design"] = inferred
         st.session_state["builder_parsed_design"] = parsed_design
         st.session_state["conversational_builder_complete"] = True
 
         # Set conditions for Step 3/4 compatibility
         st.session_state["selected_conditions"] = [c.name for c in parsed_conditions]
-        st.session_state["confirmed_scales"] = inferred["scales"]
+        st.session_state["confirmed_scales"] = inferred.get("scales", [])
         st.session_state["scales_confirmed"] = True
         st.session_state["confirmed_open_ended"] = inferred.get("open_ended_questions", [])
         st.session_state["open_ended_confirmed"] = True
@@ -3592,7 +3603,13 @@ def _render_builder_design_review() -> None:
                 new_name = st.text_input(
                     "Name", value=scale.get("name", ""), key=f"br_scale_name_{i}"
                 )
-                scale["name"] = new_name
+                if new_name.strip():
+                    scale["name"] = new_name.strip()
+                    # Regenerate variable name from updated name
+                    scale["variable_name"] = re.sub(r'[^a-zA-Z0-9\s]', '', new_name)
+                    scale["variable_name"] = re.sub(r'\s+', '_', scale["variable_name"].strip())[:30]
+                else:
+                    st.caption("Name cannot be empty")
             with col2:
                 new_items = st.number_input(
                     "Items", value=scale.get("num_items", 1),
@@ -3609,9 +3626,13 @@ def _render_builder_design_review() -> None:
                 )
                 scale["scale_min"] = new_min
             with col4:
+                # Ensure max > min
+                _min_for_max = max(new_min + 1, 1)
+                _cur_max = scale.get("scale_max", 7)
+                _safe_max = max(_cur_max, _min_for_max)
                 new_max = st.number_input(
-                    "Max", value=scale.get("scale_max", 7),
-                    min_value=1, max_value=1000, key=f"br_scale_max_{i}"
+                    "Max", value=_safe_max,
+                    min_value=_min_for_max, max_value=1000, key=f"br_scale_max_{i}"
                 )
                 scale["scale_max"] = new_max
                 scale["scale_points"] = new_max
@@ -3646,8 +3667,15 @@ def _render_builder_design_review() -> None:
                     value=oe.get("question_text", ""),
                     key=f"br_oe_text_{i}",
                 )
-                if new_text != oe.get("question_text", ""):
+                if new_text and new_text != oe.get("question_text", ""):
                     oe["question_text"] = new_text
+                    # Regenerate variable name from updated text
+                    _stop = {'the', 'a', 'an', 'of', 'for', 'in', 'on', 'to', 'by',
+                             'your', 'you', 'this', 'that', 'what', 'how', 'why',
+                             'did', 'please', 'would', 'about', 'any', 'with', 'and'}
+                    _words = [w.lower() for w in re.findall(r'[a-zA-Z]+', new_text)
+                              if len(w) > 2 and w.lower() not in _stop]
+                    oe["variable_name"] = '_'.join(_words[:3])[:30] if _words else f"OE_{i+1}"
             with oe_col2:
                 st.markdown("<br>", unsafe_allow_html=True)
                 if st.button("Remove", key=f"br_remove_oe_{i}", help=f"Remove question {i+1}"):
@@ -5174,1371 +5202,1372 @@ with tab_design:
 
     _builder_complete = st.session_state.get("conversational_builder_complete", False)
 
+    # Determine which path to show (builder vs QSF)
+    # CRITICAL: Do NOT use st.stop() here — it would kill the Generate tab too
+    _skip_qsf_design = False
+
     if not preview and not _builder_complete:
         st.warning("Upload a QSF file or describe your study in the **Study Input** tab first")
-        st.stop()
-
-    # If coming from conversational builder, show review mode
-    if _builder_complete and not preview:
+        _skip_qsf_design = True
+    elif _builder_complete and not preview:
+        # Conversational builder path — show review mode, skip QSF config
         _render_builder_design_review()
-        # After builder review, check if inferred_design is set, then skip QSF-based config
-        if st.session_state.get("inferred_design"):
-            pass  # Design is configured, Step 4 can proceed
-        st.stop()  # Don't show QSF-based design configuration
+        _skip_qsf_design = True
 
-    # If we reach here, preview exists (QSF path)
-    inferred = st.session_state.get("inferred_design", {})
+    if not _skip_qsf_design:
+        # If we reach here, preview exists (QSF path)
+        inferred = st.session_state.get("inferred_design", {})
 
-    st.markdown("---")
+        st.markdown("---")
 
-    # ========================================
-    # STEP 1: CONDITION SETUP
-    # ========================================
-    st.markdown("### 1. Define Your Experimental Conditions")
+        # ========================================
+        # STEP 1: CONDITION SETUP
+        # ========================================
+        st.markdown("### 1. Define Your Experimental Conditions")
 
-    # Help text in expander (separate from selection)
-    with st.expander("ℹ️ What are conditions? (click for help)", expanded=False):
-        st.markdown("""
-**Conditions** are the different groups/treatments in your experiment.
+        # Help text in expander (separate from selection)
+        with st.expander("ℹ️ What are conditions? (click for help)", expanded=False):
+            st.markdown("""
+    **Conditions** are the different groups/treatments in your experiment.
 
-**Examples:**
-- A simple A/B test has 2 conditions: Control vs. Treatment
-- A 2x2 design has 4 conditions: Control-Low, Control-High, Treatment-Low, Treatment-High
+    **Examples:**
+    - A simple A/B test has 2 conditions: Control vs. Treatment
+    - A 2x2 design has 4 conditions: Control-Low, Control-High, Treatment-Low, Treatment-High
 
-**Where do conditions come from?**
-- The simulator detects conditions from your QSF file's **Randomizer** or **BlockRandomizer** elements
-- If your QSF doesn't use randomization, select the block names that represent your conditions
-- Condition names should match what's in your QSF (they appear in the dropdown below)
-""")
+    **Where do conditions come from?**
+    - The simulator detects conditions from your QSF file's **Randomizer** or **BlockRandomizer** elements
+    - If your QSF doesn't use randomization, select the block names that represent your conditions
+    - Condition names should match what's in your QSF (they appear in the dropdown below)
+    """)
 
-    # Condition selection (OUTSIDE the help expander)
-    condition_candidates = st.session_state.get("condition_candidates")
-    if not condition_candidates:
-        condition_candidates = _get_condition_candidates(preview, enhanced_analysis)
-        st.session_state["condition_candidates"] = condition_candidates
+        # Condition selection (OUTSIDE the help expander)
+        condition_candidates = st.session_state.get("condition_candidates")
+        if not condition_candidates:
+            condition_candidates = _get_condition_candidates(preview, enhanced_analysis)
+            st.session_state["condition_candidates"] = condition_candidates
 
-    all_possible_conditions = condition_candidates or []
+        all_possible_conditions = condition_candidates or []
 
-    # Get all QSF identifiers for the dropdown option
-    qsf_identifiers = st.session_state.get("qsf_identifiers")
-    if qsf_identifiers is None:
-        qsf_identifiers = _get_qsf_identifiers(preview)
-        st.session_state["qsf_identifiers"] = qsf_identifiers
+        # Get all QSF identifiers for the dropdown option
+        qsf_identifiers = st.session_state.get("qsf_identifiers")
+        if qsf_identifiers is None:
+            qsf_identifiers = _get_qsf_identifiers(preview)
+            st.session_state["qsf_identifiers"] = qsf_identifiers
 
-    # Initialize selected conditions in session state
-    if "selected_conditions" not in st.session_state:
-        # Default to QSF-detected conditions if any
-        st.session_state["selected_conditions"] = condition_candidates[:] if condition_candidates else []
+        # Initialize selected conditions in session state
+        if "selected_conditions" not in st.session_state:
+            # Default to QSF-detected conditions if any
+            st.session_state["selected_conditions"] = condition_candidates[:] if condition_candidates else []
 
-    # Get current custom conditions
-    custom_conditions = st.session_state.get("custom_conditions", [])
+        # Get current custom conditions
+        custom_conditions = st.session_state.get("custom_conditions", [])
 
-    # --- Option 1: Auto-detected conditions (multiselect) ---
-    if all_possible_conditions:
-        st.markdown("**Option 1: Select from auto-detected conditions**")
-        st.caption(
-            "These were detected from your QSF file's randomizer and block structure."
-        )
+        # --- Option 1: Auto-detected conditions (multiselect) ---
+        if all_possible_conditions:
+            st.markdown("**Option 1: Select from auto-detected conditions**")
+            st.caption(
+                "These were detected from your QSF file's randomizer and block structure."
+            )
 
-        # Multi-select from available options
-        selected = st.multiselect(
-            "Auto-detected conditions",
-            options=all_possible_conditions,
-            default=st.session_state.get("selected_conditions", []),
-            help="Pick the block names that correspond to experimental conditions.",
-            key="condition_multiselect",
-        )
-        st.session_state["selected_conditions"] = selected
-    else:
-        st.info("No conditions auto-detected from the QSF file. Use the options below to add conditions.")
-        selected = []
-        st.session_state["selected_conditions"] = []
+            # Multi-select from available options
+            selected = st.multiselect(
+                "Auto-detected conditions",
+                options=all_possible_conditions,
+                default=st.session_state.get("selected_conditions", []),
+                help="Pick the block names that correspond to experimental conditions.",
+                key="condition_multiselect",
+            )
+            st.session_state["selected_conditions"] = selected
+        else:
+            st.info("No conditions auto-detected from the QSF file. Use the options below to add conditions.")
+            selected = []
+            st.session_state["selected_conditions"] = []
 
-    # --- Options 2 & 3: Additional ways to add conditions ---
-    with st.expander("Add more conditions", expanded=not bool(all_possible_conditions) or not bool(selected)):
+        # --- Options 2 & 3: Additional ways to add conditions ---
+        with st.expander("Add more conditions", expanded=not bool(all_possible_conditions) or not bool(selected)):
 
-        # --- Option 2: Select from all QSF identifiers ---
-        if qsf_identifiers:
-            st.markdown("**Option 2: Select from QSF identifiers**")
-            st.caption("All blocks, embedded data fields, and question IDs from your QSF (alphabetically sorted).")
+            # --- Option 2: Select from all QSF identifiers ---
+            if qsf_identifiers:
+                st.markdown("**Option 2: Select from QSF identifiers**")
+                st.caption("All blocks, embedded data fields, and question IDs from your QSF (alphabetically sorted).")
 
-            col_id1, col_id2 = st.columns([3, 1])
-            with col_id1:
-                id_to_add = st.selectbox(
-                    "Select identifier",
-                    options=[""] + qsf_identifiers,
-                    index=0,
-                    key="qsf_identifier_select",
-                    help="Select an identifier from your QSF to add as a condition.",
+                col_id1, col_id2 = st.columns([3, 1])
+                with col_id1:
+                    id_to_add = st.selectbox(
+                        "Select identifier",
+                        options=[""] + qsf_identifiers,
+                        index=0,
+                        key="qsf_identifier_select",
+                        help="Select an identifier from your QSF to add as a condition.",
+                    )
+                with col_id2:
+                    st.write("")  # Spacer
+                    if st.button("Add →", key="add_identifier_btn", disabled=not id_to_add):
+                        # Clean up the identifier (remove [Block] or [Randomizer] prefix if present)
+                        clean_id = id_to_add
+                        if clean_id.startswith("[Block] "):
+                            clean_id = clean_id[8:]
+                        elif clean_id.startswith("[Randomizer] "):
+                            clean_id = clean_id[13:]
+
+                        if clean_id and clean_id not in custom_conditions:
+                            custom_conditions.append(clean_id)
+                            st.session_state["custom_conditions"] = custom_conditions
+                            st.rerun()
+
+            # --- Option 3: Manual text entry ---
+            st.markdown("**Option 3: Type condition name manually**")
+            st.caption("Enter custom condition names if they aren't in the QSF or were not detected.")
+
+            col_add1, col_add2 = st.columns([3, 1])
+            with col_add1:
+                new_condition = st.text_input(
+                    "New condition name",
+                    key="new_condition_input",
+                    placeholder="e.g., Control, Treatment, High, Low",
+                    help="Type any condition name you want to add.",
                 )
-            with col_id2:
+            with col_add2:
                 st.write("")  # Spacer
-                if st.button("Add →", key="add_identifier_btn", disabled=not id_to_add):
-                    # Clean up the identifier (remove [Block] or [Randomizer] prefix if present)
-                    clean_id = id_to_add
-                    if clean_id.startswith("[Block] "):
-                        clean_id = clean_id[8:]
-                    elif clean_id.startswith("[Randomizer] "):
-                        clean_id = clean_id[13:]
-
-                    if clean_id and clean_id not in custom_conditions:
-                        custom_conditions.append(clean_id)
+                if st.button("Add →", key="add_condition_btn", disabled=not new_condition.strip()):
+                    if new_condition.strip() and new_condition.strip() not in custom_conditions:
+                        custom_conditions.append(new_condition.strip())
                         st.session_state["custom_conditions"] = custom_conditions
                         st.rerun()
 
-        # --- Option 3: Manual text entry ---
-        st.markdown("**Option 3: Type condition name manually**")
-        st.caption("Enter custom condition names if they aren't in the QSF or were not detected.")
+            # Show custom conditions with remove buttons
+            if custom_conditions:
+                st.markdown("---")
+                st.markdown("**Conditions added:**")
+                for i, cc in enumerate(custom_conditions):
+                    col_cc, col_rm = st.columns([4, 1])
+                    with col_cc:
+                        st.text(f"• {cc}")
+                    with col_rm:
+                        # Use condition name in key for stability when list changes
+                        safe_key = cc.replace(" ", "_").replace(".", "_")[:20]
+                        if st.button("✕", key=f"rm_custom_{safe_key}_{i}"):
+                            # Defensive: check if item still exists before removing
+                            if cc in custom_conditions:
+                                custom_conditions.remove(cc)
+                                st.session_state["custom_conditions"] = custom_conditions
+                            st.rerun()
 
-        col_add1, col_add2 = st.columns([3, 1])
-        with col_add1:
-            new_condition = st.text_input(
-                "New condition name",
-                key="new_condition_input",
-                placeholder="e.g., Control, Treatment, High, Low",
-                help="Type any condition name you want to add.",
+        # Combine selected and custom conditions
+        custom_conditions = st.session_state.get("custom_conditions", [])
+        all_conditions = list(dict.fromkeys(selected + custom_conditions))
+
+        # Show final conditions summary
+        st.markdown("---")
+        if all_conditions:
+            # Display cleaned condition names
+            clean_names = [_clean_condition_name(c) for c in all_conditions]
+            st.success(f"**{len(all_conditions)} condition(s) configured:** {', '.join(clean_names)}")
+        else:
+            st.error("❌ No conditions defined. Please select or add at least one condition.")
+            all_conditions = ["Condition A"]  # Fallback
+
+        # ========================================
+        # STEP 2: DESIGN STRUCTURE
+        # ========================================
+        st.markdown("---")
+        st.markdown("### 2. Configure Design Structure")
+
+        col_design1, col_design2 = st.columns(2)
+
+        # Auto-detect factors from condition names
+        auto_detected_factors = _infer_factors_from_conditions(all_conditions)
+        auto_num_factors = len(auto_detected_factors)
+
+        with col_design1:
+            # Design type selection
+            design_type = st.selectbox(
+                "Experimental design type",
+                options=[
+                    "Between-subjects (each participant sees one condition)",
+                    "Within-subjects (each participant sees all conditions)",
+                    "Mixed design",
+                    "Simple comparison (2 groups)",
+                ],
+                index=0,
+                key="design_type_select",
+                help="How are conditions assigned to participants? Most experiments use between-subjects designs.",
             )
-        with col_add2:
-            st.write("")  # Spacer
-            if st.button("Add →", key="add_condition_btn", disabled=not new_condition.strip()):
-                if new_condition.strip() and new_condition.strip() not in custom_conditions:
-                    custom_conditions.append(new_condition.strip())
-                    st.session_state["custom_conditions"] = custom_conditions
-                    st.rerun()
 
-        # Show custom conditions with remove buttons
-        if custom_conditions:
-            st.markdown("---")
-            st.markdown("**Conditions added:**")
-            for i, cc in enumerate(custom_conditions):
-                col_cc, col_rm = st.columns([4, 1])
-                with col_cc:
-                    st.text(f"• {cc}")
-                with col_rm:
-                    # Use condition name in key for stability when list changes
-                    safe_key = cc.replace(" ", "_").replace(".", "_")[:20]
-                    if st.button("✕", key=f"rm_custom_{safe_key}_{i}"):
-                        # Defensive: check if item still exists before removing
-                        if cc in custom_conditions:
-                            custom_conditions.remove(cc)
-                            st.session_state["custom_conditions"] = custom_conditions
-                        st.rerun()
+            # Show auto-detected design info
+            if auto_num_factors > 1:
+                factor_levels_str = " × ".join([str(len(f.get("levels", []))) for f in auto_detected_factors])
+                st.success(f"Auto-detected: {factor_levels_str} factorial design ({auto_num_factors} factors)")
+            elif len(all_conditions) > 1:
+                st.info(f"Detected: {len(all_conditions)}-condition single-factor design")
 
-    # Combine selected and custom conditions
-    custom_conditions = st.session_state.get("custom_conditions", [])
-    all_conditions = list(dict.fromkeys(selected + custom_conditions))
+        with col_design2:
+            # Randomization level
+            rand_level = st.selectbox(
+                "Randomization level",
+                options=[
+                    "Participant-level (standard)",
+                    "Group/Cluster-level",
+                    "Not randomized / observational",
+                ],
+                index=0,
+                key="rand_level_select",
+                help="How participants are assigned to conditions.",
+            )
 
-    # Show final conditions summary
-    st.markdown("---")
-    if all_conditions:
-        # Display cleaned condition names
-        clean_names = [_clean_condition_name(c) for c in all_conditions]
-        st.success(f"**{len(all_conditions)} condition(s) configured:** {', '.join(clean_names)}")
-    else:
-        st.error("❌ No conditions defined. Please select or add at least one condition.")
-        all_conditions = ["Condition A"]  # Fallback
+        # ========================================
+        # SAMPLE SIZE AND CONDITION ALLOCATION
+        # ========================================
+        st.markdown("---")
+        st.markdown("### 3. Sample Size & Condition Allocation")
 
-    # ========================================
-    # STEP 2: DESIGN STRUCTURE
-    # ========================================
-    st.markdown("---")
-    st.markdown("### 2. Configure Design Structure")
+        # Sample size input (moved from Step 1)
+        # Use consistent key for state persistence
+        default_sample_size = int(st.session_state.get("sample_size", 200))
 
-    col_design1, col_design2 = st.columns(2)
-
-    # Auto-detect factors from condition names
-    auto_detected_factors = _infer_factors_from_conditions(all_conditions)
-    auto_num_factors = len(auto_detected_factors)
-
-    with col_design1:
-        # Design type selection
-        design_type = st.selectbox(
-            "Experimental design type",
-            options=[
-                "Between-subjects (each participant sees one condition)",
-                "Within-subjects (each participant sees all conditions)",
-                "Mixed design",
-                "Simple comparison (2 groups)",
-            ],
-            index=0,
-            key="design_type_select",
-            help="How are conditions assigned to participants? Most experiments use between-subjects designs.",
+        sample_size = st.number_input(
+            "Target sample size (N) * — based on power analysis",
+            min_value=10,
+            max_value=MAX_SIMULATED_N,
+            value=default_sample_size,
+            step=10,
+            help=(
+                "Enter the sample size from your power analysis (a priori power calculation). "
+                "This should be the N required to detect your expected effect size with adequate power (typically 80%). "
+                f"Maximum: {MAX_SIMULATED_N:,}."
+            ),
+            key="sample_size_step3",
         )
+        # Sync to canonical session state key
+        st.session_state["sample_size"] = int(sample_size)
+        st.caption("💡 Use your power analysis result (e.g., from G*Power) to determine the appropriate N.")
 
-        # Show auto-detected design info
-        if auto_num_factors > 1:
-            factor_levels_str = " × ".join([str(len(f.get("levels", []))) for f in auto_detected_factors])
-            st.success(f"Auto-detected: {factor_levels_str} factorial design ({auto_num_factors} factors)")
-        elif len(all_conditions) > 1:
-            st.info(f"Detected: {len(all_conditions)}-condition single-factor design")
+        # Condition allocation (rebalancing) with number inputs
+        if all_conditions and len(all_conditions) > 1:
+            st.markdown("#### Condition Allocation")
+            st.caption(
+                "By default, participants are divided equally across conditions. "
+                "Adjust the number of participants per condition below (must sum to total N)."
+            )
 
-    with col_design2:
-        # Randomization level
-        rand_level = st.selectbox(
-            "Randomization level",
-            options=[
-                "Participant-level (standard)",
-                "Group/Cluster-level",
-                "Not randomized / observational",
-            ],
-            index=0,
-            key="rand_level_select",
-            help="How participants are assigned to conditions.",
-        )
+            n_conditions = len(all_conditions)
+            prev_sample_size = st.session_state.get("_prev_sample_size", 0)
+            prev_n_conditions = st.session_state.get("_prev_n_conditions", 0)
+            prev_conditions = st.session_state.get("_prev_conditions", [])
 
-    # ========================================
-    # SAMPLE SIZE AND CONDITION ALLOCATION
-    # ========================================
-    st.markdown("---")
-    st.markdown("### 3. Sample Size & Condition Allocation")
+            # Detect what changed
+            conditions_changed = (
+                n_conditions != prev_n_conditions or
+                set(prev_conditions) != set(all_conditions)
+            )
+            sample_size_changed = prev_sample_size != sample_size and prev_sample_size > 0
 
-    # Sample size input (moved from Step 1)
-    # Use consistent key for state persistence
-    default_sample_size = int(st.session_state.get("sample_size", 200))
+            # Recalculate allocations if:
+            # 1. No allocation exists, OR
+            # 2. Number of conditions changed, OR
+            # 3. Condition names changed
+            needs_recalc = (
+                "condition_allocation_n" not in st.session_state or
+                conditions_changed
+            )
 
-    sample_size = st.number_input(
-        "Target sample size (N) * — based on power analysis",
-        min_value=10,
-        max_value=MAX_SIMULATED_N,
-        value=default_sample_size,
-        step=10,
-        help=(
-            "Enter the sample size from your power analysis (a priori power calculation). "
-            "This should be the N required to detect your expected effect size with adequate power (typically 80%). "
-            f"Maximum: {MAX_SIMULATED_N:,}."
-        ),
-        key="sample_size_step3",
-    )
-    # Sync to canonical session state key
-    st.session_state["sample_size"] = int(sample_size)
-    st.caption("💡 Use your power analysis result (e.g., from G*Power) to determine the appropriate N.")
-
-    # Condition allocation (rebalancing) with number inputs
-    if all_conditions and len(all_conditions) > 1:
-        st.markdown("#### Condition Allocation")
-        st.caption(
-            "By default, participants are divided equally across conditions. "
-            "Adjust the number of participants per condition below (must sum to total N)."
-        )
-
-        n_conditions = len(all_conditions)
-        prev_sample_size = st.session_state.get("_prev_sample_size", 0)
-        prev_n_conditions = st.session_state.get("_prev_n_conditions", 0)
-        prev_conditions = st.session_state.get("_prev_conditions", [])
-
-        # Detect what changed
-        conditions_changed = (
-            n_conditions != prev_n_conditions or
-            set(prev_conditions) != set(all_conditions)
-        )
-        sample_size_changed = prev_sample_size != sample_size and prev_sample_size > 0
-
-        # Recalculate allocations if:
-        # 1. No allocation exists, OR
-        # 2. Number of conditions changed, OR
-        # 3. Condition names changed
-        needs_recalc = (
-            "condition_allocation_n" not in st.session_state or
-            conditions_changed
-        )
-
-        if needs_recalc:
-            # Fresh allocation: equal distribution for current sample size
-            n_per = sample_size // n_conditions
-            remainder = sample_size % n_conditions
-            st.session_state["condition_allocation_n"] = {
-                cond: n_per + (1 if i < remainder else 0)
-                for i, cond in enumerate(all_conditions)
-            }
-            # Clear any stale widget state by incrementing a version counter
-            alloc_version = st.session_state.get("_alloc_version", 0) + 1
-            st.session_state["_alloc_version"] = alloc_version
-        elif sample_size_changed:
-            # Proportionally adjust existing allocations to match new total
-            old_alloc = st.session_state.get("condition_allocation_n", {})
-            old_total = sum(old_alloc.values())
-            if old_total > 0:
-                scale = sample_size / old_total
-                new_alloc = {}
-                running_total = 0
-                sorted_conds = list(all_conditions)
-                for j, c in enumerate(sorted_conds[:-1]):
-                    new_alloc[c] = max(1, round(old_alloc.get(c, sample_size // n_conditions) * scale))
-                    running_total += new_alloc[c]
-                # Last condition gets the remainder to ensure sum matches exactly
-                new_alloc[sorted_conds[-1]] = max(1, sample_size - running_total)
-                st.session_state["condition_allocation_n"] = new_alloc
-                # Increment version to force widget refresh
+            if needs_recalc:
+                # Fresh allocation: equal distribution for current sample size
+                n_per = sample_size // n_conditions
+                remainder = sample_size % n_conditions
+                st.session_state["condition_allocation_n"] = {
+                    cond: n_per + (1 if i < remainder else 0)
+                    for i, cond in enumerate(all_conditions)
+                }
+                # Clear any stale widget state by incrementing a version counter
                 alloc_version = st.session_state.get("_alloc_version", 0) + 1
                 st.session_state["_alloc_version"] = alloc_version
+            elif sample_size_changed:
+                # Proportionally adjust existing allocations to match new total
+                old_alloc = st.session_state.get("condition_allocation_n", {})
+                old_total = sum(old_alloc.values())
+                if old_total > 0:
+                    scale = sample_size / old_total
+                    new_alloc = {}
+                    running_total = 0
+                    sorted_conds = list(all_conditions)
+                    for j, c in enumerate(sorted_conds[:-1]):
+                        new_alloc[c] = max(1, round(old_alloc.get(c, sample_size // n_conditions) * scale))
+                        running_total += new_alloc[c]
+                    # Last condition gets the remainder to ensure sum matches exactly
+                    new_alloc[sorted_conds[-1]] = max(1, sample_size - running_total)
+                    st.session_state["condition_allocation_n"] = new_alloc
+                    # Increment version to force widget refresh
+                    alloc_version = st.session_state.get("_alloc_version", 0) + 1
+                    st.session_state["_alloc_version"] = alloc_version
 
-        # Update tracking variables
-        st.session_state["_prev_sample_size"] = sample_size
-        st.session_state["_prev_n_conditions"] = n_conditions
-        st.session_state["_prev_conditions"] = list(all_conditions)
+            # Update tracking variables
+            st.session_state["_prev_sample_size"] = sample_size
+            st.session_state["_prev_n_conditions"] = n_conditions
+            st.session_state["_prev_conditions"] = list(all_conditions)
 
-        allocation_n = st.session_state["condition_allocation_n"]
+            allocation_n = st.session_state["condition_allocation_n"]
 
-        # Create a clean display table with number inputs
-        st.markdown("**Participants per condition:**")
+            # Create a clean display table with number inputs
+            st.markdown("**Participants per condition:**")
 
-        # Use columns for layout (max 3 per row)
-        cols_per_row = min(n_conditions, 3)
-        input_cols = st.columns(cols_per_row)
+            # Use columns for layout (max 3 per row)
+            cols_per_row = min(n_conditions, 3)
+            input_cols = st.columns(cols_per_row)
 
-        # Get version for unique widget keys
-        alloc_version = st.session_state.get("_alloc_version", 0)
+            # Get version for unique widget keys
+            alloc_version = st.session_state.get("_alloc_version", 0)
 
-        new_allocation_n = {}
-        for i, cond in enumerate(all_conditions):
-            col_idx = i % cols_per_row
-            with input_cols[col_idx]:
-                # Clean display name
-                display_name = _clean_condition_name(cond)
-                if len(display_name) > 22:
-                    display_name = display_name[:20] + "..."
+            new_allocation_n = {}
+            for i, cond in enumerate(all_conditions):
+                col_idx = i % cols_per_row
+                with input_cols[col_idx]:
+                    # Clean display name
+                    display_name = _clean_condition_name(cond)
+                    if len(display_name) > 22:
+                        display_name = display_name[:20] + "..."
 
-                current_n = allocation_n.get(cond, sample_size // n_conditions)
-                # Ensure current_n doesn't exceed sample_size
-                current_n = min(max(1, current_n), sample_size)
+                    current_n = allocation_n.get(cond, sample_size // n_conditions)
+                    # Ensure current_n doesn't exceed sample_size
+                    current_n = min(max(1, current_n), sample_size)
 
-                # Use version in key to force widget refresh when conditions change
-                new_n = st.number_input(
-                    display_name,
-                    min_value=1,
-                    max_value=sample_size,
-                    value=current_n,
-                    step=1,
-                    key=f"alloc_n_v{alloc_version}_{i}",
-                    help=f"Number of participants in '{display_name}'"
-                )
-                new_allocation_n[cond] = new_n
+                    # Use version in key to force widget refresh when conditions change
+                    new_n = st.number_input(
+                        display_name,
+                        min_value=1,
+                        max_value=sample_size,
+                        value=current_n,
+                        step=1,
+                        key=f"alloc_n_v{alloc_version}_{i}",
+                        help=f"Number of participants in '{display_name}'"
+                    )
+                    new_allocation_n[cond] = new_n
 
-        # Calculate total and show status
-        total_n = sum(new_allocation_n.values())
-        diff = total_n - sample_size
+            # Calculate total and show status
+            total_n = sum(new_allocation_n.values())
+            diff = total_n - sample_size
 
-        if diff != 0:
-            st.warning(f"⚠️ Allocations sum to **{total_n}** (should be {sample_size}). Difference: {'+' if diff > 0 else ''}{diff}")
-            # Auto-balance button
-            if st.button("Auto-balance to match total N", key=f"auto_balance_n_btn_v{alloc_version}"):
-                # Scale proportionally to match sample_size
-                scale = sample_size / total_n if total_n > 0 else 1
-                normalized = {}
-                running_total = 0
-                sorted_conds = list(all_conditions)
-                for j, c in enumerate(sorted_conds[:-1]):
-                    normalized[c] = max(1, round(new_allocation_n[c] * scale))
-                    running_total += normalized[c]
-                # Last condition gets the remainder
-                normalized[sorted_conds[-1]] = max(1, sample_size - running_total)
-                st.session_state["condition_allocation_n"] = normalized
-                # Increment version to force widget refresh
-                st.session_state["_alloc_version"] = alloc_version + 1
-                st.rerun()
-        else:
-            st.success(f"✓ Allocations sum to {sample_size}")
-            st.session_state["condition_allocation_n"] = new_allocation_n
+            if diff != 0:
+                st.warning(f"⚠️ Allocations sum to **{total_n}** (should be {sample_size}). Difference: {'+' if diff > 0 else ''}{diff}")
+                # Auto-balance button
+                if st.button("Auto-balance to match total N", key=f"auto_balance_n_btn_v{alloc_version}"):
+                    # Scale proportionally to match sample_size
+                    scale = sample_size / total_n if total_n > 0 else 1
+                    normalized = {}
+                    running_total = 0
+                    sorted_conds = list(all_conditions)
+                    for j, c in enumerate(sorted_conds[:-1]):
+                        normalized[c] = max(1, round(new_allocation_n[c] * scale))
+                        running_total += normalized[c]
+                    # Last condition gets the remainder
+                    normalized[sorted_conds[-1]] = max(1, sample_size - running_total)
+                    st.session_state["condition_allocation_n"] = normalized
+                    # Increment version to force widget refresh
+                    st.session_state["_alloc_version"] = alloc_version + 1
+                    st.rerun()
+            else:
+                st.success(f"✓ Allocations sum to {sample_size}")
+                st.session_state["condition_allocation_n"] = new_allocation_n
 
-        # Show allocation summary with percentages
-        st.markdown("**Allocation summary:**")
-        summary_parts = []
-        for cond in all_conditions:
-            n = new_allocation_n.get(cond, sample_size // n_conditions)
-            pct = (n / sample_size * 100) if sample_size > 0 else 0
-            clean_name = _clean_condition_name(cond)
-            if len(clean_name) > 18:
-                clean_name = clean_name[:16] + "..."
-            summary_parts.append(f"{clean_name}: **{n}** ({pct:.1f}%)")
-        st.markdown(" | ".join(summary_parts))
+            # Show allocation summary with percentages
+            st.markdown("**Allocation summary:**")
+            summary_parts = []
+            for cond in all_conditions:
+                n = new_allocation_n.get(cond, sample_size // n_conditions)
+                pct = (n / sample_size * 100) if sample_size > 0 else 0
+                clean_name = _clean_condition_name(cond)
+                if len(clean_name) > 18:
+                    clean_name = clean_name[:16] + "..."
+                summary_parts.append(f"{clean_name}: **{n}** ({pct:.1f}%)")
+            st.markdown(" | ".join(summary_parts))
 
-        # Convert to percentage-based allocation for the simulation engine
-        st.session_state["condition_allocation"] = {
-            cond: (new_allocation_n.get(cond, 0) / sample_size * 100) if sample_size > 0 else 0
-            for cond in all_conditions
-        }
+            # Convert to percentage-based allocation for the simulation engine
+            st.session_state["condition_allocation"] = {
+                cond: (new_allocation_n.get(cond, 0) / sample_size * 100) if sample_size > 0 else 0
+                for cond in all_conditions
+            }
 
-    elif all_conditions:
-        # Single condition - show simple info
-        st.info(f"Single condition design: all {sample_size} participants in '{_clean_condition_name(all_conditions[0])}'")
-        st.session_state["condition_allocation"] = {all_conditions[0]: 100}
-        st.session_state["condition_allocation_n"] = {all_conditions[0]: sample_size}
+        elif all_conditions:
+            # Single condition - show simple info
+            st.info(f"Single condition design: all {sample_size} participants in '{_clean_condition_name(all_conditions[0])}'")
+            st.session_state["condition_allocation"] = {all_conditions[0]: 100}
+            st.session_state["condition_allocation_n"] = {all_conditions[0]: sample_size}
 
-    # Factor configuration with clear explanation
-    st.markdown("---")
-    st.markdown("#### Factor Structure")
-    st.caption(
-        "**Factors** are the independent variables you manipulate. "
-        "A 2×2 design has 2 factors (e.g., AI presence × Product type). "
-        "Supports up to 3×3×3 designs (3 factors, 3 levels each)."
-    )
-
-    # Detect design type
-    design_options = [
-        "Factorial design (2×2, 2×3, 3×3, etc.)",
-        "Factorial + control (factorial + 1 control condition)",
-        "Simple multi-arm (independent conditions, no factorial)",
-    ]
-
-    # Determine default index - use saved value if exists, otherwise auto-detect
-    if "design_structure_select" in st.session_state and st.session_state["design_structure_select"] in design_options:
-        default_design_idx = design_options.index(st.session_state["design_structure_select"])
-    else:
-        default_design_idx = 0 if auto_num_factors > 1 else 2
-
-    design_structure = st.selectbox(
-        "Design structure",
-        options=design_options,
-        index=default_design_idx,
-        key="design_structure_select",
-        help=(
-            "• **Factorial**: Conditions are factor level combinations (2×2=4, 2×3=6, 3×3=9, 2×2×2=8)\n"
-            "• **Factorial + control**: Factorial design plus a separate control condition\n"
-            "• **Simple multi-arm**: Independent conditions without factorial structure"
-        ),
-    )
-
-    # Show specific factorial design selection when factorial is chosen
-    if "Factorial" in design_structure and "multi-arm" not in design_structure:
-        # Detect if conditions appear to be from separate randomizers (not already crossed)
-        # This happens when conditions don't contain separators like " x ", " × ", " + "
-        separators = [" x ", " X ", " × ", " + ", " | "]
-        conditions_already_crossed = any(
-            any(sep in c for sep in separators)
-            for c in all_conditions
+        # Factor configuration with clear explanation
+        st.markdown("---")
+        st.markdown("#### Factor Structure")
+        st.caption(
+            "**Factors** are the independent variables you manipulate. "
+            "A 2×2 design has 2 factors (e.g., AI presence × Product type). "
+            "Supports up to 3×3×3 designs (3 factors, 3 levels each)."
         )
 
-        # If conditions are NOT already crossed, use the visual factorial table
-        if not conditions_already_crossed and len(all_conditions) >= 2:
-            st.caption("Assign your detected conditions to factors to create crossed combinations.")
+        # Detect design type
+        design_options = [
+            "Factorial design (2×2, 2×3, 3×3, etc.)",
+            "Factorial + control (factorial + 1 control condition)",
+            "Simple multi-arm (independent conditions, no factorial)",
+        ]
 
-            # Use the visual factorial design table
-            factors, crossed_conditions = _render_factorial_design_table(
-                all_conditions,
-                session_key_prefix="factorial_design"
+        # Determine default index - use saved value if exists, otherwise auto-detect
+        if "design_structure_select" in st.session_state and st.session_state["design_structure_select"] in design_options:
+            default_design_idx = design_options.index(st.session_state["design_structure_select"])
+        else:
+            default_design_idx = 0 if auto_num_factors > 1 else 2
+
+        design_structure = st.selectbox(
+            "Design structure",
+            options=design_options,
+            index=default_design_idx,
+            key="design_structure_select",
+            help=(
+                "• **Factorial**: Conditions are factor level combinations (2×2=4, 2×3=6, 3×3=9, 2×2×2=8)\n"
+                "• **Factorial + control**: Factorial design plus a separate control condition\n"
+                "• **Simple multi-arm**: Independent conditions without factorial structure"
+            ),
+        )
+
+        # Show specific factorial design selection when factorial is chosen
+        if "Factorial" in design_structure and "multi-arm" not in design_structure:
+            # Detect if conditions appear to be from separate randomizers (not already crossed)
+            # This happens when conditions don't contain separators like " x ", " × ", " + "
+            separators = [" x ", " X ", " × ", " + ", " | "]
+            conditions_already_crossed = any(
+                any(sep in c for sep in separators)
+                for c in all_conditions
             )
-            st.session_state["use_factorial_table"] = True
 
-            # Update all_conditions to use the crossed conditions
-            if crossed_conditions:
-                st.session_state["factorial_crossed_conditions"] = crossed_conditions
-                st.session_state["use_crossed_conditions"] = True
+            # If conditions are NOT already crossed, use the visual factorial table
+            if not conditions_already_crossed and len(all_conditions) >= 2:
+                st.caption("Assign your detected conditions to factors to create crossed combinations.")
 
-                # Update condition allocation for crossed conditions
-                n_crossed = len(crossed_conditions)
-                if n_crossed > 0 and sample_size > 0:
+                # Use the visual factorial design table
+                factors, crossed_conditions = _render_factorial_design_table(
+                    all_conditions,
+                    session_key_prefix="factorial_design"
+                )
+                st.session_state["use_factorial_table"] = True
+
+                # Update all_conditions to use the crossed conditions
+                if crossed_conditions:
+                    st.session_state["factorial_crossed_conditions"] = crossed_conditions
+                    st.session_state["use_crossed_conditions"] = True
+
+                    # Update condition allocation for crossed conditions
+                    n_crossed = len(crossed_conditions)
+                    if n_crossed > 0 and sample_size > 0:
+                        n_per = sample_size // n_crossed
+                        remainder = sample_size % n_crossed
+                        st.session_state["condition_allocation"] = {
+                            cond: ((n_per + (1 if i < remainder else 0)) / sample_size * 100)
+                            for i, cond in enumerate(crossed_conditions)
+                        }
+                        st.session_state["condition_allocation_n"] = {
+                            cond: n_per + (1 if i < remainder else 0)
+                            for i, cond in enumerate(crossed_conditions)
+                        }
+            else:
+                # Conditions already have factorial structure - use traditional approach
+                st.session_state["use_crossed_conditions"] = False
+                st.session_state["use_factorial_table"] = False
+
+            # Only show additional configuration if NOT using factorial table with crossed conditions
+            if not st.session_state.get("use_factorial_table") or conditions_already_crossed:
+                factorial_designs = [
+                    "2×2 (2 factors, 2 levels each = 4 conditions)",
+                    "2×3 (2 factors: 2 and 3 levels = 6 conditions)",
+                    "3×2 (2 factors: 3 and 2 levels = 6 conditions)",
+                    "3×3 (2 factors, 3 levels each = 9 conditions)",
+                    "2×2×2 (3 factors, 2 levels each = 8 conditions)",
+                    "2×2×3 (3 factors: 2, 2, and 3 levels = 12 conditions)",
+                    "3×3×3 (3 factors, 3 levels each = 27 conditions)",
+                    "Custom (define factors manually)",
+                ]
+
+                # Auto-detect which factorial design matches
+                auto_design = "Custom (define factors manually)"
+                if auto_num_factors == 2:
+                    f1_levels = len(auto_detected_factors[0].get("levels", [])) if len(auto_detected_factors) > 0 else 0
+                    f2_levels = len(auto_detected_factors[1].get("levels", [])) if len(auto_detected_factors) > 1 else 0
+                    if f1_levels == 2 and f2_levels == 2:
+                        auto_design = "2×2 (2 factors, 2 levels each = 4 conditions)"
+                    elif (f1_levels == 2 and f2_levels == 3) or (f1_levels == 3 and f2_levels == 2):
+                        auto_design = "2×3 (2 factors: 2 and 3 levels = 6 conditions)" if f1_levels == 2 else "3×2 (2 factors: 3 and 2 levels = 6 conditions)"
+                    elif f1_levels == 3 and f2_levels == 3:
+                        auto_design = "3×3 (2 factors, 3 levels each = 9 conditions)"
+                elif auto_num_factors == 3:
+                    levels = [len(f.get("levels", [])) for f in auto_detected_factors[:3]]
+                    if levels == [2, 2, 2]:
+                        auto_design = "2×2×2 (3 factors, 2 levels each = 8 conditions)"
+                    elif sorted(levels) == [2, 2, 3]:
+                        auto_design = "2×2×3 (3 factors: 2, 2, and 3 levels = 12 conditions)"
+                    elif levels == [3, 3, 3]:
+                        auto_design = "3×3×3 (3 factors, 3 levels each = 27 conditions)"
+
+                default_factorial_idx = factorial_designs.index(auto_design) if auto_design in factorial_designs else len(factorial_designs) - 1
+
+                selected_factorial = st.selectbox(
+                    "Factorial design type",
+                    options=factorial_designs,
+                    index=default_factorial_idx,
+                    key="factorial_design_type",
+                    help="Select your specific factorial design.",
+                )
+
+        factors = []
+
+        # Check if we already have factors from the factorial table
+        use_factorial_table = st.session_state.get("use_factorial_table", False)
+        factorial_table_factors = st.session_state.get("factorial_table_factors", [])
+
+        if use_factorial_table and factorial_table_factors:
+            # Use factors from the factorial table - no need to show redundant config
+            factors = factorial_table_factors
+        elif "Factorial" in design_structure and "multi-arm" not in design_structure:
+            # Factorial design (with or without control)
+            has_control = "control" in design_structure.lower()
+
+            # Show auto-detected factors if available
+            if auto_num_factors > 1:
+                st.success(f"Auto-detected {auto_num_factors}-factor design from condition names")
+
+                # Show detected factors with editable names
+                st.markdown("**Detected factors:**")
+                detected_factors_display = []
+                for i, f in enumerate(auto_detected_factors):
+                    col_name, col_levels = st.columns([1, 2])
+                    with col_name:
+                        new_name = st.text_input(
+                            f"Factor {i+1}",
+                            value=f.get("name", f"Factor {i+1}"),
+                            key=f"detected_factor_name_{i}",
+                            label_visibility="collapsed",
+                        )
+                    with col_levels:
+                        levels = f.get("levels", [])
+                        # Clean level names for display and filter out any interaction terms
+                        clean_levels = []
+                        for l in levels:
+                            clean_l = _clean_condition_name(l)
+                            # Skip if it looks like an interaction term (contains × or x)
+                            if " × " not in clean_l and " x " not in clean_l.lower():
+                                clean_levels.append(clean_l)
+                        st.markdown(f"**Levels:** {' | '.join(clean_levels)}")
+                    detected_factors_display.append({"name": new_name, "levels": [l for l in levels if " × " not in _clean_condition_name(l) and " x " not in _clean_condition_name(l).lower()]})
+
+                factors = detected_factors_display
+
+                # Option to manually adjust
+                if st.checkbox("Manually adjust factors", value=False, key="manual_adjust_factors"):
+                    factors = _render_manual_factor_config(all_conditions, auto_detected_factors)
+            else:
+                # No auto-detection - manual configuration
+                st.info("Could not auto-detect factorial structure. Please configure manually.")
+                factors = _render_manual_factor_config(all_conditions, None)
+
+            # Handle control condition for "Factorial + control"
+            if has_control:
+                st.markdown("**Control condition:**")
+
+                # Smart control condition detection:
+                # 1. Check if any factor has "_non_matching_conditions" (conditions that didn't fit pattern)
+                # 2. Look for conditions containing "control"
+                # 3. Otherwise, find the condition that doesn't fit the factorial crossing
+                control_candidates = []
+
+                # Check for non-matching conditions from factor detection
+                for f in auto_detected_factors:
+                    non_match = f.get("_non_matching_conditions", [])
+                    if non_match:
+                        control_candidates.extend(non_match)
+                        break
+
+                # If no non-matching found, look for conditions with "control" in name
+                if not control_candidates:
+                    control_candidates = [c for c in all_conditions if 'control' in _clean_condition_name(c).lower()]
+
+                # If still no candidates, find conditions that don't match the factorial pattern
+                if not control_candidates and len(factors) >= 2:
+                    # Get all factor levels
+                    all_factor_levels = []
+                    for f in factors:
+                        all_factor_levels.extend([l.lower() for l in f.get("levels", [])])
+
+                    # Find conditions where not all parts match known factor levels
+                    for cond in all_conditions:
+                        clean_cond = _clean_condition_name(cond).lower()
+                        # Check if this condition can be explained by the factorial crossing
+                        parts_match = sum(1 for level in all_factor_levels if level in clean_cond)
+                        if parts_match < len(factors):  # Doesn't match enough factor levels
+                            control_candidates.append(cond)
+
+                # Default to first condition if no candidates found
+                if not control_candidates:
+                    control_candidates = [all_conditions[0]]
+
+                # Determine default index
+                default_ctrl_idx = 0
+                if control_candidates and control_candidates[0] in all_conditions:
+                    default_ctrl_idx = all_conditions.index(control_candidates[0])
+
+                # Store detected control for display
+                if control_candidates:
+                    detected_ctrl_name = _clean_condition_name(control_candidates[0])
+                    st.caption(f"Auto-detected potential control: **{detected_ctrl_name}**")
+
+                control_cond = st.selectbox(
+                    "Select the control condition",
+                    options=all_conditions,
+                    index=default_ctrl_idx,
+                    key="control_condition_select",
+                    format_func=_clean_condition_name,
+                    help="This condition will be treated separately from the factorial structure",
+                )
+                st.session_state["control_condition"] = control_cond
+
+        else:
+            # Simple multi-arm design - each condition is independent
+            st.info("Each condition is treated as an independent level of a single factor.")
+            clean_conditions = [_clean_condition_name(c) for c in all_conditions]
+            factors = [{"name": "Condition", "levels": all_conditions}]
+
+            # Display the conditions cleanly
+            st.markdown("**Conditions:**")
+            for i, (orig, clean) in enumerate(zip(all_conditions, clean_conditions)):
+                st.markdown(f"  {i+1}. {clean}")
+
+        # Ensure we have at least one factor
+        if not factors:
+            factors = [{"name": "Condition", "levels": all_conditions}]
+
+        # Get scales from inferred design
+        scales = inferred.get("scales", []) if inferred else []
+
+        # Filter out empty scales
+        scales = [s for s in scales if s.get("name", "").strip()]
+        if not scales:
+            scales = [{"name": "Main_DV", "num_items": 5, "scale_points": 7}]
+
+        # ========================================
+        # STEP 4: DEPENDENT VARIABLES (DVs)
+        # ========================================
+        st.markdown("---")
+        st.markdown("### 4. Dependent Variables (DVs)")
+        st.caption("These are the outcome measures in your study. Verify each DV matches your QSF survey.")
+
+        # Show DV help in collapsed expander
+        with st.expander("What are DVs and how to verify them?", expanded=False):
+            st.markdown("""
+    **Dependent Variables (DVs)** are what you measure as outcomes in your experiment.
+
+    **Types of DVs detected:**
+    - **Matrix scales** - Multi-item Likert scales (e.g., Trust Scale with 5 items)
+    - **Single-item DVs** - Individual rating questions
+    - **Sliders** - Visual analog scales (0-100)
+    - **Numeric inputs** - Open-ended numeric responses (e.g., willingness to pay)
+
+    **How to verify:**
+    1. Check the variable name matches your QSF question ID
+    2. Verify the scale points (e.g., 7 for a 1-7 scale)
+    3. Remove any DVs that aren't actual outcome measures
+    4. Add any missing DVs using the button below
+            """)
+
+        # Initialize DV state - use a version counter to handle deletions
+        dv_version = st.session_state.get("_dv_version", 0)
+
+        if "confirmed_scales" not in st.session_state:
+            st.session_state["confirmed_scales"] = scales.copy()
+            st.session_state["_dv_version"] = 0
+        if "scales_confirmed" not in st.session_state:
+            st.session_state["scales_confirmed"] = False
+
+        # Get current confirmed DVs
+        confirmed_scales = st.session_state.get("confirmed_scales", scales.copy())
+
+        # Type badge colors
+        type_badges = {
+            'matrix': '🔢 Matrix Scale',
+            'numbered_items': '📊 Multi-Item Scale',
+            'likert': '📈 Likert Scale',
+            'slider': '🎚️ Slider',
+            'single_item': '📍 Single Item',
+            'numeric_input': '🔣 Numeric Input',
+            'constant_sum': '➕ Constant Sum',
+        }
+
+        # Display each DV with edit and remove options
+        updated_scales = []
+        scales_to_remove = []
+
+        if confirmed_scales:
+            st.markdown(f"**{len(confirmed_scales)} DV(s) detected from your QSF.** Review and adjust as needed:")
+
+            # v1.2.0: Column headers for clarity with tooltips
+            hdr1, hdr2, hdr3a, hdr3b, hdr4, hdr5 = st.columns([2.5, 0.8, 0.6, 0.6, 1.5, 0.4])
+            with hdr1:
+                st.markdown(
+                    '<span title="The variable name as it appears in your QSF file. You can edit this to match your analysis script.">**Variable Name**</span>',
+                    unsafe_allow_html=True
+                )
+            with hdr2:
+                st.markdown(
+                    '<span title="Number of items/questions in this scale. Multi-item scales (e.g., 5-item attitude measure) will generate averaged composite scores.">**Items**</span>',
+                    unsafe_allow_html=True
+                )
+            with hdr3a:
+                st.markdown(
+                    '<span title="Minimum value on the response scale (e.g., 1 for a 1-7 scale, 0 for a 0-100 slider).">**Min**</span>',
+                    unsafe_allow_html=True
+                )
+            with hdr3b:
+                st.markdown(
+                    '<span title="Maximum value on the response scale (e.g., 7 for a 1-7 Likert scale, 100 for a 0-100 slider).">**Max**</span>',
+                    unsafe_allow_html=True
+                )
+            with hdr4:
+                st.markdown(
+                    '<span title="Detection type: Matrix=multi-item battery, Slider=visual analog scale, Single Item=standalone question, Numeric=open-ended number input.">**Type**</span>',
+                    unsafe_allow_html=True
+                )
+            with hdr5:
+                st.caption("Del")
+
+            for i, scale in enumerate(confirmed_scales):
+                dv_type = scale.get("type", "likert")
+                type_badge = type_badges.get(dv_type, "📊 Scale")
+
+                # Get item names and scale info for display
+                item_names = scale.get("item_names", [])
+                scale_min = scale.get("scale_min", 1)
+                scale_max = scale.get("scale_max", scale.get("scale_points", 7))
+                scale_anchors = scale.get("scale_anchors", {})
+
+                with st.container():
+                    # Main row: Name, # Items, Scale Min, Scale Max, Type, Remove
+                    # v1.2.0: Improved layout with separate min/max for flexible scale ranges
+                    col1, col2, col3a, col3b, col4, col5 = st.columns([2.5, 0.8, 0.6, 0.6, 1.5, 0.4])
+
+                    # v1.2.0: Use variable_name from QSF as default, fall back to name
+                    qsf_var_name = scale.get("variable_name", scale.get("name", f"DV_{i+1}"))
+                    display_name = scale.get("name", qsf_var_name)
+
+                    with col1:
+                        scale_name = st.text_input(
+                            f"DV {i+1} Name",
+                            value=qsf_var_name,  # Use exact QSF variable name
+                            key=f"dv_name_v{dv_version}_{i}",
+                            label_visibility="collapsed",
+                            help=f"QSF Variable: {qsf_var_name} | Question: {display_name[:50]}..."
+                        )
+
+                    with col2:
+                        # Get items value, handle both 'items' and 'num_items' keys
+                        items_val = scale.get("items", scale.get("num_items", 1))
+                        # v1.2.0: Clearer label based on DV type
+                        items_label = "Items" if dv_type in ['matrix', 'numbered_items'] else "Qs"
+                        items_help = {
+                            'matrix': "Number of items in this matrix/battery (e.g., 5-item attitude scale)",
+                            'numbered_items': "Number of numbered items (e.g., Scale_1 through Scale_5)",
+                            'likert': "Number of Likert-type questions grouped together",
+                            'slider': "Number of slider questions",
+                            'single_item': "Single question (always 1)",
+                            'numeric_input': "Number of numeric input fields",
+                        }.get(dv_type, "Number of questions/items in this scale")
+                        num_items = st.number_input(
+                            items_label,
+                            min_value=1,
+                            max_value=50,
+                            value=int(items_val) if items_val else 1,
+                            key=f"dv_items_v{dv_version}_{i}",
+                            help=items_help
+                        )
+
+                    # v1.2.0: Two separate inputs for min and max scale values (1-100 range)
+                    with col3a:
+                        # Get current min, default to 1
+                        current_min = int(scale_min) if scale_min is not None else 1
+                        if dv_type == 'numeric_input':
+                            # Numeric inputs can have any range
+                            new_scale_min = st.number_input(
+                                "Min",
+                                min_value=0,
+                                max_value=1000,
+                                value=current_min,
+                                key=f"dv_min_v{dv_version}_{i}",
+                                help="Minimum value (e.g., 0 for slider, 1 for Likert)"
+                            )
+                        else:
+                            new_scale_min = st.number_input(
+                                "Min",
+                                min_value=0,
+                                max_value=100,
+                                value=current_min,
+                                key=f"dv_min_v{dv_version}_{i}",
+                                help="Minimum scale value (usually 0 or 1)"
+                            )
+
+                    with col3b:
+                        # Get current max from scale_max or scale_points
+                        current_max = int(scale_max) if scale_max is not None else (int(scale.get("scale_points", 7)) if scale.get("scale_points") else 7)
+                        if dv_type == 'numeric_input':
+                            # Numeric inputs can have any range
+                            new_scale_max = st.number_input(
+                                "Max",
+                                min_value=1,
+                                max_value=10000,
+                                value=current_max,
+                                key=f"dv_max_v{dv_version}_{i}",
+                                help="Maximum value (e.g., 100 for percentage, 1000 for WTP)"
+                            )
+                        else:
+                            new_scale_max = st.number_input(
+                                "Max",
+                                min_value=2,
+                                max_value=100,
+                                value=min(current_max, 100),  # Cap at 100 for display
+                                key=f"dv_max_v{dv_version}_{i}",
+                                help="Maximum scale value (e.g., 5, 7, 10, 100)"
+                            )
+
+                    # Calculate scale_points from min/max for compatibility
+                    scale_points = new_scale_max  # Used for data generation
+
+                    with col4:
+                        # Type badge with descriptive tooltip
+                        type_descriptions = {
+                            'matrix': 'Multi-item scale detected as a matrix (e.g., 5-item attitude battery)',
+                            'numbered_items': 'Scale detected from numbered items (e.g., Scale_1, Scale_2)',
+                            'likert': 'Likert-type scale with multiple response options',
+                            'slider': 'Visual analog scale or slider (typically 0-100)',
+                            'single_item': 'Single standalone question',
+                            'numeric_input': 'Open-ended numeric input (e.g., WTP, quantity)',
+                            'constant_sum': 'Constant sum allocation task',
+                        }
+                        type_desc = type_descriptions.get(dv_type, 'Scale type')
+                        st.markdown(
+                            f'<small title="{type_desc}">{type_badge}</small>',
+                            unsafe_allow_html=True
+                        )
+                        if scale.get("detected_from_qsf", True):
+                            st.caption("*Auto-detected*")
+
+                    with col5:
+                        # Remove button with clear help text
+                        if st.button("✕", key=f"rm_dv_v{dv_version}_{i}", help="Remove this DV from the simulation. Click to delete."):
+                            scales_to_remove.append(i)
+
+                    # Show scale anchors if available
+                    if scale_anchors:
+                        anchor_text = " | ".join([f"{k}={v}" for k, v in sorted(scale_anchors.items(), key=lambda x: str(x[0]))])
+                        if anchor_text:
+                            st.caption(f"📏 *Scale: {anchor_text}*")
+
+                    # Show question text if available
+                    q_text = scale.get("question_text", "")
+                    if q_text and not item_names:
+                        st.caption(f"*\"{q_text[:80]}{'...' if len(q_text) > 80 else ''}\"*")
+
+                    # Show individual items in an expander if there are multiple items
+                    if item_names and len(item_names) > 0:
+                        with st.expander(f"📋 View {len(item_names)} scale item(s)", expanded=False):
+                            for j, item_text in enumerate(item_names, 1):
+                                if item_text:
+                                    # Truncate long item text
+                                    display_text = item_text[:100] + "..." if len(item_text) > 100 else item_text
+                                    st.markdown(f"**{j}.** {display_text}")
+
+                if scale_name.strip() and i not in scales_to_remove:
+                    updated_scales.append({
+                        "name": scale_name.strip(),
+                        "variable_name": scale_name.strip(),  # v1.2.0: Use user-entered name as variable name
+                        "question_text": scale.get("question_text", ""),
+                        "items": num_items,
+                        "num_items": num_items,  # Keep both for compatibility
+                        "scale_points": scale_points,  # Max value for data generation
+                        "type": dv_type,
+                        "reverse_items": scale.get("reverse_items", []),
+                        "detected_from_qsf": scale.get("detected_from_qsf", True),
+                        # Preserve new fields for item display and simulation accuracy
+                        "item_names": scale.get("item_names", []),
+                        "scale_anchors": scale.get("scale_anchors", {}),
+                        # v1.2.0: Save user-specified min/max for accurate simulation
+                        "scale_min": new_scale_min,
+                        "scale_max": new_scale_max,
+                    })
+        else:
+            st.info(
+                "**No DVs detected from QSF.** This can happen if your survey uses unconventional question formats. "
+                "Click **Add DV** below to manually define your dependent variables."
+            )
+
+        # Handle removals
+        if scales_to_remove:
+            st.session_state["confirmed_scales"] = updated_scales
+            st.session_state["_dv_version"] = dv_version + 1
+            st.rerun()
+
+        # Add new DV button with helpful context
+        st.markdown("---")
+        col_add, col_help = st.columns([1, 3])
+        with col_add:
+            add_clicked = st.button("➕ Add DV", key=f"add_dv_btn_v{dv_version}", help="Add a new dependent variable manually. Use this if automatic detection missed a scale or if you want to add custom measures.")
+        with col_help:
+            st.caption("DVs (dependent variables) are the outcomes you measure. The simulation will generate realistic responses for each DV based on your experimental conditions.")
+
+        if add_clicked:
+            new_dv = {
+                "name": f"New_DV_{len(confirmed_scales)+1}",
+                "variable_name": f"New_DV_{len(confirmed_scales)+1}",
+                "question_text": "",
+                "items": 1,
+                "num_items": 1,
+                "scale_points": 7,
+                "type": "single_item",
+                "reverse_items": [],
+                "detected_from_qsf": False,
+                "item_names": [],
+                "scale_anchors": {},
+                "scale_min": 1,
+                "scale_max": 7,
+            }
+            confirmed_scales.append(new_dv)
+            st.session_state["confirmed_scales"] = confirmed_scales
+            st.session_state["_dv_version"] = dv_version + 1
+            st.rerun()
+
+        # Update session state with edited DVs
+        st.session_state["confirmed_scales"] = updated_scales
+        scales = updated_scales if updated_scales else scales
+
+        # Confirmation checkbox with better help
+        scales_confirmed = st.checkbox(
+            "I confirm these DVs match my survey",
+            value=st.session_state.get("scales_confirmed", False),
+            key=f"dv_confirm_checkbox_v{dv_version}",
+            help="Check this box once you have verified that the variable names, item counts, and scale ranges match your actual Qualtrics survey."
+        )
+        st.session_state["scales_confirmed"] = scales_confirmed
+
+        if not scales_confirmed and updated_scales:
+            st.caption("Please verify the DVs above match your survey, then check the confirmation box to proceed.")
+
+        # ========================================
+        # STEP 5: OPEN-ENDED QUESTIONS
+        # ========================================
+        st.markdown("---")
+        st.markdown("### 5. Open-Ended Questions")
+        st.caption("These questions require text responses. Verify they are correctly detected so they will be filled with realistic text.")
+
+        # Show open-ended help in collapsed expander
+        with st.expander("What are open-ended questions?", expanded=False):
+            st.markdown("""
+    **Open-Ended Questions** require participants to type free-form text responses.
+
+    **Types detected:**
+    - **Essay boxes** - Long-form text responses (ESTB, ML selectors)
+    - **Single-line text** - Short answers like names, explanations (SL selector)
+    - **Form fields** - Multiple text inputs in one question (FORM selector)
+    - **MC with "Other"** - Multiple choice with "Other: please specify" option
+
+    **How to verify:**
+    1. Check that all questions requiring text responses are included
+    2. Remove any that shouldn't have generated text (e.g., MTurk IDs)
+    3. Add any missing open-ended questions manually
+
+    **Simulation will:**
+    - Generate realistic text responses matching each persona
+    - Consider question context and survey topic
+    - Vary response length and style appropriately
+            """)
+
+        # Initialize open-ended state
+        oe_version = st.session_state.get("_oe_version", 0)
+
+        # Get detected open-ended questions from preview
+        detected_open_ended = []
+        if preview and hasattr(preview, 'open_ended_details') and preview.open_ended_details:
+            detected_open_ended = preview.open_ended_details
+        elif preview and hasattr(preview, 'open_ended_questions') and preview.open_ended_questions:
+            # Convert simple list to detailed format
+            detected_open_ended = [
+                {"variable_name": q, "question_text": "", "source_type": "detected"}
+                for q in preview.open_ended_questions
+            ]
+
+        if "confirmed_open_ended" not in st.session_state:
+            st.session_state["confirmed_open_ended"] = detected_open_ended.copy()
+            st.session_state["_oe_version"] = 0
+        if "open_ended_confirmed" not in st.session_state:
+            st.session_state["open_ended_confirmed"] = False
+
+        confirmed_open_ended = st.session_state.get("confirmed_open_ended", detected_open_ended.copy())
+
+        # Source type badges
+        source_badges = {
+            'text_entry': '📝 Text Entry',
+            'essay': '📄 Essay Box',
+            'mc_text_entry': '🔘 MC + Text',
+            'form_field': '📋 Form Field',
+            'matrix_text': '🔢 Matrix Text',
+            'detected': '🔍 Detected',
+        }
+
+        # Display each open-ended question with remove option
+        updated_open_ended = []
+        oe_to_remove = []
+
+        if confirmed_open_ended:
+            st.markdown(f"**{len(confirmed_open_ended)} open-ended question(s) detected:**")
+
+            for i, oe in enumerate(confirmed_open_ended):
+                source_type = oe.get("source_type", "detected")
+                source_badge = source_badges.get(source_type, "📝 Text")
+
+                with st.container():
+                    col1, col2, col3 = st.columns([3, 2, 0.5])
+
+                    with col1:
+                        var_name = st.text_input(
+                            f"Variable {i+1}",
+                            value=oe.get("variable_name", oe.get("name", f"OpenEnded_{i+1}")),
+                            key=f"oe_name_v{oe_version}_{i}",
+                            label_visibility="collapsed",
+                        )
+
+                    with col2:
+                        st.markdown(f"<small>{source_badge}</small>", unsafe_allow_html=True)
+                        if oe.get("force_response"):
+                            st.caption("⚠️ *Required*")
+
+                    with col3:
+                        if st.button("✕", key=f"rm_oe_v{oe_version}_{i}", help="Remove this question"):
+                            oe_to_remove.append(i)
+
+                    # Show question text if available
+                    q_text = oe.get("question_text", "")
+                    if q_text:
+                        st.caption(f"*\"{q_text[:100]}{'...' if len(q_text) > 100 else ''}\"*")
+
+                if var_name.strip() and i not in oe_to_remove:
+                    updated_open_ended.append({
+                        "variable_name": var_name.strip(),
+                        "name": var_name.strip(),
+                        "question_text": oe.get("question_text", ""),
+                        "source_type": source_type,
+                        "force_response": oe.get("force_response", False),
+                        "context_type": oe.get("context_type", "general"),
+                        "min_chars": oe.get("min_chars"),
+                        "block_name": oe.get("block_name", ""),
+                    })
+        else:
+            st.info("No open-ended questions detected. Add any text response questions below.")
+
+        # Handle removals
+        if oe_to_remove:
+            st.session_state["confirmed_open_ended"] = updated_open_ended
+            st.session_state["_oe_version"] = oe_version + 1
+            st.rerun()
+
+        # Add new open-ended question button
+        st.markdown("---")
+        col_add_oe, col_spacer_oe = st.columns([1, 3])
+        with col_add_oe:
+            if st.button("➕ Add Open-Ended Question", key=f"add_oe_btn_v{oe_version}"):
+                new_oe = {
+                    "variable_name": f"OpenEnded_{len(confirmed_open_ended)+1}",
+                    "name": f"OpenEnded_{len(confirmed_open_ended)+1}",
+                    "question_text": "",
+                    "source_type": "manual",
+                    "force_response": False,
+                    "context_type": "general",
+                }
+                confirmed_open_ended.append(new_oe)
+                st.session_state["confirmed_open_ended"] = confirmed_open_ended
+                st.session_state["_oe_version"] = oe_version + 1
+                st.rerun()
+
+        # Update session state with edited open-ended questions
+        st.session_state["confirmed_open_ended"] = updated_open_ended
+
+        # Confirmation checkbox for open-ended questions
+        open_ended_confirmed = st.checkbox(
+            "I confirm these open-ended questions match my survey",
+            value=st.session_state.get("open_ended_confirmed", False),
+            key=f"oe_confirm_checkbox_v{oe_version}",
+        )
+        st.session_state["open_ended_confirmed"] = open_ended_confirmed
+
+        if not open_ended_confirmed and updated_open_ended:
+            st.caption("Confirm your open-ended questions to ensure they receive realistic text responses.")
+
+        # ========================================
+        # ATTENTION & MANIPULATION CHECKS REVIEW
+        # ========================================
+        st.markdown("---")
+        st.markdown("### 📋 Review: Attention & Manipulation Checks")
+
+        # Get detected checks from QSF preview
+        preview = st.session_state.get("qsf_preview")
+        detected_attention = preview.attention_checks if preview and hasattr(preview, 'attention_checks') else []
+        detected_manipulation = []  # Will need to extract from analysis
+
+        # Try to get from enhanced analysis
+        enhanced_analysis = st.session_state.get("enhanced_analysis")
+        if enhanced_analysis and hasattr(enhanced_analysis, 'manipulation_checks'):
+            detected_manipulation = enhanced_analysis.manipulation_checks
+
+        col_attn, col_manip = st.columns(2)
+
+        with col_attn:
+            st.markdown("**Attention Checks**")
+            if detected_attention:
+                st.success(f"✓ {len(detected_attention)} attention check(s) detected")
+                for i, check in enumerate(detected_attention[:5]):  # Show first 5
+                    st.caption(f"  • {check[:50]}..." if len(str(check)) > 50 else f"  • {check}")
+            else:
+                st.warning("No attention checks detected in QSF")
+
+            # Allow manual addition
+            with st.expander("Add/Edit Attention Checks"):
+                st.caption("Specify attention check question IDs or descriptions")
+                manual_attention = st.text_area(
+                    "Attention check questions (one per line)",
+                    value=st.session_state.get("manual_attention_checks", ""),
+                    key="manual_attention_input",
+                    height=100,
+                    placeholder="e.g., Q15_Attention\nPlease select 'Agree' for this question"
+                )
+                st.session_state["manual_attention_checks"] = manual_attention
+
+        with col_manip:
+            st.markdown("**Manipulation Checks**")
+            if detected_manipulation:
+                st.success(f"✓ {len(detected_manipulation)} manipulation check(s) detected")
+                for i, check in enumerate(detected_manipulation[:5]):
+                    st.caption(f"  • {check[:50]}..." if len(str(check)) > 50 else f"  • {check}")
+            else:
+                st.info("No manipulation checks detected (optional)")
+
+            # Allow manual addition
+            with st.expander("Add/Edit Manipulation Checks"):
+                st.caption("Specify manipulation check question IDs or descriptions")
+                manual_manipulation = st.text_area(
+                    "Manipulation check questions (one per line)",
+                    value=st.session_state.get("manual_manipulation_checks", ""),
+                    key="manual_manipulation_input",
+                    height=100,
+                    placeholder="e.g., Q20_ManipCheck\nWhat condition were you assigned to?"
+                )
+                st.session_state["manual_manipulation_checks"] = manual_manipulation
+
+        st.caption("💡 *Attention checks help identify careless responders. Manipulation checks verify participants understood the experimental condition.*")
+
+        # ========================================
+        # FINAL SUMMARY & LOCK DESIGN
+        # ========================================
+        st.markdown("---")
+        st.markdown("### Design Summary")
+
+        # Check if using crossed factorial conditions
+        display_conditions = all_conditions
+        if st.session_state.get("use_crossed_conditions") and st.session_state.get("factorial_crossed_conditions"):
+            display_conditions = st.session_state["factorial_crossed_conditions"]
+
+        # Get confirmed open-ended count
+        confirmed_oe = st.session_state.get("confirmed_open_ended", [])
+        oe_count = len(confirmed_oe)
+
+        summary_cols = st.columns(5)
+        summary_cols[0].metric("Conditions", len(display_conditions))
+        summary_cols[1].metric("Factors", len(factors))
+        summary_cols[2].metric("DVs", len(scales))
+        summary_cols[3].metric("Open-Ended", oe_count)
+        summary_cols[4].metric("Design", design_type.split("(")[0].strip())
+
+        # Show condition list and detected scales (cleaned names)
+        clean_cond_names = [_clean_condition_name(c) for c in display_conditions]
+        if st.session_state.get("use_crossed_conditions"):
+            st.markdown(f"**Factorial Conditions (crossed):** {', '.join(clean_cond_names)}")
+        else:
+            st.markdown(f"**Conditions:** {', '.join(clean_cond_names)}")
+        scale_names = [s.get('name', 'Unknown') for s in scales if s.get('name')]
+        st.markdown(f"**DVs:** {', '.join(scale_names) if scale_names else 'Main_DV (default)'}")
+        if oe_count > 0:
+            oe_names = [oe.get('variable_name', oe.get('name', '')) for oe in confirmed_oe[:5]]
+            oe_display = ', '.join(oe_names)
+            if oe_count > 5:
+                oe_display += f" (+{oe_count - 5} more)"
+            st.markdown(f"**Open-Ended Questions:** {oe_display}")
+
+        # Validate and lock design - require conditions, scales, AND scale confirmation
+        design_valid = len(display_conditions) >= 1 and len(scales) >= 1 and scales_confirmed
+
+        if design_valid:
+            # Save to session state
+            # If using factorial crossed conditions from the visual table, use those instead
+            if st.session_state.get("use_crossed_conditions") and st.session_state.get("factorial_crossed_conditions"):
+                final_conditions = st.session_state["factorial_crossed_conditions"]
+                # Update condition allocation for the crossed conditions
+                n_crossed = len(final_conditions)
+                if n_crossed > 0 and sample_size > 0 and "condition_allocation" not in st.session_state:
                     n_per = sample_size // n_crossed
                     remainder = sample_size % n_crossed
                     st.session_state["condition_allocation"] = {
                         cond: ((n_per + (1 if i < remainder else 0)) / sample_size * 100)
-                        for i, cond in enumerate(crossed_conditions)
+                        for i, cond in enumerate(final_conditions)
                     }
-                    st.session_state["condition_allocation_n"] = {
-                        cond: n_per + (1 if i < remainder else 0)
-                        for i, cond in enumerate(crossed_conditions)
-                    }
-        else:
-            # Conditions already have factorial structure - use traditional approach
-            st.session_state["use_crossed_conditions"] = False
-            st.session_state["use_factorial_table"] = False
-
-        # Only show additional configuration if NOT using factorial table with crossed conditions
-        if not st.session_state.get("use_factorial_table") or conditions_already_crossed:
-            factorial_designs = [
-                "2×2 (2 factors, 2 levels each = 4 conditions)",
-                "2×3 (2 factors: 2 and 3 levels = 6 conditions)",
-                "3×2 (2 factors: 3 and 2 levels = 6 conditions)",
-                "3×3 (2 factors, 3 levels each = 9 conditions)",
-                "2×2×2 (3 factors, 2 levels each = 8 conditions)",
-                "2×2×3 (3 factors: 2, 2, and 3 levels = 12 conditions)",
-                "3×3×3 (3 factors, 3 levels each = 27 conditions)",
-                "Custom (define factors manually)",
-            ]
-
-            # Auto-detect which factorial design matches
-            auto_design = "Custom (define factors manually)"
-            if auto_num_factors == 2:
-                f1_levels = len(auto_detected_factors[0].get("levels", [])) if len(auto_detected_factors) > 0 else 0
-                f2_levels = len(auto_detected_factors[1].get("levels", [])) if len(auto_detected_factors) > 1 else 0
-                if f1_levels == 2 and f2_levels == 2:
-                    auto_design = "2×2 (2 factors, 2 levels each = 4 conditions)"
-                elif (f1_levels == 2 and f2_levels == 3) or (f1_levels == 3 and f2_levels == 2):
-                    auto_design = "2×3 (2 factors: 2 and 3 levels = 6 conditions)" if f1_levels == 2 else "3×2 (2 factors: 3 and 2 levels = 6 conditions)"
-                elif f1_levels == 3 and f2_levels == 3:
-                    auto_design = "3×3 (2 factors, 3 levels each = 9 conditions)"
-            elif auto_num_factors == 3:
-                levels = [len(f.get("levels", [])) for f in auto_detected_factors[:3]]
-                if levels == [2, 2, 2]:
-                    auto_design = "2×2×2 (3 factors, 2 levels each = 8 conditions)"
-                elif sorted(levels) == [2, 2, 3]:
-                    auto_design = "2×2×3 (3 factors: 2, 2, and 3 levels = 12 conditions)"
-                elif levels == [3, 3, 3]:
-                    auto_design = "3×3×3 (3 factors, 3 levels each = 27 conditions)"
-
-            default_factorial_idx = factorial_designs.index(auto_design) if auto_design in factorial_designs else len(factorial_designs) - 1
-
-            selected_factorial = st.selectbox(
-                "Factorial design type",
-                options=factorial_designs,
-                index=default_factorial_idx,
-                key="factorial_design_type",
-                help="Select your specific factorial design.",
-            )
-
-    factors = []
-
-    # Check if we already have factors from the factorial table
-    use_factorial_table = st.session_state.get("use_factorial_table", False)
-    factorial_table_factors = st.session_state.get("factorial_table_factors", [])
-
-    if use_factorial_table and factorial_table_factors:
-        # Use factors from the factorial table - no need to show redundant config
-        factors = factorial_table_factors
-    elif "Factorial" in design_structure and "multi-arm" not in design_structure:
-        # Factorial design (with or without control)
-        has_control = "control" in design_structure.lower()
-
-        # Show auto-detected factors if available
-        if auto_num_factors > 1:
-            st.success(f"Auto-detected {auto_num_factors}-factor design from condition names")
-
-            # Show detected factors with editable names
-            st.markdown("**Detected factors:**")
-            detected_factors_display = []
-            for i, f in enumerate(auto_detected_factors):
-                col_name, col_levels = st.columns([1, 2])
-                with col_name:
-                    new_name = st.text_input(
-                        f"Factor {i+1}",
-                        value=f.get("name", f"Factor {i+1}"),
-                        key=f"detected_factor_name_{i}",
-                        label_visibility="collapsed",
-                    )
-                with col_levels:
-                    levels = f.get("levels", [])
-                    # Clean level names for display and filter out any interaction terms
-                    clean_levels = []
-                    for l in levels:
-                        clean_l = _clean_condition_name(l)
-                        # Skip if it looks like an interaction term (contains × or x)
-                        if " × " not in clean_l and " x " not in clean_l.lower():
-                            clean_levels.append(clean_l)
-                    st.markdown(f"**Levels:** {' | '.join(clean_levels)}")
-                detected_factors_display.append({"name": new_name, "levels": [l for l in levels if " × " not in _clean_condition_name(l) and " x " not in _clean_condition_name(l).lower()]})
-
-            factors = detected_factors_display
-
-            # Option to manually adjust
-            if st.checkbox("Manually adjust factors", value=False, key="manual_adjust_factors"):
-                factors = _render_manual_factor_config(all_conditions, auto_detected_factors)
-        else:
-            # No auto-detection - manual configuration
-            st.info("Could not auto-detect factorial structure. Please configure manually.")
-            factors = _render_manual_factor_config(all_conditions, None)
-
-        # Handle control condition for "Factorial + control"
-        if has_control:
-            st.markdown("**Control condition:**")
-
-            # Smart control condition detection:
-            # 1. Check if any factor has "_non_matching_conditions" (conditions that didn't fit pattern)
-            # 2. Look for conditions containing "control"
-            # 3. Otherwise, find the condition that doesn't fit the factorial crossing
-            control_candidates = []
-
-            # Check for non-matching conditions from factor detection
-            for f in auto_detected_factors:
-                non_match = f.get("_non_matching_conditions", [])
-                if non_match:
-                    control_candidates.extend(non_match)
-                    break
-
-            # If no non-matching found, look for conditions with "control" in name
-            if not control_candidates:
-                control_candidates = [c for c in all_conditions if 'control' in _clean_condition_name(c).lower()]
-
-            # If still no candidates, find conditions that don't match the factorial pattern
-            if not control_candidates and len(factors) >= 2:
-                # Get all factor levels
-                all_factor_levels = []
-                for f in factors:
-                    all_factor_levels.extend([l.lower() for l in f.get("levels", [])])
-
-                # Find conditions where not all parts match known factor levels
-                for cond in all_conditions:
-                    clean_cond = _clean_condition_name(cond).lower()
-                    # Check if this condition can be explained by the factorial crossing
-                    parts_match = sum(1 for level in all_factor_levels if level in clean_cond)
-                    if parts_match < len(factors):  # Doesn't match enough factor levels
-                        control_candidates.append(cond)
-
-            # Default to first condition if no candidates found
-            if not control_candidates:
-                control_candidates = [all_conditions[0]]
-
-            # Determine default index
-            default_ctrl_idx = 0
-            if control_candidates and control_candidates[0] in all_conditions:
-                default_ctrl_idx = all_conditions.index(control_candidates[0])
-
-            # Store detected control for display
-            if control_candidates:
-                detected_ctrl_name = _clean_condition_name(control_candidates[0])
-                st.caption(f"Auto-detected potential control: **{detected_ctrl_name}**")
-
-            control_cond = st.selectbox(
-                "Select the control condition",
-                options=all_conditions,
-                index=default_ctrl_idx,
-                key="control_condition_select",
-                format_func=_clean_condition_name,
-                help="This condition will be treated separately from the factorial structure",
-            )
-            st.session_state["control_condition"] = control_cond
-
-    else:
-        # Simple multi-arm design - each condition is independent
-        st.info("Each condition is treated as an independent level of a single factor.")
-        clean_conditions = [_clean_condition_name(c) for c in all_conditions]
-        factors = [{"name": "Condition", "levels": all_conditions}]
-
-        # Display the conditions cleanly
-        st.markdown("**Conditions:**")
-        for i, (orig, clean) in enumerate(zip(all_conditions, clean_conditions)):
-            st.markdown(f"  {i+1}. {clean}")
-
-    # Ensure we have at least one factor
-    if not factors:
-        factors = [{"name": "Condition", "levels": all_conditions}]
-
-    # Get scales from inferred design
-    scales = inferred.get("scales", []) if inferred else []
-
-    # Filter out empty scales
-    scales = [s for s in scales if s.get("name", "").strip()]
-    if not scales:
-        scales = [{"name": "Main_DV", "num_items": 5, "scale_points": 7}]
-
-    # ========================================
-    # STEP 4: DEPENDENT VARIABLES (DVs)
-    # ========================================
-    st.markdown("---")
-    st.markdown("### 4. Dependent Variables (DVs)")
-    st.caption("These are the outcome measures in your study. Verify each DV matches your QSF survey.")
-
-    # Show DV help in collapsed expander
-    with st.expander("What are DVs and how to verify them?", expanded=False):
-        st.markdown("""
-**Dependent Variables (DVs)** are what you measure as outcomes in your experiment.
-
-**Types of DVs detected:**
-- **Matrix scales** - Multi-item Likert scales (e.g., Trust Scale with 5 items)
-- **Single-item DVs** - Individual rating questions
-- **Sliders** - Visual analog scales (0-100)
-- **Numeric inputs** - Open-ended numeric responses (e.g., willingness to pay)
-
-**How to verify:**
-1. Check the variable name matches your QSF question ID
-2. Verify the scale points (e.g., 7 for a 1-7 scale)
-3. Remove any DVs that aren't actual outcome measures
-4. Add any missing DVs using the button below
-        """)
-
-    # Initialize DV state - use a version counter to handle deletions
-    dv_version = st.session_state.get("_dv_version", 0)
-
-    if "confirmed_scales" not in st.session_state:
-        st.session_state["confirmed_scales"] = scales.copy()
-        st.session_state["_dv_version"] = 0
-    if "scales_confirmed" not in st.session_state:
-        st.session_state["scales_confirmed"] = False
-
-    # Get current confirmed DVs
-    confirmed_scales = st.session_state.get("confirmed_scales", scales.copy())
-
-    # Type badge colors
-    type_badges = {
-        'matrix': '🔢 Matrix Scale',
-        'numbered_items': '📊 Multi-Item Scale',
-        'likert': '📈 Likert Scale',
-        'slider': '🎚️ Slider',
-        'single_item': '📍 Single Item',
-        'numeric_input': '🔣 Numeric Input',
-        'constant_sum': '➕ Constant Sum',
-    }
-
-    # Display each DV with edit and remove options
-    updated_scales = []
-    scales_to_remove = []
-
-    if confirmed_scales:
-        st.markdown(f"**{len(confirmed_scales)} DV(s) detected from your QSF.** Review and adjust as needed:")
-
-        # v1.2.0: Column headers for clarity with tooltips
-        hdr1, hdr2, hdr3a, hdr3b, hdr4, hdr5 = st.columns([2.5, 0.8, 0.6, 0.6, 1.5, 0.4])
-        with hdr1:
-            st.markdown(
-                '<span title="The variable name as it appears in your QSF file. You can edit this to match your analysis script.">**Variable Name**</span>',
-                unsafe_allow_html=True
-            )
-        with hdr2:
-            st.markdown(
-                '<span title="Number of items/questions in this scale. Multi-item scales (e.g., 5-item attitude measure) will generate averaged composite scores.">**Items**</span>',
-                unsafe_allow_html=True
-            )
-        with hdr3a:
-            st.markdown(
-                '<span title="Minimum value on the response scale (e.g., 1 for a 1-7 scale, 0 for a 0-100 slider).">**Min**</span>',
-                unsafe_allow_html=True
-            )
-        with hdr3b:
-            st.markdown(
-                '<span title="Maximum value on the response scale (e.g., 7 for a 1-7 Likert scale, 100 for a 0-100 slider).">**Max**</span>',
-                unsafe_allow_html=True
-            )
-        with hdr4:
-            st.markdown(
-                '<span title="Detection type: Matrix=multi-item battery, Slider=visual analog scale, Single Item=standalone question, Numeric=open-ended number input.">**Type**</span>',
-                unsafe_allow_html=True
-            )
-        with hdr5:
-            st.caption("Del")
-
-        for i, scale in enumerate(confirmed_scales):
-            dv_type = scale.get("type", "likert")
-            type_badge = type_badges.get(dv_type, "📊 Scale")
-
-            # Get item names and scale info for display
-            item_names = scale.get("item_names", [])
-            scale_min = scale.get("scale_min", 1)
-            scale_max = scale.get("scale_max", scale.get("scale_points", 7))
-            scale_anchors = scale.get("scale_anchors", {})
-
-            with st.container():
-                # Main row: Name, # Items, Scale Min, Scale Max, Type, Remove
-                # v1.2.0: Improved layout with separate min/max for flexible scale ranges
-                col1, col2, col3a, col3b, col4, col5 = st.columns([2.5, 0.8, 0.6, 0.6, 1.5, 0.4])
-
-                # v1.2.0: Use variable_name from QSF as default, fall back to name
-                qsf_var_name = scale.get("variable_name", scale.get("name", f"DV_{i+1}"))
-                display_name = scale.get("name", qsf_var_name)
-
-                with col1:
-                    scale_name = st.text_input(
-                        f"DV {i+1} Name",
-                        value=qsf_var_name,  # Use exact QSF variable name
-                        key=f"dv_name_v{dv_version}_{i}",
-                        label_visibility="collapsed",
-                        help=f"QSF Variable: {qsf_var_name} | Question: {display_name[:50]}..."
-                    )
-
-                with col2:
-                    # Get items value, handle both 'items' and 'num_items' keys
-                    items_val = scale.get("items", scale.get("num_items", 1))
-                    # v1.2.0: Clearer label based on DV type
-                    items_label = "Items" if dv_type in ['matrix', 'numbered_items'] else "Qs"
-                    items_help = {
-                        'matrix': "Number of items in this matrix/battery (e.g., 5-item attitude scale)",
-                        'numbered_items': "Number of numbered items (e.g., Scale_1 through Scale_5)",
-                        'likert': "Number of Likert-type questions grouped together",
-                        'slider': "Number of slider questions",
-                        'single_item': "Single question (always 1)",
-                        'numeric_input': "Number of numeric input fields",
-                    }.get(dv_type, "Number of questions/items in this scale")
-                    num_items = st.number_input(
-                        items_label,
-                        min_value=1,
-                        max_value=50,
-                        value=int(items_val) if items_val else 1,
-                        key=f"dv_items_v{dv_version}_{i}",
-                        help=items_help
-                    )
-
-                # v1.2.0: Two separate inputs for min and max scale values (1-100 range)
-                with col3a:
-                    # Get current min, default to 1
-                    current_min = int(scale_min) if scale_min is not None else 1
-                    if dv_type == 'numeric_input':
-                        # Numeric inputs can have any range
-                        new_scale_min = st.number_input(
-                            "Min",
-                            min_value=0,
-                            max_value=1000,
-                            value=current_min,
-                            key=f"dv_min_v{dv_version}_{i}",
-                            help="Minimum value (e.g., 0 for slider, 1 for Likert)"
-                        )
-                    else:
-                        new_scale_min = st.number_input(
-                            "Min",
-                            min_value=0,
-                            max_value=100,
-                            value=current_min,
-                            key=f"dv_min_v{dv_version}_{i}",
-                            help="Minimum scale value (usually 0 or 1)"
-                        )
-
-                with col3b:
-                    # Get current max from scale_max or scale_points
-                    current_max = int(scale_max) if scale_max is not None else (int(scale.get("scale_points", 7)) if scale.get("scale_points") else 7)
-                    if dv_type == 'numeric_input':
-                        # Numeric inputs can have any range
-                        new_scale_max = st.number_input(
-                            "Max",
-                            min_value=1,
-                            max_value=10000,
-                            value=current_max,
-                            key=f"dv_max_v{dv_version}_{i}",
-                            help="Maximum value (e.g., 100 for percentage, 1000 for WTP)"
-                        )
-                    else:
-                        new_scale_max = st.number_input(
-                            "Max",
-                            min_value=2,
-                            max_value=100,
-                            value=min(current_max, 100),  # Cap at 100 for display
-                            key=f"dv_max_v{dv_version}_{i}",
-                            help="Maximum scale value (e.g., 5, 7, 10, 100)"
-                        )
-
-                # Calculate scale_points from min/max for compatibility
-                scale_points = new_scale_max  # Used for data generation
-
-                with col4:
-                    # Type badge with descriptive tooltip
-                    type_descriptions = {
-                        'matrix': 'Multi-item scale detected as a matrix (e.g., 5-item attitude battery)',
-                        'numbered_items': 'Scale detected from numbered items (e.g., Scale_1, Scale_2)',
-                        'likert': 'Likert-type scale with multiple response options',
-                        'slider': 'Visual analog scale or slider (typically 0-100)',
-                        'single_item': 'Single standalone question',
-                        'numeric_input': 'Open-ended numeric input (e.g., WTP, quantity)',
-                        'constant_sum': 'Constant sum allocation task',
-                    }
-                    type_desc = type_descriptions.get(dv_type, 'Scale type')
-                    st.markdown(
-                        f'<small title="{type_desc}">{type_badge}</small>',
-                        unsafe_allow_html=True
-                    )
-                    if scale.get("detected_from_qsf", True):
-                        st.caption("*Auto-detected*")
-
-                with col5:
-                    # Remove button with clear help text
-                    if st.button("✕", key=f"rm_dv_v{dv_version}_{i}", help="Remove this DV from the simulation. Click to delete."):
-                        scales_to_remove.append(i)
-
-                # Show scale anchors if available
-                if scale_anchors:
-                    anchor_text = " | ".join([f"{k}={v}" for k, v in sorted(scale_anchors.items(), key=lambda x: str(x[0]))])
-                    if anchor_text:
-                        st.caption(f"📏 *Scale: {anchor_text}*")
-
-                # Show question text if available
-                q_text = scale.get("question_text", "")
-                if q_text and not item_names:
-                    st.caption(f"*\"{q_text[:80]}{'...' if len(q_text) > 80 else ''}\"*")
-
-                # Show individual items in an expander if there are multiple items
-                if item_names and len(item_names) > 0:
-                    with st.expander(f"📋 View {len(item_names)} scale item(s)", expanded=False):
-                        for j, item_text in enumerate(item_names, 1):
-                            if item_text:
-                                # Truncate long item text
-                                display_text = item_text[:100] + "..." if len(item_text) > 100 else item_text
-                                st.markdown(f"**{j}.** {display_text}")
-
-            if scale_name.strip() and i not in scales_to_remove:
-                updated_scales.append({
-                    "name": scale_name.strip(),
-                    "variable_name": scale_name.strip(),  # v1.2.0: Use user-entered name as variable name
-                    "question_text": scale.get("question_text", ""),
-                    "items": num_items,
-                    "num_items": num_items,  # Keep both for compatibility
-                    "scale_points": scale_points,  # Max value for data generation
-                    "type": dv_type,
-                    "reverse_items": scale.get("reverse_items", []),
-                    "detected_from_qsf": scale.get("detected_from_qsf", True),
-                    # Preserve new fields for item display and simulation accuracy
-                    "item_names": scale.get("item_names", []),
-                    "scale_anchors": scale.get("scale_anchors", {}),
-                    # v1.2.0: Save user-specified min/max for accurate simulation
-                    "scale_min": new_scale_min,
-                    "scale_max": new_scale_max,
-                })
-    else:
-        st.info(
-            "**No DVs detected from QSF.** This can happen if your survey uses unconventional question formats. "
-            "Click **Add DV** below to manually define your dependent variables."
-        )
-
-    # Handle removals
-    if scales_to_remove:
-        st.session_state["confirmed_scales"] = updated_scales
-        st.session_state["_dv_version"] = dv_version + 1
-        st.rerun()
-
-    # Add new DV button with helpful context
-    st.markdown("---")
-    col_add, col_help = st.columns([1, 3])
-    with col_add:
-        add_clicked = st.button("➕ Add DV", key=f"add_dv_btn_v{dv_version}", help="Add a new dependent variable manually. Use this if automatic detection missed a scale or if you want to add custom measures.")
-    with col_help:
-        st.caption("DVs (dependent variables) are the outcomes you measure. The simulation will generate realistic responses for each DV based on your experimental conditions.")
-
-    if add_clicked:
-        new_dv = {
-            "name": f"New_DV_{len(confirmed_scales)+1}",
-            "variable_name": f"New_DV_{len(confirmed_scales)+1}",
-            "question_text": "",
-            "items": 1,
-            "num_items": 1,
-            "scale_points": 7,
-            "type": "single_item",
-            "reverse_items": [],
-            "detected_from_qsf": False,
-            "item_names": [],
-            "scale_anchors": {},
-            "scale_min": 1,
-            "scale_max": 7,
-        }
-        confirmed_scales.append(new_dv)
-        st.session_state["confirmed_scales"] = confirmed_scales
-        st.session_state["_dv_version"] = dv_version + 1
-        st.rerun()
-
-    # Update session state with edited DVs
-    st.session_state["confirmed_scales"] = updated_scales
-    scales = updated_scales if updated_scales else scales
-
-    # Confirmation checkbox with better help
-    scales_confirmed = st.checkbox(
-        "I confirm these DVs match my survey",
-        value=st.session_state.get("scales_confirmed", False),
-        key=f"dv_confirm_checkbox_v{dv_version}",
-        help="Check this box once you have verified that the variable names, item counts, and scale ranges match your actual Qualtrics survey."
-    )
-    st.session_state["scales_confirmed"] = scales_confirmed
-
-    if not scales_confirmed and updated_scales:
-        st.caption("Please verify the DVs above match your survey, then check the confirmation box to proceed.")
-
-    # ========================================
-    # STEP 5: OPEN-ENDED QUESTIONS
-    # ========================================
-    st.markdown("---")
-    st.markdown("### 5. Open-Ended Questions")
-    st.caption("These questions require text responses. Verify they are correctly detected so they will be filled with realistic text.")
-
-    # Show open-ended help in collapsed expander
-    with st.expander("What are open-ended questions?", expanded=False):
-        st.markdown("""
-**Open-Ended Questions** require participants to type free-form text responses.
-
-**Types detected:**
-- **Essay boxes** - Long-form text responses (ESTB, ML selectors)
-- **Single-line text** - Short answers like names, explanations (SL selector)
-- **Form fields** - Multiple text inputs in one question (FORM selector)
-- **MC with "Other"** - Multiple choice with "Other: please specify" option
-
-**How to verify:**
-1. Check that all questions requiring text responses are included
-2. Remove any that shouldn't have generated text (e.g., MTurk IDs)
-3. Add any missing open-ended questions manually
-
-**Simulation will:**
-- Generate realistic text responses matching each persona
-- Consider question context and survey topic
-- Vary response length and style appropriately
-        """)
-
-    # Initialize open-ended state
-    oe_version = st.session_state.get("_oe_version", 0)
-
-    # Get detected open-ended questions from preview
-    detected_open_ended = []
-    if preview and hasattr(preview, 'open_ended_details') and preview.open_ended_details:
-        detected_open_ended = preview.open_ended_details
-    elif preview and hasattr(preview, 'open_ended_questions') and preview.open_ended_questions:
-        # Convert simple list to detailed format
-        detected_open_ended = [
-            {"variable_name": q, "question_text": "", "source_type": "detected"}
-            for q in preview.open_ended_questions
-        ]
-
-    if "confirmed_open_ended" not in st.session_state:
-        st.session_state["confirmed_open_ended"] = detected_open_ended.copy()
-        st.session_state["_oe_version"] = 0
-    if "open_ended_confirmed" not in st.session_state:
-        st.session_state["open_ended_confirmed"] = False
-
-    confirmed_open_ended = st.session_state.get("confirmed_open_ended", detected_open_ended.copy())
-
-    # Source type badges
-    source_badges = {
-        'text_entry': '📝 Text Entry',
-        'essay': '📄 Essay Box',
-        'mc_text_entry': '🔘 MC + Text',
-        'form_field': '📋 Form Field',
-        'matrix_text': '🔢 Matrix Text',
-        'detected': '🔍 Detected',
-    }
-
-    # Display each open-ended question with remove option
-    updated_open_ended = []
-    oe_to_remove = []
-
-    if confirmed_open_ended:
-        st.markdown(f"**{len(confirmed_open_ended)} open-ended question(s) detected:**")
-
-        for i, oe in enumerate(confirmed_open_ended):
-            source_type = oe.get("source_type", "detected")
-            source_badge = source_badges.get(source_type, "📝 Text")
-
-            with st.container():
-                col1, col2, col3 = st.columns([3, 2, 0.5])
-
-                with col1:
-                    var_name = st.text_input(
-                        f"Variable {i+1}",
-                        value=oe.get("variable_name", oe.get("name", f"OpenEnded_{i+1}")),
-                        key=f"oe_name_v{oe_version}_{i}",
-                        label_visibility="collapsed",
-                    )
-
-                with col2:
-                    st.markdown(f"<small>{source_badge}</small>", unsafe_allow_html=True)
-                    if oe.get("force_response"):
-                        st.caption("⚠️ *Required*")
-
-                with col3:
-                    if st.button("✕", key=f"rm_oe_v{oe_version}_{i}", help="Remove this question"):
-                        oe_to_remove.append(i)
-
-                # Show question text if available
-                q_text = oe.get("question_text", "")
-                if q_text:
-                    st.caption(f"*\"{q_text[:100]}{'...' if len(q_text) > 100 else ''}\"*")
-
-            if var_name.strip() and i not in oe_to_remove:
-                updated_open_ended.append({
-                    "variable_name": var_name.strip(),
-                    "name": var_name.strip(),
-                    "question_text": oe.get("question_text", ""),
-                    "source_type": source_type,
-                    "force_response": oe.get("force_response", False),
-                    "context_type": oe.get("context_type", "general"),
-                    "min_chars": oe.get("min_chars"),
-                    "block_name": oe.get("block_name", ""),
-                })
-    else:
-        st.info("No open-ended questions detected. Add any text response questions below.")
-
-    # Handle removals
-    if oe_to_remove:
-        st.session_state["confirmed_open_ended"] = updated_open_ended
-        st.session_state["_oe_version"] = oe_version + 1
-        st.rerun()
-
-    # Add new open-ended question button
-    st.markdown("---")
-    col_add_oe, col_spacer_oe = st.columns([1, 3])
-    with col_add_oe:
-        if st.button("➕ Add Open-Ended Question", key=f"add_oe_btn_v{oe_version}"):
-            new_oe = {
-                "variable_name": f"OpenEnded_{len(confirmed_open_ended)+1}",
-                "name": f"OpenEnded_{len(confirmed_open_ended)+1}",
-                "question_text": "",
-                "source_type": "manual",
-                "force_response": False,
-                "context_type": "general",
+            else:
+                final_conditions = all_conditions
+            final_factors = _normalize_factor_specs(factors, final_conditions)
+            final_scales = _normalize_scale_specs(scales)
+            # Use user-confirmed open-ended questions instead of auto-detected
+            final_open_ended = st.session_state.get("confirmed_open_ended", inferred.get("open_ended_questions", []))
+
+            # Determine randomization level string
+            rand_mapping = {
+                "Participant-level (standard)": "Participant-level",
+                "Group/Cluster-level": "Group/Cluster-level",
+                "Not randomized / observational": "Not randomized",
             }
-            confirmed_open_ended.append(new_oe)
-            st.session_state["confirmed_open_ended"] = confirmed_open_ended
-            st.session_state["_oe_version"] = oe_version + 1
-            st.rerun()
+            final_rand_level = rand_mapping.get(rand_level, "Participant-level")
 
-    # Update session state with edited open-ended questions
-    st.session_state["confirmed_open_ended"] = updated_open_ended
+            # v1.0.0: Get pre-computed visibility map from QSF parser for accurate simulation
+            qsf_preview = st.session_state.get("qsf_preview")
+            visibility_map = {}
+            if qsf_preview and hasattr(qsf_preview, 'condition_visibility_map'):
+                visibility_map = qsf_preview.condition_visibility_map or {}
 
-    # Confirmation checkbox for open-ended questions
-    open_ended_confirmed = st.checkbox(
-        "I confirm these open-ended questions match my survey",
-        value=st.session_state.get("open_ended_confirmed", False),
-        key=f"oe_confirm_checkbox_v{oe_version}",
-    )
-    st.session_state["open_ended_confirmed"] = open_ended_confirmed
+            st.session_state["inferred_design"] = {
+                "conditions": final_conditions,
+                "factors": final_factors,
+                "scales": final_scales,
+                "open_ended_questions": final_open_ended,
+                "randomization_level": final_rand_level,
+                "condition_visibility_map": visibility_map,  # v1.0.0: For accurate condition-specific simulation
+            }
+            st.session_state["randomization_level"] = final_rand_level
 
-    if not open_ended_confirmed and updated_open_ended:
-        st.caption("Confirm your open-ended questions to ensure they receive realistic text responses.")
+            # Initialize variable review rows if not already set
+            if not st.session_state.get("variable_review_rows"):
+                prereg_outcomes = st.session_state.get("prereg_outcomes", "")
+                prereg_iv = st.session_state.get("prereg_iv", "")
+                st.session_state["variable_review_rows"] = _build_variable_review_rows(
+                    st.session_state["inferred_design"], prereg_outcomes, prereg_iv, enhanced_analysis
+                )
 
-    # ========================================
-    # ATTENTION & MANIPULATION CHECKS REVIEW
-    # ========================================
-    st.markdown("---")
-    st.markdown("### 📋 Review: Attention & Manipulation Checks")
-
-    # Get detected checks from QSF preview
-    preview = st.session_state.get("qsf_preview")
-    detected_attention = preview.attention_checks if preview and hasattr(preview, 'attention_checks') else []
-    detected_manipulation = []  # Will need to extract from analysis
-
-    # Try to get from enhanced analysis
-    enhanced_analysis = st.session_state.get("enhanced_analysis")
-    if enhanced_analysis and hasattr(enhanced_analysis, 'manipulation_checks'):
-        detected_manipulation = enhanced_analysis.manipulation_checks
-
-    col_attn, col_manip = st.columns(2)
-
-    with col_attn:
-        st.markdown("**Attention Checks**")
-        if detected_attention:
-            st.success(f"✓ {len(detected_attention)} attention check(s) detected")
-            for i, check in enumerate(detected_attention[:5]):  # Show first 5
-                st.caption(f"  • {check[:50]}..." if len(str(check)) > 50 else f"  • {check}")
+            st.success("✅ Design configuration complete. Proceed to the **Generate** step to run the simulation.")
         else:
-            st.warning("No attention checks detected in QSF")
+            missing_bits = []
+            if not all_conditions:
+                missing_bits.append("conditions")
+            if not scales:
+                missing_bits.append("scales")
+            if not scales_confirmed:
+                missing_bits.append("scale confirmation (check the box above)")
+            st.error("⚠️ Cannot proceed - missing: " + ", ".join(missing_bits))
 
-        # Allow manual addition
-        with st.expander("Add/Edit Attention Checks"):
-            st.caption("Specify attention check question IDs or descriptions")
-            manual_attention = st.text_area(
-                "Attention check questions (one per line)",
-                value=st.session_state.get("manual_attention_checks", ""),
-                key="manual_attention_input",
-                height=100,
-                placeholder="e.g., Q15_Attention\nPlease select 'Agree' for this question"
-            )
-            st.session_state["manual_attention_checks"] = manual_attention
+        # ========================================
+        # ADVANCED: Variable Review (collapsed)
+        # ========================================
+        with st.expander("Advanced: Review All Variables"):
+            st.caption("View and edit all detected survey variables and their roles.")
 
-    with col_manip:
-        st.markdown("**Manipulation Checks**")
-        if detected_manipulation:
-            st.success(f"✓ {len(detected_manipulation)} manipulation check(s) detected")
-            for i, check in enumerate(detected_manipulation[:5]):
-                st.caption(f"  • {check[:50]}..." if len(str(check)) > 50 else f"  • {check}")
-        else:
-            st.info("No manipulation checks detected (optional)")
-
-        # Allow manual addition
-        with st.expander("Add/Edit Manipulation Checks"):
-            st.caption("Specify manipulation check question IDs or descriptions")
-            manual_manipulation = st.text_area(
-                "Manipulation check questions (one per line)",
-                value=st.session_state.get("manual_manipulation_checks", ""),
-                key="manual_manipulation_input",
-                height=100,
-                placeholder="e.g., Q20_ManipCheck\nWhat condition were you assigned to?"
-            )
-            st.session_state["manual_manipulation_checks"] = manual_manipulation
-
-    st.caption("💡 *Attention checks help identify careless responders. Manipulation checks verify participants understood the experimental condition.*")
-
-    # ========================================
-    # FINAL SUMMARY & LOCK DESIGN
-    # ========================================
-    st.markdown("---")
-    st.markdown("### Design Summary")
-
-    # Check if using crossed factorial conditions
-    display_conditions = all_conditions
-    if st.session_state.get("use_crossed_conditions") and st.session_state.get("factorial_crossed_conditions"):
-        display_conditions = st.session_state["factorial_crossed_conditions"]
-
-    # Get confirmed open-ended count
-    confirmed_oe = st.session_state.get("confirmed_open_ended", [])
-    oe_count = len(confirmed_oe)
-
-    summary_cols = st.columns(5)
-    summary_cols[0].metric("Conditions", len(display_conditions))
-    summary_cols[1].metric("Factors", len(factors))
-    summary_cols[2].metric("DVs", len(scales))
-    summary_cols[3].metric("Open-Ended", oe_count)
-    summary_cols[4].metric("Design", design_type.split("(")[0].strip())
-
-    # Show condition list and detected scales (cleaned names)
-    clean_cond_names = [_clean_condition_name(c) for c in display_conditions]
-    if st.session_state.get("use_crossed_conditions"):
-        st.markdown(f"**Factorial Conditions (crossed):** {', '.join(clean_cond_names)}")
-    else:
-        st.markdown(f"**Conditions:** {', '.join(clean_cond_names)}")
-    scale_names = [s.get('name', 'Unknown') for s in scales if s.get('name')]
-    st.markdown(f"**DVs:** {', '.join(scale_names) if scale_names else 'Main_DV (default)'}")
-    if oe_count > 0:
-        oe_names = [oe.get('variable_name', oe.get('name', '')) for oe in confirmed_oe[:5]]
-        oe_display = ', '.join(oe_names)
-        if oe_count > 5:
-            oe_display += f" (+{oe_count - 5} more)"
-        st.markdown(f"**Open-Ended Questions:** {oe_display}")
-
-    # Validate and lock design - require conditions, scales, AND scale confirmation
-    design_valid = len(display_conditions) >= 1 and len(scales) >= 1 and scales_confirmed
-
-    if design_valid:
-        # Save to session state
-        # If using factorial crossed conditions from the visual table, use those instead
-        if st.session_state.get("use_crossed_conditions") and st.session_state.get("factorial_crossed_conditions"):
-            final_conditions = st.session_state["factorial_crossed_conditions"]
-            # Update condition allocation for the crossed conditions
-            n_crossed = len(final_conditions)
-            if n_crossed > 0 and sample_size > 0 and "condition_allocation" not in st.session_state:
-                n_per = sample_size // n_crossed
-                remainder = sample_size % n_crossed
-                st.session_state["condition_allocation"] = {
-                    cond: ((n_per + (1 if i < remainder else 0)) / sample_size * 100)
-                    for i, cond in enumerate(final_conditions)
-                }
-        else:
-            final_conditions = all_conditions
-        final_factors = _normalize_factor_specs(factors, final_conditions)
-        final_scales = _normalize_scale_specs(scales)
-        # Use user-confirmed open-ended questions instead of auto-detected
-        final_open_ended = st.session_state.get("confirmed_open_ended", inferred.get("open_ended_questions", []))
-
-        # Determine randomization level string
-        rand_mapping = {
-            "Participant-level (standard)": "Participant-level",
-            "Group/Cluster-level": "Group/Cluster-level",
-            "Not randomized / observational": "Not randomized",
-        }
-        final_rand_level = rand_mapping.get(rand_level, "Participant-level")
-
-        # v1.0.0: Get pre-computed visibility map from QSF parser for accurate simulation
-        qsf_preview = st.session_state.get("qsf_preview")
-        visibility_map = {}
-        if qsf_preview and hasattr(qsf_preview, 'condition_visibility_map'):
-            visibility_map = qsf_preview.condition_visibility_map or {}
-
-        st.session_state["inferred_design"] = {
-            "conditions": final_conditions,
-            "factors": final_factors,
-            "scales": final_scales,
-            "open_ended_questions": final_open_ended,
-            "randomization_level": final_rand_level,
-            "condition_visibility_map": visibility_map,  # v1.0.0: For accurate condition-specific simulation
-        }
-        st.session_state["randomization_level"] = final_rand_level
-
-        # Initialize variable review rows if not already set
-        if not st.session_state.get("variable_review_rows"):
             prereg_outcomes = st.session_state.get("prereg_outcomes", "")
             prereg_iv = st.session_state.get("prereg_iv", "")
-            st.session_state["variable_review_rows"] = _build_variable_review_rows(
-                st.session_state["inferred_design"], prereg_outcomes, prereg_iv, enhanced_analysis
-            )
+            default_rows = _build_variable_review_rows(inferred, prereg_outcomes, prereg_iv, enhanced_analysis)
+            current_rows = st.session_state.get("variable_review_rows")
 
-        st.success("✅ Design configuration complete. Proceed to the **Generate** step to run the simulation.")
-    else:
-        missing_bits = []
-        if not all_conditions:
-            missing_bits.append("conditions")
-        if not scales:
-            missing_bits.append("scales")
-        if not scales_confirmed:
-            missing_bits.append("scale confirmation (check the box above)")
-        st.error("⚠️ Cannot proceed - missing: " + ", ".join(missing_bits))
+            if not current_rows:
+                current_rows = default_rows
 
-    # ========================================
-    # ADVANCED: Variable Review (collapsed)
-    # ========================================
-    with st.expander("Advanced: Review All Variables"):
-        st.caption("View and edit all detected survey variables and their roles.")
+            # Simple filter
+            show_timing = st.checkbox("Include timing/meta variables", value=False, key="adv_filter_timing")
 
-        prereg_outcomes = st.session_state.get("prereg_outcomes", "")
-        prereg_iv = st.session_state.get("prereg_iv", "")
-        default_rows = _build_variable_review_rows(inferred, prereg_outcomes, prereg_iv, enhanced_analysis)
-        current_rows = st.session_state.get("variable_review_rows")
+            if not show_timing:
+                filtered_rows = [r for r in current_rows if r.get("Type") != "Timing/Meta"]
+            else:
+                filtered_rows = current_rows
 
-        if not current_rows:
-            current_rows = default_rows
+            if filtered_rows:
+                variable_df = st.data_editor(
+                    pd.DataFrame(filtered_rows),
+                    num_rows="fixed",
+                    use_container_width=True,
+                    column_config={
+                        "Variable": st.column_config.TextColumn("Variable", disabled=True),
+                        "Display Name": st.column_config.TextColumn("Name", disabled=True),
+                        "Type": st.column_config.TextColumn("Type", disabled=True),
+                        "Role": st.column_config.SelectboxColumn(
+                            "Role",
+                            options=["Primary outcome", "Secondary outcome", "Condition", "Mediator",
+                                     "Moderator", "Attention check", "Demographics", "Timing/Meta", "Other"],
+                        ),
+                        "Question Text": st.column_config.TextColumn("Question", disabled=True),
+                    },
+                    key="adv_variable_editor",
+                    height=300,
+                )
+                st.session_state["variable_review_rows"] = variable_df.to_dict(orient="records")
 
-        # Simple filter
-        show_timing = st.checkbox("Include timing/meta variables", value=False, key="adv_filter_timing")
+        # ========================================
+        # v2.4.5: DESIGN PREVIEW SUMMARY
+        # ========================================
+        if design_valid:
+            st.markdown("---")
+            st.markdown("### 📋 Design Preview")
+            st.caption("Review your experiment configuration before generating data")
 
-        if not show_timing:
-            filtered_rows = [r for r in current_rows if r.get("Type") != "Timing/Meta"]
-        else:
-            filtered_rows = current_rows
+            preview_col1, preview_col2 = st.columns(2)
+            with preview_col1:
+                st.markdown("**Study Details**")
+                study_title = st.session_state.get("study_title", "Untitled Study")
+                sample_n = st.session_state.get("sample_size", 100)
+                st.markdown(f"- **Title:** {study_title[:60]}{'...' if len(study_title) > 60 else ''}")
+                st.markdown(f"- **Sample Size:** N = {sample_n}")
 
-        if filtered_rows:
-            variable_df = st.data_editor(
-                pd.DataFrame(filtered_rows),
-                num_rows="fixed",
-                use_container_width=True,
-                column_config={
-                    "Variable": st.column_config.TextColumn("Variable", disabled=True),
-                    "Display Name": st.column_config.TextColumn("Name", disabled=True),
-                    "Type": st.column_config.TextColumn("Type", disabled=True),
-                    "Role": st.column_config.SelectboxColumn(
-                        "Role",
-                        options=["Primary outcome", "Secondary outcome", "Condition", "Mediator",
-                                 "Moderator", "Attention check", "Demographics", "Timing/Meta", "Other"],
-                    ),
-                    "Question Text": st.column_config.TextColumn("Question", disabled=True),
-                },
-                key="adv_variable_editor",
-                height=300,
-            )
-            st.session_state["variable_review_rows"] = variable_df.to_dict(orient="records")
+                st.markdown("**Experimental Design**")
+                st.markdown(f"- **Conditions:** {len(all_conditions)}")
+                if all_conditions:
+                    cond_preview = ", ".join(all_conditions[:4])
+                    if len(all_conditions) > 4:
+                        cond_preview += f", +{len(all_conditions) - 4} more"
+                    st.markdown(f"  _{cond_preview}_")
 
-    # ========================================
-    # v2.4.5: DESIGN PREVIEW SUMMARY
-    # ========================================
-    if design_valid:
-        st.markdown("---")
-        st.markdown("### 📋 Design Preview")
-        st.caption("Review your experiment configuration before generating data")
+            with preview_col2:
+                st.markdown("**Dependent Variables**")
+                st.markdown(f"- **Scales/DVs:** {len(scales)}")
+                if scales:
+                    for s in scales[:3]:
+                        s_name = s.get("name", "Scale")[:30]
+                        s_type = s.get("type", "unknown")
+                        st.markdown(f"  - {s_name} _({s_type})_")
+                    if len(scales) > 3:
+                        st.markdown(f"  - _+{len(scales) - 3} more_")
 
-        preview_col1, preview_col2 = st.columns(2)
-        with preview_col1:
-            st.markdown("**Study Details**")
-            study_title = st.session_state.get("study_title", "Untitled Study")
-            sample_n = st.session_state.get("sample_size", 100)
-            st.markdown(f"- **Title:** {study_title[:60]}{'...' if len(study_title) > 60 else ''}")
-            st.markdown(f"- **Sample Size:** N = {sample_n}")
+                # v1.0.0: Only show effect size if user has explicitly configured one
+                # Don't show default 0.5 as it's misleading when no hypothesis specified
+                if st.session_state.get("add_effect_checkbox", False):
+                    effect_size = st.session_state.get("effect_size", 0.5)
+                    st.markdown(f"**Effect Size:** d = {effect_size:.2f}")
 
-            st.markdown("**Experimental Design**")
-            st.markdown(f"- **Conditions:** {len(all_conditions)}")
-            if all_conditions:
-                cond_preview = ", ".join(all_conditions[:4])
-                if len(all_conditions) > 4:
-                    cond_preview += f", +{len(all_conditions) - 4} more"
-                st.markdown(f"  _{cond_preview}_")
+            # Design type detection
+            design_type = "Between-subjects"
+            if len(all_conditions) == 1:
+                design_type = "Single group"
+            elif len(all_conditions) == 2:
+                design_type = "2-group comparison"
+            elif len(all_conditions) == 4:
+                design_type = "2×2 factorial"
+            elif len(all_conditions) == 6:
+                design_type = "2×3 factorial"
+            elif len(all_conditions) == 9:
+                design_type = "3×3 factorial"
 
-        with preview_col2:
-            st.markdown("**Dependent Variables**")
-            st.markdown(f"- **Scales/DVs:** {len(scales)}")
-            if scales:
-                for s in scales[:3]:
-                    s_name = s.get("name", "Scale")[:30]
-                    s_type = s.get("type", "unknown")
-                    st.markdown(f"  - {s_name} _({s_type})_")
-                if len(scales) > 3:
-                    st.markdown(f"  - _+{len(scales) - 3} more_")
-
-            # v1.0.0: Only show effect size if user has explicitly configured one
-            # Don't show default 0.5 as it's misleading when no hypothesis specified
-            if st.session_state.get("add_effect_checkbox", False):
-                effect_size = st.session_state.get("effect_size", 0.5)
-                st.markdown(f"**Effect Size:** d = {effect_size:.2f}")
-
-        # Design type detection
-        design_type = "Between-subjects"
-        if len(all_conditions) == 1:
-            design_type = "Single group"
-        elif len(all_conditions) == 2:
-            design_type = "2-group comparison"
-        elif len(all_conditions) == 4:
-            design_type = "2×2 factorial"
-        elif len(all_conditions) == 6:
-            design_type = "2×3 factorial"
-        elif len(all_conditions) == 9:
-            design_type = "3×3 factorial"
-
-        st.info(f"**Design Type:** {design_type} · **Total Cells:** {len(all_conditions)} · **N per cell:** ~{sample_n // max(1, len(all_conditions))}")
+            st.info(f"**Design Type:** {design_type} · **Total Cells:** {len(all_conditions)} · **N per cell:** ~{sample_n // max(1, len(all_conditions))}")
 
 
-# =====================================================================
+    # =====================================================================
 # TAB 4: GENERATE SIMULATION
 # =====================================================================
 with tab_generate:
