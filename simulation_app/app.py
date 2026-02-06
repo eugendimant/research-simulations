@@ -640,13 +640,41 @@ def _normalize_scale_specs(scales: List[Any]) -> List[Dict[str, Any]]:
                 except (ValueError, TypeError):
                     num_items = 5
 
+            # v1.2.1: Extract scale_min and scale_max with proper numeric conversion
+            raw_min = scale.get("scale_min")
+            if raw_min is None or (isinstance(raw_min, float) and np.isnan(raw_min)):
+                scale_min = 1
+            elif isinstance(raw_min, dict):
+                # Handle case where scale_min is incorrectly a dict - extract value or default
+                scale_min = int(raw_min.get("value", 1)) if "value" in raw_min else 1
+            else:
+                try:
+                    scale_min = int(raw_min)
+                except (ValueError, TypeError):
+                    scale_min = 1
+
+            raw_max = scale.get("scale_max")
+            if raw_max is None or (isinstance(raw_max, float) and np.isnan(raw_max)):
+                scale_max = scale_points  # Default to scale_points
+            elif isinstance(raw_max, dict):
+                # Handle case where scale_max is incorrectly a dict - extract value or default
+                scale_max = int(raw_max.get("value", scale_points)) if "value" in raw_max else scale_points
+            else:
+                try:
+                    scale_max = int(raw_max)
+                except (ValueError, TypeError):
+                    scale_max = scale_points
+
             normalized.append(
                 {
                     "name": name,
                     "variable_name": var_name.replace(" ", "_"),
                     "num_items": max(1, num_items),
                     "scale_points": max(2, min(1001, scale_points)),
+                    "scale_min": max(0, scale_min),  # v1.2.1: Preserve scale_min
+                    "scale_max": max(1, scale_max),  # v1.2.1: Preserve scale_max
                     "reverse_items": scale.get("reverse_items", []) or [],
+                    "type": scale.get("type", "likert"),  # v1.2.1: Preserve scale type
                     "_validated": True,
                 }
             )
@@ -2963,6 +2991,7 @@ def _go_to_step(step_index: int) -> None:
     _save_step_state()
     st.session_state["active_step"] = max(0, min(step_index, len(STEP_LABELS) - 1))
     st.session_state["_scroll_to_top"] = True  # Flag to trigger scroll on next render
+    st.session_state["_scroll_attempts"] = 0  # Reset scroll attempts counter
     st.rerun()
 
 
@@ -2972,45 +3001,67 @@ def _inject_scroll_to_top():
     Call this at the beginning of each step to ensure the view starts at the top
     when navigating between steps.
 
-    v1.2.0: More aggressive scroll with iframe-based approach for Streamlit Cloud.
+    v1.2.1: Fixed scroll-to-top to work from ANY navigation source (top or bottom buttons).
+    Uses multiple aggressive strategies with repeated attempts.
     """
     if st.session_state.get("_scroll_to_top", False):
-        # Clear the flag first
+        # Clear the flag
         st.session_state["_scroll_to_top"] = False
-        # v1.2.0: Use components.html for more reliable script execution
-        import streamlit.components.v1 as components
-        components.html(
-            """
-            <script>
-                // Aggressive scroll to top with multiple strategies
-                (function() {
-                    // Strategy 1: Main section
-                    var mainSection = parent.document.querySelector('section.main');
-                    if (mainSection) mainSection.scrollTop = 0;
 
-                    // Strategy 2: stApp container
-                    var stApp = parent.document.querySelector('.stApp');
-                    if (stApp) stApp.scrollTop = 0;
+        # v1.2.1: Inject scroll script directly into page (not iframe) for maximum compatibility
+        scroll_script = """
+        <script>
+            // v1.2.1: Aggressive scroll-to-top that works regardless of navigation source
+            (function scrollToTop() {
+                // Function to perform the scroll
+                function doScroll() {
+                    // Strategy 1: Scroll the main Streamlit section
+                    var mainSection = document.querySelector('section.main');
+                    if (mainSection) {
+                        mainSection.scrollTop = 0;
+                        mainSection.scrollTo(0, 0);
+                    }
 
-                    // Strategy 3: Block container
-                    var block = parent.document.querySelector('[data-testid="stAppViewBlockContainer"]');
-                    if (block) block.scrollTop = 0;
+                    // Strategy 2: Scroll stApp container
+                    var stApp = document.querySelector('.stApp');
+                    if (stApp) {
+                        stApp.scrollTop = 0;
+                        stApp.scrollTo(0, 0);
+                    }
 
-                    // Strategy 4: Window scroll
-                    parent.scrollTo(0, 0);
+                    // Strategy 3: Scroll the block container
+                    var blockContainer = document.querySelector('[data-testid="stAppViewBlockContainer"]');
+                    if (blockContainer) {
+                        blockContainer.scrollTop = 0;
+                    }
 
-                    // Strategy 5: Delayed scroll for dynamic content
-                    setTimeout(function() {
-                        parent.scrollTo(0, 0);
-                        if (mainSection) mainSection.scrollTop = 0;
-                        if (stApp) stApp.scrollTop = 0;
-                    }, 100);
-                })();
-            </script>
-            """,
-            height=0,
-            width=0,
-        )
+                    // Strategy 4: Scroll window
+                    window.scrollTo(0, 0);
+
+                    // Strategy 5: Find any scrollable parent and scroll it
+                    var scrollables = document.querySelectorAll('[style*="overflow"]');
+                    scrollables.forEach(function(el) {
+                        el.scrollTop = 0;
+                    });
+                }
+
+                // Execute immediately
+                doScroll();
+
+                // Execute again after short delays to catch dynamic content
+                setTimeout(doScroll, 50);
+                setTimeout(doScroll, 150);
+                setTimeout(doScroll, 300);
+                setTimeout(doScroll, 500);
+            })();
+        </script>
+        <style>
+            /* Temporary anchor to force scroll position */
+            #scroll-top-anchor { position: absolute; top: 0; }
+        </style>
+        <div id="scroll-top-anchor"></div>
+        """
+        st.markdown(scroll_script, unsafe_allow_html=True)
 
 
 with st.expander("What this tool delivers", expanded=True):
@@ -5925,14 +5976,54 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
     progress_placeholder = st.empty()
     status_placeholder = st.empty()
 
-    # v1.2.0: Show prominent progress indicator when generating
+    # v1.2.1: Show prominent animated progress indicator when generating
     if is_generating:
         with status_placeholder.container():
             st.markdown("""
-            <div style="text-align: center; padding: 30px; background: linear-gradient(135deg, #1e3a5f 0%, #2d5a87 100%); border-radius: 15px; margin: 20px 0;">
-                <div style="font-size: 48px; margin-bottom: 15px;">⏳</div>
-                <h2 style="color: white; margin: 0 0 10px 0;">Generating Your Dataset...</h2>
-                <p style="color: #a0c4e8; font-size: 16px; margin: 0;">This typically takes 10-30 seconds. Please don't close this page.</p>
+            <style>
+                @keyframes pulse {
+                    0%, 100% { transform: scale(1); opacity: 1; }
+                    50% { transform: scale(1.1); opacity: 0.8; }
+                }
+                @keyframes spin {
+                    0% { transform: rotate(0deg); }
+                    100% { transform: rotate(360deg); }
+                }
+                .progress-spinner {
+                    display: inline-block;
+                    width: 50px;
+                    height: 50px;
+                    border: 4px solid rgba(255,255,255,0.3);
+                    border-top: 4px solid #ffffff;
+                    border-radius: 50%;
+                    animation: spin 1s linear infinite;
+                    margin-bottom: 15px;
+                }
+                .progress-container {
+                    text-align: center;
+                    padding: 40px;
+                    background: linear-gradient(135deg, #1e3a5f 0%, #2d5a87 100%);
+                    border-radius: 15px;
+                    margin: 20px 0;
+                    box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+                }
+                .progress-title {
+                    color: white;
+                    margin: 0 0 10px 0;
+                    font-size: 24px;
+                    animation: pulse 2s ease-in-out infinite;
+                }
+                .progress-subtitle {
+                    color: #a0c4e8;
+                    font-size: 16px;
+                    margin: 0;
+                }
+            </style>
+            <div class="progress-container">
+                <div class="progress-spinner"></div>
+                <h2 class="progress-title">Generating Your Dataset...</h2>
+                <p class="progress-subtitle">Creating realistic behavioral data. This typically takes 10-30 seconds.</p>
+                <p class="progress-subtitle" style="margin-top: 10px; font-size: 14px;">Please don't close or refresh this page.</p>
             </div>
             """, unsafe_allow_html=True)
 
@@ -5967,11 +6058,19 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
                 st.session_state["last_metadata"] = None
                 st.rerun()
 
+    # v1.2.1: Two-phase generation to ensure progress indicator renders
+    # Phase 1: Set is_generating and rerun to show progress UI
     if st.session_state.get("generation_requested") and not is_generating:
         st.session_state["generation_requested"] = False
         st.session_state["is_generating"] = True
+        st.session_state["_generation_phase"] = 1  # Signal that we need another rerun
+        st.rerun()  # Rerun to render progress UI BEFORE generation starts
+
+    # Phase 2: Actually generate (progress UI is now visible)
+    if is_generating and st.session_state.get("_generation_phase", 0) == 1:
+        st.session_state["_generation_phase"] = 2  # Move to generation phase
         progress_bar = progress_placeholder.progress(5, text="Preparing simulation inputs...")
-        status_placeholder.info("Preparing simulation inputs...")
+        status_placeholder.info("🔄 Preparing simulation inputs...")
         title = st.session_state.get("study_title", "") or "Untitled Study"
         desc = st.session_state.get("study_description", "") or ""
         requested_n = int(st.session_state.get("sample_size", 200))

@@ -4316,22 +4316,30 @@ class EnhancedSimulationEngine:
             num_items = max(1, num_items)
 
             # Extract scale_min and scale_max from scale dict (from QSF detection)
-            # Defensive handling: check for None, NaN, and invalid types
-            scale_min = scale.get("scale_min", 1)
-            scale_max = scale.get("scale_max", scale_points)
+            # v1.2.1: ROBUST defensive handling: check for None, NaN, dict, and invalid types
+            raw_scale_min = scale.get("scale_min", 1)
+            raw_scale_max = scale.get("scale_max", scale_points)
+
+            # Handle dict (can occur from malformed data) - extract value or default
+            if isinstance(raw_scale_min, dict):
+                raw_scale_min = raw_scale_min.get("value", 1) if "value" in raw_scale_min else 1
+            if isinstance(raw_scale_max, dict):
+                raw_scale_max = raw_scale_max.get("value", scale_points) if "value" in raw_scale_max else scale_points
+
             # Handle None
-            if scale_min is None:
-                scale_min = 1
-            if scale_max is None:
-                scale_max = scale_points
-            # Handle NaN (can occur from DataFrame conversions)
+            if raw_scale_min is None:
+                raw_scale_min = 1
+            if raw_scale_max is None:
+                raw_scale_max = scale_points
+
+            # Handle NaN and convert to int
             try:
-                if isinstance(scale_min, float) and np.isnan(scale_min):
-                    scale_min = 1
-                if isinstance(scale_max, float) and np.isnan(scale_max):
-                    scale_max = scale_points
-                scale_min = int(scale_min)
-                scale_max = int(scale_max)
+                if isinstance(raw_scale_min, float) and np.isnan(raw_scale_min):
+                    raw_scale_min = 1
+                if isinstance(raw_scale_max, float) and np.isnan(raw_scale_max):
+                    raw_scale_max = scale_points
+                scale_min = int(raw_scale_min)
+                scale_max = int(raw_scale_max)
             except (ValueError, TypeError):
                 # Fallback if conversion fails
                 scale_min = 1
