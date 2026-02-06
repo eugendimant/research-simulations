@@ -2057,20 +2057,65 @@ class TextResponseGenerator:
 
     def _add_natural_variation(self, response: str, traits: Dict[str, float], rng: random.Random) -> str:
         """Add natural language variations based on persona traits."""
+        attention = traits.get('attention_level', 0.5)
+
         # Sometimes add a hedge
         if traits.get('response_consistency', 0.5) < 0.6 and rng.random() < 0.25:
             hedge = rng.choice(self.hedges)
             response = f"{hedge}, {response[0].lower()}{response[1:]}"
 
         # Typos for low attention
-        if traits.get('attention_level', 0.5) < 0.5 and rng.random() < 0.2:
+        if attention < 0.5 and rng.random() < 0.2:
             response = response.lower()
+
+        # Self-correction for highly attentive personas (attention > 0.85)
+        if attention > 0.85 and rng.random() < 0.15:
+            self_corrections = [
+                "Well, actually, ",
+                "Let me rephrase that — ",
+                "Or rather, I should say, ",
+                "Actually, on second thought, ",
+                "What I really mean is, ",
+            ]
+            correction = rng.choice(self_corrections)
+            sentences = response.split('. ')
+            if len(sentences) > 1:
+                # Insert self-correction before a random non-first sentence
+                insert_pos = rng.randint(1, len(sentences) - 1)
+                sent = sentences[insert_pos]
+                if sent:
+                    sentences[insert_pos] = correction + sent[0].lower() + sent[1:]
+                    response = '. '.join(sentences)
+            else:
+                response = correction + response[0].lower() + response[1:]
+
+        # Trailing off for satisficers (attention < 0.4)
+        if attention < 0.4 and rng.random() < 0.20:
+            # Strip existing trailing punctuation before adding ellipsis
+            response = response.rstrip('.!?') + "..."
+
+        # Parenthetical asides for engaged personas (attention > 0.7)
+        if attention > 0.7 and rng.random() < 0.15:
+            parentheticals = [
+                "(which I found interesting)",
+                "(at least from my experience)",
+                "(if that makes sense)",
+                "(which surprised me a bit)",
+                "(worth noting, I think)",
+                "(not that it changes my overall view)",
+            ]
+            aside = rng.choice(parentheticals)
+            sentences = response.split('. ')
+            if len(sentences) > 1:
+                # Insert the parenthetical after the first sentence
+                sentences[0] = sentences[0] + " " + aside
+                response = '. '.join(sentences)
 
         # Add filler phrases for engaged responders
         fillers = [
             " To be honest,", " I have to say,", " Looking back,", " On reflection,",
         ]
-        if traits.get('attention_level', 0.5) > 0.8 and rng.random() < 0.15:
+        if attention > 0.8 and rng.random() < 0.15:
             filler = rng.choice(fillers)
             sentences = response.split('. ')
             if len(sentences) > 1:
@@ -2092,17 +2137,58 @@ class TextResponseGenerator:
             for key, value in context.items():
                 response = response.replace(f"{{{key}}}", str(value))
 
+        # For highly engaged personas, sometimes combine two templates into a
+        # multi-sentence response joined by a transition phrase
+        if traits.get('attention_level', 0.5) > 0.8 and rng.random() < 0.30 and len(templates) > 1:
+            # Pick a second template different from the primary
+            remaining = [t for t in templates if t != primary]
+            if remaining:
+                secondary = rng.choice(remaining)
+                try:
+                    second_response = secondary.format(**context)
+                except KeyError:
+                    second_response = secondary
+                    for key, value in context.items():
+                        second_response = second_response.replace(f"{{{key}}}", str(value))
+
+                transition_phrases = [
+                    " Additionally, ",
+                    " On top of that, ",
+                    " I'd also add that ",
+                    " Beyond that, ",
+                    " Another thing worth mentioning is that ",
+                    " Furthermore, ",
+                    " I should also note that ",
+                    " Along those lines, ",
+                ]
+                transition = rng.choice(transition_phrases)
+                # Join the two responses: primary + transition + second (lowercased start)
+                if second_response:
+                    combined_second = second_response[0].lower() + second_response[1:]
+                    # Ensure primary ends with proper punctuation before joining
+                    if not response.rstrip().endswith(('.', '!', '?')):
+                        response = response.rstrip() + '.'
+                    response = response.rstrip() + transition + combined_second
+
         return response
 
-    def _make_response_unique(self, response: str, rng: random.Random, max_attempts: int = 10) -> str:
-        """Ensure response is unique by adding variation if needed."""
+    def _make_response_unique(self, response: str, rng: random.Random, max_attempts: int = 10, context: Optional[Dict[str, str]] = None) -> str:
+        """Ensure response is unique by adding variation if needed.
+
+        Args:
+            response: The generated response text.
+            rng: Seeded random number generator for reproducibility.
+            max_attempts: Maximum number of variation attempts before fallback.
+            context: Optional context dict (with keys like 'topic', 'stimulus', etc.)
+                     used by topic-relevant detail strategy.
+        """
         original_response = response
         attempt = 0
 
         while response in self._used_responses and attempt < max_attempts:
             attempt += 1
-            # Try different variation strategies
-            strategy = attempt % 4
+            # Try different variation strategies (6 total, cycling through)
+            strategy = attempt % 6
 
             if strategy == 0:
                 # Add a time phrase at the beginning
@@ -2116,7 +2202,7 @@ class TextResponseGenerator:
                 # Add an ending phrase
                 ending = rng.choice([e for e in self._variation_phrases['ending_phrases'] if e])
                 response = f"{original_response}{ending}"
-            else:
+            elif strategy == 3:
                 # Combine certainty phrase with slight rewording
                 certainty = rng.choice(self._variation_phrases['certainty_phrases'])
                 # Find a natural break point
@@ -2125,6 +2211,37 @@ class TextResponseGenerator:
                     response = f"{certainty} {parts[0].lower()}. {parts[1]}"
                 else:
                     response = f"{certainty} {original_response[0].lower()}{original_response[1:]}"
+            elif strategy == 4:
+                # Paraphrase by restructuring: swap order of first two sentences
+                sentences = original_response.split('. ')
+                if len(sentences) >= 2:
+                    # Swap the first two sentences
+                    sentences[0], sentences[1] = sentences[1], sentences[0]
+                    response = '. '.join(sentences)
+                else:
+                    # Single sentence -- fall back to adding a time phrase
+                    time_phrase = rng.choice(self._variation_phrases['time_phrases'])
+                    response = f"{time_phrase} {original_response[0].lower()}{original_response[1:]}"
+            else:
+                # Strategy 5: Add a topic-relevant detail insertion
+                topic = (context or {}).get('topic', '')
+                if topic:
+                    # Extract the first sentence of the original response
+                    first_sentence = original_response.split('. ')[0]
+                    if not first_sentence.endswith('.'):
+                        first_sentence += '.'
+                    topic_prefix = f"When it comes to {topic} specifically, "
+                    # Build: topic prefix + lowercased first sentence + rest
+                    lowered_first = first_sentence[0].lower() + first_sentence[1:]
+                    rest_parts = original_response.split('. ', 1)
+                    if len(rest_parts) > 1:
+                        response = f"{topic_prefix}{lowered_first} {rest_parts[1]}"
+                    else:
+                        response = f"{topic_prefix}{lowered_first}"
+                else:
+                    # No topic available -- fall back to a personal phrase
+                    personal_phrase = rng.choice(self._variation_phrases['personal_phrases'])
+                    response = f"{personal_phrase} {original_response[0].lower()}{original_response[1:]}"
 
         # If still not unique after max attempts, add a unique identifier phrase
         if response in self._used_responses:
@@ -2229,7 +2346,7 @@ class TextResponseGenerator:
                     pass
 
         # Ensure response is unique within this dataset
-        response = self._make_response_unique(response.strip(), rng)
+        response = self._make_response_unique(response.strip(), rng, context=context)
 
         return response
 
