@@ -3792,48 +3792,91 @@ DOMAIN_KEYWORDS: Dict[StudyDomain, List[str]] = {
     # ========== SOCIAL PSYCHOLOGY ==========
     StudyDomain.INTERGROUP: [
         'outgroup', 'ingroup', 'other group', 'group membership',
-        'intergroup', 'different group',
+        'intergroup', 'different group', 'us vs them', 'we vs they',
+        'group conflict', 'group competition', 'group boundaries',
+        'social categorization', 'minimal group', 'group bias',
     ],
     StudyDomain.IDENTITY: [
         'identity', 'who you are', 'self-concept', 'belonging',
-        'identification',
+        'identification', 'sense of self', 'personal identity',
+        'social identity', 'self-definition', 'identity formation',
+        'self-perception', 'self-image', 'who am i', 'define yourself',
     ],
     StudyDomain.NORMS: [
         'norm', 'expected', 'appropriate', 'should do', 'convention',
-        'social expectation',
+        'social expectation', 'social norm', 'descriptive norm',
+        'injunctive norm', 'prescriptive', 'what others do',
+        'normative', 'standard behavior', 'unwritten rule', 'custom',
+        'acceptable', 'typical behavior', 'common practice',
     ],
     StudyDomain.TRUST: [
         'trust', 'trustworthy', 'reliable', 'honest', 'dependable',
+        'credible', 'credibility', 'faith', 'confidence in', 'belief in',
+        'distrust', 'mistrust', 'suspicious', 'skeptical', 'doubtful',
+        'trustworthiness', 'betrayal', 'broken trust', 'trusting',
+        'institutional trust', 'interpersonal trust', 'general trust',
     ],
     StudyDomain.FAIRNESS: [
         'fair', 'unfair', 'equal', 'equitable', 'just', 'justice',
+        'equity', 'equality', 'injustice', 'unjust', 'impartial',
+        'biased', 'discriminatory', 'unbiased', 'balanced', 'even-handed',
+        'distributive justice', 'procedural fairness', 'fair treatment',
+        'deserve', 'entitlement', 'proportional', 'merit',
     ],
     StudyDomain.COOPERATION: [
         'cooperat', 'collaborate', 'work together', 'joint', 'mutual benefit',
+        'teamwork', 'partnership', 'collective action', 'coordination',
+        'shared goal', 'common goal', 'mutual', 'reciprocal', 'reciprocity',
+        'cooperative', 'helping each other', 'joint effort', 'synergy',
+        'collective', 'pooling resources', 'working as a team',
     ],
     StudyDomain.CONFORMITY: [
         'conform', 'social pressure', 'group influence', 'majority', 'peer',
+        'peer pressure', 'follow the crowd', 'go along', 'fit in',
+        'compliance', 'obedience', 'herd', 'bandwagon', 'groupthink',
+        'social conformity', 'normative influence', 'informational influence',
     ],
     StudyDomain.PROSOCIAL: [
         'helping', 'altru', 'prosocial', 'charity', 'donation', 'volunteer',
+        'kindness', 'generosity', 'benevolence', 'selfless', 'good deed',
+        'give back', 'philanthropy', 'caring', 'supportive', 'compassionate',
+        'humanitarian', 'empathetic action', 'civic duty', 'community service',
     ],
     StudyDomain.SOCIAL_INFLUENCE: [
         'influence', 'persuad', 'social proof', 'comply', 'obedien',
+        'persuasion', 'convince', 'sway', 'impact', 'affect behavior',
+        'change mind', 'attitude change', 'behavior change', 'nudge',
+        'manipulation', 'social pressure', 'authority', 'power',
     ],
     StudyDomain.ATTRIBUTION: [
         'attribut', 'cause', 'explain', 'blame', 'credit', 'responsib',
+        'reason', 'why', 'internal cause', 'external cause', 'dispositional',
+        'situational', 'fundamental attribution error', 'locus of control',
+        'accountability', 'fault', 'culpability', 'explanation',
     ],
     StudyDomain.STEREOTYPE: [
         'stereotype', 'generaliz', 'category', 'group characteristic',
+        'assumption', 'preconception', 'typify', 'label', 'categorize',
+        'overgeneralize', 'group trait', 'perceived characteristic',
+        'implicit stereotype', 'explicit stereotype', 'stereotype threat',
     ],
     StudyDomain.PREJUDICE: [
         'prejud', 'discriminat', 'bias', 'racist', 'sexist',
+        'bigotry', 'intolerance', 'xenophob', 'homophob', 'ageism',
+        'ableism', 'discrimination', 'hostile', 'negative attitude',
+        'out-group hostility', 'hate', 'derogatory', 'marginaliz',
     ],
     StudyDomain.SELF_ESTEEM: [
         'self-esteem', 'self esteem', 'confidence', 'self-worth', 'self image',
+        'self-value', 'self-respect', 'self-regard', 'self-confidence',
+        'insecurity', 'low self-esteem', 'high self-esteem', 'ego',
+        'self-evaluation', 'self-perception', 'self-belief',
     ],
     StudyDomain.EMPATHY: [
         'empathy', 'empathic', 'compassion', 'feel for others', 'perspective taking',
+        'understand feelings', 'emotional understanding', 'put yourself in',
+        'walk in shoes', 'emotional attunement', 'sympathy', 'caring',
+        'affective empathy', 'cognitive empathy', 'empathetic', 'empathize',
     ],
 
     # ========== POLITICAL SCIENCE ==========
@@ -3872,34 +3915,65 @@ DOMAIN_KEYWORDS: Dict[StudyDomain, List[str]] = {
     # ========== CONSUMER/MARKETING ==========
     StudyDomain.CONSUMER: [
         'product', 'brand', 'purchase', 'buy', 'consumer', 'shopping',
-        'customer',
+        'customer', 'retail', 'e-commerce', 'ecommerce', 'checkout',
+        'cart', 'online shopping', 'store', 'shop', 'buyer', 'shopper',
+        'marketplace', 'merchant', 'vendor', 'seller', 'goods', 'item',
+        'commodity', 'merchandise', 'consumerism', 'spending', 'wallet',
     ],
     StudyDomain.BRAND: [
-        'brand', 'logo', 'company name', 'brand loyalty',
+        'brand', 'logo', 'company name', 'brand loyalty', 'brand image',
+        'brand perception', 'brand awareness', 'brand recognition',
+        'brand equity', 'brand value', 'corporate brand', 'branded',
+        'branding', 'trademark', 'brand identity', 'brand association',
     ],
     StudyDomain.ADVERTISING: [
         'ad', 'advertis', 'commercial', 'marketing', 'promotion',
+        'campaign', 'banner', 'sponsored', 'endorsement', 'celebrity',
+        'influencer marketing', 'native ad', 'programmatic', 'targeting',
+        'retargeting', 'impression', 'click', 'ctr', 'conversion',
+        'ad recall', 'brand lift', 'promotional', 'promo',
     ],
     StudyDomain.PRODUCT_EVALUATION: [
-        'product', 'purchase', 'buy', 'quality', 'review',
+        'product', 'purchase', 'buy', 'quality', 'review', 'rating',
+        'star rating', 'product review', 'customer review', 'feedback',
+        'feature', 'specification', 'performance', 'durability',
+        'reliability', 'product quality', 'value', 'worth', 'assess',
     ],
     StudyDomain.PURCHASE_INTENT: [
         'intend to buy', 'purchase intent', 'likely to purchase', 'would buy',
+        'willing to purchase', 'plan to buy', 'consider buying', 'interest',
+        'shopping intention', 'buying intention', 'likelihood of purchase',
+        'propensity to buy', 'purchase decision', 'buying decision',
     ],
     StudyDomain.BRAND_LOYALTY: [
         'brand loyal', 'stick with brand', 'prefer brand', 'brand switch',
+        'repeat purchase', 'brand commitment', 'brand attachment',
+        'favorite brand', 'go-to brand', 'always buy', 'never switch',
+        'loyal customer', 'brand advocate', 'brand fan', 'devoted',
     ],
     StudyDomain.PRICE_PERCEPTION: [
         'price', 'cost', 'value for money', 'expensive', 'cheap', 'worth',
+        'affordable', 'pricing', 'discount', 'sale', 'deal', 'bargain',
+        'premium', 'budget', 'luxury', 'overpriced', 'underpriced',
+        'price sensitive', 'willingness to pay', 'wtp', 'price point',
     ],
     StudyDomain.SERVICE_QUALITY: [
         'service', 'customer service', 'support', 'staff', 'helpful',
+        'responsiveness', 'reliability', 'assurance', 'empathy',
+        'tangibles', 'service experience', 'service encounter',
+        'wait time', 'queue', 'friendly', 'courteous', 'professional',
     ],
     StudyDomain.CUSTOMER_SATISFACTION: [
         'satisf', 'pleased', 'happy with', 'content', 'dissatisf',
+        'delight', 'exceeds expectations', 'meets expectations',
+        'disappointed', 'frustrat', 'csat', 'nps', 'net promoter',
+        'customer experience', 'cx', 'experience rating',
     ],
     StudyDomain.WORD_OF_MOUTH: [
         'recommend', 'tell others', 'word of mouth', 'refer', 'share',
+        'referral', 'ewom', 'online review', 'testimonial', 'endorsement',
+        'buzz', 'viral', 'spread', 'pass along', 'tell a friend',
+        'social proof', 'user generated', 'ugc', 'rating',
     ],
 
     # ========== ORGANIZATIONAL BEHAVIOR ==========
@@ -3934,63 +4008,125 @@ DOMAIN_KEYWORDS: Dict[StudyDomain, List[str]] = {
     # ========== TECHNOLOGY/AI ==========
     StudyDomain.AI_ATTITUDES: [
         'ai', 'artificial intelligence', 'algorithm', 'machine learning',
-        'robot', 'automation', 'chatbot',
+        'robot', 'automation', 'chatbot', 'gpt', 'llm', 'language model',
+        'neural network', 'deep learning', 'generative ai', 'gen ai',
+        'large language model', 'ai system', 'intelligent system',
+        'autonomous', 'ai-powered', 'ai tool', 'ai assistant', 'copilot',
+        'claude', 'openai', 'anthropic', 'gemini', 'transformer',
+        'foundation model', 'artificial', 'intelligent agent',
     ],
     StudyDomain.PRIVACY: [
         'privacy', 'data', 'personal information', 'tracking', 'surveillance',
+        'data collection', 'gdpr', 'consent', 'data protection', 'data sharing',
+        'monitoring', 'personal data', 'confidential', 'anonymity', 'anonymous',
     ],
     StudyDomain.AUTOMATION: [
-        'automat', 'robot', 'machine', 'ai replace',
+        'automat', 'robot', 'machine', 'ai replace', 'robotic', 'robotics',
+        'automated system', 'self-driving', 'autonomous vehicle', 'driverless',
+        'smart home', 'iot', 'automated process', 'workflow automation',
+        'rpa', 'robotic process', 'bot', 'automated task',
     ],
     StudyDomain.ALGORITHM_AVERSION: [
         'algorithm', 'ai decision', 'computer decision', 'automated decision',
+        'algorithmic', 'machine decision', 'ai recommendation', 'recommender',
+        'algorithmic bias', 'black box', 'explainability', 'ai judgment',
+        'computer-based', 'data-driven decision', 'predictive model',
     ],
     StudyDomain.TECHNOLOGY_ADOPTION: [
         'adopt', 'new technology', 'try new', 'early adopter', 'tech savvy',
+        'technology acceptance', 'digital adoption', 'tech literacy',
+        'digital transformation', 'innovation', 'cutting edge', 'emerging tech',
+        'tech use', 'technology use', 'digital skill', 'technophobe',
     ],
     StudyDomain.SOCIAL_MEDIA: [
         'social media', 'facebook', 'twitter', 'instagram', 'tiktok', 'online',
+        'linkedin', 'snapchat', 'youtube', 'reddit', 'platform', 'post',
+        'share', 'like', 'follow', 'influencer', 'viral', 'content creator',
+        'social network', 'feed', 'timeline', 'notification', 'scroll',
     ],
     StudyDomain.DIGITAL_WELLBEING: [
         'screen time', 'digital', 'phone use', 'internet use', 'tech addiction',
+        'digital detox', 'smartphone', 'device use', 'digital health',
+        'online time', 'doom scrolling', 'nomophobia', 'fomo', 'digital balance',
     ],
     StudyDomain.HUMAN_AI_INTERACTION: [
         'interact with ai', 'human-ai', 'chatbot', 'virtual assistant',
+        'conversational ai', 'dialogue system', 'voice assistant', 'siri',
+        'alexa', 'human-machine', 'ai interaction', 'talk to ai',
+        'chat with ai', 'ai conversation', 'human-robot', 'hri', 'hai',
     ],
     StudyDomain.CYBERSECURITY: [
-        'security', 'hack', 'cyber', 'password', 'protection',
+        'security', 'hack', 'cyber', 'password', 'protection', 'phishing',
+        'malware', 'breach', 'data breach', 'encryption', 'secure',
+        'authentication', 'two-factor', '2fa', 'identity theft', 'scam',
     ],
 
     # ========== HEALTH PSYCHOLOGY ==========
     StudyDomain.HEALTH: [
         'health', 'medical', 'doctor', 'illness', 'wellbeing', 'wellness',
+        'disease', 'symptom', 'diagnosis', 'healthcare', 'hospital', 'nurse',
+        'therapy', 'prescription', 'healthy', 'unhealthy', 'sick', 'sickness',
+        'clinic', 'physician', 'health care', 'health status', 'physical health',
+        'body', 'fitness', 'prevention', 'screening', 'check-up', 'checkup',
     ],
     StudyDomain.MEDICAL_DECISION: [
         'medical', 'health decision', 'treatment', 'doctor', 'patient',
+        'treatment option', 'medical choice', 'clinical decision', 'prognosis',
+        'surgery', 'procedure', 'intervention', 'therapeutic', 'cure',
+        'diagnosis', 'second opinion', 'informed consent', 'risk benefit',
+        'treatment preference', 'shared decision', 'medical advice',
     ],
     StudyDomain.WELLBEING: [
         'wellbeing', 'well-being', 'happiness', 'life satisfaction', 'quality of life',
+        'flourishing', 'thriving', 'positive affect', 'subjective wellbeing',
+        'psychological wellbeing', 'emotional wellbeing', 'life quality',
+        'satisfied with life', 'contentment', 'fulfillment', 'meaning in life',
     ],
     StudyDomain.HEALTH_BEHAVIOR: [
         'exercise', 'diet', 'sleep', 'smoking', 'alcohol', 'healthy habit',
+        'physical activity', 'nutrition', 'eating', 'drink', 'substance',
+        'sedentary', 'active lifestyle', 'workout', 'fitness routine',
+        'healthy eating', 'junk food', 'weight', 'obesity', 'bmi',
+        'health behavior', 'lifestyle', 'habit', 'behavioral health',
     ],
     StudyDomain.MENTAL_HEALTH: [
         'mental health', 'anxiety', 'depression', 'stress', 'psychological',
+        'emotional health', 'psychiatric', 'therapy', 'counseling', 'therapist',
+        'psychologist', 'mental illness', 'mental disorder', 'mood', 'emotion',
+        'wellbeing', 'psychological distress', 'ptsd', 'trauma', 'burnout',
+        'mental wellbeing', 'emotional distress', 'panic', 'worry',
     ],
     StudyDomain.VACCINATION: [
         'vaccin', 'immuniz', 'shot', 'jab', 'vaccine hesitan',
+        'anti-vax', 'antivax', 'immunization', 'booster', 'dose',
+        'covid vaccine', 'flu shot', 'vaccination rate', 'herd immunity',
+        'vaccine safety', 'vaccine efficacy', 'vaccine side effect',
+        'vaccination intention', 'vaccine confidence', 'vaccine trust',
     ],
     StudyDomain.PAIN_MANAGEMENT: [
         'pain', 'chronic pain', 'medication', 'relief', 'suffer',
+        'painkiller', 'analgesic', 'opioid', 'pain treatment', 'ache',
+        'discomfort', 'pain intensity', 'pain threshold', 'pain tolerance',
+        'acute pain', 'neuropathic', 'pain relief', 'pain control',
     ],
     StudyDomain.HEALTH_ANXIETY: [
         'health anxiety', 'worry about health', 'hypochondr', 'illness anxiety',
+        'cyberchondria', 'health concern', 'fear of illness', 'health worry',
+        'somatic symptom', 'illness worry', 'health fear', 'disease anxiety',
     ],
     StudyDomain.PATIENT_PROVIDER: [
         'doctor', 'patient', 'provider', 'communication', 'trust doctor',
+        'physician', 'nurse', 'healthcare provider', 'patient-doctor',
+        'medical communication', 'bedside manner', 'patient satisfaction',
+        'adherence', 'compliance', 'follow instructions', 'patient care',
+        'healthcare professional', 'clinician', 'patient experience',
     ],
     StudyDomain.CHRONIC_ILLNESS: [
         'chronic', 'long-term', 'managing', 'living with', 'condition',
+        'chronic disease', 'chronic condition', 'ongoing', 'persistent',
+        'diabetes', 'hypertension', 'heart disease', 'arthritis', 'asthma',
+        'autoimmune', 'disability', 'impairment', 'management', 'self-care',
+        'coping with illness', 'disease management', 'long-term condition',
     ],
 
     # ========== EDUCATION ==========
@@ -4525,24 +4661,64 @@ class ComprehensiveResponseGenerator:
     _used_responses: set = set()
     _session_id: int = 0
 
-    # Sentence variation patterns for natural diversity
+    # Sentence variation patterns for natural diversity (v1.2.0: expanded for academic variety)
     SENTENCE_STARTERS = [
+        # Personal perspective starters
         "I think ", "I feel ", "In my view, ", "From my perspective, ",
         "I believe ", "It seems to me that ", "My sense is that ",
         "I'd say ", "Personally, ", "For me, ", "Looking at this, ",
         "Considering this, ", "Reflecting on this, ", "In my experience, ",
+        # Academic/thoughtful starters
+        "Upon consideration, ", "After thinking about it, ", "My impression is that ",
+        "Based on my understanding, ", "From what I can tell, ", "As I see it, ",
+        "To my mind, ", "In my estimation, ", "My view is that ",
+        "Having considered this, ", "On reflection, ", "My position is that ",
+        # Engaged/confident starters
+        "I'm fairly certain that ", "I would argue that ", "My take is that ",
+        "The way I see it, ", "Speaking from experience, ", "I've come to think that ",
+        "It's clear to me that ", "I've found that ", "What strikes me is that ",
+        # Tentative/hedged starters
+        "I suspect that ", "My initial thought is that ", "Tentatively, I'd say ",
+        "I'm inclined to think that ", "If I had to say, ", "My gut feeling is that ",
     ]
 
     TRANSITION_PHRASES = [
+        # Additive transitions
         "Also, ", "Additionally, ", "Moreover, ", "Furthermore, ",
         "On top of that, ", "What's more, ", "Beyond that, ",
         "Plus, ", "And ", "Not only that, but ", "Similarly, ",
+        # Elaborative transitions
+        "In addition to that, ", "Along the same lines, ", "Building on that, ",
+        "To elaborate, ", "To add to this, ", "Following from that, ",
+        "Equally important, ", "Another point is that ", "Related to this, ",
+        # Contrastive transitions
+        "That said, ", "However, ", "On the other hand, ", "At the same time, ",
+        "Yet, ", "Still, ", "Conversely, ", "Nevertheless, ",
+        # Causal/consequential transitions
+        "As a result, ", "Consequently, ", "Because of this, ", "For this reason, ",
+        "This means that ", "It follows that ", "Given that, ",
+        # Emphatic transitions
+        "Importantly, ", "Notably, ", "Significantly, ", "In particular, ",
+        "Especially, ", "What's particularly relevant is ", "Key to this is that ",
     ]
 
     CONCLUDING_PHRASES = [
+        # Casual conclusions
         "That's my take on it.", "That's how I see it.", "Those are my thoughts.",
         "That's what comes to mind.", "That's my perspective.",
         "That's where I stand.", "That sums up my view.",
+        # Academic/formal conclusions
+        "This reflects my overall assessment.", "That encapsulates my thinking on this.",
+        "This is the conclusion I've reached.", "That represents my considered view.",
+        "This summarizes my position.", "Those are my key observations.",
+        # Reflective conclusions
+        "That's what I've concluded after thinking it through.",
+        "This is where my reflection has led me.", "That's my honest assessment.",
+        "This captures my main impressions.", "Those are the points that stand out to me.",
+        # Open-ended conclusions
+        "There's more I could say, but those are the main points.",
+        "I think that covers my main thoughts.", "That's the gist of my perspective.",
+        "I believe that addresses the key aspects.", "That's what seems most relevant to me.",
     ]
 
     def __init__(self, seed: Optional[int] = None):
@@ -4739,43 +4915,116 @@ class ComprehensiveResponseGenerator:
         """Add topic-specific context to ensure response stays on-topic.
 
         v1.1.0: Ensures responses are always relevant to the survey topic.
+        v1.2.0: Enhanced with 80+ topic categories and academic phrasing.
         """
         if not keywords or local_rng.random() > 0.4:  # 40% chance to add context
             return response
 
-        # Build topic phrases based on extracted keywords
+        # Build topic phrases based on extracted keywords (v1.2.0: greatly expanded)
         topic_phrases = {
             # Research-related keywords
-            'study': ['in this study', 'for this research', 'in this survey'],
-            'research': ['from a research perspective', 'considering the research'],
-            'experiment': ['in this experiment', 'during the experiment'],
-            'survey': ['in this survey', 'for the survey'],
+            'study': ['in this study', 'for this research', 'in this survey', 'as part of this study', 'within this research context'],
+            'research': ['from a research perspective', 'considering the research', 'in this research setting', 'given the research focus'],
+            'experiment': ['in this experiment', 'during the experiment', 'within this experimental context', 'given the experimental setup'],
+            'survey': ['in this survey', 'for the survey', 'responding to this survey', 'in answering this survey'],
+            'question': ['regarding this question', 'in response to this', 'when considering this question', 'to address this'],
 
             # Decision-related keywords
-            'decision': ['regarding my decision', 'about choosing', 'when deciding'],
-            'choice': ['with this choice', 'in making this choice'],
-            'option': ['considering the options', 'between the options'],
+            'decision': ['regarding my decision', 'about choosing', 'when deciding', 'in the decision-making process', 'as I weighed the options'],
+            'choice': ['with this choice', 'in making this choice', 'when faced with this choice', 'considering my options'],
+            'option': ['considering the options', 'between the options', 'evaluating the alternatives', 'weighing the options presented'],
+            'tradeoff': ['considering the tradeoffs', 'balancing these factors', 'weighing the costs and benefits'],
+            'preference': ['based on my preferences', 'given what I prefer', 'considering my personal preferences'],
 
             # Evaluation keywords
-            'product': ['about this product', 'for this item', 'regarding what was shown'],
-            'service': ['about the service', 'regarding the service quality'],
-            'brand': ['about the brand', 'regarding this brand'],
+            'product': ['about this product', 'for this item', 'regarding what was shown', 'evaluating this product', 'concerning this offering'],
+            'service': ['about the service', 'regarding the service quality', 'in terms of service', 'evaluating the service provided'],
+            'brand': ['about the brand', 'regarding this brand', 'in terms of brand perception', 'considering brand attributes'],
+            'quality': ['in terms of quality', 'regarding quality aspects', 'considering the quality', 'evaluating quality'],
+            'value': ['in terms of value', 'considering the value proposition', 'regarding perceived value'],
+            'price': ['considering the price', 'given the cost', 'in terms of pricing', 'regarding the price point'],
+            'purchase': ['regarding this purchase', 'in terms of buying', 'considering a purchase', 'when thinking about buying'],
 
             # Experience keywords
-            'experience': ['from my experience', 'based on my experience'],
-            'scenario': ['in this scenario', 'given the situation'],
-            'situation': ['in this situation', 'given these circumstances'],
+            'experience': ['from my experience', 'based on my experience', 'drawing on my experience', 'reflecting on past experiences'],
+            'scenario': ['in this scenario', 'given the situation', 'under these circumstances', 'in this hypothetical situation'],
+            'situation': ['in this situation', 'given these circumstances', 'under these conditions', 'facing this situation'],
+            'context': ['in this context', 'given the context', 'within this particular context', 'considering the context'],
 
             # Social/behavioral keywords
-            'people': ['when thinking about others', 'considering other people'],
-            'trust': ['regarding trust', 'about trusting'],
-            'fair': ['about fairness', 'regarding what seems fair'],
-            'risk': ['considering the risk', 'about the uncertainty'],
+            'people': ['when thinking about others', 'considering other people', 'in social situations', 'regarding how people behave'],
+            'trust': ['regarding trust', 'about trusting', 'in terms of trustworthiness', 'when it comes to trust'],
+            'fair': ['about fairness', 'regarding what seems fair', 'in terms of equity', 'considering fairness'],
+            'risk': ['considering the risk', 'about the uncertainty', 'when evaluating risk', 'regarding potential risks'],
+            'social': ['in social terms', 'from a social perspective', 'considering social dynamics', 'regarding social aspects'],
+            'cooperation': ['regarding cooperation', 'in terms of working together', 'considering collaborative aspects'],
+            'norm': ['considering social norms', 'regarding expectations', 'in terms of what is expected'],
 
             # Technology keywords
-            'technology': ['about technology', 'regarding tech'],
-            'ai': ['about AI', 'regarding artificial intelligence'],
-            'algorithm': ['about algorithms', 'regarding automated systems'],
+            'technology': ['about technology', 'regarding tech', 'concerning technology use', 'in terms of technology'],
+            'ai': ['about AI', 'regarding artificial intelligence', 'concerning AI systems', 'when it comes to AI'],
+            'algorithm': ['about algorithms', 'regarding automated systems', 'concerning algorithmic decisions', 'in terms of automation'],
+            'privacy': ['regarding privacy', 'concerning data privacy', 'in terms of privacy protection', 'about personal information'],
+            'data': ['concerning data', 'regarding data use', 'in terms of information handling', 'about data practices'],
+            'online': ['in online contexts', 'regarding digital interactions', 'concerning online behavior'],
+            'digital': ['in the digital realm', 'regarding digital experiences', 'concerning digital platforms'],
+
+            # Health and wellbeing keywords
+            'health': ['regarding health', 'concerning wellbeing', 'in terms of health outcomes', 'about health-related matters'],
+            'wellbeing': ['concerning wellbeing', 'regarding quality of life', 'in terms of overall wellness'],
+            'stress': ['regarding stress', 'concerning anxiety levels', 'in terms of mental load', 'about stress management'],
+            'emotion': ['regarding emotions', 'concerning feelings', 'in emotional terms', 'about emotional responses'],
+            'feeling': ['about my feelings', 'regarding how I feel', 'in terms of emotional reactions'],
+
+            # Work and organizational keywords
+            'work': ['in the workplace', 'regarding work situations', 'concerning professional contexts', 'at work'],
+            'job': ['regarding my job', 'concerning work tasks', 'in terms of job responsibilities'],
+            'team': ['regarding team dynamics', 'concerning group work', 'in terms of collaboration'],
+            'leader': ['regarding leadership', 'concerning management', 'in terms of leadership qualities'],
+            'organization': ['within organizations', 'regarding organizational matters', 'in institutional contexts'],
+
+            # Environmental keywords
+            'environment': ['regarding the environment', 'concerning environmental issues', 'in environmental terms'],
+            'climate': ['concerning climate change', 'regarding climate issues', 'about environmental sustainability'],
+            'sustain': ['regarding sustainability', 'concerning sustainable practices', 'in terms of long-term impact'],
+
+            # Political/civic keywords
+            'politics': ['regarding political matters', 'concerning civic issues', 'in political terms'],
+            'policy': ['regarding policy', 'concerning this policy issue', 'in terms of policy implications'],
+            'government': ['regarding government', 'concerning public institutions', 'about governmental action'],
+            'vote': ['regarding voting', 'concerning electoral choices', 'in terms of political participation'],
+
+            # Education keywords
+            'learn': ['regarding learning', 'concerning education', 'in terms of knowledge acquisition'],
+            'education': ['concerning education', 'regarding educational experiences', 'in academic contexts'],
+            'student': ['as a learner', 'from a student perspective', 'regarding educational experiences'],
+
+            # Ethics and morality keywords
+            'moral': ['from a moral standpoint', 'regarding ethical considerations', 'in terms of what is right'],
+            'ethic': ['regarding ethics', 'concerning ethical principles', 'from an ethical perspective'],
+            'right': ['regarding what is right', 'concerning proper conduct', 'in terms of correctness'],
+            'wrong': ['regarding what seems wrong', 'concerning inappropriate actions', 'in terms of problematic aspects'],
+            'responsibility': ['regarding responsibility', 'concerning accountability', 'in terms of obligations'],
+
+            # Financial keywords
+            'money': ['regarding money', 'concerning financial matters', 'in financial terms'],
+            'finance': ['regarding finances', 'concerning financial decisions', 'in terms of monetary considerations'],
+            'invest': ['regarding investment', 'concerning financial planning', 'in terms of investing'],
+            'save': ['regarding savings', 'concerning financial security', 'in terms of saving money'],
+            'spend': ['regarding spending', 'concerning purchases', 'in terms of expenditure'],
+
+            # Relationship keywords
+            'relationship': ['regarding relationships', 'concerning interpersonal connections', 'in terms of relating to others'],
+            'friend': ['regarding friendship', 'concerning social bonds', 'in terms of friendly relations'],
+            'family': ['regarding family', 'concerning family matters', 'in terms of family relationships'],
+            'partner': ['regarding my partner', 'concerning romantic relationships', 'in terms of partnerships'],
+
+            # Identity and self keywords
+            'identity': ['regarding identity', 'concerning self-concept', 'in terms of who I am'],
+            'self': ['regarding myself', 'concerning personal aspects', 'in terms of self-perception'],
+            'personal': ['on a personal level', 'regarding personal matters', 'in terms of individual experience'],
+            'belief': ['regarding my beliefs', 'concerning what I believe', 'in terms of my convictions'],
+            'value': ['regarding my values', 'concerning what I value', 'in terms of personal principles'],
         }
 
         # Find matching topic phrase

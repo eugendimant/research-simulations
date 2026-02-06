@@ -6,7 +6,7 @@ Generates comprehensive instructor-facing reports for student simulations.
 """
 
 # Version identifier to help track deployed code
-__version__ = "2.4.4"  # v2.4.4: Added 3 new sections - Open-ended summary, Effect size quality, Condition balance
+__version__ = "1.2.0"  # v1.2.0: Comprehensive Simulation Intelligence Report with domain analysis, persona rationale, effect strategy
 
 from dataclasses import dataclass
 from datetime import datetime
@@ -382,6 +382,238 @@ class InstructorReportGenerator:
             lines.append(f"| **Research Domain** | {domains[0] if domains else 'General'} |")
         lines.append("")
 
+        # =====================================================================
+        # v1.2.0: COMPREHENSIVE SIMULATION INTELLIGENCE REPORT
+        # =====================================================================
+        lines.append("## Simulation Intelligence Report")
+        lines.append("")
+        lines.append("This section explains how the simulation system analyzed and approached your study, providing transparency into the data generation process.")
+        lines.append("")
+
+        # --- TOPIC/DOMAIN ANALYSIS ---
+        lines.append("### Topic & Domain Analysis")
+        lines.append("")
+
+        detected_domains = metadata.get('detected_domains', [])
+        study_context = metadata.get('study_context', {})
+        domain_keywords = study_context.get('detected_keywords', [])
+
+        if detected_domains:
+            lines.append(f"**Primary Research Domain:** {detected_domains[0].replace('_', ' ').title()}")
+            if len(detected_domains) > 1:
+                secondary = [d.replace('_', ' ').title() for d in detected_domains[1:5]]
+                lines.append(f"**Secondary Domains:** {', '.join(secondary)}")
+            lines.append("")
+
+            # Domain explanation
+            domain_explanations = {
+                'behavioral_economics': 'Study involves economic decision-making, incentives, or behavioral biases',
+                'social_psychology': 'Study examines social influence, attitudes, or interpersonal dynamics',
+                'consumer_behavior': 'Study focuses on purchasing decisions, brand perceptions, or marketing',
+                'ai_attitudes': 'Study explores perceptions of AI, algorithms, or automation',
+                'technology_adoption': 'Study examines technology use, acceptance, or digital behaviors',
+                'organizational_behavior': 'Study involves workplace dynamics, leadership, or employee attitudes',
+                'health_psychology': 'Study addresses health behaviors, medical decisions, or wellbeing',
+                'political_psychology': 'Study examines political attitudes, voting, or civic engagement',
+                'environmental_psychology': 'Study focuses on environmental attitudes or sustainable behaviors',
+                'moral_psychology': 'Study explores ethical judgments, moral reasoning, or values',
+            }
+            primary_domain = detected_domains[0].lower()
+            if primary_domain in domain_explanations:
+                lines.append(f"**Domain Interpretation:** {domain_explanations[primary_domain]}")
+                lines.append("")
+        else:
+            lines.append("**Research Domain:** General (no specific domain detected)")
+            lines.append("")
+
+        if domain_keywords:
+            lines.append(f"**Keywords Detected:** {', '.join(domain_keywords[:10])}")
+            lines.append("")
+
+        # --- SIMULATION APPROACH ---
+        lines.append("### How the Simulation Approached This Study")
+        lines.append("")
+        lines.append("Based on the analysis of your QSF file, study description, and condition structure, the simulation:")
+        lines.append("")
+
+        conditions = metadata.get('conditions', [])
+        scales = metadata.get('scales', [])
+        effect_sizes = metadata.get('effect_sizes_configured', []) or metadata.get('effect_sizes', [])
+
+        # Describe the approach
+        approach_points = []
+
+        if len(conditions) > 1:
+            approach_points.append(f"Assigned **{len(conditions)} experimental conditions** with balanced allocation")
+
+        if effect_sizes:
+            approach_points.append(f"Applied **{len(effect_sizes)} user-specified effect size(s)** to create systematic condition differences")
+        else:
+            approach_points.append("Applied **automatic semantic-based effects** derived from condition label analysis")
+
+        if scales:
+            scale_types = set(s.get('type', 'likert') for s in scales)
+            approach_points.append(f"Generated responses for **{len(scales)} DV(s)** ({', '.join(scale_types)})")
+
+        open_ended = metadata.get('open_ended_questions', [])
+        if open_ended:
+            approach_points.append(f"Created **{len(open_ended)} unique open-ended responses** per participant based on detected topic context")
+
+        for point in approach_points:
+            lines.append(f"- {point}")
+        lines.append("")
+
+        # --- CONDITION EFFECT STRATEGY ---
+        lines.append("### Condition Effects Strategy")
+        lines.append("")
+
+        if effect_sizes:
+            lines.append("**User-Specified Effects:**")
+            lines.append("")
+            lines.append("| Variable | Factor | High Level | Low Level | Cohen's d |")
+            lines.append("|----------|--------|------------|-----------|-----------|")
+            for es in effect_sizes[:10]:
+                var = es.get('variable', 'DV')
+                factor = es.get('factor', 'Condition')
+                high = es.get('level_high', 'Treatment')
+                low = es.get('level_low', 'Control')
+                d = es.get('cohens_d', 0.5)
+                lines.append(f"| {var} | {factor} | {high} | {low} | d = {d:.2f} |")
+            lines.append("")
+        else:
+            lines.append("**Automatic Semantic Effects:** The system analyzed your condition labels to apply research-grounded effects.")
+            lines.append("")
+
+            # Analyze condition names for semantic content
+            semantic_effects = []
+            condition_keywords = {
+                'ai': ('AI/Algorithm', -0.12, 'Algorithm aversion effect (Dietvorst et al., 2015)'),
+                'human': ('Human agent', +0.08, 'Human preference in decision-making'),
+                'control': ('Control condition', 0.0, 'Baseline comparison'),
+                'treatment': ('Treatment', +0.15, 'Active intervention effect'),
+                'gain': ('Gain frame', +0.12, 'Positive framing effect'),
+                'loss': ('Loss frame', -0.18, 'Loss aversion (Kahneman & Tversky)'),
+                'scarcity': ('Scarcity', +0.25, 'Scarcity principle (Cialdini)'),
+                'social': ('Social proof', +0.20, 'Social influence effect'),
+                'hedonic': ('Hedonic', +0.22, 'Hedonic consumption boost'),
+                'utilitarian': ('Utilitarian', -0.08, 'Utilitarian discount'),
+                'high': ('High condition', +0.15, 'Elevated manipulation'),
+                'low': ('Low condition', -0.15, 'Reduced manipulation'),
+            }
+
+            for cond in conditions:
+                cond_lower = cond.lower()
+                for keyword, (label, effect, cite) in condition_keywords.items():
+                    if keyword in cond_lower:
+                        semantic_effects.append((cond, label, effect, cite))
+                        break
+
+            if semantic_effects:
+                lines.append("| Condition | Detected Pattern | Effect Applied | Research Basis |")
+                lines.append("|-----------|-----------------|----------------|----------------|")
+                for cond, label, effect, cite in semantic_effects[:8]:
+                    effect_str = f"+{effect:.2f}" if effect > 0 else f"{effect:.2f}"
+                    lines.append(f"| {cond} | {label} | {effect_str} | {cite} |")
+                lines.append("")
+            else:
+                lines.append("_No specific semantic patterns detected in condition labels. Equal baseline applied to all conditions._")
+                lines.append("")
+
+        # --- OBSERVED EFFECTS ---
+        observed_effects = metadata.get('effect_sizes_observed', [])
+        if observed_effects:
+            lines.append("### Observed Effects in Generated Data")
+            lines.append("")
+            lines.append("| Variable | Condition 1 | Condition 2 | M₁ | M₂ | Cohen's d |")
+            lines.append("|----------|-------------|-------------|-----|-----|-----------|")
+            for obs in observed_effects[:10]:
+                var = obs.get('variable', 'DV')[:20]
+                c1 = obs.get('condition_1', 'C1')[:15]
+                c2 = obs.get('condition_2', 'C2')[:15]
+                m1 = obs.get('mean_1', 0)
+                m2 = obs.get('mean_2', 0)
+                d = obs.get('cohens_d', 0)
+                lines.append(f"| {var} | {c1} | {c2} | {m1:.2f} | {m2:.2f} | {d:.2f} |")
+            lines.append("")
+
+            lines.append("**Effect Size Interpretation:**")
+            lines.append("- d = 0.2: Small effect (subtle but potentially meaningful)")
+            lines.append("- d = 0.5: Medium effect (moderate practical significance)")
+            lines.append("- d = 0.8: Large effect (substantial difference)")
+            lines.append("")
+
+        # --- PERSONA RATIONALE ---
+        lines.append("### Persona Selection Rationale")
+        lines.append("")
+
+        persona_dist = metadata.get('persona_distribution', {})
+        if persona_dist:
+            # Explain why certain personas were chosen
+            lines.append("The simulation assigned response style personas based on:")
+            lines.append("")
+            lines.append("1. **Base prevalence rates** from survey methodology research (Krosnick, 1991; Meade & Craig, 2012)")
+            lines.append("2. **Domain-specific adjustments** based on detected research topic")
+            lines.append("3. **Realistic online panel proportions** (~35% engaged, ~22% satisficers, ~5% careless)")
+            lines.append("")
+
+            # Show persona traits summary
+            persona_traits = {
+                'engaged responder': {'attention': 0.92, 'consistency': 0.78, 'extremity': 0.18},
+                'satisficer': {'attention': 0.68, 'consistency': 0.55, 'extremity': 0.12},
+                'extreme responder': {'attention': 0.80, 'consistency': 0.70, 'extremity': 0.88},
+                'acquiescent': {'attention': 0.75, 'consistency': 0.65, 'extremity': 0.35},
+                'careless': {'attention': 0.35, 'consistency': 0.28, 'extremity': 0.45},
+            }
+
+            lines.append("**Persona Trait Profiles:**")
+            lines.append("")
+            lines.append("| Persona | Attention Level | Response Consistency | Endpoint Use |")
+            lines.append("|---------|-----------------|---------------------|--------------|")
+            for persona, share in sorted(persona_dist.items(), key=lambda x: -float(x[1]))[:5]:
+                traits = persona_traits.get(persona.lower(), {'attention': 0.7, 'consistency': 0.6, 'extremity': 0.3})
+                att = traits['attention']
+                con = traits['consistency']
+                ext = traits['extremity']
+                att_label = "High" if att > 0.8 else ("Medium" if att > 0.5 else "Low")
+                con_label = "High" if con > 0.7 else ("Medium" if con > 0.5 else "Low")
+                ext_label = "High" if ext > 0.6 else ("Medium" if ext > 0.3 else "Low")
+                lines.append(f"| {persona.title()} | {att_label} ({att:.0%}) | {con_label} ({con:.0%}) | {ext_label} ({ext:.0%}) |")
+            lines.append("")
+        else:
+            lines.append("_Persona distribution details not available._")
+            lines.append("")
+
+        # --- OPEN-ENDED RESPONSE GENERATION ---
+        open_ended_details = metadata.get('open_ended_questions', [])
+        if open_ended_details:
+            lines.append("### Open-Ended Response Generation")
+            lines.append("")
+            lines.append(f"**{len(open_ended_details)} open-ended question(s)** were detected and populated with contextually appropriate text responses.")
+            lines.append("")
+            lines.append("**Generation approach:**")
+            lines.append("- Responses are unique per participant (no duplicate sentences within the dataset)")
+            lines.append("- Topic context is extracted from question text to ensure relevance")
+            lines.append("- Response length varies based on simulated persona verbosity")
+            lines.append("- Sentiment aligns with participant's scale responses for consistency")
+            lines.append("")
+
+            # Show sample question types
+            lines.append("**Questions detected:**")
+            lines.append("")
+            for i, q in enumerate(open_ended_details[:5], 1):
+                q_name = q.get('variable_name', q.get('name', f'Q{i}'))
+                q_text = q.get('question_text', '')[:60]
+                if q_text:
+                    lines.append(f"- **{q_name}**: \"{q_text}...\"")
+                else:
+                    lines.append(f"- **{q_name}**")
+            if len(open_ended_details) > 5:
+                lines.append(f"- _...and {len(open_ended_details) - 5} more_")
+            lines.append("")
+
+        lines.append("---")
+        lines.append("")
+
         if team_info:
             lines.append("## Team Information")
             lines.append("")
@@ -705,38 +937,101 @@ class InstructorReportGenerator:
                 lines.append("_No scales/DVs listed in metadata. This may indicate a configuration issue._")
                 lines.append("")
 
-        # v1.1.0: Add Analysis Recommendations section
+        # v1.2.0: Enhanced Analysis Recommendations with statistical test recommendations and power analysis
         lines.append("## Analysis Recommendations")
         lines.append("")
+
+        # Get design information
+        conditions = metadata.get('conditions', [])
+        factors = metadata.get('factors', [])
+        scales = metadata.get('scales', [])
+        sample_size = metadata.get('sample_size', len(df) if df is not None else 100)
+        effect_sizes_cfg = metadata.get('effect_sizes_configured', [])
+        is_factorial = len(factors) >= 2
+        num_conditions = len(conditions)
+
         lines.append("### Suggested Analysis Steps")
         lines.append("")
         lines.append("1. **Data Cleaning**")
         lines.append("   - Review `Exclude_Recommended` column for data quality issues")
-        lines.append("   - Check `Completion_Time_Seconds` for speedy responders")
-        lines.append("   - Examine `Max_Straight_Line` for response patterns")
+        lines.append("   - Check `Completion_Time_Seconds` for speedy responders (< 60s suspicious)")
+        lines.append("   - Examine `Max_Straight_Line` for response patterns (> 5 suggests inattention)")
+        lines.append("   - Check `Attention_Pass_Rate` (< 50% warrants exclusion)")
         lines.append("")
         lines.append("2. **Descriptive Statistics**")
         lines.append("   - Calculate means and SDs by condition")
-        lines.append("   - Check for outliers in scale responses")
+        lines.append("   - Check for outliers (beyond 3 SD from mean)")
         lines.append("   - Verify condition balance (N per group)")
+        lines.append("   - Assess normality (Shapiro-Wilk test)")
         lines.append("")
-        lines.append("3. **Primary Analyses**")
 
-        # Suggest analysis based on number of conditions
-        conditions = metadata.get('conditions', [])
-        if len(conditions) == 2:
-            lines.append("   - **Independent samples t-test** recommended for 2 conditions")
-            lines.append("   - Report: t-statistic, df, p-value, Cohen's d")
-        elif len(conditions) > 2:
-            lines.append("   - **One-way ANOVA** recommended for 3+ conditions")
-            lines.append("   - If significant, use post-hoc tests (e.g., Tukey HSD)")
-            lines.append("   - Report: F-statistic, df, p-value, eta-squared")
-
+        # Statistical Test Recommendations
+        lines.append("### Statistical Test Recommendations")
         lines.append("")
-        lines.append("4. **Effect Size Interpretation**")
-        lines.append("   - Small: d = 0.2 (or eta-squared = 0.01)")
-        lines.append("   - Medium: d = 0.5 (or eta-squared = 0.06)")
-        lines.append("   - Large: d = 0.8 (or eta-squared = 0.14)")
+        has_ordinal = any(s.get('scale_points', 7) <= 5 for s in scales)
+
+        if is_factorial:
+            factor_str = " x ".join([str(len(f.get('levels', []))) for f in factors])
+            lines.append(f"**Design:** {factor_str} Factorial")
+            lines.append("")
+            lines.append("| Analysis | Purpose |")
+            lines.append("|----------|---------|")
+            lines.append("| **Factorial ANOVA** | Main effects + interaction |")
+            lines.append("| **Simple effects** | If interaction significant |")
+            lines.append("")
+            if has_ordinal:
+                lines.append("**Non-parametric:** Aligned Rank Transform (ART) ANOVA")
+                lines.append("")
+        elif num_conditions == 2:
+            lines.append("**Design:** Two-Group Comparison")
+            lines.append("")
+            lines.append("| Analysis | When to Use |")
+            lines.append("|----------|-------------|")
+            lines.append("| **Independent t-test** | Normal data, equal variances |")
+            lines.append("| **Welch's t-test** | Unequal variances |")
+            lines.append("| **Mann-Whitney U** | Non-normal or ordinal data |")
+            lines.append("")
+            lines.append("**Report:** t, df, p, Cohen's d")
+            lines.append("")
+        elif num_conditions > 2:
+            lines.append(f"**Design:** {num_conditions}-Group Comparison")
+            lines.append("")
+            lines.append("| Analysis | When to Use |")
+            lines.append("|----------|-------------|")
+            lines.append("| **One-way ANOVA** | Normal data |")
+            lines.append("| **Kruskal-Wallis** | Non-normal or ordinal |")
+            lines.append("")
+            lines.append("**Post-hoc:** Tukey HSD or Dunn's test")
+            lines.append("")
+            lines.append("**Report:** F (or H), df, p, eta-squared")
+            lines.append("")
+
+        # Power Analysis
+        lines.append("### Power Analysis Estimates")
+        lines.append("")
+        n_per_group = sample_size // max(num_conditions, 1) if num_conditions > 0 else sample_size
+        lines.append(f"**Sample:** N = {sample_size} (~{n_per_group} per condition)")
+        lines.append("")
+        lines.append("| Effect Size | d | Estimated Power |")
+        lines.append("|-------------|---|-----------------|")
+        z_alpha = 1.96
+        for label, d in [("Small", 0.2), ("Medium", 0.5), ("Large", 0.8)]:
+            ncp = abs(d) * math.sqrt(n_per_group / 2)
+            z_power = ncp - z_alpha
+            power = 0.5 * (1 + math.erf(z_power / math.sqrt(2)))
+            power = max(0.05, min(0.99, power))
+            lines.append(f"| {label} | {d:.2f} | {power:.0%} |")
+        lines.append("")
+        lines.append("*80% power is generally considered adequate*")
+        lines.append("")
+
+        # Effect Size Guide
+        lines.append("### Effect Size Interpretation")
+        lines.append("")
+        lines.append("| Measure | Small | Medium | Large |")
+        lines.append("|---------|-------|--------|-------|")
+        lines.append("| Cohen's d | 0.20 | 0.50 | 0.80 |")
+        lines.append("| Eta-squared | 0.01 | 0.06 | 0.14 |")
         lines.append("")
 
         if self.config.include_schema_validation and schema_validation is not None:
@@ -747,11 +1042,41 @@ class InstructorReportGenerator:
             lines.append("```")
             lines.append("")
 
+        # Analysis Scripts Section
+        lines.append("## Analysis Scripts")
+        lines.append("")
+        lines.append("Auto-generated scripts with explanatory comments for your statistical software:")
+        lines.append("")
+
         if self.config.include_r_script:
-            lines.append("## R script (basic preparation)")
+            lines.append("### R Script")
             lines.append("")
             lines.append("```r")
-            lines.append(self._generate_basic_r_script(metadata))
+            lines.append(self._generate_comprehensive_r_script(metadata))
+            lines.append("```")
+            lines.append("")
+
+        if self.config.include_python_script:
+            lines.append("### Python Script")
+            lines.append("")
+            lines.append("```python")
+            lines.append(self._generate_python_script(metadata))
+            lines.append("```")
+            lines.append("")
+
+        if self.config.include_spss_syntax:
+            lines.append("### SPSS Syntax")
+            lines.append("")
+            lines.append("```spss")
+            lines.append(self._generate_spss_syntax(metadata))
+            lines.append("```")
+            lines.append("")
+
+        if self.config.include_stata_script:
+            lines.append("### Stata Script")
+            lines.append("")
+            lines.append("```stata")
+            lines.append(self._generate_stata_script(metadata))
             lines.append("```")
             lines.append("")
 
@@ -801,6 +1126,338 @@ class InstructorReportGenerator:
         r_lines.append("")
         r_lines.append("summary(data_clean)")
         return "\n".join(r_lines)
+
+    def _generate_comprehensive_r_script(self, metadata: Dict[str, Any]) -> str:
+        """Generate comprehensive R script with explanatory comments."""
+        conditions = metadata.get("conditions", [])
+        factors = metadata.get("factors", [])
+        scales = metadata.get('scales', [])
+        is_factorial = len(factors) >= 2
+        num_conditions = len(conditions)
+
+        def _r_quote(x: str) -> str:
+            return f'"{str(x).replace(chr(92), chr(92)+chr(92)).replace(chr(34), chr(92)+chr(34))}"'
+
+        condition_levels = ", ".join([_r_quote(c) for c in conditions])
+
+        r_lines = [
+            "# ============================================================================",
+            f"# COMPREHENSIVE R ANALYSIS SCRIPT",
+            f"# Study: {metadata.get('study_title', 'Untitled Study')}",
+            f"# Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+            "# ============================================================================",
+            "",
+            "# --- SECTION 1: SETUP ---",
+            "# Load required packages (install if needed)",
+            "library(readr)      # CSV reading",
+            "library(dplyr)      # Data manipulation",
+            "# library(effectsize) # Effect sizes (optional)",
+            "# library(car)        # Levene's test (optional)",
+            "",
+            "# --- SECTION 2: DATA LOADING ---",
+            "data <- read_csv('Simulated.csv', show_col_types = FALSE)",
+            "head(data)  # Verify data loaded correctly",
+            "",
+            "# --- SECTION 3: DATA PREPARATION ---",
+            "# Set condition as factor with proper ordering",
+            f"data$CONDITION <- factor(data$CONDITION, levels = c({condition_levels}))",
+            "",
+            "# --- SECTION 4: DATA CLEANING ---",
+            "# Apply exclusion criteria (document in your methods!)",
+            "data_clean <- data %>% filter(Exclude_Recommended == 0)",
+            "cat('Total N:', nrow(data), '| Clean N:', nrow(data_clean), '\\n')",
+            "",
+            "# --- SECTION 5: COMPUTE COMPOSITES ---",
+        ]
+
+        for s in scales:
+            name = str(s.get("name", "Scale")).replace(" ", "_")
+            num_items = int(s.get("num_items", 5) or 5)
+            items = [f"{name}_{i}" for i in range(1, num_items + 1)]
+            items_quoted = ", ".join([f'"{x}"' for x in items])
+            r_lines.append(f"# {name}: {num_items} items")
+            r_lines.append(f"data_clean${name}_composite <- rowMeans(data_clean[, c({items_quoted})], na.rm = TRUE)")
+
+        r_lines.append("")
+        r_lines.append("# --- SECTION 6: DESCRIPTIVES BY CONDITION ---")
+        r_lines.append("data_clean %>% group_by(CONDITION) %>%")
+        r_lines.append("  summarise(n = n(),")
+        for s in scales:
+            name = str(s.get("name", "Scale")).replace(" ", "_")
+            r_lines.append(f"            {name}_M = mean({name}_composite, na.rm=TRUE),")
+            r_lines.append(f"            {name}_SD = sd({name}_composite, na.rm=TRUE),")
+        r_lines.append("  )")
+        r_lines.append("")
+        r_lines.append("# --- SECTION 7: STATISTICAL TESTS ---")
+
+        if is_factorial:
+            r_lines.append("# FACTORIAL ANOVA - tests main effects and interaction")
+            for s in scales:
+                name = str(s.get("name", "Scale")).replace(" ", "_")
+                fnames = [f.get('name', 'F').replace(' ', '_') for f in factors]
+                formula = " * ".join(fnames)
+                r_lines.append(f"model_{name} <- aov({name}_composite ~ {formula}, data = data_clean)")
+                r_lines.append(f"summary(model_{name})")
+                r_lines.append("# Effect sizes: effectsize::eta_squared(model, partial = TRUE)")
+        elif num_conditions == 2:
+            r_lines.append("# TWO-GROUP T-TEST")
+            r_lines.append("# Welch's t-test (var.equal=FALSE) is more robust")
+            for s in scales:
+                name = str(s.get("name", "Scale")).replace(" ", "_")
+                r_lines.append(f"t.test({name}_composite ~ CONDITION, data = data_clean, var.equal = FALSE)")
+                r_lines.append(f"# Effect size: effectsize::cohens_d({name}_composite ~ CONDITION, data = data_clean)")
+            r_lines.append("")
+            r_lines.append("# NON-PARAMETRIC ALTERNATIVE (if non-normal):")
+            for s in scales:
+                name = str(s.get("name", "Scale")).replace(" ", "_")
+                r_lines.append(f"# wilcox.test({name}_composite ~ CONDITION, data = data_clean)")
+        elif num_conditions > 2:
+            r_lines.append("# ONE-WAY ANOVA")
+            for s in scales:
+                name = str(s.get("name", "Scale")).replace(" ", "_")
+                r_lines.append(f"model_{name} <- aov({name}_composite ~ CONDITION, data = data_clean)")
+                r_lines.append(f"summary(model_{name})")
+                r_lines.append(f"# Post-hoc: TukeyHSD(model_{name})")
+            r_lines.append("")
+            r_lines.append("# NON-PARAMETRIC ALTERNATIVE:")
+            for s in scales:
+                name = str(s.get("name", "Scale")).replace(" ", "_")
+                r_lines.append(f"# kruskal.test({name}_composite ~ CONDITION, data = data_clean)")
+
+        r_lines.append("")
+        r_lines.append("# ============================================================================")
+        return "\n".join(r_lines)
+
+    def _generate_python_script(self, metadata: Dict[str, Any]) -> str:
+        """Generate Python analysis script with explanatory comments."""
+        conditions = metadata.get("conditions", [])
+        factors = metadata.get("factors", [])
+        scales = metadata.get('scales', [])
+        is_factorial = len(factors) >= 2
+        num_conditions = len(conditions)
+
+        py_lines = [
+            "# ============================================================================",
+            f"# COMPREHENSIVE PYTHON ANALYSIS SCRIPT",
+            f"# Study: {metadata.get('study_title', 'Untitled Study')}",
+            f"# Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+            "# ============================================================================",
+            "",
+            "import pandas as pd",
+            "import numpy as np",
+            "from scipy import stats",
+            "",
+            "# --- SECTION 1: DATA LOADING ---",
+            "df = pd.read_csv('Simulated.csv')",
+            "print('Dataset shape:', df.shape)",
+            "",
+            "# --- SECTION 2: DATA PREPARATION ---",
+            f"condition_order = {conditions}",
+            "df['CONDITION'] = pd.Categorical(df['CONDITION'], categories=condition_order, ordered=True)",
+            "",
+            "# --- SECTION 3: DATA CLEANING ---",
+            "# Apply exclusion criteria (document in methods!)",
+            "df_clean = df[df['Exclude_Recommended'] == 0].copy()",
+            "print(f'Total N: {len(df)} | Clean N: {len(df_clean)}')",
+            "",
+            "# --- SECTION 4: COMPUTE COMPOSITES ---",
+        ]
+
+        for s in scales:
+            name = str(s.get("name", "Scale")).replace(" ", "_")
+            num_items = int(s.get("num_items", 5) or 5)
+            items = [f"{name}_{i}" for i in range(1, num_items + 1)]
+            py_lines.append(f"# {name}: {num_items} items")
+            py_lines.append(f"df_clean['{name}_composite'] = df_clean[{items}].mean(axis=1)")
+
+        py_lines.append("")
+        py_lines.append("# --- SECTION 5: DESCRIPTIVES ---")
+        for s in scales:
+            name = str(s.get("name", "Scale")).replace(" ", "_")
+            py_lines.append(f"print(df_clean.groupby('CONDITION')['{name}_composite'].agg(['count', 'mean', 'std']))")
+
+        py_lines.append("")
+        py_lines.append("# --- SECTION 6: STATISTICAL TESTS ---")
+
+        if num_conditions == 2 and conditions:
+            py_lines.append("# TWO-GROUP T-TEST")
+            py_lines.append(f"cond1, cond2 = '{conditions[0]}', '{conditions[1]}'")
+            for s in scales:
+                name = str(s.get("name", "Scale")).replace(" ", "_")
+                py_lines.append(f"g1 = df_clean[df_clean['CONDITION'] == cond1]['{name}_composite']")
+                py_lines.append(f"g2 = df_clean[df_clean['CONDITION'] == cond2]['{name}_composite']")
+                py_lines.append("t_stat, p_val = stats.ttest_ind(g1, g2, equal_var=False)  # Welch's t-test")
+                py_lines.append(f"print(f'{name}: t={{t_stat:.3f}}, p={{p_val:.4f}}')")
+                py_lines.append("# Cohen's d")
+                py_lines.append("d = (g1.mean() - g2.mean()) / np.sqrt((g1.std()**2 + g2.std()**2) / 2)")
+                py_lines.append("print(f\"Cohen's d = {d:.3f}\")")
+        elif num_conditions > 2:
+            py_lines.append("# ONE-WAY ANOVA")
+            for s in scales:
+                name = str(s.get("name", "Scale")).replace(" ", "_")
+                py_lines.append(f"groups = [df_clean[df_clean['CONDITION']==c]['{name}_composite'] for c in condition_order]")
+                py_lines.append("f_stat, p_val = stats.f_oneway(*groups)")
+                py_lines.append(f"print(f'{name} ANOVA: F={{f_stat:.3f}}, p={{p_val:.4f}}')")
+
+        py_lines.append("")
+        py_lines.append("# ============================================================================")
+        return "\n".join(py_lines)
+
+    def _generate_spss_syntax(self, metadata: Dict[str, Any]) -> str:
+        """Generate SPSS syntax with explanatory comments."""
+        conditions = metadata.get("conditions", [])
+        scales = metadata.get('scales', [])
+        num_conditions = len(conditions)
+
+        spss_lines = [
+            "* ============================================================================.",
+            f"* COMPREHENSIVE SPSS ANALYSIS SYNTAX.",
+            f"* Study: {metadata.get('study_title', 'Untitled Study')}.",
+            f"* Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}.",
+            "* ============================================================================.",
+            "",
+            "* --- SECTION 1: DATA LOADING ---.",
+            "* Use File > Open > Data to import Simulated.csv.",
+            "* Or use GET DATA /TYPE=TXT command.",
+            "",
+            "* --- SECTION 2: DATA CLEANING ---.",
+            "* Filter to clean data (exclude flagged participants).",
+            "USE ALL.",
+            "COMPUTE filter_clean = (Exclude_Recommended = 0).",
+            "FILTER BY filter_clean.",
+            "EXECUTE.",
+            "",
+            "* Check sample size.",
+            "FREQUENCIES VARIABLES=CONDITION.",
+            "",
+            "* --- SECTION 3: COMPUTE COMPOSITES ---.",
+        ]
+
+        for s in scales:
+            name = str(s.get("name", "Scale")).replace(" ", "_")
+            num_items = int(s.get("num_items", 5) or 5)
+            items = [f"{name}_{i}" for i in range(1, num_items + 1)]
+            items_str = " ".join(items)
+            spss_lines.append(f"* {name}: {num_items} items.")
+            spss_lines.append(f"COMPUTE {name}_composite = MEAN({items_str}).")
+            spss_lines.append("EXECUTE.")
+
+        spss_lines.append("")
+        spss_lines.append("* --- SECTION 4: DESCRIPTIVES ---.")
+        dv_vars = " ".join([f"{str(s.get('name', 'Scale')).replace(' ', '_')}_composite" for s in scales])
+        spss_lines.append(f"MEANS TABLES={dv_vars} BY CONDITION")
+        spss_lines.append("  /CELLS=MEAN STDDEV COUNT.")
+        spss_lines.append("")
+        spss_lines.append("* --- SECTION 5: STATISTICAL TESTS ---.")
+
+        if num_conditions == 2:
+            spss_lines.append("* TWO-GROUP T-TEST.")
+            spss_lines.append("* Levene's test included in output - check for equal variances.")
+            for s in scales:
+                name = str(s.get("name", "Scale")).replace(" ", "_")
+                spss_lines.append(f"T-TEST GROUPS=CONDITION")
+                spss_lines.append(f"  /VARIABLES={name}_composite")
+                spss_lines.append("  /MISSING=ANALYSIS.")
+            spss_lines.append("")
+            spss_lines.append("* NON-PARAMETRIC: Mann-Whitney U.")
+            for s in scales:
+                name = str(s.get("name", "Scale")).replace(" ", "_")
+                spss_lines.append(f"NPAR TESTS /M-W={name}_composite BY CONDITION(1 2).")
+        elif num_conditions > 2:
+            spss_lines.append("* ONE-WAY ANOVA with post-hoc tests.")
+            for s in scales:
+                name = str(s.get("name", "Scale")).replace(" ", "_")
+                spss_lines.append(f"ONEWAY {name}_composite BY CONDITION")
+                spss_lines.append("  /STATISTICS DESCRIPTIVES HOMOGENEITY")
+                spss_lines.append("  /POSTHOC=TUKEY ALPHA(0.05).")
+            spss_lines.append("")
+            spss_lines.append("* For effect size (eta-squared), use GLM.")
+            for s in scales:
+                name = str(s.get("name", "Scale")).replace(" ", "_")
+                spss_lines.append(f"UNIANOVA {name}_composite BY CONDITION")
+                spss_lines.append("  /PRINT=ETASQ.")
+
+        spss_lines.append("")
+        spss_lines.append("* ============================================================================.")
+        return "\n".join(spss_lines)
+
+    def _generate_stata_script(self, metadata: Dict[str, Any]) -> str:
+        """Generate Stata script with explanatory comments."""
+        conditions = metadata.get("conditions", [])
+        scales = metadata.get('scales', [])
+        num_conditions = len(conditions)
+
+        stata_lines = [
+            "/* ============================================================================",
+            f"   COMPREHENSIVE STATA ANALYSIS SCRIPT",
+            f"   Study: {metadata.get('study_title', 'Untitled Study')}",
+            f"   Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+            "   ============================================================================ */",
+            "",
+            "// --- SECTION 1: DATA LOADING ---",
+            "clear all",
+            'import delimited "Simulated.csv", clear',
+            "describe",
+            "",
+            "// --- SECTION 2: DATA PREPARATION ---",
+            "// Encode condition as numeric factor",
+            "encode condition, generate(condition_num)",
+            "",
+            "// --- SECTION 3: DATA CLEANING ---",
+            "// Keep only clean data (document criteria in methods!)",
+            "keep if exclude_recommended == 0",
+            "count",
+            "tabulate condition",
+            "",
+            "// --- SECTION 4: COMPUTE COMPOSITES ---",
+        ]
+
+        for s in scales:
+            name = str(s.get("name", "Scale")).replace(" ", "_").lower()
+            num_items = int(s.get("num_items", 5) or 5)
+            items = [f"{name}_{i}" for i in range(1, num_items + 1)]
+            items_str = " ".join(items)
+            stata_lines.append(f"// {name}: {num_items} items")
+            stata_lines.append(f"egen {name}_composite = rowmean({items_str})")
+
+        stata_lines.append("")
+        stata_lines.append("// --- SECTION 5: DESCRIPTIVES ---")
+        for s in scales:
+            name = str(s.get("name", "Scale")).replace(" ", "_").lower()
+            stata_lines.append(f"tabstat {name}_composite, by(condition) statistics(n mean sd)")
+
+        stata_lines.append("")
+        stata_lines.append("// --- SECTION 6: STATISTICAL TESTS ---")
+
+        if num_conditions == 2:
+            stata_lines.append("// TWO-GROUP T-TEST")
+            stata_lines.append("// Use 'unequal' for Welch's t-test (more robust)")
+            for s in scales:
+                name = str(s.get("name", "Scale")).replace(" ", "_").lower()
+                stata_lines.append(f"ttest {name}_composite, by(condition) unequal")
+            stata_lines.append("")
+            stata_lines.append("// NON-PARAMETRIC: Wilcoxon rank-sum (Mann-Whitney)")
+            for s in scales:
+                name = str(s.get("name", "Scale")).replace(" ", "_").lower()
+                stata_lines.append(f"ranksum {name}_composite, by(condition)")
+        elif num_conditions > 2:
+            stata_lines.append("// ONE-WAY ANOVA")
+            for s in scales:
+                name = str(s.get("name", "Scale")).replace(" ", "_").lower()
+                stata_lines.append(f"oneway {name}_composite condition, tabulate")
+            stata_lines.append("")
+            stata_lines.append("// Post-hoc tests")
+            stata_lines.append("// Run after anova command:")
+            stata_lines.append("// pwcompare condition, mcompare(tukey) effects")
+            stata_lines.append("")
+            stata_lines.append("// NON-PARAMETRIC: Kruskal-Wallis")
+            for s in scales:
+                name = str(s.get("name", "Scale")).replace(" ", "_").lower()
+                stata_lines.append(f"kwallis {name}_composite, by(condition)")
+
+        stata_lines.append("")
+        stata_lines.append("/* ============================================================================ */")
+        return "\n".join(stata_lines)
 
 
 class ComprehensiveInstructorReport:

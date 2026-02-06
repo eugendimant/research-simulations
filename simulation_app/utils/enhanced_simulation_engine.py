@@ -4,7 +4,7 @@ from __future__ import annotations
 Enhanced Simulation Engine for Behavioral Experiment Simulation Tool
 =============================================================================
 
-Version 2.2.1 - Comprehensive improvements with 175+ domains, 30 question types
+Version 1.2.0 - Enhanced persona metadata with per-condition tracking
 
 Advanced simulation engine with:
 - Theory-grounded persona library integration (7 persona dimensions)
@@ -45,7 +45,7 @@ This module is designed to run inside a `utils/` package (i.e., imported as
 """
 
 # Version identifier to help track deployed code
-__version__ = "1.0.0"  # OFFICIAL: Difficulty levels, mediation support, skip logic awareness
+__version__ = "1.2.0"  # Enhanced persona metadata tracking with per-condition breakdowns
 
 # =============================================================================
 # SCIENTIFIC FOUNDATIONS FOR SIMULATION
@@ -371,6 +371,29 @@ def _normalize_open_ended(open_ended: Optional[List[Any]]) -> List[Dict[str, Any
     return normalized
 
 
+def _safe_parse_reverse_items(reverse_items_raw: Any) -> set:
+    """
+    Safely parse reverse items, handling invalid values gracefully.
+
+    Args:
+        reverse_items_raw: Raw reverse items value (could be list, None, or invalid)
+
+    Returns:
+        Set of integer item numbers (empty set if parsing fails)
+    """
+    if not reverse_items_raw:
+        return set()
+
+    result = set()
+    items_list = reverse_items_raw if isinstance(reverse_items_raw, (list, tuple)) else []
+    for x in items_list:
+        try:
+            result.add(int(x))
+        except (ValueError, TypeError):
+            pass  # Skip invalid reverse item values
+    return result
+
+
 def _substitute_embedded_fields(text: str, condition: str, embedded_data: Optional[Dict[str, Any]] = None) -> str:
     """
     Substitute embedded data field references in question text.
@@ -632,6 +655,10 @@ def _validate_condition_assignment(
     if n == 0:
         return {'valid': False, 'error': 'No assignments'}
 
+    # Guard against empty conditions list to prevent division by zero
+    if not conditions or len(conditions) == 0:
+        return {'valid': False, 'error': 'No conditions provided'}
+
     # Count assignments
     counts = {}
     for cond in conditions:
@@ -639,13 +666,14 @@ def _validate_condition_assignment(
 
     # Calculate expected counts
     expected = {}
+    n_conditions = len(conditions)
     if allocation:
         for cond in conditions:
-            pct = allocation.get(cond, 100 / len(conditions))
+            pct = allocation.get(cond, 100 / n_conditions)
             expected[cond] = n * pct / 100
     else:
         for cond in conditions:
-            expected[cond] = n / len(conditions)
+            expected[cond] = n / n_conditions
 
     # Check deviations
     deviations = {}
@@ -3737,8 +3765,23 @@ class EnhancedSimulationEngine:
         """
         rng = np.random.RandomState(participant_seed)
 
-        scale_min = int(scale_min)
-        scale_max = int(scale_max)
+        # Defensive conversion with fallbacks for None/NaN
+        try:
+            if scale_min is None or (isinstance(scale_min, float) and np.isnan(scale_min)):
+                scale_min = 1
+            else:
+                scale_min = int(scale_min)
+        except (ValueError, TypeError):
+            scale_min = 1
+
+        try:
+            if scale_max is None or (isinstance(scale_max, float) and np.isnan(scale_max)):
+                scale_max = 7
+            else:
+                scale_max = int(scale_max)
+        except (ValueError, TypeError):
+            scale_max = 7
+
         if scale_max < scale_min:
             scale_min, scale_max = scale_max, scale_min
         scale_range = scale_max - scale_min
@@ -4273,14 +4316,26 @@ class EnhancedSimulationEngine:
             num_items = max(1, num_items)
 
             # Extract scale_min and scale_max from scale dict (from QSF detection)
+            # Defensive handling: check for None, NaN, and invalid types
             scale_min = scale.get("scale_min", 1)
             scale_max = scale.get("scale_max", scale_points)
+            # Handle None
             if scale_min is None:
                 scale_min = 1
             if scale_max is None:
                 scale_max = scale_points
-            scale_min = int(scale_min)
-            scale_max = int(scale_max)
+            # Handle NaN (can occur from DataFrame conversions)
+            try:
+                if isinstance(scale_min, float) and np.isnan(scale_min):
+                    scale_min = 1
+                if isinstance(scale_max, float) and np.isnan(scale_max):
+                    scale_max = scale_points
+                scale_min = int(scale_min)
+                scale_max = int(scale_max)
+            except (ValueError, TypeError):
+                # Fallback if conversion fails
+                scale_min = 1
+                scale_max = scale_points
 
             # Safely parse reverse_items - skip invalid values
             reverse_items_raw = scale.get("reverse_items", []) or []
@@ -4524,6 +4579,71 @@ class EnhancedSimulationEngine:
         # Compute observed effect sizes to validate simulation quality
         observed_effects = self._compute_observed_effect_sizes(df)
 
+        # =====================================================================
+        # ENHANCED PERSONA METADATA (v1.2.0)
+        # Comprehensive tracking of persona assignment and trait distributions
+        # =====================================================================
+
+        # 1. Persona counts (absolute numbers)
+        persona_counts: Dict[str, int] = {}
+        for p in assigned_personas:
+            persona_counts[p] = persona_counts.get(p, 0) + 1
+
+        # 2. Persona proportions (percentages)
+        total_participants = len(assigned_personas) if assigned_personas else 1
+        persona_proportions: Dict[str, float] = {
+            p: count / total_participants for p, count in persona_counts.items()
+        }
+
+        # 3. Per-condition persona breakdown
+        # Maps condition -> {persona_name -> count}
+        persona_by_condition: Dict[str, Dict[str, int]] = {}
+        conditions_list = conditions.tolist() if hasattr(conditions, 'tolist') else list(conditions)
+        for cond in self.conditions:
+            persona_by_condition[cond] = {}
+        for i, (persona_name, cond) in enumerate(zip(assigned_personas, conditions_list)):
+            if cond not in persona_by_condition:
+                persona_by_condition[cond] = {}
+            persona_by_condition[cond][persona_name] = persona_by_condition[cond].get(persona_name, 0) + 1
+
+        # 4. Per-condition persona proportions
+        persona_proportions_by_condition: Dict[str, Dict[str, float]] = {}
+        for cond, persona_dict in persona_by_condition.items():
+            cond_total = sum(persona_dict.values()) if persona_dict else 1
+            persona_proportions_by_condition[cond] = {
+                p: count / cond_total for p, count in persona_dict.items()
+            }
+
+        # 5. Per-condition trait averages
+        # Maps condition -> {trait_name -> average_value}
+        trait_averages_by_condition: Dict[str, Dict[str, float]] = {}
+        condition_traits: Dict[str, List[Dict[str, float]]] = {cond: [] for cond in self.conditions}
+        for i, (traits_dict, cond) in enumerate(zip(all_traits, conditions_list)):
+            if cond not in condition_traits:
+                condition_traits[cond] = []
+            condition_traits[cond].append(traits_dict)
+
+        for cond, traits_list in condition_traits.items():
+            if not traits_list:
+                trait_averages_by_condition[cond] = {}
+                continue
+            # Get all trait keys from first participant
+            trait_keys = list(traits_list[0].keys()) if traits_list else []
+            trait_averages_by_condition[cond] = {}
+            for trait_key in trait_keys:
+                values = [t.get(trait_key, 0.0) for t in traits_list if trait_key in t]
+                if values:
+                    trait_averages_by_condition[cond][trait_key] = round(float(np.mean(values)), 4)
+
+        # 6. Overall trait averages (across all participants)
+        overall_trait_averages: Dict[str, float] = {}
+        if all_traits:
+            trait_keys = list(all_traits[0].keys()) if all_traits else []
+            for trait_key in trait_keys:
+                values = [t.get(trait_key, 0.0) for t in all_traits if trait_key in t]
+                if values:
+                    overall_trait_averages[trait_key] = round(float(np.mean(values)), 4)
+
         metadata = {
             "run_id": self.run_id,
             "simulation_mode": self.mode,
@@ -4540,11 +4660,23 @@ class EnhancedSimulationEngine:
                 {"variable": e.variable, "factor": e.factor, "cohens_d": e.cohens_d, "direction": e.direction}
                 for e in self.effect_sizes
             ],
-            "effect_sizes_observed": observed_effects,  # NEW: Actual effects in generated data
+            "effect_sizes_observed": observed_effects,  # Actual effects in generated data
             "personas_used": sorted(list(set(assigned_personas))),
+            # ENHANCED: Full persona distribution with counts and proportions
             "persona_distribution": {
-                p: assigned_personas.count(p) / len(assigned_personas) for p in set(assigned_personas)
+                "counts": persona_counts,
+                "proportions": persona_proportions,
+                "total_participants": total_participants,
             } if assigned_personas else {},
+            # ENHANCED: Per-condition persona breakdown
+            "persona_by_condition": {
+                "counts": persona_by_condition,
+                "proportions": persona_proportions_by_condition,
+            },
+            # ENHANCED: Per-condition trait averages
+            "trait_averages_by_condition": trait_averages_by_condition,
+            # ENHANCED: Overall trait averages
+            "trait_averages_overall": overall_trait_averages,
             "exclusion_summary": {
                 "flagged_speed": int(sum(data["Flag_Speed"])),
                 "flagged_attention": int(sum(data["Flag_Attention"])),
@@ -4994,7 +5126,7 @@ class EnhancedSimulationEngine:
             scale_name = scale_name_raw.replace(" ", "_")
             num_items = int(scale.get("num_items", 5))
             scale_points = int(scale.get("scale_points", 7))
-            reverse_items = set(int(x) for x in (scale.get("reverse_items", []) or []))
+            reverse_items = _safe_parse_reverse_items(scale.get("reverse_items", []))
 
             items = [f"{scale_name}_{i}" for i in range(1, num_items + 1)]
 
@@ -5065,7 +5197,7 @@ class EnhancedSimulationEngine:
             scale_name = scale_name_raw.replace(" ", "_")
             num_items = int(scale.get("num_items", 5))
             scale_points = int(scale.get("scale_points", 7))
-            reverse_items = set(int(x) for x in (scale.get("reverse_items", []) or []))
+            reverse_items = _safe_parse_reverse_items(scale.get("reverse_items", []))
 
             items = [f"{scale_name}_{i}" for i in range(1, num_items + 1)]
 
@@ -5137,7 +5269,7 @@ class EnhancedSimulationEngine:
             scale_name = scale_name_raw.replace(" ", "_")
             num_items = int(scale.get("num_items", 5))
             scale_points = int(scale.get("scale_points", 7))
-            reverse_items = set(int(x) for x in (scale.get("reverse_items", []) or []))
+            reverse_items = _safe_parse_reverse_items(scale.get("reverse_items", []))
 
             items = [f"{scale_name}_{i}" for i in range(1, num_items + 1)]
 
@@ -5211,7 +5343,7 @@ class EnhancedSimulationEngine:
             scale_name = scale_name_raw.replace(" ", "_")
             num_items = int(scale.get("num_items", 5))
             scale_points = int(scale.get("scale_points", 7))
-            reverse_items = set(int(x) for x in (scale.get("reverse_items", []) or []))
+            reverse_items = _safe_parse_reverse_items(scale.get("reverse_items", []))
 
             items = [f"{scale_name}_{i}" for i in range(1, num_items + 1)]
 
@@ -5287,7 +5419,7 @@ class EnhancedSimulationEngine:
             scale_name = scale_name_raw.replace(" ", "_").lower()
             num_items = int(scale.get("num_items", 5))
             scale_points = int(scale.get("scale_points", 7))
-            reverse_items = set(int(x) for x in (scale.get("reverse_items", []) or []))
+            reverse_items = _safe_parse_reverse_items(scale.get("reverse_items", []))
 
             items = [f"{scale_name}_{i}" for i in range(1, num_items + 1)]
 

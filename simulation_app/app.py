@@ -2972,47 +2972,45 @@ def _inject_scroll_to_top():
     Call this at the beginning of each step to ensure the view starts at the top
     when navigating between steps.
 
-    v2.4.4: Enhanced with multiple scroll strategies for better Streamlit compatibility.
+    v1.2.0: More aggressive scroll with iframe-based approach for Streamlit Cloud.
     """
     if st.session_state.get("_scroll_to_top", False):
         # Clear the flag first
         st.session_state["_scroll_to_top"] = False
-        # Inject JavaScript with multiple fallback strategies
-        st.markdown(
+        # v1.2.0: Use components.html for more reliable script execution
+        import streamlit.components.v1 as components
+        components.html(
             """
-            <div id="scroll-anchor-top"></div>
             <script>
-                // Strategy 1: Try scrolling the main section
-                var mainSection = window.parent.document.querySelector('section.main');
-                if (mainSection) {
-                    mainSection.scrollTo({top: 0, behavior: 'instant'});
-                }
-                // Strategy 2: Try scrolling the stApp container
-                var stApp = window.parent.document.querySelector('.stApp');
-                if (stApp) {
-                    stApp.scrollTo({top: 0, behavior: 'instant'});
-                }
-                // Strategy 3: Try scrolling the block-container
-                var blockContainer = window.parent.document.querySelector('[data-testid="stAppViewBlockContainer"]');
-                if (blockContainer) {
-                    blockContainer.scrollTo({top: 0, behavior: 'instant'});
-                }
-                // Strategy 4: Scroll window itself
-                window.parent.scrollTo({top: 0, behavior: 'instant'});
-                // Strategy 5: Find and scroll the anchor
-                setTimeout(function() {
-                    var anchor = window.parent.document.getElementById('scroll-anchor-top');
-                    if (anchor) {
-                        anchor.scrollIntoView({behavior: 'instant', block: 'start'});
-                    }
-                }, 50);
+                // Aggressive scroll to top with multiple strategies
+                (function() {
+                    // Strategy 1: Main section
+                    var mainSection = parent.document.querySelector('section.main');
+                    if (mainSection) mainSection.scrollTop = 0;
+
+                    // Strategy 2: stApp container
+                    var stApp = parent.document.querySelector('.stApp');
+                    if (stApp) stApp.scrollTop = 0;
+
+                    // Strategy 3: Block container
+                    var block = parent.document.querySelector('[data-testid="stAppViewBlockContainer"]');
+                    if (block) block.scrollTop = 0;
+
+                    // Strategy 4: Window scroll
+                    parent.scrollTo(0, 0);
+
+                    // Strategy 5: Delayed scroll for dynamic content
+                    setTimeout(function() {
+                        parent.scrollTo(0, 0);
+                        if (mainSection) mainSection.scrollTop = 0;
+                        if (stApp) stApp.scrollTop = 0;
+                    }, 100);
+                })();
             </script>
             """,
-            unsafe_allow_html=True
+            height=0,
+            width=0,
         )
-    else:
-        # Always inject anchor for consistent DOM
-        st.markdown('<div id="scroll-anchor-top"></div>', unsafe_allow_html=True)
 
 
 with st.expander("What this tool delivers", expanded=True):
@@ -4256,8 +4254,10 @@ if active_step == 2:
                     # Use condition name in key for stability when list changes
                     safe_key = cc.replace(" ", "_").replace(".", "_")[:20]
                     if st.button("✕", key=f"rm_custom_{safe_key}_{i}"):
-                        custom_conditions.remove(cc)
-                        st.session_state["custom_conditions"] = custom_conditions
+                        # Defensive: check if item still exists before removing
+                        if cc in custom_conditions:
+                            custom_conditions.remove(cc)
+                            st.session_state["custom_conditions"] = custom_conditions
                         st.rerun()
 
     # Combine selected and custom conditions
@@ -4562,7 +4562,7 @@ if active_step == 2:
 
                 # Update condition allocation for crossed conditions
                 n_crossed = len(crossed_conditions)
-                if n_crossed > 0:
+                if n_crossed > 0 and sample_size > 0:
                     n_per = sample_size // n_crossed
                     remainder = sample_size % n_crossed
                     st.session_state["condition_allocation"] = {
@@ -4808,22 +4808,37 @@ if active_step == 2:
     scales_to_remove = []
 
     if confirmed_scales:
-        st.markdown(f"**{len(confirmed_scales)} DV(s) detected from your QSF:**")
+        st.markdown(f"**{len(confirmed_scales)} DV(s) detected from your QSF.** Review and adjust as needed:")
 
-        # v1.2.0: Column headers for clarity
+        # v1.2.0: Column headers for clarity with tooltips
         hdr1, hdr2, hdr3a, hdr3b, hdr4, hdr5 = st.columns([2.5, 0.8, 0.6, 0.6, 1.5, 0.4])
         with hdr1:
-            st.caption("**Variable Name** (from QSF)")
+            st.markdown(
+                '<span title="The variable name as it appears in your QSF file. You can edit this to match your analysis script.">**Variable Name**</span>',
+                unsafe_allow_html=True
+            )
         with hdr2:
-            st.caption("**Items**")
+            st.markdown(
+                '<span title="Number of items/questions in this scale. Multi-item scales (e.g., 5-item attitude measure) will generate averaged composite scores.">**Items**</span>',
+                unsafe_allow_html=True
+            )
         with hdr3a:
-            st.caption("**Min**")
+            st.markdown(
+                '<span title="Minimum value on the response scale (e.g., 1 for a 1-7 scale, 0 for a 0-100 slider).">**Min**</span>',
+                unsafe_allow_html=True
+            )
         with hdr3b:
-            st.caption("**Max**")
+            st.markdown(
+                '<span title="Maximum value on the response scale (e.g., 7 for a 1-7 Likert scale, 100 for a 0-100 slider).">**Max**</span>',
+                unsafe_allow_html=True
+            )
         with hdr4:
-            st.caption("**Type**")
+            st.markdown(
+                '<span title="Detection type: Matrix=multi-item battery, Slider=visual analog scale, Single Item=standalone question, Numeric=open-ended number input.">**Type**</span>',
+                unsafe_allow_html=True
+            )
         with hdr5:
-            st.caption("")
+            st.caption("Del")
 
         for i, scale in enumerate(confirmed_scales):
             dv_type = scale.get("type", "likert")
@@ -4926,14 +4941,27 @@ if active_step == 2:
                 scale_points = new_scale_max  # Used for data generation
 
                 with col4:
-                    # Type badge (read-only display)
-                    st.markdown(f"<small>{type_badge}</small>", unsafe_allow_html=True)
+                    # Type badge with descriptive tooltip
+                    type_descriptions = {
+                        'matrix': 'Multi-item scale detected as a matrix (e.g., 5-item attitude battery)',
+                        'numbered_items': 'Scale detected from numbered items (e.g., Scale_1, Scale_2)',
+                        'likert': 'Likert-type scale with multiple response options',
+                        'slider': 'Visual analog scale or slider (typically 0-100)',
+                        'single_item': 'Single standalone question',
+                        'numeric_input': 'Open-ended numeric input (e.g., WTP, quantity)',
+                        'constant_sum': 'Constant sum allocation task',
+                    }
+                    type_desc = type_descriptions.get(dv_type, 'Scale type')
+                    st.markdown(
+                        f'<small title="{type_desc}">{type_badge}</small>',
+                        unsafe_allow_html=True
+                    )
                     if scale.get("detected_from_qsf", True):
-                        st.caption("*From QSF*")
+                        st.caption("*Auto-detected*")
 
                 with col5:
-                    # Remove button
-                    if st.button("✕", key=f"rm_dv_v{dv_version}_{i}", help="Remove this DV"):
+                    # Remove button with clear help text
+                    if st.button("✕", key=f"rm_dv_v{dv_version}_{i}", help="Remove this DV from the simulation. Click to delete."):
                         scales_to_remove.append(i)
 
                 # Show scale anchors if available
@@ -4975,7 +5003,10 @@ if active_step == 2:
                     "scale_max": new_scale_max,
                 })
     else:
-        st.info("No DVs detected from QSF. Add your dependent variables below.")
+        st.info(
+            "**No DVs detected from QSF.** This can happen if your survey uses unconventional question formats. "
+            "Click **Add DV** below to manually define your dependent variables."
+        )
 
     # Handle removals
     if scales_to_remove:
@@ -4983,45 +5014,50 @@ if active_step == 2:
         st.session_state["_dv_version"] = dv_version + 1
         st.rerun()
 
-    # Add new DV button
+    # Add new DV button with helpful context
     st.markdown("---")
-    col_add, col_spacer = st.columns([1, 3])
+    col_add, col_help = st.columns([1, 3])
     with col_add:
-        if st.button("➕ Add DV", key=f"add_dv_btn_v{dv_version}"):
-            new_dv = {
-                "name": f"New_DV_{len(confirmed_scales)+1}",
-                "variable_name": f"New_DV_{len(confirmed_scales)+1}",
-                "question_text": "",
-                "items": 1,
-                "num_items": 1,
-                "scale_points": 7,
-                "type": "single_item",
-                "reverse_items": [],
-                "detected_from_qsf": False,
-                "item_names": [],
-                "scale_anchors": {},
-                "scale_min": 1,
-                "scale_max": 7,
-            }
-            confirmed_scales.append(new_dv)
-            st.session_state["confirmed_scales"] = confirmed_scales
-            st.session_state["_dv_version"] = dv_version + 1
-            st.rerun()
+        add_clicked = st.button("➕ Add DV", key=f"add_dv_btn_v{dv_version}", help="Add a new dependent variable manually. Use this if automatic detection missed a scale or if you want to add custom measures.")
+    with col_help:
+        st.caption("DVs (dependent variables) are the outcomes you measure. The simulation will generate realistic responses for each DV based on your experimental conditions.")
+
+    if add_clicked:
+        new_dv = {
+            "name": f"New_DV_{len(confirmed_scales)+1}",
+            "variable_name": f"New_DV_{len(confirmed_scales)+1}",
+            "question_text": "",
+            "items": 1,
+            "num_items": 1,
+            "scale_points": 7,
+            "type": "single_item",
+            "reverse_items": [],
+            "detected_from_qsf": False,
+            "item_names": [],
+            "scale_anchors": {},
+            "scale_min": 1,
+            "scale_max": 7,
+        }
+        confirmed_scales.append(new_dv)
+        st.session_state["confirmed_scales"] = confirmed_scales
+        st.session_state["_dv_version"] = dv_version + 1
+        st.rerun()
 
     # Update session state with edited DVs
     st.session_state["confirmed_scales"] = updated_scales
     scales = updated_scales if updated_scales else scales
 
-    # Confirmation checkbox
+    # Confirmation checkbox with better help
     scales_confirmed = st.checkbox(
         "I confirm these DVs match my survey",
         value=st.session_state.get("scales_confirmed", False),
         key=f"dv_confirm_checkbox_v{dv_version}",
+        help="Check this box once you have verified that the variable names, item counts, and scale ranges match your actual Qualtrics survey."
     )
     st.session_state["scales_confirmed"] = scales_confirmed
 
     if not scales_confirmed and updated_scales:
-        st.caption("Confirm your DVs are correct to proceed.")
+        st.caption("Please verify the DVs above match your survey, then check the confirmation box to proceed.")
 
     # ========================================
     # STEP 5: OPEN-ENDED QUESTIONS
@@ -5281,7 +5317,7 @@ if active_step == 2:
             final_conditions = st.session_state["factorial_crossed_conditions"]
             # Update condition allocation for the crossed conditions
             n_crossed = len(final_conditions)
-            if n_crossed > 0 and "condition_allocation" not in st.session_state:
+            if n_crossed > 0 and sample_size > 0 and "condition_allocation" not in st.session_state:
                 n_per = sample_size // n_crossed
                 remainder = sample_size % n_crossed
                 st.session_state["condition_allocation"] = {
@@ -5889,8 +5925,16 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
     progress_placeholder = st.empty()
     status_placeholder = st.empty()
 
+    # v1.2.0: Show prominent progress indicator when generating
     if is_generating:
-        status_placeholder.info("Simulation is running. Please wait...")
+        with status_placeholder.container():
+            st.markdown("""
+            <div style="text-align: center; padding: 30px; background: linear-gradient(135deg, #1e3a5f 0%, #2d5a87 100%); border-radius: 15px; margin: 20px 0;">
+                <div style="font-size: 48px; margin-bottom: 15px;">⏳</div>
+                <h2 style="color: white; margin: 0 0 10px 0;">Generating Your Dataset...</h2>
+                <p style="color: #a0c4e8; font-size: 16px; margin: 0;">This typically takes 10-30 seconds. Please don't close this page.</p>
+            </div>
+            """, unsafe_allow_html=True)
 
     if has_generated:
         st.success("Simulation complete! Download your files below.")
@@ -6028,15 +6072,28 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
         )
 
         try:
-            # v1.2.0: Enhanced progress indicator with spinner during generation
+            # v1.2.0: Enhanced progress indicator with prominent visual display
+            # Clear the status placeholder and show progress bar
+            status_placeholder.empty()
+
+            # Show large, visible progress container
+            progress_container = st.container()
+            with progress_container:
+                st.markdown("""
+                <div style="text-align: center; padding: 25px; background: linear-gradient(135deg, #1e3a5f 0%, #2d5a87 100%); border-radius: 15px; margin: 15px 0;">
+                    <div style="font-size: 40px; margin-bottom: 10px;">🔄</div>
+                    <h3 style="color: white; margin: 0 0 8px 0;">Simulation In Progress</h3>
+                    <p style="color: #a0c4e8; font-size: 14px; margin: 0;">Generating realistic behavioral data for your experiment...</p>
+                </div>
+                """, unsafe_allow_html=True)
+
             progress_bar.progress(10, text="Initializing simulation engine...")
-            status_placeholder.info("🔄 **Simulation in progress** - Generating realistic behavioral data...")
 
             # Show animated spinner during the actual data generation
-            with st.spinner("🧠 Generating simulated responses... This may take a moment for large samples."):
-                progress_bar.progress(25, text="Generating participant responses...")
+            with st.spinner("🧠 Generating participant responses... Please wait."):
+                progress_bar.progress(25, text="Creating simulated participants...")
                 df, metadata = engine.generate()
-                progress_bar.progress(50, text="Responses generated successfully!")
+                progress_bar.progress(50, text="✅ Responses generated successfully!")
 
             # Increment internal usage counter (admin tracking)
             usage_stats = _increment_usage_counter()
