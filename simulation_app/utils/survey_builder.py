@@ -104,6 +104,20 @@ KNOWN_SCALES = {
     "mfq": {"items": 20, "min": 1, "max": 6, "label": "Moral Foundations Questionnaire"},
     "sense of belonging": {"items": 8, "min": 1, "max": 7, "label": "Sense of Belonging Scale"},
     "belonging": {"items": 8, "min": 1, "max": 7, "label": "Sense of Belonging Scale"},
+
+    # Additional validated instruments
+    "ces-d": {"items": 20, "min": 0, "max": 3, "label": "Center for Epidemiological Studies Depression (CES-D)"},
+    "cesd": {"items": 20, "min": 0, "max": 3, "label": "Center for Epidemiological Studies Depression (CES-D)"},
+    "system usability": {"items": 10, "min": 1, "max": 5, "label": "System Usability Scale (SUS)"},
+    "sus": {"items": 10, "min": 1, "max": 5, "label": "System Usability Scale (SUS)"},
+    "state-trait anxiety": {"items": 20, "min": 1, "max": 4, "label": "State-Trait Anxiety Inventory (STAI)"},
+    "stai": {"items": 20, "min": 1, "max": 4, "label": "State-Trait Anxiety Inventory (STAI)"},
+    "social dominance orientation": {"items": 16, "min": 1, "max": 7, "label": "Social Dominance Orientation (SDO)"},
+    "sdo": {"items": 16, "min": 1, "max": 7, "label": "Social Dominance Orientation (SDO)"},
+    "right-wing authoritarianism": {"items": 15, "min": 1, "max": 7, "label": "Right-Wing Authoritarianism (RWA)"},
+    "rwa": {"items": 15, "min": 1, "max": 7, "label": "Right-Wing Authoritarianism (RWA)"},
+    "ucla loneliness": {"items": 20, "min": 1, "max": 4, "label": "UCLA Loneliness Scale"},
+    "loneliness": {"items": 20, "min": 1, "max": 4, "label": "UCLA Loneliness Scale"},
 }
 
 # ─── Scale abbreviation aliases → canonical KNOWN_SCALES key ──────────────────
@@ -122,6 +136,13 @@ SCALE_ABBREVIATIONS: Dict[str, str] = {
     "rse": "rse",
     "nfc": "need for cognition",
     "mfq": "mfq",
+    "pss": "stress",
+    "cesd": "cesd",
+    "ces-d": "ces-d",
+    "sus": "sus",
+    "stai": "stai",
+    "sdo": "sdo",
+    "rwa": "rwa",
 }
 
 
@@ -381,6 +402,15 @@ class SurveyDescriptionParser:
                 ))
             return conditions, warnings
 
+        # ── Warn if non-empty input produced 0 or 1 condition ──
+        if not warnings:
+            n = len(conditions)
+            if n <= 1:
+                warnings.append(
+                    f"Only {n} condition detected from your input. "
+                    f"At least 2 are needed for an experiment."
+                )
+
         return conditions, warnings
 
     def parse_scales(self, text: str) -> List[ParsedScale]:
@@ -605,6 +635,7 @@ class SurveyDescriptionParser:
             "condition_visibility_map": {},
             "study_context": {
                 "domain": parsed.research_domain,
+                "study_domain": parsed.research_domain,  # Engine reads this key
                 "title": parsed.study_title,
                 "description": parsed.study_description,
                 "source": "conversational_builder",
@@ -779,7 +810,7 @@ class SurveyDescriptionParser:
             {
                 "title": "Brand Authenticity in Green Marketing",
                 "conditions": (
-                    "2x2 design: Brand Origin (local, global) x "
+                    "Brand Origin (local, global) and "
                     "Green Claim (present, absent)"
                 ),
                 "scales": (
@@ -830,25 +861,40 @@ class SurveyDescriptionParser:
         if factorial_match.group(3):
             dims.append(int(factorial_match.group(3)))
 
-        # Try to find factor descriptions near the factorial notation
-        # Pattern: "Factor (level1/level2)" or "Factor: level1, level2"
-        factor_patterns = [
-            r'(\w[\w\s]*?)\s*\(([^)]+)\)',
-            r'(\w[\w\s]*?)\s*:\s*([^,;]+(?:,\s*[^,;]+)+)',
-        ]
+        noise_words = {
+            'the', 'and', 'with', 'for', 'or', 'a', 'an', 'in', 'on',
+            'by', 'to', 'of', 'x', 'design', 'between', 'subjects',
+        }
 
+        # Try to find factor descriptions near the factorial notation
+        # Pattern: "Factor (level1, level2)" — strict parenthetical
         text_after = text[factorial_match.end():]
         text_before = text[:factorial_match.start()]
         search_text = f"{text_before} {text_after}"
 
-        for pattern in factor_patterns:
-            matches = re.findall(pattern, search_text, re.IGNORECASE)
-            for name, levels_str in matches:
-                name = name.strip()
-                if len(name) > 2 and name.lower() not in ('the', 'and', 'with', 'for'):
-                    levels = self._parse_list_items(levels_str)
-                    if len(levels) >= 2:
-                        factors.append({"name": name, "levels": levels})
+        # Use strict pattern: word(s) followed by parenthetical levels
+        paren_matches = re.findall(
+            r'([A-Z][\w\s]*?)\s*\(\s*([^)]+)\s*\)',
+            search_text
+        )
+        for name, levels_str in paren_matches:
+            name = name.strip().rstrip(':')
+            # Filter noise words and overly long captures
+            if (len(name) > 1 and len(name) < 40
+                    and name.lower() not in noise_words):
+                levels = self._parse_list_items(levels_str)
+                if len(levels) >= 2:
+                    factors.append({"name": name, "levels": levels})
+
+        # Only keep factors matching the expected number of dimensions
+        if len(factors) > len(dims):
+            factors = factors[:len(dims)]
+
+        # Verify level counts match expected dimensions
+        if len(factors) == len(dims):
+            valid = all(len(f["levels"]) == d for f, d in zip(factors, dims))
+            if not valid:
+                factors = factors[:len(dims)]  # Keep but don't enforce count
 
         # If we couldn't extract names, use generic Factor_1, Factor_2
         if len(factors) < len(dims):
@@ -862,17 +908,52 @@ class SurveyDescriptionParser:
         return factors
 
     def _cross_factors(self, factors: List[Dict[str, Any]]) -> List[str]:
-        """Generate crossed condition names from factors."""
+        """Generate crossed condition names from factors with factor name prefixes."""
         if not factors:
             return []
 
-        result = factors[0]["levels"][:]
+        # Use abbreviated factor names for cleaner labels
+        # e.g., "Brand Origin" → "BrandOrigin" prefix removed if levels are descriptive
+        result = []
+        for level in factors[0]["levels"]:
+            result.append(f"{level}")
+
         for factor in factors[1:]:
             new_result = []
             for existing in result:
                 for level in factor["levels"]:
                     new_result.append(f"{existing}_{level}")
             result = new_result
+
+        # If crossed names are ambiguous (e.g., "high_high"), prefix with factor names
+        if len(factors) >= 2:
+            all_levels = set()
+            for f in factors:
+                for lv in f["levels"]:
+                    all_levels.add(lv.lower())
+            # Check if levels overlap across factors
+            level_sets = [set(lv.lower() for lv in f["levels"]) for f in factors]
+            has_overlap = False
+            for i in range(len(level_sets)):
+                for j in range(i + 1, len(level_sets)):
+                    if level_sets[i] & level_sets[j]:
+                        has_overlap = True
+                        break
+
+            if has_overlap:
+                # Regenerate with factor name prefixes
+                result = []
+                for level in factors[0]["levels"]:
+                    short_name = factors[0]["name"].replace(" ", "")
+                    result.append(f"{short_name}_{level}")
+                for factor in factors[1:]:
+                    new_result = []
+                    short_name = factor["name"].replace(" ", "")
+                    for existing in result:
+                        for level in factor["levels"]:
+                            new_result.append(f"{existing}_{short_name}_{level}")
+                    result = new_result
+
         return result
 
     def _parse_list_items(self, text: str) -> List[str]:
@@ -885,7 +966,17 @@ class SurveyDescriptionParser:
 
         items = [item.strip().rstrip('.') for item in text.split(',')]
         items = [item for item in items if item and len(item) < 100]
-        return items
+
+        # Strip leading articles and trailing "group" from each item
+        cleaned: List[str] = []
+        for item in items:
+            # Remove leading articles
+            item = re.sub(r'^(?:the|a|an)\s+', '', item, flags=re.IGNORECASE).strip()
+            # Remove trailing "group" (e.g., "control group" → "control")
+            item = re.sub(r'\s+group$', '', item, flags=re.IGNORECASE).strip()
+            if item:
+                cleaned.append(item)
+        return cleaned
 
     def _split_scale_segments(self, text: str) -> List[str]:
         """Split text into segments, each describing one scale."""
@@ -1032,7 +1123,7 @@ class SurveyDescriptionParser:
             name_text = re.sub(r'\d+\s*[-–]?\s*point\s*', '', name_text, flags=re.IGNORECASE)
             name_text = re.sub(r'\(?\d+\s*[-–]?\s*items?\)?', '', name_text, flags=re.IGNORECASE)
             name_text = re.sub(r'(?:from\s+)?\d+\s*(?:to|-|–)\s*\d+', '', name_text)
-            name_text = re.sub(r'(?:likert|scale|slider|measure|rating)\s*', '', name_text, flags=re.IGNORECASE)
+            name_text = re.sub(r'(?:likert|scale|slider|measure|rating|binary|yes\s*/\s*no|yes\s+or\s+no)\s*', '', name_text, flags=re.IGNORECASE)
             # Remove anchor specs from name
             name_text = re.sub(r'\d+\s*=\s*[^,;]+', '', name_text)
             # Remove reverse-coded mention from name
@@ -1041,12 +1132,42 @@ class SurveyDescriptionParser:
             name_text = re.sub(r'[,;:()]', ' ', name_text)
             name_text = name_text.strip()
 
+            # Strip common noise words from beginning and end of name
+            _noise_words = {
+                'with', 'and', 'the', 'a', 'an', 'of', 'for', 'in', 'on',
+                'to', 'by', 'from', 'using', 'about', 'measuring', 'measured',
+                'we', 'our', 'my', 'is', 'are', 'was', 'were', 'that', 'this',
+                'it', 'its', 'or', 'but', 'yes', 'no',
+            }
             if name_text:
+                # Strip noise words from both ends iteratively
+                words = name_text.split()
+                while words and words[0].lower() in _noise_words:
+                    words.pop(0)
+                while words and words[-1].lower() in _noise_words:
+                    words.pop()
+                name_text = ' '.join(words).strip()
+
+            # Generate a descriptive fallback if name is empty or a noise word
+            if not name_text or name_text.lower() in _noise_words:
+                # Build a descriptive name from the scale_type and range
+                if scale_type == "binary":
+                    name = "Binary Response"
+                elif scale_type == "slider":
+                    name = f"Slider ({scale_min}-{scale_max})"
+                elif scale_type == "numeric":
+                    name = f"Numeric ({scale_min}-{scale_max})"
+                else:
+                    # Likert fallback: use N-Point Likert
+                    n_points = scale_max - scale_min + 1
+                    if n_points >= 2:
+                        name = f"{n_points}-Point Likert"
+                    else:
+                        name = f"Likert {scale_min}-{scale_max}"
+            else:
                 name = name_text.strip()
                 if len(name) > 60:
                     name = name[:57] + "..."
-            else:
-                name = "Scale"
 
             # Check against known scales for better defaults
             for known_name, known_spec in KNOWN_SCALES.items():
@@ -1080,39 +1201,77 @@ class SurveyDescriptionParser:
         """Try to match known scale names and abbreviations in the text."""
         scales = []
         text_lower = text.lower()
-        matched_keys: set = set()
+        # Track by canonical label to prevent duplicates when both abbreviation
+        # and full name match the same underlying instrument
+        matched_labels: set = set()
+        # Keys that should be skipped (aliases of already-matched instruments)
+        covered_keys: set = set()
 
         # First try abbreviations for precise matching
+        matched_canonical_keys: set = set()
         for abbrev, canonical_key in SCALE_ABBREVIATIONS.items():
             if re.search(r'(?<![a-zA-Z])' + re.escape(abbrev) + r'(?![a-zA-Z])', text_lower):
-                if canonical_key in KNOWN_SCALES and canonical_key not in matched_keys:
+                if canonical_key in KNOWN_SCALES:
                     spec = KNOWN_SCALES[canonical_key]
-                    var_name = self._to_variable_name(spec["label"])
+                    label = spec["label"]
+                    if label not in matched_labels:
+                        var_name = self._to_variable_name(label)
+                        scales.append(ParsedScale(
+                            name=label,
+                            variable_name=var_name,
+                            num_items=spec["items"],
+                            scale_min=spec["min"],
+                            scale_max=spec["max"],
+                            scale_type="likert",
+                            description=label,
+                        ))
+                        matched_labels.add(label)
+                        matched_canonical_keys.add(canonical_key)
+
+        # Find alias keys for matched abbreviations: entries with same
+        # (items, min, max) whose labels cross-reference each other
+        for key in list(matched_canonical_keys):
+            if key in KNOWN_SCALES:
+                spec = KNOWN_SCALES[key]
+                fingerprint = (spec["items"], spec["min"], spec["max"])
+                covered_keys.add(key)
+                for other_key, other_spec in KNOWN_SCALES.items():
+                    if other_key == key:
+                        continue
+                    other_fp = (other_spec["items"], other_spec["min"], other_spec["max"])
+                    if fingerprint == other_fp:
+                        # Same structure -- check if labels cross-reference
+                        if (key in other_spec["label"].lower()
+                                or other_key in spec["label"].lower()):
+                            covered_keys.add(other_key)
+
+        # Then try full known scale names, longest first so that shorter
+        # substring keys (e.g. "anxiety") are covered when a longer key
+        # (e.g. "generalized anxiety disorder") matches first
+        sorted_known = sorted(
+            KNOWN_SCALES.items(), key=lambda x: len(x[0]), reverse=True
+        )
+        for known_name, spec in sorted_known:
+            if known_name in text_lower:
+                # Mark shorter keys that are substrings of this matched key
+                # as covered, regardless of whether we add this scale
+                for other_name in KNOWN_SCALES:
+                    if other_name != known_name and other_name in known_name:
+                        covered_keys.add(other_name)
+
+                label = spec["label"]
+                if label not in matched_labels and known_name not in covered_keys:
+                    var_name = self._to_variable_name(known_name)
                     scales.append(ParsedScale(
-                        name=spec["label"],
+                        name=known_name.title(),
                         variable_name=var_name,
                         num_items=spec["items"],
                         scale_min=spec["min"],
                         scale_max=spec["max"],
                         scale_type="likert",
-                        description=spec["label"],
+                        description=label,
                     ))
-                    matched_keys.add(canonical_key)
-
-        # Then try full known scale names
-        for known_name, spec in KNOWN_SCALES.items():
-            if known_name in text_lower and known_name not in matched_keys:
-                var_name = self._to_variable_name(known_name)
-                scales.append(ParsedScale(
-                    name=known_name.title(),
-                    variable_name=var_name,
-                    num_items=spec["items"],
-                    scale_min=spec["min"],
-                    scale_max=spec["max"],
-                    scale_type="likert",
-                    description=spec["label"],
-                ))
-                matched_keys.add(known_name)
+                    matched_labels.add(label)
 
         return scales
 
