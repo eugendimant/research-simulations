@@ -52,8 +52,8 @@ import streamlit as st
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.0.0"
-BUILD_ID = "20260203-v100-official"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.1.0"
+BUILD_ID = "20260206-v110-enhanced"  # Change this to force cache invalidation
 
 def _verify_and_reload_utils():
     """Verify utils modules are at correct version, force reload if needed.
@@ -107,7 +107,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF"
-APP_VERSION = "1.0.0"  # v1.0.0 OFFICIAL: Enhanced scale detection, skip logic, difficulty levels, mediation, pre-reg checker, live preview
+APP_VERSION = "1.1.0"  # v1.1.0: Enhanced data quality, response uniqueness, topic detection, UI improvements, reports
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -2743,6 +2743,46 @@ STEP_DESCRIPTIONS = [
     "Generate simulated data package"
 ]
 
+# v1.1.0: Enhanced step guidance with specific help text
+STEP_HELP = {
+    0: {
+        "title": "Study Information",
+        "tips": [
+            "Use a descriptive title that captures your study's main purpose",
+            "Include key variables, manipulations, or hypotheses in your description",
+            "Sample size should be at least 30 per condition for reliable analyses",
+        ],
+        "common_issues": "Tip: The description helps the simulator understand your research domain.",
+    },
+    1: {
+        "title": "File Upload",
+        "tips": [
+            "Export your survey from Qualtrics as a .qsf file (Survey → Tools → Import/Export)",
+            "The QSF file contains all question structures, conditions, and flow logic",
+            "Optionally upload your preregistration PDF for consistency checking",
+        ],
+        "common_issues": "Tip: Make sure to export the survey, not just the data.",
+    },
+    2: {
+        "title": "Design Configuration",
+        "tips": [
+            "Review auto-detected conditions and scales for accuracy",
+            "Add any conditions that weren't detected from the survey flow",
+            "Verify scale ranges match your actual survey (e.g., 1-7 Likert)",
+        ],
+        "common_issues": "Tip: Hover over detected items to see their QSF question IDs.",
+    },
+    3: {
+        "title": "Data Generation",
+        "tips": [
+            "Final mode produces full-quality data; Pilot mode is faster for testing",
+            "The output includes CSV data, R analysis script, and instructor report",
+            "Generated data simulates realistic response patterns and demographics",
+        ],
+        "common_issues": "Tip: Use 'Pilot' mode first to verify your setup is correct.",
+    },
+}
+
 # User guidance messages for better UX
 UI_GUIDANCE = {
     "study_info_complete": "Study information complete. Proceed to upload your QSF file.",
@@ -2755,6 +2795,11 @@ UI_GUIDANCE = {
     "generation_ready": "All requirements met. Click 'Generate Simulation' to create your data package.",
     "no_conditions_detected": "No experimental conditions detected. Define conditions manually below.",
     "conditions_detected": "Experimental conditions detected from your survey flow.",
+    # v1.1.0: New validation messages
+    "sample_size_low": "Sample size is below recommended minimum. Consider at least 30 per condition.",
+    "sample_size_ok": "Sample size is adequate for reliable statistical analyses.",
+    "scales_detected": "Detected scales will generate realistic Likert-type responses.",
+    "open_ended_detected": "Open-ended questions will generate unique, topic-relevant responses.",
 }
 
 
