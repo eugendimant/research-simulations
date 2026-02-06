@@ -52,8 +52,8 @@ import streamlit as st
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.2.2"
-BUILD_ID = "20260206-v122-tab-ui"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.2.3"
+BUILD_ID = "20260206-v123-fix-simulation"  # Change this to force cache invalidation
 
 def _verify_and_reload_utils():
     """Verify utils modules are at correct version, force reload if needed.
@@ -107,7 +107,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF"
-APP_VERSION = "1.2.2"  # v1.2.2: New tab-based UI - no scroll issues, cleaner UX
+APP_VERSION = "1.2.3"  # v1.2.3: Fix simulation crash - persona_distribution, safe numeric conversions, report isolation
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -6143,6 +6143,70 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
                     for q in basic_open_ended
                 ]
 
+        # ========================================
+        # v1.2.3: PRE-FLIGHT VALIDATION
+        # Sanitize all inputs before passing to engine to prevent
+        # float()/int() crashes on unexpected types (dicts, None, etc.)
+        # ========================================
+        def _preflight_sanitize_scales(scales_list: list) -> list:
+            """Ensure all scale dicts have clean numeric values."""
+            sanitized = []
+            for s in scales_list:
+                if not isinstance(s, dict):
+                    continue
+                name = str(s.get("name", "")).strip()
+                if not name:
+                    continue
+                # Force all numeric fields to proper types
+                try:
+                    pts = int(s.get("scale_points", 7) if not isinstance(s.get("scale_points"), dict) else 7)
+                except (ValueError, TypeError):
+                    pts = 7
+                try:
+                    n_items = int(s.get("num_items", 5) if not isinstance(s.get("num_items"), dict) else 5)
+                except (ValueError, TypeError):
+                    n_items = 5
+                # Handle scale_min/scale_max that could be dicts
+                raw_min = s.get("scale_min", 1)
+                raw_max = s.get("scale_max", pts)
+                if isinstance(raw_min, dict):
+                    raw_min = raw_min.get("value", 1) if "value" in raw_min else 1
+                if isinstance(raw_max, dict):
+                    raw_max = raw_max.get("value", pts) if "value" in raw_max else pts
+                try:
+                    s_min = int(raw_min) if raw_min is not None else 1
+                except (ValueError, TypeError):
+                    s_min = 1
+                try:
+                    s_max = int(raw_max) if raw_max is not None else pts
+                except (ValueError, TypeError):
+                    s_max = pts
+
+                sanitized.append({
+                    **s,
+                    "name": name,
+                    "scale_points": max(2, min(1001, pts)),
+                    "num_items": max(1, n_items),
+                    "scale_min": max(0, s_min),
+                    "scale_max": max(1, s_max),
+                    "_validated": True,
+                })
+            return sanitized
+
+        clean_scales = _preflight_sanitize_scales(clean_scales)
+
+        # Sanitize demographics dict
+        if isinstance(demographics, dict):
+            for key in ("age_mean", "age_sd", "gender_quota"):
+                val = demographics.get(key)
+                if isinstance(val, dict):
+                    demographics[key] = val.get("value", {"age_mean": 35, "age_sd": 12, "gender_quota": 50}.get(key, 0))
+                elif val is not None:
+                    try:
+                        demographics[key] = float(val)
+                    except (ValueError, TypeError):
+                        demographics[key] = {"age_mean": 35, "age_sd": 12, "gender_quota": 50}.get(key, 0)
+
         engine = EnhancedSimulationEngine(
             study_title=title,
             study_description=desc,
@@ -6234,52 +6298,67 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
             julia_bytes = julia_script.encode("utf-8")
             spss_bytes = spss_script.encode("utf-8")
             stata_bytes = stata_script.encode("utf-8")
-            # Standard instructor report (included in download for students)
-            instructor_report = InstructorReportGenerator().generate_markdown_report(
-                df=df,
-                metadata=metadata,
-                schema_validation=schema_results,
-                prereg_text=st.session_state.get("prereg_text_sanitized", ""),
-                team_info={
+            # v1.2.3: Wrap report generation in try/except to prevent report errors
+            # from crashing the entire simulation. Data generation succeeded at this point.
+            try:
+                # Standard instructor report (included in download for students)
+                instructor_report = InstructorReportGenerator().generate_markdown_report(
+                    df=df,
+                    metadata=metadata,
+                    schema_validation=schema_results,
+                    prereg_text=st.session_state.get("prereg_text_sanitized", ""),
+                    team_info={
+                        "team_name": st.session_state.get("team_name", ""),
+                        "team_members": st.session_state.get("team_members_raw", ""),
+                    },
+                )
+                instructor_bytes = instructor_report.encode("utf-8")
+            except Exception as report_err:
+                instructor_report = f"# Study Summary\n\nReport generation encountered an error: {report_err}\n\nData was generated successfully."
+                instructor_bytes = instructor_report.encode("utf-8")
+
+            try:
+                # COMPREHENSIVE instructor report (for instructor email ONLY - not included in student download)
+                # This includes detailed statistical analysis, hypothesis testing, and recommendations
+                comprehensive_reporter = ComprehensiveInstructorReport()
+                team_info_dict = {
                     "team_name": st.session_state.get("team_name", ""),
                     "team_members": st.session_state.get("team_members_raw", ""),
-                },
-            )
-            instructor_bytes = instructor_report.encode("utf-8")
+                }
+                prereg_text_report = st.session_state.get("prereg_text_sanitized", "")
 
-            # COMPREHENSIVE instructor report (for instructor email ONLY - not included in student download)
-            # This includes detailed statistical analysis, hypothesis testing, and recommendations
-            comprehensive_reporter = ComprehensiveInstructorReport()
-            team_info_dict = {
-                "team_name": st.session_state.get("team_name", ""),
-                "team_members": st.session_state.get("team_members_raw", ""),
-            }
-            prereg_text_report = st.session_state.get("prereg_text_sanitized", "")
+                # Markdown version (text-based)
+                comprehensive_report = comprehensive_reporter.generate_comprehensive_report(
+                    df=df,
+                    metadata=metadata,
+                    schema_validation=schema_results,
+                    prereg_text=prereg_text_report,
+                    team_info=team_info_dict,
+                )
+                comprehensive_bytes = comprehensive_report.encode("utf-8")
 
-            # Markdown version (text-based)
-            comprehensive_report = comprehensive_reporter.generate_comprehensive_report(
-                df=df,
-                metadata=metadata,
-                schema_validation=schema_results,
-                prereg_text=prereg_text_report,
-                team_info=team_info_dict,
-            )
-            comprehensive_bytes = comprehensive_report.encode("utf-8")
-
-            # HTML version with visualizations and statistical tests
-            comprehensive_html = comprehensive_reporter.generate_html_report(
-                df=df,
-                metadata=metadata,
-                schema_validation=schema_results,
-                prereg_text=prereg_text_report,
-                team_info=team_info_dict,
-            )
-            comprehensive_html_bytes = comprehensive_html.encode("utf-8")
+                # HTML version with visualizations and statistical tests
+                comprehensive_html = comprehensive_reporter.generate_html_report(
+                    df=df,
+                    metadata=metadata,
+                    schema_validation=schema_results,
+                    prereg_text=prereg_text_report,
+                    team_info=team_info_dict,
+                )
+                comprehensive_html_bytes = comprehensive_html.encode("utf-8")
+            except Exception as comp_report_err:
+                comprehensive_report = f"# Comprehensive Report\n\nReport generation encountered an error: {comp_report_err}\n\nData was generated successfully."
+                comprehensive_bytes = comprehensive_report.encode("utf-8")
+                comprehensive_html = f"<html><body><h1>Report Error</h1><p>{comp_report_err}</p></body></html>"
+                comprehensive_html_bytes = comprehensive_html.encode("utf-8")
 
             # Generate HTML version of study summary (easy to open and well-formatted)
-            study_title = metadata.get('study_title', 'Study Summary')
-            instructor_html = _markdown_to_html(instructor_report, title=f"Study Summary: {study_title}")
-            instructor_html_bytes = instructor_html.encode("utf-8")
+            try:
+                study_title = metadata.get('study_title', 'Study Summary')
+                instructor_html = _markdown_to_html(instructor_report, title=f"Study Summary: {study_title}")
+                instructor_html_bytes = instructor_html.encode("utf-8")
+            except Exception:
+                instructor_html_bytes = f"<html><body><pre>{instructor_report}</pre></body></html>".encode("utf-8")
 
             files = {
                 "Simulated_Data.csv": csv_bytes,
@@ -6427,9 +6506,22 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
             st.session_state["is_generating"] = False
             st.rerun()  # Refresh to show download section
         except Exception as e:
+            import traceback as _tb
             progress_bar.progress(100, text="Simulation failed.")
             status_placeholder.error("Simulation failed.")
+            # v1.2.3: Enhanced error message with traceback for debugging
+            error_tb = _tb.format_exc()
             st.error(f"Simulation failed: {e}")
+            with st.expander("Error details (for debugging)", expanded=False):
+                st.code(error_tb, language="python")
+                # Show input summary for debugging
+                st.markdown("**Input Summary:**")
+                st.markdown(f"- Scales: {len(clean_scales)} configured")
+                st.markdown(f"- Conditions: {inferred.get('conditions', [])}")
+                st.markdown(f"- Sample size: {N}")
+                if clean_scales:
+                    for i, s in enumerate(clean_scales[:5]):
+                        st.markdown(f"  - Scale {i+1}: {s.get('name', '?')} (items={s.get('num_items', '?')}, pts={s.get('scale_points', '?')}, min={s.get('scale_min', '?')}, max={s.get('scale_max', '?')})")
             st.session_state["is_generating"] = False
             st.session_state["generation_requested"] = False
             # Don't rerun on error - show error message to user

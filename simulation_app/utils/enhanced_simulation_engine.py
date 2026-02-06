@@ -209,7 +209,7 @@ Richard, F. D., et al. (2003). One hundred years of social psychology. RGP.
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple, Set
+from typing import Any, Dict, List, Optional, Tuple, Set, Union
 
 import hashlib
 import random
@@ -247,6 +247,42 @@ def _stable_int_hash(s: str) -> int:
     if not s:
         return 0
     return int(hashlib.md5(s.encode("utf-8")).hexdigest()[:8], 16)
+
+
+def _safe_numeric(value: Any, default: float = 0.0, as_int: bool = False) -> Union[float, int]:
+    """Safely convert any value to a numeric type, handling dicts, None, NaN, etc.
+
+    v1.2.3: Added as a universal safe conversion utility to prevent float()/int()
+    crashes on unexpected types (dicts, lists, objects).
+
+    Args:
+        value: The value to convert
+        default: Default value if conversion fails
+        as_int: If True, return int instead of float
+
+    Returns:
+        Numeric value (float or int depending on as_int)
+    """
+    if value is None:
+        return int(default) if as_int else default
+    if isinstance(value, (int, float)):
+        if isinstance(value, float) and (np.isnan(value) or np.isinf(value)):
+            return int(default) if as_int else default
+        return int(value) if as_int else float(value)
+    if isinstance(value, dict):
+        for key in ('value', 'proportion', 'mean', 'base_mean', 'count'):
+            if key in value:
+                try:
+                    v = float(value[key])
+                    return int(v) if as_int else v
+                except (ValueError, TypeError):
+                    pass
+        return int(default) if as_int else default
+    try:
+        v = float(value)
+        return int(v) if as_int else v
+    except (ValueError, TypeError):
+        return int(default) if as_int else default
 
 
 def _safe_trait_value(value: Any, default: float = 0.5) -> float:
@@ -322,18 +358,19 @@ def _normalize_scales(scales: Optional[List[Any]]) -> List[Dict[str, Any]]:
                 continue
 
             # If already validated by app.py, preserve all values exactly
+            # v1.2.3: Use _safe_numeric to ensure scale_min/scale_max are always ints
             if scale.get("_validated"):
-                pts = int(scale["scale_points"]) if scale.get("scale_points") else 7
+                pts = _safe_numeric(scale.get("scale_points"), default=7, as_int=True)
                 normalized.append({
                     "name": name,
                     "variable_name": str(scale.get("variable_name", name)),
-                    "num_items": int(scale["num_items"]),
+                    "num_items": _safe_numeric(scale.get("num_items"), default=5, as_int=True),
                     "scale_points": pts,
                     "reverse_items": scale.get("reverse_items", []) or [],
                     "_validated": True,
-                    # Preserve scale_min/scale_max for accurate simulation
-                    "scale_min": scale.get("scale_min", 1),
-                    "scale_max": scale.get("scale_max", pts),
+                    # v1.2.3: Force scale_min/scale_max to ints (prevents dict leakage)
+                    "scale_min": _safe_numeric(scale.get("scale_min", 1), default=1, as_int=True),
+                    "scale_max": _safe_numeric(scale.get("scale_max", pts), default=pts, as_int=True),
                     "item_names": scale.get("item_names", []),
                 })
                 continue
@@ -369,9 +406,9 @@ def _normalize_scales(scales: Optional[List[Any]]) -> List[Dict[str, Any]]:
                     "scale_points": pts,
                     "reverse_items": scale.get("reverse_items", []) or [],
                     "_validated": True,
-                    # Preserve scale_min/scale_max for accurate simulation
-                    "scale_min": scale.get("scale_min", 1),
-                    "scale_max": scale.get("scale_max", pts),
+                    # v1.2.3: Force scale_min/scale_max to ints (prevents dict leakage)
+                    "scale_min": _safe_numeric(scale.get("scale_min", 1), default=1, as_int=True),
+                    "scale_max": _safe_numeric(scale.get("scale_max", pts), default=pts, as_int=True),
                     "item_names": scale.get("item_names", []),
                 }
             )
@@ -4147,12 +4184,12 @@ class EnhancedSimulationEngine:
     def _generate_demographics(self, n: int) -> pd.DataFrame:
         rng = np.random.RandomState(self.seed + 1000)
 
-        age_mean = float(self.demographics.get("age_mean", 35))
-        age_sd = float(self.demographics.get("age_sd", 12))
+        age_mean = _safe_numeric(self.demographics.get("age_mean", 35), default=35.0)
+        age_sd = _safe_numeric(self.demographics.get("age_sd", 12), default=12.0)
         ages = rng.normal(age_mean, age_sd, int(n))
         ages = np.clip(ages, 18, 70).astype(int)
 
-        male_pct = float(self.demographics.get("gender_quota", 50)) / 100.0
+        male_pct = _safe_numeric(self.demographics.get("gender_quota", 50), default=50.0) / 100.0
         male_pct = float(np.clip(male_pct, 0.0, 1.0))
 
         female_pct = (1.0 - male_pct) * 0.96
@@ -4456,8 +4493,8 @@ class EnhancedSimulationEngine:
         for var in self.additional_vars:
             var_name_raw = str(var.get("name", "Variable")).strip() or "Variable"
             var_name = var_name_raw.replace(" ", "_")
-            var_min = int(var.get("min", 0))
-            var_max = int(var.get("max", 10))
+            var_min = _safe_numeric(var.get("min", 0), default=0, as_int=True)
+            var_max = _safe_numeric(var.get("max", 10), default=10, as_int=True)
             # SAFETY: Ensure min < max
             if var_max <= var_min:
                 var_max = var_min + 1
@@ -4771,9 +4808,9 @@ class EnhancedSimulationEngine:
         # ===== CHECK 1: Verify all expected scale columns exist =====
         for scale in self.scales:
             scale_name = str(scale.get("name", "Scale")).strip().replace(" ", "_")
-            scale_points = int(scale.get("scale_points", 7))
+            scale_points = _safe_numeric(scale.get("scale_points", 7), default=7, as_int=True)
             scale_points = max(2, min(1001, scale_points))
-            num_items = int(scale.get("num_items", 5))
+            num_items = _safe_numeric(scale.get("num_items", 5), default=5, as_int=True)
 
             for item_num in range(1, num_items + 1):
                 col_name = f"{scale_name}_{item_num}"
@@ -4831,8 +4868,8 @@ class EnhancedSimulationEngine:
         # ===== CHECK 3: Additional variable bounds =====
         for var in self.additional_vars:
             var_name = str(var.get("name", "Variable")).strip().replace(" ", "_")
-            var_min = int(var.get("min", 0))
-            var_max = int(var.get("max", 10))
+            var_min = _safe_numeric(var.get("min", 0), default=0, as_int=True)
+            var_max = _safe_numeric(var.get("max", 10), default=10, as_int=True)
             if var_max <= var_min:
                 var_max = var_min + 1
             if var_name not in df.columns:
@@ -4960,7 +4997,7 @@ class EnhancedSimulationEngine:
         scale_cols = []
         for scale in self.scales:
             scale_name = str(scale.get("name", "Scale")).replace(" ", "_")
-            num_items = int(scale.get("num_items", 5))
+            num_items = _safe_numeric(scale.get("num_items", 5), default=5, as_int=True)
             for item_num in range(1, num_items + 1):
                 col_name = f"{scale_name}_{item_num}"
                 if col_name in df.columns:
@@ -5188,8 +5225,8 @@ class EnhancedSimulationEngine:
         for scale in self.scales:
             scale_name_raw = str(scale.get("name", "Scale")).strip() or "Scale"
             scale_name = scale_name_raw.replace(" ", "_")
-            num_items = int(scale.get("num_items", 5))
-            scale_points = int(scale.get("scale_points", 7))
+            num_items = _safe_numeric(scale.get("num_items", 5), default=5, as_int=True)
+            scale_points = _safe_numeric(scale.get("scale_points", 7), default=7, as_int=True)
             reverse_items = _safe_parse_reverse_items(scale.get("reverse_items", []))
 
             items = [f"{scale_name}_{i}" for i in range(1, num_items + 1)]
@@ -5259,8 +5296,8 @@ class EnhancedSimulationEngine:
         for scale in self.scales:
             scale_name_raw = str(scale.get("name", "Scale")).strip() or "Scale"
             scale_name = scale_name_raw.replace(" ", "_")
-            num_items = int(scale.get("num_items", 5))
-            scale_points = int(scale.get("scale_points", 7))
+            num_items = _safe_numeric(scale.get("num_items", 5), default=5, as_int=True)
+            scale_points = _safe_numeric(scale.get("scale_points", 7), default=7, as_int=True)
             reverse_items = _safe_parse_reverse_items(scale.get("reverse_items", []))
 
             items = [f"{scale_name}_{i}" for i in range(1, num_items + 1)]
@@ -5331,8 +5368,8 @@ class EnhancedSimulationEngine:
         for scale in self.scales:
             scale_name_raw = str(scale.get("name", "Scale")).strip() or "Scale"
             scale_name = scale_name_raw.replace(" ", "_")
-            num_items = int(scale.get("num_items", 5))
-            scale_points = int(scale.get("scale_points", 7))
+            num_items = _safe_numeric(scale.get("num_items", 5), default=5, as_int=True)
+            scale_points = _safe_numeric(scale.get("scale_points", 7), default=7, as_int=True)
             reverse_items = _safe_parse_reverse_items(scale.get("reverse_items", []))
 
             items = [f"{scale_name}_{i}" for i in range(1, num_items + 1)]
@@ -5405,8 +5442,8 @@ class EnhancedSimulationEngine:
         for scale in self.scales:
             scale_name_raw = str(scale.get("name", "Scale")).strip() or "Scale"
             scale_name = scale_name_raw.replace(" ", "_")
-            num_items = int(scale.get("num_items", 5))
-            scale_points = int(scale.get("scale_points", 7))
+            num_items = _safe_numeric(scale.get("num_items", 5), default=5, as_int=True)
+            scale_points = _safe_numeric(scale.get("scale_points", 7), default=7, as_int=True)
             reverse_items = _safe_parse_reverse_items(scale.get("reverse_items", []))
 
             items = [f"{scale_name}_{i}" for i in range(1, num_items + 1)]
@@ -5481,8 +5518,8 @@ class EnhancedSimulationEngine:
         for scale in self.scales:
             scale_name_raw = str(scale.get("name", "Scale")).strip() or "Scale"
             scale_name = scale_name_raw.replace(" ", "_").lower()
-            num_items = int(scale.get("num_items", 5))
-            scale_points = int(scale.get("scale_points", 7))
+            num_items = _safe_numeric(scale.get("num_items", 5), default=5, as_int=True)
+            scale_points = _safe_numeric(scale.get("scale_points", 7), default=7, as_int=True)
             reverse_items = _safe_parse_reverse_items(scale.get("reverse_items", []))
 
             items = [f"{scale_name}_{i}" for i in range(1, num_items + 1)]
