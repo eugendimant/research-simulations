@@ -4,7 +4,7 @@ from __future__ import annotations
 Enhanced Simulation Engine for Behavioral Experiment Simulation Tool
 =============================================================================
 
-Version 1.2.1 - Fixed float/dict error with safe trait value extraction
+Version 1.2.2 - New tab-based UI + safe trait value extraction
 
 Advanced simulation engine with:
 - Theory-grounded persona library integration (7 persona dimensions)
@@ -45,7 +45,7 @@ This module is designed to run inside a `utils/` package (i.e., imported as
 """
 
 # Version identifier to help track deployed code
-__version__ = "1.2.1"  # Fixed float/dict error with safe trait value extraction
+__version__ = "1.2.2"  # New tab-based UI + safe trait value extraction
 
 # =============================================================================
 # SCIENTIFIC FOUNDATIONS FOR SIMULATION
