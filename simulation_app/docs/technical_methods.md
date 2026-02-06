@@ -1,6 +1,6 @@
 # Technical Methods Documentation
 
-**Behavioral Experiment Simulation Tool v1.0.0**
+**Behavioral Experiment Simulation Tool v1.3.0**
 
 **Proprietary Software** | Dr. Eugen Dimant, University of Pennsylvania
 
@@ -210,7 +210,48 @@ MD5 hashing (rather than Python's native `hash()`) ensures identical results acr
 
 ---
 
-## 8. References
+## 8. Natural Language Design Parser (v1.3)
+
+### 8.1 Condition Detection Pipeline
+
+The conversational builder parses experiment descriptions using a multi-pattern matching approach:
+
+1. **Labeled parenthetical factorial**: `N (Factor: level vs level) × N (Factor: level vs level)` — Matches academic-style condition descriptions. Factors are crossed to produce all N×M conditions.
+
+2. **Explicit N×M factorial**: `2x2`, `3×2` — Detects dimensions from multiplication notation, then extracts factor names and levels from surrounding context.
+
+3. **Simple enumeration**: `"Condition 1 vs Condition 2 vs Condition 3"` — Splits on "vs", commas, numbered lists, or semicolons.
+
+4. **Trailing noise stripping**: Removes non-condition text like "between-subjects, random assignment" before parsing.
+
+### 8.2 Scale Parsing Pipeline
+
+Scale descriptions are split into segments using prioritized delimiters:
+
+1. Paragraph breaks (double newlines) — most reliable for multi-paragraph input
+2. Numbered items (`1.`, `2)`)
+3. Bullet points (`-`, `•`)
+4. Colon-prefixed lines (`Name:`)
+5. Top-level semicolons (parenthesis-aware to avoid splitting inside descriptions)
+6. Individual lines
+
+Each segment is parsed for: scale name (from `Name (Abbrev): ...` pattern), number of items, scale range (N-point, min-max), type (likert/slider/numeric/binary), anchors, and reverse-coded items. Known validated instruments (BFI-10, PANAS, GAD-7, PHQ-9, etc.) are matched by abbreviation and auto-populated with canonical parameters.
+
+### 8.3 Design Validation
+
+The parser validates the complete design against:
+- Minimum 2 conditions
+- At least 1 scale
+- Valid scale ranges (min < max)
+- No duplicate condition or scale names
+- Reasonable sample size (≥10)
+- Per-cell sample adequacy
+- Total survey length (warning >100 items)
+- Variable name uniqueness across scales and open-ended questions
+
+---
+
+## 9. References
 
 Billiet, J. B., & McClendon, M. J. (2000). Modeling acquiescence in measurement models. *Structural Equation Modeling, 7*(4), 608-628.
 

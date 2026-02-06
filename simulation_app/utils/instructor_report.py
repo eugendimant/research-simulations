@@ -6,7 +6,7 @@ Generates comprehensive instructor-facing reports for student simulations.
 """
 
 # Version identifier to help track deployed code
-__version__ = "1.3.0"  # v1.3.0: Parser fixes, Generate tab fix, scale/condition parsing, UX improvements
+__version__ = "1.3.1"  # v1.3.1: Comprehensive instructor report, methods docs update, e2e tests
 
 from dataclasses import dataclass
 from datetime import datetime
@@ -4018,29 +4018,43 @@ class ComprehensiveInstructorReport:
         # CSS styles for the report
         css = """
         <style>
-            body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 1000px; margin: 0 auto; padding: 20px; background: #f8f9fa; }
-            .report-container { background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-            h1 { color: #2c3e50; border-bottom: 3px solid #3498db; padding-bottom: 10px; }
-            h2 { color: #34495e; border-bottom: 2px solid #ecf0f1; padding-bottom: 8px; margin-top: 30px; }
-            h3 { color: #7f8c8d; }
-            table { border-collapse: collapse; width: 100%; margin: 15px 0; }
-            th, td { border: 1px solid #ddd; padding: 10px; text-align: left; }
-            th { background-color: #3498db; color: white; }
-            tr:nth-child(even) { background-color: #f2f2f2; }
-            .stat-box { background: #e8f4f8; padding: 15px; border-radius: 5px; margin: 10px 0; border-left: 4px solid #3498db; }
-            .warning-box { background: #fff3cd; padding: 15px; border-radius: 5px; margin: 10px 0; border-left: 4px solid #ffc107; }
-            .success-box { background: #d4edda; padding: 15px; border-radius: 5px; margin: 10px 0; border-left: 4px solid #28a745; }
-            .error-box { background: #f8d7da; padding: 15px; border-radius: 5px; margin: 10px 0; border-left: 4px solid #dc3545; }
+            @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+            body { font-family: 'Inter', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 1100px; margin: 0 auto; padding: 20px; background: #f0f2f5; color: #1a1a2e; line-height: 1.6; }
+            .report-container { background: white; padding: 40px 45px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); }
+            h1 { color: #1a1a2e; border-bottom: 3px solid #2563eb; padding-bottom: 12px; font-weight: 700; font-size: 1.8em; }
+            h2 { color: #1e3a5f; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px; margin-top: 35px; font-weight: 600; font-size: 1.4em; }
+            h3 { color: #475569; font-weight: 600; font-size: 1.15em; margin-top: 20px; }
+            h4 { color: #64748b; font-weight: 500; font-size: 1.05em; margin-top: 15px; }
+            p { margin: 8px 0; }
+            table { border-collapse: collapse; width: 100%; margin: 15px 0; font-size: 0.92em; }
+            th, td { border: 1px solid #e2e8f0; padding: 10px 12px; text-align: left; }
+            th { background-color: #1e3a5f; color: white; font-weight: 500; letter-spacing: 0.02em; }
+            tr:nth-child(even) { background-color: #f8fafc; }
+            tr:hover { background-color: #eef2ff; }
+            .stat-box { background: #f0f7ff; padding: 18px 20px; border-radius: 8px; margin: 12px 0; border-left: 4px solid #2563eb; }
+            .warning-box { background: #fffbeb; padding: 18px 20px; border-radius: 8px; margin: 12px 0; border-left: 4px solid #f59e0b; }
+            .success-box { background: #f0fdf4; padding: 18px 20px; border-radius: 8px; margin: 12px 0; border-left: 4px solid #22c55e; }
+            .error-box { background: #fef2f2; padding: 18px 20px; border-radius: 8px; margin: 12px 0; border-left: 4px solid #ef4444; }
             .chart-container { text-align: center; margin: 20px 0; }
-            .chart-container img { max-width: 100%; border: 1px solid #ddd; border-radius: 5px; }
-            .confidential { background: #dc3545; color: white; padding: 5px 15px; border-radius: 3px; display: inline-block; margin-bottom: 20px; }
-            .metric-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin: 20px 0; }
-            .metric-card { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; border-radius: 8px; text-align: center; }
-            .metric-value { font-size: 2em; font-weight: bold; }
-            .metric-label { font-size: 0.9em; opacity: 0.9; }
-            code { background: #f4f4f4; padding: 2px 6px; border-radius: 3px; }
-            .sig { color: #28a745; font-weight: bold; }
-            .nonsig { color: #6c757d; }
+            .chart-container img { max-width: 100%; border: 1px solid #e2e8f0; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+            .confidential { background: #dc2626; color: white; padding: 6px 18px; border-radius: 4px; display: inline-block; margin-bottom: 20px; font-weight: 600; letter-spacing: 0.05em; font-size: 0.85em; }
+            .metric-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 15px; margin: 20px 0; }
+            .metric-card { background: linear-gradient(135deg, #1e3a5f 0%, #2563eb 100%); color: white; padding: 22px 16px; border-radius: 10px; text-align: center; box-shadow: 0 3px 12px rgba(37,99,235,0.15); }
+            .metric-value { font-size: 2em; font-weight: 700; letter-spacing: -0.02em; }
+            .metric-label { font-size: 0.85em; opacity: 0.9; margin-top: 4px; font-weight: 400; }
+            code { background: #f1f5f9; padding: 2px 6px; border-radius: 4px; font-size: 0.9em; color: #475569; }
+            .sig { color: #16a34a; font-weight: 600; }
+            .nonsig { color: #94a3b8; }
+            ol, ul { padding-left: 24px; }
+            li { margin-bottom: 4px; }
+            em { color: #64748b; }
+            @media print {
+                body { background: white; padding: 0; }
+                .report-container { box-shadow: none; padding: 20px; }
+                .metric-card { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+                .confidential { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+                th { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+            }
         </style>
         """
 
@@ -4058,8 +4072,9 @@ class ComprehensiveInstructorReport:
         ]
 
         # Header
-        html_parts.append("<span class='confidential'>CONFIDENTIAL - INSTRUCTOR ONLY</span>")
-        html_parts.append(f"<h1>Comprehensive Statistical Report</h1>")
+        html_parts.append("<span class='confidential'>CONFIDENTIAL &mdash; INSTRUCTOR ONLY</span>")
+        html_parts.append("<h1>Comprehensive Simulation &amp; Statistical Report</h1>")
+        html_parts.append(f"<p style='color:#64748b;margin-top:-8px;font-size:1.05em;'>Behavioral Experiment Simulation Tool v{__version__}</p>")
 
         # =============================================================
         # STUDY OVERVIEW SECTION (All first page info)
@@ -4139,15 +4154,58 @@ class ComprehensiveInstructorReport:
 
         html_parts.append("</div>")
 
+        # ── Study Context / Domain ─────────────────────────────────────
+        study_context = metadata.get("study_context", {})
+        detected_domains = metadata.get("detected_domains", [])
+        if study_context or detected_domains:
+            html_parts.append("<div class='stat-box'>")
+            html_parts.append("<h3>Research Context</h3>")
+            _domain = study_context.get("study_domain", study_context.get("domain", ""))
+            if _domain:
+                html_parts.append(f"<p><strong>Research Domain:</strong> {_domain.title()}</p>")
+            if detected_domains:
+                html_parts.append(f"<p><strong>Detected Topic Areas:</strong> {', '.join(detected_domains[:10])}</p>")
+            _source = study_context.get("source", "")
+            if _source:
+                _source_label = "Conversational Builder" if "builder" in _source else "QSF Upload"
+                html_parts.append(f"<p><strong>Input Method:</strong> {_source_label}</p>")
+            _participant_chars = study_context.get("participant_characteristics", "")
+            if _participant_chars:
+                html_parts.append(f"<p><strong>Target Participants:</strong> {_participant_chars}</p>")
+            _persona_domains = study_context.get("persona_domains", [])
+            if _persona_domains:
+                html_parts.append(f"<p><strong>Persona Domains Activated:</strong> {', '.join(d.replace('_', ' ').title() for d in _persona_domains)}</p>")
+            html_parts.append("</div>")
+
+        # Open-ended questions summary
+        oe_questions = metadata.get("open_ended_questions", [])
+        if oe_questions:
+            html_parts.append("<div class='stat-box'>")
+            html_parts.append(f"<h3>Open-Ended Questions ({len(oe_questions)})</h3>")
+            html_parts.append("<ul>")
+            for oe in oe_questions:
+                q_text = oe.get("question_text", oe.get("name", "")) if isinstance(oe, dict) else str(oe)
+                var_name = oe.get("variable_name", "") if isinstance(oe, dict) else ""
+                if q_text:
+                    _var_tag = f" <code>({var_name})</code>" if var_name else ""
+                    html_parts.append(f"<li>{q_text[:120]}{_var_tag}</li>")
+            html_parts.append("</ul>")
+            html_parts.append("</div>")
+
         # Generation Details
+        html_parts.append("<div class='stat-box' style='background:#f0f0f0;'>")
+        html_parts.append("<h3>Generation Details</h3>")
         html_parts.append(f"<p><strong>Generated:</strong> {metadata.get('generation_timestamp', datetime.now().isoformat())}</p>")
         html_parts.append(f"<p><strong>Run ID:</strong> <code>{metadata.get('run_id', 'N/A')}</code></p>")
         html_parts.append(f"<p><strong>Mode:</strong> {metadata.get('simulation_mode', 'pilot').title()}</p>")
+        html_parts.append(f"<p><strong>Seed:</strong> <code>{metadata.get('seed', 'N/A')}</code></p>")
+        html_parts.append(f"<p><strong>App Version:</strong> {__version__}</p>")
 
         # Internal usage counter (for instructor tracking)
         usage_stats = metadata.get('usage_stats', {})
         total_simulations = usage_stats.get('total_simulations', 'N/A')
         html_parts.append(f"<p><strong>Total Simulations Run (all time):</strong> {total_simulations}</p>")
+        html_parts.append("</div>")
 
         # Summary metrics
         n_total = len(df)
@@ -4694,7 +4752,157 @@ class ComprehensiveInstructorReport:
 
         # Chi-squared test for categorical associations
         if "CONDITION" in df_clean.columns and "Gender" in df_clean.columns:
-            html_parts.append("<h2>3. Categorical Analysis</h2>")
+            html_parts.append("<h2>3. Persona Analysis & Response Styles</h2>")
+
+            # ── Persona Distribution ──────────────────────────────────────
+            persona_dist_raw = metadata.get("persona_distribution", {}) or {}
+            persona_dist = _extract_persona_proportions(persona_dist_raw)
+            personas_used = metadata.get("personas_used", [])
+
+            if persona_dist:
+                html_parts.append("<div class='stat-box'>")
+                html_parts.append("<h3>Simulated Participant Personas</h3>")
+                html_parts.append("<p>Each simulated participant was assigned a response style persona based on decades of survey methodology research. "
+                                  "These personas reflect patterns observed in real survey respondents, producing data with realistic "
+                                  "statistical properties (varying attention, response styles, and biases).</p>")
+                html_parts.append("</div>")
+
+                # Build persona info lookup
+                _persona_info = {
+                    "engaged responder": ("Thoughtful, attentive participant", "High attention, full scale range, consistent with attitudes"),
+                    "engaged": ("Thoughtful, attentive participant", "High attention, full scale range, consistent with attitudes"),
+                    "satisficer": ("Minimally effortful responder", "Gravitates to middle options, faster completion, may skip reading"),
+                    "extreme responder": ("Uses scale endpoints frequently", "Strong opinions, uses 1s and 7s, high within-scale variance"),
+                    "extreme": ("Uses scale endpoints frequently", "Strong opinions, uses 1s and 7s, high within-scale variance"),
+                    "acquiescent": ("Agreement bias responder", "Tends to agree regardless of content, inflated positive responses"),
+                    "skeptic": ("Disagreement bias responder", "Tends to disagree or rate negatively, lower mean responses"),
+                    "random": ("Inconsistent, inattentive responder", "High variance, fails attention checks, no clear pattern"),
+                    "careless": ("Pattern-based responder", "Straight-lining, very fast completion, flagged for exclusion"),
+                    "careful responder": ("Highly attentive, methodical", "Longer completion, passes all attention checks, low variance"),
+                    "moderate responder": ("Avoids extreme responses", "Uses middle portion of scale, rarely selects endpoints"),
+                }
+
+                html_parts.append("<h4>Persona Distribution</h4>")
+                html_parts.append("<table>")
+                html_parts.append("<tr><th>Persona Type</th><th>Description</th><th>Behavioral Pattern</th><th>Share</th><th>~Count</th></tr>")
+                _n_total_pers = metadata.get("sample_size", n_total)
+                for persona, share in sorted(persona_dist.items(), key=lambda x: -_safe_float(x[1])):
+                    share_f = _safe_float(share)
+                    pct = share_f * 100 if share_f <= 1 else share_f
+                    share_val = share_f if share_f <= 1 else share_f / 100
+                    count = int(round(_n_total_pers * share_val))
+                    pkey = persona.lower()
+                    info = _persona_info.get(pkey, ("Standard response pattern", "Typical survey behavior"))
+                    html_parts.append(
+                        f"<tr><td><strong>{persona.title()}</strong></td>"
+                        f"<td>{info[0]}</td>"
+                        f"<td><em>{info[1]}</em></td>"
+                        f"<td>{pct:.1f}%</td>"
+                        f"<td>{count}</td></tr>"
+                    )
+                html_parts.append("</table>")
+
+                # Scientific references for personas
+                html_parts.append("<div class='stat-box' style='font-size:0.9em;'>")
+                html_parts.append("<strong>Scientific Basis:</strong> Engaged responders based on Krosnick's (1991) 'optimizers'; "
+                                  "satisficers per Krosnick (1991); extreme responders per Greenleaf (1992); "
+                                  "acquiescent responders per Billiet &amp; McClendon (2000); "
+                                  "careless responders per Meade &amp; Craig (2012).")
+                html_parts.append("</div>")
+
+            # ── Persona by Condition ──────────────────────────────────────
+            persona_by_cond = metadata.get("persona_by_condition", {})
+            pbc_counts = persona_by_cond.get("counts", {}) if isinstance(persona_by_cond, dict) else {}
+            if pbc_counts and conditions:
+                html_parts.append("<h4>Persona Distribution by Condition</h4>")
+                html_parts.append("<p>This table shows how personas were distributed across experimental conditions, "
+                                  "verifying that response style composition is balanced across groups.</p>")
+
+                # Collect all persona types across conditions
+                all_ptypes = set()
+                for cond_dict in pbc_counts.values():
+                    if isinstance(cond_dict, dict):
+                        all_ptypes.update(cond_dict.keys())
+                all_ptypes_sorted = sorted(all_ptypes)
+
+                if all_ptypes_sorted:
+                    html_parts.append("<table>")
+                    html_parts.append("<tr><th>Persona</th>")
+                    for cond in conditions:
+                        clean_c = _clean_condition_name(cond)
+                        html_parts.append(f"<th>{clean_c}</th>")
+                    html_parts.append("</tr>")
+
+                    for ptype in all_ptypes_sorted:
+                        html_parts.append(f"<tr><td><strong>{ptype.title()}</strong></td>")
+                        for cond in conditions:
+                            cond_dict = pbc_counts.get(cond, {})
+                            count = cond_dict.get(ptype, 0) if isinstance(cond_dict, dict) else 0
+                            html_parts.append(f"<td>{count}</td>")
+                        html_parts.append("</tr>")
+                    html_parts.append("</table>")
+
+            # ── Trait Averages (Overall) ──────────────────────────────────
+            trait_avg_overall = metadata.get("trait_averages_overall", {})
+            if trait_avg_overall and isinstance(trait_avg_overall, dict):
+                html_parts.append("<h4>Simulated Personality Profile (Sample Averages)</h4>")
+                html_parts.append("<p>Average trait values across all simulated participants, derived from persona assignments.</p>")
+                html_parts.append("<div class='metric-grid'>")
+                for trait, val in sorted(trait_avg_overall.items()):
+                    trait_display = trait.replace("_", " ").title()
+                    html_parts.append(
+                        f"<div class='metric-card' style='background:linear-gradient(135deg, #43e97b 0%, #38f9d7 100%); color: #1a1a2e;'>"
+                        f"<div class='metric-value'>{val:.2f}</div>"
+                        f"<div class='metric-label'>{trait_display}</div></div>"
+                    )
+                html_parts.append("</div>")
+
+            # ── Trait Averages by Condition ────────────────────────────────
+            trait_avg_by_cond = metadata.get("trait_averages_by_condition", {})
+            if trait_avg_by_cond and isinstance(trait_avg_by_cond, dict) and conditions:
+                # Check if any condition has trait data
+                has_traits = any(
+                    isinstance(v, dict) and len(v) > 0
+                    for v in trait_avg_by_cond.values()
+                )
+                if has_traits:
+                    html_parts.append("<h4>Personality Profiles by Condition</h4>")
+                    html_parts.append("<p>Average trait values per condition. Balanced profiles across conditions indicates "
+                                      "that persona assignment did not confound the experimental manipulation.</p>")
+
+                    # Collect all traits
+                    all_traits = set()
+                    for cond_traits in trait_avg_by_cond.values():
+                        if isinstance(cond_traits, dict):
+                            all_traits.update(cond_traits.keys())
+                    all_traits_sorted = sorted(all_traits)
+
+                    if all_traits_sorted:
+                        html_parts.append("<table>")
+                        html_parts.append("<tr><th>Trait</th>")
+                        for cond in conditions:
+                            clean_c = _clean_condition_name(cond)
+                            html_parts.append(f"<th>{clean_c}</th>")
+                        html_parts.append("</tr>")
+                        for trait in all_traits_sorted:
+                            trait_display = trait.replace("_", " ").title()
+                            html_parts.append(f"<tr><td>{trait_display}</td>")
+                            for cond in conditions:
+                                cond_traits = trait_avg_by_cond.get(cond, {})
+                                val = cond_traits.get(trait, 0) if isinstance(cond_traits, dict) else 0
+                                html_parts.append(f"<td>{val:.3f}</td>")
+                            html_parts.append("</tr>")
+                        html_parts.append("</table>")
+
+            # ── Validation Issues Corrected ────────────────────────────────
+            validation_corrected = metadata.get("validation_issues_corrected", 0)
+            if validation_corrected and validation_corrected > 0:
+                html_parts.append("<div class='stat-box'>")
+                html_parts.append(f"<strong>Data Validation:</strong> {validation_corrected} response value(s) were "
+                                  f"automatically corrected during generation to stay within valid scale ranges.")
+                html_parts.append("</div>")
+
+            html_parts.append("<h2>4. Categorical Analysis</h2>")
             html_parts.append("<h3>Condition × Gender</h3>")
 
             try:
@@ -4746,14 +4954,97 @@ class ComprehensiveInstructorReport:
             )
             html_parts.append(exec_summary)
 
-        # Footer
-        html_parts.append("<h2>Notes for Instructors</h2>")
+        # ── Observed vs Configured Effect Sizes ─────────────────────────
+        obs_effects = metadata.get("effect_sizes_observed", [])
+        cfg_effects = metadata.get("effect_sizes_configured", [])
+        if obs_effects or cfg_effects:
+            html_parts.append("<h2>5. Effect Size Verification</h2>")
+            if cfg_effects and any(e.get("cohens_d", 0) > 0 for e in cfg_effects):
+                html_parts.append("<h3>Configured Effects</h3>")
+                html_parts.append("<table><tr><th>DV</th><th>Target d</th><th>Direction</th><th>Comparison</th></tr>")
+                for eff in cfg_effects:
+                    d_val = eff.get("cohens_d", 0)
+                    if d_val > 0:
+                        html_parts.append(
+                            f"<tr><td>{eff.get('variable', '')}</td>"
+                            f"<td>{d_val:.2f}</td>"
+                            f"<td>{eff.get('direction', '')}</td>"
+                            f"<td>{eff.get('level_high', '')} vs {eff.get('level_low', '')}</td></tr>"
+                        )
+                html_parts.append("</table>")
+            if obs_effects:
+                html_parts.append("<h3>Observed Effects in Generated Data</h3>")
+                html_parts.append("<table><tr><th>DV</th><th>Observed d</th><th>Comparison</th><th>Interpretation</th></tr>")
+                for eff in obs_effects:
+                    d_val = abs(_safe_float(eff.get("cohens_d", eff.get("d", 0))))
+                    if d_val < 0.2:
+                        interp = "Negligible"
+                    elif d_val < 0.5:
+                        interp = "Small"
+                    elif d_val < 0.8:
+                        interp = "Medium"
+                    else:
+                        interp = "Large"
+                    var_name = eff.get("variable", eff.get("scale", ""))
+                    comp = f"{eff.get('condition_high', '')} vs {eff.get('condition_low', '')}"
+                    html_parts.append(
+                        f"<tr><td>{var_name}</td><td>{d_val:.3f}</td><td>{comp}</td><td>{interp}</td></tr>"
+                    )
+                html_parts.append("</table>")
+
+        # ── Exclusion Summary ─────────────────────────────────────────
+        excl = metadata.get("exclusion_summary", {})
+        if excl:
+            html_parts.append("<h2>6. Data Quality & Exclusions</h2>")
+            html_parts.append("<div class='metric-grid'>")
+            html_parts.append(f"<div class='metric-card' style='background:linear-gradient(135deg,#f093fb 0%,#f5576c 100%);'>"
+                              f"<div class='metric-value'>{excl.get('flagged_speed', 0)}</div>"
+                              f"<div class='metric-label'>Speed Flags</div></div>")
+            html_parts.append(f"<div class='metric-card' style='background:linear-gradient(135deg,#f093fb 0%,#f5576c 100%);'>"
+                              f"<div class='metric-value'>{excl.get('flagged_attention', 0)}</div>"
+                              f"<div class='metric-label'>Attention Flags</div></div>")
+            html_parts.append(f"<div class='metric-card' style='background:linear-gradient(135deg,#f093fb 0%,#f5576c 100%);'>"
+                              f"<div class='metric-value'>{excl.get('flagged_straightline', 0)}</div>"
+                              f"<div class='metric-label'>Straight-line Flags</div></div>")
+            html_parts.append(f"<div class='metric-card' style='background:linear-gradient(135deg,#f093fb 0%,#f5576c 100%);'>"
+                              f"<div class='metric-value'>{excl.get('total_excluded', 0)}</div>"
+                              f"<div class='metric-label'>Total Excluded</div></div>")
+            html_parts.append("</div>")
+
+        # Footer - Notes for Instructors
+        html_parts.append("<h2>Instructor Notes & Methodology</h2>")
         html_parts.append("<div class='warning-box'>")
-        html_parts.append("<strong>This is simulated data.</strong> Results demonstrate what the analysis pipeline will produce. ")
-        html_parts.append("Students should practice these analyses independently and may get similar (but not identical) results due to random variation.")
+        html_parts.append("<strong>Important: This is simulated data.</strong> Results demonstrate what the analysis pipeline will produce. "
+                          "Students should practice these analyses independently and may get similar (but not identical) results due to random variation.")
+        html_parts.append("</div>")
+        html_parts.append("<div class='stat-box'>")
+        html_parts.append("<h3>About This Simulation</h3>")
+        html_parts.append("<ul>")
+        html_parts.append("<li><strong>Persona-based generation:</strong> Each participant is assigned a response style persona "
+                          "(engaged, satisficer, extreme, acquiescent, careless, etc.) based on survey methodology research.</li>")
+        html_parts.append("<li><strong>Domain-specific knowledge:</strong> Responses draw on 225+ research domains across 33 categories, "
+                          "ensuring contextually appropriate language and attitudes.</li>")
+        html_parts.append("<li><strong>Effect size calibration:</strong> Treatment effects are calibrated to target Cohen's d values, "
+                          "applied at the individual response level with validation checks.</li>")
+        html_parts.append("<li><strong>Scale reliability:</strong> Multi-item scales use a factor model (Response = λ·Factor + √(1-λ²)·Error) "
+                          "producing realistic Cronbach's alpha values (typically 0.75-0.90).</li>")
+        html_parts.append("<li><strong>Reproducibility:</strong> Simulations are seeded for exact reproducibility. "
+                          "The same seed + parameters produce identical datasets.</li>")
+        html_parts.append("</ul>")
+        html_parts.append("<h3>Scientific References</h3>")
+        html_parts.append("<ol style='font-size:0.9em;'>")
+        html_parts.append("<li>Krosnick, J. A. (1991). Response strategies for coping with the cognitive demands of attitude measures. <em>Applied Cognitive Psychology, 5</em>, 213-236.</li>")
+        html_parts.append("<li>Greenleaf, E. A. (1992). Measuring extreme response style. <em>Public Opinion Quarterly, 56</em>, 328-351.</li>")
+        html_parts.append("<li>Billiet, J. B., &amp; McClendon, M. J. (2000). Modeling acquiescence in measurement models. <em>Structural Equation Modeling, 7</em>, 608-628.</li>")
+        html_parts.append("<li>Meade, A. W., &amp; Craig, S. B. (2012). Identifying careless responses in survey data. <em>Psychological Methods, 17</em>, 437-455.</li>")
+        html_parts.append("<li>Cohen, J. (1988). <em>Statistical power analysis for the behavioral sciences</em>. Lawrence Erlbaum.</li>")
+        html_parts.append("<li>Richard, F. D., Bond, C. F., &amp; Stokes-Zoota, J. J. (2003). One hundred years of social psychology quantitatively described. <em>Review of General Psychology, 7</em>, 331-363.</li>")
+        html_parts.append("</ol>")
         html_parts.append("</div>")
 
-        html_parts.append(f"<p style='color:#999;font-size:0.9em;margin-top:30px;'>Generated by Behavioral Experiment Simulation Tool v{__version__}</p>")
+        html_parts.append(f"<p style='color:#999;font-size:0.9em;margin-top:30px;text-align:center;'>"
+                          f"Generated by Behavioral Experiment Simulation Tool v{__version__} "
+                          f"&middot; Proprietary Software by Dr. Eugen Dimant</p>")
         html_parts.append("</div></body></html>")
 
         return "\n".join(html_parts)

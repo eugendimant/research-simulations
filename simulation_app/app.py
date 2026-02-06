@@ -52,8 +52,8 @@ import streamlit as st
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.3.0"
-BUILD_ID = "20260206-v130-parser-fixes-generate-tab"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.3.1"
+BUILD_ID = "20260206-v131-report-methods-personas"  # Change this to force cache invalidation
 
 def _verify_and_reload_utils():
     """Verify utils modules are at correct version, force reload if needed.
@@ -109,7 +109,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF"
-APP_VERSION = "1.3.0"  # v1.3.0: Parser fixes, Generate tab fix, scale/condition parsing, UX improvements
+APP_VERSION = "1.3.1"  # v1.3.1: Comprehensive instructor report, methods document, persona analysis
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -3345,6 +3345,15 @@ def _render_conversational_builder() -> None:
         st.session_state["confirmed_open_ended"] = inferred.get("open_ended_questions", [])
         st.session_state["open_ended_confirmed"] = True
 
+        # Set condition allocation and sample size for Generate tab
+        st.session_state["condition_allocation"] = inferred.get("condition_allocation", {})
+        _cond_names = [c.name for c in parsed_conditions]
+        _n_conds = max(len(_cond_names), 1)
+        _per_cell = builder_sample // _n_conds
+        st.session_state["condition_allocation_n"] = {c: _per_cell for c in _cond_names}
+        st.session_state["builder_design_type"] = inferred.get("design_type", "between")
+        st.session_state["builder_sample_size"] = builder_sample
+
         st.success("Study specification built successfully! Proceed to the **Design** tab to review.")
         st.rerun()
 
@@ -3532,32 +3541,51 @@ def _render_builder_design_review() -> None:
             with cond_col:
                 st.markdown(f"**{i+1}.** {cond}")
             with cond_btn_col:
-                if len(conditions) > 1 and st.button("X", key=f"br_remove_cond_{i}", help=f"Remove '{cond}'"):
+                # Require at least 2 conditions for a valid experiment
+                if len(conditions) > 2 and st.button("X", key=f"br_remove_cond_{i}", help=f"Remove '{cond}'"):
                     cond_to_remove = i
+                elif len(conditions) <= 2:
+                    st.button("X", key=f"br_remove_cond_{i}", disabled=True,
+                              help="Minimum 2 conditions required for an experiment")
         if cond_to_remove is not None:
             conditions.pop(cond_to_remove)
             inferred["conditions"] = conditions
             st.session_state["inferred_design"] = inferred
             st.session_state["selected_conditions"] = conditions
+            # Update allocation
+            _n = max(len(conditions), 1)
+            _samp = int(st.session_state.get("sample_size", 100))
+            _per = _samp // _n
+            st.session_state["condition_allocation_n"] = {c: _per for c in conditions}
+            st.session_state["condition_allocation"] = {c: round(100.0 / _n, 1) for c in conditions}
             st.rerun()
     else:
-        st.warning("No conditions found")
+        st.warning("No conditions found. Please go back and describe your conditions.")
 
     # Allow adding custom conditions
-    extra_conds = st.text_input(
-        "Add more conditions (comma-separated)",
-        value="",
-        key="builder_review_extra_conds",
-        help="Add additional conditions not captured from your description.",
-    )
-    if extra_conds.strip():
+    _add_col1, _add_col2 = st.columns([6, 1])
+    with _add_col1:
+        extra_conds = st.text_input(
+            "Add more conditions (comma-separated)",
+            value="",
+            key="builder_review_extra_conds",
+            help="Add additional conditions not captured from your description.",
+        )
+    with _add_col2:
+        st.markdown("<br>", unsafe_allow_html=True)
+        _add_clicked = st.button("Add", key="builder_add_cond_btn")
+    if _add_clicked and extra_conds.strip():
         new_conds = [c.strip() for c in extra_conds.split(",") if c.strip()]
+        _added = 0
         for c in new_conds:
             if c not in conditions:
                 conditions.append(c)
-        inferred["conditions"] = conditions
-        st.session_state["inferred_design"] = inferred
-        st.session_state["selected_conditions"] = conditions
+                _added += 1
+        if _added > 0:
+            inferred["conditions"] = conditions
+            st.session_state["inferred_design"] = inferred
+            st.session_state["selected_conditions"] = conditions
+            st.rerun()
 
     # ── Factorial Structure ─────────────────────────────────────────────
     if factors:
@@ -6795,8 +6823,12 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
                 st.markdown(f"- Check duplicate IPs: {'Yes' if exclusion.duplicate_ip_check else 'No'}")
 
                 st.markdown("**Effect Sizes**")
-                st.markdown("- No directional effects (null hypothesis)")
-                st.caption("Enable Advanced mode to specify expected effect sizes")
+                if effect_sizes:
+                    for es in effect_sizes:
+                        st.markdown(f"- **{es.variable}**: d={es.cohens_d} ({es.level_high} > {es.level_low})")
+                else:
+                    st.markdown("- No directional effects (null hypothesis)")
+                    st.caption("Specify effects in the Design tab or enable Advanced mode")
     else:
         st.markdown("### Advanced settings")
 

@@ -19,7 +19,7 @@ import re
 from typing import Any, Dict, List, Optional, Tuple
 from dataclasses import dataclass, field
 
-__version__ = "1.3.0"
+__version__ = "1.3.1"
 
 
 # ─── Common scale anchors used in behavioral science ───────────────────────────
@@ -757,7 +757,7 @@ class SurveyDescriptionParser:
                 "num_items": s.num_items,
                 "scale_min": s.scale_min,
                 "scale_max": s.scale_max,
-                "scale_points": s.scale_max,
+                "scale_points": s.scale_max - s.scale_min + 1 if s.scale_type != "numeric" else s.scale_max,
                 "type": s.scale_type,
                 "reverse_items": s.reverse_items,
                 "reliability": 0.85,
@@ -783,11 +783,22 @@ class SurveyDescriptionParser:
         # Build factors
         factors = parsed.factors if parsed.factors else []
 
+        # Compute default equal condition allocation
+        n_conds = len(conditions)
+        if n_conds >= 2:
+            pct = round(100.0 / n_conds, 1)
+            condition_allocation = {c: pct for c in conditions}
+        else:
+            condition_allocation = {}
+
         return {
             "conditions": conditions,
             "factors": factors,
             "scales": scales,
             "open_ended_questions": open_ended,
+            "design_type": parsed.design_type,
+            "sample_size": parsed.sample_size,
+            "condition_allocation": condition_allocation,
             "randomization_level": "participant",
             "condition_visibility_map": {},
             "study_context": {

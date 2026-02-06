@@ -45,7 +45,7 @@ This module is designed to run inside a `utils/` package (i.e., imported as
 """
 
 # Version identifier to help track deployed code
-__version__ = "1.3.0"  # v1.3.0: Parser fixes, Generate tab fix, scale/condition parsing, UX improvements
+__version__ = "1.3.1"  # v1.3.1: Comprehensive instructor report, methods docs update, e2e tests
 
 # =============================================================================
 # SCIENTIFIC FOUNDATIONS FOR SIMULATION
