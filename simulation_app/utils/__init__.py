@@ -81,7 +81,16 @@ from .persona_library import (
     StimulusEvaluationHandler
 )
 from .pdf_generator import generate_audit_log_pdf
-from .schema_validator import validate_schema, generate_schema_summary, check_data_quality
+from .schema_validator import (
+    validate_schema,
+    generate_schema_summary,
+    check_data_quality,
+    validate_scale_response_ranges,
+    check_condition_allocation_balance,
+    analyze_missing_data_patterns,
+    detect_extreme_values,
+    generate_validation_report,
+)
 from .qsf_preview import (
     QSFPreviewParser,
     QSFPreviewResult,
@@ -142,6 +151,11 @@ __all__ = [
     'validate_schema',
     'generate_schema_summary',
     'check_data_quality',
+    'validate_scale_response_ranges',
+    'check_condition_allocation_balance',
+    'analyze_missing_data_patterns',
+    'detect_extreme_values',
+    'generate_validation_report',
     # Enhanced simulation
     'EnhancedSimulationEngine',
     'EffectSizeSpec',
