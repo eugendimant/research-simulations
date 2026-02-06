@@ -959,13 +959,31 @@ class QSFPreviewParser:
             is_matrix = question_type == 'Matrix' or (question_type == 'MC' and selector in ['Likert', 'Bipolar'])
 
             # Extract sub-questions for matrix (these are the rows/items)
+            # v1.2.0: Fixed - For Matrix, Choices are items (rows), Answers are scale (columns)
             sub_questions = []
+            scale_anchors_parsed = {}  # v1.2.0: Extract scale anchors from Answers
 
             # For Matrix questions, Choices are the items (rows) and Answers are the scale (columns)
             if question_type == 'Matrix':
-                # The "Choices" in Matrix are actually the items/statements
-                # The "Answers" are the response scale options
+                # The "Choices" in Matrix are the items/statements (rows to rate)
+                # Extract items from Choices for sub_questions
+                if isinstance(choices_data, dict):
+                    try:
+                        sorted_choices = sorted(choices_data.items(), key=lambda x: self._safe_int_key(x[0]))
+                        for choice_id, choice_data in sorted_choices:
+                            if isinstance(choice_data, dict):
+                                sub_questions.append(choice_data.get('Display', str(choice_data)))
+                            else:
+                                sub_questions.append(str(choice_data))
+                    except Exception:
+                        pass  # If sorting fails, use choices list directly
+                    if not sub_questions:
+                        sub_questions = choices.copy()  # Fallback to already-parsed choices
+
+                # The "Answers" are the response scale options (columns)
+                # Extract these into scale_anchors with their recode values
                 answers_data = payload.get('Answers', {})
+                recode_values = payload.get('RecodeValues', {})
                 if answers_data is None:
                     answers_data = {}
                 if isinstance(answers_data, dict):
@@ -973,11 +991,17 @@ class QSFPreviewParser:
                         sorted_answers = sorted(answers_data.items(), key=lambda x: self._safe_int_key(x[0]))
                         for ans_id, ans_data in sorted_answers:
                             if isinstance(ans_data, dict):
-                                sub_questions.append(ans_data.get('Display', ''))
+                                label = ans_data.get('Display', '')
+                                # Use recode value if available, otherwise use answer ID
+                                recode_val = recode_values.get(str(ans_id), ans_id)
+                                scale_anchors_parsed[str(recode_val)] = label
+                            else:
+                                recode_val = recode_values.get(str(ans_id), ans_id)
+                                scale_anchors_parsed[str(recode_val)] = str(ans_data)
                     except Exception:
-                        pass  # If sorting fails, skip sub-questions
+                        pass  # If sorting fails, skip scale anchors
             else:
-                # For non-matrix questions with sub-questions
+                # For non-matrix questions with sub-questions (e.g., side-by-side)
                 answers_data = payload.get('Answers', {})
                 if answers_data is None:
                     answers_data = {}
@@ -989,6 +1013,22 @@ class QSFPreviewParser:
                                 sub_questions.append(ans_data.get('Display', ''))
                     except Exception:
                         pass  # If sorting fails, skip sub-questions
+                # For MC questions, extract scale anchors from choices
+                if choices and self._looks_like_scale_choices(choices):
+                    recode_values = payload.get('RecodeValues', {})
+                    if isinstance(choices_data, dict):
+                        try:
+                            sorted_choices = sorted(choices_data.items(), key=lambda x: self._safe_int_key(x[0]))
+                            for choice_id, choice_data in sorted_choices:
+                                label = choice_data.get('Display', str(choice_data)) if isinstance(choice_data, dict) else str(choice_data)
+                                recode_val = recode_values.get(str(choice_id), choice_id)
+                                scale_anchors_parsed[str(recode_val)] = label
+                        except Exception:
+                            pass
+                    else:
+                        # Fallback: number the choices
+                        for i, choice in enumerate(choices, 1):
+                            scale_anchors_parsed[str(i)] = choice
 
             # ROBUST SCALE POINT DETECTION
             scale_points = self._detect_scale_points(payload, question_type, selector, choices, sub_questions)
@@ -1200,7 +1240,8 @@ class QSFPreviewParser:
                 has_skip_logic=has_skip_logic,
                 has_display_logic=has_display_logic,
                 choice_randomization=choice_randomization,
-                fixed_choices=fixed_choices
+                fixed_choices=fixed_choices,
+                scale_anchors=scale_anchors_parsed  # v1.2.0: Properly extract scale anchors
             )
 
             self._log(
@@ -1486,6 +1527,45 @@ class QSFPreviewParser:
         for i, choice in enumerate(choices, 1):
             anchors[str(i)] = str(choice).strip()
         return anchors
+
+    def _extract_scale_range(self, scale_anchors: Dict[str, str], scale_points: Optional[int]) -> Tuple[int, int]:
+        """
+        Extract scale_min and scale_max from scale_anchors keys.
+
+        v1.2.0: New method to properly detect scale ranges from QSF RecodeValues.
+
+        The scale_anchors dict has keys that are the actual recode values (e.g., "1", "2", "7")
+        which represent the numeric values in the exported data. This method extracts
+        the minimum and maximum from these keys.
+
+        Args:
+            scale_anchors: Dictionary with recode values as keys and labels as values
+            scale_points: Number of scale points (fallback if no anchors)
+
+        Returns:
+            Tuple of (scale_min, scale_max)
+        """
+        if scale_anchors:
+            try:
+                # Extract numeric keys from scale_anchors
+                numeric_keys = []
+                for key in scale_anchors.keys():
+                    try:
+                        numeric_keys.append(int(key))
+                    except (ValueError, TypeError):
+                        # Handle non-numeric keys (e.g., "NA", "DK")
+                        pass
+                if numeric_keys:
+                    return min(numeric_keys), max(numeric_keys)
+            except Exception:
+                pass
+
+        # Fallback to default 1 to scale_points range
+        if scale_points is not None:
+            return 1, scale_points
+
+        # Ultimate fallback
+        return 1, 7
 
     def _detect_potential_mediator(self, q_info: QuestionInfo, block_position: int,
                                     total_blocks: int) -> Tuple[bool, List[str]]:
@@ -2720,7 +2800,8 @@ class QSFPreviewParser:
             # 1. Matrix questions are scales (multi-item)
             if q_info.is_matrix or q_info.question_type == 'Likert Scale Matrix':
                 scale_name = q_info.question_text[:50].strip() or q_id
-                variable_name = q_id
+                # v1.2.0: Use export_tag (DataExportTag) for variable name - this is the EXACT QSF name
+                variable_name = q_info.export_tag if q_info.export_tag else q_id
 
                 name_key = variable_name.lower()
                 if name_key in seen_scale_names:
@@ -2729,6 +2810,9 @@ class QSFPreviewParser:
 
                 num_items = len(q_info.sub_questions) if q_info.sub_questions else 1
                 scale_pts = q_info.scale_points
+
+                # v1.2.0: Extract scale_min/scale_max from scale_anchors keys (RecodeValues)
+                scale_min, scale_max = self._extract_scale_range(q_info.scale_anchors, scale_pts)
 
                 scales.append({
                     'name': scale_name,
@@ -2741,16 +2825,18 @@ class QSFPreviewParser:
                     'detected_from_qsf': True,
                     'item_names': q_info.sub_questions or [],  # Actual item text from QSF
                     'scale_anchors': q_info.scale_anchors or {},  # Scale endpoint labels
-                    'scale_min': 1,  # Default scale minimum
-                    'scale_max': scale_pts,  # Scale maximum
+                    'scale_min': scale_min,
+                    'scale_max': scale_max,
                 })
-                self._log(LogLevel.INFO, "SCALE", f"Detected matrix scale: {variable_name} ({num_items} items)")
+                self._log(LogLevel.INFO, "SCALE", f"Detected matrix scale: {variable_name} ({num_items} items, range {scale_min}-{scale_max})")
                 continue
 
             # 2. Slider/Visual Analog scales
             if q_info.question_type in ['Slider', 'Visual Analog', 'VAS', 'Slider ()']:
                 scale_name = q_info.question_text[:50].strip() or q_id
-                name_key = q_id.lower()
+                # v1.2.0: Use export_tag for variable name
+                variable_name = q_info.export_tag if q_info.export_tag else q_id
+                name_key = variable_name.lower()
                 if name_key not in seen_scale_names:
                     seen_scale_names.add(name_key)
                     # Get actual slider range if available
@@ -2760,7 +2846,7 @@ class QSFPreviewParser:
                     slider_max = q_info.slider_max if q_info.slider_max is not None else 100
                     scales.append({
                         'name': scale_name,
-                        'variable_name': q_id,
+                        'variable_name': variable_name,
                         'question_id': q_id,
                         'question_text': q_info.question_text[:100],
                         'items': 1,
@@ -2772,19 +2858,21 @@ class QSFPreviewParser:
                         'scale_min': slider_min,
                         'scale_max': slider_max,
                     })
-                    self._log(LogLevel.INFO, "SCALE", f"Detected slider DV: {q_id}")
+                    self._log(LogLevel.INFO, "SCALE", f"Detected slider DV: {variable_name}")
                 continue
 
             # 3. Constant Sum questions (allocation tasks)
             if 'Constant Sum' in q_info.question_type or 'CS' in q_info.question_type:
                 scale_name = q_info.question_text[:50].strip() or q_id
-                name_key = q_id.lower()
+                # v1.2.0: Use export_tag for variable name
+                variable_name = q_info.export_tag if q_info.export_tag else q_id
+                name_key = variable_name.lower()
                 if name_key not in seen_scale_names:
                     seen_scale_names.add(name_key)
                     num_items = len(q_info.choices) if q_info.choices else 1
                     scales.append({
                         'name': scale_name,
-                        'variable_name': q_id,
+                        'variable_name': variable_name,
                         'question_id': q_id,
                         'question_text': q_info.question_text[:100],
                         'items': num_items,
@@ -2796,19 +2884,21 @@ class QSFPreviewParser:
                         'scale_min': 0,
                         'scale_max': 100,
                     })
-                    self._log(LogLevel.INFO, "SCALE", f"Detected constant sum DV: {q_id}")
+                    self._log(LogLevel.INFO, "SCALE", f"Detected constant sum DV: {variable_name}")
                 continue
 
             # 3a. Rank Order questions (v2.4.5: NEW)
             if 'Rank Order' in q_info.question_type or 'RO' in q_info.question_type:
                 scale_name = q_info.question_text[:50].strip() or q_id
-                name_key = q_id.lower()
+                # v1.2.0: Use export_tag for variable name
+                variable_name = q_info.export_tag if q_info.export_tag else q_id
+                name_key = variable_name.lower()
                 if name_key not in seen_scale_names:
                     seen_scale_names.add(name_key)
                     num_items = len(q_info.choices) if q_info.choices else 1
                     scales.append({
                         'name': scale_name,
-                        'variable_name': q_id,
+                        'variable_name': variable_name,
                         'question_id': q_id,
                         'question_text': q_info.question_text[:100],
                         'items': num_items,
@@ -2820,19 +2910,21 @@ class QSFPreviewParser:
                         'scale_min': 1,
                         'scale_max': num_items,
                     })
-                    self._log(LogLevel.INFO, "SCALE", f"Detected rank order DV: {q_id}")
+                    self._log(LogLevel.INFO, "SCALE", f"Detected rank order DV: {variable_name}")
                 continue
 
             # 3b. Pick, Group, and Rank (MaxDiff/Best-Worst) questions (v2.4.5: NEW)
             if 'Pick' in q_info.question_type and 'Rank' in q_info.question_type:
                 scale_name = q_info.question_text[:50].strip() or q_id
-                name_key = q_id.lower()
+                # v1.2.0: Use export_tag for variable name
+                variable_name = q_info.export_tag if q_info.export_tag else q_id
+                name_key = variable_name.lower()
                 if name_key not in seen_scale_names:
                     seen_scale_names.add(name_key)
                     num_items = len(q_info.choices) if q_info.choices else 1
                     scales.append({
                         'name': scale_name,
-                        'variable_name': q_id,
+                        'variable_name': variable_name,
                         'question_id': q_id,
                         'question_text': q_info.question_text[:100],
                         'items': num_items,
@@ -2844,19 +2936,21 @@ class QSFPreviewParser:
                         'scale_min': 1,
                         'scale_max': num_items,
                     })
-                    self._log(LogLevel.INFO, "SCALE", f"Detected best-worst (MaxDiff) DV: {q_id}")
+                    self._log(LogLevel.INFO, "SCALE", f"Detected best-worst (MaxDiff) DV: {variable_name}")
                 continue
 
             # 3c. Paired Comparison / Side by Side questions (v2.4.5: NEW)
             if 'Side by Side' in q_info.question_type or 'SBS' in q_info.question_type:
                 scale_name = q_info.question_text[:50].strip() or q_id
-                name_key = q_id.lower()
+                # v1.2.0: Use export_tag for variable name
+                variable_name = q_info.export_tag if q_info.export_tag else q_id
+                name_key = variable_name.lower()
                 if name_key not in seen_scale_names:
                     seen_scale_names.add(name_key)
                     num_items = len(q_info.sub_questions) if q_info.sub_questions else 2
                     scales.append({
                         'name': scale_name,
-                        'variable_name': q_id,
+                        'variable_name': variable_name,
                         'question_id': q_id,
                         'question_text': q_info.question_text[:100],
                         'items': num_items,
@@ -2868,18 +2962,20 @@ class QSFPreviewParser:
                         'scale_min': 1,
                         'scale_max': 2,
                     })
-                    self._log(LogLevel.INFO, "SCALE", f"Detected paired comparison DV: {q_id}")
+                    self._log(LogLevel.INFO, "SCALE", f"Detected paired comparison DV: {variable_name}")
                 continue
 
             # 3d. Hot Spot / Heat Map questions (v2.4.5: NEW)
             if 'Hot Spot' in q_info.question_type or 'Heat Map' in q_info.question_type:
                 scale_name = q_info.question_text[:50].strip() or q_id
-                name_key = q_id.lower()
+                # v1.2.0: Use export_tag for variable name
+                variable_name = q_info.export_tag if q_info.export_tag else q_id
+                name_key = variable_name.lower()
                 if name_key not in seen_scale_names:
                     seen_scale_names.add(name_key)
                     scales.append({
                         'name': scale_name,
-                        'variable_name': q_id,
+                        'variable_name': variable_name,
                         'question_id': q_id,
                         'question_text': q_info.question_text[:100],
                         'items': 1,
@@ -2891,11 +2987,13 @@ class QSFPreviewParser:
                         'scale_min': None,
                         'scale_max': None,
                     })
-                    self._log(LogLevel.INFO, "SCALE", f"Detected hot spot DV: {q_id}")
+                    self._log(LogLevel.INFO, "SCALE", f"Detected hot spot DV: {variable_name}")
                 continue
 
             # 4. Check for numbered pattern (e.g., WTP_1, WTP_2)
-            match = re.match(r'^(.+?)[-_]?(\d+)$', q_id)
+            # v1.2.0: Also check export_tag for better variable naming
+            var_name = q_info.export_tag if q_info.export_tag else q_id
+            match = re.match(r'^(.+?)[-_]?(\d+)$', var_name)
             if match:
                 base_name = match.group(1).rstrip('_-')
                 item_num = int(match.group(2))
@@ -2905,7 +3003,9 @@ class QSFPreviewParser:
                     'item_num': item_num,
                     'scale_points': q_info.scale_points,
                     'question_id': q_id,
-                    'question_text': q_info.question_text
+                    'export_tag': var_name,  # v1.2.0: Store export_tag
+                    'question_text': q_info.question_text,
+                    'scale_anchors': q_info.scale_anchors or {}  # v1.2.0: Store scale anchors
                 })
                 continue
 
@@ -2915,24 +3015,29 @@ class QSFPreviewParser:
                 if 2 <= len(choices) <= 11:  # Typical Likert range
                     # Check if this looks like a scale question
                     if self._looks_like_scale_choices(choices):
-                        # Extract potential scale name from question ID
-                        q_prefix = re.sub(r'[-_]?\d+$', '', q_id)
-                        if q_prefix and q_prefix != q_id:
+                        # v1.2.0: Use export_tag for grouping
+                        var_name = q_info.export_tag if q_info.export_tag else q_id
+                        q_prefix = re.sub(r'[-_]?\d+$', '', var_name)
+                        if q_prefix and q_prefix != var_name:
                             # Has numbering pattern - group it
                             if q_prefix not in likert_questions:
                                 likert_questions[q_prefix] = []
                             likert_questions[q_prefix].append({
                                 'question_id': q_id,
+                                'export_tag': var_name,  # v1.2.0: Store export_tag
                                 'scale_points': len(choices),
-                                'question_text': q_info.question_text
+                                'question_text': q_info.question_text,
+                                'scale_anchors': q_info.scale_anchors or {}  # v1.2.0: Store scale anchors
                             })
                         else:
                             # Standalone single-item DV
                             single_item_dvs.append({
                                 'question_id': q_id,
+                                'export_tag': var_name,  # v1.2.0: Store export_tag
                                 'question_text': q_info.question_text,
                                 'scale_points': len(choices),
-                                'choices': choices
+                                'choices': choices,
+                                'scale_anchors': q_info.scale_anchors or {}  # v1.2.0: Store scale anchors
                             })
                 continue
 
@@ -2944,7 +3049,9 @@ class QSFPreviewParser:
                                     'willing to pay', 'wtp', 'bid', 'offer', 'payment',
                                     'rating', 'score', 'number', 'percentage', '%']
                 if any(kw in q_text_lower for kw in numeric_keywords):
-                    name_key = q_id.lower()
+                    # v1.2.0: Use export_tag for variable name
+                    variable_name = q_info.export_tag if q_info.export_tag else q_id
+                    name_key = variable_name.lower()
                     if name_key not in seen_scale_names:
                         seen_scale_names.add(name_key)
                         scale_name = q_info.question_text[:50].strip() or q_id
@@ -2953,7 +3060,7 @@ class QSFPreviewParser:
                         num_max = q_info.number_max if q_info.number_max is not None else 100
                         scales.append({
                             'name': scale_name,
-                            'variable_name': q_id,
+                            'variable_name': variable_name,
                             'question_id': q_id,
                             'question_text': q_info.question_text[:100],
                             'items': 1,
@@ -2965,7 +3072,7 @@ class QSFPreviewParser:
                             'scale_min': num_min,
                             'scale_max': num_max,
                         })
-                        self._log(LogLevel.INFO, "SCALE", f"Detected numeric input DV: {q_id}")
+                        self._log(LogLevel.INFO, "SCALE", f"Detected numeric input DV: {variable_name}")
 
         # Consolidate numbered scales (multi-item scales with _1, _2, etc.)
         for base_name, items in scale_patterns.items():
@@ -2981,6 +3088,16 @@ class QSFPreviewParser:
                 # Get first question text as reference
                 first_text = items[0].get('question_text', '')[:100] if items else ''
 
+                # v1.2.0: Get scale_anchors from first item that has them
+                combined_anchors = {}
+                for item in items:
+                    if item.get('scale_anchors'):
+                        combined_anchors = item['scale_anchors']
+                        break
+
+                # v1.2.0: Extract scale_min/scale_max from scale_anchors
+                scale_min, scale_max = self._extract_scale_range(combined_anchors, scale_pts)
+
                 # Collect all item texts for item_names
                 item_names_list = [i.get('question_text', f'{base_name}_{i["item_num"]}')[:80] for i in sorted(items, key=lambda x: x['item_num'])]
                 scales.append({
@@ -2992,21 +3109,24 @@ class QSFPreviewParser:
                     'type': 'numbered_items',
                     'detected_from_qsf': True,
                     'item_names': item_names_list,
-                    'scale_anchors': {},
-                    'scale_min': 1,
-                    'scale_max': scale_pts if scale_pts else 7,
+                    'scale_anchors': combined_anchors,
+                    'scale_min': scale_min,
+                    'scale_max': scale_max,
                 })
-                self._log(LogLevel.INFO, "SCALE", f"Detected numbered scale: {base_name} ({len(items)} items)")
+                self._log(LogLevel.INFO, "SCALE", f"Detected numbered scale: {base_name} ({len(items)} items, range {scale_min}-{scale_max})")
             elif len(items) == 1:
                 # Single numbered item - might still be a DV
                 item = items[0]
-                name_key = item['question_id'].lower()
+                # v1.2.0: Use export_tag for name_key if available
+                name_key = item.get('export_tag', item['question_id']).lower()
                 if name_key not in seen_scale_names:
                     single_item_dvs.append({
                         'question_id': item['question_id'],
+                        'export_tag': item.get('export_tag', item['question_id']),  # v1.2.0
                         'question_text': item.get('question_text', ''),
                         'scale_points': item.get('scale_points'),
-                        'choices': []
+                        'choices': [],
+                        'scale_anchors': item.get('scale_anchors', {})  # v1.2.0
                     })
 
         # Consolidate grouped Likert questions
@@ -3021,6 +3141,16 @@ class QSFPreviewParser:
                 scale_pts = max(set(valid_points), key=valid_points.count) if valid_points else None
                 first_text = items[0].get('question_text', '')[:100] if items else ''
 
+                # v1.2.0: Get scale_anchors from first item that has them
+                combined_anchors = {}
+                for item in items:
+                    if item.get('scale_anchors'):
+                        combined_anchors = item['scale_anchors']
+                        break
+
+                # v1.2.0: Extract scale_min/scale_max from scale_anchors
+                scale_min, scale_max = self._extract_scale_range(combined_anchors, scale_pts)
+
                 # Collect all item texts for item_names
                 item_names_list = [i.get('question_text', prefix)[:80] for i in items]
                 scales.append({
@@ -3032,34 +3162,42 @@ class QSFPreviewParser:
                     'type': 'likert',
                     'detected_from_qsf': True,
                     'item_names': item_names_list,
-                    'scale_anchors': {},
-                    'scale_min': 1,
-                    'scale_max': scale_pts if scale_pts else 7,
+                    'scale_anchors': combined_anchors,
+                    'scale_min': scale_min,
+                    'scale_max': scale_max,
                 })
-                self._log(LogLevel.INFO, "SCALE", f"Detected Likert scale: {prefix} ({len(items)} items)")
+                self._log(LogLevel.INFO, "SCALE", f"Detected Likert scale: {prefix} ({len(items)} items, range {scale_min}-{scale_max})")
             elif len(items) == 1:
                 # Single item in a group - add as single-item DV
                 item = items[0]
                 single_item_dvs.append({
                     'question_id': item['question_id'],
+                    'export_tag': item.get('export_tag', item['question_id']),  # v1.2.0
                     'question_text': item.get('question_text', ''),
                     'scale_points': item.get('scale_points'),
-                    'choices': []
+                    'choices': [],
+                    'scale_anchors': item.get('scale_anchors', {})  # v1.2.0
                 })
 
         # Add single-item DVs (standalone scale questions)
         for dv in single_item_dvs:
             q_id = dv['question_id']
-            name_key = q_id.lower()
+            # v1.2.0: Use export_tag for variable name and deduplication
+            variable_name = dv.get('export_tag', q_id)
+            name_key = variable_name.lower()
             if name_key in seen_scale_names:
                 continue
             seen_scale_names.add(name_key)
 
             scale_name = dv['question_text'][:50].strip() or q_id
             scale_pts = dv['scale_points']
+            # v1.2.0: Get scale_anchors and extract range
+            anchors = dv.get('scale_anchors', {})
+            scale_min, scale_max = self._extract_scale_range(anchors, scale_pts)
+
             scales.append({
                 'name': scale_name,
-                'variable_name': q_id,
+                'variable_name': variable_name,
                 'question_id': q_id,
                 'question_text': dv['question_text'][:100] if dv['question_text'] else '',
                 'items': 1,
@@ -3067,11 +3205,11 @@ class QSFPreviewParser:
                 'type': 'single_item',
                 'detected_from_qsf': True,
                 'item_names': [dv['question_text'][:80]] if dv['question_text'] else [],
-                'scale_anchors': {},
-                'scale_min': 1,
-                'scale_max': scale_pts if scale_pts else 7,
+                'scale_anchors': anchors,
+                'scale_min': scale_min,
+                'scale_max': scale_max,
             })
-            self._log(LogLevel.INFO, "SCALE", f"Detected single-item DV: {q_id}")
+            self._log(LogLevel.INFO, "SCALE", f"Detected single-item DV: {variable_name} (range {scale_min}-{scale_max})")
 
         return scales
 

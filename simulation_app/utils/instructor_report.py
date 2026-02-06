@@ -6,7 +6,7 @@ Generates comprehensive instructor-facing reports for student simulations.
 """
 
 # Version identifier to help track deployed code
-__version__ = "2.4.4"  # v2.4.4: Added 3 new sections - Open-ended summary, Effect size quality, Condition balance
+__version__ = "1.2.0"  # v1.2.0: Comprehensive Simulation Intelligence Report with domain analysis, persona rationale, effect strategy
 
 from dataclasses import dataclass
 from datetime import datetime
@@ -380,6 +380,238 @@ class InstructorReportGenerator:
         domains = metadata.get('detected_domains', [])
         if domains:
             lines.append(f"| **Research Domain** | {domains[0] if domains else 'General'} |")
+        lines.append("")
+
+        # =====================================================================
+        # v1.2.0: COMPREHENSIVE SIMULATION INTELLIGENCE REPORT
+        # =====================================================================
+        lines.append("## Simulation Intelligence Report")
+        lines.append("")
+        lines.append("This section explains how the simulation system analyzed and approached your study, providing transparency into the data generation process.")
+        lines.append("")
+
+        # --- TOPIC/DOMAIN ANALYSIS ---
+        lines.append("### Topic & Domain Analysis")
+        lines.append("")
+
+        detected_domains = metadata.get('detected_domains', [])
+        study_context = metadata.get('study_context', {})
+        domain_keywords = study_context.get('detected_keywords', [])
+
+        if detected_domains:
+            lines.append(f"**Primary Research Domain:** {detected_domains[0].replace('_', ' ').title()}")
+            if len(detected_domains) > 1:
+                secondary = [d.replace('_', ' ').title() for d in detected_domains[1:5]]
+                lines.append(f"**Secondary Domains:** {', '.join(secondary)}")
+            lines.append("")
+
+            # Domain explanation
+            domain_explanations = {
+                'behavioral_economics': 'Study involves economic decision-making, incentives, or behavioral biases',
+                'social_psychology': 'Study examines social influence, attitudes, or interpersonal dynamics',
+                'consumer_behavior': 'Study focuses on purchasing decisions, brand perceptions, or marketing',
+                'ai_attitudes': 'Study explores perceptions of AI, algorithms, or automation',
+                'technology_adoption': 'Study examines technology use, acceptance, or digital behaviors',
+                'organizational_behavior': 'Study involves workplace dynamics, leadership, or employee attitudes',
+                'health_psychology': 'Study addresses health behaviors, medical decisions, or wellbeing',
+                'political_psychology': 'Study examines political attitudes, voting, or civic engagement',
+                'environmental_psychology': 'Study focuses on environmental attitudes or sustainable behaviors',
+                'moral_psychology': 'Study explores ethical judgments, moral reasoning, or values',
+            }
+            primary_domain = detected_domains[0].lower()
+            if primary_domain in domain_explanations:
+                lines.append(f"**Domain Interpretation:** {domain_explanations[primary_domain]}")
+                lines.append("")
+        else:
+            lines.append("**Research Domain:** General (no specific domain detected)")
+            lines.append("")
+
+        if domain_keywords:
+            lines.append(f"**Keywords Detected:** {', '.join(domain_keywords[:10])}")
+            lines.append("")
+
+        # --- SIMULATION APPROACH ---
+        lines.append("### How the Simulation Approached This Study")
+        lines.append("")
+        lines.append("Based on the analysis of your QSF file, study description, and condition structure, the simulation:")
+        lines.append("")
+
+        conditions = metadata.get('conditions', [])
+        scales = metadata.get('scales', [])
+        effect_sizes = metadata.get('effect_sizes_configured', []) or metadata.get('effect_sizes', [])
+
+        # Describe the approach
+        approach_points = []
+
+        if len(conditions) > 1:
+            approach_points.append(f"Assigned **{len(conditions)} experimental conditions** with balanced allocation")
+
+        if effect_sizes:
+            approach_points.append(f"Applied **{len(effect_sizes)} user-specified effect size(s)** to create systematic condition differences")
+        else:
+            approach_points.append("Applied **automatic semantic-based effects** derived from condition label analysis")
+
+        if scales:
+            scale_types = set(s.get('type', 'likert') for s in scales)
+            approach_points.append(f"Generated responses for **{len(scales)} DV(s)** ({', '.join(scale_types)})")
+
+        open_ended = metadata.get('open_ended_questions', [])
+        if open_ended:
+            approach_points.append(f"Created **{len(open_ended)} unique open-ended responses** per participant based on detected topic context")
+
+        for point in approach_points:
+            lines.append(f"- {point}")
+        lines.append("")
+
+        # --- CONDITION EFFECT STRATEGY ---
+        lines.append("### Condition Effects Strategy")
+        lines.append("")
+
+        if effect_sizes:
+            lines.append("**User-Specified Effects:**")
+            lines.append("")
+            lines.append("| Variable | Factor | High Level | Low Level | Cohen's d |")
+            lines.append("|----------|--------|------------|-----------|-----------|")
+            for es in effect_sizes[:10]:
+                var = es.get('variable', 'DV')
+                factor = es.get('factor', 'Condition')
+                high = es.get('level_high', 'Treatment')
+                low = es.get('level_low', 'Control')
+                d = es.get('cohens_d', 0.5)
+                lines.append(f"| {var} | {factor} | {high} | {low} | d = {d:.2f} |")
+            lines.append("")
+        else:
+            lines.append("**Automatic Semantic Effects:** The system analyzed your condition labels to apply research-grounded effects.")
+            lines.append("")
+
+            # Analyze condition names for semantic content
+            semantic_effects = []
+            condition_keywords = {
+                'ai': ('AI/Algorithm', -0.12, 'Algorithm aversion effect (Dietvorst et al., 2015)'),
+                'human': ('Human agent', +0.08, 'Human preference in decision-making'),
+                'control': ('Control condition', 0.0, 'Baseline comparison'),
+                'treatment': ('Treatment', +0.15, 'Active intervention effect'),
+                'gain': ('Gain frame', +0.12, 'Positive framing effect'),
+                'loss': ('Loss frame', -0.18, 'Loss aversion (Kahneman & Tversky)'),
+                'scarcity': ('Scarcity', +0.25, 'Scarcity principle (Cialdini)'),
+                'social': ('Social proof', +0.20, 'Social influence effect'),
+                'hedonic': ('Hedonic', +0.22, 'Hedonic consumption boost'),
+                'utilitarian': ('Utilitarian', -0.08, 'Utilitarian discount'),
+                'high': ('High condition', +0.15, 'Elevated manipulation'),
+                'low': ('Low condition', -0.15, 'Reduced manipulation'),
+            }
+
+            for cond in conditions:
+                cond_lower = cond.lower()
+                for keyword, (label, effect, cite) in condition_keywords.items():
+                    if keyword in cond_lower:
+                        semantic_effects.append((cond, label, effect, cite))
+                        break
+
+            if semantic_effects:
+                lines.append("| Condition | Detected Pattern | Effect Applied | Research Basis |")
+                lines.append("|-----------|-----------------|----------------|----------------|")
+                for cond, label, effect, cite in semantic_effects[:8]:
+                    effect_str = f"+{effect:.2f}" if effect > 0 else f"{effect:.2f}"
+                    lines.append(f"| {cond} | {label} | {effect_str} | {cite} |")
+                lines.append("")
+            else:
+                lines.append("_No specific semantic patterns detected in condition labels. Equal baseline applied to all conditions._")
+                lines.append("")
+
+        # --- OBSERVED EFFECTS ---
+        observed_effects = metadata.get('effect_sizes_observed', [])
+        if observed_effects:
+            lines.append("### Observed Effects in Generated Data")
+            lines.append("")
+            lines.append("| Variable | Condition 1 | Condition 2 | M₁ | M₂ | Cohen's d |")
+            lines.append("|----------|-------------|-------------|-----|-----|-----------|")
+            for obs in observed_effects[:10]:
+                var = obs.get('variable', 'DV')[:20]
+                c1 = obs.get('condition_1', 'C1')[:15]
+                c2 = obs.get('condition_2', 'C2')[:15]
+                m1 = obs.get('mean_1', 0)
+                m2 = obs.get('mean_2', 0)
+                d = obs.get('cohens_d', 0)
+                lines.append(f"| {var} | {c1} | {c2} | {m1:.2f} | {m2:.2f} | {d:.2f} |")
+            lines.append("")
+
+            lines.append("**Effect Size Interpretation:**")
+            lines.append("- d = 0.2: Small effect (subtle but potentially meaningful)")
+            lines.append("- d = 0.5: Medium effect (moderate practical significance)")
+            lines.append("- d = 0.8: Large effect (substantial difference)")
+            lines.append("")
+
+        # --- PERSONA RATIONALE ---
+        lines.append("### Persona Selection Rationale")
+        lines.append("")
+
+        persona_dist = metadata.get('persona_distribution', {})
+        if persona_dist:
+            # Explain why certain personas were chosen
+            lines.append("The simulation assigned response style personas based on:")
+            lines.append("")
+            lines.append("1. **Base prevalence rates** from survey methodology research (Krosnick, 1991; Meade & Craig, 2012)")
+            lines.append("2. **Domain-specific adjustments** based on detected research topic")
+            lines.append("3. **Realistic online panel proportions** (~35% engaged, ~22% satisficers, ~5% careless)")
+            lines.append("")
+
+            # Show persona traits summary
+            persona_traits = {
+                'engaged responder': {'attention': 0.92, 'consistency': 0.78, 'extremity': 0.18},
+                'satisficer': {'attention': 0.68, 'consistency': 0.55, 'extremity': 0.12},
+                'extreme responder': {'attention': 0.80, 'consistency': 0.70, 'extremity': 0.88},
+                'acquiescent': {'attention': 0.75, 'consistency': 0.65, 'extremity': 0.35},
+                'careless': {'attention': 0.35, 'consistency': 0.28, 'extremity': 0.45},
+            }
+
+            lines.append("**Persona Trait Profiles:**")
+            lines.append("")
+            lines.append("| Persona | Attention Level | Response Consistency | Endpoint Use |")
+            lines.append("|---------|-----------------|---------------------|--------------|")
+            for persona, share in sorted(persona_dist.items(), key=lambda x: -float(x[1]))[:5]:
+                traits = persona_traits.get(persona.lower(), {'attention': 0.7, 'consistency': 0.6, 'extremity': 0.3})
+                att = traits['attention']
+                con = traits['consistency']
+                ext = traits['extremity']
+                att_label = "High" if att > 0.8 else ("Medium" if att > 0.5 else "Low")
+                con_label = "High" if con > 0.7 else ("Medium" if con > 0.5 else "Low")
+                ext_label = "High" if ext > 0.6 else ("Medium" if ext > 0.3 else "Low")
+                lines.append(f"| {persona.title()} | {att_label} ({att:.0%}) | {con_label} ({con:.0%}) | {ext_label} ({ext:.0%}) |")
+            lines.append("")
+        else:
+            lines.append("_Persona distribution details not available._")
+            lines.append("")
+
+        # --- OPEN-ENDED RESPONSE GENERATION ---
+        open_ended_details = metadata.get('open_ended_questions', [])
+        if open_ended_details:
+            lines.append("### Open-Ended Response Generation")
+            lines.append("")
+            lines.append(f"**{len(open_ended_details)} open-ended question(s)** were detected and populated with contextually appropriate text responses.")
+            lines.append("")
+            lines.append("**Generation approach:**")
+            lines.append("- Responses are unique per participant (no duplicate sentences within the dataset)")
+            lines.append("- Topic context is extracted from question text to ensure relevance")
+            lines.append("- Response length varies based on simulated persona verbosity")
+            lines.append("- Sentiment aligns with participant's scale responses for consistency")
+            lines.append("")
+
+            # Show sample question types
+            lines.append("**Questions detected:**")
+            lines.append("")
+            for i, q in enumerate(open_ended_details[:5], 1):
+                q_name = q.get('variable_name', q.get('name', f'Q{i}'))
+                q_text = q.get('question_text', '')[:60]
+                if q_text:
+                    lines.append(f"- **{q_name}**: \"{q_text}...\"")
+                else:
+                    lines.append(f"- **{q_name}**")
+            if len(open_ended_details) > 5:
+                lines.append(f"- _...and {len(open_ended_details) - 5} more_")
+            lines.append("")
+
+        lines.append("---")
         lines.append("")
 
         if team_info:
