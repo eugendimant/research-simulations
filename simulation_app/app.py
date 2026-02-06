@@ -2972,47 +2972,45 @@ def _inject_scroll_to_top():
     Call this at the beginning of each step to ensure the view starts at the top
     when navigating between steps.
 
-    v2.4.4: Enhanced with multiple scroll strategies for better Streamlit compatibility.
+    v1.2.0: More aggressive scroll with iframe-based approach for Streamlit Cloud.
     """
     if st.session_state.get("_scroll_to_top", False):
         # Clear the flag first
         st.session_state["_scroll_to_top"] = False
-        # Inject JavaScript with multiple fallback strategies
-        st.markdown(
+        # v1.2.0: Use components.html for more reliable script execution
+        import streamlit.components.v1 as components
+        components.html(
             """
-            <div id="scroll-anchor-top"></div>
             <script>
-                // Strategy 1: Try scrolling the main section
-                var mainSection = window.parent.document.querySelector('section.main');
-                if (mainSection) {
-                    mainSection.scrollTo({top: 0, behavior: 'instant'});
-                }
-                // Strategy 2: Try scrolling the stApp container
-                var stApp = window.parent.document.querySelector('.stApp');
-                if (stApp) {
-                    stApp.scrollTo({top: 0, behavior: 'instant'});
-                }
-                // Strategy 3: Try scrolling the block-container
-                var blockContainer = window.parent.document.querySelector('[data-testid="stAppViewBlockContainer"]');
-                if (blockContainer) {
-                    blockContainer.scrollTo({top: 0, behavior: 'instant'});
-                }
-                // Strategy 4: Scroll window itself
-                window.parent.scrollTo({top: 0, behavior: 'instant'});
-                // Strategy 5: Find and scroll the anchor
-                setTimeout(function() {
-                    var anchor = window.parent.document.getElementById('scroll-anchor-top');
-                    if (anchor) {
-                        anchor.scrollIntoView({behavior: 'instant', block: 'start'});
-                    }
-                }, 50);
+                // Aggressive scroll to top with multiple strategies
+                (function() {
+                    // Strategy 1: Main section
+                    var mainSection = parent.document.querySelector('section.main');
+                    if (mainSection) mainSection.scrollTop = 0;
+
+                    // Strategy 2: stApp container
+                    var stApp = parent.document.querySelector('.stApp');
+                    if (stApp) stApp.scrollTop = 0;
+
+                    // Strategy 3: Block container
+                    var block = parent.document.querySelector('[data-testid="stAppViewBlockContainer"]');
+                    if (block) block.scrollTop = 0;
+
+                    // Strategy 4: Window scroll
+                    parent.scrollTo(0, 0);
+
+                    // Strategy 5: Delayed scroll for dynamic content
+                    setTimeout(function() {
+                        parent.scrollTo(0, 0);
+                        if (mainSection) mainSection.scrollTop = 0;
+                        if (stApp) stApp.scrollTop = 0;
+                    }, 100);
+                })();
             </script>
             """,
-            unsafe_allow_html=True
+            height=0,
+            width=0,
         )
-    else:
-        # Always inject anchor for consistent DOM
-        st.markdown('<div id="scroll-anchor-top"></div>', unsafe_allow_html=True)
 
 
 with st.expander("What this tool delivers", expanded=True):
@@ -5889,8 +5887,16 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
     progress_placeholder = st.empty()
     status_placeholder = st.empty()
 
+    # v1.2.0: Show prominent progress indicator when generating
     if is_generating:
-        status_placeholder.info("Simulation is running. Please wait...")
+        with status_placeholder.container():
+            st.markdown("""
+            <div style="text-align: center; padding: 30px; background: linear-gradient(135deg, #1e3a5f 0%, #2d5a87 100%); border-radius: 15px; margin: 20px 0;">
+                <div style="font-size: 48px; margin-bottom: 15px;">⏳</div>
+                <h2 style="color: white; margin: 0 0 10px 0;">Generating Your Dataset...</h2>
+                <p style="color: #a0c4e8; font-size: 16px; margin: 0;">This typically takes 10-30 seconds. Please don't close this page.</p>
+            </div>
+            """, unsafe_allow_html=True)
 
     if has_generated:
         st.success("Simulation complete! Download your files below.")
@@ -6028,15 +6034,28 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
         )
 
         try:
-            # v1.2.0: Enhanced progress indicator with spinner during generation
+            # v1.2.0: Enhanced progress indicator with prominent visual display
+            # Clear the status placeholder and show progress bar
+            status_placeholder.empty()
+
+            # Show large, visible progress container
+            progress_container = st.container()
+            with progress_container:
+                st.markdown("""
+                <div style="text-align: center; padding: 25px; background: linear-gradient(135deg, #1e3a5f 0%, #2d5a87 100%); border-radius: 15px; margin: 15px 0;">
+                    <div style="font-size: 40px; margin-bottom: 10px;">🔄</div>
+                    <h3 style="color: white; margin: 0 0 8px 0;">Simulation In Progress</h3>
+                    <p style="color: #a0c4e8; font-size: 14px; margin: 0;">Generating realistic behavioral data for your experiment...</p>
+                </div>
+                """, unsafe_allow_html=True)
+
             progress_bar.progress(10, text="Initializing simulation engine...")
-            status_placeholder.info("🔄 **Simulation in progress** - Generating realistic behavioral data...")
 
             # Show animated spinner during the actual data generation
-            with st.spinner("🧠 Generating simulated responses... This may take a moment for large samples."):
-                progress_bar.progress(25, text="Generating participant responses...")
+            with st.spinner("🧠 Generating participant responses... Please wait."):
+                progress_bar.progress(25, text="Creating simulated participants...")
                 df, metadata = engine.generate()
-                progress_bar.progress(50, text="Responses generated successfully!")
+                progress_bar.progress(50, text="✅ Responses generated successfully!")
 
             # Increment internal usage counter (admin tracking)
             usage_stats = _increment_usage_counter()
