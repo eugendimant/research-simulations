@@ -187,7 +187,7 @@ BUILDER_DOMAIN_TO_PERSONA_DOMAIN: Dict[str, List[str]] = {
     "environmental psychology": ["environmental"],
     "educational psychology": ["educational_psychology"],
     "moral psychology": ["deontology_utilitarianism"],
-    "technology & HCI": ["ai", "technology"],
+    "technology & hci": ["ai", "technology"],
     "communication": ["accuracy_misinformation"],
     "food & nutrition": ["consumer_behavior", "health_psychology"],
     "prosocial behavior": ["charitable_giving", "social_psychology"],
@@ -636,7 +636,7 @@ class SurveyDescriptionParser:
             "environmental psychology": ["environment", "climate", "sustainability", "green", "recycling", "carbon", "pollution"],
             "educational psychology": ["education", "learning", "student", "teacher", "academic", "classroom", "instruction"],
             "moral psychology": ["moral", "ethical", "fairness", "justice", "virtue", "dilemma", "right", "wrong"],
-            "technology & HCI": ["technology", "ai", "artificial intelligence", "robot", "app", "digital", "online", "interface", "ux"],
+            "technology & hci": ["technology", "ai", "artificial intelligence", "robot", "app", "digital", "online", "interface", "ux"],
             "communication": ["media", "news", "framing", "message", "communication", "misinformation", "fake news"],
             "food & nutrition": ["food", "eating", "diet", "nutrition", "meal", "restaurant", "taste", "organic"],
             "prosocial behavior": ["cooperation", "altruism", "helping", "charity", "donation", "volunteer", "prosocial"],
@@ -871,7 +871,7 @@ class SurveyDescriptionParser:
                 {"name": "NASA-TLX", "description": "6-item, 0-100 slider measuring cognitive workload", "why": "Standard measure of task difficulty and mental effort."},
                 {"name": "Self-Efficacy", "description": "5-item, 1-7 Likert scale", "why": "Captures confidence in cognitive abilities; moderates performance."},
             ],
-            "technology & HCI": [
+            "technology & hci": [
                 {"name": "Technology Acceptance Model (TAM)", "description": "12-item, 1-7 Likert scale", "why": "Standard measure for technology adoption research."},
                 {"name": "System Usability Scale (SUS)", "description": "10-item, 1-5 Likert scale", "why": "Industry-standard usability benchmark; easy to interpret."},
                 {"name": "NASA-TLX", "description": "6-item, 0-100 slider measuring cognitive workload", "why": "Captures task load in human-computer interaction studies."},
@@ -1102,7 +1102,7 @@ class SurveyDescriptionParser:
                 "open_ended": (
                     "Why did you rate the article's credibility the way you did?"
                 ),
-                "domain": "technology & HCI",
+                "domain": "technology & hci",
             },
             {
                 "title": "Moral Framing and Donation Behavior",

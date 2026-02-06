@@ -6,7 +6,7 @@ Generates comprehensive instructor-facing reports for student simulations.
 """
 
 # Version identifier to help track deployed code
-__version__ = "1.2.8"  # v1.2.8: Visual design tables, navigation polish, builder UX improvements
+__version__ = "1.2.9"  # v1.2.9: Persona preview, domain dropdown, builder UX, custom persona weights
 
 from dataclasses import dataclass
 from datetime import datetime
