@@ -2969,6 +2969,8 @@ def _render_conversational_builder() -> None:
                 st.session_state["builder_conditions_text"] = ex["conditions"]
                 st.session_state["builder_scales_text"] = ex["scales"]
                 st.session_state["builder_oe_text"] = ex.get("open_ended", "")
+                st.session_state["study_title"] = ex["title"]
+                st.session_state["study_description"] = f"Investigating {ex.get('domain', ex['title'].lower())}"
                 st.rerun()
 
     # ── Section 1: Experimental Conditions ──────────────────────────────
@@ -3235,8 +3237,27 @@ def _render_builder_design_review() -> None:
         st.warning("No study design found. Go back to the **Study Input** tab and describe your study.")
         return
 
+    # ── Go back to edit button (Issue #19) ─────────────────────────────
+    if st.button("← Edit my study description", key="builder_go_back_edit"):
+        st.session_state["conversational_builder_complete"] = False
+        st.rerun()
+
     st.markdown("### Review Your Study Design")
     st.markdown("Review and edit the study specification extracted from your description.")
+
+    # ── Detected Research Domain (Issue #25) ─────────────────────────────
+    detected_domain = inferred.get("study_context", {}).get("domain", "")
+    domain_override = st.text_input(
+        "Research Domain",
+        value=detected_domain if detected_domain else "",
+        key="builder_review_domain",
+        help="The research domain detected from your study description. Edit to override.",
+    )
+    if domain_override.strip():
+        if "study_context" not in inferred:
+            inferred["study_context"] = {}
+        inferred["study_context"]["domain"] = domain_override.strip()
+        st.session_state["inferred_design"] = inferred
 
     conditions = inferred.get("conditions", [])
     scales = inferred.get("scales", [])
@@ -3247,8 +3268,20 @@ def _render_builder_design_review() -> None:
     st.markdown("---")
     st.markdown("#### Conditions")
     if conditions:
+        cond_to_remove = None
         for i, cond in enumerate(conditions):
-            st.markdown(f"**{i+1}.** {cond}")
+            cond_col, cond_btn_col = st.columns([8, 1])
+            with cond_col:
+                st.markdown(f"**{i+1}.** {cond}")
+            with cond_btn_col:
+                if len(conditions) > 1 and st.button("X", key=f"br_remove_cond_{i}", help=f"Remove '{cond}'"):
+                    cond_to_remove = i
+        if cond_to_remove is not None:
+            conditions.pop(cond_to_remove)
+            inferred["conditions"] = conditions
+            st.session_state["inferred_design"] = inferred
+            st.session_state["selected_conditions"] = conditions
+            st.rerun()
     else:
         st.warning("No conditions found")
 
@@ -3279,8 +3312,9 @@ def _render_builder_design_review() -> None:
     st.markdown("---")
     st.markdown("#### Dependent Variables / Scales")
     if scales:
+        scale_to_remove = None
         for i, scale in enumerate(scales):
-            col1, col2, col3, col4 = st.columns([3, 1, 1, 1])
+            col1, col2, col3, col4, col5 = st.columns([3, 1, 1, 1, 0.5])
             with col1:
                 new_name = st.text_input(
                     "Name", value=scale.get("name", ""), key=f"br_scale_name_{i}"
@@ -3308,6 +3342,17 @@ def _render_builder_design_review() -> None:
                 )
                 scale["scale_max"] = new_max
                 scale["scale_points"] = new_max
+            with col5:
+                st.markdown("<br>", unsafe_allow_html=True)
+                if st.button("Remove", key=f"br_remove_scale_{i}", help=f"Remove '{scale.get('name', 'scale')}'"):
+                    scale_to_remove = i
+
+        if scale_to_remove is not None:
+            scales.pop(scale_to_remove)
+            inferred["scales"] = scales
+            st.session_state["inferred_design"] = inferred
+            st.session_state["confirmed_scales"] = scales
+            st.rerun()
 
         inferred["scales"] = scales
         st.session_state["inferred_design"] = inferred
@@ -3319,8 +3364,31 @@ def _render_builder_design_review() -> None:
     if open_ended:
         st.markdown("---")
         st.markdown("#### Open-Ended Questions")
+        oe_to_remove = None
         for i, oe in enumerate(open_ended):
-            st.markdown(f"**{i+1}.** {oe.get('question_text', 'N/A')} (`{oe.get('variable_name', '')}`)")
+            oe_col1, oe_col2 = st.columns([8, 1])
+            with oe_col1:
+                new_text = st.text_input(
+                    f"Question {i+1} (`{oe.get('variable_name', '')}`)",
+                    value=oe.get("question_text", ""),
+                    key=f"br_oe_text_{i}",
+                )
+                if new_text != oe.get("question_text", ""):
+                    oe["question_text"] = new_text
+            with oe_col2:
+                st.markdown("<br>", unsafe_allow_html=True)
+                if st.button("Remove", key=f"br_remove_oe_{i}", help=f"Remove question {i+1}"):
+                    oe_to_remove = i
+        if oe_to_remove is not None:
+            open_ended.pop(oe_to_remove)
+            inferred["open_ended_questions"] = open_ended
+            st.session_state["inferred_design"] = inferred
+            st.session_state["confirmed_open_ended"] = open_ended
+            st.rerun()
+        # Persist edits
+        inferred["open_ended_questions"] = open_ended
+        st.session_state["inferred_design"] = inferred
+        st.session_state["confirmed_open_ended"] = open_ended
 
     # ── Sample Size ─────────────────────────────────────────────────────
     st.markdown("---")
@@ -3357,11 +3425,11 @@ def _render_builder_design_review() -> None:
     difficulty = st.select_slider(
         "How 'messy' should the simulated data be?",
         options=["easy", "medium", "hard", "expert"],
-        value=st.session_state.get("difficulty_level", "medium"),
-        key="builder_difficulty",
+        value=st.session_state.get("builder_difficulty_level", st.session_state.get("difficulty_level", "medium")),
+        key="builder_review_difficulty",
         help="Easy = clean data with high attention. Hard = more noise, careless respondents, missing data.",
     )
-    st.session_state["difficulty_level"] = difficulty
+    st.session_state["builder_difficulty_level"] = difficulty
 
     # ── Effect Sizes (Optional) ─────────────────────────────────────────
     if conditions and scales and len(conditions) >= 2:
@@ -3418,7 +3486,11 @@ def _render_builder_design_review() -> None:
     if conditions and scales:
         st.success(
             f"Design ready: **{len(conditions)}** conditions, **{len(scales)}** scale(s), "
-            f"**{sample}** participants. Proceed to the **Generate** tab."
+            f"**{sample}** participants."
+        )
+        st.info(
+            "Your design is fully configured. You can proceed directly to the "
+            "**Generate** tab to simulate your data."
         )
     else:
         st.error("Design incomplete. Please go back and provide conditions and scales.")
@@ -6222,13 +6294,19 @@ with tab_generate:
     st.markdown("---")
     st.markdown("### Data Quality Difficulty")
 
+    # Use builder_difficulty_level as fallback if set from design review
+    _diff_options = ['easy', 'medium', 'hard', 'expert']
+    _builder_diff = st.session_state.get("builder_difficulty_level", "")
+    _diff_default = _builder_diff if _builder_diff in _diff_options else "medium"
+    _diff_index = _diff_options.index(_diff_default)
+
     difficulty_col1, difficulty_col2 = st.columns([1, 2])
     with difficulty_col1:
         difficulty_level = st.selectbox(
             "Select difficulty level",
-            options=['easy', 'medium', 'hard', 'expert'],
+            options=_diff_options,
             format_func=lambda x: DIFFICULTY_LEVELS[x]['name'],
-            index=1,  # Default to 'medium'
+            index=_diff_index,
             key="difficulty_level",
             help="Controls the amount of noise and data quality issues in the simulated data"
         )
@@ -6325,11 +6403,34 @@ with tab_generate:
     if not st.session_state.get("advanced_mode", False):
         # v1.0.0: Use difficulty level settings
         diff_settings = _get_difficulty_settings(difficulty_level)
-        demographics = STANDARD_DEFAULTS["demographics"].copy()
+        # Use builder demographics if available, otherwise defaults
+        builder_demo = st.session_state.get("demographics_config")
+        if builder_demo and isinstance(builder_demo, dict):
+            demographics = {
+                "gender_quota": builder_demo.get("gender_quota", 50),
+                "age_mean": builder_demo.get("age_mean", 35),
+                "age_sd": builder_demo.get("age_sd", 12),
+            }
+        else:
+            demographics = STANDARD_DEFAULTS["demographics"].copy()
         attention_rate = diff_settings['attention_rate']  # From difficulty level
         random_responder_rate = diff_settings['random_responder_rate']  # From difficulty level
         exclusion = ExclusionCriteria(**STANDARD_DEFAULTS["exclusion_criteria"])
+        # Use builder effect sizes if available
+        builder_effects = st.session_state.get("builder_effect_sizes", [])
         effect_sizes: List[EffectSizeSpec] = []
+        for be in builder_effects:
+            try:
+                effect_sizes.append(EffectSizeSpec(
+                    variable=be["variable"],
+                    factor=be.get("factor", "condition"),
+                    level_high=be["level_high"],
+                    level_low=be["level_low"],
+                    cohens_d=float(be.get("cohens_d", 0.5)),
+                    direction=be.get("direction", "positive"),
+                ))
+            except (KeyError, ValueError):
+                pass
         custom_persona_weights = None
 
         # Store difficulty settings in session state for engine
