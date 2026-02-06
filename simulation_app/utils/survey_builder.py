@@ -1,7 +1,7 @@
 """
 Conversational Survey Builder - Natural Language Study Specification Parser
 
-Version: 1.2.7
+Version: 1.2.8
 Allows users to describe their experiment in words instead of uploading a QSF file.
 Parses natural language descriptions into structured survey specifications that
 feed directly into the EnhancedSimulationEngine.
@@ -19,7 +19,7 @@ import re
 from typing import Any, Dict, List, Optional, Tuple
 from dataclasses import dataclass, field
 
-__version__ = "1.2.7"
+__version__ = "1.2.8"
 
 
 # ─── Common scale anchors used in behavioral science ───────────────────────────
