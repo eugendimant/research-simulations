@@ -371,6 +371,29 @@ def _normalize_open_ended(open_ended: Optional[List[Any]]) -> List[Dict[str, Any
     return normalized
 
 
+def _safe_parse_reverse_items(reverse_items_raw: Any) -> set:
+    """
+    Safely parse reverse items, handling invalid values gracefully.
+
+    Args:
+        reverse_items_raw: Raw reverse items value (could be list, None, or invalid)
+
+    Returns:
+        Set of integer item numbers (empty set if parsing fails)
+    """
+    if not reverse_items_raw:
+        return set()
+
+    result = set()
+    items_list = reverse_items_raw if isinstance(reverse_items_raw, (list, tuple)) else []
+    for x in items_list:
+        try:
+            result.add(int(x))
+        except (ValueError, TypeError):
+            pass  # Skip invalid reverse item values
+    return result
+
+
 def _substitute_embedded_fields(text: str, condition: str, embedded_data: Optional[Dict[str, Any]] = None) -> str:
     """
     Substitute embedded data field references in question text.
@@ -632,6 +655,10 @@ def _validate_condition_assignment(
     if n == 0:
         return {'valid': False, 'error': 'No assignments'}
 
+    # Guard against empty conditions list to prevent division by zero
+    if not conditions or len(conditions) == 0:
+        return {'valid': False, 'error': 'No conditions provided'}
+
     # Count assignments
     counts = {}
     for cond in conditions:
@@ -639,13 +666,14 @@ def _validate_condition_assignment(
 
     # Calculate expected counts
     expected = {}
+    n_conditions = len(conditions)
     if allocation:
         for cond in conditions:
-            pct = allocation.get(cond, 100 / len(conditions))
+            pct = allocation.get(cond, 100 / n_conditions)
             expected[cond] = n * pct / 100
     else:
         for cond in conditions:
-            expected[cond] = n / len(conditions)
+            expected[cond] = n / n_conditions
 
     # Check deviations
     deviations = {}
@@ -3737,8 +3765,23 @@ class EnhancedSimulationEngine:
         """
         rng = np.random.RandomState(participant_seed)
 
-        scale_min = int(scale_min)
-        scale_max = int(scale_max)
+        # Defensive conversion with fallbacks for None/NaN
+        try:
+            if scale_min is None or (isinstance(scale_min, float) and np.isnan(scale_min)):
+                scale_min = 1
+            else:
+                scale_min = int(scale_min)
+        except (ValueError, TypeError):
+            scale_min = 1
+
+        try:
+            if scale_max is None or (isinstance(scale_max, float) and np.isnan(scale_max)):
+                scale_max = 7
+            else:
+                scale_max = int(scale_max)
+        except (ValueError, TypeError):
+            scale_max = 7
+
         if scale_max < scale_min:
             scale_min, scale_max = scale_max, scale_min
         scale_range = scale_max - scale_min
@@ -4273,14 +4316,26 @@ class EnhancedSimulationEngine:
             num_items = max(1, num_items)
 
             # Extract scale_min and scale_max from scale dict (from QSF detection)
+            # Defensive handling: check for None, NaN, and invalid types
             scale_min = scale.get("scale_min", 1)
             scale_max = scale.get("scale_max", scale_points)
+            # Handle None
             if scale_min is None:
                 scale_min = 1
             if scale_max is None:
                 scale_max = scale_points
-            scale_min = int(scale_min)
-            scale_max = int(scale_max)
+            # Handle NaN (can occur from DataFrame conversions)
+            try:
+                if isinstance(scale_min, float) and np.isnan(scale_min):
+                    scale_min = 1
+                if isinstance(scale_max, float) and np.isnan(scale_max):
+                    scale_max = scale_points
+                scale_min = int(scale_min)
+                scale_max = int(scale_max)
+            except (ValueError, TypeError):
+                # Fallback if conversion fails
+                scale_min = 1
+                scale_max = scale_points
 
             # Safely parse reverse_items - skip invalid values
             reverse_items_raw = scale.get("reverse_items", []) or []
@@ -5071,7 +5126,7 @@ class EnhancedSimulationEngine:
             scale_name = scale_name_raw.replace(" ", "_")
             num_items = int(scale.get("num_items", 5))
             scale_points = int(scale.get("scale_points", 7))
-            reverse_items = set(int(x) for x in (scale.get("reverse_items", []) or []))
+            reverse_items = _safe_parse_reverse_items(scale.get("reverse_items", []))
 
             items = [f"{scale_name}_{i}" for i in range(1, num_items + 1)]
 
@@ -5142,7 +5197,7 @@ class EnhancedSimulationEngine:
             scale_name = scale_name_raw.replace(" ", "_")
             num_items = int(scale.get("num_items", 5))
             scale_points = int(scale.get("scale_points", 7))
-            reverse_items = set(int(x) for x in (scale.get("reverse_items", []) or []))
+            reverse_items = _safe_parse_reverse_items(scale.get("reverse_items", []))
 
             items = [f"{scale_name}_{i}" for i in range(1, num_items + 1)]
 
@@ -5214,7 +5269,7 @@ class EnhancedSimulationEngine:
             scale_name = scale_name_raw.replace(" ", "_")
             num_items = int(scale.get("num_items", 5))
             scale_points = int(scale.get("scale_points", 7))
-            reverse_items = set(int(x) for x in (scale.get("reverse_items", []) or []))
+            reverse_items = _safe_parse_reverse_items(scale.get("reverse_items", []))
 
             items = [f"{scale_name}_{i}" for i in range(1, num_items + 1)]
 
@@ -5288,7 +5343,7 @@ class EnhancedSimulationEngine:
             scale_name = scale_name_raw.replace(" ", "_")
             num_items = int(scale.get("num_items", 5))
             scale_points = int(scale.get("scale_points", 7))
-            reverse_items = set(int(x) for x in (scale.get("reverse_items", []) or []))
+            reverse_items = _safe_parse_reverse_items(scale.get("reverse_items", []))
 
             items = [f"{scale_name}_{i}" for i in range(1, num_items + 1)]
 
@@ -5364,7 +5419,7 @@ class EnhancedSimulationEngine:
             scale_name = scale_name_raw.replace(" ", "_").lower()
             num_items = int(scale.get("num_items", 5))
             scale_points = int(scale.get("scale_points", 7))
-            reverse_items = set(int(x) for x in (scale.get("reverse_items", []) or []))
+            reverse_items = _safe_parse_reverse_items(scale.get("reverse_items", []))
 
             items = [f"{scale_name}_{i}" for i in range(1, num_items + 1)]
 

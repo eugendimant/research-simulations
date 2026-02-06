@@ -4254,8 +4254,10 @@ if active_step == 2:
                     # Use condition name in key for stability when list changes
                     safe_key = cc.replace(" ", "_").replace(".", "_")[:20]
                     if st.button("✕", key=f"rm_custom_{safe_key}_{i}"):
-                        custom_conditions.remove(cc)
-                        st.session_state["custom_conditions"] = custom_conditions
+                        # Defensive: check if item still exists before removing
+                        if cc in custom_conditions:
+                            custom_conditions.remove(cc)
+                            st.session_state["custom_conditions"] = custom_conditions
                         st.rerun()
 
     # Combine selected and custom conditions
@@ -4560,7 +4562,7 @@ if active_step == 2:
 
                 # Update condition allocation for crossed conditions
                 n_crossed = len(crossed_conditions)
-                if n_crossed > 0:
+                if n_crossed > 0 and sample_size > 0:
                     n_per = sample_size // n_crossed
                     remainder = sample_size % n_crossed
                     st.session_state["condition_allocation"] = {
@@ -5315,7 +5317,7 @@ if active_step == 2:
             final_conditions = st.session_state["factorial_crossed_conditions"]
             # Update condition allocation for the crossed conditions
             n_crossed = len(final_conditions)
-            if n_crossed > 0 and "condition_allocation" not in st.session_state:
+            if n_crossed > 0 and sample_size > 0 and "condition_allocation" not in st.session_state:
                 n_per = sample_size // n_crossed
                 remainder = sample_size % n_crossed
                 st.session_state["condition_allocation"] = {
