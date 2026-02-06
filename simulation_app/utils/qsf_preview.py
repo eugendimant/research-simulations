@@ -33,7 +33,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 # Version identifier to help track deployed code
-__version__ = "1.0.0"  # v1.0.0 OFFICIAL RELEASE: Enhanced scale detection, skip logic, difficulty levels, mediation, pre-reg checker
+__version__ = "1.1.0"  # v1.1.0: Enhanced data quality, response uniqueness, topic detection, UI improvements
 
 
 # ============================================================================

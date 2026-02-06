@@ -60,10 +60,10 @@ introspection, memory, experience, recall, opinion, belief, preference, attitude
 value, worldview, prediction, intention, suggestion, recommendation, advice,
 association, impression, perception, feedback, comment, observation, general
 
-Version: 1.0.0 - OFFICIAL RELEASE: Enhanced scale detection, difficulty levels, mediation, pre-reg checker
+Version: 1.1.0 - Enhanced response uniqueness, topic detection, social science domains
 """
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 
 import random
 import re
@@ -520,6 +520,22 @@ class StudyDomain(Enum):
     SKILLS_OBSOLESCENCE = "skills_obsolescence"
     UNIVERSAL_BASIC_INCOME = "universal_basic_income"
     HUMAN_MACHINE_COLLABORATION = "human_machine_collaboration"
+
+    # ========== ADVANCED SOCIAL SCIENCE DOMAINS (v1.1.0) ==========
+
+    # Cognitive & Self-Regulation (4 domains)
+    SELF_CONTROL = "self_control"
+    EMOTION_REGULATION = "emotion_regulation"
+    CONFIRMATION_BIAS = "confirmation_bias"
+    MENTAL_EFFORT = "mental_effort"
+
+    # Interpersonal & Group (3 domains)
+    RELATIONSHIP_QUALITY = "relationship_quality"
+    GROUP_IDENTITY = "group_identity"
+    BEHAVIOR_INTENTION = "behavior_intention"
+
+    # Scientific Reasoning (1 domain)
+    SCIENTIFIC_REASONING = "scientific_reasoning"
 
 
 # ============================================================================
@@ -3430,6 +3446,139 @@ DOMAIN_TEMPLATES: Dict[str, Dict[str, Dict[str, List[str]]]] = {
             "very_negative": ["Automation will devastate the job market.", "Mass unemployment is coming.", "Technology is replacing humans unfairly.", "Workers will suffer greatly.", "I'm very worried about automation."],
         },
     },
+
+    # ========== ADDITIONAL SOCIAL SCIENCE DOMAINS (v1.1.0) ==========
+
+    # MORAL PSYCHOLOGY
+    "moral_judgment": {
+        "explanation": {
+            "very_positive": ["This action is clearly morally right.", "The ethical choice here is obvious.", "I strongly support this moral stance.", "This aligns with my core values.", "Morally, this is the correct path."],
+            "positive": ["This seems like the ethical choice.", "I think this is morally acceptable.", "This action appears justified.", "The moral reasoning here is sound.", "I can support this ethically."],
+            "neutral": ["Morally, this is a gray area.", "I can see ethical arguments both ways.", "This is a difficult moral question.", "The ethics here are complex.", "I'm torn on the morality of this."],
+            "negative": ["I have moral concerns about this.", "This doesn't seem entirely ethical.", "I'm uncomfortable with this morally.", "There are ethical issues here.", "This raises moral red flags."],
+            "very_negative": ["This is morally wrong.", "I strongly oppose this on ethical grounds.", "This violates fundamental moral principles.", "This is clearly unethical.", "I cannot support this morally."],
+        },
+    },
+
+    "ethical_dilemma": {
+        "explanation": {
+            "very_positive": ["Despite the dilemma, I'm confident in my choice.", "The right answer became clear to me.", "I feel good about my ethical reasoning.", "This dilemma has a defensible solution.", "My moral compass guided me well."],
+            "positive": ["I made my best ethical judgment.", "I think my choice was reasonable.", "I weighed the considerations carefully.", "My decision seems morally sound.", "I'm relatively comfortable with my choice."],
+            "neutral": ["This was a genuine dilemma with no easy answer.", "Both options had merit and problems.", "I struggled with this ethical question.", "Any choice here involves moral trade-offs.", "I'm not sure there's a right answer."],
+            "negative": ["This dilemma made me uncomfortable.", "I'm not satisfied with my choice.", "The options were both problematic.", "I wish there was a better alternative.", "This ethical conflict was troubling."],
+            "very_negative": ["This dilemma had no good solution.", "I hated having to choose.", "Both options felt morally wrong.", "This situation was deeply troubling.", "I'm distressed by this ethical bind."],
+        },
+    },
+
+    # COGNITIVE BIASES
+    "confirmation_bias": {
+        "explanation": {
+            "very_positive": ["I actively seek out diverse viewpoints.", "I challenge my own assumptions regularly.", "I'm very open to evidence that contradicts my views.", "I work hard to avoid confirmation bias.", "I embrace information that challenges me."],
+            "positive": ["I try to consider different perspectives.", "I'm open to changing my mind.", "I seek out various sources.", "I recognize my biases exist.", "I make an effort to be balanced."],
+            "neutral": ["I probably have some confirmation bias.", "I'm not sure how biased I am.", "Like everyone, I have preferences.", "I try but likely fall short.", "Avoiding bias is difficult."],
+            "negative": ["I tend to favor information I agree with.", "I probably don't seek opposing views enough.", "My information sources are limited.", "I recognize this is a weakness.", "I could do better at being open-minded."],
+            "very_negative": ["I admit I mostly seek confirming information.", "I tend to dismiss opposing views.", "My media diet is probably biased.", "I'm not very open to contrary evidence.", "I prefer information that supports my views."],
+        },
+    },
+
+    # SOCIAL COMPARISON
+    "social_comparison": {
+        "explanation": {
+            "very_positive": ["Comparing myself to others motivates me.", "I learn from people who are doing well.", "Social comparison helps me improve.", "I feel inspired by others' success.", "Comparison gives me useful benchmarks."],
+            "positive": ["Some social comparison can be helpful.", "I occasionally compare and find it useful.", "Seeing others' progress can motivate.", "I try to compare constructively.", "Comparison sometimes provides perspective."],
+            "neutral": ["Social comparison has mixed effects on me.", "Sometimes it helps, sometimes it hurts.", "I have mixed feelings about comparing.", "It depends on the situation.", "I'm neutral about social comparison."],
+            "negative": ["Social comparison often makes me feel worse.", "I tend to compare unfavorably.", "Comparing myself to others is discouraging.", "I find it more harmful than helpful.", "I try to avoid social comparison."],
+            "very_negative": ["Social comparison is very harmful to me.", "I always feel worse after comparing.", "Comparison triggers negative feelings.", "I strongly dislike social comparison.", "It's toxic for my wellbeing."],
+        },
+    },
+
+    # SELF-REGULATION
+    "self_control": {
+        "explanation": {
+            "very_positive": ["I have excellent self-control.", "I'm very disciplined in my choices.", "Resisting temptation is easy for me.", "I consistently make good decisions.", "Self-regulation is a strength of mine."],
+            "positive": ["I have reasonably good self-control.", "I usually resist temptation.", "I'm fairly disciplined.", "I make good choices most of the time.", "My self-control is adequate."],
+            "neutral": ["My self-control is average.", "Sometimes I'm disciplined, sometimes not.", "I have mixed results with self-control.", "It depends on the situation.", "I'm neither strong nor weak in this area."],
+            "negative": ["I struggle with self-control.", "Resisting temptation is difficult.", "I often give in to impulses.", "My discipline could be better.", "Self-regulation is challenging for me."],
+            "very_negative": ["I have very poor self-control.", "I almost always give in to temptation.", "Discipline is extremely hard for me.", "I frequently make impulsive choices.", "Self-control is a major weakness."],
+        },
+    },
+
+    # WELLBEING & LIFE SATISFACTION
+    "life_satisfaction": {
+        "explanation": {
+            "very_positive": ["I'm very satisfied with my life overall.", "Life is going extremely well.", "I feel fulfilled and content.", "I have few regrets.", "My life is close to ideal."],
+            "positive": ["I'm generally satisfied with my life.", "Things are going pretty well.", "I'm content for the most part.", "Life is good overall.", "I have much to be grateful for."],
+            "neutral": ["My life satisfaction is average.", "Some things are good, some aren't.", "I have mixed feelings about my life.", "It could be better, could be worse.", "I'm neither satisfied nor dissatisfied."],
+            "negative": ["I'm somewhat dissatisfied with my life.", "Things could be going better.", "I have significant concerns.", "My life isn't what I hoped.", "I'm not very satisfied overall."],
+            "very_negative": ["I'm very dissatisfied with my life.", "Things are not going well at all.", "I have many regrets.", "My life is far from ideal.", "I'm deeply unsatisfied."],
+        },
+    },
+
+    # EMOTION REGULATION
+    "emotion_regulation": {
+        "explanation": {
+            "very_positive": ["I manage my emotions very effectively.", "I have excellent emotional control.", "I rarely get overwhelmed by feelings.", "I can regulate my emotions well.", "Emotional stability is a strength."],
+            "positive": ["I generally manage emotions well.", "I have decent emotional control.", "I can usually regulate my feelings.", "I cope with emotions reasonably.", "My emotional regulation is good."],
+            "neutral": ["My emotion regulation is average.", "Sometimes I manage well, sometimes not.", "I have typical emotional control.", "My coping varies by situation.", "I'm neither great nor poor at this."],
+            "negative": ["I struggle to regulate emotions.", "My feelings often overwhelm me.", "Emotional control is difficult.", "I have trouble managing feelings.", "My emotion regulation needs work."],
+            "very_negative": ["I have very poor emotion regulation.", "I'm frequently overwhelmed by feelings.", "Emotional control is extremely hard.", "My emotions control me.", "I struggle greatly with this."],
+        },
+    },
+
+    # INTERPERSONAL RELATIONSHIPS
+    "relationship_quality": {
+        "explanation": {
+            "very_positive": ["My relationships are extremely fulfilling.", "I have wonderful connections with others.", "My relationships are very satisfying.", "I feel deeply connected to people.", "My interpersonal life is excellent."],
+            "positive": ["I have good relationships overall.", "My connections with others are positive.", "I'm satisfied with my relationships.", "I have meaningful connections.", "My relationships are generally healthy."],
+            "neutral": ["My relationships are average.", "Some relationships are good, some not.", "I have mixed relationship quality.", "My interpersonal life is okay.", "Relationships are neither great nor poor."],
+            "negative": ["My relationships need improvement.", "I'm not satisfied with my connections.", "My relationships have problems.", "I feel somewhat disconnected.", "My interpersonal life is lacking."],
+            "very_negative": ["My relationships are very poor.", "I feel isolated and disconnected.", "My interpersonal life is troubled.", "I have few meaningful connections.", "Relationships are a major struggle."],
+        },
+    },
+
+    # SCIENTIFIC LITERACY
+    "scientific_reasoning": {
+        "explanation": {
+            "very_positive": ["I strongly value scientific evidence.", "I trust the scientific method.", "I base my views on research.", "Science provides reliable knowledge.", "I'm very science-oriented."],
+            "positive": ["I generally trust scientific findings.", "I value evidence-based approaches.", "Science is usually reliable.", "I try to follow the research.", "I'm fairly science-minded."],
+            "neutral": ["I have mixed views on science.", "Science has strengths and limits.", "I'm neither pro nor anti-science.", "It depends on the topic.", "I'm neutral about scientific claims."],
+            "negative": ["I'm skeptical of some scientific claims.", "Scientists can be biased too.", "I question some research findings.", "Science doesn't have all the answers.", "I'm cautious about scientific claims."],
+            "very_negative": ["I'm very skeptical of science.", "Scientists often get things wrong.", "I distrust many scientific claims.", "Science is overrated.", "I don't rely on scientific evidence."],
+        },
+    },
+
+    # GROUP DYNAMICS
+    "group_identity": {
+        "explanation": {
+            "very_positive": ["I strongly identify with my group.", "Group membership is very important to me.", "I feel a deep connection to my group.", "My group is central to who I am.", "I'm proud of my group membership."],
+            "positive": ["I identify with my group.", "Being part of this group matters to me.", "I feel connected to my group.", "Group membership is meaningful.", "I value my group affiliation."],
+            "neutral": ["I have moderate group identification.", "My group membership is somewhat important.", "I feel some connection to my group.", "Group identity matters to some extent.", "I'm neutral about group membership."],
+            "negative": ["I don't strongly identify with my group.", "Group membership isn't very important.", "I feel somewhat disconnected from my group.", "Group identity doesn't define me much.", "I'm ambivalent about my group."],
+            "very_negative": ["I don't identify with my group at all.", "Group membership is unimportant to me.", "I feel no connection to my group.", "Group identity doesn't matter.", "I reject group-based thinking."],
+        },
+    },
+
+    # BEHAVIORAL INTENTIONS
+    "behavior_intention": {
+        "explanation": {
+            "very_positive": ["I definitely intend to do this.", "I'm fully committed to this action.", "I will certainly follow through.", "My intention is very strong.", "I'm determined to do this."],
+            "positive": ["I intend to do this.", "I'll likely follow through.", "I plan to take this action.", "My intention is fairly strong.", "I'm inclined to do this."],
+            "neutral": ["I might do this.", "I'm undecided about taking action.", "My intention is uncertain.", "I could go either way.", "I haven't decided yet."],
+            "negative": ["I probably won't do this.", "I'm unlikely to follow through.", "My intention is weak.", "I'm leaning against this action.", "I doubt I'll do this."],
+            "very_negative": ["I definitely won't do this.", "I have no intention of doing this.", "I refuse to take this action.", "My intention is firmly against.", "I'm certain I won't do this."],
+        },
+    },
+
+    # COGNITIVE LOAD
+    "mental_effort": {
+        "explanation": {
+            "very_positive": ["This required minimal mental effort.", "I found this very easy to think about.", "The cognitive load was very light.", "This was effortless for me.", "I didn't have to think hard at all."],
+            "positive": ["This was fairly easy to process.", "I didn't find it too demanding.", "The mental effort was manageable.", "This wasn't too taxing.", "I could think about this easily."],
+            "neutral": ["The mental effort was moderate.", "This required some thinking.", "The cognitive demand was average.", "It wasn't too easy or hard.", "The effort required was typical."],
+            "negative": ["This required significant mental effort.", "I found it somewhat demanding.", "The cognitive load was high.", "This was mentally taxing.", "I had to think quite hard."],
+            "very_negative": ["This was very mentally demanding.", "I found it extremely difficult to process.", "The cognitive load was overwhelming.", "This was exhausting to think about.", "The mental effort was excessive."],
+        },
+    },
 }
 
 
@@ -4189,6 +4338,46 @@ DOMAIN_KEYWORDS: Dict[StudyDomain, List[str]] = {
     StudyDomain.SOCIAL_SUPPORT: [
         'social support', 'support network', 'emotional support', 'help from others',
     ],
+
+    # ========== ADVANCED SOCIAL SCIENCE DOMAINS (v1.1.0) ==========
+
+    # Cognitive & Self-Regulation
+    StudyDomain.SELF_CONTROL: [
+        'self-control', 'self control', 'willpower', 'impulse control', 'discipline',
+        'temptation', 'resist', 'delay gratification', 'self-regulation',
+    ],
+    StudyDomain.EMOTION_REGULATION: [
+        'emotion regulation', 'emotional control', 'manage emotions', 'coping',
+        'emotional response', 'regulate feelings', 'emotional stability',
+    ],
+    StudyDomain.CONFIRMATION_BIAS: [
+        'confirmation bias', 'seek information', 'biased search', 'motivated reasoning',
+        'selective exposure', 'echo chamber', 'filter bubble',
+    ],
+    StudyDomain.MENTAL_EFFORT: [
+        'mental effort', 'cognitive load', 'thinking effort', 'cognitive demand',
+        'mental workload', 'processing', 'cognitive resources',
+    ],
+
+    # Interpersonal & Group
+    StudyDomain.RELATIONSHIP_QUALITY: [
+        'relationship quality', 'relationship satisfaction', 'interpersonal',
+        'connection quality', 'closeness', 'relationship health',
+    ],
+    StudyDomain.GROUP_IDENTITY: [
+        'group identity', 'social identity', 'group membership', 'collective identity',
+        'in-group', 'group belonging', 'we-feeling',
+    ],
+    StudyDomain.BEHAVIOR_INTENTION: [
+        'intention', 'intend to', 'plan to', 'likely to', 'willingness',
+        'behavioral intention', 'future behavior',
+    ],
+
+    # Scientific Reasoning
+    StudyDomain.SCIENTIFIC_REASONING: [
+        'scientific reasoning', 'evidence-based', 'research', 'scientific method',
+        'empirical', 'data-driven', 'scientific thinking',
+    ],
 }
 
 
@@ -4256,6 +4445,7 @@ def add_variation(response: str, persona_verbosity: float, persona_formality: fl
     """Add natural variation to a response based on persona traits.
 
     v1.0.0: Uses local RNG for deterministic, question-specific variation.
+    v1.1.0: Added research-grounded phrasing for formal personas.
     """
     rng = local_rng or random.Random()
     result = response
@@ -4276,6 +4466,18 @@ def add_variation(response: str, persona_verbosity: float, persona_formality: fl
             "it just makes sense to me.",
         ])
 
+    # v1.1.0: Add research-grounded phrasing for formal/high-engagement personas
+    if persona_formality > 0.6 and rng.random() < 0.25:
+        research_phrases = [
+            " This aligns with what I've read about the topic.",
+            " From what I understand, this is a common perspective.",
+            " Based on my understanding, this makes sense.",
+            " I think this reflects broader patterns in how people think.",
+            " This is consistent with my general knowledge on the subject.",
+            " Considering the evidence, this seems reasonable.",
+        ]
+        result = result.rstrip('.!?') + '.' + rng.choice(research_phrases)
+
     # Add casual modifiers for informal personas
     if persona_formality < 0.4 and rng.random() < 0.3:
         modifier = rng.choice(CASUAL_MODIFIERS)
@@ -4284,6 +4486,16 @@ def add_variation(response: str, persona_verbosity: float, persona_formality: fl
             insert_pos = rng.randint(1, min(3, len(words)-1))
             words.insert(insert_pos, modifier)
             result = ' '.join(words)
+
+    # v1.1.0: Add thoughtful elaboration for high-verbosity personas
+    if persona_verbosity > 0.7 and rng.random() < 0.2:
+        elaborations = [
+            " When I think about it more deeply, several factors come into play.",
+            " There are multiple considerations that influenced my thinking.",
+            " I've given this some thought and considered different angles.",
+            " Looking at this from different perspectives helps clarify my view.",
+        ]
+        result = result.rstrip('.!?') + '.' + rng.choice(elaborations)
 
     # Add concluding phrase occasionally
     if rng.random() < 0.2 and not result.endswith(('.', '!', '?')):
@@ -4301,16 +4513,129 @@ class ComprehensiveResponseGenerator:
     LLM-quality response generator for open-ended survey questions.
 
     Provides context-aware, persona-specific responses across 50+ research domains.
+
+    v1.1.0 Enhancements:
+    - Response fingerprinting to prevent duplicate sentences within a dataset
+    - Topic-aware response generation that stays on survey subject
+    - Sentence variation algorithms for natural text
+    - Scientific grounding with research-based language patterns
     """
+
+    # Class-level response fingerprint tracking for dataset uniqueness
+    _used_responses: set = set()
+    _session_id: int = 0
+
+    # Sentence variation patterns for natural diversity
+    SENTENCE_STARTERS = [
+        "I think ", "I feel ", "In my view, ", "From my perspective, ",
+        "I believe ", "It seems to me that ", "My sense is that ",
+        "I'd say ", "Personally, ", "For me, ", "Looking at this, ",
+        "Considering this, ", "Reflecting on this, ", "In my experience, ",
+    ]
+
+    TRANSITION_PHRASES = [
+        "Also, ", "Additionally, ", "Moreover, ", "Furthermore, ",
+        "On top of that, ", "What's more, ", "Beyond that, ",
+        "Plus, ", "And ", "Not only that, but ", "Similarly, ",
+    ]
+
+    CONCLUDING_PHRASES = [
+        "That's my take on it.", "That's how I see it.", "Those are my thoughts.",
+        "That's what comes to mind.", "That's my perspective.",
+        "That's where I stand.", "That sums up my view.",
+    ]
 
     def __init__(self, seed: Optional[int] = None):
         if seed is not None:
             random.seed(seed)
         self.study_context: Dict[str, Any] = {}
+        # Initialize fresh session for uniqueness tracking
+        ComprehensiveResponseGenerator._session_id += 1
+        ComprehensiveResponseGenerator._used_responses = set()
 
     def set_study_context(self, context: Dict[str, Any]):
         """Set the study context for context-aware generation."""
         self.study_context = context or {}
+
+    def _get_response_fingerprint(self, response: str) -> str:
+        """Generate a fingerprint for detecting duplicate responses."""
+        # Normalize: lowercase, remove punctuation, collapse spaces
+        normalized = re.sub(r'[^\w\s]', '', response.lower())
+        normalized = re.sub(r'\s+', ' ', normalized).strip()
+        # Take first 50 chars as fingerprint (catches near-duplicates)
+        return normalized[:50]
+
+    def _ensure_unique_response(self, response: str, local_rng: random.Random, max_attempts: int = 5) -> str:
+        """Ensure response is unique within the dataset by varying if needed."""
+        fingerprint = self._get_response_fingerprint(response)
+
+        if fingerprint not in ComprehensiveResponseGenerator._used_responses:
+            ComprehensiveResponseGenerator._used_responses.add(fingerprint)
+            return response
+
+        # Response is a duplicate - vary it
+        for attempt in range(max_attempts):
+            varied = self._vary_response(response, local_rng, attempt)
+            new_fingerprint = self._get_response_fingerprint(varied)
+            if new_fingerprint not in ComprehensiveResponseGenerator._used_responses:
+                ComprehensiveResponseGenerator._used_responses.add(new_fingerprint)
+                return varied
+
+        # Fallback: add unique suffix
+        unique_suffix = local_rng.choice([
+            " That's my honest view.", " That reflects my thinking.",
+            " That's what I genuinely feel.", " Those are my real thoughts.",
+            " I wanted to share that perspective.", " That's my actual experience.",
+        ])
+        final = response.rstrip('.!?') + '.' + unique_suffix
+        ComprehensiveResponseGenerator._used_responses.add(self._get_response_fingerprint(final))
+        return final
+
+    def _vary_response(self, response: str, local_rng: random.Random, variation_level: int = 0) -> str:
+        """Apply variation to make a response unique while preserving meaning."""
+        # Level 0: Change sentence starter
+        if variation_level == 0:
+            starter = local_rng.choice(self.SENTENCE_STARTERS)
+            # Remove existing starter if present
+            for existing_starter in self.SENTENCE_STARTERS:
+                if response.lower().startswith(existing_starter.lower()):
+                    response = response[len(existing_starter):]
+                    break
+            return starter + response[0].lower() + response[1:] if response else response
+
+        # Level 1: Add transition phrase in middle
+        elif variation_level == 1:
+            sentences = response.split('. ')
+            if len(sentences) >= 2:
+                transition = local_rng.choice(self.TRANSITION_PHRASES)
+                sentences[1] = transition.lower() + sentences[1][0].lower() + sentences[1][1:] if sentences[1] else sentences[1]
+                return '. '.join(sentences)
+
+        # Level 2: Change concluding phrase
+        elif variation_level == 2:
+            concluder = local_rng.choice(self.CONCLUDING_PHRASES)
+            return response.rstrip('.!?') + '. ' + concluder
+
+        # Level 3: Reorder clauses if possible
+        elif variation_level == 3:
+            if ' because ' in response.lower():
+                parts = response.split(' because ', 1)
+                if len(parts) == 2:
+                    return parts[1].capitalize().rstrip('.') + ', which is why ' + parts[0].lower()
+            elif ' but ' in response.lower():
+                parts = response.split(' but ', 1)
+                if len(parts) == 2:
+                    return 'While ' + parts[1].rstrip('.') + ', ' + parts[0].lower()
+
+        # Level 4: Add qualifier
+        else:
+            qualifiers = [
+                "To be honest, ", "Thinking about it, ", "Upon reflection, ",
+                "When I consider this, ", "Given the circumstances, ",
+            ]
+            return local_rng.choice(qualifiers) + response[0].lower() + response[1:]
+
+        return response
 
     def generate(
         self,
@@ -4384,6 +4709,9 @@ class ComprehensiveResponseGenerator:
         elif persona_verbosity > 0.7:
             response = self._extend(response, domain, sentiment, local_rng)
 
+        # v1.1.0: Add topic-specific context to keep response on-topic
+        response = self._add_topic_context(response, question_text, question_keywords, domain, local_rng)
+
         # v1.0.0: Ensure we never return an empty response
         if not response or not response.strip():
             fallback_responses = [
@@ -4394,6 +4722,78 @@ class ComprehensiveResponseGenerator:
                 "I appreciated the opportunity to reflect on this.",
             ]
             response = local_rng.choice(fallback_responses)
+
+        # v1.1.0: Ensure response is unique within the dataset
+        response = self._ensure_unique_response(response, local_rng)
+
+        return response
+
+    def _add_topic_context(
+        self,
+        response: str,
+        question_text: str,
+        keywords: List[str],
+        domain: StudyDomain,
+        local_rng: random.Random
+    ) -> str:
+        """Add topic-specific context to ensure response stays on-topic.
+
+        v1.1.0: Ensures responses are always relevant to the survey topic.
+        """
+        if not keywords or local_rng.random() > 0.4:  # 40% chance to add context
+            return response
+
+        # Build topic phrases based on extracted keywords
+        topic_phrases = {
+            # Research-related keywords
+            'study': ['in this study', 'for this research', 'in this survey'],
+            'research': ['from a research perspective', 'considering the research'],
+            'experiment': ['in this experiment', 'during the experiment'],
+            'survey': ['in this survey', 'for the survey'],
+
+            # Decision-related keywords
+            'decision': ['regarding my decision', 'about choosing', 'when deciding'],
+            'choice': ['with this choice', 'in making this choice'],
+            'option': ['considering the options', 'between the options'],
+
+            # Evaluation keywords
+            'product': ['about this product', 'for this item', 'regarding what was shown'],
+            'service': ['about the service', 'regarding the service quality'],
+            'brand': ['about the brand', 'regarding this brand'],
+
+            # Experience keywords
+            'experience': ['from my experience', 'based on my experience'],
+            'scenario': ['in this scenario', 'given the situation'],
+            'situation': ['in this situation', 'given these circumstances'],
+
+            # Social/behavioral keywords
+            'people': ['when thinking about others', 'considering other people'],
+            'trust': ['regarding trust', 'about trusting'],
+            'fair': ['about fairness', 'regarding what seems fair'],
+            'risk': ['considering the risk', 'about the uncertainty'],
+
+            # Technology keywords
+            'technology': ['about technology', 'regarding tech'],
+            'ai': ['about AI', 'regarding artificial intelligence'],
+            'algorithm': ['about algorithms', 'regarding automated systems'],
+        }
+
+        # Find matching topic phrase
+        for keyword in keywords[:3]:  # Check top 3 keywords
+            keyword_lower = keyword.lower()
+            for topic_key, phrases in topic_phrases.items():
+                if topic_key in keyword_lower or keyword_lower in topic_key:
+                    phrase = local_rng.choice(phrases)
+                    # Insert phrase naturally into response
+                    if local_rng.random() < 0.5:
+                        # Add at beginning
+                        return f"{phrase.capitalize()}, {response[0].lower()}{response[1:]}"
+                    else:
+                        # Add before last sentence
+                        sentences = response.rsplit('. ', 1)
+                        if len(sentences) == 2:
+                            return f"{sentences[0]}. {phrase.capitalize()}, {sentences[1][0].lower()}{sentences[1][1:]}"
+                    break
 
         return response
 

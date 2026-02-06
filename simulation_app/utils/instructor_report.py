@@ -351,6 +351,37 @@ class InstructorReportGenerator:
         lines.append(f"| **Random Seed** | {metadata.get('random_seed', 'Auto')} |")
         lines.append("")
 
+        # v1.1.0: Add Study Overview section
+        lines.append("## Study Overview")
+        lines.append("")
+        study_desc = metadata.get('study_description', '')
+        if study_desc:
+            # Clean and truncate description
+            clean_desc = study_desc.strip()[:500]
+            if len(study_desc) > 500:
+                clean_desc += "..."
+            lines.append(f"**Description:** {clean_desc}")
+            lines.append("")
+
+        # Design summary
+        conditions = metadata.get('conditions', [])
+        scales = metadata.get('scales', [])
+        sample_size = metadata.get('sample_size', 0)
+
+        lines.append("### Design at a Glance")
+        lines.append("")
+        lines.append("| Element | Details |")
+        lines.append("|---------|---------|")
+        lines.append(f"| **Sample Size** | N = {sample_size} |")
+        lines.append(f"| **Conditions** | {len(conditions)} ({', '.join(conditions[:4])}{'...' if len(conditions) > 4 else ''}) |")
+        lines.append(f"| **Outcome Measures** | {len(scales)} scale(s) detected |")
+
+        # Detected research domain
+        domains = metadata.get('detected_domains', [])
+        if domains:
+            lines.append(f"| **Research Domain** | {domains[0] if domains else 'General'} |")
+        lines.append("")
+
         if team_info:
             lines.append("## Team Information")
             lines.append("")
@@ -673,6 +704,40 @@ class InstructorReportGenerator:
             else:
                 lines.append("_No scales/DVs listed in metadata. This may indicate a configuration issue._")
                 lines.append("")
+
+        # v1.1.0: Add Analysis Recommendations section
+        lines.append("## Analysis Recommendations")
+        lines.append("")
+        lines.append("### Suggested Analysis Steps")
+        lines.append("")
+        lines.append("1. **Data Cleaning**")
+        lines.append("   - Review `Exclude_Recommended` column for data quality issues")
+        lines.append("   - Check `Completion_Time_Seconds` for speedy responders")
+        lines.append("   - Examine `Max_Straight_Line` for response patterns")
+        lines.append("")
+        lines.append("2. **Descriptive Statistics**")
+        lines.append("   - Calculate means and SDs by condition")
+        lines.append("   - Check for outliers in scale responses")
+        lines.append("   - Verify condition balance (N per group)")
+        lines.append("")
+        lines.append("3. **Primary Analyses**")
+
+        # Suggest analysis based on number of conditions
+        conditions = metadata.get('conditions', [])
+        if len(conditions) == 2:
+            lines.append("   - **Independent samples t-test** recommended for 2 conditions")
+            lines.append("   - Report: t-statistic, df, p-value, Cohen's d")
+        elif len(conditions) > 2:
+            lines.append("   - **One-way ANOVA** recommended for 3+ conditions")
+            lines.append("   - If significant, use post-hoc tests (e.g., Tukey HSD)")
+            lines.append("   - Report: F-statistic, df, p-value, eta-squared")
+
+        lines.append("")
+        lines.append("4. **Effect Size Interpretation**")
+        lines.append("   - Small: d = 0.2 (or eta-squared = 0.01)")
+        lines.append("   - Medium: d = 0.5 (or eta-squared = 0.06)")
+        lines.append("   - Large: d = 0.8 (or eta-squared = 0.14)")
+        lines.append("")
 
         if self.config.include_schema_validation and schema_validation is not None:
             lines.append("## Schema validation")
