@@ -118,6 +118,23 @@ KNOWN_SCALES = {
     "rwa": {"items": 15, "min": 1, "max": 7, "label": "Right-Wing Authoritarianism (RWA)"},
     "ucla loneliness": {"items": 20, "min": 1, "max": 4, "label": "UCLA Loneliness Scale"},
     "loneliness": {"items": 20, "min": 1, "max": 4, "label": "UCLA Loneliness Scale"},
+
+    # Iteration 6 additions
+    "iri": {"items": 28, "min": 1, "max": 5, "label": "Interpersonal Reactivity Index (IRI)"},
+    "interpersonal reactivity index": {"items": 28, "min": 1, "max": 5, "label": "Interpersonal Reactivity Index (IRI)"},
+    "big five": {"items": 10, "min": 1, "max": 5, "label": "Big Five Inventory-10"},
+    "tam": {"items": 12, "min": 1, "max": 7, "label": "Technology Acceptance Model (TAM)"},
+    "technology acceptance model": {"items": 12, "min": 1, "max": 7, "label": "Technology Acceptance Model (TAM)"},
+    "net promoter score": {"items": 1, "min": 0, "max": 10, "label": "Net Promoter Score (NPS)"},
+    "nps": {"items": 1, "min": 0, "max": 10, "label": "Net Promoter Score (NPS)"},
+    "nasa-tlx": {"items": 6, "min": 0, "max": 100, "label": "NASA Task Load Index (NASA-TLX)"},
+    "nasa task load index": {"items": 6, "min": 0, "max": 100, "label": "NASA Task Load Index (NASA-TLX)"},
+    "tlx": {"items": 6, "min": 0, "max": 100, "label": "NASA Task Load Index (NASA-TLX)"},
+    "csq-8": {"items": 8, "min": 1, "max": 4, "label": "Client Satisfaction Questionnaire (CSQ-8)"},
+    "csq": {"items": 8, "min": 1, "max": 4, "label": "Client Satisfaction Questionnaire (CSQ-8)"},
+    "client satisfaction questionnaire": {"items": 8, "min": 1, "max": 4, "label": "Client Satisfaction Questionnaire (CSQ-8)"},
+    "imc": {"items": 1, "min": 0, "max": 1, "label": "Instructional Manipulation Check (IMC)"},
+    "instructional manipulation check": {"items": 1, "min": 0, "max": 1, "label": "Instructional Manipulation Check (IMC)"},
 }
 
 # ─── Scale abbreviation aliases → canonical KNOWN_SCALES key ──────────────────
@@ -143,6 +160,16 @@ SCALE_ABBREVIATIONS: Dict[str, str] = {
     "stai": "stai",
     "sdo": "sdo",
     "rwa": "rwa",
+    # Iteration 6 additions
+    "iri": "iri",
+    "tam": "tam",
+    "nps": "nps",
+    "net promoter score": "nps",
+    "tlx": "tlx",
+    "nasa-tlx": "nasa-tlx",
+    "csq": "csq",
+    "csq-8": "csq-8",
+    "imc": "imc",
 }
 
 
@@ -546,9 +573,30 @@ class SurveyDescriptionParser:
                     return factors
         return []
 
-    def detect_research_domain(self, title: str, description: str) -> str:
-        """Detect research domain from study title and description."""
-        combined = f"{title} {description}".lower()
+    def detect_research_domain(
+        self,
+        title: str,
+        description: str,
+        conditions_text: str = "",
+        scales_text: str = "",
+    ) -> str:
+        """
+        Detect research domain from study title, description, condition names,
+        and scale names.
+
+        Args:
+            title: Study title.
+            description: Study description text.
+            conditions_text: Space-separated condition names for additional
+                keyword matching (improves detection when title/description
+                is sparse).
+            scales_text: Space-separated scale/DV names for additional keyword
+                matching.
+
+        Returns:
+            Best-matching research domain string.
+        """
+        combined = f"{title} {description} {conditions_text} {scales_text}".lower()
 
         domain_keywords = {
             "consumer behavior": ["consumer", "purchase", "buying", "shopping", "brand", "product", "advertising", "marketing"],
@@ -642,6 +690,240 @@ class SurveyDescriptionParser:
             },
         }
 
+    def generate_feedback(self, parsed: ParsedDesign) -> List[str]:
+        """
+        Generate smart, actionable suggestions based on the parsed design.
+
+        Checks for common design issues and returns a list of human-readable
+        suggestion strings that help researchers improve their study setup.
+
+        Args:
+            parsed: A fully populated ParsedDesign instance.
+
+        Returns:
+            List of suggestion strings (may be empty if design looks good).
+        """
+        suggestions: List[str] = []
+
+        # ── Check for generic condition names ─────────────────────────────
+        if parsed.conditions:
+            generic_pattern = re.compile(
+                r'^(?:condition|group|cond\.?)\s*\d+$', re.IGNORECASE
+            )
+            generic_count = sum(
+                1 for c in parsed.conditions if generic_pattern.match(c.name.strip())
+            )
+            if generic_count == len(parsed.conditions) and generic_count >= 2:
+                suggestions.append(
+                    "Your conditions have generic names (e.g., 'Condition 1'). "
+                    "Consider using descriptive names that reflect the manipulation "
+                    "(e.g., 'High Trust', 'AI-Generated') for clearer simulation output."
+                )
+
+        # ── Check for single scale — suggest mediators / manipulation checks ─
+        if len(parsed.scales) == 1:
+            suggestions.append(
+                f"You have only one measure ('{parsed.scales[0].name}'). "
+                f"Consider adding a mediator variable to test underlying mechanisms, "
+                f"or a manipulation check to verify your conditions worked as intended."
+            )
+
+        # ── Check for missing open-ended questions ────────────────────────
+        if not parsed.open_ended:
+            suggestions.append(
+                "Your design has no open-ended questions. Adding at least one "
+                "qualitative measure (e.g., 'Why did you make this choice?') "
+                "can provide richer insights and help interpret quantitative patterns."
+            )
+
+        # ── Check per-cell sample size ────────────────────────────────────
+        n_conditions = max(len(parsed.conditions), 1)
+        per_cell = parsed.sample_size // n_conditions
+        if per_cell < 20 and len(parsed.conditions) >= 2:
+            suggestions.append(
+                f"With {parsed.sample_size} participants across "
+                f"{n_conditions} conditions (~{per_cell} per cell), "
+                f"statistical power may be low. Consider increasing to at least "
+                f"{n_conditions * 20} participants (20 per cell) for more "
+                f"reliable effect detection."
+            )
+
+        # ── Check for mixed scale ranges ──────────────────────────────────
+        if len(parsed.scales) >= 2:
+            ranges = [
+                (s.scale_max - s.scale_min) for s in parsed.scales
+            ]
+            if max(ranges) > 10 * min(ranges) and min(ranges) > 0:
+                narrow = [
+                    s.name for s in parsed.scales
+                    if (s.scale_max - s.scale_min) == min(ranges)
+                ]
+                wide = [
+                    s.name for s in parsed.scales
+                    if (s.scale_max - s.scale_min) == max(ranges)
+                ]
+                suggestions.append(
+                    f"Your scales have very different ranges "
+                    f"(e.g., '{narrow[0]}' uses {min(ranges)+1} points vs "
+                    f"'{wide[0]}' uses {max(ranges)+1} points). "
+                    f"This is fine, but remember to standardize (z-score) "
+                    f"before comparing effect sizes across measures."
+                )
+
+        # ── Warn about large factorial designs ────────────────────────────
+        if len(parsed.conditions) > 8:
+            suggestions.append(
+                f"Your design has {len(parsed.conditions)} conditions. "
+                f"With large factorial designs, ensure your sample size is "
+                f"sufficient for each cell. A minimum of 20-30 per cell is "
+                f"recommended, meaning N >= {len(parsed.conditions) * 25} "
+                f"for adequate power."
+            )
+
+        return suggestions
+
+    def suggest_additional_measures(
+        self,
+        domain: str,
+        existing_scales: List[ParsedScale],
+    ) -> List[Dict[str, str]]:
+        """
+        Suggest relevant scales based on the detected research domain that
+        are not already included in the design.
+
+        Args:
+            domain: The detected research domain (e.g., 'consumer behavior').
+            existing_scales: The scales already present in the design.
+
+        Returns:
+            Up to 3 dicts with keys 'name', 'description', and 'why'.
+        """
+        # Map domains to recommended scales with reasons
+        domain_scale_suggestions: Dict[str, List[Dict[str, str]]] = {
+            "consumer behavior": [
+                {"name": "Purchase Intention", "description": "3-item, 1-7 Likert scale measuring likelihood to buy", "why": "Core consumer outcome; captures behavioral intent beyond attitudes."},
+                {"name": "Brand Attitude", "description": "4-item, 1-7 Likert scale measuring overall brand evaluation", "why": "Mediates between ad exposure and purchase; useful for process analysis."},
+                {"name": "Perceived Quality", "description": "4-item, 1-7 Likert scale measuring product quality perception", "why": "Helps distinguish between affective and cognitive evaluation routes."},
+                {"name": "Net Promoter Score (NPS)", "description": "1-item, 0-10 numeric scale measuring recommendation likelihood", "why": "Industry-standard metric; easy to compare with real-world benchmarks."},
+            ],
+            "social psychology": [
+                {"name": "Social Distance", "description": "3-item, 1-7 Likert scale measuring psychological closeness", "why": "Classic social psych measure; captures subtle intergroup attitudes."},
+                {"name": "Perceived Warmth", "description": "3-item, 1-7 Likert scale (Stereotype Content Model)", "why": "One of two fundamental dimensions of social perception."},
+                {"name": "Perceived Competence", "description": "3-item, 1-7 Likert scale (Stereotype Content Model)", "why": "Complements warmth; together they predict distinct behavioral outcomes."},
+                {"name": "Empathy Scale", "description": "5-item, 1-7 Likert scale measuring empathic concern", "why": "Key mediator in prosocial behavior and intergroup relations."},
+            ],
+            "behavioral economics": [
+                {"name": "Risk Perception", "description": "4-item, 1-7 Likert scale measuring perceived risk", "why": "Central to decision-making under uncertainty; common mediator."},
+                {"name": "Need for Cognition (NFC)", "description": "18-item, 1-5 Likert scale measuring cognitive motivation", "why": "Important moderator of framing effects and cognitive biases."},
+                {"name": "Willingness to Pay", "description": "Numeric input, 0-100 dollars", "why": "Direct behavioral measure with high ecological validity."},
+                {"name": "Behavioral Intention", "description": "3-item, 1-7 Likert scale measuring intent to act", "why": "Bridges the attitude-behavior gap in economic decision models."},
+            ],
+            "organizational behavior": [
+                {"name": "Job Satisfaction", "description": "5-item, 1-7 Likert scale", "why": "Foundational OB outcome; strongly tied to turnover and performance."},
+                {"name": "Trust Scale", "description": "5-item, 1-7 Likert scale measuring interpersonal/organizational trust", "why": "Key mediator in leadership and team dynamics research."},
+                {"name": "Motivation Scale", "description": "4-item, 1-7 Likert scale measuring intrinsic/extrinsic motivation", "why": "Helps distinguish between motivational mechanisms in interventions."},
+            ],
+            "health psychology": [
+                {"name": "GAD-7", "description": "7-item, 0-3 anxiety screening measure", "why": "Validated clinical instrument; enables comparison with clinical populations."},
+                {"name": "PHQ-9", "description": "9-item, 0-3 depression screening measure", "why": "Gold-standard brief depression measure; excellent psychometric properties."},
+                {"name": "Self-Efficacy", "description": "5-item, 1-7 Likert scale measuring perceived capability", "why": "Strong predictor of health behavior change across domains."},
+                {"name": "Perceived Stress Scale", "description": "10-item, 1-5 scale measuring stress appraisal", "why": "Most widely used stress measure; great for pre-post designs."},
+            ],
+            "political psychology": [
+                {"name": "Social Dominance Orientation (SDO)", "description": "16-item, 1-7 Likert scale", "why": "Predicts attitudes toward social hierarchy and intergroup relations."},
+                {"name": "Moral Foundations Questionnaire", "description": "20-item, 1-6 scale measuring moral values", "why": "Explains political ideology differences through moral reasoning."},
+                {"name": "Right-Wing Authoritarianism (RWA)", "description": "15-item, 1-7 Likert scale", "why": "Complements SDO; together they explain most variance in prejudice."},
+            ],
+            "cognitive psychology": [
+                {"name": "Need for Cognition (NFC)", "description": "18-item, 1-5 Likert scale", "why": "Measures individual differences in cognitive engagement."},
+                {"name": "NASA-TLX", "description": "6-item, 0-100 slider measuring cognitive workload", "why": "Standard measure of task difficulty and mental effort."},
+                {"name": "Self-Efficacy", "description": "5-item, 1-7 Likert scale", "why": "Captures confidence in cognitive abilities; moderates performance."},
+            ],
+            "technology & HCI": [
+                {"name": "Technology Acceptance Model (TAM)", "description": "12-item, 1-7 Likert scale", "why": "Standard measure for technology adoption research."},
+                {"name": "System Usability Scale (SUS)", "description": "10-item, 1-5 Likert scale", "why": "Industry-standard usability benchmark; easy to interpret."},
+                {"name": "NASA-TLX", "description": "6-item, 0-100 slider measuring cognitive workload", "why": "Captures task load in human-computer interaction studies."},
+                {"name": "Privacy Concern", "description": "5-item, 1-7 Likert scale", "why": "Critical in studies involving data collection or AI systems."},
+            ],
+            "moral psychology": [
+                {"name": "Moral Foundations Questionnaire", "description": "20-item, 1-6 scale", "why": "Maps the five moral foundations; central to the field."},
+                {"name": "Moral Judgment", "description": "4-item, 1-7 Likert scale", "why": "Measures moral evaluation of specific scenarios or agents."},
+                {"name": "Empathy Scale", "description": "5-item, 1-7 Likert measuring empathic concern", "why": "Key mediator between moral reasoning and prosocial action."},
+            ],
+            "communication": [
+                {"name": "Credibility Scale", "description": "4-item, 1-7 Likert scale measuring source credibility", "why": "Central to persuasion and media effects research."},
+                {"name": "Ad Effectiveness", "description": "4-item, 1-7 Likert scale", "why": "Measures message impact on attitudes and behavioral intent."},
+                {"name": "Trust Scale", "description": "5-item, 1-7 Likert measuring media/source trust", "why": "Key outcome in misinformation and news credibility studies."},
+            ],
+            "emotion research": [
+                {"name": "PANAS", "description": "20-item, 1-5 Positive and Negative Affect Schedule", "why": "Gold-standard measure of affective states; captures both valence dimensions."},
+                {"name": "Emotional Response", "description": "6-item, 1-7 Likert scale", "why": "Brief measure suitable for within-subjects emotion inductions."},
+                {"name": "Anxiety (GAD-7)", "description": "7-item, 0-3 scale", "why": "Captures anxiety as trait or state; useful for emotion regulation studies."},
+            ],
+            "environmental psychology": [
+                {"name": "Risk Perception", "description": "4-item, 1-7 Likert scale", "why": "Central to climate risk and environmental hazard research."},
+                {"name": "Behavioral Intention", "description": "3-item, 1-7 Likert scale", "why": "Predicts pro-environmental action; bridges attitude-behavior gap."},
+                {"name": "Moral Judgment", "description": "4-item, 1-7 Likert scale", "why": "Captures moral dimensions of environmental decision-making."},
+            ],
+            "food & nutrition": [
+                {"name": "Perceived Quality", "description": "4-item, 1-7 Likert scale", "why": "Measures food quality perceptions across conditions."},
+                {"name": "Purchase Intention", "description": "3-item, 1-7 Likert scale", "why": "Captures consumer intent for food products."},
+                {"name": "Willingness to Pay", "description": "Numeric input, 0-100 dollars", "why": "Direct behavioral measure; highly relevant for food pricing studies."},
+            ],
+            "prosocial behavior": [
+                {"name": "Empathy Scale", "description": "5-item, 1-7 Likert scale", "why": "Primary motivational mechanism for prosocial behavior."},
+                {"name": "Interpersonal Reactivity Index (IRI)", "description": "28-item, 1-5 scale", "why": "Multi-dimensional empathy measure; captures cognitive and affective components."},
+                {"name": "Moral Judgment", "description": "4-item, 1-7 Likert scale", "why": "Links moral reasoning to helping and cooperation."},
+            ],
+            "educational psychology": [
+                {"name": "Self-Efficacy", "description": "5-item, 1-7 Likert scale", "why": "Strongest predictor of academic performance and persistence."},
+                {"name": "Motivation Scale", "description": "4-item, 1-7 Likert scale", "why": "Captures intrinsic vs extrinsic motivation for learning."},
+                {"name": "Satisfaction Scale", "description": "5-item, 1-7 Likert measuring learning satisfaction", "why": "Common outcome measure in educational intervention studies."},
+            ],
+            "developmental psychology": [
+                {"name": "Self-Esteem (RSE)", "description": "10-item, 1-4 Rosenberg Self-Esteem Scale", "why": "Most widely used self-esteem measure across age groups."},
+                {"name": "Well-Being Scale", "description": "5-item, 1-7 Likert scale", "why": "Captures subjective well-being across developmental stages."},
+                {"name": "Life Satisfaction (SWLS)", "description": "5-item, 1-7 Satisfaction with Life Scale", "why": "Validated for adolescents and adults; strong test-retest reliability."},
+            ],
+        }
+
+        existing_names_lower = {s.name.lower().strip() for s in existing_scales}
+        # Also normalize against known labels to catch abbreviation matches
+        existing_labels_lower: set = set()
+        for s in existing_scales:
+            existing_labels_lower.add(s.name.lower().strip())
+            if s.description:
+                existing_labels_lower.add(s.description.lower().strip())
+
+        domain_lower = domain.lower().strip()
+        candidates = domain_scale_suggestions.get(domain_lower, [])
+
+        # Fallback: if exact match fails, try partial match on domain key
+        if not candidates:
+            for key, val in domain_scale_suggestions.items():
+                if key in domain_lower or domain_lower in key:
+                    candidates = val
+                    break
+
+        # Filter out already-included scales
+        suggestions: List[Dict[str, str]] = []
+        for candidate in candidates:
+            candidate_name_lower = candidate["name"].lower().strip()
+            # Check if this scale (or something very similar) is already present
+            already_present = False
+            for existing in existing_names_lower | existing_labels_lower:
+                # Check substring overlap in both directions
+                if (candidate_name_lower in existing
+                        or existing in candidate_name_lower):
+                    already_present = True
+                    break
+            if not already_present:
+                suggestions.append(candidate)
+            if len(suggestions) >= 3:
+                break
+
+        return suggestions
+
     def validate_full_design(self, parsed: ParsedDesign) -> Dict[str, List[str]]:
         """
         Validate a complete parsed design and return errors and warnings.
@@ -653,6 +935,7 @@ class SurveyDescriptionParser:
         - Scale ranges are valid (min < max)
         - No duplicate condition names
         - No duplicate scale names
+        - Total items across all scales not exceeding 100
 
         Returns:
             Dict with 'errors' (fatal) and 'warnings' (non-fatal) lists of strings.
@@ -742,6 +1025,18 @@ class SurveyDescriptionParser:
                 f"With {parsed.sample_size} total participants across "
                 f"{n_conditions} conditions, each cell gets ~{per_cell} "
                 f"participants. Consider increasing sample size."
+            )
+
+        # ── Total survey length check ────────────────────────────────────
+        total_items = sum(s.num_items for s in parsed.scales)
+        if total_items > 100:
+            warnings.append(
+                f"Your survey contains {total_items} total items across "
+                f"{len(parsed.scales)} scales, which may be too long. "
+                f"Surveys exceeding 100 items often suffer from participant "
+                f"fatigue, lower completion rates, and reduced data quality. "
+                f"Consider shortening scales or using brief validated "
+                f"alternatives where possible."
             )
 
         return {"errors": errors, "warnings": warnings}
@@ -1054,10 +1349,10 @@ class SurveyDescriptionParser:
                 scale_min = min(anchor_vals)
                 scale_max = max(anchor_vals)
 
-        # ── Extract reverse-coded items ──────────────────────────────────
+        # ── Extract reverse-coded / reverse-scored items ──────────────────
         rev_match = re.search(
             r'(?:items?\s+)?([\d,\s]+(?:\s+and\s+\d+)?)\s+'
-            r'(?:are|is)\s+reverse[- ]?coded',
+            r'(?:are|is)\s+reverse[- ]?(?:coded|scored)',
             text_lower
         )
         if rev_match:
@@ -1065,9 +1360,9 @@ class SurveyDescriptionParser:
             reverse_items = [
                 int(n) for n in re.findall(r'\d+', rev_text)
             ]
-        # Also handle "reverse-coded items: 3, 5, 8"
+        # Also handle "reverse-coded items: 3, 5, 8" / "reverse-scored items: 3, 5, 8"
         rev_match2 = re.search(
-            r'reverse[- ]?coded\s+items?\s*[:\-]?\s*([\d,\s]+(?:\s+and\s+\d+)?)',
+            r'reverse[- ]?(?:coded|scored)\s+items?\s*[:\-]?\s*([\d,\s]+(?:\s+and\s+\d+)?)',
             text_lower
         )
         if rev_match2 and not reverse_items:
@@ -1126,9 +1421,9 @@ class SurveyDescriptionParser:
             name_text = re.sub(r'(?:likert|scale|slider|measure|rating|binary|yes\s*/\s*no|yes\s+or\s+no)\s*', '', name_text, flags=re.IGNORECASE)
             # Remove anchor specs from name
             name_text = re.sub(r'\d+\s*=\s*[^,;]+', '', name_text)
-            # Remove reverse-coded mention from name
-            name_text = re.sub(r'(?:items?\s+)?[\d,\s]+(?:and\s+\d+\s+)?(?:are|is)\s+reverse[- ]?coded', '', name_text, flags=re.IGNORECASE)
-            name_text = re.sub(r'reverse[- ]?coded\s+items?\s*[:\-]?\s*[\d,\s]+', '', name_text, flags=re.IGNORECASE)
+            # Remove reverse-coded/reverse-scored mention from name
+            name_text = re.sub(r'(?:items?\s+)?[\d,\s]+(?:and\s+\d+\s+)?(?:are|is)\s+reverse[- ]?(?:coded|scored)', '', name_text, flags=re.IGNORECASE)
+            name_text = re.sub(r'reverse[- ]?(?:coded|scored)\s+items?\s*[:\-]?\s*[\d,\s]+', '', name_text, flags=re.IGNORECASE)
             name_text = re.sub(r'[,;:()]', ' ', name_text)
             name_text = name_text.strip()
 
