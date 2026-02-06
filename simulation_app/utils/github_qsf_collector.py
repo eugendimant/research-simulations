@@ -59,6 +59,11 @@ def _sanitize_filename(filename: str) -> str:
     # Collapse multiple underscores
     while "__" in sanitized:
         sanitized = sanitized.replace("__", "_")
+    # Collapse multiple spaces
+    while "  " in sanitized:
+        sanitized = sanitized.replace("  ", " ")
+    # Trim leading/trailing spaces and underscores
+    sanitized = sanitized.strip(" _")
     # Ensure .qsf extension
     if not sanitized.lower().endswith(".qsf"):
         sanitized = sanitized.rstrip(".") + ".qsf"

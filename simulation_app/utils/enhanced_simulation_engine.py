@@ -356,10 +356,14 @@ def _normalize_open_ended(open_ended: Optional[List[Any]]) -> List[Dict[str, Any
                 normalized.append({"name": name, "type": "text", "question_text": name})
             continue
         if isinstance(item, dict):
-            name = str(item.get("name", "")).strip()
+            # Support both "name" and "question_id" keys (QSF uses question_id)
+            name = str(item.get("name", item.get("question_id", ""))).strip()
             if name:
                 # Preserve question_text, display_logic, and condition info for survey flow
                 normalized_item = dict(item)
+                # Ensure name is set (for column naming)
+                if not normalized_item.get("name"):
+                    normalized_item["name"] = name
                 # Ensure question_text is set for unique response generation
                 if not normalized_item.get("question_text"):
                     normalized_item["question_text"] = name
