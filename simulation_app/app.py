@@ -52,8 +52,8 @@ import streamlit as st
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.3.7"
-BUILD_ID = "20260207-v137-builder-bugfixes"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.3.8"
+BUILD_ID = "20260207-v138-builder-improvements"  # Change this to force cache invalidation
 
 def _verify_and_reload_utils():
     """Verify utils modules are at correct version, force reload if needed.
@@ -109,7 +109,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF"
-APP_VERSION = "1.3.7"  # v1.3.7: Builder bugfixes (anchor precedence, numeric scale_points, factor warnings)
+APP_VERSION = "1.3.8"  # v1.3.8: Builder improvements (sample size guidance, condition hints, duplicate detection, analysis recommendations)
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -3049,6 +3049,19 @@ def _render_conversational_builder() -> None:
         parsed_conditions, cond_warnings = [], []
     for cw in cond_warnings:
         st.warning(cw)
+
+    # Check for duplicate conditions
+    if parsed_conditions:
+        _cond_names_lower = [c.name.lower().strip() for c in parsed_conditions]
+        _seen = set()
+        _dupes = []
+        for cn in _cond_names_lower:
+            if cn in _seen:
+                _dupes.append(cn)
+            _seen.add(cn)
+        if _dupes:
+            st.error(f"Duplicate condition(s) detected: {', '.join(set(_dupes))}. Each condition must be unique.")
+
     if parsed_conditions:
         cond_names = [c.name for c in parsed_conditions]
         # Detect if factorial (conditions contain ×)
@@ -3083,25 +3096,37 @@ def _render_conversational_builder() -> None:
                 + " x ".join(f"{f['name']} ({', '.join(f['levels'])})" for f in factors)
             )
 
-    # Smart condition guidance (Iteration 7)
+    # Smart condition guidance based on study title/description
     if not conditions_text.strip():
         _builder_title = st.session_state.get("study_title", "")
         _builder_desc = st.session_state.get("study_description", "")
         if _builder_title or _builder_desc:
             _combined = f"{_builder_title} {_builder_desc}".lower()
             _condition_hints = []
-            if any(w in _combined for w in ["ai", "artificial", "algorithm", "chatbot"]):
-                _condition_hints.append("AI-generated vs Human-created vs No information")
-            if any(w in _combined for w in ["brand", "product", "marketing"]):
-                _condition_hints.append("Brand A vs Brand B vs Control")
-            if any(w in _combined for w in ["trust", "credibility"]):
-                _condition_hints.append("High Trust vs Low Trust")
-            if any(w in _combined for w in ["moral", "ethical", "dilemma"]):
+            if any(w in _combined for w in ["ai", "artificial", "algorithm", "chatbot", "machine learning", "automated"]):
+                _condition_hints.append("AI-generated vs Human-created vs No label (control)")
+            if any(w in _combined for w in ["brand", "product", "marketing", "advertising", "ad "]):
+                _condition_hints.append("Brand A vs Brand B vs No-brand control")
+            if any(w in _combined for w in ["trust", "credibility", "reliability"]):
+                _condition_hints.append("High trust vs Low trust")
+            if any(w in _combined for w in ["moral", "ethical", "dilemma", "fairness"]):
                 _condition_hints.append("Moral frame vs Neutral frame")
-            if any(w in _combined for w in ["health", "medical", "wellness"]):
+            if any(w in _combined for w in ["health", "medical", "wellness", "nutrition", "exercise"]):
                 _condition_hints.append("Health intervention vs Standard care vs Control")
+            if any(w in _combined for w in ["price", "discount", "pricing", "cost", "expensive"]):
+                _condition_hints.append("High price vs Low price vs Medium price")
+            if any(w in _combined for w in ["message", "framing", "frame", "persuasion", "communication"]):
+                _condition_hints.append("Gain frame vs Loss frame")
+            if any(w in _combined for w in ["social media", "online", "digital", "platform"]):
+                _condition_hints.append("Social media exposure vs No exposure vs Traditional media")
+            if any(w in _combined for w in ["gender", "race", "age", "stereotype", "bias", "discrimination"]):
+                _condition_hints.append("Ingroup vs Outgroup vs Control")
+            if any(w in _combined for w in ["education", "learning", "teaching", "training"]):
+                _condition_hints.append("New method vs Traditional method vs Control")
             if _condition_hints:
-                st.info(f"Based on your study description, try: **{_condition_hints[0]}**")
+                st.info(f"Based on your study, suggested conditions: **{_condition_hints[0]}**")
+                if len(_condition_hints) > 1:
+                    st.caption("Other suggestions: " + " | ".join(_condition_hints[1:3]))
 
     # ── Section 2: Dependent Variables / Scales ─────────────────────────
     st.markdown("---")
@@ -3209,6 +3234,24 @@ def _render_conversational_builder() -> None:
     st.session_state["builder_sample_size"] = builder_sample
     st.session_state["sample_size"] = builder_sample
 
+    # Power-based sample size guidance
+    if parsed_conditions:
+        n_conds = len(parsed_conditions)
+        recommended_min = max(30 * n_conds, 50)  # At least 30 per cell
+        recommended_good = max(50 * n_conds, 100)  # 50 per cell for good power
+        if builder_sample < recommended_min:
+            st.warning(
+                f"With {n_conds} conditions, a minimum of **{recommended_min}** participants "
+                f"(~{recommended_min // n_conds} per condition) is recommended for adequate statistical power."
+            )
+        elif builder_sample < recommended_good:
+            st.info(
+                f"Sample size of {builder_sample} is adequate. For strong power (~.80), "
+                f"consider **{recommended_good}** ({recommended_good // n_conds} per condition)."
+            )
+        else:
+            st.success(f"Good sample size: ~{builder_sample // n_conds} participants per condition.")
+
     # ── Section 5: Design Type ──────────────────────────────────────────
     st.markdown("---")
     st.markdown("#### 5. Design Type")
@@ -3314,6 +3357,16 @@ def _render_conversational_builder() -> None:
                 for q in parsed_oe:
                     st.markdown(f"- {q.question_text[:80]}...")
             st.markdown(f"**Sample size:** {builder_sample}")
+
+            # Show recommended statistical test
+            if len(parsed_conditions) == 2 and len(parsed_scales) >= 1:
+                st.caption("Recommended analysis: **Independent samples t-test** (or Mann-Whitney U)")
+            elif len(parsed_conditions) > 2 and not any(" × " in c.name for c in parsed_conditions):
+                st.caption("Recommended analysis: **One-way ANOVA** (or Kruskal-Wallis)")
+            elif any(" × " in c.name for c in parsed_conditions):
+                n_factors = len(parsed_conditions[0].name.split(" × "))
+                st.caption(f"Recommended analysis: **{n_factors}-way factorial ANOVA**")
+
             st.markdown(f"**Design:** {design_options[design_type]}")
 
             # Detect domain with visual badge (pass all text for better accuracy)
@@ -3447,6 +3500,32 @@ def _render_builder_design_review() -> None:
 
     st.markdown("### Review Your Study Design")
     st.markdown("Review and edit the study specification extracted from your description.")
+
+    # ── Quick design summary metrics ──────────────────────────────────
+    _summary_conditions = inferred.get("conditions", [])
+    _summary_scales = inferred.get("scales", [])
+    _summary_oe = inferred.get("open_ended_questions", [])
+    _n_conds = len(_summary_conditions) if isinstance(_summary_conditions, list) else 0
+    _n_scales = len(_summary_scales) if isinstance(_summary_scales, list) else 0
+    _n_oe = len(_summary_oe) if isinstance(_summary_oe, list) else 0
+    _n_sample = st.session_state.get("sample_size", st.session_state.get("builder_sample_size", 100))
+
+    _sum_c1, _sum_c2, _sum_c3, _sum_c4 = st.columns(4)
+    _sum_c1.metric("Conditions", _n_conds)
+    _sum_c2.metric("Scales/DVs", _n_scales)
+    _sum_c3.metric("Open-ended", _n_oe)
+    _sum_c4.metric("Sample Size", _n_sample)
+
+    # Design completeness check
+    _design_issues: list[str] = []
+    if _n_conds < 2:
+        _design_issues.append("At least 2 conditions needed")
+    if _n_scales < 1:
+        _design_issues.append("At least 1 scale/DV needed")
+    if _design_issues:
+        st.warning("Design incomplete: " + "; ".join(_design_issues))
+    else:
+        st.success("Design looks complete. Review the details below, then proceed to **Generate**.")
 
     # Show design improvement suggestions if available
     _builder_feedback = st.session_state.get("_builder_feedback", [])
@@ -3641,11 +3720,32 @@ def _render_builder_design_review() -> None:
     st.markdown("---")
     st.markdown("#### Conditions")
     if conditions:
+        # Build a lookup: condition name → factor-level decomposition for factorial designs
+        _cond_factor_map: dict[str, list[str]] = {}
+        if factors and len(factors) >= 2:
+            for _cond_name in conditions:
+                _parts: list[str] = []
+                for _fac in factors:
+                    _fac_name = _fac.get("name", "Factor")
+                    for _lev in _fac.get("levels", []):
+                        # Check if this level appears in the condition name (case-insensitive)
+                        if _lev.lower() in _cond_name.lower():
+                            _parts.append(f"{_fac_name}: {_lev}")
+                            break
+                if _parts:
+                    _cond_factor_map[_cond_name] = _parts
+
         cond_to_remove = None
         for i, cond in enumerate(conditions):
             cond_col, cond_btn_col = st.columns([8, 1])
             with cond_col:
-                st.markdown(f"**{i+1}.** {cond}")
+                _factor_info = _cond_factor_map.get(cond, [])
+                if _factor_info:
+                    # Factorial condition: show name prominently with factor breakdown
+                    st.markdown(f"**{i+1}. {cond}**")
+                    st.caption(" | ".join(_factor_info))
+                else:
+                    st.markdown(f"**{i+1}. {cond}**")
             with cond_btn_col:
                 # Require at least 2 conditions for a valid experiment
                 if len(conditions) > 2 and st.button("X", key=f"br_remove_cond_{i}", help=f"Remove '{cond}'"):
@@ -3969,7 +4069,14 @@ def _render_builder_design_review() -> None:
 
     # ── Effect Sizes (Optional) ─────────────────────────────────────────
     if conditions and scales and len(conditions) >= 2:
-        with st.expander("Expected Effect Sizes (Optional)", expanded=False):
+        st.markdown("---")
+        st.markdown("##### Effect Sizes")
+        st.caption(
+            "Effect sizes control how different conditions are from each other. "
+            "Common benchmarks: **Small** (d=0.2), **Medium** (d=0.5), **Large** (d=0.8). "
+            "Most behavioral experiments find medium effects."
+        )
+        with st.expander("Configure Expected Effect Sizes", expanded=False):
             st.caption(
                 "Specify expected differences between conditions. "
                 "This makes the simulated data reflect realistic experimental effects."

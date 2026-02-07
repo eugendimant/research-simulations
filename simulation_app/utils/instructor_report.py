@@ -6,7 +6,7 @@ Generates comprehensive instructor-facing reports for student simulations.
 """
 
 # Version identifier to help track deployed code
-__version__ = "1.3.7"  # v1.3.7: Builder bugfixes (anchor precedence, numeric scale_points, factor warnings)
+__version__ = "1.3.8"  # v1.3.8: Builder improvements (sample size guidance, condition hints, duplicate detection, analysis recommendations)
 
 from dataclasses import dataclass
 from datetime import datetime
