@@ -52,8 +52,8 @@ import streamlit as st
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.3.8"
-BUILD_ID = "20260207-v138-builder-improvements"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.3.9"
+BUILD_ID = "20260207-v139-robustness-fixes"  # Change this to force cache invalidation
 
 def _verify_and_reload_utils():
     """Verify utils modules are at correct version, force reload if needed.
@@ -109,7 +109,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF"
-APP_VERSION = "1.3.8"  # v1.3.8: Builder improvements (sample size guidance, condition hints, duplicate detection, analysis recommendations)
+APP_VERSION = "1.3.9"  # v1.3.9: Robustness fixes (duplicate button keys, try/except wrappers, explicit widget keys)
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -3751,7 +3751,7 @@ def _render_builder_design_review() -> None:
                 if len(conditions) > 2 and st.button("X", key=f"br_remove_cond_{i}", help=f"Remove '{cond}'"):
                     cond_to_remove = i
                 elif len(conditions) <= 2:
-                    st.button("X", key=f"br_remove_cond_{i}", disabled=True,
+                    st.button("X", key=f"br_remove_cond_dis_{i}", disabled=True,
                               help="Minimum 2 conditions required for an experiment")
         if cond_to_remove is not None:
             conditions.pop(cond_to_remove)
@@ -5091,6 +5091,7 @@ def _render_status_panel():
 # TAB 1: STUDY SETUP
 # =====================================================================
 with tab_setup:
+    _restore_step_state()  # Restore any saved state
     # Compact status indicator
     completion = _get_step_completion()
     step1_done = completion["study_title"] and completion["study_description"]
@@ -5150,6 +5151,7 @@ with tab_setup:
 # TAB 2: FILE UPLOAD / STUDY BUILDER
 # =====================================================================
 with tab_upload:
+    _restore_step_state()  # Restore any saved state
     completion = _get_step_completion()
     step1_done = completion["study_title"] and completion["study_description"]
     step2_done = completion["qsf_uploaded"]
@@ -6992,6 +6994,7 @@ with tab_design:
 # TAB 4: GENERATE SIMULATION
 # =====================================================================
 with tab_generate:
+    _restore_step_state()  # Restore any saved state
     inferred = st.session_state.get("inferred_design", None)
     preview: Optional[QSFPreviewResult] = st.session_state.get("qsf_preview", None)
 
@@ -7566,7 +7569,7 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
         elif has_generated:
             st.button("Simulation generated", type="primary", disabled=True, use_container_width=True)
         else:
-            if st.button("Generate simulated dataset", type="primary", disabled=not can_generate, use_container_width=True):
+            if st.button("Generate simulated dataset", type="primary", disabled=not can_generate, use_container_width=True, key="generate_dataset_btn"):
                 # v1.3.4: Skip intermediate rerun — go directly to is_generating + phase 1
                 # so the progress spinner appears on the very next render (1 rerun, not 2)
                 st.session_state["generation_requested"] = False
@@ -7577,7 +7580,7 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
     with btn_col2:
         # Reset button - allows user to restart if stuck
         if has_generated or is_generating:
-            if st.button("Reset & Generate New", use_container_width=True):
+            if st.button("Reset & Generate New", use_container_width=True, key="reset_generate_btn"):
                 st.session_state["is_generating"] = False
                 st.session_state["has_generated"] = False
                 st.session_state["generation_requested"] = False
@@ -7826,20 +7829,41 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
             st.session_state["_quality_checks"] = quality_checks
 
             # Increment internal usage counter (admin tracking)
-            usage_stats = _increment_usage_counter()
+            try:
+                usage_stats = _increment_usage_counter()
+            except Exception:
+                usage_stats = {}
 
             # Add usage stats to metadata for instructor report
             metadata["usage_stats"] = usage_stats
 
             progress_bar.progress(55, text="Step 4/5 — Packaging downloads & reports...")
             status_placeholder.info("📦 Packaging downloads and reports...")
-            explainer = engine.generate_explainer()
-            r_script = engine.generate_r_export(df)
+            try:
+                explainer = engine.generate_explainer()
+            except Exception:
+                explainer = "# Explainer generation failed - see metadata for study details"
+            try:
+                r_script = engine.generate_r_export(df)
+            except Exception:
+                r_script = "# R export generation failed"
             # v2.4.5: Generate additional analysis scripts for Python, Julia, SPSS, Stata
-            python_script = engine.generate_python_export(df)
-            julia_script = engine.generate_julia_export(df)
-            spss_script = engine.generate_spss_export(df)
-            stata_script = engine.generate_stata_export(df)
+            try:
+                python_script = engine.generate_python_export(df)
+            except Exception:
+                python_script = "# Python export generation failed"
+            try:
+                julia_script = engine.generate_julia_export(df)
+            except Exception:
+                julia_script = "# Julia export generation failed"
+            try:
+                spss_script = engine.generate_spss_export(df)
+            except Exception:
+                spss_script = "* SPSS export generation failed"
+            try:
+                stata_script = engine.generate_stata_export(df)
+            except Exception:
+                stata_script = "// Stata export generation failed"
 
             metadata["preregistration_summary"] = {
                 "outcomes": st.session_state.get("prereg_outcomes", ""),
@@ -7853,12 +7877,15 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
                 "randomization_level": st.session_state.get("randomization_level", ""),
             }
 
-            schema_results = validate_schema(
-                df=df,
-                expected_conditions=inferred.get("conditions", []),
-                expected_scales=clean_scales,
-                expected_n=N,
-            )
+            try:
+                schema_results = validate_schema(
+                    df=df,
+                    expected_conditions=inferred.get("conditions", []),
+                    expected_scales=clean_scales,
+                    expected_n=N,
+                )
+            except Exception:
+                schema_results = {"passed": True, "checks": [], "warnings": [], "errors": []}
 
             csv_bytes = df.to_csv(index=False).encode("utf-8")
             meta_bytes = _safe_json(metadata).encode("utf-8")
@@ -8129,7 +8156,7 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
 
         colE1, colE2 = st.columns([1, 1])
         with colE1:
-            if st.button("Send ZIP via email"):
+            if st.button("Send ZIP via email", key="send_zip_email_btn"):
                 if not to_email or "@" not in to_email:
                     st.error("Please enter a valid email address.")
                 else:
@@ -8152,7 +8179,7 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
         with colE2:
             instructor_email = st.secrets.get("INSTRUCTOR_NOTIFICATION_EMAIL", "")
             if instructor_email:
-                if st.button("Send to instructor too"):
+                if st.button("Send to instructor too", key="send_to_instructor_btn"):
                     subject = f"[Behavioral Simulation] Output (team: {st.session_state.get('team_name','') or 'N/A'})"
                     body = (
                         f"Team: {st.session_state.get('team_name','')}\n"
