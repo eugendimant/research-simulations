@@ -12,7 +12,7 @@ For every QSF file:
 7. Report any mismatches
 
 Usage:
-    python3 simulation_app/tests/test_qsf_simulation_match.py
+    python3 tests/test_qsf_simulation_match.py
 """
 import sys
 import os
@@ -21,8 +21,8 @@ import traceback
 import io
 import zipfile
 
-# Add parent dir to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+# Path setup: works both via pytest (conftest.py) and direct script execution
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "simulation_app"))
 
 import numpy as np
 from utils.qsf_preview import QSFPreviewParser
@@ -371,6 +371,6 @@ def run_full_verification(qsf_dir, verbose=True, max_files=None):
 
 
 if __name__ == "__main__":
-    qsf_dir = os.path.join(os.path.dirname(__file__), "..", "example_files")
+    qsf_dir = os.path.join(os.path.dirname(__file__), "..", "simulation_app", "example_files")
     results = run_full_verification(qsf_dir)
     sys.exit(0 if results["failed"] == 0 and results["errored"] == 0 else 1)

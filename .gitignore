@@ -2,3 +2,10 @@ backups/
 __pycache__/
 *.pyc
 *.pyo
+*.egg-info/
+.eggs/
+dist/
+build/
+.pytest_cache/
+*.log
+.DS_Store

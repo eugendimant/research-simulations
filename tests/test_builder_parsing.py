@@ -4,8 +4,9 @@ Test suite for SurveyDescriptionParser natural language parsing capabilities.
 Tests condition parsing, scale parsing, domain detection, factorial detection,
 and design validation.
 """
-import sys
-sys.path.insert(0, 'simulation_app')
+import sys, os
+# Path setup: works both via pytest (conftest.py) and direct script execution
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "simulation_app"))
 from utils.survey_builder import SurveyDescriptionParser, ParsedDesign, ParsedScale
 
 parser = SurveyDescriptionParser()

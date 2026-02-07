@@ -22,8 +22,8 @@ from typing import Tuple
 
 import pytest
 
-# Add the simulation_app directory to the path so we can import utils
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "simulation_app"))
+# Path setup: works both via pytest (conftest.py) and direct script execution
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "simulation_app"))
 
 import numpy as np
 import pandas as pd

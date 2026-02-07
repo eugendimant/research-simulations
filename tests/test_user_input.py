@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Test scale/condition parsing with the user's exact experiment description."""
-import sys
-sys.path.insert(0, 'simulation_app')
+import sys, os
+# Path setup: works both via pytest (conftest.py) and direct script execution
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "simulation_app"))
 from utils.survey_builder import SurveyDescriptionParser
 
 parser = SurveyDescriptionParser()

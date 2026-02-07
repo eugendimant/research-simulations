@@ -179,14 +179,51 @@ Organized into 33 categories:
 
 ---
 
+## Project Directory Structure
+
+```
+research-simulations/
+├── simulation_app/          # Main application code
+│   ├── app.py               # Streamlit app entry point
+│   ├── utils/               # Core utility modules
+│   │   ├── __init__.py
+│   │   ├── enhanced_simulation_engine.py
+│   │   ├── instructor_report.py
+│   │   ├── qsf_preview.py
+│   │   ├── survey_builder.py
+│   │   ├── response_library.py
+│   │   ├── persona_library.py
+│   │   ├── group_management.py
+│   │   ├── schema_validator.py
+│   │   └── condition_identifier.py
+│   ├── example_files/       # QSF training data & examples
+│   │   ├── *.qsf            # QSF training files
+│   │   └── karlijn_case_study/  # Validation case study
+│   └── README.md
+├── tests/                   # All test files
+│   ├── conftest.py          # Shared path setup & fixtures
+│   ├── test_e2e.py          # Main E2E pytest suite
+│   ├── test_builder_parsing.py
+│   └── ...
+├── docs/                    # Documentation
+│   ├── papers/              # Research papers
+│   ├── CHANGELOG.md
+│   └── *.md
+├── CLAUDE.md                # This file
+└── .gitignore
+```
+
 ## Testing Changes
 
 Before committing:
 1. Run `python3 -m py_compile <file>` on modified Python files
 2. Verify version numbers are synchronized
-3. Test the app loads without version mismatch warning
-4. Verify trash blocks are properly excluded
-5. Check that state persists across step navigation
+3. Run tests: `python3 -m pytest tests/test_e2e.py -v --tb=short`
+4. Test the app loads without version mismatch warning
+5. Verify trash blocks are properly excluded
+6. Check that state persists across step navigation
+
+**Test directory**: All tests live in `tests/`. Path setup is handled by `tests/conftest.py` — individual test files do not need `sys.path` manipulation.
 
 ---
 
