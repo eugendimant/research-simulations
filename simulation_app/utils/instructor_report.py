@@ -6,7 +6,7 @@ Generates comprehensive instructor-facing reports for student simulations.
 """
 
 # Version identifier to help track deployed code
-__version__ = "1.4.0"  # v1.4.0: Builder-engine integration fixes (scale type mapping, demographics gender_quota)
+__version__ = "1.4.3.1"  # v1.4.3.1: Enhanced instructor report (data dictionary, design-specific analysis, builder support)
 
 from dataclasses import dataclass
 from datetime import datetime
@@ -507,7 +507,13 @@ class InstructorReportGenerator:
         # --- SIMULATION APPROACH ---
         lines.append("### How the Simulation Approached This Study")
         lines.append("")
-        lines.append("Based on the analysis of your QSF file, study description, and condition structure, the simulation:")
+        # v1.4.3.1: Use source-agnostic language (works for both QSF upload and conversational builder)
+        _data_source = metadata.get("data_source", "")
+        if "builder" in str(_data_source).lower():
+            _source_phrase = "your study description and condition structure"
+        else:
+            _source_phrase = "your QSF file, study description, and condition structure"
+        lines.append(f"Based on the analysis of {_source_phrase}, the simulation:")
         lines.append("")
 
         conditions = metadata.get('conditions', [])
@@ -832,9 +838,13 @@ class InstructorReportGenerator:
         if self.config.include_attention_checks:
             lines.append("## Attention checks")
             lines.append("")
-            if "AI_Mentioned_Check" in df.columns:
-                lines.append("- **AI_Mentioned_Check** distribution:")
-                lines.append(_safe_to_markdown(df["AI_Mentioned_Check"].value_counts(dropna=False).to_frame("n")))
+            # v1.4.3: Support both old and new attention check column names
+            _attn_col = "Attention_Check_1" if "Attention_Check_1" in df.columns else (
+                "AI_Mentioned_Check" if "AI_Mentioned_Check" in df.columns else None
+            )
+            if _attn_col is not None:
+                lines.append(f"- **{_attn_col}** distribution:")
+                lines.append(_safe_to_markdown(df[_attn_col].value_counts(dropna=False).to_frame("n")))
                 lines.append("")
             if "Attention_Pass_Rate" in df.columns:
                 lines.append("- **Attention_Pass_Rate** summary:")
@@ -973,7 +983,12 @@ class InstructorReportGenerator:
         if self.config.include_variables:
             lines.append("## Dependent Variables (Scales)")
             lines.append("")
-            lines.append("The following scales/DVs were simulated based on your QSF and configuration:")
+            # v1.4.3.1: Source-agnostic phrasing
+            _dv_source = metadata.get("data_source", "")
+            if "builder" in str(_dv_source).lower():
+                lines.append("The following scales/DVs were simulated based on your study description and configuration:")
+            else:
+                lines.append("The following scales/DVs were simulated based on your QSF and configuration:")
             lines.append("")
 
             scales = metadata.get("scales", []) or []
@@ -989,7 +1004,12 @@ class InstructorReportGenerator:
                     # Determine source of scale points
                     detected = s.get("detected_from_qsf", None)
                     if detected is True:
-                        source = "QSF (detected)"
+                        # v1.4.3.1: Source-agnostic label
+                        _scale_data_source = metadata.get("data_source", "")
+                        if "builder" in str(_scale_data_source).lower():
+                            source = "Auto-detected"
+                        else:
+                            source = "QSF (detected)"
                     elif detected is False:
                         source = "Default"
                     else:
@@ -1005,15 +1025,78 @@ class InstructorReportGenerator:
                 # Add note about scale points
                 lines.append("### Scale Points Note")
                 lines.append("")
-                lines.append("- **QSF (detected)**: Scale points were automatically detected from your Qualtrics survey file")
-                lines.append("- **Default**: Scale points defaulted to 7 because they couldn't be detected from QSF")
-                lines.append("- **Config**: Scale points were set in the simulation configuration")
-                lines.append("")
-                lines.append("If the scale points don't match your preregistration, please verify your QSF has the correct response options defined, or manually specify scale points in the tool's configuration.")
+                # v1.4.3.1: Source-agnostic scale point notes
+                _sp_source = metadata.get("data_source", "")
+                if "builder" in str(_sp_source).lower():
+                    lines.append("- **Auto-detected**: Scale points were inferred from your study description")
+                    lines.append("- **Default**: Scale points defaulted to 7 when not explicitly specified")
+                    lines.append("- **Config**: Scale points were set in the simulation configuration")
+                    lines.append("")
+                    lines.append("If the scale points don't match your preregistration, manually specify scale points in the tool's configuration.")
+                else:
+                    lines.append("- **QSF (detected)**: Scale points were automatically detected from your Qualtrics survey file")
+                    lines.append("- **Default**: Scale points defaulted to 7 because they couldn't be detected from QSF")
+                    lines.append("- **Config**: Scale points were set in the simulation configuration")
+                    lines.append("")
+                    lines.append("If the scale points don't match your preregistration, please verify your QSF has the correct response options defined, or manually specify scale points in the tool's configuration.")
                 lines.append("")
             else:
                 lines.append("_No scales/DVs listed in metadata. This may indicate a configuration issue._")
                 lines.append("")
+
+        # === v1.4.3.1: DATA DICTIONARY from column_descriptions metadata ===
+        column_descriptions = metadata.get("column_descriptions", {})
+        if column_descriptions and isinstance(column_descriptions, dict):
+            lines.append("## Data Dictionary")
+            lines.append("")
+            lines.append("Complete reference for every column in the output CSV:")
+            lines.append("")
+            lines.append("| Column | Description |")
+            lines.append("|--------|-------------|")
+            for col_name, col_desc in column_descriptions.items():
+                # Sanitize for markdown table (replace pipes)
+                safe_name = str(col_name).replace("|", "/")
+                safe_desc = str(col_desc).replace("|", "/")
+                lines.append(f"| `{safe_name}` | {safe_desc} |")
+            lines.append("")
+        elif df is not None and len(df.columns) > 0:
+            # Fallback: generate a basic data dictionary from DataFrame columns
+            lines.append("## Data Dictionary")
+            lines.append("")
+            lines.append("Columns present in the output CSV:")
+            lines.append("")
+            lines.append("| Column | Type | Description |")
+            lines.append("|--------|------|-------------|")
+            _col_desc_map = {
+                "PARTICIPANT_ID": "Unique participant identifier (1-N)",
+                "RUN_ID": "Simulation run identifier",
+                "CONDITION": "Experimental condition assignment",
+                "Age": "Participant age in years",
+                "Gender": "Participant gender (Male, Female, Non-binary, Prefer not to say)",
+                "Attention_Check_1": "Attention/manipulation check (1=Correct, 2=Incorrect)",
+                "Completion_Time_Seconds": "Survey completion time in seconds",
+                "Attention_Pass_Rate": "Proportion of attention checks passed (0-1)",
+                "Max_Straight_Line": "Longest run of identical consecutive responses",
+                "Flag_Speeder": "Speed flag: 1=unusually fast completion",
+                "Flag_StraightLine": "Straight-line flag: 1=repetitive pattern detected",
+                "Exclude_Recommended": "Recommended exclusion: 1=exclude, 0=retain",
+                "SIMULATION_MODE": "Simulation mode (pilot/full)",
+                "SIMULATION_SEED": "Random seed used for reproducibility",
+            }
+            for col in df.columns:
+                col_str = str(col)
+                dtype_str = str(df[col].dtype)
+                desc = _col_desc_map.get(col_str, "")
+                if not desc:
+                    # Infer description from column name patterns
+                    if col_str.endswith("_mean"):
+                        desc = "Composite mean score for scale"
+                    elif "_" in col_str and col_str.split("_")[-1].isdigit():
+                        desc = "Individual scale item response"
+                    elif col_str.startswith("OE_") or col_str.startswith("OpenEnded_"):
+                        desc = "Open-ended text response"
+                lines.append(f"| `{col_str}` | {dtype_str} | {desc} |")
+            lines.append("")
 
         # === v1.2.4: PRACTICAL DATA INTERPRETATION GUIDE ===
         lines.append("## How to Work With This Data")
@@ -1110,44 +1193,169 @@ class InstructorReportGenerator:
         lines.append("")
 
         # Statistical Test Recommendations
+        # v1.4.3.1: Enhanced Statistical Test Recommendations with design-specific detail
         lines.append("### Statistical Test Recommendations")
         lines.append("")
         has_ordinal = any(s.get('scale_points', 7) <= 5 for s in scales)
+        # Determine if within-subjects
+        _design_type = metadata.get("design_type", "between")
+        is_within = str(_design_type).lower() in ("within", "within-subjects", "repeated")
+
+        # Build a first DV name for code snippets
+        _first_dv = "Outcome_mean"
+        if scales:
+            _first_dv = str(scales[0].get("name", "Outcome")).replace(" ", "_") + "_mean"
 
         if is_factorial:
             factor_str = " x ".join([str(len(f.get('levels', []))) for f in factors])
-            lines.append(f"**Design:** {factor_str} Factorial")
+            factor_names = [f.get('name', 'Factor').replace(' ', '_') for f in factors if isinstance(f, dict)]
+            lines.append(f"**Design:** {factor_str} Factorial (between-subjects)")
             lines.append("")
-            lines.append("| Analysis | Purpose |")
-            lines.append("|----------|---------|")
-            lines.append("| **Factorial ANOVA** | Main effects + interaction |")
-            lines.append("| **Simple effects** | If interaction significant |")
+            lines.append("**Primary analysis: Factorial ANOVA**")
+            lines.append("")
+            lines.append("| Step | Analysis | Purpose | What to Report |")
+            lines.append("|------|----------|---------|----------------|")
+            if len(factor_names) >= 2:
+                lines.append(f"| 1 | Factorial ANOVA | Test main effects and interaction | F, df, p, partial eta-squared |")
+                lines.append(f"| 2 | Main effect of {factor_names[0]} | Does {factor_names[0]} influence the DV? | F, df, p |")
+                lines.append(f"| 3 | Main effect of {factor_names[1]} | Does {factor_names[1]} influence the DV? | F, df, p |")
+                lines.append(f"| 4 | {factor_names[0]} x {factor_names[1]} interaction | Do factors combine non-additively? | F, df, p |")
+                lines.append(f"| 5 | Simple effects (if interaction p < .05) | Decompose the interaction | t or F, p, Cohen's d |")
+            else:
+                lines.append(f"| 1 | Factorial ANOVA | Main effects + interaction | F, df, p, partial eta-squared |")
+                lines.append(f"| 2 | Simple effects | If interaction significant | t or F, p |")
             lines.append("")
             if has_ordinal:
-                lines.append("**Non-parametric:** Aligned Rank Transform (ART) ANOVA")
+                lines.append("**Non-parametric alternative:** Aligned Rank Transform (ART) ANOVA for ordinal DVs")
                 lines.append("")
+            lines.append("**Effect size:** Report partial eta-squared for each effect. Benchmarks: small = .01, medium = .06, large = .14")
+            lines.append("")
         elif num_conditions == 2:
-            lines.append("**Design:** Two-Group Comparison")
+            lines.append("**Design:** Two-Group Between-Subjects Comparison")
             lines.append("")
-            lines.append("| Analysis | When to Use |")
-            lines.append("|----------|-------------|")
-            lines.append("| **Independent t-test** | Normal data, equal variances |")
-            lines.append("| **Welch's t-test** | Unequal variances |")
-            lines.append("| **Mann-Whitney U** | Non-normal or ordinal data |")
+            lines.append("**Primary analysis: Independent-samples t-test with Cohen's d**")
             lines.append("")
-            lines.append("**Report:** t, df, p, Cohen's d")
+            lines.append("| Step | Analysis | Purpose | What to Report |")
+            lines.append("|------|----------|---------|----------------|")
+            lines.append("| 1 | Check assumptions | Normality (Shapiro-Wilk), homogeneity (Levene's) | W, p; F, p |")
+            lines.append("| 2 | Welch's t-test | Compare group means (robust to unequal variances) | t, df, p (two-tailed) |")
+            lines.append("| 3 | Cohen's d | Quantify effect magnitude | d with 95% CI |")
+            lines.append("| 4 | Descriptives | Group means and SDs | M, SD per group |")
+            lines.append("")
+            if has_ordinal:
+                lines.append("**Non-parametric alternative:** Mann-Whitney U test (report U, p, rank-biserial r)")
+                lines.append("")
+            lines.append("**Interpretation guide:**")
+            lines.append("- p < .05 with d >= 0.20: Statistically significant and practically meaningful")
+            lines.append("- p < .05 with d < 0.20: Statistically significant but trivial effect")
+            lines.append("- p >= .05: No significant difference; report observed d to inform future power analyses")
             lines.append("")
         elif num_conditions > 2:
-            lines.append(f"**Design:** {num_conditions}-Group Comparison")
+            lines.append(f"**Design:** {num_conditions}-Group Between-Subjects Comparison")
             lines.append("")
-            lines.append("| Analysis | When to Use |")
-            lines.append("|----------|-------------|")
-            lines.append("| **One-way ANOVA** | Normal data |")
-            lines.append("| **Kruskal-Wallis** | Non-normal or ordinal |")
+            lines.append("**Primary analysis: One-way ANOVA with post-hoc pairwise tests**")
             lines.append("")
-            lines.append("**Post-hoc:** Tukey HSD or Dunn's test")
+            lines.append("| Step | Analysis | Purpose | What to Report |")
+            lines.append("|------|----------|---------|----------------|")
+            lines.append("| 1 | Check assumptions | Normality per group, Levene's test | Shapiro-Wilk W, Levene's F |")
+            lines.append("| 2 | One-way ANOVA | Omnibus test of group differences | F(df_between, df_within), p |")
+            lines.append("| 3 | Effect size | Overall effect magnitude | Eta-squared or omega-squared |")
+            lines.append("| 4 | Post-hoc tests (if F is significant) | Pairwise group comparisons | Tukey HSD: mean diff, p, 95% CI |")
+            lines.append("| 5 | Pairwise effect sizes | Effect for each pair | Cohen's d for each comparison |")
             lines.append("")
-            lines.append("**Report:** F (or H), df, p, eta-squared")
+            if has_ordinal:
+                lines.append("**Non-parametric alternative:** Kruskal-Wallis H test, followed by Dunn's test with Bonferroni correction")
+                lines.append("")
+            lines.append(f"**Post-hoc correction:** With {num_conditions} groups you have {num_conditions * (num_conditions - 1) // 2} pairwise comparisons. Use Tukey HSD (controls family-wise error) or Bonferroni correction.")
+            lines.append("")
+
+        if is_within:
+            lines.append("**Within-subjects design detected:**")
+            lines.append("")
+            if num_conditions == 2:
+                lines.append("- **Primary:** Paired-samples t-test (report t, df, p, Cohen's d_z)")
+                lines.append("- **Non-parametric:** Wilcoxon signed-rank test (report W, p, matched-pairs rank-biserial r)")
+            else:
+                lines.append("- **Primary:** Repeated-measures ANOVA (report F, df, p, partial eta-squared)")
+                lines.append("- Check sphericity with Mauchly's test; apply Greenhouse-Geisser correction if violated")
+                lines.append("- **Non-parametric:** Friedman test followed by pairwise Wilcoxon signed-rank tests")
+            lines.append("")
+
+        # v1.4.3.1: Quick-start analysis code snippets
+        lines.append("### Quick-Start Analysis Code")
+        lines.append("")
+        lines.append("Copy-paste starter code for your primary analysis:")
+        lines.append("")
+
+        if is_factorial and len(factor_names) >= 2:
+            # Factorial ANOVA snippets
+            lines.append("**R:**")
+            lines.append("```r")
+            lines.append("library(readr); library(car); library(effectsize)")
+            lines.append("df <- read_csv('Simulated.csv')")
+            lines.append("df_clean <- df[df$Exclude_Recommended == 0, ]")
+            lines.append(f"model <- aov({_first_dv} ~ {factor_names[0]} * {factor_names[1]}, data = df_clean)")
+            lines.append("summary(model)")
+            lines.append("eta_squared(model, partial = TRUE)")
+            lines.append("```")
+            lines.append("")
+            lines.append("**Python:**")
+            lines.append("```python")
+            lines.append("import pandas as pd; import statsmodels.api as sm")
+            lines.append("from statsmodels.formula.api import ols")
+            lines.append("df = pd.read_csv('Simulated.csv')")
+            lines.append("df_clean = df[df['Exclude_Recommended'] == 0]")
+            lines.append(f"model = ols('{_first_dv} ~ C({factor_names[0]}) * C({factor_names[1]})', data=df_clean).fit()")
+            lines.append("print(sm.stats.anova_lm(model, typ=2))")
+            lines.append("```")
+            lines.append("")
+        elif num_conditions == 2 and conditions:
+            # Two-group t-test snippets
+            lines.append("**R:**")
+            lines.append("```r")
+            lines.append("library(readr); library(effsize)")
+            lines.append("df <- read_csv('Simulated.csv')")
+            lines.append("df_clean <- df[df$Exclude_Recommended == 0, ]")
+            lines.append(f"t.test({_first_dv} ~ CONDITION, data = df_clean, var.equal = FALSE)")
+            lines.append(f"effsize::cohen.d({_first_dv} ~ CONDITION, data = df_clean)")
+            lines.append("```")
+            lines.append("")
+            lines.append("**Python:**")
+            lines.append("```python")
+            lines.append("import pandas as pd; from scipy import stats; import numpy as np")
+            lines.append("df = pd.read_csv('Simulated.csv')")
+            lines.append("df_clean = df[df['Exclude_Recommended'] == 0]")
+            lines.append(f"g1 = df_clean[df_clean['CONDITION'] == '{conditions[0]}']['{_first_dv}']")
+            lines.append(f"g2 = df_clean[df_clean['CONDITION'] == '{conditions[1]}']['{_first_dv}']")
+            lines.append("t_stat, p_val = stats.ttest_ind(g1, g2, equal_var=False)")
+            lines.append("d = (g1.mean() - g2.mean()) / np.sqrt((g1.std()**2 + g2.std()**2) / 2)")
+            lines.append("print(f't({len(g1)+len(g2)-2}) = {t_stat:.3f}, p = {p_val:.4f}, d = {d:.3f}')")
+            lines.append("```")
+            lines.append("")
+        elif num_conditions > 2:
+            # One-way ANOVA snippets
+            lines.append("**R:**")
+            lines.append("```r")
+            lines.append("library(readr); library(effectsize)")
+            lines.append("df <- read_csv('Simulated.csv')")
+            lines.append("df_clean <- df[df$Exclude_Recommended == 0, ]")
+            lines.append(f"model <- aov({_first_dv} ~ CONDITION, data = df_clean)")
+            lines.append("summary(model)")
+            lines.append("TukeyHSD(model)")
+            lines.append("eta_squared(model)")
+            lines.append("```")
+            lines.append("")
+            lines.append("**Python:**")
+            lines.append("```python")
+            lines.append("import pandas as pd; from scipy import stats")
+            lines.append("df = pd.read_csv('Simulated.csv')")
+            lines.append("df_clean = df[df['Exclude_Recommended'] == 0]")
+            cond_list_str = repr(conditions)
+            lines.append(f"groups = [df_clean[df_clean['CONDITION']==c]['{_first_dv}'] for c in {cond_list_str}]")
+            lines.append("f_stat, p_val = stats.f_oneway(*groups)")
+            lines.append("print(f'F = {f_stat:.3f}, p = {p_val:.4f}')")
+            lines.append("# Post-hoc: pip install scikit-posthocs, then sp.posthoc_ttest(df_clean, val_col, group_col)")
+            lines.append("```")
             lines.append("")
 
         # Power Analysis
@@ -1166,16 +1374,18 @@ class InstructorReportGenerator:
             power = max(0.05, min(0.99, power))
             lines.append(f"| {label} | {d:.2f} | {power:.0%} |")
         lines.append("")
-        lines.append("*80% power is generally considered adequate*")
+        lines.append("*80% power is generally considered adequate. If power < 80% for your expected effect, consider increasing sample size.*")
         lines.append("")
 
         # Effect Size Guide
         lines.append("### Effect Size Interpretation")
         lines.append("")
-        lines.append("| Measure | Small | Medium | Large |")
-        lines.append("|---------|-------|--------|-------|")
-        lines.append("| Cohen's d | 0.20 | 0.50 | 0.80 |")
-        lines.append("| Eta-squared | 0.01 | 0.06 | 0.14 |")
+        lines.append("| Measure | Small | Medium | Large | When to Use |")
+        lines.append("|---------|-------|--------|-------|-------------|")
+        lines.append("| Cohen's d | 0.20 | 0.50 | 0.80 | Two-group comparisons |")
+        lines.append("| Eta-squared (eta2) | 0.01 | 0.06 | 0.14 | ANOVA overall effect |")
+        lines.append("| Partial eta-squared | 0.01 | 0.06 | 0.14 | Factorial ANOVA per factor |")
+        lines.append("| Omega-squared | 0.01 | 0.06 | 0.14 | Less biased ANOVA estimate |")
         lines.append("")
 
         if self.config.include_schema_validation and schema_validation is not None:
@@ -1250,7 +1460,7 @@ class InstructorReportGenerator:
             "",
             "# Set up factors",
             f"data$CONDITION <- factor(data$CONDITION, levels = c({condition_levels}))",
-            "data$Gender <- factor(data$Gender, levels = 1:4, labels = c('Male','Female','Non-binary','Prefer not to say'))",
+            "data$Gender <- factor(data$Gender)  # Gender is already labeled (Male, Female, Non-binary, Prefer not to say)",
             "",
         ]
 
@@ -1720,6 +1930,17 @@ class ComprehensiveInstructorReport:
                 scale_points = scale.get('scale_points', 7)
                 num_items = scale.get('num_items', 1)
                 lines.append(f"  - {scale_name} ({num_items} item{'s' if num_items > 1 else ''}, {scale_points}-point scale)")
+            lines.append("")
+
+        # v1.4.3.1: Data Dictionary from column_descriptions (comprehensive markdown)
+        _cd_comp = metadata.get("column_descriptions", {})
+        if _cd_comp and isinstance(_cd_comp, dict):
+            lines.append("### Data Dictionary")
+            lines.append("")
+            lines.append("| Column | Description |")
+            lines.append("|--------|-------------|")
+            for _cd_k, _cd_v in _cd_comp.items():
+                lines.append(f"| `{_cd_k}` | {_cd_v} |")
             lines.append("")
 
         # Effect Sizes (hypotheses)
@@ -4174,6 +4395,17 @@ class ComprehensiveInstructorReport:
                 num_items = scale.get('num_items', 1)
                 html_parts.append(f"<li>{scale_name} ({num_items} item{'s' if num_items > 1 else ''}, {scale_points}-point)</li>")
             html_parts.append("</ul>")
+
+        # v1.4.3.1: Data Dictionary in HTML report
+        _col_descs_html = metadata.get("column_descriptions", {})
+        if _col_descs_html and isinstance(_col_descs_html, dict):
+            html_parts.append("<h3>Data Dictionary</h3>")
+            html_parts.append("<table><tr><th>Column</th><th>Description</th></tr>")
+            for _cd_col, _cd_desc in _col_descs_html.items():
+                _cd_col_safe = str(_cd_col).replace("<", "&lt;").replace(">", "&gt;")
+                _cd_desc_safe = str(_cd_desc).replace("<", "&lt;").replace(">", "&gt;")
+                html_parts.append(f"<tr><td><code>{_cd_col_safe}</code></td><td>{_cd_desc_safe}</td></tr>")
+            html_parts.append("</table>")
 
         # Effect Sizes
         effect_sizes = metadata.get('effect_sizes_configured', [])

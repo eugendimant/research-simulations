@@ -1,7 +1,7 @@
 """
 Conversational Survey Builder - Natural Language Study Specification Parser
 
-Version: 1.2.8
+Version: 1.4.2
 Allows users to describe their experiment in words instead of uploading a QSF file.
 Parses natural language descriptions into structured survey specifications that
 feed directly into the EnhancedSimulationEngine.
@@ -19,7 +19,7 @@ import re
 from typing import Any, Dict, List, Optional, Tuple
 from dataclasses import dataclass, field
 
-__version__ = "1.4.0"
+__version__ = "1.4.3.1"
 
 
 # ─── Common scale anchors used in behavioral science ───────────────────────────
@@ -709,13 +709,13 @@ class SurveyDescriptionParser:
             "social psychology": ["social", "group", "conformity", "persuasion", "attitude", "stereotype", "prejudice", "discrimination"],
             "behavioral economics": ["economic", "decision", "framing", "loss aversion", "nudge", "incentive", "willingness to pay", "wtp"],
             "organizational behavior": ["organization", "workplace", "employee", "leadership", "team", "management", "job satisfaction"],
-            "health psychology": ["health", "medical", "patient", "wellness", "illness", "treatment", "therapy", "medication", "symptom"],
+            "health psychology": ["health", "medical", "patient", "wellness", "illness", "treatment", "therapy", "medication", "symptom", "exercise", "fitness", "physical", "clinical", "disease", "vaccination", "pain", "disability"],
             "political psychology": ["political", "voting", "election", "ideology", "partisan", "democrat", "republican", "policy"],
             "cognitive psychology": ["cognitive", "memory", "attention", "perception", "reasoning", "judgment", "heuristic", "bias"],
             "developmental psychology": ["child", "development", "adolescent", "aging", "lifespan", "parenting"],
             "environmental psychology": ["environment", "climate", "sustainability", "green", "recycling", "carbon", "pollution"],
             "educational psychology": ["education", "learning", "student", "teacher", "academic", "classroom", "instruction"],
-            "moral psychology": ["moral", "ethical", "fairness", "justice", "virtue", "dilemma", "right", "wrong"],
+            "moral psychology": ["moral", "ethical", "fairness", "justice", "virtue", "dilemma", "right", "wrong", "trolley"],
             "technology & hci": ["technology", "ai", "artificial intelligence", "robot", "app", "digital", "online", "interface", "ux"],
             "communication": ["media", "news", "framing", "message", "communication", "misinformation", "fake news"],
             "food & nutrition": ["food", "eating", "diet", "nutrition", "meal", "restaurant", "taste", "organic"],
@@ -794,8 +794,11 @@ class SurveyDescriptionParser:
                 "block_name": "",  # Required by engine visibility check
             })
 
-        # Build factors
+        # Build factors - use explicit factors if provided, otherwise infer from
+        # crossed condition names (factorial designs use " × " as separator)
         factors = parsed.factors if parsed.factors else []
+        if not factors and len(conditions) >= 4:
+            factors = self._infer_factors_from_conditions(conditions)
 
         # Compute default equal condition allocation
         n_conds = len(conditions)
@@ -1064,6 +1067,111 @@ class SurveyDescriptionParser:
 
         return suggestions
 
+    def suggest_scales_for_domain(self, domain: str) -> List[Dict[str, str]]:
+        """Suggest appropriate scales/DVs based on research domain.
+
+        Unlike suggest_additional_measures(), this method returns structured
+        scale metadata (name, items, range, description) suitable for
+        auto-filling the scales text area in the conversational builder.
+
+        Args:
+            domain: The detected research domain string.
+
+        Returns:
+            List of dicts with keys 'name', 'items', 'range', 'description'.
+        """
+        domain_scales: Dict[str, List[Dict[str, str]]] = {
+            "consumer behavior": [
+                {"name": "Purchase Intention", "items": "3", "range": "1-7 Likert", "description": "Measures likelihood of buying the product"},
+                {"name": "Brand Attitude", "items": "4", "range": "1-7 Likert", "description": "Overall evaluation of the brand"},
+                {"name": "Perceived Quality", "items": "4", "range": "1-7 Likert", "description": "Perceived quality of product/service"},
+                {"name": "Willingness to Pay", "items": "1", "range": "0-100 dollars", "description": "Maximum price willing to pay"},
+            ],
+            "social psychology": [
+                {"name": "Trust Scale", "items": "5", "range": "1-7 Likert", "description": "Interpersonal or institutional trust"},
+                {"name": "Social Distance", "items": "3", "range": "1-7 Likert", "description": "Perceived closeness to target group"},
+                {"name": "Perceived Warmth", "items": "3", "range": "1-7 Likert", "description": "Warmth dimension of social judgment"},
+                {"name": "Perceived Competence", "items": "3", "range": "1-7 Likert", "description": "Competence dimension of social judgment"},
+            ],
+            "health psychology": [
+                {"name": "Health Behavior Intention", "items": "3", "range": "1-7 Likert", "description": "Intent to engage in health behavior"},
+                {"name": "Risk Perception", "items": "4", "range": "1-7 Likert", "description": "Perceived health risk"},
+                {"name": "Self-Efficacy", "items": "5", "range": "1-7 Likert", "description": "Confidence in ability to perform behavior"},
+                {"name": "Perceived Severity", "items": "3", "range": "1-7 Likert", "description": "Perceived severity of health threat"},
+            ],
+            "ai_technology": [
+                {"name": "Trust in AI", "items": "5", "range": "1-7 Likert", "description": "Trust toward AI system"},
+                {"name": "Perceived Usefulness", "items": "4", "range": "1-7 Likert", "description": "TAM perceived usefulness"},
+                {"name": "Algorithm Aversion", "items": "4", "range": "1-7 Likert", "description": "Resistance to algorithmic decisions"},
+                {"name": "Transparency Perception", "items": "3", "range": "1-7 Likert", "description": "Perceived transparency of AI system"},
+            ],
+            "organizational behavior": [
+                {"name": "Job Satisfaction", "items": "5", "range": "1-7 Likert", "description": "Overall satisfaction with work"},
+                {"name": "Organizational Commitment", "items": "4", "range": "1-7 Likert", "description": "Commitment to the organization"},
+                {"name": "Work Engagement", "items": "5", "range": "1-7 Likert", "description": "Level of engagement at work"},
+                {"name": "Perceived Fairness", "items": "3", "range": "1-7 Likert", "description": "Fairness of organizational processes"},
+            ],
+            "communication": [
+                {"name": "Message Credibility", "items": "4", "range": "1-7 Likert", "description": "Perceived credibility of message"},
+                {"name": "Persuasion Effectiveness", "items": "3", "range": "1-7 Likert", "description": "How persuasive the message was"},
+                {"name": "Attitude Change", "items": "4", "range": "1-7 Likert", "description": "Pre-post attitude shift"},
+                {"name": "Behavioral Intention", "items": "3", "range": "1-7 Likert", "description": "Intent to act on message"},
+            ],
+            "education": [
+                {"name": "Learning Outcome", "items": "5", "range": "1-10 scale", "description": "Knowledge/skill assessment"},
+                {"name": "Motivation", "items": "4", "range": "1-7 Likert", "description": "Learning motivation"},
+                {"name": "Self-Efficacy", "items": "5", "range": "1-7 Likert", "description": "Academic self-efficacy"},
+                {"name": "Engagement", "items": "4", "range": "1-7 Likert", "description": "Student engagement"},
+            ],
+            "behavioral economics": [
+                {"name": "Risk Perception", "items": "4", "range": "1-7 Likert", "description": "Perceived risk in decision-making"},
+                {"name": "Willingness to Pay", "items": "1", "range": "0-100 dollars", "description": "Maximum price willing to pay"},
+                {"name": "Behavioral Intention", "items": "3", "range": "1-7 Likert", "description": "Intent to act on economic decision"},
+                {"name": "Need for Cognition", "items": "18", "range": "1-5 Likert", "description": "Cognitive motivation moderator"},
+            ],
+            "technology & hci": [
+                {"name": "System Usability Scale", "items": "10", "range": "1-5 Likert", "description": "Industry-standard usability benchmark"},
+                {"name": "Perceived Usefulness", "items": "4", "range": "1-7 Likert", "description": "TAM perceived usefulness"},
+                {"name": "Ease of Use", "items": "4", "range": "1-7 Likert", "description": "TAM ease of use"},
+                {"name": "Privacy Concern", "items": "5", "range": "1-7 Likert", "description": "Concerns about data privacy"},
+            ],
+            "political psychology": [
+                {"name": "Social Dominance Orientation", "items": "16", "range": "1-7 Likert", "description": "Attitudes toward social hierarchy"},
+                {"name": "Moral Foundations", "items": "20", "range": "1-6 Likert", "description": "Moral values across five foundations"},
+                {"name": "Trust in Institutions", "items": "5", "range": "1-7 Likert", "description": "Trust toward political institutions"},
+            ],
+            "moral psychology": [
+                {"name": "Moral Judgment", "items": "4", "range": "1-7 Likert", "description": "Moral evaluation of scenarios"},
+                {"name": "Moral Foundations", "items": "20", "range": "1-6 Likert", "description": "Five moral foundations questionnaire"},
+                {"name": "Empathy Scale", "items": "5", "range": "1-7 Likert", "description": "Empathic concern measure"},
+            ],
+            "emotion research": [
+                {"name": "PANAS", "items": "20", "range": "1-5 Likert", "description": "Positive and Negative Affect Schedule"},
+                {"name": "Emotional Response", "items": "6", "range": "1-7 Likert", "description": "Brief emotional response measure"},
+                {"name": "Anxiety (GAD-7)", "items": "7", "range": "0-3 scale", "description": "Generalized anxiety measure"},
+            ],
+            "educational psychology": [
+                {"name": "Self-Efficacy", "items": "5", "range": "1-7 Likert", "description": "Academic self-efficacy"},
+                {"name": "Motivation Scale", "items": "4", "range": "1-7 Likert", "description": "Intrinsic vs extrinsic motivation"},
+                {"name": "Satisfaction Scale", "items": "5", "range": "1-7 Likert", "description": "Learning satisfaction"},
+            ],
+        }
+        # Default if domain not found
+        default: List[Dict[str, str]] = [
+            {"name": "Primary Outcome", "items": "5", "range": "1-7 Likert", "description": "Main dependent variable"},
+            {"name": "Attitude Scale", "items": "4", "range": "1-7 Likert", "description": "Overall attitude measure"},
+            {"name": "Satisfaction", "items": "3", "range": "1-7 Likert", "description": "General satisfaction"},
+        ]
+        domain_lower = domain.lower().strip()
+        result = domain_scales.get(domain_lower)
+        if result is not None:
+            return result
+        # Fallback: try partial match
+        for key, val in domain_scales.items():
+            if key in domain_lower or domain_lower in key:
+                return val
+        return default
+
     def validate_full_design(self, parsed: ParsedDesign) -> Dict[str, List[str]]:
         """
         Validate a complete parsed design and return errors and warnings.
@@ -1231,180 +1339,372 @@ class SurveyDescriptionParser:
     @staticmethod
     def generate_example_descriptions() -> List[Dict[str, str]]:
         """
-        Return 3-5 example study descriptions that users can click to
+        Return example study descriptions that users can click to
         auto-fill the survey builder for inspiration and guidance.
 
-        Each example includes:
+        Each example demonstrates a different experimental design type
+        and covers a distinct research domain. All examples include
+        every required field:
         - title: Short study title
+        - description: Full study description with hypothesis
         - conditions: Natural-language condition description
-        - scales: Natural-language scale/DV description
-        - open_ended: Natural-language open-ended question description
+        - scales: Parse-ready scale/DV description (items count, scale range)
+        - open_ended: Realistic open-ended question(s)
         - domain: Research domain
+
+        Design types covered:
+        - Simple 2-condition between-subjects
+        - Factorial 2x2 between-subjects
+        - 3-condition with control group
+        - Within-subjects (repeated measures)
+        - Mixed design (between + within)
+        - 3x2 factorial between-subjects
+        - 2x2x2 factorial between-subjects
+        - 2-condition with mediator
+        - Quasi-experimental with matched groups
         """
         return [
+            # -- 1. Simple 2-condition between-subjects ------------------
             {
-                "title": "AI vs Human Content Credibility",
+                "title": "Sleep Deprivation and Cognitive Performance",
                 "description": (
-                    "This study examines how disclosure of AI authorship affects "
-                    "perceived credibility of news articles. Participants read an article "
-                    "and are told it was written by AI, a human journalist, or given no "
-                    "authorship information. We measure credibility, trust, and willingness "
-                    "to share the article on social media."
+                    "This experiment tests the causal effect of sleep deprivation "
+                    "on next-day cognitive performance. Participants are randomly "
+                    "assigned to either a normal sleep condition (8 hours) or a "
+                    "restricted sleep condition (4 hours) in a controlled lab "
+                    "setting. The next morning, they complete a battery of "
+                    "cognitive tasks measuring attention, working memory, and "
+                    "executive function. We hypothesize that sleep-restricted "
+                    "participants will show significantly worse performance on "
+                    "all cognitive measures."
                 ),
                 "conditions": (
-                    "Condition 1: AI-generated article, "
-                    "Condition 2: Human-written article, "
-                    "Condition 3: No authorship information"
+                    "Normal sleep (8 hours, control) vs "
+                    "Restricted sleep (4 hours, treatment)"
                 ),
                 "scales": (
-                    "Credibility scale (4 items, 1-7); "
-                    "Trust scale (5 items, 1-7); "
-                    "Willingness to share (slider 0-100)"
+                    "Sustained attention (PVT reaction time, 10 items, 0-1000); "
+                    "Working memory capacity (3 items, 0-100); "
+                    "Executive function (Stroop accuracy, 5 items, 0-100); "
+                    "Subjective sleepiness (Karolinska Sleepiness Scale, "
+                    "1 item, 1-9, 1=extremely alert, 9=extremely sleepy); "
+                    "Self-reported cognitive difficulty (4 items, 1-7, "
+                    "1=not at all difficult, 7=extremely difficult)"
                 ),
                 "open_ended": (
-                    "Why did you rate the article's credibility the way you did?"
-                ),
-                "domain": "technology & hci",
-            },
-            {
-                "title": "Moral Framing and Donation Behavior",
-                "description": (
-                    "We investigate how moral framing (care vs fairness) and trust "
-                    "in the charity (high vs low) affect donation amounts. Participants "
-                    "read a charity appeal framed around either caring for others or "
-                    "fairness/justice, from an organization with either high or low "
-                    "trustworthiness ratings."
-                ),
-                "conditions": (
-                    "Trust (high, low) and Moral Frame (care, fairness)"
-                ),
-                "scales": (
-                    "Moral Foundations Questionnaire (MFQ); "
-                    "Donation amount in dollars (WTP, 0-100); "
-                    "Empathy scale (5 items, 1-7)"
-                ),
-                "open_ended": (
-                    "Describe your reasoning when deciding how much to donate."
-                ),
-                "domain": "moral psychology",
-            },
-            {
-                "title": "Social Media and Well-Being",
-                "description": (
-                    "A field experiment examining the causal effects of social media "
-                    "usage reduction on psychological well-being. Participants are "
-                    "randomly assigned to continue normal usage, reduce usage to 30 "
-                    "minutes per day, or abstain completely for two weeks."
-                ),
-                "conditions": "Control vs Reduced Usage vs Complete Abstinence",
-                "scales": (
-                    "SWLS (Satisfaction with Life Scale); "
-                    "PANAS; "
-                    "PHQ-9; "
-                    "GAD-7"
-                ),
-                "open_ended": (
-                    "How did the social media intervention affect your "
-                    "daily routine?"
+                    "Describe how you felt during the cognitive tasks. "
+                    "Did you notice any changes in your ability to concentrate "
+                    "compared to a typical day?"
                 ),
                 "domain": "health psychology",
             },
+            # -- 2. Factorial 2x2 between-subjects -----------------------
             {
-                "title": "Brand Authenticity in Green Marketing",
+                "title": "Leadership Style and Feedback Type on Employee Motivation",
                 "description": (
-                    "This study tests whether brand origin (local vs global) and the "
-                    "presence of green environmental claims interact to influence "
-                    "consumer perceptions and purchase intentions. We hypothesize that "
-                    "local brands benefit more from green claims than global brands."
+                    "A 2x2 factorial experiment examining how leadership style "
+                    "(transformational vs transactional) and feedback type "
+                    "(developmental vs evaluative) jointly influence employee "
+                    "work motivation and job satisfaction. Participants read a "
+                    "scenario describing their manager's leadership approach "
+                    "and then receive performance feedback in one of two styles. "
+                    "We predict that transformational leadership paired with "
+                    "developmental feedback will produce the highest motivation, "
+                    "and that transactional leadership paired with evaluative "
+                    "feedback will produce the lowest."
                 ),
                 "conditions": (
-                    "Brand Origin (local, global) and "
-                    "Green Claim (present, absent)"
+                    "Leadership Style (transformational, transactional) "
+                    "x Feedback Type (developmental, evaluative)"
                 ),
                 "scales": (
-                    "Brand attitude (4 items, 1-7); "
-                    "Purchase intention (3 items, 1-7); "
-                    "Perceived quality (4 items, 1-7, "
-                    "1=strongly disagree, 7=strongly agree)"
+                    "Intrinsic motivation (6 items, 1-7, "
+                    "1=strongly disagree, 7=strongly agree); "
+                    "Job satisfaction (5 items, 1-7, "
+                    "1=very dissatisfied, 7=very satisfied); "
+                    "Organizational commitment (4 items, 1-7, "
+                    "1=strongly disagree, 7=strongly agree); "
+                    "Perceived supervisor support (5 items, 1-7, "
+                    "1=strongly disagree, 7=strongly agree); "
+                    "Turnover intention (3 items, 1-7, "
+                    "1=very unlikely, 7=very likely, reverse-coded)"
                 ),
                 "open_ended": (
-                    "What factors influenced your evaluation of this brand?"
+                    "How would working under this manager affect your "
+                    "day-to-day motivation at work? What specific aspects "
+                    "of the feedback you received stood out to you, and why?"
                 ),
-                "domain": "consumer behavior",
+                "domain": "organizational behavior",
             },
+            # -- 3. 3-condition with control group -----------------------
             {
-                "title": "Personality and Risk-Taking Under Uncertainty",
+                "title": "AI Authorship Disclosure and News Credibility",
                 "description": (
-                    "Investigating how personality traits moderate risk-taking behavior "
-                    "under varying levels of uncertainty. Participants complete personality "
-                    "measures and then face financial decision scenarios with different "
-                    "levels of outcome uncertainty."
+                    "This study examines how disclosure of AI authorship affects "
+                    "perceived credibility of news articles. Participants read "
+                    "an identical news article but are randomly assigned to one "
+                    "of three conditions: told the article was written by an AI "
+                    "system, told it was written by a human journalist, or given "
+                    "no authorship information (control). We measure perceived "
+                    "credibility, institutional trust, and willingness to share "
+                    "the article on social media. We predict that AI disclosure "
+                    "will reduce credibility relative to both the human and "
+                    "control conditions."
                 ),
                 "conditions": (
-                    "High uncertainty vs Low uncertainty vs Ambiguous"
+                    "AI-authored (told article written by AI), "
+                    "Human-authored (told article written by journalist), "
+                    "No disclosure (control, no authorship information)"
                 ),
                 "scales": (
-                    "BFI-10; "
-                    "Risk perception (4 items, 1-7); "
-                    "Need for Cognition (NFC); "
-                    "Behavioral intention (3 items, 1-7, "
-                    "items 2 and 3 are reverse-coded)"
+                    "Perceived credibility (4 items, 1-7, "
+                    "1=not at all credible, 7=extremely credible); "
+                    "Trust in source (5 items, 1-7, "
+                    "1=strongly distrust, 7=strongly trust); "
+                    "Willingness to share (slider 0-100, "
+                    "0=definitely would not share, 100=definitely would share); "
+                    "Perceived accuracy (3 items, 1-7, "
+                    "1=very inaccurate, 7=very accurate)"
                 ),
                 "open_ended": (
-                    "Explain why you chose the option you did in "
-                    "the decision task."
+                    "What factors did you consider when judging the credibility "
+                    "of this article? If you learned the article was written "
+                    "differently than you assumed, how would that change your "
+                    "evaluation?"
                 ),
-                "domain": "behavioral economics",
+                "domain": "technology & hci",
             },
+            # -- 4. Within-subjects (repeated measures) ------------------
             {
-                "title": "Product Annotation and Consumer Perception",
+                "title": "Emotional Valence and Autobiographical Memory Recall",
                 "description": (
-                    "A 3x2 between-subjects experiment examining how product "
-                    "description source (AI-generated, human-curated, or no source info) "
-                    "and product type (hedonic vs utilitarian) affect perceived quality, "
-                    "purchase intention, and ad credibility."
+                    "A within-subjects experiment examining how the emotional "
+                    "valence of memory cues affects the vividness, detail, and "
+                    "emotional intensity of autobiographical memory recall. "
+                    "Each participant recalls three personal memories in "
+                    "counterbalanced order: one prompted by a positive cue word, "
+                    "one by a negative cue word, and one by a neutral cue word. "
+                    "We predict that emotionally valenced cues (both positive "
+                    "and negative) will elicit more vivid and detailed memories "
+                    "than neutral cues, with negative cues producing the highest "
+                    "emotional intensity ratings."
                 ),
                 "conditions": (
-                    "3 (Annotation: AI-generated vs Human-curated vs No source) "
-                    "× 2 (Product type: Hedonic vs Utilitarian), "
+                    "Within-subjects, counterbalanced: "
+                    "Positive cue, Negative cue, Neutral cue "
+                    "(each participant experiences all three)"
+                ),
+                "scales": (
+                    "Memory vividness (4 items, 1-7, "
+                    "1=extremely vague, 7=extremely vivid); "
+                    "Memory detail richness (5 items, 1-7, "
+                    "1=no detail, 7=extremely detailed); "
+                    "Emotional intensity (3 items, 1-9, "
+                    "1=no emotion, 9=extremely intense); "
+                    "Confidence in accuracy (1 item, slider 0-100, "
+                    "0=completely uncertain, 100=completely certain); "
+                    "Temporal distance estimate (1 item, numeric, years ago)"
+                ),
+                "open_ended": (
+                    "Describe the memory that came to mind. What sensory "
+                    "details do you recall most clearly (sights, sounds, "
+                    "smells)? How did recalling this memory make you feel "
+                    "right now?"
+                ),
+                "domain": "cognitive psychology",
+            },
+            # -- 5. Mixed design (between + within) ----------------------
+            {
+                "title": "Mindfulness Training and Stress Reactivity Over Time",
+                "description": (
+                    "A mixed-design study investigating whether an 8-week "
+                    "mindfulness-based stress reduction (MBSR) program reduces "
+                    "physiological and psychological stress reactivity compared "
+                    "to an active control (relaxation training). The between-"
+                    "subjects factor is intervention type (MBSR vs relaxation "
+                    "control). The within-subjects factor is time, with stress "
+                    "measures collected at baseline (Week 0), mid-point "
+                    "(Week 4), and post-intervention (Week 8). We hypothesize "
+                    "that the MBSR group will show steeper declines in stress "
+                    "reactivity over time compared to controls."
+                ),
+                "conditions": (
+                    "Between-subjects: MBSR training vs Relaxation control; "
+                    "Within-subjects (repeated measures): "
+                    "Baseline (Week 0), Mid-point (Week 4), "
+                    "Post-intervention (Week 8)"
+                ),
+                "scales": (
+                    "Perceived Stress Scale (PSS, 10 items, 1-5, "
+                    "1=never, 5=very often, items 4 6 7 are reverse-coded); "
+                    "State anxiety (STAI-S, 6 items, 1-4, "
+                    "1=not at all, 4=very much so); "
+                    "Mindfulness (MAAS, 6 items, 1-6, "
+                    "1=almost never, 6=almost always); "
+                    "Cortisol reactivity (1 item, numeric, nmol/L); "
+                    "Sleep quality (PSQI, 4 items, 0-3, "
+                    "0=very good, 3=very bad)"
+                ),
+                "open_ended": (
+                    "How has your experience of stressful situations changed "
+                    "since beginning the program? Describe a recent stressful "
+                    "event and how you responded to it compared to how you "
+                    "might have responded before the training."
+                ),
+                "domain": "health psychology",
+            },
+            # -- 6. Factorial 2x2 -- moral psychology --------------------
+            {
+                "title": "Moral Framing and Charity Trust on Donation Behavior",
+                "description": (
+                    "A 2x2 between-subjects experiment investigating how moral "
+                    "framing of a charity appeal (care-based vs justice-based) "
+                    "and perceived charity trustworthiness (high vs low, "
+                    "manipulated via Charity Navigator ratings) jointly affect "
+                    "donation amounts and willingness to volunteer. Participants "
+                    "read a charity appeal and then decide how much of a $10 "
+                    "bonus to donate. We predict a crossover interaction: "
+                    "care framing will be more effective for high-trust "
+                    "charities, while justice framing will partially compensate "
+                    "for low trust."
+                ),
+                "conditions": (
+                    "Moral Frame (care-based, justice-based) "
+                    "x Charity Trust (high trustworthiness, low trustworthiness)"
+                ),
+                "scales": (
+                    "Donation amount (WTP, 0-10); "
+                    "Willingness to volunteer (1 item, slider 0-100, "
+                    "0=not at all willing, 100=extremely willing); "
+                    "Empathy (5 items, 1-7, "
+                    "1=strongly disagree, 7=strongly agree); "
+                    "Perceived charity effectiveness (3 items, 1-7, "
+                    "1=not at all effective, 7=extremely effective); "
+                    "Moral elevation (4 items, 1-7, "
+                    "1=not at all, 7=very strongly)"
+                ),
+                "open_ended": (
+                    "What went through your mind when deciding how much to "
+                    "donate? How did the charity's description influence your "
+                    "feelings about the cause?"
+                ),
+                "domain": "moral psychology",
+            },
+            # -- 7. 3x2 factorial between-subjects -----------------------
+            {
+                "title": "Product Description Source and Product Type Effects",
+                "description": (
+                    "A 3x2 between-subjects experiment examining how the source "
+                    "of a product description (AI-generated, human-curated, or "
+                    "no source disclosed) and product type (hedonic vs "
+                    "utilitarian) affect perceived quality, purchase intention, "
+                    "and ad credibility. Participants view a product listing "
+                    "with the source attribution manipulated. We predict that "
+                    "human-curated descriptions will outperform AI-generated "
+                    "ones for hedonic products, but that the gap will be "
+                    "smaller for utilitarian products where factual accuracy "
+                    "matters more."
+                ),
+                "conditions": (
+                    "3 (Description Source: AI-generated vs Human-curated "
+                    "vs No source disclosed) "
+                    "x 2 (Product Type: Hedonic vs Utilitarian), "
                     "between-subjects, random assignment"
                 ),
                 "scales": (
-                    "Perceived Quality (PQ): 3 items (7-point Likert; "
-                    "1=extremely low quality, 7=extremely high quality)\n\n"
-                    "Purchase Intention (PI): 3 items (7-point Likert; "
-                    "1=strongly disagree, 7=strongly agree)\n\n"
-                    "Ad Credibility (AC): 3 items (7-point Likert; "
-                    "1=not at all credible, 7=extremely credible)"
+                    "Perceived quality (3 items, 1-7, "
+                    "1=extremely low quality, 7=extremely high quality); "
+                    "Purchase intention (3 items, 1-7, "
+                    "1=strongly disagree, 7=strongly agree); "
+                    "Ad credibility (3 items, 1-7, "
+                    "1=not at all credible, 7=extremely credible); "
+                    "Perceived authenticity (4 items, 1-7, "
+                    "1=very inauthentic, 7=very authentic)"
                 ),
                 "open_ended": (
-                    "What influenced your perception of the product?\n"
-                    "Describe your overall impression of the product."
+                    "What influenced your perception of this product? "
+                    "How did the product description affect your willingness "
+                    "to purchase?"
                 ),
                 "domain": "consumer behavior",
             },
+            # -- 8. 2x2x2 factorial between-subjects ---------------------
             {
-                "title": "Framing, Source, and Time Pressure",
+                "title": "Message Framing, Source Expertise, and Time Pressure",
                 "description": (
                     "A 2x2x2 factorial experiment testing how message framing "
-                    "(gain vs loss), information source (expert vs peer), and time "
-                    "pressure (immediate vs delayed response) interact to influence "
-                    "risk perception and decision confidence."
+                    "(gain vs loss), information source (expert vs peer), and "
+                    "decision time pressure (15 seconds vs unlimited) interact "
+                    "to influence health risk perception and preventive behavior "
+                    "intentions. Participants read a health message about flu "
+                    "vaccination and then indicate their risk perceptions and "
+                    "behavioral intentions. We predict a three-way interaction: "
+                    "loss framing from expert sources will be most persuasive "
+                    "under time pressure, while gain framing from peers will "
+                    "be most effective without time constraints."
                 ),
                 "conditions": (
                     "2 (Frame: Gain vs Loss) "
-                    "× 2 (Source: Expert vs Peer) "
-                    "× 2 (Time: Immediate vs Delayed)"
+                    "x 2 (Source: Expert vs Peer) "
+                    "x 2 (Time Pressure: 15-second limit vs Unlimited)"
                 ),
                 "scales": (
-                    "Risk perception (4 items, 1-7); "
-                    "Decision confidence (3 items, 1-7); "
-                    "Willingness to act (slider 0-100)"
+                    "Risk perception (4 items, 1-7, "
+                    "1=very low risk, 7=very high risk); "
+                    "Vaccination intention (3 items, 1-7, "
+                    "1=definitely will not, 7=definitely will); "
+                    "Decision confidence (3 items, 1-7, "
+                    "1=not at all confident, 7=extremely confident); "
+                    "Message persuasiveness (4 items, 1-7, "
+                    "1=not at all persuasive, 7=extremely persuasive); "
+                    "Willingness to recommend to others (slider 0-100, "
+                    "0=would not recommend, 100=would strongly recommend)"
                 ),
                 "open_ended": (
-                    "Explain why you made the decision you did."
+                    "What aspects of the health message were most convincing "
+                    "to you? Did you feel any time pressure during your "
+                    "decision, and if so, how did it affect your thinking?"
                 ),
                 "domain": "behavioral economics",
+            },
+            # -- 9. 2-condition with mediator -- org behavior -------------
+            {
+                "title": "Remote Work Autonomy and Burnout via Boundary Management",
+                "description": (
+                    "This between-subjects experiment tests whether remote work "
+                    "policy (high autonomy: flexible hours with self-set "
+                    "boundaries vs low autonomy: fixed 9-5 schedule with "
+                    "mandatory check-ins) affects employee burnout, and whether "
+                    "work-life boundary management mediates this effect. "
+                    "Participants who have worked remotely for at least 6 months "
+                    "are randomly assigned to read and imagine themselves in one "
+                    "of the two policy scenarios for a week-long experience "
+                    "sampling study. We predict that high autonomy reduces "
+                    "burnout, mediated by stronger boundary management."
+                ),
+                "conditions": (
+                    "High autonomy (flexible hours, self-set boundaries) vs "
+                    "Low autonomy (fixed schedule, mandatory check-ins)"
+                ),
+                "scales": (
+                    "Burnout (Maslach Burnout Inventory, 9 items, 1-7, "
+                    "1=never, 7=every day); "
+                    "Work-life boundary management (5 items, 1-7, "
+                    "1=strongly disagree, 7=strongly agree); "
+                    "Job autonomy (4 items, 1-7, "
+                    "1=very little, 7=very much); "
+                    "Psychological detachment from work (4 items, 1-5, "
+                    "1=not at all, 5=completely); "
+                    "Work engagement (UWES-9, 9 items, 0-6, "
+                    "0=never, 6=always)"
+                ),
+                "open_ended": (
+                    "Describe how you typically manage the boundary between "
+                    "your work and personal life when working remotely. What "
+                    "challenges do you face, and what strategies have you "
+                    "found most effective?"
+                ),
+                "domain": "organizational behavior",
             },
         ]
 
@@ -1552,6 +1852,55 @@ class SurveyDescriptionParser:
                     "name": f"Factor_{i+1}",
                     "levels": [f"Level_{j+1}" for j in range(dim)],
                 })
+
+        return factors
+
+    def _infer_factors_from_conditions(self, conditions: List[str]) -> List[Dict[str, Any]]:
+        """Infer factorial factors from crossed condition names.
+
+        When parse_conditions() creates factorial conditions with ' × ' separators,
+        this method reconstructs the factor structure from those condition names.
+
+        Args:
+            conditions: List of condition names (e.g., ["Premium × Emotional", ...])
+
+        Returns:
+            List of factor dicts with 'name' and 'levels' keys, or empty list
+            if conditions are not in factorial format.
+        """
+        sep = " × "
+        # Check if all conditions use the factorial separator
+        split_conditions = [c.split(sep) for c in conditions]
+        n_parts = [len(parts) for parts in split_conditions]
+
+        # All conditions must have the same number of factor parts
+        if not n_parts or len(set(n_parts)) != 1 or n_parts[0] < 2:
+            return []
+
+        n_factors = n_parts[0]
+        factors: List[Dict[str, Any]] = []
+
+        for i in range(n_factors):
+            # Collect unique levels for this factor position (preserve order)
+            seen: set = set()
+            levels: List[str] = []
+            for parts in split_conditions:
+                level = parts[i].strip()
+                if level not in seen:
+                    seen.add(level)
+                    levels.append(level)
+            factors.append({
+                "name": f"Factor_{i + 1}",
+                "levels": levels,
+            })
+
+        # Verify that the number of conditions equals the product of factor levels
+        import math
+        expected = 1
+        for f in factors:
+            expected *= len(f["levels"])
+        if expected != len(conditions):
+            return []
 
         return factors
 

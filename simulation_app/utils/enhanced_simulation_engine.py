@@ -45,7 +45,7 @@ This module is designed to run inside a `utils/` package (i.e., imported as
 """
 
 # Version identifier to help track deployed code
-__version__ = "1.4.0"  # v1.4.0: Builder-engine integration fixes (scale type mapping, demographics gender_quota)
+__version__ = "1.4.3.1"  # v1.4.3.1: Enhanced instructor report (data dictionary, design-specific analysis, builder support)
 
 # =============================================================================
 # SCIENTIFIC FOUNDATIONS FOR SIMULATION
@@ -283,6 +283,27 @@ def _safe_numeric(value: Any, default: float = 0.0, as_int: bool = False) -> Uni
         return int(v) if as_int else v
     except (ValueError, TypeError):
         return int(default) if as_int else default
+
+
+def _clean_column_name(name: str) -> str:
+    """Sanitize a string for use as a DataFrame column name.
+
+    v1.4.3: Added to ensure all generated column names are clean and scientific.
+    Removes spaces, special characters, and collapses multiple underscores.
+
+    Args:
+        name: Raw name string (e.g., "Trust scale", "My (custom) DV!")
+
+    Returns:
+        Clean column name (e.g., "Trust_scale", "My_custom_DV")
+    """
+    # Replace spaces and non-alphanumeric/underscore characters with underscore
+    clean = re.sub(r'[^a-zA-Z0-9_]', '_', name)
+    # Collapse multiple underscores into one
+    clean = re.sub(r'_+', '_', clean)
+    # Strip leading/trailing underscores
+    clean = clean.strip('_')
+    return clean if clean else "Variable"
 
 
 def _safe_trait_value(value: Any, default: float = 0.5) -> float:
@@ -4673,8 +4694,11 @@ class EnhancedSimulationEngine:
         total = male_pct + female_pct + nonbinary_pct + pnts_pct
         if total <= 0:
             total = 1.0
+
+        # v1.4.3: Use descriptive string labels instead of numeric codes for Gender
+        _gender_labels = ["Male", "Female", "Non-binary", "Prefer not to say"]
         genders = rng.choice(
-            [1, 2, 3, 4],
+            _gender_labels,
             size=int(n),
             p=[male_pct / total, female_pct / total, nonbinary_pct / total, pnts_pct / total],
         )
@@ -4835,8 +4859,8 @@ class EnhancedSimulationEngine:
         data["Gender"] = demographics_df["Gender"].tolist()
         self.column_info.extend(
             [
-                ("Age", f"Participant age (18-70, mean ~ {self.demographics.get('age_mean', 35)})"),
-                ("Gender", "Gender: 1=Male, 2=Female, 3=Non-binary, 4=Prefer not to say"),
+                ("Age", f"Participant age in years (18-70, mean ~ {self.demographics.get('age_mean', 35)})"),
+                ("Gender", "Participant gender: Male, Female, Non-binary, or Prefer not to say"),
             ]
         )
 
@@ -4853,17 +4877,18 @@ class EnhancedSimulationEngine:
         participant_item_responses: List[List[int]] = [[] for _ in range(n)]
 
         attention_results: List[List[bool]] = []
-        ai_check_values: List[int] = []
+        attention_check_values: List[int] = []
         for i in range(n):
             p_seed = (self.seed + i * 100) % (2**31)
             check_val, passed = self._generate_attention_check(
                 conditions.iloc[i], all_traits[i], "ai_manipulation", p_seed
             )
-            ai_check_values.append(int(check_val))
+            attention_check_values.append(int(check_val))
             attention_results.append([bool(passed)])
 
-        data["AI_Mentioned_Check"] = ai_check_values
-        self.column_info.append(("AI_Mentioned_Check", "Manipulation check: Was AI mentioned? 1=Yes, 2=No"))
+        # v1.4.3: Use clear, scientific attention check column naming
+        data["Attention_Check_1"] = attention_check_values
+        self.column_info.append(("Attention_Check_1", "Manipulation/attention check: 1=Correct, 2=Incorrect"))
 
         # =====================================================================
         # SCALE DATA GENERATION - CONTRACT ENFORCEMENT
@@ -4884,11 +4909,12 @@ class EnhancedSimulationEngine:
                 continue
             # v1.3.6: Prefer variable_name for column generation to avoid collisions
             # when multiple scales share the same display name
+            # v1.4.3: Use _clean_column_name for scientific column naming
             _var_name = str(scale.get("variable_name", "")).strip()
             if _var_name:
-                scale_name = _var_name.replace(" ", "_")
+                scale_name = _clean_column_name(_var_name)
             else:
-                scale_name = scale_name_raw.replace(" ", "_")
+                scale_name = _clean_column_name(scale_name_raw)
 
             # Deduplicate column prefix to prevent overwrites
             _base_col = scale_name
@@ -5004,9 +5030,35 @@ class EnhancedSimulationEngine:
         # Store generation log for post-generation verification
         self._scale_generation_log = _scale_generation_log
 
+        # =====================================================================
+        # v1.4.3: COMPOSITE MEAN COLUMNS FOR MULTI-ITEM SCALES
+        # For each scale with > 1 item, compute a _mean column as the row-wise
+        # average across all items. This is the standard composite score used
+        # in behavioral science analysis.
+        # =====================================================================
+        for log_entry in _scale_generation_log:
+            item_cols = log_entry["columns_generated"]
+            if len(item_cols) > 1:
+                # Compute row-wise mean across all items for this scale
+                mean_values: List[float] = []
+                for i in range(n):
+                    item_sum = sum(data[col][i] for col in item_cols)
+                    mean_values.append(round(item_sum / len(item_cols), 2))
+                # Derive clean composite column name from the first item column
+                # e.g., "Trust_1" -> "Trust_mean"
+                _prefix = item_cols[0].rsplit("_", 1)[0]
+                mean_col_name = f"{_prefix}_mean"
+                data[mean_col_name] = mean_values
+                scale_raw_name = log_entry["name"]
+                self.column_info.append(
+                    (mean_col_name, f"{scale_raw_name} composite mean ({log_entry['scale_min']}-{log_entry['scale_max']})")
+                )
+                self._log(f"Generated composite mean column '{mean_col_name}' from {len(item_cols)} items")
+
         for var in self.additional_vars:
             var_name_raw = str(var.get("name", "Variable")).strip() or "Variable"
-            var_name = var_name_raw.replace(" ", "_")
+            # v1.4.3: Use _clean_column_name for scientific column naming
+            var_name = _clean_column_name(var_name_raw)
             var_min = _safe_numeric(var.get("min", 0), default=0, as_int=True)
             var_max = _safe_numeric(var.get("max", 10), default=10, as_int=True)
             # SAFETY: Ensure min < max
@@ -5057,7 +5109,8 @@ class EnhancedSimulationEngine:
         # Never create default/fake questions - this prevents fake variables like "Task_Summary"
         # v1.0.0: Use survey flow handler to determine question visibility per condition
         for q in self.open_ended_questions:
-            col_name = str(q.get("name", "Open_Response")).replace(" ", "_")
+            # v1.4.3: Use _clean_column_name for scientific column naming
+            col_name = _clean_column_name(str(q.get("name", "Open_Response")))
 
             # v1.0.0 FIX: Prevent open-ended columns from overwriting existing columns
             # (e.g., an OE question named "Age" must not overwrite the demographic "Age" column)
@@ -5303,6 +5356,8 @@ class EnhancedSimulationEngine:
             "validation_issues_corrected": len(validation_issues),
             "scale_verification": self._build_scale_verification_report(df),
             "generation_warnings": self._check_generation_warnings(df),
+            # v1.4.3: Column descriptions for data dictionary / codebook generation
+            "column_descriptions": {col: desc for col, desc in self.column_info},
         }
         return df, metadata
 
@@ -5428,9 +5483,9 @@ class EnhancedSimulationEngine:
                 })
 
         # ===== CHECK 4: Demographic bounds =====
+        # v1.4.3: Gender is now string-labeled, only check numeric demographics
         for col_name, expected_range in [
             ("Age", (18, 85)),
-            ("Gender", (1, 4)),
         ]:
             if col_name not in df.columns:
                 continue
@@ -5752,9 +5807,8 @@ class EnhancedSimulationEngine:
             "# Convert CONDITION to factor with proper levels",
             f"data$CONDITION <- factor(data$CONDITION, levels = c({condition_levels}))",
             "",
-            "# Convert Gender to factor",
-            'data$Gender <- factor(data$Gender, levels = 1:4,',
-            '                     labels = c("Male", "Female", "Non-binary", "Prefer not to say"))',
+            "# Gender is already labeled as strings (Male, Female, Non-binary, Prefer not to say)",
+            'data$Gender <- factor(data$Gender)',
             "",
         ]
 
@@ -5823,9 +5877,8 @@ class EnhancedSimulationEngine:
             f"condition_order = [{condition_levels}]",
             "data['CONDITION'] = pd.Categorical(data['CONDITION'], categories=condition_order, ordered=True)",
             "",
-            "# Convert Gender to categorical",
-            "gender_labels = {1: 'Male', 2: 'Female', 3: 'Non-binary', 4: 'Prefer not to say'}",
-            "data['Gender_Label'] = data['Gender'].map(gender_labels)",
+            "# Gender is already labeled as strings (Male, Female, Non-binary, Prefer not to say)",
+            "data['Gender'] = pd.Categorical(data['Gender'])",
             "",
         ]
 
@@ -5895,9 +5948,8 @@ class EnhancedSimulationEngine:
             f"condition_levels = [{condition_levels}]",
             "data.CONDITION = categorical(data.CONDITION, levels=condition_levels, ordered=true)",
             "",
-            "# Convert Gender to categorical",
-            'gender_labels = Dict(1 => "Male", 2 => "Female", 3 => "Non-binary", 4 => "Prefer not to say")',
-            "data.Gender_Label = [get(gender_labels, g, missing) for g in data.Gender]",
+            "# Gender is already labeled as strings (Male, Female, Non-binary, Prefer not to say)",
+            "data.Gender = categorical(data.Gender)",
             "",
         ]
 
@@ -5967,11 +6019,8 @@ class EnhancedSimulationEngine:
             "VALUE LABELS CONDITION",
             f"  {condition_labels}.",
             "",
-            "VALUE LABELS Gender",
-            "  1 'Male'",
-            "  2 'Female'",
-            "  3 'Non-binary'",
-            "  4 'Prefer not to say'.",
+            "* Gender is already labeled as strings (Male, Female, Non-binary, Prefer not to say).",
+            "* STRING Gender(A20).",
             "",
         ])
 
@@ -6045,9 +6094,8 @@ class EnhancedSimulationEngine:
         lines.extend([
             "encode condition, gen(condition_num) label(condition_lbl)",
             "",
-            "// Label Gender variable",
-            'label define gender_lbl 1 "Male" 2 "Female" 3 "Non-binary" 4 "Prefer not to say"',
-            "label values gender gender_lbl",
+            "// Gender is already labeled as strings (Male, Female, Non-binary, Prefer not to say)",
+            "// No numeric encoding needed",
             "",
         ])
 
