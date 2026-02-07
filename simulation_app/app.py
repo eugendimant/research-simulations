@@ -52,8 +52,8 @@ import streamlit as st
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.3.9"
-BUILD_ID = "20260207-v139-robustness-fixes"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.4.0"
+BUILD_ID = "20260207-v140-builder-engine-integration"  # Change this to force cache invalidation
 
 def _verify_and_reload_utils():
     """Verify utils modules are at correct version, force reload if needed.
@@ -109,7 +109,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF"
-APP_VERSION = "1.3.9"  # v1.3.9: Robustness fixes (duplicate button keys, try/except wrappers, explicit widget keys)
+APP_VERSION = "1.4.0"  # v1.4.0: Builder-engine integration fixes (scale type mapping, demographics gender_quota)
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -672,6 +672,17 @@ def _validate_simulation_output(df: pd.DataFrame, metadata: dict, scales: list) 
     return results
 
 
+# Map builder scale types to engine-expected types
+# The conversational builder uses "likert", "slider", "numeric", "binary"
+# but the engine and QSF path use "matrix", "slider", "numeric_input", "single_item"
+_BUILDER_TO_ENGINE_TYPE: Dict[str, str] = {
+    "likert": "matrix",         # Multi-item Likert -> matrix
+    "slider": "slider",         # Slider stays slider
+    "numeric": "numeric_input", # Numeric input
+    "binary": "single_item",    # Binary -> single item
+}
+
+
 def _normalize_scale_specs(scales: List[Any]) -> List[Dict[str, Any]]:
     """
     SINGLE SOURCE OF TRUTH for scale normalization.
@@ -683,9 +694,11 @@ def _normalize_scale_specs(scales: List[Any]) -> List[Dict[str, Any]]:
       - num_items: int >= 1
       - scale_points: int >= 2 and <= 1001
       - reverse_items: list
+      - type: str (engine-compatible scale type)
       - _validated: True (contract flag - engine MUST NOT re-default these)
 
     Preserves scale_points from source (QSF or user input) - only defaults when missing.
+    Maps builder scale types to engine-expected types via _BUILDER_TO_ENGINE_TYPE.
     Deduplicates by variable name AND display name to prevent extra DVs
     and column collisions.
     """
@@ -728,9 +741,38 @@ def _normalize_scale_specs(scales: List[Any]) -> List[Dict[str, Any]]:
             seen_display.add(display_key)
 
             # Carefully extract scale_points - preserve from source
+            # v1.4.0: Handle dict-contaminated values (e.g. {"value": 7})
             raw_points = scale.get("scale_points")
             if raw_points is None or (isinstance(raw_points, float) and np.isnan(raw_points)):
-                scale_points = 7
+                # For numeric/slider scales, compute from scale_min/scale_max if available
+                scale_type = str(scale.get("type", "likert")).lower()
+                if scale_type in ("numeric", "slider", "number"):
+                    # Numeric scales: scale_points = range + 1 (or default 101 for sliders)
+                    _raw_max = scale.get("scale_max")
+                    _raw_min = scale.get("scale_min")
+                    if _raw_max is not None and _raw_min is not None:
+                        try:
+                            _p_max = int(_raw_max) if not isinstance(_raw_max, dict) else int(_raw_max.get("value", 100))
+                            _p_min = int(_raw_min) if not isinstance(_raw_min, dict) else int(_raw_min.get("value", 0))
+                            scale_points = max(2, _p_max - _p_min + 1)
+                        except (ValueError, TypeError):
+                            scale_points = 101 if scale_type == "slider" else 7
+                    else:
+                        scale_points = 101 if scale_type == "slider" else 7
+                else:
+                    scale_points = 7
+            elif isinstance(raw_points, dict):
+                # Handle dict-contaminated scale_points (e.g. {"value": 7, "label": "..."})
+                try:
+                    scale_points = int(raw_points.get("value", 7)) if "value" in raw_points else 7
+                except (ValueError, TypeError):
+                    scale_points = 7
+            elif isinstance(raw_points, (list, tuple)):
+                # Handle list-contaminated values - take first element or default
+                try:
+                    scale_points = int(raw_points[0]) if raw_points else 7
+                except (ValueError, TypeError, IndexError):
+                    scale_points = 7
             else:
                 try:
                     scale_points = int(raw_points)
@@ -738,11 +780,24 @@ def _normalize_scale_specs(scales: List[Any]) -> List[Dict[str, Any]]:
                     scale_points = 7
 
             # Extract num_items - check BOTH "num_items" and "items" keys for compatibility
+            # v1.4.0: Handle dict-contaminated values
             raw_items = scale.get("num_items")
             if raw_items is None:
                 raw_items = scale.get("items")  # Fallback to QSF detection key
             if raw_items is None or (isinstance(raw_items, float) and np.isnan(raw_items)):
                 num_items = 5
+            elif isinstance(raw_items, dict):
+                # Handle dict-contaminated num_items
+                try:
+                    num_items = int(raw_items.get("value", 5)) if "value" in raw_items else 5
+                except (ValueError, TypeError):
+                    num_items = 5
+            elif isinstance(raw_items, (list, tuple)):
+                # Handle list-contaminated values
+                try:
+                    num_items = int(raw_items[0]) if raw_items else 5
+                except (ValueError, TypeError, IndexError):
+                    num_items = 5
             else:
                 try:
                     num_items = int(raw_items)
@@ -774,6 +829,10 @@ def _normalize_scale_specs(scales: List[Any]) -> List[Dict[str, Any]]:
                 except (ValueError, TypeError):
                     scale_max = scale_points
 
+            # v1.4.0: Map builder scale types to engine-expected types
+            raw_type = scale.get("type", "likert")
+            mapped_type = _BUILDER_TO_ENGINE_TYPE.get(raw_type, raw_type)
+
             normalized.append(
                 {
                     "name": name,
@@ -783,7 +842,7 @@ def _normalize_scale_specs(scales: List[Any]) -> List[Dict[str, Any]]:
                     "scale_min": max(0, scale_min),  # v1.2.1: Preserve scale_min
                     "scale_max": max(1, scale_max),  # v1.2.1: Preserve scale_max
                     "reverse_items": scale.get("reverse_items", []) or [],
-                    "type": scale.get("type", "likert"),  # v1.2.1: Preserve scale type
+                    "type": mapped_type,  # v1.4.0: Mapped from builder types to engine types
                     "_validated": True,
                 }
             )
@@ -3287,10 +3346,11 @@ def _render_conversational_builder() -> None:
             )
         with col_gender:
             gender_pct = st.slider(
-                "Female %", min_value=0, max_value=100, value=50,
+                "Male %", min_value=0, max_value=100, value=50,
                 key="builder_gender_pct",
-                help="Percentage of female participants in the sample",
+                help="Percentage of male participants in the sample (engine uses this as gender_quota)",
             )
+        # v1.4.0: gender_quota represents Male % throughout the app and engine
         st.session_state["demographics_config"] = {
             "age_mean": age_mean,
             "age_sd": age_sd,
@@ -7687,7 +7747,11 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
         # float()/int() crashes on unexpected types (dicts, None, etc.)
         # ========================================
         def _preflight_sanitize_scales(scales_list: list) -> list:
-            """Ensure all scale dicts have clean numeric values."""
+            """Ensure all scale dicts have clean numeric values.
+
+            v1.4.0: Enhanced to handle NaN, list, and dict contamination for all fields.
+            Also handles None scale_points for numeric/slider scales from the builder.
+            """
             sanitized = []
             for s in scales_list:
                 if not isinstance(s, dict):
@@ -7695,30 +7759,53 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
                 name = str(s.get("name", "")).strip()
                 if not name:
                     continue
+
+                def _clean_int(val: Any, default: int) -> int:
+                    """Safely convert any value to int, handling dicts, lists, NaN, None."""
+                    if val is None:
+                        return default
+                    if isinstance(val, float) and (np.isnan(val) or np.isinf(val)):
+                        return default
+                    if isinstance(val, dict):
+                        for key in ("value", "count", "mean"):
+                            if key in val:
+                                try:
+                                    return int(val[key])
+                                except (ValueError, TypeError):
+                                    pass
+                        return default
+                    if isinstance(val, (list, tuple)):
+                        try:
+                            return int(val[0]) if val else default
+                        except (ValueError, TypeError, IndexError):
+                            return default
+                    try:
+                        return int(val)
+                    except (ValueError, TypeError):
+                        return default
+
+                # Determine scale type to handle None scale_points for numeric scales
+                scale_type = str(s.get("type", "likert")).lower()
+
                 # Force all numeric fields to proper types
-                try:
-                    pts = int(s.get("scale_points", 7) if not isinstance(s.get("scale_points"), dict) else 7)
-                except (ValueError, TypeError):
-                    pts = 7
-                try:
-                    n_items = int(s.get("num_items", 5) if not isinstance(s.get("num_items"), dict) else 5)
-                except (ValueError, TypeError):
-                    n_items = 5
-                # Handle scale_min/scale_max that could be dicts
-                raw_min = s.get("scale_min", 1)
-                raw_max = s.get("scale_max", pts)
-                if isinstance(raw_min, dict):
-                    raw_min = raw_min.get("value", 1) if "value" in raw_min else 1
-                if isinstance(raw_max, dict):
-                    raw_max = raw_max.get("value", pts) if "value" in raw_max else pts
-                try:
-                    s_min = int(raw_min) if raw_min is not None else 1
-                except (ValueError, TypeError):
-                    s_min = 1
-                try:
-                    s_max = int(raw_max) if raw_max is not None else pts
-                except (ValueError, TypeError):
-                    s_max = pts
+                raw_pts = s.get("scale_points")
+                if raw_pts is None and scale_type in ("numeric", "slider", "number"):
+                    # Numeric scales: derive from min/max or use sensible default
+                    _tmp_min = _clean_int(s.get("scale_min"), 0)
+                    _tmp_max = _clean_int(s.get("scale_max"), 100)
+                    pts = max(2, _tmp_max - _tmp_min + 1)
+                else:
+                    pts = _clean_int(raw_pts, 7)
+
+                n_items = _clean_int(s.get("num_items"), 5)
+
+                # Handle scale_min/scale_max
+                s_min = _clean_int(s.get("scale_min", 1), 1)
+                s_max = _clean_int(s.get("scale_max", pts), pts)
+
+                # Ensure s_max > s_min
+                if s_max <= s_min:
+                    s_max = s_min + max(1, pts - 1)
 
                 sanitized.append({
                     **s,
