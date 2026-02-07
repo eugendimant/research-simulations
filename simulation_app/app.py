@@ -4910,10 +4910,11 @@ def _render_scroll_to_top_button(tab_index: int, next_tab_label: str = "") -> No
     if next_tab_label and next_index < len(STEP_LABELS):
         btn_label = f"Continue to {next_tab_label}"
         # JS: scroll to top, then click the next tab header button
+        # NOTE: use [role=tab] (no quotes) to avoid breaking onclick="..." attribute
         tab_click_js = (
             _SCROLL_TOP_JS
             + f"""(function(){{"""
-            f"""  var tabs = document.querySelectorAll('[role="tab"]');"""
+            f"""  var tabs = document.querySelectorAll('[role=tab]');"""
             f"""  if (tabs.length > {next_index}) {{ tabs[{next_index}].click(); }}"""
             f"""}})();"""
         )
