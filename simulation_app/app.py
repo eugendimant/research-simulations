@@ -4915,21 +4915,33 @@ _SCROLL_TOP_JS = """(function() {
 
 
 def _render_scroll_to_top_button(tab_index: int, next_tab_label: str = "") -> None:
-    """Render a 'Complete - Ready for Next Step' button that scrolls to top of page.
+    """Render a 'Complete - Ready for Next Step' button that scrolls to top AND switches tab.
 
     v1.3.4: Helps users navigate back to the tab bar after working through long content.
     v1.3.5: CSS injected once, cleaner markup.
+    v1.3.6: Actually clicks the next tab instead of just scrolling.
     """
     st.markdown("---")
 
-    # Build label
-    if next_tab_label:
-        btn_label = f"Done &mdash; scroll up to continue to {next_tab_label}"
+    next_index = tab_index + 1  # 0-based index of the target tab
+
+    # Build label and JavaScript
+    if next_tab_label and next_index < len(STEP_LABELS):
+        btn_label = f"Continue to {next_tab_label}"
+        # JS: scroll to top, then click the next tab header button
+        tab_click_js = (
+            _SCROLL_TOP_JS
+            + f"""(function(){{"""
+            f"""  var tabs = document.querySelectorAll('[role="tab"]');"""
+            f"""  if (tabs.length > {next_index}) {{ tabs[{next_index}].click(); }}"""
+            f"""}})();"""
+        )
     else:
         btn_label = "Done &mdash; scroll back to top"
+        tab_click_js = _SCROLL_TOP_JS
 
     st.markdown(
-        f'<button class="scroll-top-btn" onclick="{_SCROLL_TOP_JS}">&#10003; {btn_label}</button>',
+        f'<button class="scroll-top-btn" onclick="{tab_click_js}">&#10003; {btn_label}</button>',
         unsafe_allow_html=True,
     )
 
