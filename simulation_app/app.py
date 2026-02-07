@@ -44,6 +44,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import pandas as pd
 import numpy as np
 import streamlit as st
+import streamlit.components.v1 as _st_components
 
 # =============================================================================
 # MODULE VERSION VERIFICATION
@@ -4868,98 +4869,58 @@ def _render_workflow_stepper():
                     _go_to_step(i)
 
 
-# v1.3.7: Helper functions for scroll/navigation (must be defined before module-level calls)
-def _inject_scroll_button_css() -> None:
-    """Inject CSS for scroll-to-top buttons once per page render."""
-    if not st.session_state.get("_scroll_btn_css_injected"):
-        st.markdown("""
-        <style>
-            .scroll-top-btn {
-                display: block;
-                width: 100%;
-                padding: 14px 24px;
-                background: linear-gradient(135deg, #1e3a5f 0%, #2d5a87 100%);
-                color: white;
-                border: none;
-                border-radius: 10px;
-                font-size: 16px;
-                font-weight: 600;
-                cursor: pointer;
-                text-align: center;
-                transition: all 0.2s ease;
-                box-shadow: 0 3px 10px rgba(30, 58, 95, 0.25);
-                letter-spacing: 0.02em;
-                margin-top: 8px;
-            }
-            .scroll-top-btn:hover {
-                background: linear-gradient(135deg, #2d5a87 0%, #3b7dba 100%);
-                box-shadow: 0 4px 14px rgba(30, 58, 95, 0.35);
-                transform: translateY(-1px);
-            }
-            .scroll-top-btn:active { transform: translateY(0px); }
-        </style>
-        """, unsafe_allow_html=True)
-        st.session_state["_scroll_btn_css_injected"] = True
-
-
-# Scroll-to-top JS function (shared by all buttons)
-# NOTE: Uses regular quotes — this JS runs inside <script> tags, NOT onclick attributes
-_SCROLL_TOP_JS = """(function() {
-    var sels = ['section.main', '.stApp', '[data-testid="stAppViewBlockContainer"]', '.block-container', 'main', '.main'];
-    sels.forEach(function(s) {
-        var els = document.querySelectorAll(s);
-        els.forEach(function(el) { el.scrollTop = 0; try { el.scrollTo({top:0,behavior:'smooth'}); } catch(e) {} });
-    });
-    window.scrollTo({top:0,behavior:'smooth'});
-    document.documentElement.scrollTop = 0;
-    document.body.scrollTop = 0;
-    try { if (window.parent && window.parent !== window) { window.parent.scrollTo({top:0,behavior:'smooth'}); } } catch(e) {}
-})();"""
-
-
 def _render_scroll_to_top_button(tab_index: int, next_tab_label: str = "") -> None:
-    """Render a 'Complete - Ready for Next Step' button that scrolls to top AND switches tab.
+    """Render a navigation button that scrolls to top and switches to the next tab.
 
-    v1.3.4: Helps users navigate back to the tab bar after working through long content.
-    v1.3.5: CSS injected once, cleaner markup.
-    v1.3.6: Actually clicks the next tab instead of just scrolling.
-    v1.4.4: Use <script> to attach click handler — Streamlit strips onclick attributes.
+    v1.4.4.1: Uses native st.button() + streamlit.components.v1.html() for reliable
+    JS execution. Previous approaches (onclick, <script> in st.markdown) all fail
+    because Streamlit's DOM rebuild on rerun kills event listeners and script execution.
+    components.v1.html() creates a real iframe where JS always executes.
     """
     st.markdown("---")
 
     next_index = tab_index + 1  # 0-based index of the target tab
-    # Unique ID per button — tab_index is unique per call site
-    btn_id = f"nav_btn_{tab_index}"
 
-    # Build label and tab-switch JS
     if next_tab_label and next_index < len(STEP_LABELS):
-        btn_label = f"&#10003; Continue to {next_tab_label}"
-        tab_switch_js = (
-            f"var tabs = document.querySelectorAll('[role=tab]');"
-            f"if (tabs.length > {next_index}) {{ tabs[{next_index}].click(); }}"
-        )
+        btn_label = f"Continue to {next_tab_label}"
     else:
-        btn_label = "&#10003; Done &mdash; scroll back to top"
-        tab_switch_js = ""
+        btn_label = "Done — scroll back to top"
 
-    # Render button + <script> tag — Streamlit strips onclick from st.markdown
-    # but allows <script> tags with unsafe_allow_html=True.
-    # NOTE: Use string concatenation, NOT f-string, because _SCROLL_TOP_JS
-    # contains JS curly braces {} that would break f-string interpolation.
-    _btn_html = (
-        '<button class="scroll-top-btn" id="' + btn_id + '">' + btn_label + '</button>'
-        '<script>'
-        '(function() {'
-        '  var btn = document.getElementById("' + btn_id + '");'
-        '  if (!btn) return;'
-        '  btn.addEventListener("click", function() {'
-        + _SCROLL_TOP_JS
-        + tab_switch_js
-        + '  });'
-        '})();'
-        '</script>'
-    )
-    st.markdown(_btn_html, unsafe_allow_html=True)
+    # Native Streamlit button — guaranteed to work for click detection
+    if st.button(f"✓ {btn_label}", key=f"scroll_nav_{tab_index}", type="primary", use_container_width=True):
+        # Use components.html() to execute JS reliably.
+        # This creates a real iframe where JS always executes, unlike st.markdown.
+        # window.parent accesses the main Streamlit page from the iframe.
+        _tab_click_js = ""
+        if next_tab_label and next_index < len(STEP_LABELS):
+            _tab_click_js = f"""
+                var tabs = doc.querySelectorAll('[role="tab"]');
+                if (tabs.length > {next_index}) {{ tabs[{next_index}].click(); }}
+            """
+
+        _st_components.html(f"""
+            <script>
+            (function() {{
+                var doc = window.parent.document;
+                // Scroll every possible container to top
+                var sels = ['section.main', '.stApp',
+                             '[data-testid="stAppViewBlockContainer"]',
+                             '.block-container', 'main', '.main'];
+                sels.forEach(function(s) {{
+                    var els = doc.querySelectorAll(s);
+                    els.forEach(function(el) {{
+                        el.scrollTop = 0;
+                        try {{ el.scrollTo({{top:0, behavior:'smooth'}}); }} catch(e) {{}}
+                    }});
+                }});
+                window.parent.scrollTo({{top:0, behavior:'smooth'}});
+                doc.documentElement.scrollTop = 0;
+                doc.body.scrollTop = 0;
+                // Click the next tab header
+                {_tab_click_js}
+            }})();
+            </script>
+        """, height=0)
 
 
 # v1.2.2: NEW TAB-BASED UI - Replaces step wizard for better UX and no scroll issues
@@ -4975,8 +4936,7 @@ progress_pct = int((completed_count / total_count) * 100)
 status_emoji = "🟢" if progress_pct == 100 else "🟡" if progress_pct >= 50 else "⚪"
 st.progress(completed_count / total_count, text=f"{status_emoji} Ready: {progress_pct}% ({completed_count}/{total_count})")
 
-# v1.3.5: Inject scroll button CSS once, reserve feedback container before tabs
-_inject_scroll_button_css()
+# v1.3.5: Reserve feedback container before tabs
 _feedback_container = st.container()
 
 # Create the main tabs
