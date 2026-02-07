@@ -53,32 +53,13 @@ import streamlit as st
 # Where deeply imported modules don't hot-reload properly.
 
 REQUIRED_UTILS_VERSION = "1.4.3.1"
-BUILD_ID = "20260207-v1431-enhanced-instructor-report"  # Change this to force cache invalidation
+BUILD_ID = "20260207-v1431-fix-import-nav"  # Change this to force cache invalidation
 
-def _verify_and_reload_utils():
-    """Verify utils modules are at correct version, force reload if needed.
-
-    Note: This function safely removes utils modules from sys.modules to ensure
-    fresh imports on Streamlit Cloud where module caching can cause issues.
-    """
-    try:
-        # Collect all utils modules currently loaded
-        modules_to_remove = [m for m in list(sys.modules.keys()) if m.startswith('utils')]
-
-        # Safely remove each module
-        for mod_name in modules_to_remove:
-            try:
-                if mod_name in sys.modules:
-                    del sys.modules[mod_name]
-            except (KeyError, RuntimeError):
-                # Module was already removed by another process/thread or dict changed during iteration
-                pass
-    except Exception:
-        # If anything goes wrong, just continue - imports will still work
-        pass
-
-# Force fresh import of utils modules
-_verify_and_reload_utils()
+# NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
+# before every import.  This caused KeyError crashes on Streamlit Cloud when
+# concurrent sessions imported the same modules simultaneously.  Removed in
+# v1.4.3.1 — the version-check on line ~103 already warns on mismatch, and
+# BUILD_ID changes handle cache invalidation safely.
 
 from utils.group_management import GroupManager, APIKeyManager
 from utils.qsf_preview import QSFPreviewParser, QSFPreviewResult
