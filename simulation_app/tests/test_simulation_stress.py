@@ -378,12 +378,12 @@ def iteration_2_scale_integrity(qsf_files, max_files=None):
             type_checks = {
                 "PARTICIPANT_ID": np.integer,
                 "Age": np.integer,
-                "Gender": np.integer,
+                # Gender is now a string label (Male, Female, Non-binary, Prefer not to say)
                 "Flag_Speed": np.integer,
                 "Flag_Attention": np.integer,
                 "Flag_StraightLine": np.integer,
                 "Exclude_Recommended": np.integer,
-                "AI_Mentioned_Check": np.integer,
+                "Attention_Check_1": np.integer,
             }
             for col, expected_dtype in type_checks.items():
                 if col in df.columns:

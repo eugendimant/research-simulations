@@ -45,7 +45,7 @@ This module is designed to run inside a `utils/` package (i.e., imported as
 """
 
 # Version identifier to help track deployed code
-__version__ = "1.4.2.1"  # v1.4.2.1: Generate tab edge case fixes
+__version__ = "1.4.3"  # v1.4.3: Improved data output quality (clean column names, labeled Gender, composite means, column_descriptions)
 
 # =============================================================================
 # SCIENTIFIC FOUNDATIONS FOR SIMULATION
@@ -5030,6 +5030,31 @@ class EnhancedSimulationEngine:
         # Store generation log for post-generation verification
         self._scale_generation_log = _scale_generation_log
 
+        # =====================================================================
+        # v1.4.3: COMPOSITE MEAN COLUMNS FOR MULTI-ITEM SCALES
+        # For each scale with > 1 item, compute a _mean column as the row-wise
+        # average across all items. This is the standard composite score used
+        # in behavioral science analysis.
+        # =====================================================================
+        for log_entry in _scale_generation_log:
+            item_cols = log_entry["columns_generated"]
+            if len(item_cols) > 1:
+                # Compute row-wise mean across all items for this scale
+                mean_values: List[float] = []
+                for i in range(n):
+                    item_sum = sum(data[col][i] for col in item_cols)
+                    mean_values.append(round(item_sum / len(item_cols), 2))
+                # Derive clean composite column name from the first item column
+                # e.g., "Trust_1" -> "Trust_mean"
+                _prefix = item_cols[0].rsplit("_", 1)[0]
+                mean_col_name = f"{_prefix}_mean"
+                data[mean_col_name] = mean_values
+                scale_raw_name = log_entry["name"]
+                self.column_info.append(
+                    (mean_col_name, f"{scale_raw_name} composite mean ({log_entry['scale_min']}-{log_entry['scale_max']})")
+                )
+                self._log(f"Generated composite mean column '{mean_col_name}' from {len(item_cols)} items")
+
         for var in self.additional_vars:
             var_name_raw = str(var.get("name", "Variable")).strip() or "Variable"
             # v1.4.3: Use _clean_column_name for scientific column naming
@@ -5331,6 +5356,8 @@ class EnhancedSimulationEngine:
             "validation_issues_corrected": len(validation_issues),
             "scale_verification": self._build_scale_verification_report(df),
             "generation_warnings": self._check_generation_warnings(df),
+            # v1.4.3: Column descriptions for data dictionary / codebook generation
+            "column_descriptions": {col: desc for col, desc in self.column_info},
         }
         return df, metadata
 
@@ -5456,9 +5483,9 @@ class EnhancedSimulationEngine:
                 })
 
         # ===== CHECK 4: Demographic bounds =====
+        # v1.4.3: Gender is now string-labeled, only check numeric demographics
         for col_name, expected_range in [
             ("Age", (18, 85)),
-            ("Gender", (1, 4)),
         ]:
             if col_name not in df.columns:
                 continue
@@ -5780,9 +5807,8 @@ class EnhancedSimulationEngine:
             "# Convert CONDITION to factor with proper levels",
             f"data$CONDITION <- factor(data$CONDITION, levels = c({condition_levels}))",
             "",
-            "# Convert Gender to factor",
-            'data$Gender <- factor(data$Gender, levels = 1:4,',
-            '                     labels = c("Male", "Female", "Non-binary", "Prefer not to say"))',
+            "# Gender is already labeled as strings (Male, Female, Non-binary, Prefer not to say)",
+            'data$Gender <- factor(data$Gender)',
             "",
         ]
 
@@ -5922,9 +5948,8 @@ class EnhancedSimulationEngine:
             f"condition_levels = [{condition_levels}]",
             "data.CONDITION = categorical(data.CONDITION, levels=condition_levels, ordered=true)",
             "",
-            "# Convert Gender to categorical",
-            'gender_labels = Dict(1 => "Male", 2 => "Female", 3 => "Non-binary", 4 => "Prefer not to say")',
-            "data.Gender_Label = [get(gender_labels, g, missing) for g in data.Gender]",
+            "# Gender is already labeled as strings (Male, Female, Non-binary, Prefer not to say)",
+            "data.Gender = categorical(data.Gender)",
             "",
         ]
 
@@ -5994,11 +6019,8 @@ class EnhancedSimulationEngine:
             "VALUE LABELS CONDITION",
             f"  {condition_labels}.",
             "",
-            "VALUE LABELS Gender",
-            "  1 'Male'",
-            "  2 'Female'",
-            "  3 'Non-binary'",
-            "  4 'Prefer not to say'.",
+            "* Gender is already labeled as strings (Male, Female, Non-binary, Prefer not to say).",
+            "* STRING Gender(A20).",
             "",
         ])
 
@@ -6072,9 +6094,8 @@ class EnhancedSimulationEngine:
         lines.extend([
             "encode condition, gen(condition_num) label(condition_lbl)",
             "",
-            "// Label Gender variable",
-            'label define gender_lbl 1 "Male" 2 "Female" 3 "Non-binary" 4 "Prefer not to say"',
-            "label values gender gender_lbl",
+            "// Gender is already labeled as strings (Male, Female, Non-binary, Prefer not to say)",
+            "// No numeric encoding needed",
             "",
         ])
 

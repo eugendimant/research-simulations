@@ -912,17 +912,21 @@ def generate_schema_summary(
 
     if 'Gender' in df.columns:
         gender_counts = df['Gender'].value_counts()
+        # v1.4.3: Gender is now stored as string labels; support both old numeric and new string formats
         gender_map = {1: 'Male', 2: 'Female', 3: 'Non-binary', 4: 'Prefer not to say'}
         gender_str = ', '.join([
             f"{gender_map.get(g, g)}: {c} ({c/len(df)*100:.1f}%)"
-            for g, c in sorted(gender_counts.items())
+            for g, c in sorted(gender_counts.items(), key=lambda x: str(x[0]))
         ])
         lines.append(f"Gender: {gender_str}")
 
     lines.append("")
 
-    # Attention check summary
-    if 'AI_Mentioned_Check' in df.columns and 'CONDITION' in df.columns:
+    # Attention check summary (v1.4.3: support both old and new column names)
+    _attn_col = 'Attention_Check_1' if 'Attention_Check_1' in df.columns else (
+        'AI_Mentioned_Check' if 'AI_Mentioned_Check' in df.columns else None
+    )
+    if _attn_col is not None and 'CONDITION' in df.columns:
         lines.extend([
             "-" * 70,
             "ATTENTION CHECK ACCURACY",
@@ -935,13 +939,13 @@ def generate_schema_summary(
 
         if ai_conditions:
             ai_df = df[df['CONDITION'].isin(ai_conditions)]
-            ai_correct = (ai_df['AI_Mentioned_Check'] == 1).sum()
+            ai_correct = (ai_df[_attn_col] == 1).sum()
             ai_accuracy = ai_correct / len(ai_df) * 100 if len(ai_df) > 0 else 0
             lines.append(f"AI Conditions (should answer Yes): {ai_accuracy:.1f}% correct")
 
         if no_ai_conditions:
             no_ai_df = df[df['CONDITION'].isin(no_ai_conditions)]
-            no_ai_correct = (no_ai_df['AI_Mentioned_Check'] == 2).sum()
+            no_ai_correct = (no_ai_df[_attn_col] == 2).sum()
             no_ai_accuracy = no_ai_correct / len(no_ai_df) * 100 if len(no_ai_df) > 0 else 0
             lines.append(f"No AI Conditions (should answer No): {no_ai_accuracy:.1f}% correct")
 
@@ -949,9 +953,9 @@ def generate_schema_summary(
         for cond in conditions:
             cond_df = df[df['CONDITION'] == cond]
             if 'AI' in cond.upper() and 'NO' not in cond.upper():
-                overall_correct += (cond_df['AI_Mentioned_Check'] == 1).sum()
+                overall_correct += (cond_df[_attn_col] == 1).sum()
             else:
-                overall_correct += (cond_df['AI_Mentioned_Check'] == 2).sum()
+                overall_correct += (cond_df[_attn_col] == 2).sum()
 
         overall_accuracy = overall_correct / len(df) * 100
         lines.append(f"Overall Manipulation Check Accuracy: {overall_accuracy:.1f}%")

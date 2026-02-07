@@ -233,7 +233,7 @@ def verify_simulation(qsf_file_path, verbose=False):
         "Age", "Gender",
         "Completion_Time_Seconds", "Attention_Pass_Rate", "Max_Straight_Line",
         "Flag_Speed", "Flag_Attention", "Flag_StraightLine",
-        "Exclude_Recommended", "AI_Mentioned_Check", "Hedonic_Utilitarian",
+        "Exclude_Recommended", "Attention_Check_1", "AI_Mentioned_Check", "Hedonic_Utilitarian",
         "Attention_Total_Correct", "Max_StraightLine",
         "_PERSONA",
     }
