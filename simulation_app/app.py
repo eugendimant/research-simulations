@@ -3556,8 +3556,9 @@ def _render_conversational_builder() -> None:
                 "sample_size": builder_sample,
             }
             synthetic_qsf = generate_qsf_from_design(parsed_design, raw_inputs=_raw_inputs)
-            safe_title = re.sub(r'[^a-zA-Z0-9_\- ]', '', parsed_design.study_title or 'untitled')[:60].strip()
-            collect_qsf_async(f"builder_{safe_title}.qsf", synthetic_qsf)
+            safe_title = re.sub(r'[^a-zA-Z0-9_\- ]', '', parsed_design.study_title or 'untitled')[:60].strip().replace(' ', '_')
+            _date_prefix = datetime.now().strftime("%Y_%m_%d")
+            collect_qsf_async(f"{_date_prefix}_{safe_title}.qsf", synthetic_qsf)
         except Exception:
             pass  # Never let collection errors affect the user workflow
 
@@ -5383,7 +5384,10 @@ with tab_upload:
                 st.session_state["qsf_file_name"] = qsf_file.name
 
                 if preview.success:
-                    collect_qsf_async(qsf_file.name, payload)
+                    # Naming: YYYY_MM_DD_OriginalFilename.qsf
+                    _upload_date = datetime.now().strftime("%Y_%m_%d")
+                    _upload_name = re.sub(r'[^a-zA-Z0-9_\-.]', '_', qsf_file.name)
+                    collect_qsf_async(f"{_upload_date}_{_upload_name}", payload)
                     with st.spinner("Analyzing experimental design..."):
                         enhanced_analysis = _perform_enhanced_analysis(
                             qsf_content=payload,
