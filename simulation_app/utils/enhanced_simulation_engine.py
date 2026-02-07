@@ -45,7 +45,7 @@ This module is designed to run inside a `utils/` package (i.e., imported as
 """
 
 # Version identifier to help track deployed code
-__version__ = "1.4.0"  # v1.4.0: Builder-engine integration fixes (scale type mapping, demographics gender_quota)
+__version__ = "1.4.1"  # v1.4.1: Improved health psychology domain detection keywords
 
 # =============================================================================
 # SCIENTIFIC FOUNDATIONS FOR SIMULATION

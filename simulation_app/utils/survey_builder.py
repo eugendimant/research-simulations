@@ -1,7 +1,7 @@
 """
 Conversational Survey Builder - Natural Language Study Specification Parser
 
-Version: 1.2.8
+Version: 1.4.1
 Allows users to describe their experiment in words instead of uploading a QSF file.
 Parses natural language descriptions into structured survey specifications that
 feed directly into the EnhancedSimulationEngine.
@@ -19,7 +19,7 @@ import re
 from typing import Any, Dict, List, Optional, Tuple
 from dataclasses import dataclass, field
 
-__version__ = "1.4.0"
+__version__ = "1.4.1"
 
 
 # ─── Common scale anchors used in behavioral science ───────────────────────────
@@ -709,7 +709,7 @@ class SurveyDescriptionParser:
             "social psychology": ["social", "group", "conformity", "persuasion", "attitude", "stereotype", "prejudice", "discrimination"],
             "behavioral economics": ["economic", "decision", "framing", "loss aversion", "nudge", "incentive", "willingness to pay", "wtp"],
             "organizational behavior": ["organization", "workplace", "employee", "leadership", "team", "management", "job satisfaction"],
-            "health psychology": ["health", "medical", "patient", "wellness", "illness", "treatment", "therapy", "medication", "symptom"],
+            "health psychology": ["health", "medical", "patient", "wellness", "illness", "treatment", "therapy", "medication", "symptom", "exercise", "fitness", "physical", "clinical", "disease", "vaccination", "pain", "disability"],
             "political psychology": ["political", "voting", "election", "ideology", "partisan", "democrat", "republican", "policy"],
             "cognitive psychology": ["cognitive", "memory", "attention", "perception", "reasoning", "judgment", "heuristic", "bias"],
             "developmental psychology": ["child", "development", "adolescent", "aging", "lifespan", "parenting"],

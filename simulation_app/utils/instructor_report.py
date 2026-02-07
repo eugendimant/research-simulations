@@ -6,7 +6,7 @@ Generates comprehensive instructor-facing reports for student simulations.
 """
 
 # Version identifier to help track deployed code
-__version__ = "1.4.0"  # v1.4.0: Builder-engine integration fixes (scale type mapping, demographics gender_quota)
+__version__ = "1.4.1"  # v1.4.1: Improved health psychology domain detection keywords
 
 from dataclasses import dataclass
 from datetime import datetime
