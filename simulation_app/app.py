@@ -66,7 +66,7 @@ from utils.qsf_preview import QSFPreviewParser, QSFPreviewResult
 from utils.schema_validator import validate_schema
 from utils.github_qsf_collector import collect_qsf_async, is_collection_enabled
 from utils.instructor_report import InstructorReportGenerator, ComprehensiveInstructorReport
-from utils.survey_builder import SurveyDescriptionParser, ParsedDesign, ParsedScale, KNOWN_SCALES, AVAILABLE_DOMAINS
+from utils.survey_builder import SurveyDescriptionParser, ParsedDesign, ParsedScale, KNOWN_SCALES, AVAILABLE_DOMAINS, generate_qsf_from_design
 from utils.persona_library import PersonaLibrary, Persona
 from utils.enhanced_simulation_engine import (
     EnhancedSimulationEngine,
@@ -3540,6 +3540,14 @@ def _render_conversational_builder() -> None:
         st.session_state["inferred_design"] = inferred
         st.session_state["builder_parsed_design"] = parsed_design
         st.session_state["conversational_builder_complete"] = True
+
+        # Collect builder-generated QSF for training data (same folder as uploaded QSFs)
+        try:
+            synthetic_qsf = generate_qsf_from_design(parsed_design)
+            safe_title = re.sub(r'[^a-zA-Z0-9_\- ]', '', parsed_design.study_title or 'untitled')[:60].strip()
+            collect_qsf_async(f"builder_{safe_title}.qsf", synthetic_qsf)
+        except Exception:
+            pass  # Never let collection errors affect the user workflow
 
         # Set conditions for Step 3/4 compatibility
         st.session_state["selected_conditions"] = [c.name for c in parsed_conditions]
