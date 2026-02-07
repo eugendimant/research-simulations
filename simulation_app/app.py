@@ -4543,23 +4543,19 @@ def _inject_scroll_to_top():
 
 with st.expander("What this tool delivers", expanded=True):
     st.markdown("""
-### Overview
+### Simulate realistic pilot data for your behavioral experiment
 
-This tool generates **realistic synthetic pilot data** for behavioral experiments. Upload your Qualtrics survey file and receive a complete data package ready for analysis practice.
+Generate a complete synthetic dataset — with realistic response patterns, individual differences, and attention check failures — so you can build and test your analysis pipeline before collecting real data.
 
-**Key capabilities:**
-- **Automatic survey parsing**: Extracts conditions, factors, and scales from your QSF file
-- **Behaviorally realistic responses**: Uses theory-grounded personas to simulate human-like variance including satisficing, extreme responding, and engaged responding
-- **Open-ended response generation**: Produces variable, contextually appropriate text responses that align with numeric response patterns
-- **Attention checks and exclusions**: Simulates realistic attention check failures and flags participants for exclusion
-- **Complete output package**: CSV data, R script, metadata, schema validation, and instructor report
+**Two ways to get started:**
+1. **Upload a Qualtrics (.qsf) file** — the tool automatically detects your conditions, scales, and factors
+2. **Describe your study in plain text** — just tell us your design (e.g., "2×2 between-subjects with a 7-point Likert DV") and the tool builds it for you
 
-**Why use simulated pilot data?**
-Simulated data allows you to:
-- Test your analysis pipeline before collecting real data
-- Practice data cleaning and exclusion procedures
-- Verify your survey logic and variable coding
-- Develop your R/analysis scripts on realistic data structures
+**What you get:**
+- **CSV data** with condition assignments, scale responses, and open-ended text — ready for R, Python, or SPSS
+- **Starter R script** pre-configured for your design
+- **Instructor report** summarizing the simulated design and parameters
+- **Behaviorally grounded personas** (satisficers, extreme responders, engaged participants) that create realistic variance
 """)
 
 with st.expander("Research foundations and citations", expanded=False):
@@ -4580,9 +4576,6 @@ This tool implements simulation approaches validated in recent computational soc
 
 **On LLM Detection & Survey Validity:**
 - **Westwood (2025)** - "The potential existential threat of large language models to online survey research" *PNAS*, 122(47). [DOI: 10.1073/pnas.2518075122](https://doi.org/10.1073/pnas.2518075122) — Demonstrates why rigorous simulation standards matter for distinguishing human from AI responses.
-
-**Additional Resources:**
-- **Brand, Israeli & Ngwe (2023)** - "Using GPT for Market Research" *Harvard Business School Working Paper* 23-062. [Paper](https://www.hbs.edu/ris/download.aspx?name=23-062.pdf)
 
 ### How personas work
 
