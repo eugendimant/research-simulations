@@ -19,7 +19,7 @@ import re
 from typing import Any, Dict, List, Optional, Tuple
 from dataclasses import dataclass, field
 
-__version__ = "1.3.6"
+__version__ = "1.4.0"
 
 
 # ─── Common scale anchors used in behavioral science ───────────────────────────
@@ -762,7 +762,7 @@ class SurveyDescriptionParser:
                 "num_items": s.num_items,
                 "scale_min": s.scale_min,
                 "scale_max": s.scale_max,
-                "scale_points": s.scale_max - s.scale_min + 1 if s.scale_type != "numeric" else s.scale_max,
+                "scale_points": s.scale_max - s.scale_min + 1 if s.scale_type != "numeric" else None,
                 "type": s.scale_type,
                 "reverse_items": s.reverse_items,
                 "reliability": 0.85,
@@ -1539,7 +1539,10 @@ class SurveyDescriptionParser:
         if len(factors) == len(dims):
             valid = all(len(f["levels"]) == d for f, d in zip(factors, dims))
             if not valid:
-                factors = factors[:len(dims)]  # Keep but don't enforce count
+                # Log warning about level count mismatch
+                warnings = getattr(self, '_warnings', [])
+                warnings.append(f"Factor level counts don't match expected {dims} dimensions - some conditions may be missing")
+                factors = factors[:len(dims)]
 
         # If we couldn't extract names, use generic Factor_1, Factor_2
         if len(factors) < len(dims):
@@ -1826,7 +1829,7 @@ class SurveyDescriptionParser:
             # Extract N-point scale: "7-point", "5 point"
             # Only apply if no explicit range was already found (e.g., "0-100")
             npoint_match = re.search(r'(\d+)\s*[-–]?\s*point', text_lower)
-            if npoint_match and not (range_match and not anchor_matches):
+            if npoint_match and not anchor_matches and not range_match:
                 scale_max = int(npoint_match.group(1))
                 scale_min = 1
 

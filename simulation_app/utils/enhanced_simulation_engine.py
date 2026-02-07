@@ -45,7 +45,7 @@ This module is designed to run inside a `utils/` package (i.e., imported as
 """
 
 # Version identifier to help track deployed code
-__version__ = "1.3.6"  # v1.3.6: Builder fixes, deduplication
+__version__ = "1.4.0"  # v1.4.0: Builder-engine integration fixes (scale type mapping, demographics gender_quota)
 
 # =============================================================================
 # SCIENTIFIC FOUNDATIONS FOR SIMULATION
@@ -372,6 +372,8 @@ def _normalize_scales(scales: Optional[List[Any]]) -> List[Dict[str, Any]]:
                     "scale_min": _safe_numeric(scale.get("scale_min", 1), default=1, as_int=True),
                     "scale_max": _safe_numeric(scale.get("scale_max", pts), default=pts, as_int=True),
                     "item_names": scale.get("item_names", []),
+                    # v1.4.0: Preserve scale type for downstream use
+                    "type": str(scale.get("type", "matrix")),
                 })
                 continue
 
@@ -410,6 +412,8 @@ def _normalize_scales(scales: Optional[List[Any]]) -> List[Dict[str, Any]]:
                     "scale_min": _safe_numeric(scale.get("scale_min", 1), default=1, as_int=True),
                     "scale_max": _safe_numeric(scale.get("scale_max", pts), default=pts, as_int=True),
                     "item_names": scale.get("item_names", []),
+                    # v1.4.0: Preserve scale type for downstream use
+                    "type": str(scale.get("type", "matrix")),
                 }
             )
     return normalized
@@ -1390,15 +1394,20 @@ RESPONSE_TEMPLATES_BY_DOMAIN = {
             "I found the AI-generated recommendations to be {adjective}. The system seemed to {verb} my preferences well.",
             "The algorithm {verb} relevant suggestions. I appreciated how it {action}.",
             "Overall, I'm {sentiment} with how the technology {verb} my needs. It felt {adjective}.",
+            "I was {sentiment} by how well the system understood what I was looking for. Really {adjective} results.",
+            "The AI did a {adjective} job. It clearly {verb} the patterns in my preferences and {action} accordingly.",
         ],
         'negative': [
             "I was {sentiment} by the AI's recommendations. They seemed {adjective} and didn't {verb} what I was looking for.",
             "The algorithm felt {adjective}. I wished it could have {action} better.",
             "I found the technology to be {adjective}. It {verb} my actual preferences.",
+            "The system was pretty {adjective} in my opinion. It seemed to {verb} what I actually needed.",
+            "Not a great experience with the AI. The suggestions were {adjective} and it {verb} the point entirely.",
         ],
         'neutral': [
             "The AI recommendations were {adjective}. Some were helpful while others {verb} the mark.",
             "I had mixed feelings about the algorithm. It {verb} in some areas but {action} in others.",
+            "The technology was {adjective} - neither great nor terrible. It {verb} its basic function.",
         ]
     },
     'consumer_behavior': {
@@ -1406,15 +1415,20 @@ RESPONSE_TEMPLATES_BY_DOMAIN = {
             "I {verb} the product. It {adjective} exceeded my expectations in terms of {quality}.",
             "The {product_aspect} was {adjective}. I would {action} this to others.",
             "Overall, a {adjective} experience. The {quality} really stood out.",
+            "I was genuinely {sentiment} with the {quality}. It felt like the product was designed with real care.",
+            "Great {product_aspect}. I felt the {quality} was {adjective} and worth every penny.",
         ],
         'negative': [
             "I was {sentiment} with the product. The {quality} was {adjective}.",
             "The {product_aspect} {verb} to meet my expectations. It felt {adjective}.",
             "Not {adjective} overall. The {quality} needs improvement.",
+            "The product left me feeling {sentiment}. The {product_aspect} was particularly {adjective}.",
+            "I expected more. The {quality} was {adjective} and the {product_aspect} {verb} to deliver.",
         ],
         'neutral': [
             "The product was {adjective}. It {verb} its purpose but nothing {adjective}.",
             "Mixed feelings - the {quality} was fine but the {product_aspect} could be {adjective}.",
+            "A perfectly {adjective} product. It {verb} what it needed to without being particularly notable.",
         ]
     },
     'social_psychology': {
@@ -1422,15 +1436,20 @@ RESPONSE_TEMPLATES_BY_DOMAIN = {
             "I felt {adjective} about the interaction. The other person seemed {trait}.",
             "The experience was {adjective}. It made me feel {emotion}.",
             "I {verb} the social aspect. People appeared {adjective} and {trait}.",
+            "The interaction left me feeling {emotion}. I thought the other person was very {trait} and {adjective}.",
+            "It was a {adjective} experience interacting with others. I felt {emotion} about the whole thing.",
         ],
         'negative': [
             "I felt {emotion} during the interaction. The situation seemed {adjective}.",
             "The experience was {adjective}. It left me feeling {emotion}.",
             "I {verb} uncomfortable. The atmosphere felt {adjective}.",
+            "The social interaction was {adjective}. I felt {emotion} and somewhat {adjective} throughout.",
+            "I was not {sentiment} with how things went. The other person seemed {trait} and the situation felt {adjective}.",
         ],
         'neutral': [
             "The interaction was {adjective}. I didn't feel strongly either way.",
             "A {adjective} experience overall. Nothing particularly {trait}.",
+            "It was an {adjective} interaction. I felt {adjective} about it without any strong reaction.",
         ]
     },
     'political': {
@@ -1438,32 +1457,113 @@ RESPONSE_TEMPLATES_BY_DOMAIN = {
             "I {verb} with this perspective. It seems {adjective} and {trait}.",
             "The position is {adjective}. I appreciate how it {action}.",
             "I find this view {adjective}. It {verb} with my values.",
+            "This argument is {adjective}. I think it {verb} the core issues well and seems {trait}.",
         ],
         'negative': [
             "I {verb} with this perspective. It seems {adjective} and fails to {action}.",
             "This position is {adjective}. It doesn't {verb} the real issues.",
             "I find this view {adjective} and {trait}.",
+            "I'm {sentiment} by this perspective. It {verb} important nuances and comes across as {adjective}.",
         ],
         'neutral': [
             "I have mixed feelings about this. Some points are {adjective} while others {verb} consideration.",
             "This perspective has both {adjective} and {adjective} aspects.",
+            "I can see both sides. The argument is {adjective} in some ways but {verb} in others.",
         ]
-    }
+    },
+    'behavioral_economics': {
+        'positive': [
+            "The decision felt {adjective}. I was {sentiment} with how the options were presented.",
+            "I found the choice {adjective}. The framing really {verb} me think about the trade-offs carefully.",
+            "I was {sentiment} with my decision. It felt {adjective} to weigh the different factors.",
+        ],
+        'negative': [
+            "The decision felt {adjective}. I was {sentiment} with how limited the options seemed.",
+            "I found the choice {adjective}. It felt like the framing {verb} important considerations.",
+            "I wasn't {sentiment} with the way the decision was structured. It seemed {adjective}.",
+        ],
+        'neutral': [
+            "The decision was {adjective}. I weighed the options and {verb} a reasonable choice.",
+            "Neither option stood out strongly. The choice felt {adjective} overall.",
+        ]
+    },
+    'health_psychology': {
+        'positive': [
+            "I felt {sentiment} about the health information. It was {adjective} and {verb} my concerns.",
+            "The health advice seemed {adjective}. I feel more {emotion} about making changes.",
+            "This information was {adjective}. It {verb} me think more carefully about my health decisions.",
+        ],
+        'negative': [
+            "I was {sentiment} by the health information. It felt {adjective} and didn't {verb} my specific situation.",
+            "The advice seemed {adjective}. I'm {emotion} about whether it would actually help.",
+            "Not very {adjective} health information. It {verb} the complexity of my situation.",
+        ],
+        'neutral': [
+            "The health information was {adjective}. Some parts {verb} my needs, others not so much.",
+            "I had {adjective} reactions to the advice. It was {adjective} but not life-changing.",
+        ]
+    },
+    'organizational': {
+        'positive': [
+            "The workplace scenario felt {adjective}. I was {sentiment} with how the situation was handled.",
+            "I thought the leadership approach was {adjective}. It {verb} employee concerns effectively.",
+            "The organizational decision seemed {adjective} and {trait}. It would {action} team morale.",
+        ],
+        'negative': [
+            "The workplace scenario felt {adjective}. I was {sentiment} with the management approach.",
+            "I thought the decision was {adjective}. It {verb} important employee perspectives.",
+            "The organizational approach seemed {adjective}. It would likely {action} trust and morale.",
+        ],
+        'neutral': [
+            "The workplace scenario was {adjective}. It had both {adjective} and concerning elements.",
+            "A {adjective} organizational situation. The approach {verb} some needs but not others.",
+        ]
+    },
+    'education': {
+        'positive': [
+            "I found the learning experience {adjective}. It {verb} my understanding of the topic.",
+            "The educational approach was {adjective}. I felt {emotion} about how much I learned.",
+            "This was a {adjective} way to learn. The material {verb} my curiosity and engagement.",
+        ],
+        'negative': [
+            "I found the learning experience {adjective}. It {verb} to engage me with the material.",
+            "The educational approach was {adjective}. I felt {emotion} about the effectiveness.",
+            "Not a very {adjective} learning experience. The material {verb} to capture my interest.",
+        ],
+        'neutral': [
+            "The learning experience was {adjective}. It {verb} some things well but could improve in others.",
+            "An {adjective} educational experience overall. Neither especially engaging nor boring.",
+        ]
+    },
 }
 
 WORD_BANKS = {
     'adjective_positive': ['excellent', 'impressive', 'helpful', 'intuitive', 'effective', 'valuable',
-                          'thoughtful', 'accurate', 'responsive', 'innovative', 'reliable', 'satisfying'],
+                          'thoughtful', 'accurate', 'responsive', 'innovative', 'reliable', 'satisfying',
+                          'remarkable', 'compelling', 'well-designed', 'outstanding', 'refreshing',
+                          'insightful', 'encouraging', 'empowering'],
     'adjective_negative': ['disappointing', 'frustrating', 'confusing', 'inaccurate', 'unhelpful',
-                          'limited', 'generic', 'impersonal', 'unreliable', 'underwhelming'],
-    'adjective_neutral': ['adequate', 'acceptable', 'standard', 'typical', 'moderate', 'ordinary'],
-    'verb_positive': ['understood', 'captured', 'addressed', 'enhanced', 'improved', 'recognized'],
-    'verb_negative': ['missed', 'ignored', 'failed', 'overlooked', 'misunderstood', 'neglected'],
-    'verb_neutral': ['met', 'served', 'provided', 'delivered', 'offered', 'presented'],
-    'emotion_positive': ['satisfied', 'pleased', 'impressed', 'confident', 'comfortable', 'optimistic'],
-    'emotion_negative': ['frustrated', 'disappointed', 'concerned', 'uncomfortable', 'skeptical'],
-    'trait_positive': ['genuine', 'trustworthy', 'competent', 'approachable', 'transparent'],
-    'trait_negative': ['dismissive', 'insincere', 'unreliable', 'distant', 'opaque']
+                          'limited', 'generic', 'impersonal', 'unreliable', 'underwhelming',
+                          'poorly designed', 'off-putting', 'problematic', 'tedious', 'misguided',
+                          'unconvincing', 'shallow', 'ineffective'],
+    'adjective_neutral': ['adequate', 'acceptable', 'standard', 'typical', 'moderate', 'ordinary',
+                         'reasonable', 'average', 'straightforward', 'unremarkable', 'fair', 'decent'],
+    'verb_positive': ['understood', 'captured', 'addressed', 'enhanced', 'improved', 'recognized',
+                     'appreciated', 'supported', 'facilitated', 'delivered', 'exceeded', 'highlighted'],
+    'verb_negative': ['missed', 'ignored', 'failed', 'overlooked', 'misunderstood', 'neglected',
+                     'underestimated', 'distorted', 'complicated', 'undermined', 'dismissed', 'confused'],
+    'verb_neutral': ['met', 'served', 'provided', 'delivered', 'offered', 'presented',
+                    'covered', 'maintained', 'fulfilled', 'supplied', 'conveyed', 'handled'],
+    'emotion_positive': ['satisfied', 'pleased', 'impressed', 'confident', 'comfortable', 'optimistic',
+                        'encouraged', 'reassured', 'motivated', 'grateful', 'relieved', 'engaged'],
+    'emotion_negative': ['frustrated', 'disappointed', 'concerned', 'uncomfortable', 'skeptical',
+                        'anxious', 'annoyed', 'uneasy', 'discouraged', 'doubtful', 'irritated'],
+    'emotion_neutral': ['indifferent', 'neutral', 'uncertain', 'ambivalent', 'mixed', 'undecided'],
+    'trait_positive': ['genuine', 'trustworthy', 'competent', 'approachable', 'transparent',
+                      'professional', 'attentive', 'considerate', 'fair-minded', 'knowledgeable'],
+    'trait_negative': ['dismissive', 'insincere', 'unreliable', 'distant', 'opaque',
+                      'condescending', 'careless', 'biased', 'evasive', 'unprofessional'],
+    'trait_neutral': ['professional', 'neutral', 'detached', 'measured', 'cautious', 'reserved'],
 }
 
 
@@ -1478,6 +1578,9 @@ def _generate_diverse_open_ended(
     """
     Generate diverse, contextually appropriate open-ended responses.
 
+    v1.4.0: Enhanced with question-text-aware responses, condition-specific
+    elaborations, and broader domain coverage.
+
     Args:
         question_text: The question being answered
         domain: Study domain (ai_technology, consumer_behavior, etc.)
@@ -1489,49 +1592,119 @@ def _generate_diverse_open_ended(
     Returns:
         Generated response text
     """
-    # Select appropriate template set
+    # Select appropriate template set - try exact domain, then related domains
+    domain_lower = str(domain).lower().replace(" ", "_")
+    domain_aliases = {
+        "technology": "ai_technology",
+        "ai": "ai_technology",
+        "marketing": "consumer_behavior",
+        "consumer": "consumer_behavior",
+        "social": "social_psychology",
+        "psychology": "social_psychology",
+        "politics": "political",
+        "economics": "behavioral_economics",
+        "finance": "behavioral_economics",
+        "health": "health_psychology",
+        "medical": "health_psychology",
+        "workplace": "organizational",
+        "management": "organizational",
+        "leadership": "organizational",
+        "learning": "education",
+        "teaching": "education",
+    }
+    resolved_domain = domain_aliases.get(domain_lower, domain_lower)
     templates = RESPONSE_TEMPLATES_BY_DOMAIN.get(
-        domain,
-        RESPONSE_TEMPLATES_BY_DOMAIN['social_psychology']
+        resolved_domain,
+        RESPONSE_TEMPLATES_BY_DOMAIN.get('social_psychology', {})
     ).get(valence, [])
 
+    if not templates:
+        # Fallback to any valence from same domain
+        domain_templates = RESPONSE_TEMPLATES_BY_DOMAIN.get(resolved_domain, {})
+        for v in ['neutral', 'positive', 'negative']:
+            templates = domain_templates.get(v, [])
+            if templates:
+                break
     if not templates:
         templates = ["I found this to be an interesting experience."]
 
     # Select template
-    template = rng.choice(templates)
+    template = str(rng.choice(templates))
 
     # Fill in template with appropriate words
-    verbosity = persona_traits.get('verbosity', 0.5)
+    verbosity = _safe_trait_value(persona_traits.get('verbosity'), 0.5)
 
-    def get_word(category, sentiment):
+    def get_word(category: str, sentiment: str) -> str:
         if sentiment == 'positive':
             words = WORD_BANKS.get(f'{category}_positive', WORD_BANKS.get(category, ['good']))
         elif sentiment == 'negative':
             words = WORD_BANKS.get(f'{category}_negative', WORD_BANKS.get(category, ['poor']))
         else:
             words = WORD_BANKS.get(f'{category}_neutral', WORD_BANKS.get(category, ['okay']))
-        return rng.choice(words)
+        return str(rng.choice(words))
 
-    # Replace placeholders
+    # Replace placeholders - each replacement gets a unique random word
     response = template
-    response = response.replace('{adjective}', get_word('adjective', valence))
+    response = response.replace('{adjective}', get_word('adjective', valence), 1)
+    # Replace any remaining {adjective} with a DIFFERENT word
+    while '{adjective}' in response:
+        response = response.replace('{adjective}', get_word('adjective', valence), 1)
     response = response.replace('{verb}', get_word('verb', valence))
     response = response.replace('{emotion}', get_word('emotion', valence))
     response = response.replace('{trait}', get_word('trait', valence))
     response = response.replace('{sentiment}', get_word('emotion', valence))
     response = response.replace('{action}', get_word('verb', valence))
-    response = response.replace('{quality}', rng.choice(['quality', 'functionality', 'design', 'performance']))
-    response = response.replace('{product_aspect}', rng.choice(['overall experience', 'main features', 'user interface']))
+    response = response.replace('{quality}', str(rng.choice(
+        ['quality', 'functionality', 'design', 'performance', 'usability', 'value', 'reliability']
+    )))
+    response = response.replace('{product_aspect}', str(rng.choice(
+        ['overall experience', 'main features', 'user interface', 'core functionality',
+         'presentation', 'build quality', 'ease of use']
+    )))
+
+    # v1.4.0: Add question-text-aware elaboration
+    # Extract key topic words from the question text for contextual responses
+    q_lower = str(question_text).lower()
+    condition_lower = str(condition).lower()
 
     # Add elaboration based on verbosity
     if verbosity > 0.7:
-        elaborations = [
-            f" I think this is particularly relevant given {condition.lower()}.",
-            " This aligns with my expectations.",
-            " I would be interested to see how this develops.",
+        # Build condition-specific elaborations
+        elaborations = []
+        # Reference the condition meaningfully
+        if any(w in condition_lower for w in ['high', 'strong', 'positive']):
+            elaborations.append(" I think the stronger approach really made a difference here.")
+        elif any(w in condition_lower for w in ['low', 'weak', 'negative']):
+            elaborations.append(" The weaker version was noticeable and affected my impression.")
+        elif any(w in condition_lower for w in ['control', 'baseline', 'neutral']):
+            elaborations.append(" Without any particular manipulation, this felt like a natural experience.")
+        elif any(w in condition_lower for w in ['ai', 'algorithm', 'automated']):
+            elaborations.append(" Knowing it was AI-driven definitely shaped my perspective.")
+        elif any(w in condition_lower for w in ['human', 'personal', 'manual']):
+            elaborations.append(" The human element of this really came through.")
+        else:
+            elaborations.append(f" Given the {condition_lower} condition, this was my honest impression.")
+
+        # Question-text-aware elaborations
+        if 'why' in q_lower or 'reason' in q_lower or 'explain' in q_lower:
+            elaborations.append(" My main reasoning comes from my personal experiences with similar situations.")
+        elif 'feel' in q_lower or 'emotion' in q_lower:
+            elaborations.append(f" Emotionally, I felt {get_word('emotion', valence)} about the whole thing.")
+        elif 'suggest' in q_lower or 'improve' in q_lower or 'recommend' in q_lower:
+            elaborations.append(" I think there is room for improvement in how this was presented.")
+        else:
+            elaborations.append(" This aligns with my overall expectations.")
+
+        response += str(rng.choice(elaborations))
+    elif verbosity > 0.5:
+        # Medium verbosity: short elaboration
+        short_elaborations = [
+            " That's my overall take.",
+            " I hope that makes sense.",
+            " It was an interesting experience overall.",
         ]
-        response += rng.choice(elaborations)
+        if rng.random() > 0.5:
+            response += str(rng.choice(short_elaborations))
 
     return response
 
@@ -2302,13 +2475,43 @@ class SurveyFlowHandler:
 
 @dataclass
 class EffectSizeSpec:
-    """Specification for an expected effect in the study."""
+    """Specification for an expected effect in the study.
+
+    v1.4.0: Added __post_init__ to safely convert cohens_d and direction,
+    preventing crashes from string/dict/None values.
+    """
     variable: str
     factor: str
     level_high: str
     level_low: str
     cohens_d: float
     direction: str = "positive"  # "positive" or "negative"
+
+    def __post_init__(self) -> None:
+        """Safely convert fields to proper types."""
+        # Safely convert cohens_d
+        try:
+            if isinstance(self.cohens_d, dict):
+                self.cohens_d = float(self.cohens_d.get("value", 0.5))
+            elif self.cohens_d is None:
+                self.cohens_d = 0.5
+            else:
+                self.cohens_d = float(self.cohens_d)
+        except (ValueError, TypeError):
+            self.cohens_d = 0.5
+
+        if np.isnan(self.cohens_d) or np.isinf(self.cohens_d):
+            self.cohens_d = 0.5
+
+        # Ensure direction is a valid string
+        if self.direction not in ("positive", "negative"):
+            self.direction = "positive"
+
+        # Ensure string fields are strings
+        self.variable = str(self.variable or "")
+        self.factor = str(self.factor or "")
+        self.level_high = str(self.level_high or "")
+        self.level_low = str(self.level_low or "")
 
 
 @dataclass
@@ -2376,6 +2579,8 @@ class EnhancedSimulationEngine:
             if str(c).replace('\xa0', ' ').strip()
         ]
         if not self.conditions:
+            if hasattr(self, '_log'):
+                self._log("WARNING", "CONDITIONS", "No conditions specified - defaulting to single 'Condition A'. Results may not match intended design.")
             self.conditions = ["Condition A"]
         self.factors = _normalize_factors(factors, self.conditions)
         self.scales = _normalize_scales(scales)
@@ -2388,7 +2593,9 @@ class EnhancedSimulationEngine:
         self.open_ended_questions = _normalize_open_ended(open_ended_questions)
         self.study_context = study_context or {}
         self.stimulus_evaluations = stimulus_evaluations or []
-        self.condition_allocation = condition_allocation  # Dict[condition_name, percentage 0-100]
+        self.condition_allocation = self._normalize_condition_allocation(
+            condition_allocation, self.conditions
+        )  # Dict[condition_name, percentage 0-100]
         self.precomputed_visibility = precomputed_visibility or {}  # v1.0.0: From QSF parser
         self.mode = (mode or "pilot").strip().lower()
         if self.mode not in ("pilot", "final"):
@@ -2473,6 +2680,94 @@ class EnhancedSimulationEngine:
         self.column_info: List[Tuple[str, str]] = []
         self.validation_log: List[str] = []
         self._scale_generation_log: List[Dict[str, Any]] = []
+
+    @staticmethod
+    def _normalize_condition_allocation(
+        allocation: Optional[Dict[str, Any]],
+        conditions: List[str],
+    ) -> Optional[Dict[str, float]]:
+        """Normalize condition allocation dict, handling edge cases.
+
+        v1.4.0: Ensures:
+        - Empty dicts are treated as None (equal allocation)
+        - String values are converted to floats
+        - Proportions (0-1 range) are converted to percentages (0-100)
+        - Keys that don't match conditions are matched case-insensitively
+        - All values are proper floats
+        - Total allocation sums to ~100%
+
+        Args:
+            allocation: Raw condition allocation dict (or None)
+            conditions: List of condition names
+
+        Returns:
+            Normalized allocation dict or None for equal allocation
+        """
+        if not allocation or not isinstance(allocation, dict):
+            return None
+
+        # Filter out empty/None values and convert to float
+        cleaned: Dict[str, float] = {}
+        condition_lower_map = {c.lower().strip(): c for c in conditions}
+
+        for key, val in allocation.items():
+            # Skip None/empty values
+            if val is None:
+                continue
+
+            # Convert value to float safely
+            if isinstance(val, dict):
+                # Handle dict-contaminated values
+                for dkey in ("value", "proportion", "percentage", "pct"):
+                    if dkey in val:
+                        try:
+                            val = float(val[dkey])
+                            break
+                        except (ValueError, TypeError):
+                            continue
+                else:
+                    continue  # Could not extract from dict
+            try:
+                float_val = float(val)
+            except (ValueError, TypeError):
+                continue
+
+            # Skip NaN/inf
+            if np.isnan(float_val) or np.isinf(float_val):
+                continue
+
+            # Match key to actual condition name (case-insensitive)
+            key_stripped = str(key).strip()
+            matched_condition = None
+            if key_stripped in [c for c in conditions]:
+                matched_condition = key_stripped
+            else:
+                key_lower = key_stripped.lower()
+                if key_lower in condition_lower_map:
+                    matched_condition = condition_lower_map[key_lower]
+
+            if matched_condition:
+                cleaned[matched_condition] = float_val
+
+        if not cleaned:
+            return None
+
+        # Detect if values are proportions (0-1) vs percentages (0-100)
+        all_values = list(cleaned.values())
+        total = sum(all_values)
+        max_val = max(all_values) if all_values else 0
+
+        if max_val <= 1.0 and total <= 1.05:
+            # Values appear to be proportions (0-1), convert to percentages
+            cleaned = {k: v * 100.0 for k, v in cleaned.items()}
+            total = sum(cleaned.values())
+
+        # If total is way off from 100, normalize to 100%
+        if total > 0 and (total < 80 or total > 120):
+            factor = 100.0 / total
+            cleaned = {k: v * factor for k, v in cleaned.items()}
+
+        return cleaned
 
     def _log(self, message: str) -> None:
         """Append a message to the validation log for debugging and verification."""
@@ -2673,6 +2968,9 @@ class EnhancedSimulationEngine:
         Convert Cohen's d effect size to a normalized effect shift that produces
         STATISTICALLY DETECTABLE differences between conditions.
 
+        v1.4.0: Enhanced with safe numeric conversion for cohens_d and improved
+        level matching to reduce false positives (e.g., "no ai" matching "ai").
+
         CRITICAL FIX (v2.2.6): Previous versions produced effects too small to detect.
 
         Cohen's d interpretation for behavioral data:
@@ -2680,7 +2978,7 @@ class EnhancedSimulationEngine:
         - d = 0.5: Medium effect (detectable with N~64 per group)
         - d = 0.8: Large effect (detectable with N~26 per group)
 
-        For Likert scales (1-7), typical SD ≈ 1.5 scale points
+        For Likert scales (1-7), typical SD = 1.5 scale points
         Effect in raw scale units = d * SD = d * 1.5
 
         NEW APPROACH: Apply FULL effect size to condition means
@@ -2692,21 +2990,57 @@ class EnhancedSimulationEngine:
         """
         # INCREASED effect multiplier for detectable differences
         # This converts Cohen's d to a 0-1 normalized shift
-        # d=0.5 → 0.20 shift (20% of scale range) = ~1.2 points on 7-point scale
+        # d=0.5 -> 0.20 shift (20% of scale range) = ~1.2 points on 7-point scale
         COHENS_D_TO_NORMALIZED = 0.40  # Increased from 0.25 for detectable effects
 
-        # Check explicit effect size specifications — accumulate ALL matching effects
+        # Check explicit effect size specifications -- accumulate ALL matching effects
         # for factorial designs where multiple effect specs may apply to one condition
         matched_effects: list = []
-        condition_lower = str(condition).lower()
+        condition_lower = str(condition).lower().strip()
+        variable_lower = str(variable).lower().strip()
+
         for effect in self.effect_sizes:
-            if effect.variable == variable or str(variable).startswith(effect.variable):
-                if str(effect.level_high).lower() in condition_lower:
-                    d = effect.cohens_d if effect.direction == "positive" else -effect.cohens_d
-                    matched_effects.append(float(d) * COHENS_D_TO_NORMALIZED)
-                elif str(effect.level_low).lower() in condition_lower:
-                    d = -effect.cohens_d if effect.direction == "positive" else effect.cohens_d
-                    matched_effects.append(float(d) * COHENS_D_TO_NORMALIZED)
+            # v1.4.0: Safe conversion of cohens_d (could be string, dict, or NaN)
+            try:
+                cohens_d = float(effect.cohens_d) if not isinstance(effect.cohens_d, dict) else 0.5
+            except (ValueError, TypeError):
+                cohens_d = 0.5  # Default to medium effect on conversion failure
+            if isinstance(cohens_d, float) and (np.isnan(cohens_d) or np.isinf(cohens_d)):
+                cohens_d = 0.5
+            # Clamp to reasonable range (0-3.0 covers virtually all real effects)
+            cohens_d = float(np.clip(abs(cohens_d), 0.0, 3.0))
+
+            # Check if this effect spec matches the current variable
+            effect_var = str(effect.variable).lower().strip()
+            variable_matches = (
+                effect_var == variable_lower
+                or variable_lower.startswith(effect_var)
+                or effect_var in variable_lower
+            )
+
+            if variable_matches:
+                # v1.4.0: Improved level matching with false-positive prevention
+                level_high = str(effect.level_high).lower().strip()
+                level_low = str(effect.level_low).lower().strip()
+                direction = str(getattr(effect, 'direction', 'positive')).lower().strip()
+
+                is_high = bool(level_high and level_high in condition_lower)
+                is_low = bool(level_low and level_low in condition_lower)
+
+                # Avoid double-matching (e.g., "no ai" matching both "ai" and "no ai")
+                # If both match, prefer the longer/more specific match
+                if is_high and is_low:
+                    if len(level_high) >= len(level_low):
+                        is_low = False
+                    else:
+                        is_high = False
+
+                if is_high:
+                    d = cohens_d if direction == "positive" else -cohens_d
+                    matched_effects.append(d * COHENS_D_TO_NORMALIZED)
+                elif is_low:
+                    d = -cohens_d if direction == "positive" else cohens_d
+                    matched_effects.append(d * COHENS_D_TO_NORMALIZED)
 
         if matched_effects:
             # Average matched effects so they don't stack unreasonably
@@ -4256,27 +4590,57 @@ class EnhancedSimulationEngine:
             style = "default"
 
         # Build context from study_context and question_spec
+        # v1.4.0: Enhanced context building with better condition and question integration
         study_domain = self.study_context.get("study_domain", "general")
         survey_name = self.study_context.get("survey_name", self.study_title)
 
+        # Extract meaningful topic from question text or study context
+        topic = question_spec.get("topic", study_domain)
+        if topic == "general" and question_text:
+            # Try to extract a topic from the question text itself
+            q_words = [w for w in question_text.lower().split() if len(w) > 4 and w not in {
+                "about", "would", "could", "should", "which", "there", "their", "these",
+                "those", "where", "while", "being", "other", "after", "before", "during",
+                "please", "describe", "explain"
+            }]
+            if q_words:
+                topic = q_words[0]
+
+        # Map sentiment to emotion words
+        emotion_map = {
+            "very_positive": ["delighted", "thrilled", "very pleased", "impressed"],
+            "positive": ["pleased", "satisfied", "happy", "comfortable"],
+            "neutral": ["interested", "curious", "engaged", "attentive"],
+            "negative": ["concerned", "disappointed", "uneasy", "uncertain"],
+            "very_negative": ["frustrated", "upset", "very disappointed", "troubled"],
+        }
+        emotion_words = emotion_map.get(sentiment, emotion_map["neutral"])
+
         context = {
-            "topic": question_spec.get("topic", study_domain),
+            "topic": topic,
             "stimulus": question_spec.get("stimulus", survey_name),
             "product": question_spec.get("product", "item"),
             "feature": question_spec.get("feature", "aspect"),
-            "emotion": str(rng.choice(["pleased", "interested", "satisfied", "engaged"])),
+            "emotion": str(rng.choice(emotion_words)),
             "sentiment": sentiment.replace("very_", ""),  # Basic generator uses simple sentiment
             "question_text": question_text,
             "study_domain": study_domain,
+            "condition": condition,  # v1.4.0: Pass condition for context-aware generation
         }
 
         cond = str(condition).lower()
-        if "ai" in cond:
+        if "ai" in cond and "no ai" not in cond:
             context["stimulus"] = "AI-recommended " + str(context["stimulus"])
-        if "hedonic" in cond:
+        elif "human" in cond or "no ai" in cond:
+            context["stimulus"] = "human-curated " + str(context["stimulus"])
+        if "hedonic" in cond or "experiential" in cond:
             context["product"] = "hedonic " + str(context["product"])
-        elif "utilitarian" in cond:
+        elif "utilitarian" in cond or "functional" in cond:
             context["product"] = "functional " + str(context["product"])
+        if "high" in cond:
+            context["feature"] = "prominent " + str(context["feature"])
+        elif "low" in cond:
+            context["feature"] = "subtle " + str(context["feature"])
 
         # v1.0.0 CRITICAL FIX: Create question-specific seed for fallback generator
         # Combine participant_seed with a stable hash of the question identity
@@ -4318,20 +4682,32 @@ class EnhancedSimulationEngine:
         return pd.DataFrame({"Age": ages, "Gender": genders})
 
     def _generate_condition_assignment(self, n: int) -> pd.Series:
-        """Generate condition assignments based on allocation percentages or equal distribution."""
+        """Generate condition assignments based on allocation percentages or equal distribution.
+
+        v1.4.0: Enhanced with safe numeric conversion and proportion/percentage detection.
+        """
         n_conditions = len(self.conditions)
+        if n_conditions == 0:
+            raise ValueError("No experimental conditions defined. Cannot generate data without at least one condition.")
         assignments: List[str] = []
 
         if self.condition_allocation and len(self.condition_allocation) > 0:
-            # Use specified allocation percentages
+            # Use specified allocation percentages (already normalized by __init__)
             running_total = 0
             for i, cond in enumerate(self.conditions):
-                pct = self.condition_allocation.get(cond, 100 / n_conditions)
+                raw_pct = self.condition_allocation.get(cond, 100.0 / n_conditions)
+                # Safe float conversion in case normalization missed something
+                try:
+                    pct = float(raw_pct) if not isinstance(raw_pct, dict) else 100.0 / n_conditions
+                except (ValueError, TypeError):
+                    pct = 100.0 / n_conditions
+                if np.isnan(pct) or np.isinf(pct) or pct < 0:
+                    pct = 100.0 / n_conditions
                 if i == n_conditions - 1:
                     # Last condition gets all remaining participants
                     count = n - running_total
                 else:
-                    count = round(n * pct / 100)
+                    count = round(n * pct / 100.0)
                     running_total += count
                 assignments.extend([cond] * max(0, count))
         else:
@@ -4343,6 +4719,8 @@ class EnhancedSimulationEngine:
                 assignments.extend([cond] * count)
 
         # Ensure we have exactly n assignments
+        if not self.conditions:
+            raise ValueError("No experimental conditions defined. Please specify at least one condition.")
         while len(assignments) < n:
             assignments.append(self.conditions[-1])
         assignments = assignments[:n]
@@ -4525,14 +4903,20 @@ class EnhancedSimulationEngine:
                 self._log(f"WARNING: Scale '{scale_name_raw}' missing scale_points, using 7")
                 scale_points = 7
             else:
-                scale_points = int(scale["scale_points"])
+                try:
+                    scale_points = int(float(scale.get("scale_points", 7)))
+                except (ValueError, TypeError):
+                    scale_points = 7
 
             # Extract num_items - NO silent defaulting
             if "num_items" not in scale:
                 self._log(f"WARNING: Scale '{scale_name_raw}' missing num_items, using 5")
                 num_items = 5
             else:
-                num_items = int(scale["num_items"])
+                try:
+                    num_items = int(float(scale.get("num_items", 1)))
+                except (ValueError, TypeError):
+                    num_items = 1
 
             # Final safety bounds (should never trigger for validated scales)
             scale_points = max(2, min(1001, scale_points))
