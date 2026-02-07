@@ -52,8 +52,8 @@ import streamlit as st
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.3.5"
-BUILD_ID = "20260207-v135-reset-fix-ux-polish"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.3.6"
+BUILD_ID = "20260207-v136-builder-fixes-dedup"  # Change this to force cache invalidation
 
 def _verify_and_reload_utils():
     """Verify utils modules are at correct version, force reload if needed.
@@ -85,7 +85,7 @@ from utils.qsf_preview import QSFPreviewParser, QSFPreviewResult
 from utils.schema_validator import validate_schema
 from utils.github_qsf_collector import collect_qsf_async, is_collection_enabled
 from utils.instructor_report import InstructorReportGenerator, ComprehensiveInstructorReport
-from utils.survey_builder import SurveyDescriptionParser, ParsedDesign, KNOWN_SCALES, AVAILABLE_DOMAINS
+from utils.survey_builder import SurveyDescriptionParser, ParsedDesign, ParsedScale, KNOWN_SCALES, AVAILABLE_DOMAINS
 from utils.persona_library import PersonaLibrary, Persona
 from utils.enhanced_simulation_engine import (
     EnhancedSimulationEngine,
@@ -109,7 +109,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF"
-APP_VERSION = "1.3.5"  # v1.3.5: Full reset fix, feedback resilience, report layout, UX polish
+APP_VERSION = "1.3.6"  # v1.3.6: Builder fixes, deduplication
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -1216,29 +1216,40 @@ def _generate_preview_data(
     for scale in scales[:5]:  # Limit to 5 scales for preview
         scale_name = scale.get('name', 'Scale')
         scale_points = scale.get('scale_points', 7)
-        # Check both "num_items" and "items" for compatibility with QSF detection
+        # Check both "num_items" and "items" for compatibility with QSF and builder
         items = scale.get('num_items')
         if items is None:
-            items = scale.get('items', 5)
+            _raw_items = scale.get('items', 5)
+            # 'items' can be a list of item names (builder) or an int (QSF)
+            if isinstance(_raw_items, (list, tuple)):
+                items = len(_raw_items) if _raw_items else 5
+            else:
+                items = _raw_items
         try:
             items = int(items)
         except (ValueError, TypeError):
             items = 5
 
+        # Use scale_min/scale_max if available (builder always provides these)
+        _s_min = int(scale.get('scale_min', 1))
+        _s_max = int(scale.get('scale_max', scale_points))
+        if _s_max <= _s_min:
+            _s_max = _s_min + scale_points - 1
+
         if items == 1:
             # Single item
             var_name = scale_name.replace(' ', '_')
             preview_data[var_name] = [
-                np.random.randint(1, scale_points + 1) for _ in range(n_rows)
+                np.random.randint(_s_min, _s_max + 1) for _ in range(n_rows)
             ]
         else:
             # Multi-item scale - show first item and composite
             var_name = scale_name.replace(' ', '_')
             preview_data[f"{var_name}_1"] = [
-                np.random.randint(1, scale_points + 1) for _ in range(n_rows)
+                np.random.randint(_s_min, _s_max + 1) for _ in range(n_rows)
             ]
             preview_data[f"{var_name}_mean"] = [
-                round(np.random.uniform(1, scale_points), 2) for _ in range(n_rows)
+                round(np.random.uniform(_s_min, _s_max), 2) for _ in range(n_rows)
             ]
 
     # Add sample open-ended responses
@@ -2990,7 +3001,11 @@ def _render_conversational_builder() -> None:
                 st.session_state["builder_scales_text"] = ex["scales"]
                 st.session_state["builder_oe_text"] = ex.get("open_ended", "")
                 st.session_state["study_title"] = ex["title"]
-                st.session_state["study_description"] = f"Investigating {ex.get('domain', ex['title'].lower())}"
+                # Use rich description from example if available, otherwise generate one
+                st.session_state["study_description"] = ex.get(
+                    "description",
+                    f"Investigating {ex.get('domain', ex['title'].lower())}",
+                )
                 st.rerun()
 
     # ── Section 1: Experimental Conditions ──────────────────────────────
@@ -3301,10 +3316,16 @@ def _render_conversational_builder() -> None:
             st.markdown(f"**Sample size:** {builder_sample}")
             st.markdown(f"**Design:** {design_options[design_type]}")
 
-            # Detect domain with visual badge
+            # Detect domain with visual badge (pass all text for better accuracy)
             title = st.session_state.get("study_title", "")
             desc = st.session_state.get("study_description", "")
-            domain = parser.detect_research_domain(title, desc)
+            _cond_str = " ".join(c.name for c in parsed_conditions)
+            _scale_str = " ".join(s.name for s in parsed_scales)
+            domain = parser.detect_research_domain(
+                title, desc,
+                conditions_text=_cond_str,
+                scales_text=_scale_str,
+            )
             st.markdown(f"**Domain:** `{domain}`")
 
     for w in warnings:
@@ -3327,7 +3348,22 @@ def _render_conversational_builder() -> None:
         # Build the parsed design
         title = st.session_state.get("study_title", "")
         desc = st.session_state.get("study_description", "")
-        domain = parser.detect_research_domain(title, desc)
+
+        # Auto-generate description if user left it empty
+        if not desc.strip() and title.strip():
+            desc = parser.generate_smart_description(
+                title, parsed_conditions, parsed_scales, design_type
+            )
+            st.session_state["study_description"] = desc
+
+        # Pass conditions and scales text for improved domain detection accuracy
+        _cond_text_for_domain = " ".join(c.name for c in parsed_conditions)
+        _scale_text_for_domain = " ".join(s.name for s in parsed_scales)
+        domain = parser.detect_research_domain(
+            title, desc,
+            conditions_text=_cond_text_for_domain,
+            scales_text=_scale_text_for_domain,
+        )
 
         factors = parser.detect_factorial_structure(parsed_conditions)
 
@@ -3381,6 +3417,11 @@ def _render_conversational_builder() -> None:
         st.session_state["builder_design_type"] = inferred.get("design_type", "between")
         st.session_state["builder_sample_size"] = builder_sample
 
+        # Generate design feedback suggestions
+        _feedback = parser.generate_feedback(parsed_design)
+        if _feedback:
+            st.session_state["_builder_feedback"] = _feedback
+
         st.success("Study specification built successfully! Proceed to the **Design** tab to review.")
         st.rerun()
 
@@ -3406,6 +3447,15 @@ def _render_builder_design_review() -> None:
 
     st.markdown("### Review Your Study Design")
     st.markdown("Review and edit the study specification extracted from your description.")
+
+    # Show design improvement suggestions if available
+    _builder_feedback = st.session_state.get("_builder_feedback", [])
+    if _builder_feedback:
+        with st.expander("Design Improvement Suggestions", expanded=True):
+            for _fb in _builder_feedback:
+                st.info(_fb)
+        # Clear after display so it doesn't reappear on every rerun
+        st.session_state.pop("_builder_feedback", None)
 
     # ── Detected Research Domain (Iteration 2: dropdown) ──────────────
     detected_domain = inferred.get("study_context", {}).get("domain", "")
@@ -3561,6 +3611,31 @@ def _render_builder_design_review() -> None:
     scales = inferred.get("scales", [])
     open_ended = inferred.get("open_ended_questions", [])
     factors = inferred.get("factors", [])
+
+    # ── Sample Size (moved BEFORE factorial table to fix NameError) ────
+    st.markdown("---")
+    st.markdown("#### Sample Size")
+    sample = st.number_input(
+        "Total participants",
+        min_value=10,
+        max_value=10000,
+        value=int(st.session_state.get("sample_size", 100)),
+        step=10,
+        key="builder_review_sample",
+    )
+    st.session_state["sample_size"] = sample
+
+    # Per-cell size guidance
+    if conditions and len(conditions) >= 2:
+        _per_cell_n = sample // len(conditions)
+        if _per_cell_n < 20:
+            st.warning(
+                f"With {sample} participants across {len(conditions)} conditions, "
+                f"each cell gets ~{_per_cell_n} participants. "
+                f"Consider at least {len(conditions) * 20} for adequate statistical power."
+            )
+        else:
+            st.caption(f"~{_per_cell_n} participants per condition")
 
     # ── Conditions ──────────────────────────────────────────────────────
     st.markdown("---")
@@ -3769,6 +3844,51 @@ def _render_builder_design_review() -> None:
         inferred["scales"] = scales
         st.session_state["inferred_design"] = inferred
         st.session_state["confirmed_scales"] = scales
+
+        # Domain-specific scale suggestions
+        _review_domain = (domain_override.strip() if domain_override.strip() else detected_domain)
+        if _review_domain and scales:
+            _existing_parsed = [
+                ParsedScale(name=s.get("name", ""), scale_type=s.get("type", "likert"))
+                for s in scales
+            ]
+            _suggestions = SurveyDescriptionParser().suggest_additional_measures(
+                _review_domain, _existing_parsed
+            )
+            if _suggestions:
+                with st.expander("Suggested additional measures for your domain"):
+                    for _sug in _suggestions:
+                        _s_col1, _s_col2 = st.columns([5, 1])
+                        with _s_col1:
+                            st.markdown(f"**{_sug['name']}** — {_sug['description']}")
+                            st.caption(f"Why: {_sug['why']}")
+                        with _s_col2:
+                            if st.button("Add", key=f"br_add_sug_{_sug['name'][:15]}"):
+                                # Add suggested scale to the design
+                                _sug_lower = _sug['name'].lower().strip()
+                                _known = KNOWN_SCALES.get(_sug_lower, {})
+                                _new_scale = {
+                                    "name": _sug['name'],
+                                    "variable_name": re.sub(r'[^a-zA-Z0-9]', '_', _sug['name'])[:30],
+                                    "num_items": _known.get("items", 4),
+                                    "scale_min": _known.get("min", 1),
+                                    "scale_max": _known.get("max", 7),
+                                    "scale_points": _known.get("max", 7) - _known.get("min", 1) + 1,
+                                    "type": "likert",
+                                    "reverse_items": [],
+                                    "reliability": 0.85,
+                                    "detected_from_qsf": False,
+                                    "description": _sug['description'],
+                                    "items": [
+                                        f"{re.sub(r'[^a-zA-Z0-9]', '_', _sug['name'])[:20]}_{j+1}"
+                                        for j in range(_known.get("items", 4))
+                                    ],
+                                }
+                                scales.append(_new_scale)
+                                inferred["scales"] = scales
+                                st.session_state["inferred_design"] = inferred
+                                st.session_state["confirmed_scales"] = scales
+                                st.rerun()
     else:
         st.warning("No scales detected")
 
@@ -3808,19 +3928,6 @@ def _render_builder_design_review() -> None:
         inferred["open_ended_questions"] = open_ended
         st.session_state["inferred_design"] = inferred
         st.session_state["confirmed_open_ended"] = open_ended
-
-    # ── Sample Size ─────────────────────────────────────────────────────
-    st.markdown("---")
-    st.markdown("#### Sample Size")
-    sample = st.number_input(
-        "Total participants",
-        min_value=10,
-        max_value=10000,
-        value=int(st.session_state.get("sample_size", 100)),
-        step=10,
-        key="builder_review_sample",
-    )
-    st.session_state["sample_size"] = sample
 
     # ── Condition Allocation ────────────────────────────────────────────
     if conditions and len(conditions) >= 2:

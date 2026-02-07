@@ -19,7 +19,7 @@ import re
 from typing import Any, Dict, List, Optional, Tuple
 from dataclasses import dataclass, field
 
-__version__ = "1.3.5"
+__version__ = "1.3.6"
 
 
 # ─── Common scale anchors used in behavioral science ───────────────────────────
@@ -585,8 +585,8 @@ class SurveyDescriptionParser:
         if not text_clean:
             return questions
 
-        # Split by lines or sentences
-        segments = re.split(r'[\n;]|(?<=\?)\s+', text_clean)
+        # Split by lines or semicolons (NOT on "?" which cuts questions in half)
+        segments = re.split(r'[\n;]', text_clean)
 
         for i, segment in enumerate(segments):
             segment = segment.strip()
@@ -742,10 +742,18 @@ class SurveyDescriptionParser:
         # Build conditions list
         conditions = [c.name for c in parsed.conditions]
 
-        # Build scales list in engine format
+        # Build scales list in engine format (with variable name deduplication)
         scales = []
+        _used_var_names: set = set()
         for s in parsed.scales:
             var_name = s.variable_name or self._to_variable_name(s.name)
+            # Deduplicate variable names to prevent column collisions
+            base_var = var_name
+            _suffix = 2
+            while var_name in _used_var_names:
+                var_name = f"{base_var}_{_suffix}"
+                _suffix += 1
+            _used_var_names.add(var_name)
             items = [f"{var_name}_{i+1}" for i in range(s.num_items)]
             scale_dict = {
                 "name": s.name,
@@ -765,16 +773,25 @@ class SurveyDescriptionParser:
                 scale_dict["item_names"] = s.item_labels
             scales.append(scale_dict)
 
-        # Build open-ended list in engine format
+        # Build open-ended list in engine format (with variable name deduplication)
         open_ended = []
         for oe in parsed.open_ended:
+            oe_var = oe.variable_name
+            # Deduplicate against scale variable names and other OE variables
+            base_oe = oe_var
+            _oe_suffix = 2
+            while oe_var in _used_var_names:
+                oe_var = f"{base_oe}_{_oe_suffix}"
+                _oe_suffix += 1
+            _used_var_names.add(oe_var)
             open_ended.append({
-                "variable_name": oe.variable_name,
+                "variable_name": oe_var,
                 "name": oe.question_text[:50],
                 "question_text": oe.question_text,
                 "source_type": "conversational_builder",
                 "force_response": True,
                 "context_type": oe.context_type,
+                "block_name": "",  # Required by engine visibility check
             })
 
         # Build factors
@@ -1227,6 +1244,13 @@ class SurveyDescriptionParser:
         return [
             {
                 "title": "AI vs Human Content Credibility",
+                "description": (
+                    "This study examines how disclosure of AI authorship affects "
+                    "perceived credibility of news articles. Participants read an article "
+                    "and are told it was written by AI, a human journalist, or given no "
+                    "authorship information. We measure credibility, trust, and willingness "
+                    "to share the article on social media."
+                ),
                 "conditions": (
                     "Condition 1: AI-generated article, "
                     "Condition 2: Human-written article, "
@@ -1244,6 +1268,13 @@ class SurveyDescriptionParser:
             },
             {
                 "title": "Moral Framing and Donation Behavior",
+                "description": (
+                    "We investigate how moral framing (care vs fairness) and trust "
+                    "in the charity (high vs low) affect donation amounts. Participants "
+                    "read a charity appeal framed around either caring for others or "
+                    "fairness/justice, from an organization with either high or low "
+                    "trustworthiness ratings."
+                ),
                 "conditions": (
                     "Trust (high, low) and Moral Frame (care, fairness)"
                 ),
@@ -1259,6 +1290,12 @@ class SurveyDescriptionParser:
             },
             {
                 "title": "Social Media and Well-Being",
+                "description": (
+                    "A field experiment examining the causal effects of social media "
+                    "usage reduction on psychological well-being. Participants are "
+                    "randomly assigned to continue normal usage, reduce usage to 30 "
+                    "minutes per day, or abstain completely for two weeks."
+                ),
                 "conditions": "Control vs Reduced Usage vs Complete Abstinence",
                 "scales": (
                     "SWLS (Satisfaction with Life Scale); "
@@ -1274,6 +1311,12 @@ class SurveyDescriptionParser:
             },
             {
                 "title": "Brand Authenticity in Green Marketing",
+                "description": (
+                    "This study tests whether brand origin (local vs global) and the "
+                    "presence of green environmental claims interact to influence "
+                    "consumer perceptions and purchase intentions. We hypothesize that "
+                    "local brands benefit more from green claims than global brands."
+                ),
                 "conditions": (
                     "Brand Origin (local, global) and "
                     "Green Claim (present, absent)"
@@ -1291,6 +1334,12 @@ class SurveyDescriptionParser:
             },
             {
                 "title": "Personality and Risk-Taking Under Uncertainty",
+                "description": (
+                    "Investigating how personality traits moderate risk-taking behavior "
+                    "under varying levels of uncertainty. Participants complete personality "
+                    "measures and then face financial decision scenarios with different "
+                    "levels of outcome uncertainty."
+                ),
                 "conditions": (
                     "High uncertainty vs Low uncertainty vs Ambiguous"
                 ),
@@ -1309,6 +1358,12 @@ class SurveyDescriptionParser:
             },
             {
                 "title": "Product Annotation and Consumer Perception",
+                "description": (
+                    "A 3x2 between-subjects experiment examining how product "
+                    "description source (AI-generated, human-curated, or no source info) "
+                    "and product type (hedonic vs utilitarian) affect perceived quality, "
+                    "purchase intention, and ad credibility."
+                ),
                 "conditions": (
                     "3 (Annotation: AI-generated vs Human-curated vs No source) "
                     "× 2 (Product type: Hedonic vs Utilitarian), "
@@ -1330,6 +1385,12 @@ class SurveyDescriptionParser:
             },
             {
                 "title": "Framing, Source, and Time Pressure",
+                "description": (
+                    "A 2x2x2 factorial experiment testing how message framing "
+                    "(gain vs loss), information source (expert vs peer), and time "
+                    "pressure (immediate vs delayed response) interact to influence "
+                    "risk perception and decision confidence."
+                ),
                 "conditions": (
                     "2 (Frame: Gain vs Loss) "
                     "× 2 (Source: Expert vs Peer) "
@@ -1346,6 +1407,60 @@ class SurveyDescriptionParser:
                 "domain": "behavioral economics",
             },
         ]
+
+    def generate_smart_description(
+        self,
+        title: str,
+        conditions: List[ParsedCondition],
+        scales: List[ParsedScale],
+        design_type: str = "between",
+    ) -> str:
+        """
+        Auto-generate a rich study description from title, conditions, and scales.
+        Helps users who leave the description field empty.
+        """
+        parts = []
+
+        # Design type intro
+        n_conds = len(conditions)
+        cond_names = [c.name for c in conditions]
+        is_factorial = any(" × " in cn for cn in cond_names)
+
+        if is_factorial:
+            n_factors = len(cond_names[0].split(" × ")) if cond_names else 0
+            parts.append(
+                f"This is a {n_factors}-factor {design_type}-subjects experiment "
+                f"with {n_conds} conditions."
+            )
+        elif n_conds >= 2:
+            parts.append(
+                f"This is a {design_type}-subjects experiment comparing "
+                f"{n_conds} conditions: {', '.join(cond_names[:6])}."
+            )
+
+        # Scales summary
+        if scales:
+            scale_names = [s.name for s in scales]
+            parts.append(
+                f"The dependent variables include {', '.join(scale_names[:5])}"
+                + (f" and {len(scale_names) - 5} more" if len(scale_names) > 5 else "")
+                + "."
+            )
+
+        # Domain-relevant filler based on title keywords
+        title_lower = title.lower()
+        if any(w in title_lower for w in ["ai", "artificial", "algorithm"]):
+            parts.append("The study investigates perceptions of AI-generated content.")
+        elif any(w in title_lower for w in ["brand", "product", "consumer"]):
+            parts.append("The study examines consumer attitudes and purchase behavior.")
+        elif any(w in title_lower for w in ["moral", "ethical", "dilemma"]):
+            parts.append("The study explores moral reasoning and ethical judgments.")
+        elif any(w in title_lower for w in ["health", "well-being", "wellness"]):
+            parts.append("The study examines health-related attitudes and behaviors.")
+        elif any(w in title_lower for w in ["social", "group", "identity"]):
+            parts.append("The study investigates social psychological processes.")
+
+        return " ".join(parts) if parts else f"A {design_type}-subjects experiment studying {title}."
 
     @staticmethod
     def get_persona_domain_keys(builder_domain: str) -> List[str]:
@@ -1732,15 +1847,25 @@ class SurveyDescriptionParser:
             scale_min = 0
             scale_max = 1
             num_items = 1
-        elif 'numeric' in text_lower or 'dollar' in text_lower or 'wtp' in text_lower or 'willingness to pay' in text_lower:
+        elif any(kw in text_lower for kw in [
+            'numeric', 'dollar', 'wtp', 'willingness to pay',
+            'amount', 'price', 'cost', 'payment',
+        ]):
             scale_type = "numeric"
             if scale_min == 1 and scale_max == 7:
                 # Default numeric range; use 0-500 for dollar/WTP, 0-100 otherwise
                 scale_min = 0
-                if 'dollar' in text_lower or 'wtp' in text_lower or 'willingness to pay' in text_lower:
+                if any(kw in text_lower for kw in ['dollar', 'wtp', 'willingness to pay', 'price', 'payment', 'cost']):
                     scale_max = 500
                 else:
                     scale_max = 100
+        elif any(kw in text_lower for kw in ['frequency', 'never', 'rarely', 'sometimes', 'often', 'always']):
+            # Frequency-type scale (never/rarely/sometimes/often/always)
+            if scale_min == 1 and scale_max == 7:
+                scale_min = 1
+                scale_max = 5
+                if not item_labels:
+                    item_labels = ["1=Never", "2=Rarely", "3=Sometimes", "4=Often", "5=Always"]
 
         # Try to extract scale name (only if abbreviation didn't set it)
         if not abbrev_matched:
