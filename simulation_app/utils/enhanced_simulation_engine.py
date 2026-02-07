@@ -45,7 +45,7 @@ This module is designed to run inside a `utils/` package (i.e., imported as
 """
 
 # Version identifier to help track deployed code
-__version__ = "1.3.3"  # v1.3.3: Edge-case hardening, validation, 142 e2e tests
+__version__ = "1.3.4"  # v1.3.4: UX navigation buttons, instant progress, report layout
 
 # =============================================================================
 # SCIENTIFIC FOUNDATIONS FOR SIMULATION

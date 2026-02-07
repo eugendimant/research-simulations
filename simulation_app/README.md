@@ -1,6 +1,6 @@
 # Behavioral Experiment Simulation Tool
 
-**Version 1.3.3** | A Streamlit application for generating realistic synthetic behavioral experiment data using theory-grounded persona-driven simulation.
+**Version 1.3.4** | A Streamlit application for generating realistic synthetic behavioral experiment data using theory-grounded persona-driven simulation.
 
 ## What This Tool Does
 
@@ -19,7 +19,7 @@
 - **Develop analysis scripts** on properly structured data
 - **Check pre-registration consistency** before data collection
 
-## Features (v1.3.3)
+## Features (v1.3.4)
 
 ### NEW: Enhanced Scale/Matrix Detection
 - **Semantic scale type detection** (satisfaction, trust, intention, risk, etc.)

@@ -52,8 +52,8 @@ import streamlit as st
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.3.3"
-BUILD_ID = "20260206-v133-edge-case-hardening"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.3.4"
+BUILD_ID = "20260207-v134-ux-navigation-report"  # Change this to force cache invalidation
 
 def _verify_and_reload_utils():
     """Verify utils modules are at correct version, force reload if needed.
@@ -109,7 +109,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF"
-APP_VERSION = "1.3.3"  # v1.3.3: Edge-case hardening, validation, 142 e2e tests
+APP_VERSION = "1.3.4"  # v1.3.4: UX navigation buttons, instant progress, report layout
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -4736,6 +4736,73 @@ def _render_step_navigation(step_index: int, can_next: bool, next_label: str) ->
                 _go_to_step(step_index - 1)
 
 
+def _render_scroll_to_top_button(tab_index: int, next_tab_label: str = "") -> None:
+    """Render a 'Complete - Ready for Next Step' button that scrolls to top of page.
+
+    v1.3.4: Helps users navigate back to the tab bar after working through long content.
+    """
+    st.markdown("---")
+
+    # Build label
+    if next_tab_label:
+        btn_label = f"Done — scroll up to continue to {next_tab_label}"
+    else:
+        btn_label = "Done — scroll back to top"
+
+    # Use HTML/JS button for instant scroll (no Streamlit rerun needed)
+    scroll_js = """
+    <style>
+        .scroll-top-btn {
+            display: block;
+            width: 100%;
+            padding: 14px 24px;
+            background: linear-gradient(135deg, #1e3a5f 0%, #2d5a87 100%);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            text-align: center;
+            transition: all 0.2s ease;
+            box-shadow: 0 3px 10px rgba(30, 58, 95, 0.25);
+            letter-spacing: 0.02em;
+        }
+        .scroll-top-btn:hover {
+            background: linear-gradient(135deg, #2d5a87 0%, #3b7dba 100%);
+            box-shadow: 0 4px 14px rgba(30, 58, 95, 0.35);
+            transform: translateY(-1px);
+        }
+        .scroll-top-btn:active {
+            transform: translateY(0px);
+        }
+    </style>
+    <button class="scroll-top-btn" onclick="
+        (function() {
+            var selectors = ['section.main', '.stApp', '[data-testid=&quot;stAppViewBlockContainer&quot;]', '.block-container', 'main', '.main'];
+            selectors.forEach(function(sel) {
+                var els = document.querySelectorAll(sel);
+                els.forEach(function(el) {
+                    el.scrollTop = 0;
+                    try { el.scrollTo({top: 0, behavior: 'smooth'}); } catch(e) {}
+                });
+            });
+            window.scrollTo({top: 0, behavior: 'smooth'});
+            document.documentElement.scrollTop = 0;
+            document.body.scrollTop = 0;
+            try {
+                if (window.parent && window.parent !== window) {
+                    window.parent.scrollTo({top: 0, behavior: 'smooth'});
+                }
+            } catch(e) {}
+        })();
+    ">BUTTON_LABEL</button>
+    """.replace("BUTTON_LABEL", f"&#10003; {btn_label}")
+
+    st.markdown(scroll_js, unsafe_allow_html=True)
+    st.markdown("")  # spacing
+
+
 def _get_total_conditions() -> int:
     """Get total number of conditions from all sources."""
     selected = st.session_state.get("selected_conditions", [])
@@ -4850,6 +4917,9 @@ with tab_setup:
         )
         st.session_state["team_name"] = team_name
         st.session_state["team_members_raw"] = members
+
+    # v1.3.4: Scroll-to-top button at bottom of Setup tab
+    _render_scroll_to_top_button(0, next_tab_label="Study Input")
 
 
 # =====================================================================
@@ -5311,6 +5381,9 @@ with tab_upload:
 
         if current_conditions:
             st.success(f"✓ Conditions: {', '.join(current_conditions)}")
+
+    # v1.3.4: Scroll-to-top button at bottom of Study Input tab
+    _render_scroll_to_top_button(1, next_tab_label="Design")
 
 
 # =====================================================================
@@ -6687,6 +6760,9 @@ with tab_design:
 
             st.info(f"**Design Type:** {design_type} · **Total Cells:** {len(all_conditions)} · **N per cell:** ~{sample_n // max(1, len(all_conditions))}")
 
+    # v1.3.4: Scroll-to-top button at bottom of Design tab
+    _render_scroll_to_top_button(2, next_tab_label="Generate")
+
 
     # =====================================================================
 # TAB 4: GENERATE SIMULATION
@@ -7267,7 +7343,11 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
             st.button("Simulation generated", type="primary", disabled=True, use_container_width=True)
         else:
             if st.button("Generate simulated dataset", type="primary", disabled=not can_generate, use_container_width=True):
-                st.session_state["generation_requested"] = True
+                # v1.3.4: Skip intermediate rerun — go directly to is_generating + phase 1
+                # so the progress spinner appears on the very next render (1 rerun, not 2)
+                st.session_state["generation_requested"] = False
+                st.session_state["is_generating"] = True
+                st.session_state["_generation_phase"] = 1
                 st.rerun()
 
     with btn_col2:
@@ -7282,13 +7362,12 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
                 st.session_state["last_metadata"] = None
                 st.rerun()
 
-    # v1.2.1: Two-phase generation to ensure progress indicator renders
-    # Phase 1: Set is_generating and rerun to show progress UI
+    # v1.2.1 / v1.3.4: Legacy fallback — handle generation_requested if set elsewhere
     if st.session_state.get("generation_requested") and not is_generating:
         st.session_state["generation_requested"] = False
         st.session_state["is_generating"] = True
-        st.session_state["_generation_phase"] = 1  # Signal that we need another rerun
-        st.rerun()  # Rerun to render progress UI BEFORE generation starts
+        st.session_state["_generation_phase"] = 1
+        st.rerun()
 
     # Phase 2: Actually generate (progress UI is now visible)
     if is_generating and st.session_state.get("_generation_phase", 0) == 1:
@@ -7865,6 +7944,9 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
                         st.error(msg)
             else:
                 st.caption("Instructor email not configured in secrets (INSTRUCTOR_NOTIFICATION_EMAIL).")
+
+    # v1.3.4: Scroll-to-top button at bottom of Generate tab
+    _render_scroll_to_top_button(3)
 
 # ========================================
 # FEEDBACK BUTTON (Shown on all pages)
