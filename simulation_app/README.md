@@ -9,7 +9,7 @@
 - Automatic detection of conditions, factors, and scales
 - Open-ended text responses that align with numeric ratings
 - Attention check failures and exclusion flags
-- R/Python/Julia/SPSS/Stata scripts ready for analysis
+- Analysis scripts ready for immediate use in your preferred statistical software
 
 ### Why Use Simulated Pilot Data?
 
@@ -211,28 +211,37 @@ This tool implements simulation approaches from recent LLM research:
 - **Dillion et al. (2023)** - *Trends in Cognitive Sciences* — [DOI: 10.1016/j.tics.2023.04.008](https://doi.org/10.1016/j.tics.2023.04.008)
 - **Westwood (2025)** - "Existential threat of LLMs to survey research" *PNAS* — [DOI: 10.1073/pnas.2518075122](https://doi.org/10.1073/pnas.2518075122)
 
-See `docs/methods_summary.md` for complete methodology documentation with full citations.
+See `docs/methods_summary.md` and `docs/papers/methods_summary.pdf` for complete methodology documentation with full citations.
 
 ## Directory Structure
 
 ```
-simulation_app/
-├── app.py                      # Main Streamlit application
-├── requirements.txt            # Python dependencies
-├── README.md                   # This file
-├── docs/
-│   └── methods_summary.md      # Detailed methodology
-└── utils/
-    ├── __init__.py
-    ├── enhanced_simulation_engine.py  # Core simulation logic
-    ├── persona_library.py      # Behavioral personas
-    ├── qsf_preview.py          # QSF parsing & scale detection
-    ├── response_library.py     # 175+ domains, 30 question types
-    ├── text_generator.py       # Open-ended response generation
-    ├── condition_identifier.py # Condition & factor detection
-    ├── schema_validator.py     # Data validation
-    ├── instructor_report.py    # Report generation
-    └── group_management.py     # Team/API management
+research-simulations/
+├── simulation_app/
+│   ├── app.py                      # Main Streamlit application
+│   ├── requirements.txt            # Python dependencies
+│   ├── README.md                   # This file
+│   ├── example_files/              # QSF training data & examples
+│   └── utils/
+│       ├── __init__.py
+│       ├── enhanced_simulation_engine.py  # Core simulation logic
+│       ├── persona_library.py      # Behavioral personas
+│       ├── qsf_preview.py          # QSF parsing & scale detection
+│       ├── response_library.py     # 225+ domains, 40 question types
+│       ├── survey_builder.py       # Conversational study builder
+│       ├── text_generator.py       # Open-ended response generation
+│       ├── condition_identifier.py # Condition & factor detection
+│       ├── schema_validator.py     # Data validation
+│       ├── instructor_report.py    # Report generation
+│       └── group_management.py     # Team/API management
+├── tests/                          # All test files
+│   ├── conftest.py                 # Shared fixtures & path setup
+│   └── test_e2e.py                 # Main E2E test suite
+├── docs/                           # Documentation
+│   ├── papers/                     # Research papers & methods PDF
+│   ├── methods_summary.md          # Detailed methodology
+│   └── technical_methods.md        # Technical documentation
+└── CLAUDE.md                       # Development guidelines
 ```
 
 ## Configuration

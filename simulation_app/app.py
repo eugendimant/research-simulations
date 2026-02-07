@@ -4555,10 +4555,16 @@ Generate a complete synthetic dataset — with realistic response patterns, indi
 2. **Describe your study in plain text** — just tell us your design (e.g., "2×2 between-subjects with a 7-point Likert DV") and the tool builds it for you
 
 **What you get:**
-- **CSV data** with condition assignments, scale responses, and open-ended text — ready for R, Python, or SPSS
-- **Starter R script** pre-configured for your design
-- **Instructor report** summarizing the simulated design and parameters
-- **Behaviorally grounded personas** (satisficers, extreme responders, engaged participants) that create realistic variance
+- **Publication-ready CSV data** with condition assignments, scale responses, and open-ended text — ready for immediate statistical analysis in any software
+- **Pre-configured analysis scripts** for your specific design, ready to run in your preferred statistical software
+- **Comprehensive instructor report** documenting the simulated design, parameters, and expected patterns — ideal for teaching and preregistration planning
+- **Behaviorally grounded personas** (satisficers, extreme responders, engaged participants) calibrated from computational social science research to create realistic individual differences and variance structures
+
+**Why use simulated data?**
+- **Build your entire analysis pipeline before data collection** — catch coding errors, verify statistical power, and refine your hypotheses risk-free
+- **Practice with realistic data** — unlike random noise, simulated responses reflect known psychological patterns (acquiescence bias, scale anchoring, satisficing)
+- **Iterate faster** — generate unlimited samples in seconds to stress-test your analysis plan across different effect sizes and sample compositions
+- **Teach experimental methods** — give students hands-on experience with realistic datasets that have known ground truth for answer keys
 """)
 
 with st.expander("Research foundations and citations", expanded=False):
@@ -4585,8 +4591,9 @@ This tool implements simulation approaches validated in recent computational soc
 The simulator automatically assigns behavioral personas to simulated participants based on the study domain. Each persona has trait parameters calibrated from computational social science research on LLM response patterns. This creates realistic individual differences without requiring manual configuration.
 """)
     # Prefer PDF over markdown for methods summary
-    methods_pdf_path = Path(__file__).resolve().parent / "docs" / "Behavioral Experiment Simulation Tool - Methods Summary.pdf"
-    methods_md_path = Path(__file__).resolve().parent / "docs" / "methods_summary.md"
+    # PDF and docs moved to project-root docs/ directory during repo reorganization
+    methods_pdf_path = Path(__file__).resolve().parent.parent / "docs" / "papers" / "methods_summary.pdf"
+    methods_md_path = Path(__file__).resolve().parent.parent / "docs" / "methods_summary.md"
 
     if methods_pdf_path.exists():
         methods_updated = datetime.utcfromtimestamp(methods_pdf_path.stat().st_mtime).strftime("%Y-%m-%d")
@@ -8284,7 +8291,7 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
         st.subheader("Download")
 
         st.download_button(
-            "Download ZIP (CSV + metadata + R script)",
+            "Download ZIP (CSV + metadata + analysis scripts)",
             data=zip_bytes,
             file_name=f"behavioral_simulation_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip",
             mime="application/zip",
@@ -8314,7 +8321,7 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
                 else:
                     subject = f"[Behavioral Simulation] Output: {st.session_state.get('study_title','Untitled Study')}"
                     body = (
-                        "Attached is the simulation output ZIP (Simulated.csv, metadata, R prep script).\n\n"
+                        "Attached is the simulation output ZIP (Simulated.csv, metadata, analysis scripts).\n\n"
                         f"Generated: {datetime.now().isoformat(timespec='seconds')}\n"
                     )
                     ok, msg = _send_email(

@@ -1103,7 +1103,7 @@ class InstructorReportGenerator:
         lines.append("")
         lines.append("### Quick Start Checklist")
         lines.append("")
-        lines.append("1. **Load the CSV** into your preferred analysis tool (R, Python, SPSS, Stata, Julia)")
+        lines.append("1. **Load the CSV** into your preferred statistical analysis tool")
         lines.append("2. **Check the codebook** (Data_Codebook_Handbook.txt) for variable definitions")
         lines.append("3. **Examine exclusion flags** — filter out flagged participants before analysis")
         lines.append("4. **Verify your conditions** — check that CONDITION matches your expected groups")
