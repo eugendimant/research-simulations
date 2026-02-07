@@ -19,7 +19,7 @@ import re
 from typing import Any, Dict, List, Optional, Tuple
 from dataclasses import dataclass, field
 
-__version__ = "1.4.2"
+__version__ = "1.4.2.1"
 
 
 # ─── Common scale anchors used in behavioral science ───────────────────────────

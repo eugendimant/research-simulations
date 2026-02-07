@@ -52,8 +52,8 @@ import streamlit as st
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.4.2"
-BUILD_ID = "20260207-v142-improved-example-descriptions"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.4.2.1"
+BUILD_ID = "20260207-v1421-generate-tab-edge-cases"  # Change this to force cache invalidation
 
 def _verify_and_reload_utils():
     """Verify utils modules are at correct version, force reload if needed.
@@ -109,7 +109,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF"
-APP_VERSION = "1.4.2"  # v1.4.2: Improved example study descriptions in conversational builder
+APP_VERSION = "1.4.2.1"  # v1.4.2.1: Generate tab edge case fixes (progress bar, preview safety, dead code)
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -1272,9 +1272,20 @@ def _generate_preview_data(
         preview_data['condition'] = [conditions[i % len(conditions)] for i in range(n_rows)]
 
     # Add scale responses - use same defaults as actual generation
+    # v1.4.2.1: Safe handling for None values in scale properties (builder/QSF compat)
     for scale in scales[:5]:  # Limit to 5 scales for preview
-        scale_name = scale.get('name', 'Scale')
-        scale_points = scale.get('scale_points', 7)
+        if not isinstance(scale, dict):
+            continue
+        scale_name = scale.get('name', 'Scale') or 'Scale'
+
+        # Safely parse scale_points (may be None for numeric/slider scales from builder)
+        raw_pts = scale.get('scale_points')
+        try:
+            scale_points = int(raw_pts) if raw_pts is not None else 7
+        except (ValueError, TypeError):
+            scale_points = 7
+        scale_points = max(2, scale_points)
+
         # Check both "num_items" and "items" for compatibility with QSF and builder
         items = scale.get('num_items')
         if items is None:
@@ -1285,13 +1296,23 @@ def _generate_preview_data(
             else:
                 items = _raw_items
         try:
-            items = int(items)
+            items = int(items) if items is not None else 5
         except (ValueError, TypeError):
             items = 5
+        items = max(1, items)
 
         # Use scale_min/scale_max if available (builder always provides these)
-        _s_min = int(scale.get('scale_min', 1))
-        _s_max = int(scale.get('scale_max', scale_points))
+        # Safely handle None values to prevent int(None) TypeError
+        raw_s_min = scale.get('scale_min')
+        raw_s_max = scale.get('scale_max')
+        try:
+            _s_min = int(raw_s_min) if raw_s_min is not None else 1
+        except (ValueError, TypeError):
+            _s_min = 1
+        try:
+            _s_max = int(raw_s_max) if raw_s_max is not None else scale_points
+        except (ValueError, TypeError):
+            _s_max = scale_points
         if _s_max <= _s_min:
             _s_max = _s_min + scale_points - 1
 
@@ -1313,9 +1334,16 @@ def _generate_preview_data(
 
     # Add sample open-ended responses
     # v1.0.0 CRITICAL FIX: Pass question name to ensure UNIQUE responses per question
+    # v1.4.2.1: Handle both dict and string elements in open_ended list
     for oe in open_ended[:2]:  # Limit to 2 open-ended for preview
-        var_name = oe.get('variable_name', oe.get('name', 'OE'))
-        question_text = oe.get('question_text', var_name)
+        if isinstance(oe, str):
+            var_name = oe
+            question_text = oe
+        elif isinstance(oe, dict):
+            var_name = oe.get('variable_name', oe.get('name', 'OE'))
+            question_text = oe.get('question_text', var_name)
+        else:
+            continue
         # Use both var_name AND question_text to create truly unique identifier
         unique_question_id = f"{var_name}_{question_text[:50]}"
         preview_data[var_name] = [
@@ -7091,7 +7119,18 @@ with tab_generate:
     )
 
     if not inferred:
-        st.warning("💡 Complete the **Design** tab first to configure your experiment")
+        st.warning(
+            "No experiment design configured yet. Please complete **Step 2 (Study Input)** "
+            "to upload a QSF file or describe your study, then **Step 3 (Design)** to review "
+            "and confirm your experimental design before generating data."
+        )
+        col_back1, col_back2 = st.columns([1, 1])
+        with col_back1:
+            if st.button("Go to Step 2: Study Input", key="go_step2_from_generate", use_container_width=True):
+                _go_to_step(1)
+        with col_back2:
+            if st.button("Go to Step 3: Design", key="go_step3_from_generate", use_container_width=True):
+                _go_to_step(2)
         st.stop()
 
     # Show readiness checklist
@@ -7697,10 +7736,18 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
             )
         N = min(requested_n, MAX_SIMULATED_N)
 
+        # v1.4.2.1: Safety assertion — missing_fields should never be true here
+        # because the Generate button is disabled when all_required_complete is False.
+        # The legacy generation_requested fallback is the only theoretical path, so
+        # guard defensively rather than leaving dead code.
         if missing_fields:
-            st.error("Generation blocked until all required fields are completed.")
             st.session_state["is_generating"] = False
+            st.session_state["generation_requested"] = False
             progress_placeholder.empty()
+            st.warning(
+                "Cannot generate: missing required fields "
+                f"({', '.join(missing_fields)}). Please complete all steps first."
+            )
             st.stop()
 
         prereg_text = st.session_state.get("prereg_text_sanitized", "")
@@ -7734,22 +7781,31 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
         # Build open-ended questions with full context for text generation
         # PRIORITY: Use user-confirmed open-ended questions from Step 3
         # This ensures only questions the user verified will have text generated
+        # v1.4.2.1: Robust handling for both dict and string elements in confirmed_open_ended
         confirmed_open_ended = st.session_state.get("confirmed_open_ended", [])
         if confirmed_open_ended:
             # Use user-confirmed questions with full context
-            open_ended_questions_for_engine = [
-                {
-                    "name": oe.get("variable_name", oe.get("name", "")),
-                    "variable_name": oe.get("variable_name", oe.get("name", "")),
-                    "question_text": oe.get("question_text", ""),
-                    "context_type": oe.get("context_type", "general"),
-                    "type": oe.get("source_type", "text"),
-                    "force_response": oe.get("force_response", False),
-                    "min_chars": oe.get("min_chars"),
-                    "block_name": oe.get("block_name", ""),
-                }
-                for oe in confirmed_open_ended
-            ]
+            open_ended_questions_for_engine = []
+            for oe in confirmed_open_ended:
+                if isinstance(oe, dict):
+                    open_ended_questions_for_engine.append({
+                        "name": oe.get("variable_name", oe.get("name", "")),
+                        "variable_name": oe.get("variable_name", oe.get("name", "")),
+                        "question_text": oe.get("question_text", ""),
+                        "context_type": oe.get("context_type", "general"),
+                        "type": oe.get("source_type", "text"),
+                        "force_response": oe.get("force_response", False),
+                        "min_chars": oe.get("min_chars"),
+                        "block_name": oe.get("block_name", ""),
+                    })
+                elif isinstance(oe, str) and oe.strip():
+                    # Handle legacy/fallback case where open-ended is a plain string
+                    open_ended_questions_for_engine.append({
+                        "name": oe, "variable_name": oe,
+                        "question_text": oe, "context_type": "general",
+                        "type": "text", "force_response": False,
+                        "min_chars": None, "block_name": "",
+                    })
         else:
             # Fallback to inferred detailed info if available
             open_ended_details = inferred.get("open_ended_details", [])
@@ -7758,10 +7814,14 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
             else:
                 # Final fallback to basic list (variable names only)
                 basic_open_ended = inferred.get("open_ended_questions", [])
-                open_ended_questions_for_engine = [
-                    {"name": q, "question_text": q, "context_type": "general"}
-                    for q in basic_open_ended
-                ]
+                open_ended_questions_for_engine = []
+                for q in basic_open_ended:
+                    if isinstance(q, dict):
+                        open_ended_questions_for_engine.append(q)
+                    elif isinstance(q, str) and q.strip():
+                        open_ended_questions_for_engine.append(
+                            {"name": q, "question_text": q, "context_type": "general"}
+                        )
 
         # ========================================
         # v1.2.3: PRE-FLIGHT VALIDATION
@@ -7902,9 +7962,8 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
 
             # Show animated spinner during the actual data generation
             with st.spinner("🧠 Generating participant responses... Please wait."):
-                progress_bar.progress(25, text="Step 2/5 — Creating simulated participants...")
+                progress_bar.progress(25, text="Step 2/5 — Generating participant responses...")
                 df, metadata = engine.generate()
-                progress_bar.progress(50, text="Step 2/5 — Responses generated successfully!")
 
             # v1.2.4: Run simulation quality validation
             validation_results = _validate_simulation_output(df, metadata, clean_scales)
@@ -7917,7 +7976,7 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
                 st.warning(warn)
 
             # v1.2.5: Show quick data quality summary
-            progress_bar.progress(50, text="Step 3/5 — Validating data quality...")
+            progress_bar.progress(50, text="Step 3/5 — Validating data quality...")  # v1.4.2.1: Fixed duplicate step numbering
             status_placeholder.info("🔍 Validating generated data...")
             quality_checks = []
             # Check scale ranges
@@ -7946,7 +8005,7 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
             # Add usage stats to metadata for instructor report
             metadata["usage_stats"] = usage_stats
 
-            progress_bar.progress(55, text="Step 4/5 — Packaging downloads & reports...")
+            progress_bar.progress(70, text="Step 4/5 — Packaging downloads & reports...")
             status_placeholder.info("📦 Packaging downloads and reports...")
             try:
                 explainer = engine.generate_explainer()

@@ -6,7 +6,7 @@ Generates comprehensive instructor-facing reports for student simulations.
 """
 
 # Version identifier to help track deployed code
-__version__ = "1.4.2"  # v1.4.2: Improved example study descriptions in conversational builder
+__version__ = "1.4.2.1"  # v1.4.2.1: Generate tab edge case fixes
 
 from dataclasses import dataclass
 from datetime import datetime
@@ -832,9 +832,13 @@ class InstructorReportGenerator:
         if self.config.include_attention_checks:
             lines.append("## Attention checks")
             lines.append("")
-            if "AI_Mentioned_Check" in df.columns:
-                lines.append("- **AI_Mentioned_Check** distribution:")
-                lines.append(_safe_to_markdown(df["AI_Mentioned_Check"].value_counts(dropna=False).to_frame("n")))
+            # v1.4.3: Support both old and new attention check column names
+            _attn_col = "Attention_Check_1" if "Attention_Check_1" in df.columns else (
+                "AI_Mentioned_Check" if "AI_Mentioned_Check" in df.columns else None
+            )
+            if _attn_col is not None:
+                lines.append(f"- **{_attn_col}** distribution:")
+                lines.append(_safe_to_markdown(df[_attn_col].value_counts(dropna=False).to_frame("n")))
                 lines.append("")
             if "Attention_Pass_Rate" in df.columns:
                 lines.append("- **Attention_Pass_Rate** summary:")
@@ -1250,7 +1254,7 @@ class InstructorReportGenerator:
             "",
             "# Set up factors",
             f"data$CONDITION <- factor(data$CONDITION, levels = c({condition_levels}))",
-            "data$Gender <- factor(data$Gender, levels = 1:4, labels = c('Male','Female','Non-binary','Prefer not to say'))",
+            "data$Gender <- factor(data$Gender)  # Gender is already labeled (Male, Female, Non-binary, Prefer not to say)",
             "",
         ]
 
