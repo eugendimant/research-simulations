@@ -196,7 +196,9 @@ research-simulations/
 │   │   ├── group_management.py
 │   │   ├── schema_validator.py
 │   │   └── condition_identifier.py
-│   ├── example_files/       # QSF training data files
+│   ├── example_files/       # QSF training data & examples
+│   │   ├── *.qsf            # QSF training files
+│   │   └── karlijn_case_study/  # Validation case study
 │   └── README.md
 ├── tests/                   # All test files
 │   ├── conftest.py          # Shared path setup & fixtures
@@ -207,8 +209,6 @@ research-simulations/
 │   ├── papers/              # Research papers
 │   ├── CHANGELOG.md
 │   └── *.md
-├── examples/                # Example case studies
-│   └── karlijn_case_study/
 ├── CLAUDE.md                # This file
 └── .gitignore
 ```
