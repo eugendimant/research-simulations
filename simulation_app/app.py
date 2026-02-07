@@ -52,8 +52,8 @@ import streamlit as st
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.4.1"
-BUILD_ID = "20260207-v141-health-domain-keywords"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.4.1.1"
+BUILD_ID = "20260207-v1411-auto-suggest-scales"  # Change this to force cache invalidation
 
 def _verify_and_reload_utils():
     """Verify utils modules are at correct version, force reload if needed.
@@ -109,7 +109,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF"
-APP_VERSION = "1.4.1"  # v1.4.1: Improved health psychology domain detection keywords
+APP_VERSION = "1.4.1.1"  # v1.4.1.1: Auto-suggest scales, auto-detect design type
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -3237,21 +3237,25 @@ def _render_conversational_builder() -> None:
                 f"{s.scale_min}-{s.scale_max}{validated_tag}"
             )
 
-    # Smart scale suggestions based on domain (Iteration 6)
+    # Smart scale auto-fill based on conditions and domain
     if parsed_conditions and not scales_text.strip():
         _builder_title = st.session_state.get("study_title", "")
         _builder_desc = st.session_state.get("study_description", "")
-        if _builder_title or _builder_desc:
+        if _builder_title or _builder_desc or conditions_text.strip():
             _sug_domain = parser.detect_research_domain(
                 _builder_title, _builder_desc,
                 conditions_text=conditions_text,
             )
-            _suggestions = parser.suggest_additional_measures(_sug_domain, [])
-            if _suggestions:
+            _auto_scales = parser.suggest_scales_for_domain(_sug_domain)
+            if _auto_scales:
                 st.markdown("**Suggested scales for your domain:**")
-                for _sug in _suggestions[:3]:
-                    st.caption(f"- **{_sug['name']}** -- {_sug['description']}")
-                st.caption("_Copy a suggestion above into the text area to add it._")
+                for _sug in _auto_scales[:4]:
+                    st.caption(f"- **{_sug['name']}** ({_sug['items']} items, {_sug['range']}) -- {_sug['description']}")
+                # Auto-fill button
+                _auto_text = "\n".join(f"{s['name']}, {s['items']} items, {s['range']}" for s in _auto_scales[:3])
+                if st.button("Auto-fill suggested scales", key="auto_fill_scales_btn"):
+                    st.session_state["builder_scales_text"] = _auto_text
+                    st.rerun()
 
     # ── Section 3: Open-Ended Questions (Optional) ─────────────────────
     st.markdown("---")
@@ -3315,6 +3319,21 @@ def _render_conversational_builder() -> None:
     st.markdown("---")
     st.markdown("#### 5. Design Type")
 
+    # Auto-detect design type from condition structure
+    _auto_design: str = "between"  # Default
+    if parsed_conditions:
+        cond_names_lower = " ".join(c.name.lower() for c in parsed_conditions)
+        if any(w in cond_names_lower for w in [
+            "pre", "post", "before", "after", "time 1", "time 2",
+            "baseline", "follow", "wave 1", "wave 2", "session 1", "session 2",
+        ]):
+            _auto_design = "within"
+        elif any(w in cond_names_lower for w in ["mixed", "repeated"]):
+            _auto_design = "mixed"
+    # Use auto-detected if user hasn't explicitly changed it
+    if not st.session_state.get("_design_type_manually_set"):
+        st.session_state["builder_design_type"] = _auto_design
+
     design_options = {
         "between": "Between-subjects (each participant sees one condition)",
         "within": "Within-subjects (each participant sees all conditions)",
@@ -3330,6 +3349,9 @@ def _render_conversational_builder() -> None:
         key="builder_design_type_input",
     )
     st.session_state["builder_design_type"] = design_type
+    # Track manual override so auto-detection doesn't overwrite user choice
+    if design_type != _auto_design:
+        st.session_state["_design_type_manually_set"] = True
 
     # ── Section 6: Demographics (Optional) ──────────────────────────────
     with st.expander("6. Demographics Configuration (Optional)", expanded=False):

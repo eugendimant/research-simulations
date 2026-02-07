@@ -1,7 +1,7 @@
 """
 Conversational Survey Builder - Natural Language Study Specification Parser
 
-Version: 1.4.1
+Version: 1.4.1.1
 Allows users to describe their experiment in words instead of uploading a QSF file.
 Parses natural language descriptions into structured survey specifications that
 feed directly into the EnhancedSimulationEngine.
@@ -19,7 +19,7 @@ import re
 from typing import Any, Dict, List, Optional, Tuple
 from dataclasses import dataclass, field
 
-__version__ = "1.4.1"
+__version__ = "1.4.1.1"
 
 
 # ─── Common scale anchors used in behavioral science ───────────────────────────
@@ -1064,6 +1064,111 @@ class SurveyDescriptionParser:
 
         return suggestions
 
+    def suggest_scales_for_domain(self, domain: str) -> List[Dict[str, str]]:
+        """Suggest appropriate scales/DVs based on research domain.
+
+        Unlike suggest_additional_measures(), this method returns structured
+        scale metadata (name, items, range, description) suitable for
+        auto-filling the scales text area in the conversational builder.
+
+        Args:
+            domain: The detected research domain string.
+
+        Returns:
+            List of dicts with keys 'name', 'items', 'range', 'description'.
+        """
+        domain_scales: Dict[str, List[Dict[str, str]]] = {
+            "consumer behavior": [
+                {"name": "Purchase Intention", "items": "3", "range": "1-7 Likert", "description": "Measures likelihood of buying the product"},
+                {"name": "Brand Attitude", "items": "4", "range": "1-7 Likert", "description": "Overall evaluation of the brand"},
+                {"name": "Perceived Quality", "items": "4", "range": "1-7 Likert", "description": "Perceived quality of product/service"},
+                {"name": "Willingness to Pay", "items": "1", "range": "0-100 dollars", "description": "Maximum price willing to pay"},
+            ],
+            "social psychology": [
+                {"name": "Trust Scale", "items": "5", "range": "1-7 Likert", "description": "Interpersonal or institutional trust"},
+                {"name": "Social Distance", "items": "3", "range": "1-7 Likert", "description": "Perceived closeness to target group"},
+                {"name": "Perceived Warmth", "items": "3", "range": "1-7 Likert", "description": "Warmth dimension of social judgment"},
+                {"name": "Perceived Competence", "items": "3", "range": "1-7 Likert", "description": "Competence dimension of social judgment"},
+            ],
+            "health psychology": [
+                {"name": "Health Behavior Intention", "items": "3", "range": "1-7 Likert", "description": "Intent to engage in health behavior"},
+                {"name": "Risk Perception", "items": "4", "range": "1-7 Likert", "description": "Perceived health risk"},
+                {"name": "Self-Efficacy", "items": "5", "range": "1-7 Likert", "description": "Confidence in ability to perform behavior"},
+                {"name": "Perceived Severity", "items": "3", "range": "1-7 Likert", "description": "Perceived severity of health threat"},
+            ],
+            "ai_technology": [
+                {"name": "Trust in AI", "items": "5", "range": "1-7 Likert", "description": "Trust toward AI system"},
+                {"name": "Perceived Usefulness", "items": "4", "range": "1-7 Likert", "description": "TAM perceived usefulness"},
+                {"name": "Algorithm Aversion", "items": "4", "range": "1-7 Likert", "description": "Resistance to algorithmic decisions"},
+                {"name": "Transparency Perception", "items": "3", "range": "1-7 Likert", "description": "Perceived transparency of AI system"},
+            ],
+            "organizational behavior": [
+                {"name": "Job Satisfaction", "items": "5", "range": "1-7 Likert", "description": "Overall satisfaction with work"},
+                {"name": "Organizational Commitment", "items": "4", "range": "1-7 Likert", "description": "Commitment to the organization"},
+                {"name": "Work Engagement", "items": "5", "range": "1-7 Likert", "description": "Level of engagement at work"},
+                {"name": "Perceived Fairness", "items": "3", "range": "1-7 Likert", "description": "Fairness of organizational processes"},
+            ],
+            "communication": [
+                {"name": "Message Credibility", "items": "4", "range": "1-7 Likert", "description": "Perceived credibility of message"},
+                {"name": "Persuasion Effectiveness", "items": "3", "range": "1-7 Likert", "description": "How persuasive the message was"},
+                {"name": "Attitude Change", "items": "4", "range": "1-7 Likert", "description": "Pre-post attitude shift"},
+                {"name": "Behavioral Intention", "items": "3", "range": "1-7 Likert", "description": "Intent to act on message"},
+            ],
+            "education": [
+                {"name": "Learning Outcome", "items": "5", "range": "1-10 scale", "description": "Knowledge/skill assessment"},
+                {"name": "Motivation", "items": "4", "range": "1-7 Likert", "description": "Learning motivation"},
+                {"name": "Self-Efficacy", "items": "5", "range": "1-7 Likert", "description": "Academic self-efficacy"},
+                {"name": "Engagement", "items": "4", "range": "1-7 Likert", "description": "Student engagement"},
+            ],
+            "behavioral economics": [
+                {"name": "Risk Perception", "items": "4", "range": "1-7 Likert", "description": "Perceived risk in decision-making"},
+                {"name": "Willingness to Pay", "items": "1", "range": "0-100 dollars", "description": "Maximum price willing to pay"},
+                {"name": "Behavioral Intention", "items": "3", "range": "1-7 Likert", "description": "Intent to act on economic decision"},
+                {"name": "Need for Cognition", "items": "18", "range": "1-5 Likert", "description": "Cognitive motivation moderator"},
+            ],
+            "technology & hci": [
+                {"name": "System Usability Scale", "items": "10", "range": "1-5 Likert", "description": "Industry-standard usability benchmark"},
+                {"name": "Perceived Usefulness", "items": "4", "range": "1-7 Likert", "description": "TAM perceived usefulness"},
+                {"name": "Ease of Use", "items": "4", "range": "1-7 Likert", "description": "TAM ease of use"},
+                {"name": "Privacy Concern", "items": "5", "range": "1-7 Likert", "description": "Concerns about data privacy"},
+            ],
+            "political psychology": [
+                {"name": "Social Dominance Orientation", "items": "16", "range": "1-7 Likert", "description": "Attitudes toward social hierarchy"},
+                {"name": "Moral Foundations", "items": "20", "range": "1-6 Likert", "description": "Moral values across five foundations"},
+                {"name": "Trust in Institutions", "items": "5", "range": "1-7 Likert", "description": "Trust toward political institutions"},
+            ],
+            "moral psychology": [
+                {"name": "Moral Judgment", "items": "4", "range": "1-7 Likert", "description": "Moral evaluation of scenarios"},
+                {"name": "Moral Foundations", "items": "20", "range": "1-6 Likert", "description": "Five moral foundations questionnaire"},
+                {"name": "Empathy Scale", "items": "5", "range": "1-7 Likert", "description": "Empathic concern measure"},
+            ],
+            "emotion research": [
+                {"name": "PANAS", "items": "20", "range": "1-5 Likert", "description": "Positive and Negative Affect Schedule"},
+                {"name": "Emotional Response", "items": "6", "range": "1-7 Likert", "description": "Brief emotional response measure"},
+                {"name": "Anxiety (GAD-7)", "items": "7", "range": "0-3 scale", "description": "Generalized anxiety measure"},
+            ],
+            "educational psychology": [
+                {"name": "Self-Efficacy", "items": "5", "range": "1-7 Likert", "description": "Academic self-efficacy"},
+                {"name": "Motivation Scale", "items": "4", "range": "1-7 Likert", "description": "Intrinsic vs extrinsic motivation"},
+                {"name": "Satisfaction Scale", "items": "5", "range": "1-7 Likert", "description": "Learning satisfaction"},
+            ],
+        }
+        # Default if domain not found
+        default: List[Dict[str, str]] = [
+            {"name": "Primary Outcome", "items": "5", "range": "1-7 Likert", "description": "Main dependent variable"},
+            {"name": "Attitude Scale", "items": "4", "range": "1-7 Likert", "description": "Overall attitude measure"},
+            {"name": "Satisfaction", "items": "3", "range": "1-7 Likert", "description": "General satisfaction"},
+        ]
+        domain_lower = domain.lower().strip()
+        result = domain_scales.get(domain_lower)
+        if result is not None:
+            return result
+        # Fallback: try partial match
+        for key, val in domain_scales.items():
+            if key in domain_lower or domain_lower in key:
+                return val
+        return default
+
     def validate_full_design(self, parsed: ParsedDesign) -> Dict[str, List[str]]:
         """
         Validate a complete parsed design and return errors and warnings.
@@ -1231,19 +1336,34 @@ class SurveyDescriptionParser:
     @staticmethod
     def generate_example_descriptions() -> List[Dict[str, str]]:
         """
-        Return 3-5 example study descriptions that users can click to
+        Return example study descriptions that users can click to
         auto-fill the survey builder for inspiration and guidance.
 
-        Each example includes:
+        Each example demonstrates a different experimental design type
+        and covers a distinct research domain. All examples include
+        every required field:
         - title: Short study title
+        - description: Full study description with hypothesis
         - conditions: Natural-language condition description
-        - scales: Natural-language scale/DV description
-        - open_ended: Natural-language open-ended question description
+        - scales: Parse-ready scale/DV description (items count, scale range)
+        - open_ended: Realistic open-ended question(s)
         - domain: Research domain
+
+        Design types covered:
+        - Simple 2-condition between-subjects
+        - Factorial 2x2 between-subjects
+        - 3-condition with control group
+        - Within-subjects (repeated measures)
+        - Mixed design (between + within)
+        - 3x2 factorial between-subjects
+        - 2x2x2 factorial between-subjects
+        - 2-condition with mediator
+        - Quasi-experimental with matched groups
         """
         return [
+            # -- 1. Simple 2-condition between-subjects ------------------
             {
-                "title": "AI vs Human Content Credibility",
+                "title": "Sleep Deprivation and Cognitive Performance",
                 "description": (
                     "This study examines how disclosure of AI authorship affects "
                     "perceived credibility of news articles. Participants read an article "
