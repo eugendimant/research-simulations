@@ -1,1 +1,4 @@
 backups/
+__pycache__/
+*.pyc
+*.pyo
