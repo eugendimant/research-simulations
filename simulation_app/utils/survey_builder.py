@@ -715,7 +715,7 @@ class SurveyDescriptionParser:
             "developmental psychology": ["child", "development", "adolescent", "aging", "lifespan", "parenting"],
             "environmental psychology": ["environment", "climate", "sustainability", "green", "recycling", "carbon", "pollution"],
             "educational psychology": ["education", "learning", "student", "teacher", "academic", "classroom", "instruction"],
-            "moral psychology": ["moral", "ethical", "fairness", "justice", "virtue", "dilemma", "right", "wrong"],
+            "moral psychology": ["moral", "ethical", "fairness", "justice", "virtue", "dilemma", "right", "wrong", "trolley"],
             "technology & hci": ["technology", "ai", "artificial intelligence", "robot", "app", "digital", "online", "interface", "ux"],
             "communication": ["media", "news", "framing", "message", "communication", "misinformation", "fake news"],
             "food & nutrition": ["food", "eating", "diet", "nutrition", "meal", "restaurant", "taste", "organic"],
@@ -794,8 +794,11 @@ class SurveyDescriptionParser:
                 "block_name": "",  # Required by engine visibility check
             })
 
-        # Build factors
+        # Build factors - use explicit factors if provided, otherwise infer from
+        # crossed condition names (factorial designs use " × " as separator)
         factors = parsed.factors if parsed.factors else []
+        if not factors and len(conditions) >= 4:
+            factors = self._infer_factors_from_conditions(conditions)
 
         # Compute default equal condition allocation
         n_conds = len(conditions)
@@ -1849,6 +1852,55 @@ class SurveyDescriptionParser:
                     "name": f"Factor_{i+1}",
                     "levels": [f"Level_{j+1}" for j in range(dim)],
                 })
+
+        return factors
+
+    def _infer_factors_from_conditions(self, conditions: List[str]) -> List[Dict[str, Any]]:
+        """Infer factorial factors from crossed condition names.
+
+        When parse_conditions() creates factorial conditions with ' × ' separators,
+        this method reconstructs the factor structure from those condition names.
+
+        Args:
+            conditions: List of condition names (e.g., ["Premium × Emotional", ...])
+
+        Returns:
+            List of factor dicts with 'name' and 'levels' keys, or empty list
+            if conditions are not in factorial format.
+        """
+        sep = " × "
+        # Check if all conditions use the factorial separator
+        split_conditions = [c.split(sep) for c in conditions]
+        n_parts = [len(parts) for parts in split_conditions]
+
+        # All conditions must have the same number of factor parts
+        if not n_parts or len(set(n_parts)) != 1 or n_parts[0] < 2:
+            return []
+
+        n_factors = n_parts[0]
+        factors: List[Dict[str, Any]] = []
+
+        for i in range(n_factors):
+            # Collect unique levels for this factor position (preserve order)
+            seen: set = set()
+            levels: List[str] = []
+            for parts in split_conditions:
+                level = parts[i].strip()
+                if level not in seen:
+                    seen.add(level)
+                    levels.append(level)
+            factors.append({
+                "name": f"Factor_{i + 1}",
+                "levels": levels,
+            })
+
+        # Verify that the number of conditions equals the product of factor levels
+        import math
+        expected = 1
+        for f in factors:
+            expected *= len(f["levels"])
+        if expected != len(conditions):
+            return []
 
         return factors
 
