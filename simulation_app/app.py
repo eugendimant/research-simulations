@@ -52,8 +52,8 @@ import streamlit as st
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.3.6"
-BUILD_ID = "20260207-v136-builder-fixes-dedup"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.3.7"
+BUILD_ID = "20260207-v137-builder-bugfixes"  # Change this to force cache invalidation
 
 def _verify_and_reload_utils():
     """Verify utils modules are at correct version, force reload if needed.
@@ -109,7 +109,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF"
-APP_VERSION = "1.3.6"  # v1.3.6: Builder fixes, deduplication
+APP_VERSION = "1.3.7"  # v1.3.7: Builder bugfixes (anchor precedence, numeric scale_points, factor warnings)
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -4656,6 +4656,74 @@ def _render_workflow_stepper():
                     _go_to_step(i)
 
 
+# v1.3.7: Helper functions for scroll/navigation (must be defined before module-level calls)
+def _inject_scroll_button_css() -> None:
+    """Inject CSS for scroll-to-top buttons once per page render."""
+    if not st.session_state.get("_scroll_btn_css_injected"):
+        st.markdown("""
+        <style>
+            .scroll-top-btn {
+                display: block;
+                width: 100%;
+                padding: 14px 24px;
+                background: linear-gradient(135deg, #1e3a5f 0%, #2d5a87 100%);
+                color: white;
+                border: none;
+                border-radius: 10px;
+                font-size: 16px;
+                font-weight: 600;
+                cursor: pointer;
+                text-align: center;
+                transition: all 0.2s ease;
+                box-shadow: 0 3px 10px rgba(30, 58, 95, 0.25);
+                letter-spacing: 0.02em;
+                margin-top: 8px;
+            }
+            .scroll-top-btn:hover {
+                background: linear-gradient(135deg, #2d5a87 0%, #3b7dba 100%);
+                box-shadow: 0 4px 14px rgba(30, 58, 95, 0.35);
+                transform: translateY(-1px);
+            }
+            .scroll-top-btn:active { transform: translateY(0px); }
+        </style>
+        """, unsafe_allow_html=True)
+        st.session_state["_scroll_btn_css_injected"] = True
+
+
+# Scroll-to-top JS function (shared by all buttons)
+_SCROLL_TOP_JS = """(function() {
+    var sels = ['section.main', '.stApp', '[data-testid=&quot;stAppViewBlockContainer&quot;]', '.block-container', 'main', '.main'];
+    sels.forEach(function(s) {
+        var els = document.querySelectorAll(s);
+        els.forEach(function(el) { el.scrollTop = 0; try { el.scrollTo({top:0,behavior:'smooth'}); } catch(e) {} });
+    });
+    window.scrollTo({top:0,behavior:'smooth'});
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0;
+    try { if (window.parent && window.parent !== window) { window.parent.scrollTo({top:0,behavior:'smooth'}); } } catch(e) {}
+})();"""
+
+
+def _render_scroll_to_top_button(tab_index: int, next_tab_label: str = "") -> None:
+    """Render a 'Complete - Ready for Next Step' button that scrolls to top of page.
+
+    v1.3.4: Helps users navigate back to the tab bar after working through long content.
+    v1.3.5: CSS injected once, cleaner markup.
+    """
+    st.markdown("---")
+
+    # Build label
+    if next_tab_label:
+        btn_label = f"Done &mdash; scroll up to continue to {next_tab_label}"
+    else:
+        btn_label = "Done &mdash; scroll back to top"
+
+    st.markdown(
+        f'<button class="scroll-top-btn" onclick="{_SCROLL_TOP_JS}">&#10003; {btn_label}</button>',
+        unsafe_allow_html=True,
+    )
+
+
 # v1.2.2: NEW TAB-BASED UI - Replaces step wizard for better UX and no scroll issues
 # Tabs naturally handle scroll (each tab starts at top) - no JavaScript hacks needed
 
@@ -4850,73 +4918,6 @@ def _render_step_navigation(step_index: int, can_next: bool, next_label: str) ->
         with col_back:
             if st.button("← Previous Step", key=f"nav_back_{step_index}", use_container_width=True):
                 _go_to_step(step_index - 1)
-
-
-def _inject_scroll_button_css() -> None:
-    """Inject CSS for scroll-to-top buttons once per page render."""
-    if not st.session_state.get("_scroll_btn_css_injected"):
-        st.markdown("""
-        <style>
-            .scroll-top-btn {
-                display: block;
-                width: 100%;
-                padding: 14px 24px;
-                background: linear-gradient(135deg, #1e3a5f 0%, #2d5a87 100%);
-                color: white;
-                border: none;
-                border-radius: 10px;
-                font-size: 16px;
-                font-weight: 600;
-                cursor: pointer;
-                text-align: center;
-                transition: all 0.2s ease;
-                box-shadow: 0 3px 10px rgba(30, 58, 95, 0.25);
-                letter-spacing: 0.02em;
-                margin-top: 8px;
-            }
-            .scroll-top-btn:hover {
-                background: linear-gradient(135deg, #2d5a87 0%, #3b7dba 100%);
-                box-shadow: 0 4px 14px rgba(30, 58, 95, 0.35);
-                transform: translateY(-1px);
-            }
-            .scroll-top-btn:active { transform: translateY(0px); }
-        </style>
-        """, unsafe_allow_html=True)
-        st.session_state["_scroll_btn_css_injected"] = True
-
-
-# Scroll-to-top JS function (shared by all buttons)
-_SCROLL_TOP_JS = """(function() {
-    var sels = ['section.main', '.stApp', '[data-testid=&quot;stAppViewBlockContainer&quot;]', '.block-container', 'main', '.main'];
-    sels.forEach(function(s) {
-        var els = document.querySelectorAll(s);
-        els.forEach(function(el) { el.scrollTop = 0; try { el.scrollTo({top:0,behavior:'smooth'}); } catch(e) {} });
-    });
-    window.scrollTo({top:0,behavior:'smooth'});
-    document.documentElement.scrollTop = 0;
-    document.body.scrollTop = 0;
-    try { if (window.parent && window.parent !== window) { window.parent.scrollTo({top:0,behavior:'smooth'}); } } catch(e) {}
-})();"""
-
-
-def _render_scroll_to_top_button(tab_index: int, next_tab_label: str = "") -> None:
-    """Render a 'Complete - Ready for Next Step' button that scrolls to top of page.
-
-    v1.3.4: Helps users navigate back to the tab bar after working through long content.
-    v1.3.5: CSS injected once, cleaner markup.
-    """
-    st.markdown("---")
-
-    # Build label
-    if next_tab_label:
-        btn_label = f"Done &mdash; scroll up to continue to {next_tab_label}"
-    else:
-        btn_label = "Done &mdash; scroll back to top"
-
-    st.markdown(
-        f'<button class="scroll-top-btn" onclick="{_SCROLL_TOP_JS}">&#10003; {btn_label}</button>',
-        unsafe_allow_html=True,
-    )
 
 
 def _get_total_conditions() -> int:

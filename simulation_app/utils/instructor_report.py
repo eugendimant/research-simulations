@@ -6,7 +6,7 @@ Generates comprehensive instructor-facing reports for student simulations.
 """
 
 # Version identifier to help track deployed code
-__version__ = "1.3.6"  # v1.3.6: Builder fixes, deduplication
+__version__ = "1.3.7"  # v1.3.7: Builder bugfixes (anchor precedence, numeric scale_points, factor warnings)
 
 from dataclasses import dataclass
 from datetime import datetime
@@ -468,6 +468,8 @@ class InstructorReportGenerator:
 
         detected_domains = metadata.get('detected_domains', [])
         study_context = metadata.get('study_context', {})
+        if not isinstance(study_context, dict):
+            study_context = {}
         domain_keywords = study_context.get('detected_keywords', [])
 
         if detected_domains:
@@ -756,8 +758,8 @@ class InstructorReportGenerator:
         lines.append("")
         lines.append("| Setting | Value |")
         lines.append("|---------|-------|")
-        lines.append(f"| Attention check pass rate | {metadata.get('attention_rate', 0.85):.0%} |")
-        lines.append(f"| Random responder rate | {metadata.get('random_responder_rate', 0.05):.0%} |")
+        lines.append(f"| Attention check pass rate | {_safe_float(metadata.get('attention_rate', 0.85)):.0%} |")
+        lines.append(f"| Random responder rate | {_safe_float(metadata.get('random_responder_rate', 0.05)):.0%} |")
         lines.append("")
 
         # Exclusion criteria
@@ -791,14 +793,14 @@ class InstructorReportGenerator:
             lines.append(f"| **Sample Size (N)** | {metadata.get('sample_size', 'N/A')} |")
 
             conditions = metadata.get("conditions", []) or []
-            lines.append(f"| **Conditions** | {len(conditions)}: {', '.join(conditions) if conditions else 'N/A'} |")
+            lines.append(f"| **Conditions** | {len(conditions)}: {', '.join(str(c) for c in conditions) if conditions else 'N/A'} |")
 
             factors = metadata.get("factors", []) or []
             if factors:
                 for i, f in enumerate(factors):
                     fname = f.get("name", "Factor")
                     levels = f.get("levels", [])
-                    lines.append(f"| **Factor {i+1}** | {fname}: {', '.join(levels)} |")
+                    lines.append(f"| **Factor {i+1}** | {fname}: {', '.join(str(l) for l in levels)} |")
             else:
                 lines.append("| **Factors** | Single factor (Condition) |")
 
@@ -930,11 +932,11 @@ class InstructorReportGenerator:
                 }
 
                 for persona, share in sorted(dist.items(), key=lambda x: -_safe_float(x[1])):
-                    persona_key = persona.lower()
+                    persona_key = str(persona).lower() if persona else "unknown"
                     info = persona_info.get(persona_key, {"desc": "Standard response pattern", "chars": "Typical survey behavior"})
                     share_f = _safe_float(share)
                     pct = share_f * 100 if share_f <= 1 else share_f
-                    lines.append(f"| **{persona.title()}** | {info['desc']} | {info['chars']} | {pct:.1f}% |")
+                    lines.append(f"| **{str(persona).title()}** | {info['desc']} | {info['chars']} | {pct:.1f}% |")
                 lines.append("")
 
                 # Show total participants by persona
@@ -1030,12 +1032,12 @@ class InstructorReportGenerator:
             lines.append("### Suggested Analysis Approach")
             lines.append("")
             if len(conditions) == 2:
-                lines.append(f"With **2 conditions** ({', '.join(conditions)}), consider:")
+                lines.append(f"With **2 conditions** ({', '.join(str(c) for c in conditions)}), consider:")
                 lines.append("- **Independent samples t-test** for comparing condition means")
                 lines.append("- **Mann-Whitney U test** as a non-parametric alternative")
                 lines.append("- **Cohen's d** for effect size estimation")
             elif len(conditions) <= 4:
-                lines.append(f"With **{len(conditions)} conditions** ({', '.join(conditions)}), consider:")
+                lines.append(f"With **{len(conditions)} conditions** ({', '.join(str(c) for c in conditions)}), consider:")
                 lines.append("- **One-way ANOVA** for comparing condition means")
                 lines.append("- **Kruskal-Wallis test** as a non-parametric alternative")
                 lines.append("- **Post-hoc pairwise comparisons** (Tukey HSD or Bonferroni)")
@@ -1084,7 +1086,9 @@ class InstructorReportGenerator:
         # Get design information
         conditions = metadata.get('conditions', [])
         factors = metadata.get('factors', [])
+        factors = [f for f in factors if isinstance(f, dict)]
         scales = metadata.get('scales', [])
+        scales = [s for s in scales if isinstance(s, dict)]
         sample_size = metadata.get('sample_size', len(df) if df is not None else 100)
         effect_sizes_cfg = metadata.get('effect_sizes_configured', [])
         is_factorial = len(factors) >= 2
@@ -1704,7 +1708,7 @@ class ComprehensiveInstructorReport:
             for factor in factors:
                 factor_name = factor.get('name', 'Factor')
                 levels = factor.get('levels', [])
-                lines.append(f"  - {factor_name}: {', '.join(levels)}")
+                lines.append(f"  - {factor_name}: {', '.join(str(l) for l in levels)}")
             lines.append("")
 
         # Scales / DVs
@@ -1884,7 +1888,7 @@ class ComprehensiveInstructorReport:
             for f in factors:
                 fname = f.get("name", "Factor")
                 levels = f.get("levels", [])
-                lines.append(f"- **{fname}**: {', '.join(levels)} ({len(levels)} levels)")
+                lines.append(f"- **{fname}**: {', '.join(str(l) for l in levels)} ({len(levels)} levels)")
             lines.append("")
 
         # =============================================================
@@ -3271,7 +3275,7 @@ class ComprehensiveInstructorReport:
         html.append(
             f"This simulation generated data for <strong>{n_total} participants</strong> randomly assigned to "
             f"<strong>{n_conditions} experimental condition{'s' if n_conditions > 1 else ''}</strong>: "
-            f"{', '.join(conditions)}. "
+            f"{', '.join(str(c) for c in conditions)}. "
         )
         html.append(f"The analysis examined {n_scales} dependent variable{'s' if n_scales > 1 else ''}.")
 
@@ -4156,7 +4160,7 @@ class ComprehensiveInstructorReport:
             for factor in factors:
                 factor_name = factor.get('name', 'Factor')
                 levels = factor.get('levels', [])
-                html_parts.append(f"<li>{factor_name}: {', '.join(levels)}</li>")
+                html_parts.append(f"<li>{factor_name}: {', '.join(str(l) for l in levels)}</li>")
             html_parts.append("</ul>")
 
         # Scales / DVs

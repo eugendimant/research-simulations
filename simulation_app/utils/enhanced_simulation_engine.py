@@ -45,7 +45,7 @@ This module is designed to run inside a `utils/` package (i.e., imported as
 """
 
 # Version identifier to help track deployed code
-__version__ = "1.3.6"  # v1.3.6: Builder fixes, deduplication
+__version__ = "1.3.7"  # v1.3.7: Builder bugfixes (anchor precedence, numeric scale_points, factor warnings)
 
 # =============================================================================
 # SCIENTIFIC FOUNDATIONS FOR SIMULATION
@@ -2376,6 +2376,8 @@ class EnhancedSimulationEngine:
             if str(c).replace('\xa0', ' ').strip()
         ]
         if not self.conditions:
+            if hasattr(self, '_log'):
+                self._log("WARNING", "CONDITIONS", "No conditions specified - defaulting to single 'Condition A'. Results may not match intended design.")
             self.conditions = ["Condition A"]
         self.factors = _normalize_factors(factors, self.conditions)
         self.scales = _normalize_scales(scales)
@@ -4320,6 +4322,8 @@ class EnhancedSimulationEngine:
     def _generate_condition_assignment(self, n: int) -> pd.Series:
         """Generate condition assignments based on allocation percentages or equal distribution."""
         n_conditions = len(self.conditions)
+        if n_conditions == 0:
+            raise ValueError("No experimental conditions defined. Cannot generate data without at least one condition.")
         assignments: List[str] = []
 
         if self.condition_allocation and len(self.condition_allocation) > 0:
@@ -4343,6 +4347,8 @@ class EnhancedSimulationEngine:
                 assignments.extend([cond] * count)
 
         # Ensure we have exactly n assignments
+        if not self.conditions:
+            raise ValueError("No experimental conditions defined. Please specify at least one condition.")
         while len(assignments) < n:
             assignments.append(self.conditions[-1])
         assignments = assignments[:n]
@@ -4525,14 +4531,20 @@ class EnhancedSimulationEngine:
                 self._log(f"WARNING: Scale '{scale_name_raw}' missing scale_points, using 7")
                 scale_points = 7
             else:
-                scale_points = int(scale["scale_points"])
+                try:
+                    scale_points = int(float(scale.get("scale_points", 7)))
+                except (ValueError, TypeError):
+                    scale_points = 7
 
             # Extract num_items - NO silent defaulting
             if "num_items" not in scale:
                 self._log(f"WARNING: Scale '{scale_name_raw}' missing num_items, using 5")
                 num_items = 5
             else:
-                num_items = int(scale["num_items"])
+                try:
+                    num_items = int(float(scale.get("num_items", 1)))
+                except (ValueError, TypeError):
+                    num_items = 1
 
             # Final safety bounds (should never trigger for validated scales)
             scale_points = max(2, min(1001, scale_points))
