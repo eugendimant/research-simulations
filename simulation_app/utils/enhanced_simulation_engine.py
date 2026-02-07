@@ -45,7 +45,7 @@ This module is designed to run inside a `utils/` package (i.e., imported as
 """
 
 # Version identifier to help track deployed code
-__version__ = "1.4.1.1"  # v1.4.1.1: Auto-suggest scales, auto-detect design type
+__version__ = "1.4.2"  # v1.4.2: Improved example study descriptions in conversational builder
 
 # =============================================================================
 # SCIENTIFIC FOUNDATIONS FOR SIMULATION

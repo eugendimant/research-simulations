@@ -6,7 +6,7 @@ Generates comprehensive instructor-facing reports for student simulations.
 """
 
 # Version identifier to help track deployed code
-__version__ = "1.4.1.1"  # v1.4.1.1: Auto-suggest scales, auto-detect design type
+__version__ = "1.4.2"  # v1.4.2: Improved example study descriptions in conversational builder
 
 from dataclasses import dataclass
 from datetime import datetime

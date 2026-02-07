@@ -33,7 +33,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 # Version identifier to help track deployed code
-__version__ = "1.4.1.1"  # v1.4.1.1: Auto-suggest scales, auto-detect design type
+__version__ = "1.4.2"  # v1.4.2: Improved example study descriptions in conversational builder
 
 
 # ============================================================================
