@@ -45,7 +45,7 @@ This module is designed to run inside a `utils/` package (i.e., imported as
 """
 
 # Version identifier to help track deployed code
-__version__ = "1.4.3"  # v1.4.3: Improved data output quality (clean column names, labeled Gender, composite means, column_descriptions)
+__version__ = "1.4.3.1"  # v1.4.3.1: Enhanced instructor report (data dictionary, design-specific analysis, builder support)
 
 # =============================================================================
 # SCIENTIFIC FOUNDATIONS FOR SIMULATION
