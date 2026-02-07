@@ -1,7 +1,7 @@
 """
 Conversational Survey Builder - Natural Language Study Specification Parser
 
-Version: 1.4.2
+Version: 1.4.4
 Allows users to describe their experiment in words instead of uploading a QSF file.
 Parses natural language descriptions into structured survey specifications that
 feed directly into the EnhancedSimulationEngine.
@@ -15,11 +15,14 @@ This module handles:
 - Converting all parsed data into the same inferred_design format used by QSF upload
 """
 
+import hashlib
+import json
 import re
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 from dataclasses import dataclass, field
 
-__version__ = "1.4.3.1"
+__version__ = "1.4.4"
 
 
 # ─── Common scale anchors used in behavioral science ───────────────────────────
@@ -2449,3 +2452,254 @@ class SurveyDescriptionParser:
         if any(w in text_lower for w in ['describe', 'tell', 'share', 'narrative']):
             return "narrative"
         return "general"
+
+
+# ─── QSF Generation from Conversational Builder ────────────────────────────────
+
+# Maps builder scale types to Qualtrics QuestionType/Selector pairs
+_SCALE_TYPE_TO_QSF = {
+    "likert": ("MC", "SAVR"),
+    "matrix": ("Matrix", "Likert"),
+    "slider": ("Slider", "HSLIDER"),
+    "numeric": ("TE", "SL"),
+    "binary": ("MC", "SAVR"),
+}
+
+
+def generate_qsf_from_design(
+    parsed_design: ParsedDesign,
+    raw_inputs: Optional[Dict[str, str]] = None,
+) -> bytes:
+    """Convert a ParsedDesign into a minimal but valid QSF JSON file.
+
+    This allows conversational-builder submissions to be collected alongside
+    real QSF uploads, populating the same training-data folder.
+
+    Args:
+        parsed_design: The complete study design from the conversational builder.
+        raw_inputs: Optional dict of raw NL text inputs for training data.
+            Keys: 'conditions_text', 'scales_text', 'open_ended_text',
+                  'study_title', 'study_description', 'participant_desc'.
+
+    Returns:
+        UTF-8 encoded bytes of a QSF-format JSON file.
+    """
+    title = parsed_design.study_title or "Untitled Study"
+    description = parsed_design.study_description or ""
+    design_hash = hashlib.sha256(
+        f"{title}{description}{datetime.now(timezone.utc).isoformat()}".encode()
+    ).hexdigest()[:8]
+    survey_id = f"SV_builder_{design_hash}"
+
+    # ── Blocks ────────────────────────────────────────────────────────────
+    blocks: List[Dict[str, Any]] = []
+    flow_elements: List[Dict[str, Any]] = []
+    questions: List[Dict[str, Any]] = []
+    qid_counter = 1
+
+    # Shared block for scales visible across all conditions
+    shared_block_id = "BL_shared"
+    shared_block_elements: List[Dict[str, Any]] = []
+
+    for scale in parsed_design.scales:
+        qid = f"QID{qid_counter}"
+        qid_counter += 1
+
+        q_type, selector = _SCALE_TYPE_TO_QSF.get(
+            scale.scale_type, ("MC", "SAVR")
+        )
+        var_name = scale.variable_name or re.sub(r'\W+', '_', scale.name)
+
+        # Build choices dict
+        choices: Dict[str, Dict[str, str]] = {}
+        if scale.scale_type == "binary":
+            choices = {"1": {"Display": "No"}, "2": {"Display": "Yes"}}
+        elif scale.scale_type in ("likert", "matrix"):
+            for val in range(scale.scale_min, scale.scale_max + 1):
+                choices[str(val)] = {"Display": str(val)}
+        elif scale.scale_type == "slider":
+            choices = {
+                "1": {"Display": str(scale.scale_min)},
+                "2": {"Display": str(scale.scale_max)},
+            }
+
+        # If multi-item, create sub-questions for matrix
+        sub_questions: Optional[Dict[str, Dict[str, str]]] = None
+        if scale.num_items > 1 and q_type == "MC":
+            q_type, selector = "Matrix", "Likert"
+            sub_questions = {}
+            for i in range(1, scale.num_items + 1):
+                label = (
+                    scale.item_labels[i - 1]
+                    if i <= len(scale.item_labels)
+                    else f"{scale.name} item {i}"
+                )
+                sub_questions[str(i)] = {"Display": label}
+
+        payload: Dict[str, Any] = {
+            "QuestionID": qid,
+            "QuestionType": q_type,
+            "Selector": selector,
+            "QuestionText": scale.description or f"Rate: {scale.name}",
+            "DataExportTag": var_name,
+            "Choices": choices,
+            "ChoiceOrder": list(choices.keys()),
+            "Validation": {"Settings": {"ForceResponse": "ON", "Type": "None"}},
+        }
+        if sub_questions:
+            payload["SubSelector"] = "SingleAnswer"
+            payload["Answers"] = choices
+            payload["AnswerOrder"] = list(choices.keys())
+            payload["Choices"] = sub_questions
+            payload["ChoiceOrder"] = list(sub_questions.keys())
+
+        questions.append({
+            "Element": "SQ",
+            "PrimaryAttribute": qid,
+            "Payload": payload,
+        })
+        shared_block_elements.append({"Type": "Question", "QuestionID": qid})
+
+    # Open-ended questions
+    for oe in parsed_design.open_ended:
+        qid = f"QID{qid_counter}"
+        qid_counter += 1
+        var_name = oe.variable_name or f"OE_{qid_counter}"
+        questions.append({
+            "Element": "SQ",
+            "PrimaryAttribute": qid,
+            "Payload": {
+                "QuestionID": qid,
+                "QuestionType": "TE",
+                "Selector": "ML",
+                "QuestionText": oe.question_text,
+                "DataExportTag": var_name,
+                "Validation": {"Settings": {"ForceResponse": "ON", "Type": "None"}},
+            },
+        })
+        shared_block_elements.append({"Type": "Question", "QuestionID": qid})
+
+    if shared_block_elements:
+        blocks.append({
+            "Type": "Default",
+            "Description": "Shared Measures",
+            "ID": shared_block_id,
+            "BlockElements": shared_block_elements,
+        })
+        # Shared block appears AFTER condition randomiser in the flow
+        shared_flow = {"Type": "Block", "ID": shared_block_id}
+
+    # Condition blocks (one per condition, for the BlockRandomizer)
+    condition_block_flows: List[Dict[str, Any]] = []
+    for cond in parsed_design.conditions:
+        blk_id = f"BL_{re.sub(r'[^a-zA-Z0-9]', '_', cond.name)[:30]}"
+        # A minimal "condition" block with an embedded-data marker
+        blocks.append({
+            "Type": "Standard",
+            "Description": cond.name,
+            "ID": blk_id,
+            "BlockElements": [],  # condition assignment only — no extra questions
+        })
+        condition_block_flows.append({"Type": "Block", "ID": blk_id})
+
+    # ── Flow ──────────────────────────────────────────────────────────────
+    flow_children: List[Dict[str, Any]] = []
+
+    if condition_block_flows:
+        subset = 1 if parsed_design.design_type == "between" else len(condition_block_flows)
+        flow_children.append({
+            "Type": "BlockRandomizer",
+            "SubSet": subset,
+            "EvenPresentation": True,
+            "ID": "BR_conditions",
+            "Description": "Condition Assignment",
+            "Flow": condition_block_flows,
+        })
+
+    if shared_block_elements:
+        flow_children.append(shared_flow)
+
+    # Embedded data for study metadata
+    flow_children.insert(0, {
+        "Type": "EmbeddedData",
+        "FlowID": "FL_embed",
+        "EmbeddedData": [
+            {"Description": "study_domain", "Value": parsed_design.research_domain},
+            {"Description": "design_type", "Value": parsed_design.design_type},
+            {"Description": "source", "Value": "conversational_builder"},
+        ],
+    })
+
+    survey_flow = {
+        "Element": "FL",
+        "PrimaryAttribute": "Survey Flow",
+        "Payload": {
+            "Type": "Root",
+            "FlowID": "FL_1",
+            "Flow": flow_children,
+        },
+    }
+
+    # ── Assemble SurveyElements ───────────────────────────────────────────
+    block_element = {
+        "Element": "BL",
+        "PrimaryAttribute": "Survey Blocks",
+        "Payload": blocks,
+    }
+
+    survey_elements = [block_element, survey_flow] + questions
+
+    # ── Full QSF ──────────────────────────────────────────────────────────
+    qsf = {
+        "SurveyEntry": {
+            "SurveyID": survey_id,
+            "SurveyName": title,
+            "SurveyDescription": description,
+            "SurveyLanguage": "EN",
+            "SurveyStatus": "Inactive",
+            "SurveyStartDate": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
+            "CreatorID": "conversational_builder",
+        },
+        "SurveyElements": survey_elements,
+        "_builder_metadata": {
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "source": "conversational_builder",
+            "design_type": parsed_design.design_type,
+            "conditions": [c.name for c in parsed_design.conditions],
+            "scales": [s.name for s in parsed_design.scales],
+            "open_ended": [oe.variable_name for oe in parsed_design.open_ended],
+            "factors": parsed_design.factors,
+            "domain": parsed_design.research_domain,
+            "sample_size": parsed_design.sample_size,
+            "participant_characteristics": parsed_design.participant_characteristics,
+            # Raw NL inputs for training the parser
+            "raw_inputs": raw_inputs or {},
+            # Structured parsed output (for training pair: raw -> parsed)
+            "parsed_scales_detail": [
+                {
+                    "name": s.name,
+                    "variable_name": s.variable_name,
+                    "scale_type": s.scale_type,
+                    "num_items": s.num_items,
+                    "scale_min": s.scale_min,
+                    "scale_max": s.scale_max,
+                    "description": s.description,
+                }
+                for s in parsed_design.scales
+            ],
+            "parsed_conditions_detail": [
+                {"name": c.name, "description": c.description}
+                for c in parsed_design.conditions
+            ],
+            "parsed_open_ended_detail": [
+                {
+                    "question_text": oe.question_text,
+                    "variable_name": oe.variable_name,
+                    "question_type": oe.question_type,
+                }
+                for oe in parsed_design.open_ended
+            ],
+        },
+    }
+
+    return json.dumps(qsf, indent=2, ensure_ascii=False).encode("utf-8")

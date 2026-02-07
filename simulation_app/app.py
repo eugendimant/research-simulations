@@ -52,8 +52,8 @@ import streamlit as st
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.4.3.1"
-BUILD_ID = "20260207-v1431-fix-import-nav"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.4.4"
+BUILD_ID = "20260207-v144-fix-nav-buttons-training"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -66,7 +66,7 @@ from utils.qsf_preview import QSFPreviewParser, QSFPreviewResult
 from utils.schema_validator import validate_schema
 from utils.github_qsf_collector import collect_qsf_async, is_collection_enabled
 from utils.instructor_report import InstructorReportGenerator, ComprehensiveInstructorReport
-from utils.survey_builder import SurveyDescriptionParser, ParsedDesign, ParsedScale, KNOWN_SCALES, AVAILABLE_DOMAINS
+from utils.survey_builder import SurveyDescriptionParser, ParsedDesign, ParsedScale, KNOWN_SCALES, AVAILABLE_DOMAINS, generate_qsf_from_design
 from utils.persona_library import PersonaLibrary, Persona
 from utils.enhanced_simulation_engine import (
     EnhancedSimulationEngine,
@@ -90,7 +90,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF"
-APP_VERSION = "1.4.3.1"  # v1.4.3.1: Enhanced instructor report (data dictionary, design-specific analysis, builder support)
+APP_VERSION = "1.4.4"  # v1.4.4: Fix navigation buttons, enhance training data collection, export builder types
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -1245,12 +1245,12 @@ def _generate_preview_data(
     preview_data = {}
     difficulty_settings = _get_difficulty_settings(difficulty)
 
-    # Add participant ID
-    preview_data['participant_id'] = [f"P{i+1:03d}" for i in range(n_rows)]
+    # Add participant ID (matches actual engine output column name)
+    preview_data['PARTICIPANT_ID'] = [f"P{i+1:03d}" for i in range(n_rows)]
 
-    # Add condition assignment
+    # Add condition assignment (matches actual engine output column name)
     if conditions:
-        preview_data['condition'] = [conditions[i % len(conditions)] for i in range(n_rows)]
+        preview_data['CONDITION'] = [conditions[i % len(conditions)] for i in range(n_rows)]
 
     # Add scale responses - use same defaults as actual generation
     # v1.4.2.1: Safe handling for None values in scale properties (builder/QSF compat)
@@ -3541,6 +3541,26 @@ def _render_conversational_builder() -> None:
         st.session_state["builder_parsed_design"] = parsed_design
         st.session_state["conversational_builder_complete"] = True
 
+        # Collect builder-generated QSF for training data (same folder as uploaded QSFs)
+        # Include raw NL inputs so collected files serve as training pairs:
+        #   raw_inputs (what user typed) → parsed output (what the parser inferred)
+        try:
+            _raw_inputs = {
+                "conditions_text": st.session_state.get("builder_conditions_text", ""),
+                "scales_text": st.session_state.get("builder_scales_text", ""),
+                "open_ended_text": st.session_state.get("builder_oe_text", ""),
+                "study_title": title,
+                "study_description": desc,
+                "participant_desc": participant_desc,
+                "design_type": design_type,
+                "sample_size": builder_sample,
+            }
+            synthetic_qsf = generate_qsf_from_design(parsed_design, raw_inputs=_raw_inputs)
+            safe_title = re.sub(r'[^a-zA-Z0-9_\- ]', '', parsed_design.study_title or 'untitled')[:60].strip()
+            collect_qsf_async(f"builder_{safe_title}.qsf", synthetic_qsf)
+        except Exception:
+            pass  # Never let collection errors affect the user workflow
+
         # Set conditions for Step 3/4 compatibility
         st.session_state["selected_conditions"] = [c.name for c in parsed_conditions]
         st.session_state["confirmed_scales"] = inferred.get("scales", [])
@@ -4882,8 +4902,9 @@ def _inject_scroll_button_css() -> None:
 
 
 # Scroll-to-top JS function (shared by all buttons)
+# NOTE: Uses regular quotes — this JS runs inside <script> tags, NOT onclick attributes
 _SCROLL_TOP_JS = """(function() {
-    var sels = ['section.main', '.stApp', '[data-testid=&quot;stAppViewBlockContainer&quot;]', '.block-container', 'main', '.main'];
+    var sels = ['section.main', '.stApp', '[data-testid="stAppViewBlockContainer"]', '.block-container', 'main', '.main'];
     sels.forEach(function(s) {
         var els = document.querySelectorAll(s);
         els.forEach(function(el) { el.scrollTop = 0; try { el.scrollTo({top:0,behavior:'smooth'}); } catch(e) {} });
@@ -4901,31 +4922,43 @@ def _render_scroll_to_top_button(tab_index: int, next_tab_label: str = "") -> No
     v1.3.4: Helps users navigate back to the tab bar after working through long content.
     v1.3.5: CSS injected once, cleaner markup.
     v1.3.6: Actually clicks the next tab instead of just scrolling.
+    v1.4.4: Use <script> to attach click handler — Streamlit strips onclick attributes.
     """
     st.markdown("---")
 
     next_index = tab_index + 1  # 0-based index of the target tab
+    # Unique ID per button — tab_index is unique per call site
+    btn_id = f"nav_btn_{tab_index}"
 
-    # Build label and JavaScript
+    # Build label and tab-switch JS
     if next_tab_label and next_index < len(STEP_LABELS):
-        btn_label = f"Continue to {next_tab_label}"
-        # JS: scroll to top, then click the next tab header button
-        # NOTE: use [role=tab] (no quotes) to avoid breaking onclick="..." attribute
-        tab_click_js = (
-            _SCROLL_TOP_JS
-            + f"""(function(){{"""
-            f"""  var tabs = document.querySelectorAll('[role=tab]');"""
-            f"""  if (tabs.length > {next_index}) {{ tabs[{next_index}].click(); }}"""
-            f"""}})();"""
+        btn_label = f"&#10003; Continue to {next_tab_label}"
+        tab_switch_js = (
+            f"var tabs = document.querySelectorAll('[role=tab]');"
+            f"if (tabs.length > {next_index}) {{ tabs[{next_index}].click(); }}"
         )
     else:
-        btn_label = "Done &mdash; scroll back to top"
-        tab_click_js = _SCROLL_TOP_JS
+        btn_label = "&#10003; Done &mdash; scroll back to top"
+        tab_switch_js = ""
 
-    st.markdown(
-        f'<button class="scroll-top-btn" onclick="{tab_click_js}">&#10003; {btn_label}</button>',
-        unsafe_allow_html=True,
+    # Render button + <script> tag — Streamlit strips onclick from st.markdown
+    # but allows <script> tags with unsafe_allow_html=True.
+    # NOTE: Use string concatenation, NOT f-string, because _SCROLL_TOP_JS
+    # contains JS curly braces {} that would break f-string interpolation.
+    _btn_html = (
+        '<button class="scroll-top-btn" id="' + btn_id + '">' + btn_label + '</button>'
+        '<script>'
+        '(function() {'
+        '  var btn = document.getElementById("' + btn_id + '");'
+        '  if (!btn) return;'
+        '  btn.addEventListener("click", function() {'
+        + _SCROLL_TOP_JS
+        + tab_switch_js
+        + '  });'
+        '})();'
+        '</script>'
     )
+    st.markdown(_btn_html, unsafe_allow_html=True)
 
 
 # v1.2.2: NEW TAB-BASED UI - Replaces step wizard for better UX and no scroll issues

@@ -2,7 +2,7 @@
 """
 Utility modules for the Behavioral Experiment Simulation Tool.
 
-Version: 1.4.3.1 - Enhanced instructor report (data dictionary, design-specific analysis recommendations, builder-path support)
+Version: 1.4.4 - Fix navigation buttons, enhance training data collection, export builder types
 
 Changes (v1.0.0 - 20 Iterations of Comprehensive Improvements):
     === ENHANCED SCALE/MATRIX DETECTION ===
@@ -65,7 +65,7 @@ Modules:
 """
 
 # Package version - should match all module versions
-__version__ = "1.4.3.1"
+__version__ = "1.4.4"
 
 from .qsf_parser import parse_qsf_file, extract_survey_structure, generate_qsf_summary
 from .simulation_engine import SimulationEngine
@@ -140,6 +140,14 @@ from .github_qsf_collector import (
     is_collection_enabled,
     get_collection_status,  # v1.2.0: Added detailed status function
 )
+from .survey_builder import (
+    SurveyDescriptionParser,
+    ParsedDesign,
+    ParsedCondition,
+    ParsedScale,
+    ParsedOpenEnded,
+    generate_qsf_from_design,
+)
 
 __all__ = [
     # Original exports
@@ -206,5 +214,12 @@ __all__ = [
     'collect_qsf_async',
     'collect_qsf_sync',
     'is_collection_enabled',
-    'get_collection_status',  # v1.2.0
+    'get_collection_status',
+    # Survey builder
+    'SurveyDescriptionParser',
+    'ParsedDesign',
+    'ParsedCondition',
+    'ParsedScale',
+    'ParsedOpenEnded',
+    'generate_qsf_from_design',
 ]

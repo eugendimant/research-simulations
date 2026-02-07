@@ -20,6 +20,8 @@ import os
 import traceback
 from typing import Tuple
 
+import pytest
+
 # Add the simulation_app directory to the path so we can import utils
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "simulation_app"))
 
@@ -43,6 +45,56 @@ from utils.instructor_report import (
     InstructorReportConfig,
     ComprehensiveInstructorReport,
 )
+
+# ─── Pytest Fixtures ─────────────────────────────────────────────────────────
+
+@pytest.fixture(scope="module")
+def parser():
+    """Shared SurveyDescriptionParser instance for all tests."""
+    return SurveyDescriptionParser()
+
+
+@pytest.fixture(scope="module")
+def conditions(parser):
+    """Parsed conditions for reuse across tests."""
+    conds, _ = parser.parse_conditions("Control, AI-generated")
+    return conds
+
+
+@pytest.fixture(scope="module")
+def df_and_metadata():
+    """Generate a test DataFrame and metadata once for the module."""
+    _parser = SurveyDescriptionParser()
+    conds, _ = _parser.parse_conditions("Control, Treatment")
+    scales = _parser.parse_scales("Trust scale, 5 items, 1-7 Likert")
+    oe = _parser.parse_open_ended("Why did you make this choice?")
+    design = ParsedDesign(
+        conditions=conds, scales=scales, open_ended=oe,
+        design_type="between", sample_size=60,
+        study_title="Test Study", study_description="A test study.",
+    )
+    inferred = _parser.build_inferred_design(design)
+    from utils.enhanced_simulation_engine import EnhancedSimulationEngine, ExclusionCriteria
+    engine = EnhancedSimulationEngine(
+        study_title="Test Study", study_description="A test study.",
+        sample_size=60, conditions=inferred["conditions"],
+        factors=inferred.get("factors", []), scales=inferred["scales"],
+        additional_vars=[], demographics={"gender_quota": 50, "age_mean": 35, "age_sd": 12},
+        seed=42,
+    )
+    _df, _meta = engine.generate()
+    return _df, _meta
+
+
+@pytest.fixture(scope="module")
+def df(df_and_metadata):
+    return df_and_metadata[0]
+
+
+@pytest.fixture(scope="module")
+def metadata(df_and_metadata):
+    return df_and_metadata[1]
+
 
 # ─── Tracking ────────────────────────────────────────────────────────────────
 TESTS_RUN = 0
