@@ -45,7 +45,7 @@ This module is designed to run inside a `utils/` package (i.e., imported as
 """
 
 # Version identifier to help track deployed code
-__version__ = "1.3.5"  # v1.3.5: Full reset fix, feedback resilience, report layout, UX polish
+__version__ = "1.3.6"  # v1.3.6: Builder fixes, deduplication
 
 # =============================================================================
 # SCIENTIFIC FOUNDATIONS FOR SIMULATION
@@ -2426,6 +2426,12 @@ class EnhancedSimulationEngine:
         all_domains = list(set(self.detected_domains + condition_domains))
         self.detected_domains = all_domains if all_domains else self.detected_domains
 
+        # v1.3.6: Also merge in explicitly provided persona_domains from builder
+        _explicit_persona_domains = self.study_context.get("persona_domains", [])
+        if _explicit_persona_domains and isinstance(_explicit_persona_domains, list):
+            _merged = list(set(self.detected_domains + _explicit_persona_domains))
+            self.detected_domains = _merged if _merged else self.detected_domains
+
         self.available_personas = self.persona_library.get_personas_for_domains(
             self.detected_domains
         )
@@ -4490,13 +4496,29 @@ class EnhancedSimulationEngine:
         # =====================================================================
         _scale_generation_log: List[Dict[str, Any]] = []  # Track what was generated
 
+        _used_column_prefixes: set = set()  # Track to prevent column collisions
+
         for scale_idx, scale in enumerate(self.scales):
             # EXTRACT with contract enforcement - fail loudly on missing keys
             scale_name_raw = str(scale.get("name", "")).strip()
             if not scale_name_raw:
                 self._log(f"WARNING: Scale {scale_idx} has no name, skipping")
                 continue
-            scale_name = scale_name_raw.replace(" ", "_")
+            # v1.3.6: Prefer variable_name for column generation to avoid collisions
+            # when multiple scales share the same display name
+            _var_name = str(scale.get("variable_name", "")).strip()
+            if _var_name:
+                scale_name = _var_name.replace(" ", "_")
+            else:
+                scale_name = scale_name_raw.replace(" ", "_")
+
+            # Deduplicate column prefix to prevent overwrites
+            _base_col = scale_name
+            _col_suffix = 2
+            while scale_name in _used_column_prefixes:
+                scale_name = f"{_base_col}_{_col_suffix}"
+                _col_suffix += 1
+            _used_column_prefixes.add(scale_name)
 
             # Extract scale_points - NO silent defaulting
             if "scale_points" not in scale:
