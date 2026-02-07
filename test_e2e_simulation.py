@@ -958,6 +958,199 @@ print()
 
 
 # ═══════════════════════════════════════════════════════════════════
+# TEST 26: v1.3.6 - Variable name deduplication in builder
+# ═══════════════════════════════════════════════════════════════════
+print("=" * 70)
+print("TEST 26: Variable name deduplication")
+print("=" * 70)
+
+# Scales with similar names that could produce same variable_name
+dup_scales = parser.parse_scales(
+    "Trust (4 items, 1-7); Trust in AI (3 items, 1-7); Trust measure (5 items, 1-5)"
+)
+dup_design = ParsedDesign(
+    conditions=[ParsedCondition(name="Control"), ParsedCondition(name="Treatment")],
+    scales=dup_scales,
+    design_type="between",
+    sample_size=40,
+)
+dup_inferred = parser.build_inferred_design(dup_design)
+_var_names = [s["variable_name"] for s in dup_inferred["scales"]]
+check("3 scales produced", len(dup_inferred["scales"]) == 3, f"got {len(dup_inferred['scales'])}")
+check("no duplicate var names", len(_var_names) == len(set(_var_names)),
+      f"duplicates: {_var_names}")
+
+# Engine should work with these
+dup_engine = make_engine(dup_inferred, sample_size=40, seed=99)
+dup_df, dup_meta = dup_engine.generate()
+check("dedup engine runs", len(dup_df) == 40, f"got {len(dup_df)}")
+# All scale columns should be present (check variable_name from inferred)
+for s in dup_inferred["scales"]:
+    vn = s["variable_name"].replace(' ', '_')
+    col1 = f"{vn}_1"
+    check(f"column {col1} exists", col1 in dup_df.columns,
+          f"missing {col1}, available: {[c for c in dup_df.columns if 'Trust' in c or 'trust' in c]}")
+
+print()
+
+
+# ═══════════════════════════════════════════════════════════════════
+# TEST 27: v1.3.6 - Open-ended question splitting fix
+# ═══════════════════════════════════════════════════════════════════
+print("=" * 70)
+print("TEST 27: Open-ended question preservation (no splitting on ?)")
+print("=" * 70)
+
+oe_test = parser.parse_open_ended(
+    "Why did you rate it the way you did? Please be specific about your reasoning"
+)
+check("OE not split on ?", len(oe_test) == 1,
+      f"got {len(oe_test)} questions (should be 1)")
+if oe_test:
+    check("OE full text preserved", "Please be specific" in oe_test[0].question_text,
+          f"got: {oe_test[0].question_text[:60]}")
+
+# Multi-line OE should still split on newlines
+oe_multi = parser.parse_open_ended(
+    "Why did you choose this option?\n"
+    "What factors influenced your decision?"
+)
+check("multi-line OE split on newline", len(oe_multi) == 2,
+      f"got {len(oe_multi)}")
+
+print()
+
+
+# ═══════════════════════════════════════════════════════════════════
+# TEST 28: v1.3.6 - Auto-generated study description
+# ═══════════════════════════════════════════════════════════════════
+print("=" * 70)
+print("TEST 28: Auto-generated study description")
+print("=" * 70)
+
+conds28, _ = parser.parse_conditions("Control vs Treatment A vs Treatment B")
+scales28 = parser.parse_scales("Trust (4 items, 1-7)")
+desc28 = parser.generate_smart_description(
+    "AI Content Credibility",
+    conds28, scales28, "between"
+)
+check("auto-desc not empty", len(desc28) > 20, f"got: {desc28[:40]}")
+check("auto-desc mentions conditions", "3 conditions" in desc28 or "comparing" in desc28,
+      f"got: {desc28[:60]}")
+check("auto-desc mentions AI", "AI" in desc28, f"got: {desc28[:60]}")
+
+# Empty title should still produce something
+desc28b = parser.generate_smart_description("", conds28, scales28, "between")
+check("empty title → fallback desc", len(desc28b) > 10, f"got: {desc28b[:40]}")
+
+print()
+
+
+# ═══════════════════════════════════════════════════════════════════
+# TEST 29: v1.3.6 - Frequency scale detection
+# ═══════════════════════════════════════════════════════════════════
+print("=" * 70)
+print("TEST 29: Frequency & dollar scale detection")
+print("=" * 70)
+
+freq_scales = parser.parse_scales("How often do you exercise? (frequency, 1 item)")
+check("frequency scale parsed", len(freq_scales) >= 1, f"got {len(freq_scales)}")
+if freq_scales:
+    check("frequency max=5", freq_scales[0].scale_max == 5,
+          f"got max={freq_scales[0].scale_max}")
+
+dollar_scales = parser.parse_scales("How much would you pay for this product? (dollar amount, 0-500)")
+check("dollar scale parsed", len(dollar_scales) >= 1, f"got {len(dollar_scales)}")
+if dollar_scales:
+    check("dollar is numeric", dollar_scales[0].scale_type == "numeric",
+          f"got type={dollar_scales[0].scale_type}")
+
+print()
+
+
+# ═══════════════════════════════════════════════════════════════════
+# TEST 30: v1.3.6 - Full builder pipeline (all examples)
+# ═══════════════════════════════════════════════════════════════════
+print("=" * 70)
+print("TEST 30: Full pipeline for all 7 example studies")
+print("=" * 70)
+
+examples = SurveyDescriptionParser.generate_example_descriptions()
+check("7 examples available", len(examples) == 7, f"got {len(examples)}")
+
+for idx, ex in enumerate(examples):
+    _ex_conds, _ex_warns = parser.parse_conditions(ex["conditions"])
+    _ex_scales = parser.parse_scales(ex["scales"])
+    _ex_oe = parser.parse_open_ended(ex.get("open_ended", ""))
+
+    _ex_design = ParsedDesign(
+        conditions=_ex_conds, scales=_ex_scales, open_ended=_ex_oe,
+        design_type="between", sample_size=60,
+        research_domain=ex.get("domain", "general"),
+        study_title=ex["title"],
+        study_description=ex.get("description", ""),
+    )
+    _ex_inferred = parser.build_inferred_design(_ex_design)
+
+    check(f"example {idx+1} ({ex['title'][:30]}): ≥2 conds",
+          len(_ex_inferred["conditions"]) >= 2,
+          f"got {len(_ex_inferred['conditions'])}")
+    check(f"example {idx+1}: ≥1 scale",
+          len(_ex_inferred["scales"]) >= 1,
+          f"got {len(_ex_inferred['scales'])}")
+
+    # Full simulation
+    try:
+        _ex_engine = make_engine(_ex_inferred, sample_size=40, seed=idx + 100)
+        _ex_df, _ex_meta = _ex_engine.generate()
+        check(f"example {idx+1}: simulation OK",
+              len(_ex_df) == 40, f"got {len(_ex_df)} rows")
+        check(f"example {idx+1}: CONDITION col present",
+              "CONDITION" in _ex_df.columns)
+    except Exception as e:
+        check(f"example {idx+1}: simulation OK", False, str(e)[:80])
+
+    # Report generation
+    try:
+        _ex_html = ComprehensiveInstructorReport().generate_html_report(_ex_df, _ex_meta)
+        check(f"example {idx+1}: report OK",
+              len(_ex_html) > 2000, f"report length={len(_ex_html)}")
+    except Exception as e:
+        check(f"example {idx+1}: report OK", False, str(e)[:80])
+
+print()
+
+
+# ═══════════════════════════════════════════════════════════════════
+# TEST 31: v1.3.6 - Explicit persona domains from builder context
+# ═══════════════════════════════════════════════════════════════════
+print("=" * 70)
+print("TEST 31: Builder persona domain passthrough")
+print("=" * 70)
+
+conds31, _ = parser.parse_conditions("Control vs Treatment")
+scales31 = parser.parse_scales("Attitude (3 items, 1-7)")
+design31 = ParsedDesign(
+    conditions=conds31, scales=scales31,
+    design_type="between", sample_size=30,
+    research_domain="behavioral economics",
+    study_title="Test",
+)
+inferred31 = parser.build_inferred_design(design31)
+check("persona_domains in context",
+      "persona_domains" in inferred31.get("study_context", {}),
+      f"keys: {list(inferred31.get('study_context', {}).keys())}")
+
+# Engine should pick up persona_domains
+engine31 = make_engine(inferred31, sample_size=30, seed=77)
+check("engine detected domains",
+      len(engine31.detected_domains) >= 1,
+      f"got {engine31.detected_domains}")
+
+print()
+
+
+# ═══════════════════════════════════════════════════════════════════
 # SUMMARY
 # ═══════════════════════════════════════════════════════════════════
 print("=" * 70)
