@@ -1,7 +1,7 @@
 """
 Conversational Survey Builder - Natural Language Study Specification Parser
 
-Version: 1.4.2
+Version: 1.4.4
 Allows users to describe their experiment in words instead of uploading a QSF file.
 Parses natural language descriptions into structured survey specifications that
 feed directly into the EnhancedSimulationEngine.
@@ -22,7 +22,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 from dataclasses import dataclass, field
 
-__version__ = "1.4.3.1"
+__version__ = "1.4.4"
 
 
 # ─── Common scale anchors used in behavioral science ───────────────────────────
@@ -2466,7 +2466,10 @@ _SCALE_TYPE_TO_QSF = {
 }
 
 
-def generate_qsf_from_design(parsed_design: ParsedDesign) -> bytes:
+def generate_qsf_from_design(
+    parsed_design: ParsedDesign,
+    raw_inputs: Optional[Dict[str, str]] = None,
+) -> bytes:
     """Convert a ParsedDesign into a minimal but valid QSF JSON file.
 
     This allows conversational-builder submissions to be collected alongside
@@ -2474,6 +2477,9 @@ def generate_qsf_from_design(parsed_design: ParsedDesign) -> bytes:
 
     Args:
         parsed_design: The complete study design from the conversational builder.
+        raw_inputs: Optional dict of raw NL text inputs for training data.
+            Keys: 'conditions_text', 'scales_text', 'open_ended_text',
+                  'study_title', 'study_description', 'participant_desc'.
 
     Returns:
         UTF-8 encoded bytes of a QSF-format JSON file.
@@ -2666,6 +2672,33 @@ def generate_qsf_from_design(parsed_design: ParsedDesign) -> bytes:
             "domain": parsed_design.research_domain,
             "sample_size": parsed_design.sample_size,
             "participant_characteristics": parsed_design.participant_characteristics,
+            # Raw NL inputs for training the parser
+            "raw_inputs": raw_inputs or {},
+            # Structured parsed output (for training pair: raw -> parsed)
+            "parsed_scales_detail": [
+                {
+                    "name": s.name,
+                    "variable_name": s.variable_name,
+                    "scale_type": s.scale_type,
+                    "num_items": s.num_items,
+                    "scale_min": s.scale_min,
+                    "scale_max": s.scale_max,
+                    "description": s.description,
+                }
+                for s in parsed_design.scales
+            ],
+            "parsed_conditions_detail": [
+                {"name": c.name, "description": c.description}
+                for c in parsed_design.conditions
+            ],
+            "parsed_open_ended_detail": [
+                {
+                    "question_text": oe.question_text,
+                    "variable_name": oe.variable_name,
+                    "question_type": oe.question_type,
+                }
+                for oe in parsed_design.open_ended
+            ],
         },
     }
 

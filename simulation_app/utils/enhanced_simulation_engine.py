@@ -45,7 +45,7 @@ This module is designed to run inside a `utils/` package (i.e., imported as
 """
 
 # Version identifier to help track deployed code
-__version__ = "1.4.3.1"  # v1.4.3.1: Enhanced instructor report (data dictionary, design-specific analysis, builder support)
+__version__ = "1.4.4"  # v1.4.4: Fix navigation buttons, enhance training data collection
 
 # =============================================================================
 # SCIENTIFIC FOUNDATIONS FOR SIMULATION
