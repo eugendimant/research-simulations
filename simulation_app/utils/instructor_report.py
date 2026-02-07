@@ -6,7 +6,7 @@ Generates comprehensive instructor-facing reports for student simulations.
 """
 
 # Version identifier to help track deployed code
-__version__ = "1.3.3"  # v1.3.3: Edge-case hardening, validation, 142 e2e tests
+__version__ = "1.3.5"  # v1.3.5: Full reset fix, feedback resilience, report layout, UX polish
 
 from dataclasses import dataclass
 from datetime import datetime
@@ -3191,8 +3191,8 @@ class ComprehensiveInstructorReport:
         Returns:
             HTML string with executive summary
         """
-        html = ["<h2>Executive Summary</h2>"]
-        html.append("<div class='summary-box' style='background:#f0f7ff;padding:20px;border-radius:8px;border-left:4px solid #3498db;margin:20px 0;'>")
+        html = ["<h2>2. Executive Summary</h2>"]
+        html.append("<div class='section-block' style='background:#f0f7ff;border-left:4px solid #3498db;'>")
 
         # Collect detailed findings
         sig_findings = []
@@ -4015,22 +4015,31 @@ class ComprehensiveInstructorReport:
     ) -> str:
         """Generate a comprehensive HTML report with visualizations and statistical tests."""
 
-        # CSS styles for the report
+        # CSS styles for the report (v1.3.4: improved layout with TOC and sections)
         css = """
         <style>
             @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
-            body { font-family: 'Inter', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 1100px; margin: 0 auto; padding: 20px; background: #f0f2f5; color: #1a1a2e; line-height: 1.6; }
-            .report-container { background: white; padding: 40px 45px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); }
+            * { box-sizing: border-box; }
+            body { font-family: 'Inter', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 20px; background: #f0f2f5; color: #1a1a2e; line-height: 1.6; }
+            .page-wrapper { max-width: 1200px; margin: 0 auto; display: flex; gap: 30px; align-items: flex-start; }
+            .toc-sidebar { position: sticky; top: 20px; width: 220px; min-width: 220px; background: white; border-radius: 10px; padding: 20px 16px; box-shadow: 0 2px 12px rgba(0,0,0,0.06); font-size: 0.82em; max-height: calc(100vh - 40px); overflow-y: auto; }
+            .toc-sidebar h3 { color: #1e3a5f; font-size: 0.95em; margin: 0 0 12px 0; padding-bottom: 8px; border-bottom: 2px solid #2563eb; }
+            .toc-sidebar a { display: block; color: #475569; text-decoration: none; padding: 5px 8px; border-radius: 4px; margin-bottom: 2px; transition: all 0.15s; }
+            .toc-sidebar a:hover { background: #eef2ff; color: #2563eb; }
+            .toc-sidebar a.toc-h2 { font-weight: 600; color: #1e3a5f; }
+            .toc-sidebar a.toc-h3 { padding-left: 18px; font-size: 0.92em; }
+            .report-container { flex: 1; min-width: 0; background: white; padding: 40px 45px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); }
             h1 { color: #1a1a2e; border-bottom: 3px solid #2563eb; padding-bottom: 12px; font-weight: 700; font-size: 1.8em; }
-            h2 { color: #1e3a5f; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px; margin-top: 35px; font-weight: 600; font-size: 1.4em; }
-            h3 { color: #475569; font-weight: 600; font-size: 1.15em; margin-top: 20px; }
-            h4 { color: #64748b; font-weight: 500; font-size: 1.05em; margin-top: 15px; }
+            h2 { color: #1e3a5f; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px; margin-top: 40px; font-weight: 600; font-size: 1.4em; scroll-margin-top: 20px; }
+            h3 { color: #475569; font-weight: 600; font-size: 1.15em; margin-top: 24px; scroll-margin-top: 20px; }
+            h4 { color: #64748b; font-weight: 500; font-size: 1.05em; margin-top: 18px; }
             p { margin: 8px 0; }
             table { border-collapse: collapse; width: 100%; margin: 15px 0; font-size: 0.92em; }
             th, td { border: 1px solid #e2e8f0; padding: 10px 12px; text-align: left; }
             th { background-color: #1e3a5f; color: white; font-weight: 500; letter-spacing: 0.02em; }
             tr:nth-child(even) { background-color: #f8fafc; }
             tr:hover { background-color: #eef2ff; }
+            .section-block { background: #fafbfc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 24px 28px; margin: 20px 0; }
             .stat-box { background: #f0f7ff; padding: 18px 20px; border-radius: 8px; margin: 12px 0; border-left: 4px solid #2563eb; }
             .warning-box { background: #fffbeb; padding: 18px 20px; border-radius: 8px; margin: 12px 0; border-left: 4px solid #f59e0b; }
             .success-box { background: #f0fdf4; padding: 18px 20px; border-radius: 8px; margin: 12px 0; border-left: 4px solid #22c55e; }
@@ -4042,6 +4051,8 @@ class ComprehensiveInstructorReport:
             .metric-card { background: linear-gradient(135deg, #1e3a5f 0%, #2563eb 100%); color: white; padding: 22px 16px; border-radius: 10px; text-align: center; box-shadow: 0 3px 12px rgba(37,99,235,0.15); }
             .metric-value { font-size: 2em; font-weight: 700; letter-spacing: -0.02em; }
             .metric-label { font-size: 0.85em; opacity: 0.9; margin-top: 4px; font-weight: 400; }
+            .back-to-top { display: inline-block; margin-top: 10px; font-size: 0.8em; color: #94a3b8; text-decoration: none; }
+            .back-to-top:hover { color: #2563eb; }
             code { background: #f1f5f9; padding: 2px 6px; border-radius: 4px; font-size: 0.9em; color: #475569; }
             .sig { color: #16a34a; font-weight: 600; }
             .nonsig { color: #94a3b8; }
@@ -4050,10 +4061,16 @@ class ComprehensiveInstructorReport:
             em { color: #64748b; }
             @media print {
                 body { background: white; padding: 0; }
+                .page-wrapper { display: block; }
+                .toc-sidebar { display: none; }
                 .report-container { box-shadow: none; padding: 20px; }
                 .metric-card { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
                 .confidential { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
                 th { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+            }
+            @media (max-width: 900px) {
+                .page-wrapper { flex-direction: column; }
+                .toc-sidebar { position: static; width: 100%; min-width: 0; }
             }
         </style>
         """
@@ -4068,7 +4085,24 @@ class ComprehensiveInstructorReport:
             css,
             "</head>",
             "<body>",
+            "<div class='page-wrapper'>",
+            # Table of Contents sidebar
+            "<nav class='toc-sidebar'>",
+            "<h3>Contents</h3>",
+            "<a href='#top' class='toc-h2'>Report Header</a>",
+            "<a href='#study-overview' class='toc-h2'>Study Overview</a>",
+            "<a href='#sample-overview' class='toc-h2'>1. Sample Overview</a>",
+            "<a href='#exec-summary' class='toc-h2'>2. Executive Summary</a>",
+            "<a href='#statistical-analysis' class='toc-h2'>3. Statistical Analysis</a>",
+            "<a href='#persona-analysis' class='toc-h2'>4. Persona &amp; Response</a>",
+            "<a href='#categorical-analysis' class='toc-h2'>5. Categorical Analysis</a>",
+            "<a href='#effect-verification' class='toc-h2'>6. Effect Verification</a>",
+            "<a href='#data-quality' class='toc-h2'>7. Data Quality</a>",
+            "<a href='#methodology' class='toc-h2'>8. Methodology</a>",
+            "</nav>",
+            # Main report content
             "<div class='report-container'>",
+            "<a id='top'></a>",
         ]
 
         # Header
@@ -4079,7 +4113,8 @@ class ComprehensiveInstructorReport:
         # =============================================================
         # STUDY OVERVIEW SECTION (All first page info)
         # =============================================================
-        html_parts.append("<div class='stat-box'>")
+        html_parts.append("<a id='study-overview'></a>")
+        html_parts.append("<div class='section-block'>")
         html_parts.append("<h2>Study Overview</h2>")
 
         # Study Title
@@ -4101,10 +4136,7 @@ class ComprehensiveInstructorReport:
         if study_description:
             html_parts.append(f"<p><strong>Abstract:</strong> {study_description}</p>")
 
-        html_parts.append("</div>")
-
-        # Experimental Design Box
-        html_parts.append("<div class='stat-box'>")
+        # Experimental Design (inside same section-block)
         html_parts.append("<h3>Experimental Design</h3>")
 
         # Conditions
@@ -4152,13 +4184,10 @@ class ComprehensiveInstructorReport:
                     html_parts.append(f"<li>{var}: d = {d:.2f} ({direction} in treatment)</li>")
             html_parts.append("</ul>")
 
-        html_parts.append("</div>")
-
         # ── Study Context / Domain ─────────────────────────────────────
         study_context = metadata.get("study_context", {})
         detected_domains = metadata.get("detected_domains", [])
         if study_context or detected_domains:
-            html_parts.append("<div class='stat-box'>")
             html_parts.append("<h3>Research Context</h3>")
             _domain = study_context.get("study_domain", study_context.get("domain", ""))
             if _domain:
@@ -4175,12 +4204,9 @@ class ComprehensiveInstructorReport:
             _persona_domains = study_context.get("persona_domains", [])
             if _persona_domains:
                 html_parts.append(f"<p><strong>Persona Domains Activated:</strong> {', '.join(d.replace('_', ' ').title() for d in _persona_domains)}</p>")
-            html_parts.append("</div>")
-
         # Open-ended questions summary
         oe_questions = metadata.get("open_ended_questions", [])
         if oe_questions:
-            html_parts.append("<div class='stat-box'>")
             html_parts.append(f"<h3>Open-Ended Questions ({len(oe_questions)})</h3>")
             html_parts.append("<ul>")
             for oe in oe_questions:
@@ -4190,11 +4216,9 @@ class ComprehensiveInstructorReport:
                     _var_tag = f" <code>({var_name})</code>" if var_name else ""
                     html_parts.append(f"<li>{q_text[:120]}{_var_tag}</li>")
             html_parts.append("</ul>")
-            html_parts.append("</div>")
 
-        # Generation Details
-        html_parts.append("<div class='stat-box' style='background:#f0f0f0;'>")
-        html_parts.append("<h3>Generation Details</h3>")
+        # Generation Details (still inside section-block)
+        html_parts.append("<h3 style='margin-top:28px;padding-top:16px;border-top:1px solid #e2e8f0;'>Generation Details</h3>")
         html_parts.append(f"<p><strong>Generated:</strong> {metadata.get('generation_timestamp', datetime.now().isoformat())}</p>")
         html_parts.append(f"<p><strong>Run ID:</strong> <code>{metadata.get('run_id', 'N/A')}</code></p>")
         html_parts.append(f"<p><strong>Mode:</strong> {metadata.get('simulation_mode', 'pilot').title()}</p>")
@@ -4205,7 +4229,8 @@ class ComprehensiveInstructorReport:
         usage_stats = metadata.get('usage_stats', {})
         total_simulations = usage_stats.get('total_simulations', 'N/A')
         html_parts.append(f"<p><strong>Total Simulations Run (all time):</strong> {total_simulations}</p>")
-        html_parts.append("</div>")
+        html_parts.append("</div>")  # close Study Overview section-block
+        html_parts.append("<a href='#top' class='back-to-top'>Back to top</a>")
 
         # Summary metrics
         n_total = len(df)
@@ -4214,6 +4239,7 @@ class ComprehensiveInstructorReport:
         exclusion_rate = (n_excluded / n_total * 100) if n_total > 0 else 0
         conditions = metadata.get("conditions", [])
 
+        html_parts.append("<a id='sample-overview'></a>")
         html_parts.append("<h2>1. Sample Overview</h2>")
         html_parts.append("<div class='metric-grid'>")
         html_parts.append(f"<div class='metric-card'><div class='metric-value'>{n_total}</div><div class='metric-label'>Total N</div></div>")
@@ -4233,12 +4259,20 @@ class ComprehensiveInstructorReport:
                 html_parts.append(f"<tr><td>{clean_cond}</td><td>{count}</td><td>{pct:.1f}%</td></tr>")
             html_parts.append("</table>")
 
+        html_parts.append("<a href='#top' class='back-to-top'>Back to top</a>")
+
         # Clean data for analysis
         df_clean = df[df["Exclude_Recommended"] == 0] if "Exclude_Recommended" in df.columns else df
 
+        # v1.3.4: Executive Summary placeholder — will be computed after DV analysis and inserted here
+        html_parts.append("<a id='exec-summary'></a>")
+        exec_summary_index = len(html_parts)
+        html_parts.append("<!-- EXEC_SUMMARY_PLACEHOLDER -->")
+
         # DV Analysis with statistical tests
         scales = metadata.get("scales", [])
-        html_parts.append("<h2>2. Statistical Analysis by DV</h2>")
+        html_parts.append("<a id='statistical-analysis'></a>")
+        html_parts.append("<h2>3. Statistical Analysis by DV</h2>")
 
         # Track all scale analysis results for executive summary
         all_scale_results = []
@@ -4752,7 +4786,8 @@ class ComprehensiveInstructorReport:
 
         # Chi-squared test for categorical associations
         if "CONDITION" in df_clean.columns and "Gender" in df_clean.columns:
-            html_parts.append("<h2>3. Persona Analysis & Response Styles</h2>")
+            html_parts.append("<a id='persona-analysis'></a>")
+            html_parts.append("<h2>4. Persona Analysis &amp; Response Styles</h2>")
 
             # ── Persona Distribution ──────────────────────────────────────
             persona_dist_raw = metadata.get("persona_distribution", {}) or {}
@@ -4902,7 +4937,8 @@ class ComprehensiveInstructorReport:
                                   f"automatically corrected during generation to stay within valid scale ranges.")
                 html_parts.append("</div>")
 
-            html_parts.append("<h2>4. Categorical Analysis</h2>")
+            html_parts.append("<a id='categorical-analysis'></a>")
+            html_parts.append("<h2>5. Categorical Analysis</h2>")
             html_parts.append("<h3>Condition × Gender</h3>")
 
             try:
@@ -4944,7 +4980,9 @@ class ComprehensiveInstructorReport:
             except Exception:
                 pass
 
-        # Executive Summary - Main takeaways from all analyses
+        html_parts.append("<a href='#top' class='back-to-top'>Back to top</a>")
+
+        # v1.3.4: Insert executive summary into its placeholder position (before statistical analysis)
         if all_scale_results:
             exec_summary = self._generate_executive_summary(
                 all_scale_results,
@@ -4952,13 +4990,16 @@ class ComprehensiveInstructorReport:
                 n_total,
                 [_clean_condition_name(c) for c in conditions]
             )
-            html_parts.append(exec_summary)
+            html_parts[exec_summary_index] = exec_summary
+        else:
+            html_parts[exec_summary_index] = ""  # Remove placeholder if no results
 
         # ── Observed vs Configured Effect Sizes ─────────────────────────
         obs_effects = metadata.get("effect_sizes_observed", [])
         cfg_effects = metadata.get("effect_sizes_configured", [])
         if obs_effects or cfg_effects:
-            html_parts.append("<h2>5. Effect Size Verification</h2>")
+            html_parts.append("<a id='effect-verification'></a>")
+            html_parts.append("<h2>6. Effect Size Verification</h2>")
             if cfg_effects and any(e.get("cohens_d", 0) > 0 for e in cfg_effects):
                 html_parts.append("<h3>Configured Effects</h3>")
                 html_parts.append("<table><tr><th>DV</th><th>Target d</th><th>Direction</th><th>Comparison</th></tr>")
@@ -4995,7 +5036,8 @@ class ComprehensiveInstructorReport:
         # ── Exclusion Summary ─────────────────────────────────────────
         excl = metadata.get("exclusion_summary", {})
         if excl:
-            html_parts.append("<h2>6. Data Quality & Exclusions</h2>")
+            html_parts.append("<a id='data-quality'></a>")
+            html_parts.append("<h2>7. Data Quality &amp; Exclusions</h2>")
             html_parts.append("<div class='metric-grid'>")
             html_parts.append(f"<div class='metric-card' style='background:linear-gradient(135deg,#f093fb 0%,#f5576c 100%);'>"
                               f"<div class='metric-value'>{excl.get('flagged_speed', 0)}</div>"
@@ -5021,7 +5063,8 @@ class ComprehensiveInstructorReport:
             html_parts.append("</ul></div>")
 
         # Footer - Notes for Instructors
-        html_parts.append("<h2>Instructor Notes & Methodology</h2>")
+        html_parts.append("<a id='methodology'></a>")
+        html_parts.append("<h2>8. Instructor Notes &amp; Methodology</h2>")
         html_parts.append("<div class='warning-box'>")
         html_parts.append("<strong>Important: This is simulated data.</strong> Results demonstrate what the analysis pipeline will produce. "
                           "Students should practice these analyses independently and may get similar (but not identical) results due to random variation.")
@@ -5051,9 +5094,10 @@ class ComprehensiveInstructorReport:
         html_parts.append("</ol>")
         html_parts.append("</div>")
 
+        html_parts.append("<a href='#top' class='back-to-top'>Back to top</a>")
         html_parts.append(f"<p style='color:#999;font-size:0.9em;margin-top:30px;text-align:center;'>"
                           f"Generated by Behavioral Experiment Simulation Tool v{__version__} "
                           f"&middot; Proprietary Software by Dr. Eugen Dimant</p>")
-        html_parts.append("</div></body></html>")
+        html_parts.append("</div></div></body></html>")  # close report-container + page-wrapper
 
         return "\n".join(html_parts)
