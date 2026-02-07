@@ -950,8 +950,8 @@ class InstructorReportGenerator:
                     share_val = share_f if share_f <= 1 else share_f / 100
                     count = int(round(n_total * share_val))
                     # Describe expected impact
-                    impact = self._get_persona_impact(persona.lower())
-                    lines.append(f"| {persona.title()} | ~{count} | {impact} |")
+                    impact = self._get_persona_impact(str(persona).lower() if persona else "unknown")
+                    lines.append(f"| {str(persona).title()} | ~{count} | {impact} |")
                 lines.append("")
 
                 # Interpretation guidance
