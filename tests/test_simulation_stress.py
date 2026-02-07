@@ -33,7 +33,7 @@ Iteration 4: Statistical validity
 Iteration 5: Cross-QSF comprehensive re-test with all checks combined
 
 Usage:
-    python3 simulation_app/tests/test_simulation_stress.py
+    python3 tests/test_simulation_stress.py
 """
 import sys
 import os
@@ -45,7 +45,8 @@ import re
 import glob
 from collections import Counter, defaultdict
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+# Path setup: works both via pytest (conftest.py) and direct script execution
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "simulation_app"))
 
 import numpy as np
 import pandas as pd
@@ -951,7 +952,7 @@ def _print_results(label, stats, issues):
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    qsf_dir = os.path.join(os.path.dirname(__file__), "..", "example_files")
+    qsf_dir = os.path.join(os.path.dirname(__file__), "..", "simulation_app", "example_files")
     qsf_files = sorted(glob.glob(os.path.join(qsf_dir, "*.qsf")))
     print(f"Found {len(qsf_files)} QSF files\n")
 

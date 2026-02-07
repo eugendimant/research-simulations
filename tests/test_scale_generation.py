@@ -4,14 +4,14 @@ End-to-end tests for scale data generation.
 Tests that the simulation engine correctly generates data matching
 user-specified scale configurations across a wide range of scenarios.
 
-Run with: python3 -m pytest simulation_app/tests/test_scale_generation.py -v
-Or directly: python3 simulation_app/tests/test_scale_generation.py
+Run with: python3 -m pytest tests/test_scale_generation.py -v
+Or directly: python3 tests/test_scale_generation.py
 """
 import sys
 import os
 
-# Add parent directory to path for imports
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+# Path setup: works both via pytest (conftest.py) and direct script execution
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "simulation_app"))
 
 import numpy as np
 import pandas as pd

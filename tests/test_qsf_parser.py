@@ -9,10 +9,10 @@ import os
 import sys
 from pathlib import Path
 
-# Add parent directory to path for imports - import only the specific module
-sys.path.insert(0, str(Path(__file__).parent.parent / "utils"))
+# Path setup: works both via pytest (conftest.py) and direct script execution
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "simulation_app"))
 
-from qsf_preview import QSFPreviewParser, QSFPreviewResult
+from utils.qsf_preview import QSFPreviewParser, QSFPreviewResult
 
 
 class TestQSFParser:

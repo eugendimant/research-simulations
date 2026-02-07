@@ -1,5 +1,6 @@
-import sys, traceback
-sys.path.insert(0, 'simulation_app')
+import sys, os, traceback
+# Path setup: works both via pytest (conftest.py) and direct script execution
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "simulation_app"))
 from utils.survey_builder import SurveyDescriptionParser, ParsedDesign, ParsedScale, ParsedCondition
 from utils.enhanced_simulation_engine import EnhancedSimulationEngine, EffectSizeSpec
 

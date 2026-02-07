@@ -6,7 +6,8 @@ Tests the full pipeline with multiple experiment types.
 import sys
 import os
 import json
-sys.path.insert(0, 'simulation_app')
+# Path setup: works both via pytest (conftest.py) and direct script execution
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "simulation_app"))
 
 import numpy as np
 import pandas as pd
