@@ -52,8 +52,8 @@ import streamlit as st
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.3.4"
-BUILD_ID = "20260207-v134-ux-navigation-report"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.3.5"
+BUILD_ID = "20260207-v135-reset-fix-ux-polish"  # Change this to force cache invalidation
 
 def _verify_and_reload_utils():
     """Verify utils modules are at correct version, force reload if needed.
@@ -109,7 +109,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF"
-APP_VERSION = "1.3.4"  # v1.3.4: UX navigation buttons, instant progress, report layout
+APP_VERSION = "1.3.5"  # v1.3.5: Full reset fix, feedback resilience, report layout, UX polish
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -4399,27 +4399,32 @@ with st.sidebar:
         if st.button("Go to Generate", key="jump_step4", use_container_width=True):
             _go_to_step(3)
 
-    # Start Over button
+    # Start Over button with two-step confirmation
     st.divider()
-    if st.button("🔄 Start Over", key="start_over_btn", use_container_width=True, type="secondary"):
-        # Clear all session state
-        keys_to_clear = [
-            "study_title", "study_description", "sample_size", "team_name", "team_members_raw",
-            "qsf_preview", "qsf_raw_content", "qsf_file_name",
-            "survey_pdf_content", "survey_pdf_name",
-            "prereg_pdf_content", "prereg_pdf_name", "prereg_text_sanitized", "prereg_pdf_text",
-            "prereg_outcomes", "prereg_iv", "prereg_exclusions", "prereg_analysis",
-            "enhanced_analysis", "inferred_design", "condition_allocation", "condition_allocation_n",
-            "selected_conditions", "current_conditions", "custom_conditions",
-            "last_df", "last_zip", "last_metadata",
-            "has_generated", "is_generating", "generation_requested",
-            "active_step",
-        ]
-        for key in keys_to_clear:
-            if key in st.session_state:
-                del st.session_state[key]
-        st.rerun()
-    st.caption("Clear all entries and start fresh")
+    _confirm_reset = st.session_state.get("_confirm_reset", False)
+    if not _confirm_reset:
+        if st.button("🔄 Start Over", key="start_over_btn", use_container_width=True, type="secondary"):
+            st.session_state["_confirm_reset"] = True
+            st.rerun()
+        st.caption("Clear all entries and start fresh")
+    else:
+        st.warning("Are you sure? This will clear all your entries and uploaded files.")
+        _c1, _c2 = st.columns(2)
+        with _c1:
+            if st.button("Yes, clear everything", key="confirm_reset_yes", use_container_width=True, type="primary"):
+                # v1.3.5: Clear ALL session state for a true fresh start.
+                keys_to_delete = [k for k in st.session_state.keys()
+                                  if k != "confirm_reset_yes"]
+                for key in keys_to_delete:
+                    try:
+                        del st.session_state[key]
+                    except Exception:
+                        pass
+                st.rerun()
+        with _c2:
+            if st.button("Cancel", key="confirm_reset_no", use_container_width=True):
+                st.session_state["_confirm_reset"] = False
+                st.rerun()
 
 
 if "active_step" not in st.session_state:
@@ -4556,6 +4561,10 @@ total_count = len(progress_items)
 progress_pct = int((completed_count / total_count) * 100)
 status_emoji = "🟢" if progress_pct == 100 else "🟡" if progress_pct >= 50 else "⚪"
 st.progress(completed_count / total_count, text=f"{status_emoji} Ready: {progress_pct}% ({completed_count}/{total_count})")
+
+# v1.3.5: Inject scroll button CSS once, reserve feedback container before tabs
+_inject_scroll_button_css()
+_feedback_container = st.container()
 
 # Create the main tabs
 TAB_LABELS = ["📋 Setup", "📁 Study Input", "⚙️ Design", "🚀 Generate"]
@@ -4736,71 +4745,71 @@ def _render_step_navigation(step_index: int, can_next: bool, next_label: str) ->
                 _go_to_step(step_index - 1)
 
 
+def _inject_scroll_button_css() -> None:
+    """Inject CSS for scroll-to-top buttons once per page render."""
+    if not st.session_state.get("_scroll_btn_css_injected"):
+        st.markdown("""
+        <style>
+            .scroll-top-btn {
+                display: block;
+                width: 100%;
+                padding: 14px 24px;
+                background: linear-gradient(135deg, #1e3a5f 0%, #2d5a87 100%);
+                color: white;
+                border: none;
+                border-radius: 10px;
+                font-size: 16px;
+                font-weight: 600;
+                cursor: pointer;
+                text-align: center;
+                transition: all 0.2s ease;
+                box-shadow: 0 3px 10px rgba(30, 58, 95, 0.25);
+                letter-spacing: 0.02em;
+                margin-top: 8px;
+            }
+            .scroll-top-btn:hover {
+                background: linear-gradient(135deg, #2d5a87 0%, #3b7dba 100%);
+                box-shadow: 0 4px 14px rgba(30, 58, 95, 0.35);
+                transform: translateY(-1px);
+            }
+            .scroll-top-btn:active { transform: translateY(0px); }
+        </style>
+        """, unsafe_allow_html=True)
+        st.session_state["_scroll_btn_css_injected"] = True
+
+
+# Scroll-to-top JS function (shared by all buttons)
+_SCROLL_TOP_JS = """(function() {
+    var sels = ['section.main', '.stApp', '[data-testid=&quot;stAppViewBlockContainer&quot;]', '.block-container', 'main', '.main'];
+    sels.forEach(function(s) {
+        var els = document.querySelectorAll(s);
+        els.forEach(function(el) { el.scrollTop = 0; try { el.scrollTo({top:0,behavior:'smooth'}); } catch(e) {} });
+    });
+    window.scrollTo({top:0,behavior:'smooth'});
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0;
+    try { if (window.parent && window.parent !== window) { window.parent.scrollTo({top:0,behavior:'smooth'}); } } catch(e) {}
+})();"""
+
+
 def _render_scroll_to_top_button(tab_index: int, next_tab_label: str = "") -> None:
     """Render a 'Complete - Ready for Next Step' button that scrolls to top of page.
 
     v1.3.4: Helps users navigate back to the tab bar after working through long content.
+    v1.3.5: CSS injected once, cleaner markup.
     """
     st.markdown("---")
 
     # Build label
     if next_tab_label:
-        btn_label = f"Done — scroll up to continue to {next_tab_label}"
+        btn_label = f"Done &mdash; scroll up to continue to {next_tab_label}"
     else:
-        btn_label = "Done — scroll back to top"
+        btn_label = "Done &mdash; scroll back to top"
 
-    # Use HTML/JS button for instant scroll (no Streamlit rerun needed)
-    scroll_js = """
-    <style>
-        .scroll-top-btn {
-            display: block;
-            width: 100%;
-            padding: 14px 24px;
-            background: linear-gradient(135deg, #1e3a5f 0%, #2d5a87 100%);
-            color: white;
-            border: none;
-            border-radius: 10px;
-            font-size: 16px;
-            font-weight: 600;
-            cursor: pointer;
-            text-align: center;
-            transition: all 0.2s ease;
-            box-shadow: 0 3px 10px rgba(30, 58, 95, 0.25);
-            letter-spacing: 0.02em;
-        }
-        .scroll-top-btn:hover {
-            background: linear-gradient(135deg, #2d5a87 0%, #3b7dba 100%);
-            box-shadow: 0 4px 14px rgba(30, 58, 95, 0.35);
-            transform: translateY(-1px);
-        }
-        .scroll-top-btn:active {
-            transform: translateY(0px);
-        }
-    </style>
-    <button class="scroll-top-btn" onclick="
-        (function() {
-            var selectors = ['section.main', '.stApp', '[data-testid=&quot;stAppViewBlockContainer&quot;]', '.block-container', 'main', '.main'];
-            selectors.forEach(function(sel) {
-                var els = document.querySelectorAll(sel);
-                els.forEach(function(el) {
-                    el.scrollTop = 0;
-                    try { el.scrollTo({top: 0, behavior: 'smooth'}); } catch(e) {}
-                });
-            });
-            window.scrollTo({top: 0, behavior: 'smooth'});
-            document.documentElement.scrollTop = 0;
-            document.body.scrollTop = 0;
-            try {
-                if (window.parent && window.parent !== window) {
-                    window.parent.scrollTo({top: 0, behavior: 'smooth'});
-                }
-            } catch(e) {}
-        })();
-    ">BUTTON_LABEL</button>
-    """.replace("BUTTON_LABEL", f"&#10003; {btn_label}")
-
-    st.markdown(scroll_js, unsafe_allow_html=True)
-    st.markdown("")  # spacing
+    st.markdown(
+        f'<button class="scroll-top-btn" onclick="{_SCROLL_TOP_JS}">&#10003; {btn_label}</button>',
+        unsafe_allow_html=True,
+    )
 
 
 def _get_total_conditions() -> int:
@@ -7357,9 +7366,13 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
                 st.session_state["is_generating"] = False
                 st.session_state["has_generated"] = False
                 st.session_state["generation_requested"] = False
+                st.session_state["_generation_phase"] = 0  # v1.3.5: Reset generation phase
                 st.session_state["last_df"] = None
                 st.session_state["last_zip"] = None
                 st.session_state["last_metadata"] = None
+                st.session_state["generated_metadata"] = None
+                st.session_state["_quality_checks"] = []
+                st.session_state["_validation_results"] = None
                 st.rerun()
 
     # v1.2.1 / v1.3.4: Legacy fallback — handle generation_requested if set elsewhere
@@ -7558,13 +7571,13 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
                 </div>
                 """, unsafe_allow_html=True)
 
-            progress_bar.progress(10, text="Initializing simulation engine...")
+            progress_bar.progress(10, text="Step 1/5 — Initializing simulation engine...")
 
             # Show animated spinner during the actual data generation
             with st.spinner("🧠 Generating participant responses... Please wait."):
-                progress_bar.progress(25, text="Creating simulated participants...")
+                progress_bar.progress(25, text="Step 2/5 — Creating simulated participants...")
                 df, metadata = engine.generate()
-                progress_bar.progress(50, text="✅ Responses generated successfully!")
+                progress_bar.progress(50, text="Step 2/5 — Responses generated successfully!")
 
             # v1.2.4: Run simulation quality validation
             validation_results = _validate_simulation_output(df, metadata, clean_scales)
@@ -7577,7 +7590,7 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
                 st.warning(warn)
 
             # v1.2.5: Show quick data quality summary
-            progress_bar.progress(50, text="Validating data quality...")
+            progress_bar.progress(50, text="Step 3/5 — Validating data quality...")
             status_placeholder.info("🔍 Validating generated data...")
             quality_checks = []
             # Check scale ranges
@@ -7603,7 +7616,7 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
             # Add usage stats to metadata for instructor report
             metadata["usage_stats"] = usage_stats
 
-            progress_bar.progress(55, text="Packaging downloads...")
+            progress_bar.progress(55, text="Step 4/5 — Packaging downloads & reports...")
             status_placeholder.info("📦 Packaging downloads and reports...")
             explainer = engine.generate_explainer()
             r_script = engine.generate_r_export(df)
@@ -7760,7 +7773,7 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
             st.session_state["last_zip"] = zip_bytes
             st.session_state["last_metadata"] = metadata
 
-            progress_bar.progress(85, text="Finalizing notifications...")
+            progress_bar.progress(85, text="Step 5/5 — Sending notifications...")
             status_placeholder.info("Finalizing notifications...")
             st.success("Simulation generated.")
             st.markdown("[Jump to download](#download)")
@@ -7843,7 +7856,7 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
                 else:
                     st.error(f"Instructor auto-email failed: {msg}")
 
-            progress_bar.progress(100, text="Simulation ready.")
+            progress_bar.progress(100, text="Complete — your dataset is ready to download.")
             status_placeholder.success("Simulation complete.")
             st.session_state["has_generated"] = True
             st.session_state["is_generating"] = False
@@ -7950,5 +7963,7 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
 
 # ========================================
 # FEEDBACK BUTTON (Shown on all pages)
+# v1.3.5: Rendered into pre-reserved container so st.stop() in tabs can't block it
 # ========================================
-_render_feedback_button()
+with _feedback_container:
+    _render_feedback_button()

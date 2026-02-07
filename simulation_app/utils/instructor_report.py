@@ -6,7 +6,7 @@ Generates comprehensive instructor-facing reports for student simulations.
 """
 
 # Version identifier to help track deployed code
-__version__ = "1.3.4"  # v1.3.4: UX navigation buttons, instant progress, report layout
+__version__ = "1.3.5"  # v1.3.5: Full reset fix, feedback resilience, report layout, UX polish
 
 from dataclasses import dataclass
 from datetime import datetime
@@ -4136,10 +4136,7 @@ class ComprehensiveInstructorReport:
         if study_description:
             html_parts.append(f"<p><strong>Abstract:</strong> {study_description}</p>")
 
-        html_parts.append("</div>")
-
-        # Experimental Design Box
-        html_parts.append("<div class='stat-box'>")
+        # Experimental Design (inside same section-block)
         html_parts.append("<h3>Experimental Design</h3>")
 
         # Conditions
@@ -4187,13 +4184,10 @@ class ComprehensiveInstructorReport:
                     html_parts.append(f"<li>{var}: d = {d:.2f} ({direction} in treatment)</li>")
             html_parts.append("</ul>")
 
-        html_parts.append("</div>")
-
         # ── Study Context / Domain ─────────────────────────────────────
         study_context = metadata.get("study_context", {})
         detected_domains = metadata.get("detected_domains", [])
         if study_context or detected_domains:
-            html_parts.append("<div class='stat-box'>")
             html_parts.append("<h3>Research Context</h3>")
             _domain = study_context.get("study_domain", study_context.get("domain", ""))
             if _domain:
@@ -4210,12 +4204,9 @@ class ComprehensiveInstructorReport:
             _persona_domains = study_context.get("persona_domains", [])
             if _persona_domains:
                 html_parts.append(f"<p><strong>Persona Domains Activated:</strong> {', '.join(d.replace('_', ' ').title() for d in _persona_domains)}</p>")
-            html_parts.append("</div>")
-
         # Open-ended questions summary
         oe_questions = metadata.get("open_ended_questions", [])
         if oe_questions:
-            html_parts.append("<div class='stat-box'>")
             html_parts.append(f"<h3>Open-Ended Questions ({len(oe_questions)})</h3>")
             html_parts.append("<ul>")
             for oe in oe_questions:
@@ -4225,11 +4216,9 @@ class ComprehensiveInstructorReport:
                     _var_tag = f" <code>({var_name})</code>" if var_name else ""
                     html_parts.append(f"<li>{q_text[:120]}{_var_tag}</li>")
             html_parts.append("</ul>")
-            html_parts.append("</div>")
 
-        # Generation Details
-        html_parts.append("<div class='stat-box' style='background:#f0f0f0;'>")
-        html_parts.append("<h3>Generation Details</h3>")
+        # Generation Details (still inside section-block)
+        html_parts.append("<h3 style='margin-top:28px;padding-top:16px;border-top:1px solid #e2e8f0;'>Generation Details</h3>")
         html_parts.append(f"<p><strong>Generated:</strong> {metadata.get('generation_timestamp', datetime.now().isoformat())}</p>")
         html_parts.append(f"<p><strong>Run ID:</strong> <code>{metadata.get('run_id', 'N/A')}</code></p>")
         html_parts.append(f"<p><strong>Mode:</strong> {metadata.get('simulation_mode', 'pilot').title()}</p>")
@@ -4240,7 +4229,6 @@ class ComprehensiveInstructorReport:
         usage_stats = metadata.get('usage_stats', {})
         total_simulations = usage_stats.get('total_simulations', 'N/A')
         html_parts.append(f"<p><strong>Total Simulations Run (all time):</strong> {total_simulations}</p>")
-        html_parts.append("</div>")  # close generation details stat-box
         html_parts.append("</div>")  # close Study Overview section-block
         html_parts.append("<a href='#top' class='back-to-top'>Back to top</a>")
 
