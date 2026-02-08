@@ -54,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.4.14"
-BUILD_ID = "20260208-v1414-page-nav-builder-validation"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.4.15"
+BUILD_ID = "20260208-v1415-scroll-fix-wizard-stepper"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -109,7 +109,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF"
-APP_VERSION = "1.4.14"  # v1.4.14: Page-based navigation, preflight validation, builder streamlining
+APP_VERSION = "1.4.15"  # v1.4.15: JS scroll-to-top fix, CSS wizard stepper, dead code cleanup
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -623,8 +623,8 @@ def _validate_simulation_output(df: pd.DataFrame, metadata: dict, scales: list) 
                         )
                     else:
                         results["checks"].append(f"✅ {col}: range [{actual_min}-{actual_max}] within bounds")
-                except Exception:
-                    pass
+                except Exception as _val_err:
+                    results["warnings"].append(f"⚠️ {col}: validation check skipped ({_val_err})")
 
     # CHECK 4: Open-ended response uniqueness (>= 90% unique)
     oe_cols = [c for c in df.columns if df[c].dtype == object and c not in [
@@ -3207,7 +3207,7 @@ def _render_conversational_builder() -> None:
 
     # Check if builder is already complete
     if st.session_state.get("conversational_builder_complete"):
-        st.success("Study description complete — proceed to **Design** tab to review and generate.")
+        st.success("Study description complete — proceed to **Design** to review and generate.")
         _done_col1, _done_col2 = st.columns(2)
         with _done_col1:
             if st.button("Go to Design →", key="builder_goto_design", type="primary", use_container_width=True):
@@ -3648,7 +3648,7 @@ def _render_conversational_builder() -> None:
             participant_desc=participant_desc,
             raw_inputs=_raw_inputs,
         ):
-            st.success("Study specification built successfully! Proceed to the **Design** tab to review.")
+            st.success("Study specification built successfully! Proceed to **Design** to review.")
             _navigate_to(2)
 
 
@@ -3659,7 +3659,7 @@ def _render_builder_design_review() -> None:
     """
     inferred = st.session_state.get("inferred_design", {})
     if not inferred:
-        st.warning("No study design found. Go back to the **Study Input** tab and describe your study.")
+        st.warning("No study design found. Go back to **Study Input** and describe your study.")
         return
 
     # ── Go back to edit button (Issue #19) ─────────────────────────────
@@ -4309,7 +4309,7 @@ def _render_builder_design_review() -> None:
         )
         st.info(
             "Your design is fully configured. You can proceed directly to the "
-            "**Generate** tab to simulate your data."
+            "**Generate** step to simulate your data."
         )
     else:
         st.error("Design incomplete. Please go back and provide conditions and scales.")
@@ -4334,7 +4334,7 @@ def _render_builder_design_review() -> None:
         st.markdown("---")
         st.markdown("#### Ready to generate?")
         st.markdown(
-            "Click the **Generate** tab above to simulate your data. "
+            "Click **Generate** above to simulate your data. "
             "You can always come back here to adjust your design."
         )
 
@@ -4461,19 +4461,57 @@ def _get_smart_defaults(study_description: str = "", preview: Any = None) -> Dic
 def _navigate_to(page_index: int) -> None:
     """Navigate to a page by index and rerun.
 
-    v1.4.14: Replaces the old _navigate_to() + _navigate_to() + JavaScript
-    MutationObserver approach with a simple page-based navigation model.
-    Only one page renders at a time, so scrolling to the top is automatic
-    (Streamlit rerenders fresh content that starts at the top of the viewport).
+    v1.4.15: Sets a _page_just_changed flag so that the render cycle
+    can inject JavaScript to scroll the browser viewport to the very top.
+    Streamlit's st.rerun() preserves scroll position; only JS can reset it.
     """
     clamped = max(0, min(page_index, len(STEP_LABELS) - 1))
     st.session_state["active_page"] = clamped
+    st.session_state["_page_just_changed"] = True
     st.rerun()
 
 
-# v1.4.14: _inject_scroll_to_top() and _navigate_to() REMOVED.
-# Page-based rendering (one page at a time) eliminates the need for
-# JavaScript tab-restore hacks. Scroll position resets naturally.
+_SCROLL_TO_TOP_JS = """<script>
+function _stScrollToTop() {
+    // Target every known scroll container across Streamlit versions
+    var selectors = [
+        'section.main',
+        '[data-testid="stAppViewContainer"]',
+        '[data-testid="stVerticalBlock"]',
+        '.main .block-container',
+        '.main'
+    ];
+    for (var i = 0; i < selectors.length; i++) {
+        var els = window.parent.document.querySelectorAll(selectors[i]);
+        for (var j = 0; j < els.length; j++) {
+            els[j].scrollTop = 0;
+        }
+    }
+    window.parent.scrollTo(0, 0);
+    // Also try the iframe's parent document body
+    try { window.parent.document.body.scrollTop = 0; } catch(e) {}
+    try { window.parent.document.documentElement.scrollTop = 0; } catch(e) {}
+}
+// Fire 5 times with increasing delays to catch all rendering stages
+_stScrollToTop();
+setTimeout(_stScrollToTop, 30);
+setTimeout(_stScrollToTop, 100);
+setTimeout(_stScrollToTop, 250);
+setTimeout(_stScrollToTop, 500);
+</script>"""
+
+
+def _inject_scroll_to_top_js() -> None:
+    """Inject a zero-height HTML component with JavaScript that scrolls to top.
+
+    This is the ONLY reliable way to scroll to the top of a Streamlit app
+    after st.rerun(). Streamlit preserves scroll position across reruns,
+    so we must use JavaScript to override it.
+
+    Targets multiple scroll containers for maximum compatibility across
+    Streamlit versions (Cloud, local, embedded).
+    """
+    _st_components.html(_SCROLL_TO_TOP_JS, height=0)
 
 
 with st.expander("What this tool delivers", expanded=True):
@@ -4857,132 +4895,8 @@ with st.sidebar:
     # ── END TEMPORARY BENCHMARK ──────────────────────────────────────
 
 
-# v1.4.14: active_page is now initialized in the page-based navigation section below.
-# This block is kept for backward compatibility (stepper reads active_page).
 if "active_page" not in st.session_state:
     st.session_state["active_page"] = 0
-
-active_page_for_stepper = st.session_state["active_page"]
-
-# Get step completion status
-completion = _get_step_completion()
-step_complete = [
-    completion["study_title"] and completion["study_description"],
-    completion["qsf_uploaded"],
-    completion["conditions_set"] and completion["primary_outcome"] and completion["independent_var"] and completion["sample_size"],
-    completion["design_ready"],
-]
-
-
-def _render_workflow_stepper():
-    """Render a visual workflow stepper with progress indicators."""
-    # Inject CSS for step styling
-    st.markdown("""
-    <style>
-    .step-circle-completed {
-        width: 44px;
-        height: 44px;
-        border-radius: 50%;
-        background: #10b981;
-        color: white;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        font-weight: 600;
-        font-size: 1.1rem;
-        margin: 0 auto 0.5rem auto;
-    }
-    .step-circle-current {
-        width: 44px;
-        height: 44px;
-        border-radius: 50%;
-        background: #3b82f6;
-        color: white;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        font-weight: 600;
-        font-size: 1.1rem;
-        margin: 0 auto 0.5rem auto;
-        box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.3);
-    }
-    .step-circle-pending {
-        width: 44px;
-        height: 44px;
-        border-radius: 50%;
-        background: #9ca3af;
-        color: white;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        font-weight: 600;
-        font-size: 1.1rem;
-        margin: 0 auto 0.5rem auto;
-    }
-    .step-container {
-        text-align: center;
-        padding: 0.5rem 0;
-    }
-    .step-label-current {
-        font-weight: 600;
-        font-size: 0.9rem;
-        color: #1f2937;
-        text-align: center;
-    }
-    .step-label-default {
-        font-weight: 500;
-        font-size: 0.9rem;
-        color: #374151;
-        text-align: center;
-    }
-    .step-desc {
-        font-size: 0.75rem;
-        color: #6b7280;
-        text-align: center;
-    }
-    </style>
-    """, unsafe_allow_html=True)
-
-    # Render stepper using Streamlit columns for interactivity
-    cols = st.columns(len(STEP_LABELS))
-
-    for i, (label, desc) in enumerate(zip(STEP_LABELS, STEP_DESCRIPTIONS)):
-        with cols[i]:
-            # Determine step status
-            is_completed = step_complete[i]
-            is_current = i == active_page_for_stepper
-
-            # Step indicator and status
-            if is_completed:
-                status_icon = "✓"
-                circle_class = "step-circle-completed"
-            elif is_current:
-                status_icon = str(i + 1)
-                circle_class = "step-circle-current"
-            else:
-                status_icon = str(i + 1)
-                circle_class = "step-circle-pending"
-
-            label_class = "step-label-current" if is_current else "step-label-default"
-
-            # Create step display using clean HTML with CSS classes
-            step_html = f'''<div class="step-container">
-<div class="{circle_class}">{status_icon}</div>
-<div class="{label_class}">{label}</div>
-<div class="step-desc">{desc}</div>
-</div>'''
-            st.markdown(step_html, unsafe_allow_html=True)
-
-            # Navigation button under each step
-            if is_current:
-                st.caption("You are here")
-            elif is_completed or i <= active_page_for_stepper + 1:
-                if st.button(f"Go to Step {i + 1}", key=f"stepper_nav_{i}", use_container_width=True):
-                    _navigate_to(i)
-
-
-# v1.4.14: _render_scroll_to_top_button() REMOVED.
-# Navigation buttons are now inline at the bottom of each page via _render_step_navigation().
 
 
 # v1.4.14: Pending reset handler — MUST run before ANY widgets render.
@@ -4997,6 +4911,7 @@ if st.session_state.pop("_pending_reset", False):
             except Exception:
                 pass
     st.session_state["active_page"] = 0  # Reset to first page
+    st.session_state["_page_just_changed"] = True  # Scroll to top
 
 # Show compact progress bar
 completion = _get_step_completion()
@@ -5015,10 +4930,10 @@ st.progress(completed_count / total_count, text=f"{status_emoji} Ready: {progres
 _feedback_container = st.container()
 
 # =====================================================================
-# v1.4.14: PAGE-BASED NAVIGATION — replaces buggy st.tabs() system.
+# v1.4.15: PAGE-BASED NAVIGATION with CSS Wizard Stepper.
 # Only one page renders at a time. When the user navigates, _navigate_to()
-# sets active_page and calls st.rerun(). The new content renders fresh,
-# starting at the top of the viewport — no JavaScript hacks needed.
+# sets active_page, flags _page_just_changed, and calls st.rerun().
+# A JavaScript snippet scrolls the browser to the very top.
 # =====================================================================
 PAGE_LABELS = ["Setup", "Study Input", "Design", "Generate"]
 PAGE_ICONS = ["1", "2", "3", "4"]
@@ -5027,14 +4942,137 @@ if "active_page" not in st.session_state:
     st.session_state["active_page"] = 0
 active_page = st.session_state["active_page"]
 
-# Render navigation bar as styled buttons
+# ── Scroll to top on page change ─────────────────────────────────────
+# MUST fire BEFORE any visible content so the user sees the page from the top.
+if st.session_state.pop("_page_just_changed", False):
+    _inject_scroll_to_top_js()
+
+# ── Completion status for stepper badges ──────────────────────────────
+_step_completion = _get_step_completion()
+_step_done = [
+    _step_completion["study_title"] and _step_completion["study_description"],
+    _step_completion["qsf_uploaded"],
+    _step_completion["conditions_confirmed"] and _step_completion["scales_confirmed"],
+    bool(st.session_state.get("generated_data")),
+]
+
+# ── Modern CSS Wizard Stepper ─────────────────────────────────────────
+def _render_wizard_stepper(active: int, done: list) -> None:
+    """Render a modern CSS wizard progress stepper."""
+    steps_html = ""
+    for i, (label, icon) in enumerate(zip(PAGE_LABELS, PAGE_ICONS)):
+        if i < active and done[i]:
+            state = "completed"
+            circle_content = "&#10003;"  # checkmark
+        elif i == active:
+            state = "active"
+            circle_content = icon
+        else:
+            state = "pending"
+            circle_content = icon
+
+        # Connector line (not for last step)
+        line_html = ""
+        if i < len(PAGE_LABELS) - 1:
+            line_state = "completed" if (i < active and done[i]) else "pending"
+            line_html = f'<div class="wz-line {line_state}"></div>'
+
+        steps_html += f"""
+        <div class="wz-step">
+            <div class="wz-circle {state}">{circle_content}</div>
+            <div class="wz-label {state}">{label}</div>
+            {line_html}
+        </div>"""
+
+    st.markdown(f"""
+    <style>
+    .wz-container {{
+        display: flex;
+        justify-content: center;
+        align-items: flex-start;
+        padding: 16px 8px 8px 8px;
+        margin-bottom: 4px;
+    }}
+    .wz-step {{
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        position: relative;
+        flex: 1;
+        min-width: 0;
+    }}
+    .wz-circle {{
+        width: 42px;
+        height: 42px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 700;
+        font-size: 16px;
+        z-index: 2;
+        transition: all 0.2s ease;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    }}
+    .wz-circle.active {{
+        background: linear-gradient(135deg, #FF4B4B 0%, #E03E3E 100%);
+        color: white;
+        box-shadow: 0 4px 14px rgba(255,75,75,0.35);
+        transform: scale(1.1);
+    }}
+    .wz-circle.completed {{
+        background: linear-gradient(135deg, #21C354 0%, #1BA94C 100%);
+        color: white;
+        box-shadow: 0 2px 8px rgba(33,195,84,0.25);
+    }}
+    .wz-circle.pending {{
+        background: #F0F2F6;
+        color: #9CA3AF;
+        border: 2px solid #E5E7EB;
+    }}
+    .wz-label {{
+        margin-top: 8px;
+        font-size: 12px;
+        font-weight: 600;
+        text-align: center;
+        letter-spacing: 0.3px;
+    }}
+    .wz-label.active {{ color: #FF4B4B; }}
+    .wz-label.completed {{ color: #21C354; }}
+    .wz-label.pending {{ color: #9CA3AF; }}
+    .wz-line {{
+        position: absolute;
+        top: 21px;
+        left: calc(50% + 24px);
+        right: calc(-50% + 24px);
+        height: 3px;
+        border-radius: 2px;
+        z-index: 1;
+    }}
+    .wz-line.completed {{ background: linear-gradient(90deg, #21C354, #21C354); }}
+    .wz-line.pending {{ background: #E5E7EB; }}
+    /* Fade-in animation for page content */
+    @keyframes wzFadeIn {{
+        from {{ opacity: 0; transform: translateY(8px); }}
+        to {{ opacity: 1; transform: translateY(0); }}
+    }}
+    .wz-page-enter {{
+        animation: wzFadeIn 0.25s ease-out;
+    }}
+    </style>
+    <div class="wz-container">{steps_html}</div>
+    """, unsafe_allow_html=True)
+
+_render_wizard_stepper(active_page, _step_done)
+
+# ── Clickable navigation buttons (below the visual stepper) ──────────
 _nav_cols = st.columns(len(PAGE_LABELS))
-for _i, (_label, _icon) in enumerate(zip(PAGE_LABELS, PAGE_ICONS)):
+for _i, _label in enumerate(PAGE_LABELS):
     with _nav_cols[_i]:
         _is_active = _i == active_page
         _btn_type = "primary" if _is_active else "secondary"
         if st.button(
-            f"{_icon}. {_label}" if not _is_active else f"▸ {_icon}. {_label}",
+            _label if _is_active else _label,
             key=f"nav_page_{_i}",
             type=_btn_type,
             use_container_width=True,
@@ -5193,29 +5231,41 @@ def _get_qsf_identifiers(preview: Optional[QSFPreviewResult]) -> List[str]:
 
 
 def _render_step_navigation(step_index: int, can_next: bool, next_label: str) -> None:
-    """Render navigation buttons at the bottom of each step."""
+    """Render a modern bottom navigation bar with Previous/Continue actions."""
     st.markdown("---")
 
-    # Create a prominent navigation section
-    if step_index < len(STEP_LABELS) - 1:
-        # Not on final step
-        col_back, col_spacer, col_next = st.columns([1, 1, 2])
+    # Step indicator: "Step X of 4"
+    st.caption(f"Step {step_index + 1} of {len(PAGE_LABELS)}")
+
+    if step_index < len(PAGE_LABELS) - 1:
+        # Not on final step — show back + continue
+        col_back, col_spacer, col_next = st.columns([1.2, 0.6, 2])
         with col_back:
             if step_index > 0:
-                if st.button("← Previous Step", key=f"nav_back_{step_index}", use_container_width=True):
+                if st.button("← Back", key=f"nav_back_{step_index}", use_container_width=True):
                     _navigate_to(step_index - 1)
         with col_next:
             if can_next:
-                if st.button(f"Continue to {next_label} →", key=f"nav_next_{step_index}", type="primary", use_container_width=True):
+                if st.button(
+                    f"Continue to {next_label} →",
+                    key=f"nav_next_{step_index}",
+                    type="primary",
+                    use_container_width=True,
+                ):
                     _navigate_to(step_index + 1)
             else:
-                st.button(f"Continue to {next_label} →", key=f"nav_next_disabled_{step_index}", disabled=True, use_container_width=True)
+                st.button(
+                    f"Continue to {next_label} →",
+                    key=f"nav_next_disabled_{step_index}",
+                    disabled=True,
+                    use_container_width=True,
+                )
                 st.caption("Complete required fields above to continue")
     else:
-        # On final step - just show back button
+        # On final step — just show back
         col_back, col_spacer = st.columns([1, 3])
         with col_back:
-            if st.button("← Previous Step", key=f"nav_back_{step_index}", use_container_width=True):
+            if st.button("← Back", key=f"nav_back_{step_index}", use_container_width=True):
                 _navigate_to(step_index - 1)
 
 
@@ -5226,69 +5276,17 @@ def _get_total_conditions() -> int:
     return len(set(selected + custom))
 
 
-# ========================================
-# UNIFIED STATUS PANEL - Shows progress across all steps
-# ========================================
-def _render_status_panel():
-    """Render a unified status panel showing all required fields (v2.4.5 enhanced)."""
-    completion = _get_step_completion()
-
-    # Calculate overall progress
-    required_items = ["study_title", "study_description", "sample_size", "qsf_uploaded",
-                      "primary_outcome", "independent_var", "conditions_set"]
-    completed_count = sum(1 for k in required_items if completion.get(k, False))
-    total_count = len(required_items)
-
-    # v2.4.5: Enhanced progress bar with percentage
-    progress = completed_count / total_count
-    pct = int(progress * 100)
-    status_emoji = "🟢" if pct == 100 else "🟡" if pct >= 50 else "🔴"
-    st.progress(progress, text=f"{status_emoji} Setup progress: {pct}% ({completed_count}/{total_count} required fields)")
-
-    # Missing fields with clickable guidance
-    missing = []
-    if not completion["study_title"]:
-        missing.append(("Study title", "Step 1"))
-    if not completion["study_description"]:
-        missing.append(("Study description", "Step 1"))
-    if not completion["sample_size"]:
-        missing.append(("Sample size (minimum 10)", "Step 3"))
-    if not completion["qsf_uploaded"]:
-        missing.append(("Study input (QSF or description)", "Step 2"))
-    if not completion["primary_outcome"]:
-        missing.append(("Primary outcome variable", "Step 2"))
-    if not completion["independent_var"]:
-        missing.append(("Independent variable", "Step 2"))
-    if not completion["conditions_set"]:
-        missing.append(("Experimental conditions", "Step 3"))
-
-    if missing:
-        missing_text = " · ".join([f"**{name}** ({loc})" for name, loc in missing])
-        st.warning(f"Missing: {missing_text}")
-
-    # Current status summary
-    preview = st.session_state.get("qsf_preview", None)
-    total_conditions = _get_total_conditions()
-    inferred = st.session_state.get("inferred_design", None)
-    num_scales = len(inferred.get("scales", [])) if inferred else 0
-
-    col1, col2, col3, col4 = st.columns(4)
-    col1.metric("Sample Size", st.session_state.get("sample_size", 0))
-    col2.metric("Conditions", total_conditions)
-    col3.metric("Scales", num_scales)
-    col4.metric("QSF Status", "✓ Uploaded" if preview and preview.success else "Not uploaded")
-
 
 # =====================================================================
 # PAGE 1: STUDY SETUP
 # =====================================================================
 if active_page == 0:
-    # Compact status indicator
+    st.markdown('<div class="wz-page-enter">', unsafe_allow_html=True)
     completion = _get_step_completion()
     step1_done = completion["study_title"] and completion["study_description"]
 
     if step1_done:
-        st.success("Study info complete — proceed to **Study Input** tab")
+        st.success("Study info complete — proceed to **Study Input**")
     else:
         st.info("Enter study title and description below")
 
@@ -5336,15 +5334,16 @@ if active_page == 0:
 # PAGE 2: FILE UPLOAD / STUDY BUILDER
 # =====================================================================
 if active_page == 1:
+    st.markdown('<div class="wz-page-enter">', unsafe_allow_html=True)
     completion = _get_step_completion()
     step1_done = completion["study_title"] and completion["study_description"]
     step2_done = completion["qsf_uploaded"]
 
     if not step1_done:
-        st.warning("Complete the **Setup** tab first (study title & description)")
+        st.warning("Complete the **Setup** step first (study title & description)")
 
     if step2_done:
-        st.success("Study input complete — proceed to **Design** tab")
+        st.success("Study input complete — proceed to **Design**")
 
     # ========================================
     # MODE SELECTOR: QSF Upload vs Conversational Builder
@@ -5808,6 +5807,7 @@ if active_page == 1:
 # PAGE 3: DESIGN CONFIGURATION
 # =====================================================================
 if active_page == 2:
+    st.markdown('<div class="wz-page-enter">', unsafe_allow_html=True)
     preview: Optional[QSFPreviewResult] = st.session_state.get("qsf_preview", None)
     enhanced_analysis: Optional[DesignAnalysisResult] = st.session_state.get("enhanced_analysis", None)
 
@@ -5822,12 +5822,12 @@ if active_page == 2:
         _user_input_mode = st.session_state.get("study_input_mode", "upload_qsf")
         if _user_input_mode == "describe_study":
             st.warning(
-                "Complete the **Study Input** tab first — describe your conditions and scales, "
+                "Complete the **Study Input** step first — describe your conditions and scales, "
                 "then click **Build Study Specification** to proceed."
             )
         else:
             st.warning(
-                "Complete the **Study Input** tab first — upload a QSF file or describe your study "
+                "Complete the **Study Input** step first — upload a QSF file or describe your study "
                 "using the builder."
             )
         _skip_qsf_design = True
@@ -7188,6 +7188,7 @@ if active_page == 2:
 # PAGE 4: GENERATE SIMULATION
 # =====================================================================
 if active_page == 3:
+    st.markdown('<div class="wz-page-enter">', unsafe_allow_html=True)
     inferred = st.session_state.get("inferred_design", None)
     preview: Optional[QSFPreviewResult] = st.session_state.get("qsf_preview", None)
 
@@ -7207,20 +7208,20 @@ if active_page == 3:
             st.warning(
                 "No experiment design configured yet. Please complete **Study Input** "
                 "to describe your conditions and scales, click **Build Study Specification**, "
-                "then review your design in the **Design** tab before generating data."
+                "then review your design in **Design** before generating data."
             )
         else:
             st.warning(
                 "No experiment design configured yet. Please complete **Study Input** "
                 "to upload a QSF file (or describe your study), then configure your "
-                "design in the **Design** tab before generating data."
+                "design in **Design** before generating data."
             )
         col_back1, col_back2 = st.columns([1, 1])
         with col_back1:
-            if st.button("Go to Step 2: Study Input", key="go_step2_from_generate", use_container_width=True):
+            if st.button("Go to Study Input", key="go_step2_from_generate", use_container_width=True):
                 _navigate_to(1)
         with col_back2:
-            if st.button("Go to Step 3: Design", key="go_step3_from_generate", use_container_width=True):
+            if st.button("Go to Design", key="go_step3_from_generate", use_container_width=True):
                 _navigate_to(2)
         st.stop()
 
@@ -7753,8 +7754,9 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
                 _llm_status = _test_gen.check_connectivity()
                 _llm_status["provider_display"] = _test_gen.provider_display_name
                 st.session_state["_llm_connectivity_status"] = _llm_status
-            except Exception:
-                _llm_status = {"available": False, "provider": "none", "error": "Import failed"}
+            except Exception as _llm_err:
+                _log(f"LLM connectivity check failed: {_llm_err}", level="warning")
+                _llm_status = {"available": False, "provider": "none", "error": f"Init failed: {_llm_err}"}
                 st.session_state["_llm_connectivity_status"] = _llm_status
 
         if _llm_status.get("available"):
@@ -8274,29 +8276,34 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
             status_placeholder.info("📦 Packaging downloads and reports...")
             try:
                 explainer = engine.generate_explainer()
-            except Exception:
-                explainer = "# Explainer generation failed - see metadata for study details"
+            except Exception as _e:
+                _log(f"Explainer generation failed: {_e}", level="warning")
+                explainer = f"# Explainer generation failed: {_e}\n# See metadata for study details"
             try:
                 r_script = engine.generate_r_export(df)
-            except Exception:
-                r_script = "# R export generation failed"
-            # v2.4.5: Generate additional analysis scripts for Python, Julia, SPSS, Stata
+            except Exception as _e:
+                _log(f"R export failed: {_e}", level="warning")
+                r_script = f"# R export generation failed: {_e}"
             try:
                 python_script = engine.generate_python_export(df)
-            except Exception:
-                python_script = "# Python export generation failed"
+            except Exception as _e:
+                _log(f"Python export failed: {_e}", level="warning")
+                python_script = f"# Python export generation failed: {_e}"
             try:
                 julia_script = engine.generate_julia_export(df)
-            except Exception:
-                julia_script = "# Julia export generation failed"
+            except Exception as _e:
+                _log(f"Julia export failed: {_e}", level="warning")
+                julia_script = f"# Julia export generation failed: {_e}"
             try:
                 spss_script = engine.generate_spss_export(df)
-            except Exception:
-                spss_script = "* SPSS export generation failed"
+            except Exception as _e:
+                _log(f"SPSS export failed: {_e}", level="warning")
+                spss_script = f"* SPSS export generation failed: {_e}"
             try:
                 stata_script = engine.generate_stata_export(df)
-            except Exception:
-                stata_script = "// Stata export generation failed"
+            except Exception as _e:
+                _log(f"Stata export failed: {_e}", level="warning")
+                stata_script = f"// Stata export generation failed: {_e}"
 
             metadata["preregistration_summary"] = {
                 "outcomes": st.session_state.get("prereg_outcomes", ""),
