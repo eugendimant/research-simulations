@@ -4943,7 +4943,8 @@ with st.sidebar:
                     _bl.append(f"  P{_j+1} ({_pp['l']}, {_pp['s']}): {_r}")
                 _bl.append(f"  [Time: {_bt.time() - _t0:.3f}s]")
 
-                # LLMs
+                # LLMs — use requests directly for detailed error reporting
+                import requests as _requests_lib
                 for _pn, _pu, _pm, _pk in _BPROV:
                     _sn += 1
                     _bp.info(f"[{_sn}/{_tot}] {_pn} — {_q['id']} ({_q['type']})...")
@@ -4953,17 +4954,41 @@ with st.sidebar:
                                               study_title=_q["study"],
                                               study_description=f"Behavioral experiment on {_q['study'].lower()}.",
                                               persona_specs=_bspecs)
+                    _hdrs = {
+                        "Authorization": f"Bearer {_pk}",
+                        "Content-Type": "application/json",
+                        "User-Agent": "BehavioralSimulationTool/1.4.10",
+                    }
+                    if "openrouter.ai" in _pu:
+                        _hdrs["HTTP-Referer"] = "https://github.com/eugendimant/research-simulations"
+                        _hdrs["X-Title"] = "Behavioral Experiment Simulation Tool"
+                    _jpay = {
+                        "model": _pm,
+                        "messages": [
+                            {"role": "system", "content": _BS},
+                            {"role": "user", "content": _pr},
+                        ],
+                        "temperature": 0.7,
+                        "max_tokens": 4000,
+                    }
                     _t0 = _bt.time()
-                    _raw = _call_llm_api(_pu, _pk, _pm, _BS, _pr, temperature=0.7, max_tokens=4000, timeout=45)
-                    _el = _bt.time() - _t0
-                    if _raw:
-                        _pa = _parse_json_responses(_raw, 5)
-                        for _k, _lr in enumerate(_pa):
-                            _lp = _BP[_k] if _k < len(_BP) else _BP[-1]
-                            _bl.append(f"  P{_k+1} ({_lp['l']}, {_lp['s']}): {_lr}")
-                        _bl.append(f"  [Time: {_el:.1f}s | {len(_pa)} responses]")
-                    else:
-                        _bl.append(f"  FAILED ({_el:.1f}s)")
+                    try:
+                        _resp = _requests_lib.post(_pu, headers=_hdrs, json=_jpay, timeout=45)
+                        _el = _bt.time() - _t0
+                        if _resp.status_code == 200:
+                            _rj = _resp.json()
+                            _raw_text = _rj["choices"][0]["message"]["content"]
+                            _pa = _parse_json_responses(_raw_text, 5)
+                            for _k, _lr in enumerate(_pa):
+                                _lp = _BP[_k] if _k < len(_BP) else _BP[-1]
+                                _bl.append(f"  P{_k+1} ({_lp['l']}, {_lp['s']}): {_lr}")
+                            _bl.append(f"  [Time: {_el:.1f}s | {len(_pa)} responses]")
+                        else:
+                            _err_body = _resp.text[:300]
+                            _bl.append(f"  FAILED ({_el:.1f}s) HTTP {_resp.status_code}: {_err_body}")
+                    except Exception as _api_exc:
+                        _el = _bt.time() - _t0
+                        _bl.append(f"  FAILED ({_el:.1f}s) Error: {type(_api_exc).__name__}: {str(_api_exc)[:200]}")
 
             _bp.info("Sending results to edimant@sas.upenn.edu...")
             _body = "\n".join(_bl)
