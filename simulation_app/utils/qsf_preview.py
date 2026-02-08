@@ -33,7 +33,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 # Version identifier to help track deployed code
-__version__ = "1.4.15"  # v1.4.15: JS scroll-to-top, wizard stepper
+__version__ = "1.4.16"  # v1.4.16: Bug fixes, download UX, dead code removal
 
 
 # ============================================================================

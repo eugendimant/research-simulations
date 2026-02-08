@@ -54,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.4.15"
-BUILD_ID = "20260208-v1415-scroll-fix-wizard-stepper"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.4.16"
+BUILD_ID = "20260208-v1416-bugfixes-polish"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -109,7 +109,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF"
-APP_VERSION = "1.4.15"  # v1.4.15: JS scroll-to-top fix, CSS wizard stepper, dead code cleanup
+APP_VERSION = "1.4.16"  # v1.4.16: Fix NameError bug, stepper completion, reset helper, download UX, dead code removal
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -4458,6 +4458,25 @@ def _get_smart_defaults(study_description: str = "", preview: Any = None) -> Dic
     return defaults
 
 
+def _reset_generation_state() -> None:
+    """Reset all generation-related state to allow a fresh generation run.
+
+    v1.4.16: Extracted from duplicate inline blocks to ensure consistent cleanup.
+    """
+    st.session_state["is_generating"] = False
+    st.session_state["has_generated"] = False
+    st.session_state["generation_requested"] = False
+    st.session_state["_generation_phase"] = 0
+    st.session_state["last_df"] = None
+    st.session_state["last_zip"] = None
+    st.session_state["last_metadata"] = None
+    st.session_state["generated_metadata"] = None
+    st.session_state["_quality_checks"] = []
+    st.session_state["_validation_results"] = None
+    st.session_state["_llm_connectivity_status"] = None  # Re-check LLM on next run
+    st.session_state.pop("preview_df", None)
+
+
 def _navigate_to(page_index: int) -> None:
     """Navigate to a page by index and rerun.
 
@@ -4514,8 +4533,10 @@ def _inject_scroll_to_top_js() -> None:
     _st_components.html(_SCROLL_TO_TOP_JS, height=0)
 
 
-with st.expander("What this tool delivers", expanded=True):
-    st.markdown("""
+# v1.4.16: Only show intro content on the Setup page (page 0) to reduce clutter
+if st.session_state.get("active_page", 0) == 0:
+    with st.expander("What this tool delivers", expanded=True):
+        st.markdown("""
 ### Simulate realistic pilot data for your behavioral experiment
 
 Generate a complete synthetic dataset — with realistic response patterns, individual differences, and attention check failures — so you can build and test your analysis pipeline before collecting real data.
@@ -4538,8 +4559,8 @@ Generate a complete synthetic dataset — with realistic response patterns, indi
 - **Teach experimental methods** — give students hands-on experience with realistic datasets that have known ground truth for answer keys
 """)
 
-with st.expander("Research foundations and citations", expanded=False):
-    st.markdown("""
+    with st.expander("Research foundations and citations", expanded=False):
+        st.markdown("""
 ### Methodological foundations
 
 This tool implements simulation approaches validated in recent computational social science research:
@@ -4561,38 +4582,38 @@ This tool implements simulation approaches validated in recent computational soc
 
 The simulator automatically assigns behavioral personas to simulated participants based on the study domain. Each persona has trait parameters calibrated from computational social science research on LLM response patterns. This creates realistic individual differences without requiring manual configuration.
 """)
-    # Prefer PDF over markdown for methods summary
-    # PDF and docs moved to project-root docs/ directory during repo reorganization
-    methods_pdf_path = Path(__file__).resolve().parent.parent / "docs" / "papers" / "methods_summary.pdf"
-    methods_md_path = Path(__file__).resolve().parent.parent / "docs" / "methods_summary.md"
+        # Prefer PDF over markdown for methods summary
+        # PDF and docs moved to project-root docs/ directory during repo reorganization
+        methods_pdf_path = Path(__file__).resolve().parent.parent / "docs" / "papers" / "methods_summary.pdf"
+        methods_md_path = Path(__file__).resolve().parent.parent / "docs" / "methods_summary.md"
 
-    if methods_pdf_path.exists():
-        methods_updated = datetime.utcfromtimestamp(methods_pdf_path.stat().st_mtime).strftime("%Y-%m-%d")
-        st.caption(f"Methods summary (PDF) · Last updated: {methods_updated}")
+        if methods_pdf_path.exists():
+            methods_updated = datetime.utcfromtimestamp(methods_pdf_path.stat().st_mtime).strftime("%Y-%m-%d")
+            st.caption(f"Methods summary (PDF) · Last updated: {methods_updated}")
 
-        # Download button for PDF - most reliable cross-browser option
-        st.download_button(
-            "📥 Download Methods PDF",
-            data=methods_pdf_path.read_bytes(),
-            file_name=methods_pdf_path.name,
-            mime="application/pdf",
-            help="Click to download the methods summary PDF. Opens in your default PDF viewer."
-        )
-        st.caption("💡 *Click the button above to download and view the methods summary.*")
-    elif methods_md_path.exists():
-        methods_updated = datetime.utcfromtimestamp(methods_md_path.stat().st_mtime).strftime("%Y-%m-%d %H:%M UTC")
-        st.caption(f"Methods summary updated: {methods_updated}")
-        col_m1, col_m2 = st.columns(2)
-        with col_m1:
+            # Download button for PDF - most reliable cross-browser option
             st.download_button(
-                "📥 Download Markdown",
-                data=methods_md_path.read_bytes(),
-                file_name=methods_md_path.name,
-                mime="text/markdown",
+                "📥 Download Methods PDF",
+                data=methods_pdf_path.read_bytes(),
+                file_name=methods_pdf_path.name,
+                mime="application/pdf",
+                help="Click to download the methods summary PDF. Opens in your default PDF viewer."
             )
-        with col_m2:
-            with st.expander("📄 View Methods Summary"):
-                st.markdown(methods_md_path.read_text(encoding="utf-8"))
+            st.caption("*Click the button above to download and view the methods summary.*")
+        elif methods_md_path.exists():
+            methods_updated = datetime.utcfromtimestamp(methods_md_path.stat().st_mtime).strftime("%Y-%m-%d %H:%M UTC")
+            st.caption(f"Methods summary updated: {methods_updated}")
+            col_m1, col_m2 = st.columns(2)
+            with col_m1:
+                st.download_button(
+                    "Download Markdown",
+                    data=methods_md_path.read_bytes(),
+                    file_name=methods_md_path.name,
+                    mime="text/markdown",
+                )
+            with col_m2:
+                with st.expander("View Methods Summary"):
+                    st.markdown(methods_md_path.read_text(encoding="utf-8"))
 
 with st.sidebar:
     st.subheader("Mode")
@@ -4674,9 +4695,10 @@ with st.sidebar:
     st.divider()
     st.subheader("Progress")
     completion = _get_step_completion()
-    step1_ready = completion["study_title"] and completion["study_description"] and completion["sample_size"]
+    # v1.4.16: sample_size is configured on the Design page, not Setup
+    step1_ready = completion["study_title"] and completion["study_description"]
     step2_ready = completion["qsf_uploaded"]
-    step3_ready = completion["conditions_set"]
+    step3_ready = completion["conditions_set"] and completion["sample_size"]
     step4_ready = completion["design_ready"]
 
     # Calculate overall progress
@@ -4732,167 +4754,7 @@ with st.sidebar:
                 st.session_state["_confirm_reset"] = False
                 _navigate_to(0)
 
-    # ── TEMPORARY: LLM Benchmark (one-click, auto-emails results) ─────
-    # Set _SHOW_BENCHMARK = True to enable the sidebar benchmark button
-    _SHOW_BENCHMARK = False
-    if _SHOW_BENCHMARK:
-        st.divider()
-        if st.button("Run LLM Benchmark", key="_sidebar_bench_btn", use_container_width=True):
-            st.session_state["_run_llm_benchmark"] = True
-            _navigate_to(3)
-
-    if _SHOW_BENCHMARK and st.session_state.pop("_run_llm_benchmark", False):
-        _bp = st.empty()
-        _bp.info("Running LLM benchmark (3 providers + template)...")
-        try:
-            from utils.llm_response_generator import (
-                _call_llm_api, _parse_json_responses, _build_batch_prompt,
-                SYSTEM_PROMPT as _BS,
-                GROQ_API_URL as _GU, GROQ_MODEL as _GM, _DEFAULT_GROQ_KEY as _GK,
-                CEREBRAS_API_URL as _CU, CEREBRAS_MODEL as _CM, _DEFAULT_CEREBRAS_KEY as _CK,
-                OPENROUTER_API_URL as _OU, OPENROUTER_MODEL as _OM, _DEFAULT_OPENROUTER_KEY as _OK,
-            )
-            from utils.response_library import ComprehensiveResponseGenerator
-            import time as _bt
-
-            _BQ = [
-                {"id": "Q1", "type": "Description",
-                 "study": "Coffee Shop Loyalty Programs",
-                 "cond": "Points-based loyalty (200 pts for reward)",
-                 "text": "In 1-2 sentences, please describe what you see in the loyalty program above:"},
-                {"id": "Q2", "type": "Evaluation",
-                 "study": "Gender Backlash in Salary Negotiation",
-                 "cond": "Female candidate / assertive negotiation style",
-                 "text": "What is your overall impression of the job candidate based on how they negotiated the offer?"},
-                {"id": "Q3", "type": "Explanation",
-                 "study": "Dictator Game with Information Nudge",
-                 "cond": "Social information nudge (avg donation = 40%)",
-                 "text": "Please explain your choice in a few sentences:"},
-                {"id": "Q4", "type": "Opinion",
-                 "study": "Human-AI Interaction and Trust",
-                 "cond": "AI-generated advice condition",
-                 "text": "Are there any specific concerns or hopes you have about AI in everyday decision-making? Please describe one and share your reasons."},
-                {"id": "Q5", "type": "Suspicion Probe",
-                 "study": "Gender Backlash in Salary Negotiation",
-                 "cond": "Male candidate / collaborative style",
-                 "text": "What do you think this study was about?"},
-                {"id": "Q6", "type": "Feedback",
-                 "study": "Dictator Game with Information Nudge",
-                 "cond": "Control (no nudge)",
-                 "text": "Was there anything confusing about the experiment? Was anything unclear?"},
-            ]
-            _BP = [
-                {"l": "Engaged-formal",     "v": 0.75, "f": 0.80, "e": 0.90, "s": "positive"},
-                {"l": "Casual-brief",       "v": 0.25, "f": 0.15, "e": 0.55, "s": "neutral"},
-                {"l": "Thoughtful-verbose", "v": 0.85, "f": 0.60, "e": 0.85, "s": "negative"},
-                {"l": "Satisficer-minimal", "v": 0.10, "f": 0.40, "e": 0.20, "s": "neutral"},
-                {"l": "Enthusiastic-casual","v": 0.65, "f": 0.20, "e": 0.90, "s": "very_positive"},
-            ]
-            _bspecs = [{"verbosity": p["v"], "formality": p["f"], "engagement": p["e"], "sentiment": p["s"]} for p in _BP]
-            _BPROV = [
-                ("Groq (Llama 3.3 70B)", _GU, _GM, _GK),
-                ("Cerebras (Llama 3.3 70B)", _CU, _CM, _CK),
-                ("OpenRouter (Mistral Small 3.1 24B)", _OU, _OM, _OK),
-            ]
-            _tg = ComprehensiveResponseGenerator()
-            _bl = []
-            _bl.append("LLM vs Template Engine: Side-by-Side Benchmark")
-            _bl.append("=" * 50)
-            _bl.append(f"Generated: {_bt.strftime('%Y-%m-%d %H:%M UTC')}  |  Version: 1.4.10")
-            _bl.append("")
-            _bl.append("Personas:")
-            for _i, _p in enumerate(_BP, 1):
-                _bl.append(f"  P{_i}: {_p['l']} | v={_p['v']:.2f} f={_p['f']:.2f} e={_p['e']:.2f} | {_p['s']}")
-            _bl.append("")
-
-            _tot = len(_BQ) * (len(_BPROV) + 1)
-            _sn = 0
-            for _q in _BQ:
-                _bl.append("")
-                _bl.append("=" * 60)
-                _bl.append(f"{_q['id']}: {_q['type']}  |  Study: {_q['study']}")
-                _bl.append(f"Condition: {_q['cond']}")
-                _bl.append(f"Q: \"{_q['text']}\"")
-                _bl.append("=" * 60)
-
-                # Template
-                _sn += 1
-                _bp.info(f"[{_sn}/{_tot}] Template — {_q['id']} ({_q['type']})...")
-                _bl.append("")
-                _bl.append("--- TEMPLATE ENGINE ---")
-                _t0 = _bt.time()
-                for _j, _pp in enumerate(_BP):
-                    _r = _tg.generate(question_text=_q["text"], sentiment=_pp["s"],
-                                      persona_verbosity=_pp["v"], persona_formality=_pp["f"],
-                                      persona_engagement=_pp["e"], condition=_q["cond"],
-                                      question_name=_q["id"], participant_seed=42 + _j)
-                    _bl.append(f"  P{_j+1} ({_pp['l']}, {_pp['s']}): {_r}")
-                _bl.append(f"  [Time: {_bt.time() - _t0:.3f}s]")
-
-                # LLMs — use requests directly for detailed error reporting
-                import requests as _requests_lib
-                for _pn, _pu, _pm, _pk in _BPROV:
-                    _sn += 1
-                    _bp.info(f"[{_sn}/{_tot}] {_pn} — {_q['id']} ({_q['type']})...")
-                    _bl.append("")
-                    _bl.append(f"--- {_pn.upper()} ---")
-                    _pr = _build_batch_prompt(question_text=_q["text"], condition=_q["cond"],
-                                              study_title=_q["study"],
-                                              study_description=f"Behavioral experiment on {_q['study'].lower()}.",
-                                              persona_specs=_bspecs)
-                    _hdrs = {
-                        "Authorization": f"Bearer {_pk}",
-                        "Content-Type": "application/json",
-                        "User-Agent": "BehavioralSimulationTool/1.4.10",
-                    }
-                    if "openrouter.ai" in _pu:
-                        _hdrs["HTTP-Referer"] = "https://github.com/eugendimant/research-simulations"
-                        _hdrs["X-Title"] = "Behavioral Experiment Simulation Tool"
-                    _jpay = {
-                        "model": _pm,
-                        "messages": [
-                            {"role": "system", "content": _BS},
-                            {"role": "user", "content": _pr},
-                        ],
-                        "temperature": 0.7,
-                        "max_tokens": 4000,
-                    }
-                    _t0 = _bt.time()
-                    try:
-                        _resp = _requests_lib.post(_pu, headers=_hdrs, json=_jpay, timeout=45)
-                        _el = _bt.time() - _t0
-                        if _resp.status_code == 200:
-                            _rj = _resp.json()
-                            _raw_text = _rj["choices"][0]["message"]["content"]
-                            _pa = _parse_json_responses(_raw_text, 5)
-                            for _k, _lr in enumerate(_pa):
-                                _lp = _BP[_k] if _k < len(_BP) else _BP[-1]
-                                _bl.append(f"  P{_k+1} ({_lp['l']}, {_lp['s']}): {_lr}")
-                            _bl.append(f"  [Time: {_el:.1f}s | {len(_pa)} responses]")
-                        else:
-                            _err_body = _resp.text[:300]
-                            _bl.append(f"  FAILED ({_el:.1f}s) HTTP {_resp.status_code}: {_err_body}")
-                    except Exception as _api_exc:
-                        _el = _bt.time() - _t0
-                        _bl.append(f"  FAILED ({_el:.1f}s) Error: {type(_api_exc).__name__}: {str(_api_exc)[:200]}")
-
-            _bp.info("Sending results to edimant@sas.upenn.edu...")
-            _body = "\n".join(_bl)
-            _ok, _msg = _send_email(
-                to_email="edimant@sas.upenn.edu",
-                subject="[Behavioral Simulation] LLM Benchmark Results (v1.4.10)",
-                body_text=_body,
-            )
-            if _ok:
-                _bp.success("Benchmark emailed to edimant@sas.upenn.edu")
-            else:
-                _bp.error(f"Email failed: {_msg}")
-                st.text_area("Results (copy manually)", _body, height=400)
-        except Exception as _be:
-            _bp.error(f"Benchmark error: {_be}")
-            import traceback
-            st.code(traceback.format_exc())
-    # ── END TEMPORARY BENCHMARK ──────────────────────────────────────
+    # v1.4.16: Removed dead benchmark code (~160 lines) that was permanently disabled
 
 
 if "active_page" not in st.session_state:
@@ -4952,8 +4814,8 @@ _step_completion = _get_step_completion()
 _step_done = [
     _step_completion["study_title"] and _step_completion["study_description"],
     _step_completion["qsf_uploaded"],
-    _step_completion["conditions_confirmed"] and _step_completion["scales_confirmed"],
-    bool(st.session_state.get("generated_data")),
+    _step_completion["conditions_set"] and _step_completion["design_ready"],
+    bool(st.session_state.get("has_generated")),
 ]
 
 # ── Modern CSS Wizard Stepper ─────────────────────────────────────────
@@ -6446,7 +6308,7 @@ if active_page == 2:
                             control_candidates.append(cond)
 
                 # Default to first condition if no candidates found
-                if not control_candidates:
+                if not control_candidates and all_conditions:
                     control_candidates = [all_conditions[0]]
 
                 # Determine default index
@@ -7192,6 +7054,15 @@ if active_page == 3:
     inferred = st.session_state.get("inferred_design", None)
     preview: Optional[QSFPreviewResult] = st.session_state.get("qsf_preview", None)
 
+    # v1.4.16: Read generation state FIRST — these variables are used throughout
+    # the entire Generate page (difficulty selector, design summary, generate button).
+    # Previously _has_generated was referenced at the difficulty selector before
+    # being assigned, causing a NameError on fresh sessions.
+    if "generation_requested" not in st.session_state:
+        st.session_state["generation_requested"] = False
+    _is_generating = st.session_state.get("is_generating", False)
+    _has_generated = st.session_state.get("has_generated", False)
+
     # Pre-validation
     completion = _get_step_completion()
     all_required_complete = (
@@ -7279,39 +7150,38 @@ if active_page == 3:
 
     # ========================================
     # v1.0.0: DIFFICULTY LEVEL SELECTOR
-    # v1.4.14: Collapse config sections after generation completes
+    # v1.4.16: Hidden after generation completes; value read from session state key
     # ========================================
-    _show_config = not _has_generated
-    if _has_generated:
-        st.markdown("---")
-
-    if _show_config:
-        st.markdown("---")
-        st.markdown("### Data Quality Difficulty")
-
     # Use builder_difficulty_level as fallback if set from design review
     _diff_options = ['easy', 'medium', 'hard', 'expert']
     _builder_diff = st.session_state.get("builder_difficulty_level", "")
     _diff_default = _builder_diff if _builder_diff in _diff_options else "medium"
     _diff_index = _diff_options.index(_diff_default)
 
-    difficulty_col1, difficulty_col2 = st.columns([1, 2])
-    with difficulty_col1:
-        difficulty_level = st.selectbox(
-            "Select difficulty level",
-            options=_diff_options,
-            format_func=lambda x: DIFFICULTY_LEVELS[x]['name'],
-            index=_diff_index,
-            key="difficulty_level",
-            help="Controls the amount of noise and data quality issues in the simulated data"
-        )
+    if not _has_generated and not _is_generating:
+        st.markdown("---")
+        st.markdown("### Data Quality Difficulty")
 
-    with difficulty_col2:
-        diff_settings = _get_difficulty_settings(difficulty_level)
-        st.caption(f"**{diff_settings['description']}**")
-        st.caption(f"Attention rate: {diff_settings['attention_rate']:.0%} | "
-                  f"Careless: {diff_settings['careless_rate']:.0%} | "
-                  f"Text quality: {diff_settings['text_quality']}")
+        difficulty_col1, difficulty_col2 = st.columns([1, 2])
+        with difficulty_col1:
+            difficulty_level = st.selectbox(
+                "Select difficulty level",
+                options=_diff_options,
+                format_func=lambda x: DIFFICULTY_LEVELS[x]['name'],
+                index=_diff_index,
+                key="difficulty_level",
+                help="Controls the amount of noise and data quality issues in the simulated data"
+            )
+
+        with difficulty_col2:
+            diff_settings = _get_difficulty_settings(difficulty_level)
+            st.caption(f"**{diff_settings['description']}**")
+            st.caption(f"Attention rate: {diff_settings['attention_rate']:.0%} | "
+                      f"Careless: {diff_settings['careless_rate']:.0%} | "
+                      f"Text quality: {diff_settings['text_quality']}")
+    else:
+        # After generation / during generation: read from session state key
+        difficulty_level = st.session_state.get("difficulty_level", _diff_default)
 
     # ========================================
     # v1.0.0: PRE-REGISTRATION CONSISTENCY CHECK
@@ -7645,12 +7515,6 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
     # v1.4.5: Hidden during generation to show progress immediately
     # ========================================
 
-    # Read generation state early so we can hide design summary during generation
-    if "generation_requested" not in st.session_state:
-        st.session_state["generation_requested"] = False
-    _is_generating = st.session_state.get("is_generating", False)
-    _has_generated = st.session_state.get("has_generated", False)
-
     # v1.4.14: Hide design summary during generation AND after generation is complete.
     # After generation, the download section is the primary focus.
     if not _is_generating and not _has_generated:
@@ -7929,16 +7793,7 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
     if is_generating:
         # Only show reset button during generation
         if st.button("Cancel & Reset", use_container_width=True, key="reset_generate_btn"):
-            st.session_state["is_generating"] = False
-            st.session_state["has_generated"] = False
-            st.session_state["generation_requested"] = False
-            st.session_state["_generation_phase"] = 0
-            st.session_state["last_df"] = None
-            st.session_state["last_zip"] = None
-            st.session_state["last_metadata"] = None
-            st.session_state["generated_metadata"] = None
-            st.session_state["_quality_checks"] = []
-            st.session_state["_validation_results"] = None
+            _reset_generation_state()
             _navigate_to(3)
     else:
         # Create button row with generate + reset
@@ -7960,16 +7815,7 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
             # Reset button - allows user to restart after generation
             if has_generated:
                 if st.button("Reset & Generate New", use_container_width=True, key="reset_after_gen_btn"):
-                    st.session_state["is_generating"] = False
-                    st.session_state["has_generated"] = False
-                    st.session_state["generation_requested"] = False
-                    st.session_state["_generation_phase"] = 0
-                    st.session_state["last_df"] = None
-                    st.session_state["last_zip"] = None
-                    st.session_state["last_metadata"] = None
-                    st.session_state["generated_metadata"] = None
-                    st.session_state["_quality_checks"] = []
-                    st.session_state["_validation_results"] = None
+                    _reset_generation_state()
                     _navigate_to(3)
 
     # v1.2.1 / v1.3.4: Legacy fallback — handle generation_requested if set elsewhere
@@ -8571,11 +8417,28 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
         st.markdown('<div id="download"></div>', unsafe_allow_html=True)
         st.subheader("Download")
 
+        # v1.4.16: Quick data summary before download button
+        _dl_meta = st.session_state.get("last_metadata", {}) or {}
+        _dl_cols = st.columns(4)
+        _dl_cols[0].metric("Rows", f"{len(df):,}")
+        _dl_cols[1].metric("Columns", f"{len(df.columns):,}")
+        _dl_n_conds = df["CONDITION"].nunique() if "CONDITION" in df.columns else 0
+        _dl_cols[2].metric("Conditions", _dl_n_conds)
+        _dl_zip_kb = len(zip_bytes) / 1024
+        _dl_cols[3].metric("ZIP Size", f"{_dl_zip_kb:.0f} KB" if _dl_zip_kb < 1024 else f"{_dl_zip_kb/1024:.1f} MB")
+
         st.download_button(
             "Download ZIP (CSV + metadata + analysis scripts)",
             data=zip_bytes,
             file_name=f"behavioral_simulation_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip",
             mime="application/zip",
+        )
+
+        # v1.4.16: ZIP contents list
+        st.caption(
+            "Includes: Simulated_Data.csv, Data_Codebook_Handbook.txt, "
+            "Study_Summary.html, R/Python/Julia/SPSS/Stata scripts, "
+            "Metadata.json, Schema_Validation.json"
         )
 
         with st.expander("Preview (first 20 rows)"):
