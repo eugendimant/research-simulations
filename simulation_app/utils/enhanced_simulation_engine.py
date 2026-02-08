@@ -45,7 +45,7 @@ This module is designed to run inside a `utils/` package (i.e., imported as
 """
 
 # Version identifier to help track deployed code
-__version__ = "1.4.4"  # v1.4.4: Fix navigation buttons, enhance training data collection
+__version__ = "1.4.6"  # v1.4.6: Fix autofill bug, improve builder flow, move Data Dictionary to bottom
 
 # =============================================================================
 # SCIENTIFIC FOUNDATIONS FOR SIMULATION
