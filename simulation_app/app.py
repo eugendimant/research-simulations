@@ -54,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.4.12"
-BUILD_ID = "20260208-v1412-five-quality-improvements"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.4.13"
+BUILD_ID = "20260208-v1413-state-management-ux-overhaul"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -109,7 +109,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF"
-APP_VERSION = "1.4.12"  # v1.4.12: 5 quality improvements (scales, columns, effects, diversity, registry)
+APP_VERSION = "1.4.13"  # v1.4.13: State management overhaul, Start Over fix, widget key unification, UX improvements
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -3059,14 +3059,9 @@ def _render_conversational_builder() -> None:
     _pending = st.session_state.pop("_pending_autofill_example", None)
     if _pending:
         st.session_state["builder_conditions_text"] = _pending["conditions"]
-        st.session_state["builder_conditions_input"] = _pending["conditions"]
         st.session_state["builder_scales_text"] = _pending["scales"]
-        st.session_state["builder_scales_input"] = _pending["scales"]
-        _oe_pending = _pending.get("open_ended", "")
-        st.session_state["builder_oe_text"] = _oe_pending
-        st.session_state["builder_oe_input"] = _oe_pending
+        st.session_state["builder_oe_text"] = _pending.get("open_ended", "")
         st.session_state["study_title"] = _pending["title"]
-        st.session_state["study_title_input"] = _pending["title"]
         _pending_desc = _pending.get(
             "description",
             f"Investigating {_pending.get('domain', _pending['title'].lower())}",
@@ -3148,7 +3143,6 @@ def _render_conversational_builder() -> None:
     _pending_scales = st.session_state.pop("_pending_autofill_scales", None)
     if _pending_scales:
         st.session_state["builder_scales_text"] = _pending_scales
-        st.session_state["builder_scales_input"] = _pending_scales
 
     # Check if builder is already complete
     if st.session_state.get("conversational_builder_complete"):
@@ -3160,8 +3154,8 @@ def _render_conversational_builder() -> None:
 
     st.markdown("### Describe Your Experiment")
     st.markdown(
-        "Answer the questions below to set up your simulation. "
-        "Describe your study in plain language — we'll extract the technical details automatically."
+        "Tell us about your study in plain language. "
+        "Fill in the **conditions** and **scales** sections below, then click **Build Study Specification**."
     )
 
     # Progress indicator
@@ -3171,12 +3165,11 @@ def _render_conversational_builder() -> None:
     st.progress(_filled_sections / 2, text=f"Core sections: {_filled_sections}/2 complete (conditions + scales required)")
 
     # Getting-started message when nothing has been filled in yet
-    _existing_conds = st.session_state.get("builder_conditions_text", "").strip()
-    _existing_scales = st.session_state.get("builder_scales_text", "").strip()
-    if not _existing_conds and not _existing_scales:
+    if not _has_conds and not _has_scales:
         st.info(
-            "Start by describing your experimental conditions below, "
-            "then add your measures. Use the examples for inspiration!"
+            "**Quick start:** Describe your conditions (e.g., 'Control, Treatment A, Treatment B'), "
+            "add your scales (e.g., 'Trust scale, 5 items, 1-7'), and click Build. "
+            "Or click an example below to see how it works."
         )
 
     # Example studies for inspiration
@@ -3209,10 +3202,9 @@ def _render_conversational_builder() -> None:
 
     conditions_text = st.text_area(
         "Conditions",
-        value=st.session_state.get("builder_conditions_text", ""),
         placeholder=conditions_placeholder,
         height=100,
-        key="builder_conditions_input",
+        key="builder_conditions_text",
         help=(
             "Describe your experimental design. Supports:\n"
             "- Simple lists: 'Control, Treatment A, Treatment B'\n"
@@ -3222,7 +3214,6 @@ def _render_conversational_builder() -> None:
             "Any NxM (and NxMxK, etc.) factorial is automatically detected and crossed."
         ),
     )
-    st.session_state["builder_conditions_text"] = conditions_text
 
     # Live parsing preview for conditions
     if conditions_text.strip():
@@ -3296,13 +3287,11 @@ def _render_conversational_builder() -> None:
 
     scales_text = st.text_area(
         "Scales / Dependent Variables",
-        value=st.session_state.get("builder_scales_text", ""),
         placeholder=scales_placeholder,
         height=120,
-        key="builder_scales_input",
+        key="builder_scales_text",
         help="Describe each scale on a new line or separated by semicolons. Include item count and range when possible.",
     )
-    st.session_state["builder_scales_text"] = scales_text
 
     # Live parsing preview for scales
     parsed_scales = parser.parse_scales(scales_text) if scales_text.strip() else []
@@ -3355,7 +3344,6 @@ def _render_conversational_builder() -> None:
 
     oe_text = st.text_area(
         "Open-ended questions",
-        value=st.session_state.get("builder_oe_text", ""),
         placeholder=(
             "Examples:\n"
             "• Please explain why you made this choice\n"
@@ -3363,10 +3351,9 @@ def _render_conversational_builder() -> None:
             "• What are your thoughts on this policy?"
         ),
         height=100,
-        key="builder_oe_input",
+        key="builder_oe_text",
         help="Enter each open-ended question on a new line. Leave empty if none.",
     )
-    st.session_state["builder_oe_text"] = oe_text
 
     parsed_oe = parser.parse_open_ended(oe_text) if oe_text.strip() else []
     if parsed_oe:
@@ -3480,7 +3467,6 @@ def _render_conversational_builder() -> None:
 
     participant_desc = st.text_area(
         "Participant characteristics",
-        value=st.session_state.get("builder_participant_desc", ""),
         placeholder=(
             "Examples:\n"
             "- College students taking introductory psychology\n"
@@ -3489,13 +3475,12 @@ def _render_conversational_builder() -> None:
             "- MTurk workers (general population)"
         ),
         height=80,
-        key="builder_participant_input",
+        key="builder_participant_desc",
         help=(
             "Describe who your participants are. This helps select appropriate "
             "behavioral personas and calibrate response patterns."
         ),
     )
-    st.session_state["builder_participant_desc"] = participant_desc
 
     # ── Validation & Submission ─────────────────────────────────────────
     st.markdown("---")
@@ -4400,8 +4385,9 @@ def _save_step_state():
         "conversational_builder_complete", "study_input_mode",
         "builder_conditions_text", "builder_scales_text", "builder_oe_text",
         "builder_design_type", "builder_sample_size",
-        "builder_parsed_design",
+        "builder_parsed_design", "builder_participant_desc",
         "prereg_text", "prereg_pdf_text", "prereg_files",
+        "prereg_outcomes", "prereg_iv",
         "survey_pdf_content", "survey_pdf_name",
         # Step 3: Design Setup
         "selected_conditions", "custom_conditions", "condition_candidates",
@@ -4721,7 +4707,7 @@ with st.sidebar:
     st.subheader("Study Snapshot")
 
     # Gather all snapshot data
-    snapshot_conditions = st.session_state.get("current_conditions") or st.session_state.get("selected_conditions") or []
+    snapshot_conditions = st.session_state.get("selected_conditions") or []
     snapshot_conditions = snapshot_conditions + st.session_state.get("custom_conditions", [])
     snapshot_conditions = list(dict.fromkeys([c for c in snapshot_conditions if str(c).strip()]))
     inferred = st.session_state.get("inferred_design", {})
@@ -4818,14 +4804,10 @@ with st.sidebar:
         _c1, _c2 = st.columns(2)
         with _c1:
             if st.button("Yes, clear everything", key="confirm_reset_yes", use_container_width=True, type="primary"):
-                # v1.3.5: Clear ALL session state for a true fresh start.
-                keys_to_delete = [k for k in st.session_state.keys()
-                                  if k != "confirm_reset_yes"]
-                for key in keys_to_delete:
-                    try:
-                        del st.session_state[key]
-                    except Exception:
-                        pass
+                # v1.4.13: Use pending pattern — set flag then rerun.
+                # The handler at the top of the script clears all state
+                # BEFORE any widgets render, so fields appear empty.
+                st.session_state["_pending_reset"] = True
                 _rerun_on_tab(0)
         with _c2:
             if st.button("Cancel", key="confirm_reset_no", use_container_width=True):
@@ -4839,7 +4821,7 @@ with st.sidebar:
         st.divider()
         if st.button("Run LLM Benchmark", key="_sidebar_bench_btn", use_container_width=True):
             st.session_state["_run_llm_benchmark"] = True
-            st.rerun()
+            _rerun_on_tab(3)
 
     if _SHOW_BENCHMARK and st.session_state.pop("_run_llm_benchmark", False):
         _bp = st.empty()
@@ -5152,8 +5134,17 @@ def _render_scroll_to_top_button(tab_index: int, next_tab_label: str = "") -> No
         """, height=0)
 
 
-# v1.2.2: NEW TAB-BASED UI - Replaces step wizard for better UX and no scroll issues
-# Tabs naturally handle scroll (each tab starts at top) - no JavaScript hacks needed
+# v1.4.13: Pending reset handler — MUST run before ANY widgets render.
+# The "Start Over" button sets the flag; we clear state here so that
+# Streamlit widgets see empty session_state on this render cycle.
+if st.session_state.pop("_pending_reset", False):
+    _keys_to_preserve = {"_restore_tab_index", "_scroll_to_top", "_pending_reset"}
+    for _k in list(st.session_state.keys()):
+        if _k not in _keys_to_preserve:
+            try:
+                del st.session_state[_k]
+            except Exception:
+                pass
 
 # Show compact progress bar
 completion = _get_step_completion()
@@ -5432,43 +5423,37 @@ with tab_setup:
 
     with col1:
         st.markdown("#### Study Details")
+        # v1.4.13: Widget keys now match session state keys exactly.
+        # This eliminates duplicate state and ensures Start Over clears properly.
         study_title = st.text_input(
             "Study title *",
-            value=st.session_state.get("study_title", ""),
             placeholder="e.g., Effect of AI Labels on Consumer Trust",
             help="Appears in the report and simulated data outputs.",
-            key="setup_study_title",
+            key="study_title",
         )
         study_description = st.text_area(
             "Study description *",
-            value=st.session_state.get("study_description", ""),
             height=150,
             placeholder="Describe your study's purpose, manipulation, and main outcomes.",
             help="Include your manipulation, population, and intended outcomes.",
-            key="setup_study_desc",
+            key="study_description",
         )
-        st.session_state["study_title"] = study_title
-        st.session_state["study_description"] = study_description
 
     with col2:
         st.markdown("#### Team (optional)")
         team_name = st.text_input(
             "Team name",
-            value=st.session_state.get("team_name", ""),
             placeholder="e.g., Team Alpha",
             help="Optional. Helps instructors identify your team.",
-            key="setup_team_name",
+            key="team_name",
         )
         members = st.text_area(
             "Team members (one per line)",
-            value=st.session_state.get("team_members_raw", ""),
             height=100,
             placeholder="John Doe\nJane Smith",
             help="Optional. List team members for the report.",
-            key="setup_team_members",
+            key="team_members_raw",
         )
-        st.session_state["team_name"] = team_name
-        st.session_state["team_members_raw"] = members
 
     # v1.3.4: Scroll-to-top button at bottom of Setup tab
     _render_scroll_to_top_button(0, next_tab_label="Study Input")
@@ -5829,21 +5814,17 @@ with tab_upload:
         with col_prereg2:
             prereg_outcomes = st.text_area(
                 "Primary outcome variables",
-                value=st.session_state.get("prereg_outcomes", ""),
                 placeholder="e.g., purchase_intention, brand_attitude",
                 help="List your main dependent variables (comma-separated)",
-                key="prereg_outcomes_input",
+                key="prereg_outcomes",
             )
-            st.session_state["prereg_outcomes"] = prereg_outcomes
 
             prereg_iv = st.text_area(
                 "Independent variables / Manipulations",
-                value=st.session_state.get("prereg_iv", ""),
                 placeholder="e.g., AI_recommendation (yes/no), product_type (utilitarian/hedonic)",
                 help="List your manipulated variables and levels",
-                key="prereg_iv_input",
+                key="prereg_iv",
             )
-            st.session_state["prereg_iv"] = prereg_iv
 
             # Sanitize preregistration text to remove hypothesis-biasing language
             combined_prereg = f"{prereg_outcomes}\n{prereg_iv}".strip()
@@ -5878,14 +5859,23 @@ with tab_upload:
             ]
         st.session_state["condition_sources"] = condition_sources
 
-        current_conditions = st.session_state.get("current_conditions") or []
-        c1, c2, c3, c4, c5 = st.columns(5)
-        c1.metric("Questions", int(getattr(preview, "total_questions", 0) or 0))
-        c2.metric("Scales detected", int(len(getattr(preview, "detected_scales", []) or [])))
-        c3.metric("Condition candidates", int(len(st.session_state.get("condition_candidates", []) or [])))
-        c4.metric("Conditions selected", int(len(current_conditions)))
+        selected_conditions = st.session_state.get("selected_conditions") or []
+        st.markdown("#### QSF Analysis Results")
+        _n_questions = int(getattr(preview, "total_questions", 0) or 0)
+        _n_scales = int(len(getattr(preview, "detected_scales", []) or []))
+        _n_candidates = int(len(st.session_state.get("condition_candidates", []) or []))
         warnings = getattr(preview, "validation_warnings", []) or []
+        c1, c2, c3, c4, c5 = st.columns(5)
+        c1.metric("Questions", _n_questions)
+        c2.metric("Scales detected", _n_scales)
+        c3.metric("Condition candidates", _n_candidates)
+        c4.metric("Conditions selected", int(len(selected_conditions)))
         c5.metric("Warnings", int(len(warnings)))
+        if _n_questions > 0 and not warnings:
+            st.success(
+                f"QSF parsed successfully: {_n_questions} questions, {_n_scales} scales, "
+                f"{_n_candidates} condition candidates. Proceed to the **Design** tab to configure."
+            )
 
         errors = getattr(preview, "validation_errors", []) or []
 
@@ -5935,8 +5925,8 @@ with tab_upload:
                     if w.get("fix_suggestion"):
                         st.caption(f"Suggested fix: {w['fix_suggestion']}")
 
-        if current_conditions:
-            st.success(f"✓ Conditions: {', '.join(current_conditions)}")
+        if selected_conditions:
+            st.success(f"✓ Conditions: {', '.join(selected_conditions)}")
 
     # v1.3.4: Scroll-to-top button at bottom of Study Input tab
     _render_scroll_to_top_button(1, next_tab_label="Design")
@@ -5978,6 +5968,28 @@ with tab_design:
     if not _skip_qsf_design:
         # If we reach here, preview exists (QSF path)
         inferred = st.session_state.get("inferred_design", {})
+
+        # v1.4.13: Design tab progress banner
+        _design_conds = st.session_state.get("selected_conditions", [])
+        _design_scales = st.session_state.get("confirmed_scales", [])
+        _design_n = st.session_state.get("sample_size", 0)
+        _design_ready = bool(_design_conds) and len(_design_conds) >= 1 and bool(_design_scales) and st.session_state.get("scales_confirmed", False)
+        if _design_ready:
+            st.success(
+                f"Design configured: **{len(_design_conds)}** conditions, "
+                f"**{len(_design_scales)}** DVs, N={_design_n}. "
+                "Review below or proceed to **Generate**."
+            )
+        else:
+            _missing = []
+            if not _design_conds:
+                _missing.append("conditions")
+            if not _design_scales:
+                _missing.append("DVs/scales")
+            if not st.session_state.get("scales_confirmed", False) and _design_scales:
+                _missing.append("scale confirmation")
+            if _missing:
+                st.info(f"Configure your design below. Still needed: {', '.join(_missing)}")
 
         st.markdown("---")
 
@@ -7056,12 +7068,10 @@ with tab_design:
                 st.caption("Specify attention check question IDs or descriptions")
                 manual_attention = st.text_area(
                     "Attention check questions (one per line)",
-                    value=st.session_state.get("manual_attention_checks", ""),
-                    key="manual_attention_input",
+                    key="manual_attention_checks",
                     height=100,
                     placeholder="e.g., Q15_Attention\nPlease select 'Agree' for this question"
                 )
-                st.session_state["manual_attention_checks"] = manual_attention
 
         with col_manip:
             st.markdown("**Manipulation Checks**")
@@ -7077,12 +7087,10 @@ with tab_design:
                 st.caption("Specify manipulation check question IDs or descriptions")
                 manual_manipulation = st.text_area(
                     "Manipulation check questions (one per line)",
-                    value=st.session_state.get("manual_manipulation_checks", ""),
-                    key="manual_manipulation_input",
+                    key="manual_manipulation_checks",
                     height=100,
                     placeholder="e.g., Q20_ManipCheck\nWhat condition were you assigned to?"
                 )
-                st.session_state["manual_manipulation_checks"] = manual_manipulation
 
         st.caption("💡 *Attention checks help identify careless responders. Manipulation checks verify participants understood the experimental condition.*")
 
@@ -7350,10 +7358,24 @@ with tab_generate:
     missing_fields = [label for label, ok in required_fields.items() if not ok]
     if missing_fields:
         st.warning(f"**Missing required fields:** {', '.join(missing_fields)}")
-        col1, col2 = st.columns([1, 1])
-        with col1:
-            if st.button("← Go to Step 3: Design Setup", key="fix_missing_from_generate", use_container_width=True):
-                _go_to_step(2)
+        # Direct user to the right tab based on what's missing
+        _setup_missing = any(f in ("Study title", "Study description") for f in missing_fields)
+        _input_missing = _input_label in missing_fields
+        _sample_missing = "Sample size (≥10)" in missing_fields
+        _design_missing = "Design configured" in missing_fields
+        col1, col2, col3 = st.columns([1, 1, 1])
+        if _setup_missing:
+            with col1:
+                if st.button("← Go to Setup", key="fix_setup_from_generate", use_container_width=True):
+                    _go_to_step(0)
+        if _input_missing:
+            with col2:
+                if st.button("← Go to Study Input", key="fix_input_from_generate", use_container_width=True):
+                    _go_to_step(1)
+        if _design_missing or _sample_missing:
+            with col3:
+                if st.button("← Go to Design", key="fix_design_from_generate", use_container_width=True):
+                    _go_to_step(2)
     else:
         st.success("All required fields are complete. You can generate your simulation.")
 
