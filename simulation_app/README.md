@@ -1,6 +1,6 @@
 # Behavioral Experiment Simulation Tool
 
-**Version 1.4.6** | A Streamlit application for generating realistic synthetic behavioral experiment data using theory-grounded persona-driven simulation.
+**Version 1.4.7** | A Streamlit application for generating realistic synthetic behavioral experiment data using theory-grounded persona-driven simulation.
 
 ## What This Tool Does
 
@@ -19,7 +19,20 @@
 - **Develop analysis scripts** on properly structured data
 - **Check pre-registration consistency** before data collection
 
-## Features (v1.4.6)
+## Features (v1.4.7)
+
+### NEW: LLM-Powered Open-Ended Responses (v1.4.7)
+- **Groq API integration** (free tier: 14,400 req/day) for AI-generated survey responses
+- **Batch-in-prompt architecture**: generates 10-15 responses per API call for efficiency
+- **Response pool system**: pre-generates responses before per-participant loop
+- **Persona-aware prompts**: verbosity, formality, engagement, and sentiment control output
+- **Graceful fallback**: silently falls back to template-based generation if LLM unavailable
+- **Sidebar API key input**: paste your free Groq key to enable (no key = templates used)
+
+### NEW: Tab Navigation & UI Fixes (v1.4.7)
+- **Tab jumping fix**: widgets no longer reset view to Setup tab on changes
+- **Scroll-to-top**: each tab opens at the top instead of middle
+- **Collapsed open-ended section**: open-ended questions in Design tab now use an expander
 
 ### NEW: Enhanced Scale/Matrix Detection
 - **Semantic scale type detection** (satisfaction, trust, intention, risk, etc.)
