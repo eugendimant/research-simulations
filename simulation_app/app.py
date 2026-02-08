@@ -54,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.4.10"
-BUILD_ID = "20260208-v1410-full-provider-chain-failover"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.4.11"
+BUILD_ID = "20260208-v1411-fix-tabs-improve-llm-prompts"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -109,7 +109,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF"
-APP_VERSION = "1.4.10"  # v1.4.10: Full provider chain failover, built-in multi-provider keys
+APP_VERSION = "1.4.11"  # v1.4.11: Fix tab jumping, remove bad suggestions, improve LLM prompts
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -3278,38 +3278,6 @@ def _render_conversational_builder() -> None:
                 + " x ".join(f"{f['name']} ({', '.join(f['levels'])})" for f in factors)
             )
 
-    # Smart condition guidance based on study title/description
-    if not conditions_text.strip():
-        _builder_title = st.session_state.get("study_title", "")
-        _builder_desc = st.session_state.get("study_description", "")
-        if _builder_title or _builder_desc:
-            _combined = f"{_builder_title} {_builder_desc}".lower()
-            _condition_hints = []
-            if any(w in _combined for w in ["ai", "artificial", "algorithm", "chatbot", "machine learning", "automated"]):
-                _condition_hints.append("AI-generated vs Human-created vs No label (control)")
-            if any(w in _combined for w in ["brand", "product", "marketing", "advertising", "ad "]):
-                _condition_hints.append("Brand A vs Brand B vs No-brand control")
-            if any(w in _combined for w in ["trust", "credibility", "reliability"]):
-                _condition_hints.append("High trust vs Low trust")
-            if any(w in _combined for w in ["moral", "ethical", "dilemma", "fairness"]):
-                _condition_hints.append("Moral frame vs Neutral frame")
-            if any(w in _combined for w in ["health", "medical", "wellness", "nutrition", "exercise"]):
-                _condition_hints.append("Health intervention vs Standard care vs Control")
-            if any(w in _combined for w in ["price", "discount", "pricing", "cost", "expensive"]):
-                _condition_hints.append("High price vs Low price vs Medium price")
-            if any(w in _combined for w in ["message", "framing", "frame", "persuasion", "communication"]):
-                _condition_hints.append("Gain frame vs Loss frame")
-            if any(w in _combined for w in ["social media", "online", "digital", "platform"]):
-                _condition_hints.append("Social media exposure vs No exposure vs Traditional media")
-            if any(w in _combined for w in ["gender", "race", "age", "stereotype", "bias", "discrimination"]):
-                _condition_hints.append("Ingroup vs Outgroup vs Control")
-            if any(w in _combined for w in ["education", "learning", "teaching", "training"]):
-                _condition_hints.append("New method vs Traditional method vs Control")
-            if _condition_hints:
-                st.info(f"Based on your study, suggested conditions: **{_condition_hints[0]}**")
-                if len(_condition_hints) > 1:
-                    st.caption("Other suggestions: " + " | ".join(_condition_hints[1:3]))
-
     # ── Section 2: Dependent Variables / Scales ─────────────────────────
     st.markdown("---")
     st.markdown("#### 2. What Do You Measure?")
@@ -4554,78 +4522,93 @@ def _get_smart_defaults(study_description: str = "", preview: Any = None) -> Dic
 def _go_to_step(step_index: int) -> None:
     """Navigate to a specific step with scroll-to-top and state persistence.
 
-    v1.2.1: Uses query params + navigation counter to force browser scroll reset.
+    v1.4.11: Uses _rerun_on_tab() to properly restore the target tab after
+    rerun instead of a bare st.rerun() which loses tab context.
     """
     # Save current state before navigating
     _save_step_state()
-    st.session_state["active_step"] = max(0, min(step_index, len(STEP_LABELS) - 1))
+    clamped = max(0, min(step_index, len(STEP_LABELS) - 1))
+    st.session_state["active_step"] = clamped
     st.session_state["_scroll_to_top"] = True  # Flag to trigger scroll on next render
-    st.session_state["_scroll_attempts"] = 0  # Reset scroll attempts counter
-
-    # v1.2.1: Increment navigation counter for fresh URL
-    nav_counter = st.session_state.get("_nav_counter", 0) + 1
-    st.session_state["_nav_counter"] = nav_counter
-
-    # Set query param to force scroll reset (new URL = new scroll position)
-    try:
-        st.query_params["_nav"] = str(nav_counter)
-    except Exception:
-        pass  # Ignore if query_params not available
-
-    st.rerun()
+    _rerun_on_tab(clamped)
 
 
 def _inject_scroll_to_top():
-    """Inject JavaScript to scroll the page to the top of the active tab.
+    """Inject JavaScript to scroll to top and/or restore the active tab.
 
-    v1.4.6: Also restores the active tab after st.rerun() to prevent
-    the browser from jumping back to the first tab.  Uses
-    _st_components.html() for reliable JS execution in an iframe.
+    v1.4.11: ALWAYS renders an HTML component (even when idle) so the
+    DOM structure is consistent across reruns.  Without this, Streamlit's
+    frontend diff algorithm can lose track of which tab is active when the
+    component count changes between renders.
+
+    Uses MutationObserver to wait for Streamlit's tab elements before
+    clicking, then scrolls the main container to the very top.
     """
     _target_tab = st.session_state.pop("_restore_tab_index", None)
     _do_scroll = st.session_state.pop("_scroll_to_top", False)
 
-    if _target_tab is not None or _do_scroll:
-        _tab_js = ""
-        if _target_tab is not None:
-            _tab_js = f"""
-                var tabs = doc.querySelectorAll('[role=tab]');
-                if (tabs.length > {_target_tab}) {{ tabs[{_target_tab}].click(); }}
-            """
+    _tab_index = _target_tab if _target_tab is not None else -1
+    _need_action = _target_tab is not None or _do_scroll
 
-        _scroll_js = """
-            var sels = ['section.main', '.stApp',
-                         '[data-testid="stAppViewBlockContainer"]',
-                         '[data-testid="stVerticalBlock"]',
-                         '.block-container', 'main', '.main'];
-            sels.forEach(function(s) {
-                var els = doc.querySelectorAll(s);
-                els.forEach(function(el) {
-                    el.scrollTop = 0;
-                    try { el.scrollTo({top: 0, behavior: 'instant'}); } catch(e) {}
-                });
-            });
-            window.parent.scrollTo({top: 0, behavior: 'instant'});
-            doc.documentElement.scrollTop = 0;
-            doc.body.scrollTop = 0;
-        """
+    # ALWAYS render the HTML component to keep the DOM structure stable.
+    # When no action is needed, render a no-op script.
+    if not _need_action:
+        _st_components.html("<script>/* noop — tab anchor */</script>", height=0)
+        return
 
-        _st_components.html(f"""
-            <script>
-            (function() {{
-                var doc = window.parent.document;
-                function restore() {{
-                    {_tab_js}
-                    {_scroll_js if _do_scroll else ''}
+    _st_components.html(f"""
+        <script>
+        (function() {{
+            var TARGET = {_tab_index};
+            var DO_SCROLL = {'true' if _do_scroll else 'false'};
+            var doc = window.parent.document;
+            var done = false;
+
+            function scrollToTop() {{
+                ['section.main', '.stApp', '[data-testid="stAppViewBlockContainer"]',
+                 '[data-testid="stVerticalBlock"]', '.block-container', 'main'
+                ].forEach(function(s) {{
+                    doc.querySelectorAll(s).forEach(function(el) {{
+                        el.scrollTop = 0;
+                        try {{ el.scrollTo({{top:0, behavior:'instant'}}); }} catch(e) {{}}
+                    }});
+                }});
+                window.parent.scrollTo({{top:0, behavior:'instant'}});
+                doc.documentElement.scrollTop = 0;
+                doc.body.scrollTop = 0;
+            }}
+
+            function tryRestore() {{
+                if (done) return;
+                var tabList = doc.querySelector('[data-baseweb="tab-list"]');
+                if (!tabList) return false;
+                var tabs = tabList.querySelectorAll('[role="tab"]');
+                if (TARGET >= 0 && tabs.length > TARGET) {{
+                    var tab = tabs[TARGET];
+                    if (tab.getAttribute('aria-selected') !== 'true') {{
+                        tab.click();
+                    }}
                 }}
-                // Multiple timeouts to handle async Streamlit rendering
-                restore();
-                setTimeout(restore, 50);
-                setTimeout(restore, 150);
-                setTimeout(restore, 300);
-            }})();
-            </script>
-        """, height=0)
+                if (DO_SCROLL) scrollToTop();
+                done = true;
+                return true;
+            }}
+
+            if (tryRestore()) return;
+
+            var observer = new MutationObserver(function() {{
+                if (tryRestore()) observer.disconnect();
+            }});
+            observer.observe(doc.body, {{childList: true, subtree: true}});
+
+            setTimeout(function() {{
+                observer.disconnect();
+                tryRestore();
+                if (DO_SCROLL) setTimeout(scrollToTop, 100);
+            }}, 3000);
+        }})();
+        </script>
+    """, height=0)
 
 
 def _rerun_on_tab(tab_index: int) -> None:
@@ -4850,12 +4833,15 @@ with st.sidebar:
                 _rerun_on_tab(0)
 
     # ── TEMPORARY: LLM Benchmark (one-click, auto-emails results) ─────
-    st.divider()
-    if st.button("Run LLM Benchmark", key="_sidebar_bench_btn", use_container_width=True):
-        st.session_state["_run_llm_benchmark"] = True
-        st.rerun()
+    # Set _SHOW_BENCHMARK = True to enable the sidebar benchmark button
+    _SHOW_BENCHMARK = False
+    if _SHOW_BENCHMARK:
+        st.divider()
+        if st.button("Run LLM Benchmark", key="_sidebar_bench_btn", use_container_width=True):
+            st.session_state["_run_llm_benchmark"] = True
+            st.rerun()
 
-    if st.session_state.pop("_run_llm_benchmark", False):
+    if _SHOW_BENCHMARK and st.session_state.pop("_run_llm_benchmark", False):
         _bp = st.empty()
         _bp.info("Running LLM benchmark (3 providers + template)...")
         try:
@@ -5185,12 +5171,13 @@ st.progress(completed_count / total_count, text=f"{status_emoji} Ready: {progres
 # v1.3.5: Reserve feedback container before tabs
 _feedback_container = st.container()
 
-# v1.4.5: Inject scroll-to-top JS before tabs render (reliable iframe-based approach)
-_inject_scroll_to_top()
-
 # Create the main tabs
 TAB_LABELS = ["📋 Setup", "📁 Study Input", "⚙️ Design", "🚀 Generate"]
 tab_setup, tab_upload, tab_design, tab_generate = st.tabs(TAB_LABELS)
+
+# v1.4.11: Inject tab-restore + scroll-to-top JS AFTER tabs are created
+# so MutationObserver can find [data-baseweb="tab-list"] immediately.
+_inject_scroll_to_top()
 
 
 def _get_condition_candidates(

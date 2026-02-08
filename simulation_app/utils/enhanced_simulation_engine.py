@@ -45,7 +45,7 @@ This module is designed to run inside a `utils/` package (i.e., imported as
 """
 
 # Version identifier to help track deployed code
-__version__ = "1.4.10"  # v1.4.10: Full provider chain failover
+__version__ = "1.4.11"  # v1.4.11: Fix tab jumping, improve LLM prompts
 
 # =============================================================================
 # SCIENTIFIC FOUNDATIONS FOR SIMULATION
@@ -2717,6 +2717,7 @@ class EnhancedSimulationEngine:
                 seed=self.seed,
                 fallback_generator=self.comprehensive_generator,
                 batch_size=20,
+                all_conditions=self.conditions if self.conditions else None,
             )
             if self.llm_generator.is_llm_available:
                 self._log(f"LLM response generator initialized ({self.llm_generator.provider_display_name})")
@@ -4562,6 +4563,21 @@ class EnhancedSimulationEngine:
         response_type = str(question_spec.get("type", "general"))
         question_text = str(question_spec.get("question_text", ""))
         context_type = str(question_spec.get("context_type", "general"))
+
+        # v1.4.11: If question_text looks like a variable name (no spaces),
+        # build a richer question from study context so LLM/template can
+        # generate contextually relevant responses.
+        if question_text and " " not in question_text.strip():
+            import re as _re
+            _humanized = _re.sub(r'[_\-]+', ' ', question_text).strip()
+            _study_topic = self.study_title or self.study_description or ""
+            if _study_topic:
+                question_text = (
+                    f"In the context of a study about {_study_topic}, "
+                    f"please share your thoughts on: {_humanized}"
+                )
+            else:
+                question_text = f"Please share your thoughts on: {_humanized}"
 
         rng = np.random.RandomState(participant_seed)
 

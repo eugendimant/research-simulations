@@ -85,10 +85,17 @@ SYSTEM_PROMPT = (
     "participants.  Each response should sound natural, contain typical human "
     "imperfections (hedging, incomplete thoughts, colloquialisms where appropriate), "
     "and vary in quality and detail based on the participant profile provided.\n\n"
-    "IMPORTANT: Responses must be realistic survey responses, NOT polished essays.  "
+    "CRITICAL: Every response MUST be grounded in the specific study topic, "
+    "experimental condition, and survey question provided.  A participant in a "
+    "political polarization study should talk about political feelings and partisan "
+    "dynamics, NOT generic 'the study was interesting' filler.  A participant in a "
+    "trust study should reference trust-related thoughts.  The study context, "
+    "condition, and question are your primary guide for response content.\n\n"
+    "Responses must be realistic survey responses, NOT polished essays.  "
     "Real participants write informally, sometimes go off-topic slightly, and vary "
-    "significantly in effort and detail.  Careless participants give very short, "
-    "generic answers.  Engaged participants give thoughtful, specific answers."
+    "significantly in effort and detail.  Careless participants give very short "
+    "but still topic-relevant answers.  Engaged participants give thoughtful, "
+    "specific answers referencing their experimental experience."
 )
 
 # ---------------------------------------------------------------------------
@@ -215,15 +222,52 @@ def _sentiment_label(sentiment: str) -> str:
     }.get(sentiment, "neutral / balanced")
 
 
+def _humanize_variable_name(name: str) -> str:
+    """Convert a variable-style name into a readable question prompt.
+
+    Examples:
+        "close_feel_other"   → "How close do you feel to the other?"
+        "much_love_trump"    → "How much do you love Trump?"
+        "explain_reasoning"  → "Please explain your reasoning"
+        "overall_experience" → "Describe your overall experience"
+    """
+    if not name or " " in name:
+        # Already has spaces → likely a real question, return as-is
+        return name
+    # Replace underscores/camelCase with spaces
+    import re as _re
+    text = _re.sub(r'[_\-]+', ' ', name)
+    text = _re.sub(r'([a-z])([A-Z])', r'\1 \2', text).lower().strip()
+    if not text:
+        return name
+    # Add a question frame if the text doesn't look like a question already
+    if not any(text.startswith(w) for w in ("how ", "what ", "why ", "where ", "when ",
+                                             "who ", "which ", "do ", "does ", "did ",
+                                             "please ", "describe ", "explain ")):
+        # Heuristic: start with "Please describe your thoughts on: "
+        return f"Please describe your thoughts on: {text}"
+    return text
+
+
 def _build_batch_prompt(
     question_text: str,
     condition: str,
     study_title: str,
     study_description: str,
     persona_specs: List[Dict[str, Any]],
+    all_conditions: Optional[List[str]] = None,
 ) -> str:
-    """Build a single prompt that asks the LLM to generate N responses at once."""
+    """Build a single prompt that asks the LLM to generate N responses at once.
+
+    v1.4.11: Enhanced with richer study context and variable-name detection
+    so responses are contextually grounded even when question_text is sparse.
+    """
     n = len(persona_specs)
+
+    # If question_text looks like a variable name (no spaces), humanize it
+    _q_display = question_text.strip()
+    if _q_display and " " not in _q_display:
+        _q_display = _humanize_variable_name(_q_display)
 
     participant_lines = []
     for i, spec in enumerate(persona_specs, 1):
@@ -257,18 +301,33 @@ def _build_batch_prompt(
 
     participants_block = "\n".join(participant_lines)
 
+    # Build conditions context (helps LLM understand the experimental design)
+    conditions_block = ""
+    if all_conditions:
+        conditions_block = (
+            f"All experimental conditions in this study: {', '.join(all_conditions)}\n"
+            f"This participant was assigned to: {condition}\n"
+        )
+    else:
+        conditions_block = f"Experimental condition: {condition}\n"
+
     prompt = (
         f'Study: "{study_title}"\n'
-        f"Context: {study_description[:300]}\n"
-        f"Experimental condition: {condition}\n\n"
-        f'Survey question: "{question_text}"\n\n'
-        f"Generate exactly {n} unique responses from {n} different participants.\n"
+        f"Study description: {study_description[:500]}\n"
+        f"{conditions_block}\n"
+        f'Survey question: "{_q_display}"\n\n'
+        f"Generate exactly {n} unique responses from {n} different survey "
+        f"participants who just completed this experiment.\n"
         f"Each participant's profile controls their response style:\n\n"
         f"{participants_block}\n\n"
         f"Rules:\n"
         f"- Each response MUST be different from every other response.\n"
-        f"- Responses should reference the specific experimental context "
-        f"and condition when relevant.\n"
+        f"- Responses MUST be grounded in the specific study topic "
+        f"(\"{study_title}\") and the participant's assigned condition "
+        f"(\"{condition}\").\n"
+        f"- Participants should write AS IF they actually experienced the "
+        f"experimental manipulation. Reference specific aspects of the study, "
+        f"condition, or topic — do not give generic 'the study was fine' answers.\n"
         f"- Do NOT use bullet points, numbered lists, or markdown formatting "
         f"inside responses — just plain text as a survey participant would write.\n"
         f"- Match each participant's length, style, effort, and sentiment exactly.\n\n"
@@ -559,9 +618,11 @@ class LLMResponseGenerator:
         seed: Optional[int] = None,
         fallback_generator: Any = None,
         batch_size: int = 20,
+        all_conditions: Optional[List[str]] = None,
     ) -> None:
         self._study_title = study_title
         self._study_description = study_description
+        self._all_conditions: List[str] = list(all_conditions) if all_conditions else []
         self._rng = random.Random(seed)
         self._fallback = fallback_generator
         self._batch_size = max(4, min(batch_size, 25))
@@ -645,9 +706,12 @@ class LLMResponseGenerator:
             },
         }
 
-    def set_study_context(self, title: str, description: str) -> None:
+    def set_study_context(self, title: str, description: str,
+                         conditions: Optional[List[str]] = None) -> None:
         self._study_title = title
         self._study_description = description
+        if conditions is not None:
+            self._all_conditions = list(conditions)
 
     def reset_providers(self) -> None:
         """Re-enable all providers (useful after rate-limit windows expire)."""
@@ -775,6 +839,7 @@ class LLMResponseGenerator:
             study_title=self._study_title,
             study_description=self._study_description,
             persona_specs=persona_specs,
+            all_conditions=self._all_conditions or None,
         )
 
         # Try every provider in the chain

@@ -6,7 +6,7 @@ Generates comprehensive instructor-facing reports for student simulations.
 """
 
 # Version identifier to help track deployed code
-__version__ = "1.4.10"  # v1.4.10: Full provider chain failover
+__version__ = "1.4.11"  # v1.4.11: Fix tab jumping, improve LLM prompts
 
 from dataclasses import dataclass
 from datetime import datetime
