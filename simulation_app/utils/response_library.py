@@ -63,7 +63,7 @@ association, impression, perception, feedback, comment, observation, general
 Version: 1.2.2 - New tab-based UI
 """
 
-__version__ = "1.4.11"
+__version__ = "1.4.12"
 
 import random
 import re
@@ -4821,10 +4821,14 @@ class ComprehensiveResponseGenerator:
                         return varied
 
             elif strategy == 1:
-                # Add a qualifier prefix
+                # v1.4.11: Expanded qualifier prefixes
                 qualifiers = [
                     "Honestly, ", "In truth, ", "Frankly, ",
                     "To be fair, ", "Realistically, ", "Genuinely, ",
+                    "Looking back, ", "On reflection, ", "In retrospect, ",
+                    "All things considered, ", "At the end of the day, ",
+                    "When I think about it, ", "From what I can tell, ",
+                    "In my experience, ", "As far as I can tell, ",
                 ]
                 qualifier = local_rng.choice(qualifiers)
                 varied = qualifier + sentence[0].lower() + sentence[1:] if sentence else sentence
@@ -4833,13 +4837,38 @@ class ComprehensiveResponseGenerator:
                     return varied
 
             elif strategy == 2:
-                # Synonym substitution within the sentence
+                # v1.4.11: Expanded synonym map from 5 → 30+ words
                 synonym_map = {
-                    'good': ['fine', 'decent', 'solid'],
-                    'bad': ['poor', 'inadequate', 'subpar'],
-                    'very': ['quite', 'really', 'particularly'],
-                    'interesting': ['intriguing', 'noteworthy', 'compelling'],
-                    'important': ['significant', 'crucial', 'essential'],
+                    'good': ['fine', 'decent', 'solid', 'positive', 'favorable'],
+                    'bad': ['poor', 'inadequate', 'subpar', 'unfavorable', 'weak'],
+                    'very': ['quite', 'really', 'particularly', 'especially', 'notably'],
+                    'interesting': ['intriguing', 'noteworthy', 'compelling', 'engaging', 'thought-provoking'],
+                    'important': ['significant', 'crucial', 'essential', 'vital', 'key'],
+                    'think': ['believe', 'feel', 'consider', 'sense', 'suspect'],
+                    'like': ['appreciate', 'enjoy', 'prefer', 'favor', 'value'],
+                    'understand': ['grasp', 'comprehend', 'see', 'follow', 'recognize'],
+                    'agree': ['concur', 'align', 'share that view', 'support that'],
+                    'different': ['distinct', 'varied', 'divergent', 'separate', 'contrasting'],
+                    'clear': ['obvious', 'evident', 'apparent', 'straightforward', 'plain'],
+                    'difficult': ['challenging', 'tough', 'hard', 'complex', 'demanding'],
+                    'easy': ['simple', 'straightforward', 'effortless', 'manageable'],
+                    'helpful': ['useful', 'beneficial', 'valuable', 'constructive'],
+                    'confusing': ['unclear', 'ambiguous', 'puzzling', 'muddled'],
+                    'reasonable': ['fair', 'sensible', 'rational', 'sound', 'logical'],
+                    'experience': ['encounter', 'involvement', 'interaction', 'exposure'],
+                    'concerned': ['worried', 'troubled', 'uneasy', 'anxious'],
+                    'surprised': ['taken aback', 'startled', 'caught off guard'],
+                    'comfortable': ['at ease', 'content', 'relaxed', 'settled'],
+                    'certain': ['sure', 'confident', 'convinced', 'positive'],
+                    'probably': ['likely', 'presumably', 'perhaps', 'possibly'],
+                    'overall': ['on the whole', 'all things considered', 'generally'],
+                    'somewhat': ['moderately', 'fairly', 'to some extent', 'partially'],
+                    'really': ['truly', 'genuinely', 'honestly', 'absolutely'],
+                    'suggest': ['indicate', 'imply', 'point to', 'recommend'],
+                    'impact': ['effect', 'influence', 'consequence', 'outcome'],
+                    'approach': ['method', 'strategy', 'way', 'technique'],
+                    'improve': ['enhance', 'strengthen', 'better', 'refine'],
+                    'situation': ['circumstance', 'scenario', 'context', 'case'],
                 }
                 varied = sentence
                 for word, synonyms in synonym_map.items():
@@ -4854,10 +4883,13 @@ class ComprehensiveResponseGenerator:
                         return varied
 
             elif strategy == 3:
-                # Rephrase ending
+                # v1.4.11: Expanded ending rephrases
                 suffixes = [
                     ", I think", ", in my view", ", as I see it",
                     ", from my perspective", ", to my mind",
+                    ", at least in my opinion", ", or so it seems",
+                    ", if I'm being honest", ", which is how I feel about it",
+                    ", and that's my take", ", as far as I'm concerned",
                 ]
                 base = sentence.rstrip('.!?,;')
                 suffix = local_rng.choice(suffixes)

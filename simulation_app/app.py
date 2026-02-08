@@ -54,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.4.11"
-BUILD_ID = "20260208-v1411-fix-tabs-improve-llm-prompts"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.4.12"
+BUILD_ID = "20260208-v1412-five-quality-improvements"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -109,7 +109,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF"
-APP_VERSION = "1.4.11"  # v1.4.11: Fix tab jumping, remove bad suggestions, improve LLM prompts
+APP_VERSION = "1.4.12"  # v1.4.12: 5 quality improvements (scales, columns, effects, diversity, registry)
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
