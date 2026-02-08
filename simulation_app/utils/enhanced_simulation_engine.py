@@ -4,7 +4,7 @@ from __future__ import annotations
 Enhanced Simulation Engine for Behavioral Experiment Simulation Tool
 =============================================================================
 
-Version 1.2.2 - New tab-based UI + safe trait value extraction
+Version 1.4.10 - 3-provider LLM failover, deep persona variation, smart pool scaling
 
 Advanced simulation engine with:
 - Theory-grounded persona library integration (7 persona dimensions)
