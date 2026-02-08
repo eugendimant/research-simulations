@@ -45,7 +45,7 @@ This module is designed to run inside a `utils/` package (i.e., imported as
 """
 
 # Version identifier to help track deployed code
-__version__ = "1.4.12"  # v1.4.12: 5 quality improvements
+__version__ = "1.4.13"  # v1.4.13: State management overhaul
 
 # =============================================================================
 # SCIENTIFIC FOUNDATIONS FOR SIMULATION
