@@ -690,10 +690,10 @@ class InstructorReportGenerator:
                 provider_display = {
                     "groq_builtin": "Groq (built-in) — Llama 3.3 70B Versatile",
                     "cerebras_builtin": "Cerebras (built-in) — Llama 3.3 70B",
-                    "openrouter_builtin": "OpenRouter (built-in) — Llama 3.3 70B Instruct",
+                    "openrouter_builtin": "OpenRouter (built-in) — Mistral Small 3.1 24B",
                     "groq_user": "Groq (user key) — Llama 3.3 70B Versatile",
                     "cerebras_user": "Cerebras (user key) — Llama 3.3 70B",
-                    "openrouter_user": "OpenRouter (user key) — Llama 3.3 70B Instruct",
+                    "openrouter_user": "OpenRouter (user key)",
                     "together": "Together AI — Llama 3.3 70B Turbo",
                 }
                 used_providers = []

@@ -44,7 +44,7 @@ CEREBRAS_API_URL = "https://api.cerebras.ai/v1/chat/completions"
 CEREBRAS_MODEL = "llama-3.3-70b"
 
 OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
-OPENROUTER_MODEL = "meta-llama/llama-3.3-70b-instruct:free"
+OPENROUTER_MODEL = "mistralai/mistral-small-3.1-24b-instruct:free"
 
 # ---------------------------------------------------------------------------
 # Built-in API keys (XOR-encoded for repository secret scanning compliance)
@@ -67,7 +67,7 @@ _EB_CEREBRAS = [57, 41, 49, 119, 111, 63, 98, 104, 50, 49, 104, 50, 52, 46, 45, 
                 45, 40, 105, 46]
 _DEFAULT_CEREBRAS_KEY = bytes(b ^ _XK for b in _EB_CEREBRAS).decode()
 
-# OpenRouter — free models (Llama 3.3 70B Instruct)
+# OpenRouter — free models (Mistral Small 3.1 24B — more generous rate limits than Llama free)
 _EB_OPENROUTER = [41, 49, 119, 53, 40, 119, 44, 107, 119, 63, 111, 62, 104, 63, 59,
                   99, 111, 62, 57, 98, 59, 99, 105, 111, 59, 59, 104, 108, 98, 62,
                   110, 63, 63, 57, 60, 99, 56, 60, 105, 104, 105, 105, 110, 104, 104,
