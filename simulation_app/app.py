@@ -53,8 +53,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.4.4"
-BUILD_ID = "20260207-v144-fix-nav-buttons-training"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.4.5"
+BUILD_ID = "20260207-v145-fix-scroll-generate-ux"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -91,7 +91,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF"
-APP_VERSION = "1.4.4"  # v1.4.4: Fix navigation buttons, enhance training data collection, export builder types
+APP_VERSION = "1.4.5"  # v1.4.5: Fix scroll-to-top on navigation, remove Done button, improve Generate UX
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -4464,84 +4464,43 @@ def _go_to_step(step_index: int) -> None:
 def _inject_scroll_to_top():
     """Inject JavaScript to scroll the page to the top.
 
-    Call this at the beginning of each step to ensure the view starts at the top
+    Call this at the beginning of each render to ensure the view starts at the top
     when navigating between steps.
 
-    v1.2.1: Multi-strategy scroll that targets all possible scrollable containers
-    including parent iframe, Streamlit containers, and uses anchor navigation.
+    v1.4.5: Uses _st_components.html() for reliable JS execution in an iframe.
+    Previous st.markdown approach was unreliable (script tags don't re-execute on reruns).
     """
     if st.session_state.get("_scroll_to_top", False):
         # Clear the flag
         st.session_state["_scroll_to_top"] = False
 
-        # v1.2.1: Enhanced scroll script with anchor navigation and parent frame handling
-        scroll_script = """
-        <script>
+        _st_components.html("""
+            <script>
             (function() {
-                function scrollAllContainers() {
-                    // Target the page-top anchor we added at the very top
-                    var anchor = document.getElementById('page-top');
-                    if (anchor) {
-                        anchor.scrollIntoView({behavior: 'instant', block: 'start'});
-                    }
-
-                    // Scroll all possible Streamlit containers
-                    var selectors = [
-                        'section.main',
-                        '.stApp',
-                        '[data-testid="stAppViewBlockContainer"]',
-                        '[data-testid="stVerticalBlock"]',
-                        '.block-container',
-                        'main',
-                        '.main'
-                    ];
-
-                    selectors.forEach(function(sel) {
-                        var elements = document.querySelectorAll(sel);
-                        elements.forEach(function(el) {
-                            if (el) {
-                                el.scrollTop = 0;
-                                try { el.scrollTo({top: 0, behavior: 'instant'}); } catch(e) {}
-                            }
+                var doc = window.parent.document;
+                var sels = ['section.main', '.stApp',
+                             '[data-testid="stAppViewBlockContainer"]',
+                             '[data-testid="stVerticalBlock"]',
+                             '.block-container', 'main', '.main'];
+                function scrollAll() {
+                    sels.forEach(function(s) {
+                        var els = doc.querySelectorAll(s);
+                        els.forEach(function(el) {
+                            el.scrollTop = 0;
+                            try { el.scrollTo({top: 0, behavior: 'instant'}); } catch(e) {}
                         });
                     });
-
-                    // Scroll window and document
-                    window.scrollTo({top: 0, behavior: 'instant'});
-                    document.documentElement.scrollTop = 0;
-                    document.body.scrollTop = 0;
-
-                    // Try to scroll parent frame if we're in an iframe
-                    try {
-                        if (window.parent && window.parent !== window) {
-                            window.parent.scrollTo({top: 0, behavior: 'instant'});
-                            window.parent.document.documentElement.scrollTop = 0;
-                        }
-                    } catch(e) {
-                        // Cross-origin restriction, use postMessage
-                        try {
-                            window.parent.postMessage({type: 'scroll-to-top'}, '*');
-                        } catch(e2) {}
-                    }
+                    window.parent.scrollTo({top: 0, behavior: 'instant'});
+                    doc.documentElement.scrollTop = 0;
+                    doc.body.scrollTop = 0;
                 }
-
-                // Execute immediately and repeatedly
-                scrollAllContainers();
-                setTimeout(scrollAllContainers, 10);
-                setTimeout(scrollAllContainers, 50);
-                setTimeout(scrollAllContainers, 100);
-                setTimeout(scrollAllContainers, 200);
-                setTimeout(scrollAllContainers, 400);
-
-                // Also try on DOM ready and load
-                if (document.readyState !== 'complete') {
-                    document.addEventListener('DOMContentLoaded', scrollAllContainers);
-                    window.addEventListener('load', scrollAllContainers);
-                }
+                scrollAll();
+                setTimeout(scrollAll, 50);
+                setTimeout(scrollAll, 150);
+                setTimeout(scrollAll, 300);
             })();
-        </script>
-        """
-        st.markdown(scroll_script, unsafe_allow_html=True)
+            </script>
+        """, height=0)
 
 
 with st.expander("What this tool delivers", expanded=True):
@@ -4877,54 +4836,35 @@ def _render_workflow_stepper():
 
 
 def _render_scroll_to_top_button(tab_index: int, next_tab_label: str = "") -> None:
-    """Render a navigation button that scrolls to top and switches to the next tab.
+    """Render a navigation button that switches to the next tab with scroll-to-top.
 
-    v1.4.4.1: Uses native st.button() + streamlit.components.v1.html() for reliable
-    JS execution. Previous approaches (onclick, <script> in st.markdown) all fail
-    because Streamlit's DOM rebuild on rerun kills event listeners and script execution.
-    components.v1.html() creates a real iframe where JS always executes.
+    v1.4.5: Sets _scroll_to_top flag so _inject_scroll_to_top() fires on the next
+    rerun (after the tab click). Uses components.html() for reliable JS tab switching.
+    Only renders if there IS a next tab (no more "Done" button on the last tab).
     """
+    # Only render if there's a next tab to navigate to
+    next_index = tab_index + 1  # 0-based index of the target tab
+    if not next_tab_label or next_index >= len(STEP_LABELS):
+        return  # No button on the last tab
+
     st.markdown("---")
 
-    next_index = tab_index + 1  # 0-based index of the target tab
-
-    if next_tab_label and next_index < len(STEP_LABELS):
-        btn_label = f"Continue to {next_tab_label}"
-    else:
-        btn_label = "Done — scroll back to top"
+    btn_label = f"Continue to {next_tab_label}"
 
     # Native Streamlit button — guaranteed to work for click detection
     if st.button(f"✓ {btn_label}", key=f"scroll_nav_{tab_index}", type="primary", use_container_width=True):
-        # Use components.html() to execute JS reliably.
-        # This creates a real iframe where JS always executes, unlike st.markdown.
-        # window.parent accesses the main Streamlit page from the iframe.
-        _tab_click_js = ""
-        if next_tab_label and next_index < len(STEP_LABELS):
-            _tab_click_js = f"""
-                var tabs = doc.querySelectorAll('[role="tab"]');
-                if (tabs.length > {next_index}) {{ tabs[{next_index}].click(); }}
-            """
+        # Set scroll flag so _inject_scroll_to_top() fires on the NEXT rerun
+        # (the rerun triggered by the JS tab click below)
+        st.session_state["_scroll_to_top"] = True
 
+        # Use components.html() to click the next tab header reliably
         _st_components.html(f"""
             <script>
             (function() {{
                 var doc = window.parent.document;
-                // Scroll every possible container to top
-                var sels = ['section.main', '.stApp',
-                             '[data-testid="stAppViewBlockContainer"]',
-                             '.block-container', 'main', '.main'];
-                sels.forEach(function(s) {{
-                    var els = doc.querySelectorAll(s);
-                    els.forEach(function(el) {{
-                        el.scrollTop = 0;
-                        try {{ el.scrollTo({{top:0, behavior:'smooth'}}); }} catch(e) {{}}
-                    }});
-                }});
-                window.parent.scrollTo({{top:0, behavior:'smooth'}});
-                doc.documentElement.scrollTop = 0;
-                doc.body.scrollTop = 0;
                 // Click the next tab header
-                {_tab_click_js}
+                var tabs = doc.querySelectorAll('[role=tab]');
+                if (tabs.length > {next_index}) {{ tabs[{next_index}].click(); }}
             }})();
             </script>
         """, height=0)
@@ -4945,6 +4885,9 @@ st.progress(completed_count / total_count, text=f"{status_emoji} Ready: {progres
 
 # v1.3.5: Reserve feedback container before tabs
 _feedback_container = st.container()
+
+# v1.4.5: Inject scroll-to-top JS before tabs render (reliable iframe-based approach)
+_inject_scroll_to_top()
 
 # Create the main tabs
 TAB_LABELS = ["📋 Setup", "📁 Study Input", "⚙️ Design", "🚀 Generate"]
@@ -7519,12 +7462,22 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
     # ========================================
     # v1.0.0: FINAL DESIGN SUMMARY
     # Complete overview of what will be simulated
+    # v1.4.5: Hidden during generation to show progress immediately
     # ========================================
-    st.markdown("---")
-    st.markdown("### Final Design Summary")
-    st.caption("Please review your experimental design before generating data.")
 
-    # Get all relevant design info
+    # Read generation state early so we can hide design summary during generation
+    if "generation_requested" not in st.session_state:
+        st.session_state["generation_requested"] = False
+    _is_generating = st.session_state.get("is_generating", False)
+    _has_generated = st.session_state.get("has_generated", False)
+
+    # v1.4.5: Hide design summary during generation — show progress instead
+    if not _is_generating:
+        st.markdown("---")
+        st.markdown("### Final Design Summary")
+        st.caption("Please review your experimental design before generating data.")
+
+    # Get all relevant design info (needed for both display and generation)
     display_conditions = conditions
     if st.session_state.get("use_crossed_conditions") and st.session_state.get("factorial_crossed_conditions"):
         display_conditions = st.session_state["factorial_crossed_conditions"]
@@ -7532,85 +7485,86 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
     confirmed_oe = st.session_state.get("confirmed_open_ended", [])
     oe_count = len(confirmed_oe)
 
-    # Design metrics row
-    summary_cols = st.columns(5)
-    summary_cols[0].metric("Conditions", len(display_conditions))
-    summary_cols[1].metric("Factors", len(factors))
-    summary_cols[2].metric("DVs", len(scales))
-    summary_cols[3].metric("Open-Ended", oe_count)
+    # v1.4.5: Show design summary only when NOT generating
+    if not _is_generating:
+        # Design metrics row
+        summary_cols = st.columns(5)
+        summary_cols[0].metric("Conditions", len(display_conditions))
+        summary_cols[1].metric("Factors", len(factors))
+        summary_cols[2].metric("DVs", len(scales))
+        summary_cols[3].metric("Open-Ended", oe_count)
 
-    # Determine design type for display
-    n_conds = len(display_conditions)
-    if n_conds == 1:
-        design_type_str = "Single group"
-    elif n_conds == 2:
-        design_type_str = "2-group"
-    elif n_conds == 4:
-        design_type_str = "2×2 factorial"
-    elif n_conds == 6:
-        design_type_str = "2×3 factorial"
-    elif n_conds == 9:
-        design_type_str = "3×3 factorial"
-    else:
-        design_type_str = f"{n_conds}-cell"
-    summary_cols[4].metric("Design", design_type_str)
-
-    # Detailed breakdown
-    detail_col1, detail_col2 = st.columns(2)
-
-    with detail_col1:
-        clean_cond_names = [_clean_condition_name(c) for c in display_conditions]
-        if st.session_state.get("use_crossed_conditions"):
-            st.markdown(f"**Factorial Conditions:** {', '.join(clean_cond_names[:6])}")
-            if len(clean_cond_names) > 6:
-                st.markdown(f"  _{len(clean_cond_names) - 6} more..._")
+        # Determine design type for display
+        n_conds = len(display_conditions)
+        if n_conds == 1:
+            design_type_str = "Single group"
+        elif n_conds == 2:
+            design_type_str = "2-group"
+        elif n_conds == 4:
+            design_type_str = "2×2 factorial"
+        elif n_conds == 6:
+            design_type_str = "2×3 factorial"
+        elif n_conds == 9:
+            design_type_str = "3×3 factorial"
         else:
-            st.markdown(f"**Conditions:** {', '.join(clean_cond_names[:6])}")
-            if len(clean_cond_names) > 6:
-                st.markdown(f"  _{len(clean_cond_names) - 6} more..._")
+            design_type_str = f"{n_conds}-cell"
+        summary_cols[4].metric("Design", design_type_str)
 
-        # DVs
-        dv_names = [s.get('name', 'Unknown') for s in scales if s.get('name')]
-        st.markdown(f"**DVs:** {', '.join(dv_names[:5]) if dv_names else 'Main_DV (default)'}")
-        if len(dv_names) > 5:
-            st.markdown(f"  _{len(dv_names) - 5} more..._")
+        # Detailed breakdown
+        detail_col1, detail_col2 = st.columns(2)
 
-    with detail_col2:
-        # Open-ended questions
-        if oe_count > 0:
-            oe_names = [oe.get('variable_name', oe.get('name', '')) for oe in confirmed_oe[:5]]
-            oe_display = ', '.join(oe_names)
-            st.markdown(f"**Open-Ended:** {oe_display}")
-            if oe_count > 5:
-                st.markdown(f"  _{oe_count - 5} more..._")
-        else:
-            st.markdown("**Open-Ended:** None configured")
+        with detail_col1:
+            clean_cond_names = [_clean_condition_name(c) for c in display_conditions]
+            if st.session_state.get("use_crossed_conditions"):
+                st.markdown(f"**Factorial Conditions:** {', '.join(clean_cond_names[:6])}")
+                if len(clean_cond_names) > 6:
+                    st.markdown(f"  _{len(clean_cond_names) - 6} more..._")
+            else:
+                st.markdown(f"**Conditions:** {', '.join(clean_cond_names[:6])}")
+                if len(clean_cond_names) > 6:
+                    st.markdown(f"  _{len(clean_cond_names) - 6} more..._")
 
-        # Sample info
-        N = st.session_state.get("sample_size", 200)
-        n_per_cell = N // max(1, len(display_conditions))
-        st.markdown(f"**Sample:** {N} total (~{n_per_cell} per condition)")
+            # DVs
+            dv_names = [s.get('name', 'Unknown') for s in scales if s.get('name')]
+            st.markdown(f"**DVs:** {', '.join(dv_names[:5]) if dv_names else 'Main_DV (default)'}")
+            if len(dv_names) > 5:
+                st.markdown(f"  _{len(dv_names) - 5} more..._")
 
-        # Effect size only if user specified
-        if st.session_state.get("add_effect_checkbox", False):
-            effect_d = st.session_state.get("effect_cohens_d", 0.5)
-            st.markdown(f"**Effect Size:** d = {effect_d:.2f}")
+        with detail_col2:
+            # Open-ended questions
+            if oe_count > 0:
+                oe_names = [oe.get('variable_name', oe.get('name', '')) for oe in confirmed_oe[:5]]
+                oe_display = ', '.join(oe_names)
+                st.markdown(f"**Open-Ended:** {oe_display}")
+                if oe_count > 5:
+                    st.markdown(f"  _{oe_count - 5} more..._")
+            else:
+                st.markdown("**Open-Ended:** None configured")
+
+            # Sample info
+            N = st.session_state.get("sample_size", 200)
+            n_per_cell = N // max(1, len(display_conditions))
+            st.markdown(f"**Sample:** {N} total (~{n_per_cell} per condition)")
+
+            # Effect size only if user specified
+            if st.session_state.get("add_effect_checkbox", False):
+                effect_d = st.session_state.get("effect_cohens_d", 0.5)
+                st.markdown(f"**Effect Size:** d = {effect_d:.2f}")
 
     # ========================================
     # GENERATE BUTTON - with proper state management
+    # v1.4.5: Progress spinner shown FIRST, design summary hidden during generation
     # ========================================
     st.markdown("---")
 
-    if "generation_requested" not in st.session_state:
-        st.session_state["generation_requested"] = False
-
-    is_generating = st.session_state.get("is_generating", False)
-    has_generated = st.session_state.get("has_generated", False)
+    is_generating = _is_generating  # Use the early-read variable
+    has_generated = _has_generated
 
     progress_placeholder = st.empty()
     status_placeholder = st.empty()
 
-    # v1.2.1: Show prominent animated progress indicator when generating
+    # v1.4.5: Show prominent animated progress indicator IMMEDIATELY when generating
+    # (design summary is hidden above, so this is the first thing users see)
     if is_generating:
         with status_placeholder.container():
             st.markdown("""
@@ -7669,41 +7623,68 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
         for _gw in _gen_warns:
             st.warning(_gw)
 
+    # v1.4.5: CSS to prevent disabled buttons from appearing clickable
+    st.markdown("""
+    <style>
+        /* Disabled buttons should NOT look clickable */
+        button[disabled], button:disabled,
+        [data-testid="stBaseButton-primary"] button:disabled,
+        .stButton button:disabled {
+            cursor: not-allowed !important;
+            opacity: 0.6 !important;
+        }
+    </style>
+    """, unsafe_allow_html=True)
+
     # Button: disabled if not ready, generating, or already generated
     can_generate = all_required_complete and not is_generating and not has_generated
 
-    # Create button row
-    btn_col1, btn_col2 = st.columns([2, 1])
+    # v1.4.5: No generate button during generation — just show the progress + reset
+    if is_generating:
+        # Only show reset button during generation
+        if st.button("Cancel & Reset", use_container_width=True, key="reset_generate_btn"):
+            st.session_state["is_generating"] = False
+            st.session_state["has_generated"] = False
+            st.session_state["generation_requested"] = False
+            st.session_state["_generation_phase"] = 0
+            st.session_state["last_df"] = None
+            st.session_state["last_zip"] = None
+            st.session_state["last_metadata"] = None
+            st.session_state["generated_metadata"] = None
+            st.session_state["_quality_checks"] = []
+            st.session_state["_validation_results"] = None
+            st.rerun()
+    else:
+        # Create button row with generate + reset
+        btn_col1, btn_col2 = st.columns([2, 1])
 
-    with btn_col1:
-        if is_generating:
-            st.button("Generating simulated dataset...", type="primary", disabled=True, use_container_width=True)
-        elif has_generated:
-            st.button("Simulation generated", type="primary", disabled=True, use_container_width=True)
-        else:
-            if st.button("Generate simulated dataset", type="primary", disabled=not can_generate, use_container_width=True, key="generate_dataset_btn"):
-                # v1.3.4: Skip intermediate rerun — go directly to is_generating + phase 1
-                # so the progress spinner appears on the very next render (1 rerun, not 2)
-                st.session_state["generation_requested"] = False
-                st.session_state["is_generating"] = True
-                st.session_state["_generation_phase"] = 1
-                st.rerun()
+        with btn_col1:
+            if has_generated:
+                st.button("Simulation generated", type="primary", disabled=True, use_container_width=True)
+            else:
+                if st.button("Generate simulated dataset", type="primary", disabled=not can_generate, use_container_width=True, key="generate_dataset_btn"):
+                    # v1.3.4: Skip intermediate rerun — go directly to is_generating + phase 1
+                    # so the progress spinner appears on the very next render (1 rerun, not 2)
+                    st.session_state["generation_requested"] = False
+                    st.session_state["is_generating"] = True
+                    st.session_state["_generation_phase"] = 1
+                    st.rerun()
 
-    with btn_col2:
-        # Reset button - allows user to restart if stuck
-        if has_generated or is_generating:
-            if st.button("Reset & Generate New", use_container_width=True, key="reset_generate_btn"):
-                st.session_state["is_generating"] = False
-                st.session_state["has_generated"] = False
-                st.session_state["generation_requested"] = False
-                st.session_state["_generation_phase"] = 0  # v1.3.5: Reset generation phase
-                st.session_state["last_df"] = None
-                st.session_state["last_zip"] = None
-                st.session_state["last_metadata"] = None
-                st.session_state["generated_metadata"] = None
-                st.session_state["_quality_checks"] = []
-                st.session_state["_validation_results"] = None
-                st.rerun()
+        with btn_col2:
+            # Reset button - allows user to restart after generation
+            if has_generated:
+                if st.button("Reset & Generate New", use_container_width=True, key="reset_after_gen_btn"):
+                    st.session_state["is_generating"] = False
+                    st.session_state["has_generated"] = False
+                    st.session_state["generation_requested"] = False
+                    st.session_state["_generation_phase"] = 0
+                    st.session_state["last_df"] = None
+                    st.session_state["last_zip"] = None
+                    st.session_state["last_metadata"] = None
+                    st.session_state["generated_metadata"] = None
+                    st.session_state["_quality_checks"] = []
+                    st.session_state["_validation_results"] = None
+                    st.rerun()
 
     # v1.2.1 / v1.3.4: Legacy fallback — handle generation_requested if set elsewhere
     if st.session_state.get("generation_requested") and not is_generating:
@@ -8359,8 +8340,7 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
             else:
                 st.caption("Instructor email not configured in secrets (INSTRUCTOR_NOTIFICATION_EMAIL).")
 
-    # v1.3.4: Scroll-to-top button at bottom of Generate tab
-    _render_scroll_to_top_button(3)
+    # v1.4.5: Removed "Done — scroll back to top" button (was unreliable, not needed on last tab)
 
 # ========================================
 # FEEDBACK BUTTON (Shown on all pages)
