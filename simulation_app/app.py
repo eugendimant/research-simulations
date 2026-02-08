@@ -3066,9 +3066,15 @@ def _render_conversational_builder() -> None:
         examples = SurveyDescriptionParser.generate_example_descriptions()
         for idx, ex in enumerate(examples):
             if st.button(f"Load: {ex['title']}", key=f"example_btn_{idx}"):
+                # Set BOTH the data keys AND the widget keys
+                # (Streamlit ignores the value= param once a widget key exists in session_state)
                 st.session_state["builder_conditions_text"] = ex["conditions"]
+                st.session_state["builder_conditions_input"] = ex["conditions"]
                 st.session_state["builder_scales_text"] = ex["scales"]
-                st.session_state["builder_oe_text"] = ex.get("open_ended", "")
+                st.session_state["builder_scales_input"] = ex["scales"]
+                _oe = ex.get("open_ended", "")
+                st.session_state["builder_oe_text"] = _oe
+                st.session_state["builder_oe_input"] = _oe
                 st.session_state["study_title"] = ex["title"]
                 # Use rich description from example if available, otherwise generate one
                 st.session_state["study_description"] = ex.get(
@@ -3265,6 +3271,7 @@ def _render_conversational_builder() -> None:
                 _auto_text = "\n".join(f"{s['name']}, {s['items']} items, {s['range']}" for s in _auto_scales[:3])
                 if st.button("Auto-fill suggested scales", key="auto_fill_scales_btn"):
                     st.session_state["builder_scales_text"] = _auto_text
+                    st.session_state["builder_scales_input"] = _auto_text  # Must also set widget key
                     st.rerun()
 
     # ── Section 3: Open-Ended Questions (Optional) ─────────────────────
@@ -5671,7 +5678,7 @@ with tab_design:
     _skip_qsf_design = False
 
     if not preview and not _builder_complete:
-        st.warning("Upload a QSF file or describe your study in the **Study Input** tab first")
+        st.warning("Complete the **Study Input** tab first — upload a QSF file or describe your study using the builder")
         _skip_qsf_design = True
     elif _builder_complete and not preview:
         # Conversational builder path — show review mode, skip QSF config
@@ -7054,8 +7061,8 @@ with tab_generate:
 
     if not inferred:
         st.warning(
-            "No experiment design configured yet. Please complete **Step 2 (Study Input)** "
-            "to upload a QSF file or describe your study, then **Step 3 (Design)** to review "
+            "No experiment design configured yet. Please complete **Study Input** "
+            "to describe your study (or upload a QSF file), then **Design** to review "
             "and confirm your experimental design before generating data."
         )
         col_back1, col_back2 = st.columns([1, 1])
