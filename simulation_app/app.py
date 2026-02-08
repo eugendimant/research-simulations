@@ -54,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.4.8"
-BUILD_ID = "20260208-v148-multi-provider-llm-deep-variation"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.4.9"
+BUILD_ID = "20260208-v149-multi-provider-autodetect-10iter"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -109,7 +109,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF"
-APP_VERSION = "1.4.8"  # v1.4.8: Multi-provider LLM, deep variation, smart pool scaling, Generate tab status
+APP_VERSION = "1.4.9"  # v1.4.9: Multi-provider auto-detect, unified key input, docs update, 10 iterations
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -7679,10 +7679,9 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
     # ========================================
     st.markdown("---")
 
-    # v1.4.8: LLM status indicator for open-ended responses
+    # v1.4.9: LLM status indicator with multi-provider support and single key input
     _has_open_ended = bool(st.session_state.get("inferred_design", {}).get("open_ended", []))
     if not _has_open_ended:
-        # Also check QSF-detected open-ended questions
         _has_open_ended = bool(st.session_state.get("confirmed_open_ended", []))
 
     if _has_open_ended and not _is_generating and not _has_generated:
@@ -7691,15 +7690,17 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
         if _llm_status is None:
             try:
                 from utils.llm_response_generator import LLMResponseGenerator
-                _user_key = st.session_state.get("user_groq_api_key", "")
+                _user_key = st.session_state.get("user_llm_api_key", "")
                 _test_gen = LLMResponseGenerator(api_key=_user_key or None, seed=1)
                 _llm_status = _test_gen.check_connectivity()
+                _llm_status["provider_display"] = _test_gen.provider_display_name
                 st.session_state["_llm_connectivity_status"] = _llm_status
             except Exception:
                 _llm_status = {"available": False, "provider": "none", "error": "Import failed"}
                 st.session_state["_llm_connectivity_status"] = _llm_status
 
         if _llm_status.get("available"):
+            _prov_display = _llm_status.get("provider_display", "AI")
             st.markdown(
                 '<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;'
                 'padding:12px 16px;margin-bottom:16px;">'
@@ -7711,7 +7712,7 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
                 unsafe_allow_html=True,
             )
         else:
-            # LLM unavailable — show fallback options
+            # LLM unavailable — show single unified key input
             st.markdown(
                 '<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;'
                 'padding:12px 16px;margin-bottom:12px;">'
@@ -7719,29 +7720,43 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
                 'AI-Powered Open-Ended Responses: Unavailable</span><br>'
                 '<span style="color:#a16207;font-size:0.9em;">'
                 'The built-in AI service is currently at capacity. '
-                'You can either provide your own free API key below, '
+                'You can provide your own free API key below, '
                 'or proceed with high-quality template-based responses.</span></div>',
                 unsafe_allow_html=True,
             )
-            with st.expander("Use your own free Groq API key (optional)", expanded=False):
+            with st.expander("Use your own free API key (optional)", expanded=False):
                 st.markdown(
-                    "Get a **free** key in 30 seconds at "
-                    "[console.groq.com](https://console.groq.com). "
-                    "Free tier: 14,400 requests/day."
+                    "**Get a free key in 30 seconds** from any of these providers:\n\n"
+                    "| Provider | Free Tier | Sign Up |\n"
+                    "|----------|-----------|--------|\n"
+                    "| **Groq** (recommended) | 14,400 req/day | [console.groq.com](https://console.groq.com) |\n"
+                    "| **Cerebras** | 1M tokens/day | [cloud.cerebras.ai](https://cloud.cerebras.ai) |\n"
+                    "| **OpenRouter** | Free models | [openrouter.ai](https://openrouter.ai) |\n\n"
+                    "Simply paste your key below — the provider is detected automatically."
                 )
                 _user_key_input = st.text_input(
-                    "Groq API Key",
-                    value=st.session_state.get("user_groq_api_key", ""),
+                    "API Key",
+                    value=st.session_state.get("user_llm_api_key", ""),
                     type="password",
-                    key="user_groq_key_input",
-                    placeholder="gsk_...",
+                    key="user_llm_key_input",
+                    placeholder="Paste your key here (e.g., gsk_..., csk-..., sk-or-...)",
                 )
-                if _user_key_input != st.session_state.get("user_groq_api_key", ""):
-                    st.session_state["user_groq_api_key"] = _user_key_input
-                    os.environ["GROQ_API_KEY"] = _user_key_input
+                if _user_key_input != st.session_state.get("user_llm_api_key", ""):
+                    st.session_state["user_llm_api_key"] = _user_key_input
+                    # Set in environment for the generator to pick up (only if non-empty)
+                    if _user_key_input.strip():
+                        os.environ["LLM_API_KEY"] = _user_key_input.strip()
+                    elif "LLM_API_KEY" in os.environ:
+                        del os.environ["LLM_API_KEY"]
                     # Clear cached status so it re-checks with the new key
                     st.session_state["_llm_connectivity_status"] = None
                     _rerun_on_tab(3)
+                st.markdown(
+                    '<span style="color:#6b7280;font-size:0.8em;">'
+                    'Your key is used only for this session, kept in memory only, '
+                    'and never saved or transmitted anywhere except to the provider\'s API.</span>',
+                    unsafe_allow_html=True,
+                )
 
             st.markdown(
                 '<div style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;'
@@ -8082,10 +8097,10 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
                     except (ValueError, TypeError):
                         demographics[key] = {"age_mean": 35, "age_sd": 12, "gender_quota": 50}.get(key, 0)
 
-        # v1.4.8: Ensure user's Groq key (if provided) is in env for the engine
-        _user_groq = st.session_state.get("user_groq_api_key", "")
-        if _user_groq:
-            os.environ["GROQ_API_KEY"] = _user_groq
+        # v1.4.9: Ensure user's API key (if provided) is in env for the engine
+        _user_llm_key = st.session_state.get("user_llm_api_key", "") or st.session_state.get("user_groq_api_key", "")
+        if _user_llm_key:
+            os.environ["LLM_API_KEY"] = _user_llm_key
 
         engine = EnhancedSimulationEngine(
             study_title=title,
@@ -8137,6 +8152,10 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
             with st.spinner("🧠 Generating participant responses... Please wait."):
                 progress_bar.progress(25, text="Step 2/5 — Generating participant responses...")
                 df, metadata = engine.generate()
+
+            # v1.4.9: Inject LLM stats into metadata for the instructor report
+            if hasattr(engine, 'llm_generator') and engine.llm_generator is not None:
+                metadata['llm_stats'] = engine.llm_generator.stats
 
             # v1.2.4: Run simulation quality validation
             validation_results = _validate_simulation_output(df, metadata, clean_scales)
