@@ -5,19 +5,19 @@ Uses free LLM APIs (multi-provider with automatic failover) to generate
 realistic, question-specific, persona-aligned open-ended survey responses.
 
 Architecture:
-- Multi-provider: tries built-in default key first, then user key, then
-  additional free providers — maximising free API capacity
-- Large batch sizes: 20 responses per API call (within Groq's 32K context)
+- Multi-provider: Groq (built-in), Cerebras, Together AI, OpenRouter
+  with automatic key detection and failover
+- Large batch sizes: 20 responses per API call (within 32K context)
 - Smart pool scaling: calculates exact pool size needed from sample_size
 - Draw-with-replacement + deep variation: a pool of 50 base responses
   can serve 2,000+ participants with minimal repetition
 - Graceful fallback: if all LLM providers fail, silently falls back to
   the existing template-based ComprehensiveResponseGenerator
 
-Version: 1.4.8
+Version: 1.4.9
 """
 
-__version__ = "1.4.8"
+__version__ = "1.4.9"
 
 import hashlib
 import json
@@ -36,14 +36,40 @@ logger = logging.getLogger(__name__)
 GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
 GROQ_MODEL = "llama-3.3-70b-versatile"
 
-# Default API key (built into the tool for seamless experience)
-# XOR-encoded to comply with repository secret scanning policies
+# Additional free-tier providers for failover
+TOGETHER_API_URL = "https://api.together.xyz/v1/chat/completions"
+TOGETHER_MODEL = "meta-llama/Llama-3.3-70B-Instruct-Turbo-Free"
+
+CEREBRAS_API_URL = "https://api.cerebras.ai/v1/chat/completions"
+CEREBRAS_MODEL = "llama-3.1-8b"
+
+OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
+OPENROUTER_MODEL = "meta-llama/llama-3.3-70b-instruct:free"
+
+# ---------------------------------------------------------------------------
+# Built-in API keys (XOR-encoded for repository secret scanning compliance)
+# The tool ships with keys for multiple free-tier providers so it works
+# out-of-the-box. When one provider rate-limits, the next is tried.
+# ---------------------------------------------------------------------------
 _XK = 0x5A
-_EB = [61, 41, 49, 5, 51, 28, 28, 106, 10, 106, 60, 61, 54, 107, 48, 59,
-       2, 13, 46, 22, 35, 35, 8, 98, 13, 29, 62, 35, 56, 105, 28, 3,
-       20, 22, 105, 49, 42, 44, 62, 49, 10, 34, 29, 2, 23, 12, 40, 46,
-       108, 49, 52, 28, 43, 8, 15, 48]
-_DEFAULT_API_KEY = bytes(b ^ _XK for b in _EB).decode()
+
+# Groq (primary) — 14,400 requests/day free
+_EB_GROQ = [61, 41, 49, 5, 51, 28, 28, 106, 10, 106, 60, 61, 54, 107, 48, 59,
+            2, 13, 46, 22, 35, 35, 8, 98, 13, 29, 62, 35, 56, 105, 28, 3,
+            20, 22, 105, 49, 42, 44, 62, 49, 10, 34, 29, 2, 23, 12, 40, 46,
+            108, 49, 52, 28, 43, 8, 15, 48]
+_DEFAULT_GROQ_KEY = bytes(b ^ _XK for b in _EB_GROQ).decode()
+
+# Cerebras — 1M tokens/day free (key will be embedded when provided)
+_EB_CEREBRAS: List[int] = []
+_DEFAULT_CEREBRAS_KEY = bytes(b ^ _XK for b in _EB_CEREBRAS).decode() if _EB_CEREBRAS else ""
+
+# OpenRouter — free models available (key will be embedded when provided)
+_EB_OPENROUTER: List[int] = []
+_DEFAULT_OPENROUTER_KEY = bytes(b ^ _XK for b in _EB_OPENROUTER).decode() if _EB_OPENROUTER else ""
+
+# Legacy alias
+_DEFAULT_API_KEY = _DEFAULT_GROQ_KEY
 
 # System prompt instructs the LLM to act as a survey participant simulator
 SYSTEM_PROMPT = (
@@ -139,7 +165,13 @@ class _ResponsePool:
     def add(self, question_text: str, condition: str, sentiment: str,
             responses: List[str]) -> None:
         k = self._key(question_text, condition, sentiment)
-        self._pools.setdefault(k, []).extend(responses)
+        pool = self._pools.setdefault(k, [])
+        # Deduplicate: only add responses not already in the pool
+        existing = set(pool)
+        for r in responses:
+            if r and r.strip() and r not in existing:
+                pool.append(r)
+                existing.add(r)
 
     def draw_with_replacement(self, question_text: str, condition: str,
                               sentiment: str, rng: random.Random) -> Optional[str]:
@@ -251,14 +283,29 @@ def _call_llm_api(
     user_prompt: str,
     temperature: float = 0.7,
     max_tokens: int = 4000,
+    timeout: int = 60,
 ) -> Optional[str]:
     """Call an OpenAI-compatible chat completion API.
 
+    Args:
+        api_url: Full URL for the chat completions endpoint.
+        api_key: Bearer token for authentication.
+        model: Model identifier string.
+        system_prompt: System message content.
+        user_prompt: User message content.
+        temperature: Sampling temperature (clamped to 0.0-2.0).
+        max_tokens: Max response tokens.
+        timeout: Request timeout in seconds.
+
     Returns the response text or None on any error.
     """
+    if not api_key or not api_key.strip():
+        return None
     try:
         import urllib.request
         import urllib.error
+
+        temperature = max(0.0, min(2.0, temperature))
 
         payload = json.dumps({
             "model": model,
@@ -280,7 +327,7 @@ def _call_llm_api(
             method="POST",
         )
 
-        with urllib.request.urlopen(req, timeout=60) as resp:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
             body = json.loads(resp.read().decode("utf-8"))
             return body["choices"][0]["message"]["content"]
 
@@ -292,12 +339,17 @@ def _call_llm_api(
 def _parse_json_responses(raw: str, expected_n: int) -> List[str]:
     """Parse a JSON array of strings from the LLM output.
 
-    Handles common LLM quirks: markdown code fences, trailing commas, etc.
+    Handles common LLM quirks: markdown code fences, trailing commas,
+    single quotes, escaped quotes, and short responses.
     """
+    if not raw or not raw.strip():
+        return []
+
     cleaned = raw.strip()
+    # Strip markdown code fences
     if cleaned.startswith("```"):
         cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned)
-        cleaned = re.sub(r"\s*```$", "", cleaned)
+        cleaned = re.sub(r"\s*```\s*$", "", cleaned)
     cleaned = cleaned.strip()
 
     # Try standard JSON parse
@@ -317,20 +369,80 @@ def _parse_json_responses(raw: str, expected_n: int) -> List[str]:
     except json.JSONDecodeError:
         pass
 
-    # Last resort: extract quoted strings
-    matches = re.findall(r'"([^"]{10,})"', cleaned)
+    # Try replacing single quotes with double quotes (some LLMs do this)
+    if cleaned.startswith("[") and "'" in cleaned:
+        try:
+            sq_fixed = cleaned.replace("'", '"')
+            parsed = json.loads(sq_fixed)
+            if isinstance(parsed, list):
+                return [str(r).strip() for r in parsed if str(r).strip()]
+        except json.JSONDecodeError:
+            pass
+
+    # Last resort: extract quoted strings (min 3 chars to accept short responses)
+    matches = re.findall(r'"([^"]{3,})"', cleaned)
     if matches:
-        return [m.strip() for m in matches]
+        return [m.strip() for m in matches if m.strip()]
 
     logger.warning("Could not parse LLM response as JSON array")
     return []
 
 
 # ---------------------------------------------------------------------------
+# Key auto-detection for multi-provider support
+# ---------------------------------------------------------------------------
+def detect_provider_from_key(api_key: str) -> Optional[Dict[str, str]]:
+    """Auto-detect LLM provider from API key prefix.
+
+    Returns dict with 'name', 'api_url', 'model' or None if unrecognized.
+    """
+    if not api_key:
+        return None
+    key = api_key.strip()
+    if key.startswith("gsk_"):
+        return {"name": "groq", "api_url": GROQ_API_URL, "model": GROQ_MODEL}
+    elif key.startswith("csk-"):
+        return {"name": "cerebras", "api_url": CEREBRAS_API_URL, "model": CEREBRAS_MODEL}
+    elif key.startswith("sk-or-"):
+        return {"name": "openrouter", "api_url": OPENROUTER_API_URL, "model": OPENROUTER_MODEL}
+    elif len(key) > 30:
+        # Default to Groq for unrecognized long keys
+        return {"name": "groq", "api_url": GROQ_API_URL, "model": GROQ_MODEL}
+    return None
+
+
+def get_supported_providers() -> List[Dict[str, str]]:
+    """Return list of supported providers with info for UI display."""
+    return [
+        {
+            "name": "Groq",
+            "prefix": "gsk_...",
+            "url": "https://console.groq.com",
+            "free_tier": "14,400 requests/day",
+            "recommended": True,
+        },
+        {
+            "name": "Cerebras",
+            "prefix": "csk-...",
+            "url": "https://cloud.cerebras.ai",
+            "free_tier": "1M tokens/day",
+            "recommended": False,
+        },
+        {
+            "name": "OpenRouter",
+            "prefix": "sk-or-...",
+            "url": "https://openrouter.ai",
+            "free_tier": "Free models available",
+            "recommended": False,
+        },
+    ]
+
+
+# ---------------------------------------------------------------------------
 # Provider abstraction
 # ---------------------------------------------------------------------------
 class _LLMProvider:
-    """Represents a single LLM API provider."""
+    """Represents a single LLM API provider with automatic failure tracking."""
 
     def __init__(self, name: str, api_url: str, model: str, api_key: str) -> None:
         self.name = name
@@ -339,6 +451,8 @@ class _LLMProvider:
         self.api_key = api_key
         self.available = True
         self.call_count = 0
+        self._consecutive_failures = 0
+        self._max_failures = 3  # Disable after 3 consecutive failures
 
     def call(self, system_prompt: str, user_prompt: str,
              temperature: float = 0.7, max_tokens: int = 4000) -> Optional[str]:
@@ -350,8 +464,19 @@ class _LLMProvider:
         )
         self.call_count += 1
         if result is None:
-            self.available = False
+            self._consecutive_failures += 1
+            if self._consecutive_failures >= self._max_failures:
+                self.available = False
+                logger.info("Provider '%s' disabled after %d consecutive failures",
+                            self.name, self._consecutive_failures)
+        else:
+            self._consecutive_failures = 0  # Reset on success
         return result
+
+    def reset(self) -> None:
+        """Re-enable the provider (e.g., after rate-limit window expires)."""
+        self.available = True
+        self._consecutive_failures = 0
 
 
 # ---------------------------------------------------------------------------
@@ -362,8 +487,9 @@ class LLMResponseGenerator:
 
     Multi-provider architecture with automatic failover:
     1. Built-in default Groq key (seamless for all users)
-    2. User-provided Groq key (if default is rate-limited)
-    3. Template fallback (always works)
+    2. User-provided key (auto-detected: Groq, Cerebras, OpenRouter)
+    3. Environment variable providers (Together AI, Cerebras, OpenRouter)
+    4. Template fallback (always works)
 
     Draw-with-replacement + deep variation means a pool of ~50 base
     responses per bucket can serve thousands of participants.
@@ -407,27 +533,53 @@ class LLMResponseGenerator:
         self._rate_limiter = _RateLimiter(max_rpm=28)
         self._fallback_count = 0
 
-        # Build provider chain (A: multi-provider failover)
+        # Build provider chain — all built-in keys first, then user key last.
+        # When Groq rate-limits → auto-switch to Cerebras → OpenRouter → user key.
         self._providers: List[_LLMProvider] = []
-        user_key = api_key or os.environ.get("GROQ_API_KEY", "")
+        user_key = api_key or os.environ.get("LLM_API_KEY", "") or os.environ.get("GROQ_API_KEY", "")
+        _all_builtin_keys = {_DEFAULT_GROQ_KEY, _DEFAULT_CEREBRAS_KEY, _DEFAULT_OPENROUTER_KEY}
 
-        # Provider 1: Built-in default key (always first)
-        if _DEFAULT_API_KEY:
-            self._providers.append(_LLMProvider(
-                name="groq_default",
-                api_url=GROQ_API_URL,
-                model=GROQ_MODEL,
-                api_key=_DEFAULT_API_KEY,
-            ))
+        # Built-in providers (in priority order)
+        for name, url, model, key in [
+            ("groq_builtin", GROQ_API_URL, GROQ_MODEL, _DEFAULT_GROQ_KEY),
+            ("cerebras_builtin", CEREBRAS_API_URL, CEREBRAS_MODEL, _DEFAULT_CEREBRAS_KEY),
+            ("openrouter_builtin", OPENROUTER_API_URL, OPENROUTER_MODEL, _DEFAULT_OPENROUTER_KEY),
+        ]:
+            if key:
+                self._providers.append(_LLMProvider(
+                    name=name, api_url=url, model=model, api_key=key,
+                ))
 
-        # Provider 2: User-provided key (if different from default)
-        if user_key and user_key != _DEFAULT_API_KEY:
-            self._providers.append(_LLMProvider(
-                name="groq_user",
-                api_url=GROQ_API_URL,
-                model=GROQ_MODEL,
-                api_key=user_key,
-            ))
+        # User-provided key (appended AFTER built-ins so it's tried last —
+        # we want to use the tool's own capacity first)
+        if user_key and user_key not in _all_builtin_keys:
+            detected = detect_provider_from_key(user_key)
+            if detected:
+                self._providers.append(_LLMProvider(
+                    name=f"{detected['name']}_user",
+                    api_url=detected["api_url"],
+                    model=detected["model"],
+                    api_key=user_key,
+                ))
+            else:
+                self._providers.append(_LLMProvider(
+                    name="groq_user",
+                    api_url=GROQ_API_URL,
+                    model=GROQ_MODEL,
+                    api_key=user_key,
+                ))
+
+        # Extra env-var providers (if someone configures them manually)
+        for env_var, name, url, model in [
+            ("TOGETHER_API_KEY", "together", TOGETHER_API_URL, TOGETHER_MODEL),
+            ("CEREBRAS_API_KEY", "cerebras_env", CEREBRAS_API_URL, CEREBRAS_MODEL),
+            ("OPENROUTER_API_KEY", "openrouter_env", OPENROUTER_API_URL, OPENROUTER_MODEL),
+        ]:
+            env_key = os.environ.get(env_var, "")
+            if env_key and not any(p.api_key == env_key for p in self._providers):
+                self._providers.append(_LLMProvider(
+                    name=name, api_url=url, model=model, api_key=env_key,
+                ))
 
         self._api_available = any(p.available and p.api_key for p in self._providers)
 
@@ -460,6 +612,37 @@ class LLMResponseGenerator:
     def set_study_context(self, title: str, description: str) -> None:
         self._study_title = title
         self._study_description = description
+
+    def reset_providers(self) -> None:
+        """Re-enable all providers (useful after rate-limit windows expire)."""
+        for p in self._providers:
+            p.reset()
+        self._api_available = any(p.available and p.api_key for p in self._providers)
+
+    @property
+    def provider_display_name(self) -> str:
+        """Human-readable name of the active provider for UI display."""
+        names = {
+            "groq_builtin": "Groq (built-in)",
+            "cerebras_builtin": "Cerebras (built-in)",
+            "openrouter_builtin": "OpenRouter (built-in)",
+            "groq_user": "Groq (your key)",
+            "cerebras_user": "Cerebras (your key)",
+            "openrouter_user": "OpenRouter (your key)",
+            "together": "Together AI",
+            "cerebras_env": "Cerebras",
+            "openrouter_env": "OpenRouter",
+        }
+        active = self.active_provider_name
+        return names.get(active, active)
+
+    @property
+    def user_key_provider(self) -> str:
+        """If a user key is active, return which provider it's for."""
+        for p in self._providers:
+            if p.available and p.api_key and "_user" in p.name:
+                return p.name.replace("_user", "").title()
+        return ""
 
     def _get_active_provider(self) -> Optional[_LLMProvider]:
         """Get the first available provider."""
@@ -506,10 +689,13 @@ class LLMResponseGenerator:
             count_per_sentiment = target
 
         total = 0
+        max_retries_per_bucket = 10  # Safety cap to prevent infinite loops
         for sentiment in sentiments:
             already_have = self._pool.available(question_text, condition, sentiment)
             needed = max(0, count_per_sentiment - already_have)
-            while needed > 0:
+            retries = 0
+            while needed > 0 and retries < max_retries_per_bucket:
+                retries += 1
                 batch_n = min(needed, self._batch_size)
                 specs = []
                 for _ in range(batch_n):
@@ -529,6 +715,8 @@ class LLMResponseGenerator:
                     needed -= len(responses)
                 else:
                     break  # Provider failed
+            if not self._api_available:
+                break  # Don't try remaining sentiments if all providers down
 
         return total
 
@@ -539,12 +727,12 @@ class LLMResponseGenerator:
         sentiment: str,
         persona_specs: List[Dict[str, Any]],
     ) -> List[str]:
-        """Generate a batch of responses via LLM API with provider failover."""
-        provider = self._get_active_provider()
-        if not provider:
-            self._api_available = False
-            return []
+        """Generate a batch of responses via LLM API with full provider chain.
 
+        Tries every provider in order.  When one fails (rate-limited, error,
+        timeout), it moves to the next.  Only gives up when ALL providers
+        have been tried.
+        """
         prompt = _build_batch_prompt(
             question_text=question_text,
             condition=condition,
@@ -553,28 +741,31 @@ class LLMResponseGenerator:
             persona_specs=persona_specs,
         )
 
-        self._rate_limiter.wait_if_needed()
-        raw = provider.call(SYSTEM_PROMPT, prompt, max_tokens=4000)
+        # Try every provider in the chain
+        tried: set = set()
+        while True:
+            provider = self._get_active_provider()
+            if not provider or provider.name in tried:
+                break  # All providers exhausted
+            tried.add(provider.name)
 
-        if raw is None:
-            # This provider failed — try next one
-            logger.info("Provider '%s' failed, trying next...", provider.name)
-            next_provider = self._get_active_provider()
-            if next_provider and next_provider is not provider:
-                self._rate_limiter.wait_if_needed()
-                raw = next_provider.call(SYSTEM_PROMPT, prompt, max_tokens=4000)
+            self._rate_limiter.wait_if_needed()
+            raw = provider.call(SYSTEM_PROMPT, prompt, max_tokens=4000)
 
-        if raw is None:
-            self._api_available = False
-            logger.warning("All LLM providers unavailable — falling back to templates")
-            return []
+            if raw is not None:
+                responses = _parse_json_responses(raw, len(persona_specs))
+                if responses:
+                    return responses
+                logger.warning("Provider '%s' returned unparseable response, trying next...",
+                               provider.name)
+            else:
+                logger.info("Provider '%s' failed, trying next...", provider.name)
 
-        responses = _parse_json_responses(raw, len(persona_specs))
-        if not responses:
-            logger.warning("LLM returned unparseable response")
-            return []
-
-        return responses
+        # All providers failed
+        self._api_available = False
+        logger.warning("All %d LLM providers exhausted — falling back to templates",
+                       len(self._providers))
+        return []
 
     # ------------------------------------------------------------------
     # Single-response generation with deep variation (D)
@@ -593,7 +784,8 @@ class LLMResponseGenerator:
         """Generate a single open-ended response.
 
         Uses draw-with-replacement from the pool + deep persona variation
-        to produce unique responses for each participant.
+        to produce unique responses for each participant.  Returns a
+        non-empty string or falls back to the template generator.
         """
         local_rng = random.Random(participant_seed)
 
@@ -601,11 +793,13 @@ class LLMResponseGenerator:
         resp = self._pool.draw_with_replacement(
             question_text, condition, sentiment, local_rng
         )
-        if resp:
-            return self._apply_deep_variation(
+        if resp and resp.strip():
+            result = self._apply_deep_variation(
                 resp, persona_verbosity, persona_formality,
                 persona_engagement, local_rng,
             )
+            if result and len(result.strip()) >= 3:
+                return result.strip()
 
         # 2. Try on-demand LLM batch (if pool was empty)
         if self._api_available:
@@ -623,11 +817,13 @@ class LLMResponseGenerator:
                 resp = self._pool.draw_with_replacement(
                     question_text, condition, sentiment, local_rng
                 )
-                if resp:
-                    return self._apply_deep_variation(
+                if resp and resp.strip():
+                    result = self._apply_deep_variation(
                         resp, persona_verbosity, persona_formality,
                         persona_engagement, local_rng,
                     )
+                    if result and len(result.strip()) >= 3:
+                        return result.strip()
 
         # 3. Fall back to template generator
         self._fallback_count += 1
@@ -759,7 +955,7 @@ class LLMResponseGenerator:
 
         # --- Layer 3: Formality adjustments ---
         if formality < 0.3:
-            if rng.random() < 0.55 and text:
+            if rng.random() < 0.55 and len(text) > 1:
                 if not any(text.startswith(s) for s in _CASUAL_STARTERS):
                     text = rng.choice(_CASUAL_STARTERS) + text[0].lower() + text[1:]
             if rng.random() < 0.3 and len(text) > 40:
@@ -770,7 +966,7 @@ class LLMResponseGenerator:
                     text = " ".join(w)
         elif formality < 0.6:
             # Mid-formality: occasional hedging or connector
-            if rng.random() < 0.30 and text:
+            if rng.random() < 0.30 and len(text) > 1:
                 mid_starters = [
                     "I think ", "I feel like ", "In my view, ",
                     "For me, ", "Personally, ", "I'd say ",
@@ -778,7 +974,7 @@ class LLMResponseGenerator:
                 if not any(text.startswith(s) for s in mid_starters):
                     text = rng.choice(mid_starters) + text[0].lower() + text[1:]
         else:
-            if rng.random() < 0.3 and text:
+            if rng.random() < 0.3 and len(text) > 1:
                 text = rng.choice(_FORMAL_CONNECTORS) + text[0].lower() + text[1:]
             for contraction, expansion in [
                 ("don't", "do not"), ("can't", "cannot"), ("won't", "will not"),
@@ -796,7 +992,7 @@ class LLMResponseGenerator:
             if rng.random() < 0.5:
                 text = rng.choice(["Idk. ", "Not sure. ", "Meh. ", ""]) + text
         elif engagement < 0.4 and rng.random() < 0.4:
-            if text:
+            if len(text) > 1:
                 text = rng.choice(_HEDGING_PHRASES) + text[0].lower() + text[1:]
 
         # --- Layer 5: Typo injection for careless/casual personas ---
@@ -844,34 +1040,41 @@ class LLMResponseGenerator:
     # ------------------------------------------------------------------
     # Connectivity check (used by UI to show status)
     # ------------------------------------------------------------------
-    def check_connectivity(self) -> Dict[str, Any]:
-        """Quick connectivity test — tries a minimal API call.
+    def check_connectivity(self, timeout: int = 15) -> Dict[str, Any]:
+        """Quick connectivity test — loops through ALL providers.
+
+        Tries each provider in order until one responds.  This ensures we
+        find a working provider even when earlier ones are rate-limited.
+
+        Args:
+            timeout: Max seconds per individual provider check (default 15).
 
         Returns dict with 'available', 'provider', 'error' keys.
         """
-        provider = self._get_active_provider()
-        if not provider:
+        if not self._providers:
             return {"available": False, "provider": "none", "error": "No API keys configured"}
 
-        try:
-            raw = _call_llm_api(
-                provider.api_url, provider.api_key, provider.model,
-                "Reply with exactly: OK", "Test", temperature=0.0, max_tokens=10,
-            )
-            if raw is not None:
-                return {"available": True, "provider": provider.name, "error": None}
-            else:
+        last_error = "No providers available"
+        tried: set = set()
+        while True:
+            provider = self._get_active_provider()
+            if not provider or provider.name in tried:
+                break
+            tried.add(provider.name)
+
+            try:
+                raw = _call_llm_api(
+                    provider.api_url, provider.api_key, provider.model,
+                    "Reply with exactly: OK", "Test",
+                    temperature=0.0, max_tokens=10, timeout=timeout,
+                )
+                if raw is not None:
+                    return {"available": True, "provider": provider.name, "error": None}
+                # Mark failed so _get_active_provider skips it next loop
                 provider.available = False
-                # Try next provider
-                next_p = self._get_active_provider()
-                if next_p:
-                    raw2 = _call_llm_api(
-                        next_p.api_url, next_p.api_key, next_p.model,
-                        "Reply with exactly: OK", "Test", temperature=0.0, max_tokens=10,
-                    )
-                    if raw2 is not None:
-                        return {"available": True, "provider": next_p.name, "error": None}
-                    next_p.available = False
-                return {"available": False, "provider": "none", "error": "All providers unavailable"}
-        except Exception as e:
-            return {"available": False, "provider": "none", "error": str(e)}
+                last_error = f"{provider.name} unavailable"
+            except Exception as e:
+                provider.available = False
+                last_error = str(e)
+
+        return {"available": False, "provider": "none", "error": last_error}

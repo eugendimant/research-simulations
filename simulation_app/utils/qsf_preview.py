@@ -33,7 +33,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 # Version identifier to help track deployed code
-__version__ = "1.4.8"  # v1.4.8: Multi-provider LLM, deep variation
+__version__ = "1.4.10"  # v1.4.10: Full provider chain failover
 
 
 # ============================================================================

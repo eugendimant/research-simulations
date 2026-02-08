@@ -1,6 +1,6 @@
 # Technical Methods Documentation
 
-**Behavioral Experiment Simulation Tool v1.3.0**
+**Behavioral Experiment Simulation Tool v1.4.9**
 
 **Proprietary Software** | Dr. Eugen Dimant, University of Pennsylvania
 
@@ -161,16 +161,61 @@ For crossed factorial designs (e.g., "AI × Hedonic"), the system:
 
 ## 5. Open-Ended Response Generation
 
-### 5.1 Generation Pipeline
+### 5.1 Two-Tier Architecture
 
-1. **Question type classification**: 30+ types identified via regex patterns
-2. **Domain detection**: 175+ research domains via keyword matching
+The system uses a primary AI-powered generator with a template-based fallback.
+
+**Primary (LLM-Powered):**
+
+1. **Batch prompt construction**: For each question × condition × sentiment bucket, a prompt is built that includes study context, experimental condition, and N participant profiles (each specifying verbosity, formality, engagement, and sentiment)
+2. **LLM API call**: The prompt is sent to an OpenAI-compatible chat completion endpoint (e.g., Groq, Cerebras, OpenRouter). The LLM returns a JSON array of N responses
+3. **Pool storage**: Responses are stored in a keyed pool (key = MD5 of question + condition + sentiment)
+4. **Draw-with-replacement**: Individual participants draw randomly from the pool without depleting it
+5. **Deep variation**: Each drawn response passes through 7 transformation layers to ensure uniqueness
+
+**Fallback (Template-Based):**
+
+1. **Question type classification**: 40+ types identified via regex patterns
+2. **Domain detection**: 225+ research domains via keyword matching
 3. **Template selection**: Domain × sentiment × question-type specific templates
 4. **Personalization**: Question-specific keywords modify template content
 5. **Persona modulation**: Verbosity, formality, and engagement adjustments
 6. **Condition context**: Condition-specific elements incorporated
 
-### 5.2 Response Characteristics by Persona
+### 5.2 Deep Variation Pipeline (7 Layers)
+
+Each base response passes through independent transformation layers:
+
+| Layer | Transformation | Probability |
+|-------|---------------|-------------|
+| 0 | Word micro-variation (drop, insert, swap, synonym replace) | 30-50% per axis |
+| 1 | Sentence restructuring (shuffle, relocate, drop) | 55% combined |
+| 2 | Verbosity control (truncate or elaborate) | Persona-driven |
+| 3 | Formality adjustment (casual starters, hedging, contractions) | Persona-driven |
+| 4 | Engagement modulation (truncate + disengaged prefix) | Persona-driven |
+| 5 | Typo injection (realistic misspellings) | 25% for casual |
+| 6 | Synonym swaps (1-3 per response) | Always |
+| 7 | Punctuation variation | 30% |
+
+**Target uniqueness**: ≥84% unique text from a single base response at n=500; ≥90% from a pool of 30 at n=2,000.
+
+### 5.3 Smart Pool Scaling
+
+Pool size per sentiment bucket: `max(30, min(80, floor(√(participants_per_bucket) × 3) + 10))`
+
+Where `participants_per_bucket = sample_size / (n_conditions × 5 sentiments)`.
+
+### 5.4 Multi-Provider Failover
+
+| Provider | Rate Limit (Free) | Model | Key Prefix |
+|----------|-------------------|-------|------------|
+| Groq | 14,400 req/day | Llama 3.3 70B | `gsk_` |
+| Cerebras | 1M tokens/day | Llama 3.1 8B | `csk-` |
+| OpenRouter | Free models | Llama 3.3 70B | `sk-or-` |
+
+Providers are tried in order; if one fails or rate-limits, the next is attempted automatically.
+
+### 5.5 Response Characteristics by Persona
 
 | Persona | Typical Length | Style | Quality |
 |---------|----------------|-------|---------|

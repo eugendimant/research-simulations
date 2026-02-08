@@ -45,7 +45,7 @@ This module is designed to run inside a `utils/` package (i.e., imported as
 """
 
 # Version identifier to help track deployed code
-__version__ = "1.4.8"  # v1.4.8: Multi-provider LLM, deep variation
+__version__ = "1.4.10"  # v1.4.10: Full provider chain failover
 
 # =============================================================================
 # SCIENTIFIC FOUNDATIONS FOR SIMULATION
@@ -2708,8 +2708,8 @@ class EnhancedSimulationEngine:
         try:
             from .llm_response_generator import LLMResponseGenerator
             # LLMResponseGenerator has a built-in default API key;
-            # also picks up GROQ_API_KEY from env or user-provided key as fallback
-            _user_key = os.environ.get("GROQ_API_KEY", "")
+            # also picks up LLM_API_KEY / GROQ_API_KEY from env or user-provided key
+            _user_key = os.environ.get("LLM_API_KEY", "") or os.environ.get("GROQ_API_KEY", "")
             self.llm_generator = LLMResponseGenerator(
                 api_key=_user_key or None,
                 study_title=self.study_title,
@@ -2719,7 +2719,7 @@ class EnhancedSimulationEngine:
                 batch_size=20,
             )
             if self.llm_generator.is_llm_available:
-                self._log("LLM response generator initialized (multi-provider)")
+                self._log(f"LLM response generator initialized ({self.llm_generator.provider_display_name})")
             else:
                 self._log("LLM generator: no providers available, using templates")
                 self.llm_generator = None
@@ -4598,7 +4598,7 @@ class EnhancedSimulationEngine:
         else:
             engagement = 0.5
 
-        # v1.4.6: Try LLM generator first (question-specific, persona-aligned)
+        # v1.4.9: Try LLM generator first (question-specific, persona-aligned)
         if self.llm_generator is not None:
             try:
                 resp = self.llm_generator.generate(
@@ -4611,10 +4611,10 @@ class EnhancedSimulationEngine:
                     question_name=str(question_spec.get("name", "")),
                     participant_seed=participant_seed,
                 )
-                if resp:
+                if resp and resp.strip():
                     return resp
-            except Exception:
-                pass  # Fall through to template generator
+            except Exception as _llm_gen_err:
+                logger.debug("LLM generate() error: %s", _llm_gen_err)
 
         # Try to use comprehensive response generator if available
         if self.comprehensive_generator is not None:
