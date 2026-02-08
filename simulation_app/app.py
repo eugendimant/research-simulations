@@ -7776,6 +7776,178 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
                 unsafe_allow_html=True,
             )
 
+    # ── TEMPORARY: LLM Benchmark Button ─────────────────────────────────
+    # Runs all 3 LLM providers + template engine, emails results.
+    # Remove this block after benchmarking is complete.
+    with st.expander("Run LLM Benchmark (temporary)", expanded=False):
+        st.markdown(
+            "Generate 5 responses from each of the **3 LLM providers** (Groq, Cerebras, OpenRouter) "
+            "and the **template engine** across 6 question types from real QSF files. "
+            "Results are emailed to the instructor address."
+        )
+        _bench_email = st.text_input(
+            "Email address for benchmark results",
+            value=st.secrets.get("INSTRUCTOR_NOTIFICATION_EMAIL", "edimant@sas.upenn.edu"),
+            key="_benchmark_email_input",
+        )
+        if st.button("Run Benchmark & Email Results", key="_run_benchmark_btn", type="primary"):
+            _bench_progress = st.empty()
+            _bench_progress.info("Starting LLM benchmark across 3 providers + template engine...")
+
+            try:
+                from utils.llm_response_generator import (
+                    _call_llm_api, _parse_json_responses, _build_batch_prompt,
+                    SYSTEM_PROMPT as _BENCH_SYS,
+                    GROQ_API_URL as _BG_URL, GROQ_MODEL as _BG_MOD, _DEFAULT_GROQ_KEY as _BG_KEY,
+                    CEREBRAS_API_URL as _BC_URL, CEREBRAS_MODEL as _BC_MOD, _DEFAULT_CEREBRAS_KEY as _BC_KEY,
+                    OPENROUTER_API_URL as _BO_URL, OPENROUTER_MODEL as _BO_MOD, _DEFAULT_OPENROUTER_KEY as _BO_KEY,
+                )
+                from utils.response_library import ComprehensiveResponseGenerator
+                import time as _btime
+
+                _BENCH_QUESTIONS = [
+                    {"id": "Q1", "type": "Description", "source": "Coffee_Shop_Loyalty_Programs.qsf",
+                     "study": "Coffee Shop Loyalty Programs",
+                     "condition": "Points-based loyalty program (200 points for reward)",
+                     "text": "In 1-2 sentences, please describe what you see in the loyalty program above:"},
+                    {"id": "Q2", "type": "Evaluation", "source": "Backlash_aftermath_performance_pilot.qsf",
+                     "study": "Gender Backlash in Salary Negotiation",
+                     "condition": "Female candidate / assertive negotiation style",
+                     "text": "What is your overall impression of the job candidate based on how they negotiated the offer?"},
+                    {"id": "Q3", "type": "Explanation", "source": "DG_PGG_Information_Nudge.qsf",
+                     "study": "Dictator Game with Information Nudge",
+                     "condition": "Social information nudge (told average donation is 40%)",
+                     "text": "Please explain your choice in a few sentences:"},
+                    {"id": "Q4", "type": "Opinion", "source": "Human-AI_Interaction_Template.qsf",
+                     "study": "Human-AI Interaction and Trust",
+                     "condition": "AI-generated advice condition",
+                     "text": "Are there any specific concerns or hopes you have about AI in everyday decision-making? Please describe one and share your reasons."},
+                    {"id": "Q5", "type": "Suspicion Probe", "source": "Backlash_aftermath_performance_pilot.qsf",
+                     "study": "Gender Backlash in Salary Negotiation",
+                     "condition": "Male candidate / collaborative negotiation style",
+                     "text": "What do you think this study was about?"},
+                    {"id": "Q6", "type": "Feedback", "source": "DG_PGG_Information_Nudge.qsf",
+                     "study": "Dictator Game with Information Nudge",
+                     "condition": "Control (no nudge)",
+                     "text": "Was there anything confusing about the experiment? Was anything unclear?"},
+                ]
+
+                _BENCH_PERSONAS = [
+                    {"label": "Engaged (formal)",     "v": 0.75, "f": 0.80, "e": 0.90, "sentiment": "positive"},
+                    {"label": "Casual (brief)",       "v": 0.25, "f": 0.15, "e": 0.55, "sentiment": "neutral"},
+                    {"label": "Thoughtful (verbose)", "v": 0.85, "f": 0.60, "e": 0.85, "sentiment": "negative"},
+                    {"label": "Satisficer (minimal)", "v": 0.10, "f": 0.40, "e": 0.20, "sentiment": "neutral"},
+                    {"label": "Enthusiastic (casual)","v": 0.65, "f": 0.20, "e": 0.90, "sentiment": "very_positive"},
+                ]
+                _bench_specs = [
+                    {"verbosity": p["v"], "formality": p["f"], "engagement": p["e"], "sentiment": p["sentiment"]}
+                    for p in _BENCH_PERSONAS
+                ]
+
+                _BENCH_PROVIDERS = [
+                    ("Groq (Llama 3.3 70B)", _BG_URL, _BG_MOD, _BG_KEY),
+                    ("Cerebras (Llama 3.3 70B)", _BC_URL, _BC_MOD, _BC_KEY),
+                    ("OpenRouter (Llama 3.3 70B)", _BO_URL, _BO_MOD, _BO_KEY),
+                ]
+
+                _tpl_gen = ComprehensiveResponseGenerator()
+                _body_lines = []
+                _body_lines.append("LLM vs Template Engine: Side-by-Side Benchmark")
+                _body_lines.append("=" * 50)
+                _body_lines.append(f"Generated: {_btime.strftime('%Y-%m-%d %H:%M UTC')}")
+                _body_lines.append(f"Version: 1.4.10")
+                _body_lines.append("")
+                _body_lines.append("Persona Profiles:")
+                for _pi, _pp in enumerate(_BENCH_PERSONAS, 1):
+                    _body_lines.append(f"  P{_pi}: {_pp['label']} | v={_pp['v']:.2f} f={_pp['f']:.2f} e={_pp['e']:.2f} | {_pp['sentiment']}")
+                _body_lines.append("")
+
+                _total_steps = len(_BENCH_QUESTIONS) * (len(_BENCH_PROVIDERS) + 1)
+                _step = 0
+
+                for _bq in _BENCH_QUESTIONS:
+                    _body_lines.append("")
+                    _body_lines.append("=" * 60)
+                    _body_lines.append(f"{_bq['id']}: {_bq['type']} Question")
+                    _body_lines.append(f"Source: {_bq['source']}")
+                    _body_lines.append(f"Study: {_bq['study']}")
+                    _body_lines.append(f"Condition: {_bq['condition']}")
+                    _body_lines.append(f"Question: \"{_bq['text']}\"")
+                    _body_lines.append("=" * 60)
+
+                    # Template engine
+                    _step += 1
+                    _bench_progress.info(f"Step {_step}/{_total_steps}: Template engine for {_bq['id']}...")
+                    _body_lines.append("")
+                    _body_lines.append("--- TEMPLATE ENGINE ---")
+                    _t0 = _btime.time()
+                    for _ti, _tp in enumerate(_BENCH_PERSONAS):
+                        _tresp = _tpl_gen.generate(
+                            question_text=_bq["text"],
+                            sentiment=_tp["sentiment"],
+                            persona_verbosity=_tp["v"],
+                            persona_formality=_tp["f"],
+                            persona_engagement=_tp["e"],
+                            condition=_bq["condition"],
+                            question_name=_bq["id"],
+                            participant_seed=42 + _ti,
+                        )
+                        _body_lines.append(f"  P{_ti+1} ({_tp['label']}, {_tp['sentiment']}): {_tresp}")
+                    _telapsed = _btime.time() - _t0
+                    _body_lines.append(f"  [Time: {_telapsed:.3f}s]")
+
+                    # LLM providers
+                    for _pname, _purl, _pmodel, _pkey in _BENCH_PROVIDERS:
+                        _step += 1
+                        _bench_progress.info(f"Step {_step}/{_total_steps}: {_pname} for {_bq['id']}...")
+                        _body_lines.append("")
+                        _body_lines.append(f"--- {_pname.upper()} ---")
+
+                        _bprompt = _build_batch_prompt(
+                            question_text=_bq["text"],
+                            condition=_bq["condition"],
+                            study_title=_bq["study"],
+                            study_description=f"A behavioral experiment examining {_bq['study'].lower()}.",
+                            persona_specs=_bench_specs,
+                        )
+
+                        _t0 = _btime.time()
+                        _raw = _call_llm_api(
+                            _purl, _pkey, _pmodel, _BENCH_SYS, _bprompt,
+                            temperature=0.7, max_tokens=4000, timeout=45,
+                        )
+                        _lelapsed = _btime.time() - _t0
+
+                        if _raw:
+                            _parsed = _parse_json_responses(_raw, 5)
+                            for _li, _lr in enumerate(_parsed):
+                                _lp = _BENCH_PERSONAS[_li] if _li < len(_BENCH_PERSONAS) else _BENCH_PERSONAS[-1]
+                                _body_lines.append(f"  P{_li+1} ({_lp['label']}, {_lp['sentiment']}): {_lr}")
+                            _body_lines.append(f"  [Time: {_lelapsed:.1f}s | {len(_parsed)} responses]")
+                        else:
+                            _body_lines.append(f"  FAILED: API call returned no response ({_lelapsed:.1f}s)")
+
+                _bench_progress.info("Sending benchmark results via email...")
+                _email_body = "\n".join(_body_lines)
+                _ok, _msg = _send_email(
+                    to_email=_bench_email,
+                    subject="[Behavioral Simulation] LLM Benchmark Results (v1.4.10)",
+                    body_text=_email_body,
+                )
+                if _ok:
+                    _bench_progress.success(f"Benchmark complete! Results emailed to {_bench_email}")
+                else:
+                    _bench_progress.error(f"Benchmark complete but email failed: {_msg}")
+                    st.text_area("Benchmark Results (copy manually)", _email_body, height=400)
+
+            except Exception as _bench_exc:
+                _bench_progress.error(f"Benchmark error: {_bench_exc}")
+                import traceback
+                st.code(traceback.format_exc())
+
+    st.markdown("---")
+    # ── END TEMPORARY BENCHMARK ──────────────────────────────────────────
+
     is_generating = _is_generating  # Use the early-read variable
     has_generated = _has_generated
 
