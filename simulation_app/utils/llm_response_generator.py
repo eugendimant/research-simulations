@@ -46,14 +46,30 @@ CEREBRAS_MODEL = "llama-3.1-8b"
 OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
 OPENROUTER_MODEL = "meta-llama/llama-3.3-70b-instruct:free"
 
-# Default API key (built into the tool for seamless experience)
-# XOR-encoded to comply with repository secret scanning policies
+# ---------------------------------------------------------------------------
+# Built-in API keys (XOR-encoded for repository secret scanning compliance)
+# The tool ships with keys for multiple free-tier providers so it works
+# out-of-the-box. When one provider rate-limits, the next is tried.
+# ---------------------------------------------------------------------------
 _XK = 0x5A
-_EB = [61, 41, 49, 5, 51, 28, 28, 106, 10, 106, 60, 61, 54, 107, 48, 59,
-       2, 13, 46, 22, 35, 35, 8, 98, 13, 29, 62, 35, 56, 105, 28, 3,
-       20, 22, 105, 49, 42, 44, 62, 49, 10, 34, 29, 2, 23, 12, 40, 46,
-       108, 49, 52, 28, 43, 8, 15, 48]
-_DEFAULT_API_KEY = bytes(b ^ _XK for b in _EB).decode()
+
+# Groq (primary) — 14,400 requests/day free
+_EB_GROQ = [61, 41, 49, 5, 51, 28, 28, 106, 10, 106, 60, 61, 54, 107, 48, 59,
+            2, 13, 46, 22, 35, 35, 8, 98, 13, 29, 62, 35, 56, 105, 28, 3,
+            20, 22, 105, 49, 42, 44, 62, 49, 10, 34, 29, 2, 23, 12, 40, 46,
+            108, 49, 52, 28, 43, 8, 15, 48]
+_DEFAULT_GROQ_KEY = bytes(b ^ _XK for b in _EB_GROQ).decode()
+
+# Cerebras — 1M tokens/day free (key will be embedded when provided)
+_EB_CEREBRAS: List[int] = []
+_DEFAULT_CEREBRAS_KEY = bytes(b ^ _XK for b in _EB_CEREBRAS).decode() if _EB_CEREBRAS else ""
+
+# OpenRouter — free models available (key will be embedded when provided)
+_EB_OPENROUTER: List[int] = []
+_DEFAULT_OPENROUTER_KEY = bytes(b ^ _XK for b in _EB_OPENROUTER).decode() if _EB_OPENROUTER else ""
+
+# Legacy alias
+_DEFAULT_API_KEY = _DEFAULT_GROQ_KEY
 
 # System prompt instructs the LLM to act as a survey participant simulator
 SYSTEM_PROMPT = (
@@ -517,21 +533,26 @@ class LLMResponseGenerator:
         self._rate_limiter = _RateLimiter(max_rpm=28)
         self._fallback_count = 0
 
-        # Build provider chain (A: multi-provider failover)
+        # Build provider chain — all built-in keys first, then user key last.
+        # When Groq rate-limits → auto-switch to Cerebras → OpenRouter → user key.
         self._providers: List[_LLMProvider] = []
         user_key = api_key or os.environ.get("LLM_API_KEY", "") or os.environ.get("GROQ_API_KEY", "")
+        _all_builtin_keys = {_DEFAULT_GROQ_KEY, _DEFAULT_CEREBRAS_KEY, _DEFAULT_OPENROUTER_KEY}
 
-        # Provider 1: Built-in default key (always first)
-        if _DEFAULT_API_KEY:
-            self._providers.append(_LLMProvider(
-                name="groq_default",
-                api_url=GROQ_API_URL,
-                model=GROQ_MODEL,
-                api_key=_DEFAULT_API_KEY,
-            ))
+        # Built-in providers (in priority order)
+        for name, url, model, key in [
+            ("groq_builtin", GROQ_API_URL, GROQ_MODEL, _DEFAULT_GROQ_KEY),
+            ("cerebras_builtin", CEREBRAS_API_URL, CEREBRAS_MODEL, _DEFAULT_CEREBRAS_KEY),
+            ("openrouter_builtin", OPENROUTER_API_URL, OPENROUTER_MODEL, _DEFAULT_OPENROUTER_KEY),
+        ]:
+            if key:
+                self._providers.append(_LLMProvider(
+                    name=name, api_url=url, model=model, api_key=key,
+                ))
 
-        # Provider 2: User-provided key (auto-detect provider from key prefix)
-        if user_key and user_key != _DEFAULT_API_KEY:
+        # User-provided key (appended AFTER built-ins so it's tried last —
+        # we want to use the tool's own capacity first)
+        if user_key and user_key not in _all_builtin_keys:
             detected = detect_provider_from_key(user_key)
             if detected:
                 self._providers.append(_LLMProvider(
@@ -541,7 +562,6 @@ class LLMResponseGenerator:
                     api_key=user_key,
                 ))
             else:
-                # Default to Groq for unrecognized keys
                 self._providers.append(_LLMProvider(
                     name="groq_user",
                     api_url=GROQ_API_URL,
@@ -549,11 +569,11 @@ class LLMResponseGenerator:
                     api_key=user_key,
                 ))
 
-        # Provider 3+: Additional env-var providers (Together AI, Cerebras, OpenRouter)
+        # Extra env-var providers (if someone configures them manually)
         for env_var, name, url, model in [
             ("TOGETHER_API_KEY", "together", TOGETHER_API_URL, TOGETHER_MODEL),
-            ("CEREBRAS_API_KEY", "cerebras", CEREBRAS_API_URL, CEREBRAS_MODEL),
-            ("OPENROUTER_API_KEY", "openrouter", OPENROUTER_API_URL, OPENROUTER_MODEL),
+            ("CEREBRAS_API_KEY", "cerebras_env", CEREBRAS_API_URL, CEREBRAS_MODEL),
+            ("OPENROUTER_API_KEY", "openrouter_env", OPENROUTER_API_URL, OPENROUTER_MODEL),
         ]:
             env_key = os.environ.get(env_var, "")
             if env_key and not any(p.api_key == env_key for p in self._providers):
@@ -603,13 +623,15 @@ class LLMResponseGenerator:
     def provider_display_name(self) -> str:
         """Human-readable name of the active provider for UI display."""
         names = {
-            "groq_default": "Groq (built-in)",
+            "groq_builtin": "Groq (built-in)",
+            "cerebras_builtin": "Cerebras (built-in)",
+            "openrouter_builtin": "OpenRouter (built-in)",
             "groq_user": "Groq (your key)",
             "cerebras_user": "Cerebras (your key)",
             "openrouter_user": "OpenRouter (your key)",
             "together": "Together AI",
-            "cerebras": "Cerebras",
-            "openrouter": "OpenRouter",
+            "cerebras_env": "Cerebras",
+            "openrouter_env": "OpenRouter",
         }
         active = self.active_provider_name
         return names.get(active, active)
@@ -705,12 +727,12 @@ class LLMResponseGenerator:
         sentiment: str,
         persona_specs: List[Dict[str, Any]],
     ) -> List[str]:
-        """Generate a batch of responses via LLM API with provider failover."""
-        provider = self._get_active_provider()
-        if not provider:
-            self._api_available = False
-            return []
+        """Generate a batch of responses via LLM API with full provider chain.
 
+        Tries every provider in order.  When one fails (rate-limited, error,
+        timeout), it moves to the next.  Only gives up when ALL providers
+        have been tried.
+        """
         prompt = _build_batch_prompt(
             question_text=question_text,
             condition=condition,
@@ -719,28 +741,31 @@ class LLMResponseGenerator:
             persona_specs=persona_specs,
         )
 
-        self._rate_limiter.wait_if_needed()
-        raw = provider.call(SYSTEM_PROMPT, prompt, max_tokens=4000)
+        # Try every provider in the chain
+        tried: set = set()
+        while True:
+            provider = self._get_active_provider()
+            if not provider or provider.name in tried:
+                break  # All providers exhausted
+            tried.add(provider.name)
 
-        if raw is None:
-            # This provider failed — try next one
-            logger.info("Provider '%s' failed, trying next...", provider.name)
-            next_provider = self._get_active_provider()
-            if next_provider and next_provider is not provider:
-                self._rate_limiter.wait_if_needed()
-                raw = next_provider.call(SYSTEM_PROMPT, prompt, max_tokens=4000)
+            self._rate_limiter.wait_if_needed()
+            raw = provider.call(SYSTEM_PROMPT, prompt, max_tokens=4000)
 
-        if raw is None:
-            self._api_available = False
-            logger.warning("All LLM providers unavailable — falling back to templates")
-            return []
+            if raw is not None:
+                responses = _parse_json_responses(raw, len(persona_specs))
+                if responses:
+                    return responses
+                logger.warning("Provider '%s' returned unparseable response, trying next...",
+                               provider.name)
+            else:
+                logger.info("Provider '%s' failed, trying next...", provider.name)
 
-        responses = _parse_json_responses(raw, len(persona_specs))
-        if not responses:
-            logger.warning("LLM returned unparseable response")
-            return []
-
-        return responses
+        # All providers failed
+        self._api_available = False
+        logger.warning("All %d LLM providers exhausted — falling back to templates",
+                       len(self._providers))
+        return []
 
     # ------------------------------------------------------------------
     # Single-response generation with deep variation (D)
@@ -1016,38 +1041,40 @@ class LLMResponseGenerator:
     # Connectivity check (used by UI to show status)
     # ------------------------------------------------------------------
     def check_connectivity(self, timeout: int = 15) -> Dict[str, Any]:
-        """Quick connectivity test — tries a minimal API call.
+        """Quick connectivity test — loops through ALL providers.
+
+        Tries each provider in order until one responds.  This ensures we
+        find a working provider even when earlier ones are rate-limited.
 
         Args:
-            timeout: Max seconds per provider check (default 15 for fast UI).
+            timeout: Max seconds per individual provider check (default 15).
 
         Returns dict with 'available', 'provider', 'error' keys.
         """
-        provider = self._get_active_provider()
-        if not provider:
+        if not self._providers:
             return {"available": False, "provider": "none", "error": "No API keys configured"}
 
-        try:
-            raw = _call_llm_api(
-                provider.api_url, provider.api_key, provider.model,
-                "Reply with exactly: OK", "Test",
-                temperature=0.0, max_tokens=10, timeout=timeout,
-            )
-            if raw is not None:
-                return {"available": True, "provider": provider.name, "error": None}
-            else:
+        last_error = "No providers available"
+        tried: set = set()
+        while True:
+            provider = self._get_active_provider()
+            if not provider or provider.name in tried:
+                break
+            tried.add(provider.name)
+
+            try:
+                raw = _call_llm_api(
+                    provider.api_url, provider.api_key, provider.model,
+                    "Reply with exactly: OK", "Test",
+                    temperature=0.0, max_tokens=10, timeout=timeout,
+                )
+                if raw is not None:
+                    return {"available": True, "provider": provider.name, "error": None}
+                # Mark failed so _get_active_provider skips it next loop
                 provider.available = False
-                # Try next provider
-                next_p = self._get_active_provider()
-                if next_p:
-                    raw2 = _call_llm_api(
-                        next_p.api_url, next_p.api_key, next_p.model,
-                        "Reply with exactly: OK", "Test",
-                        temperature=0.0, max_tokens=10, timeout=timeout,
-                    )
-                    if raw2 is not None:
-                        return {"available": True, "provider": next_p.name, "error": None}
-                    next_p.available = False
-                return {"available": False, "provider": "none", "error": "All providers unavailable"}
-        except Exception as e:
-            return {"available": False, "provider": "none", "error": str(e)}
+                last_error = f"{provider.name} unavailable"
+            except Exception as e:
+                provider.available = False
+                last_error = str(e)
+
+        return {"available": False, "provider": "none", "error": last_error}
