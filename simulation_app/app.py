@@ -53,8 +53,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.4.5"
-BUILD_ID = "20260207-v145-fix-scroll-generate-ux"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.4.6"
+BUILD_ID = "20260208-v146-fix-autofill-builder-flow"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -91,7 +91,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF"
-APP_VERSION = "1.4.5"  # v1.4.5: Fix scroll-to-top on navigation, remove Done button, improve Generate UX
+APP_VERSION = "1.4.6"  # v1.4.6: Fix autofill bug, improve builder flow, move Data Dictionary to bottom
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -3032,6 +3032,106 @@ def _render_conversational_builder() -> None:
     """
     parser = SurveyDescriptionParser()
 
+    # ── Pending autofill: apply BEFORE widgets render ────────────────
+    # This is the reliable Streamlit pattern for programmatically setting
+    # widget values. The pending data is set by the example button handler,
+    # then applied here at the TOP of the next rerun — before any text_area
+    # widgets are created — so st.session_state[widget_key] is correctly
+    # picked up by each widget.
+    _pending = st.session_state.pop("_pending_autofill_example", None)
+    if _pending:
+        st.session_state["builder_conditions_text"] = _pending["conditions"]
+        st.session_state["builder_conditions_input"] = _pending["conditions"]
+        st.session_state["builder_scales_text"] = _pending["scales"]
+        st.session_state["builder_scales_input"] = _pending["scales"]
+        _oe_pending = _pending.get("open_ended", "")
+        st.session_state["builder_oe_text"] = _oe_pending
+        st.session_state["builder_oe_input"] = _oe_pending
+        st.session_state["study_title"] = _pending["title"]
+        st.session_state["study_title_input"] = _pending["title"]
+        _pending_desc = _pending.get(
+            "description",
+            f"Investigating {_pending.get('domain', _pending['title'].lower())}",
+        )
+        st.session_state["study_description"] = _pending_desc
+
+        # ── Auto-build: automatically submit the builder for example studies ──
+        # Examples are curated and always valid, so skip the manual "Build Study"
+        # step to provide a smooth one-click experience.
+        try:
+            _auto_conds, _ = parser.parse_conditions(_pending["conditions"])
+            _auto_scales = parser.parse_scales(_pending["scales"])
+            _auto_oe = parser.parse_open_ended(_oe_pending) if _oe_pending.strip() else []
+            if len(_auto_conds) >= 2 and len(_auto_scales) >= 1:
+                _auto_factors = parser.detect_factorial_structure(_auto_conds)
+                _auto_sample = int(st.session_state.get("builder_sample_size", 100))
+                _auto_title = _pending["title"]
+                _cond_str = " ".join(c.name for c in _auto_conds)
+                _scale_str = " ".join(s.name for s in _auto_scales)
+                _auto_domain = parser.detect_research_domain(
+                    _auto_title, _pending_desc,
+                    conditions_text=_cond_str, scales_text=_scale_str,
+                )
+                _auto_design = ParsedDesign(
+                    conditions=_auto_conds,
+                    scales=_auto_scales,
+                    open_ended=_auto_oe,
+                    factors=_auto_factors,
+                    design_type="between",
+                    sample_size=_auto_sample,
+                    research_domain=_auto_domain,
+                    study_title=_auto_title,
+                    study_description=_pending_desc,
+                )
+                _auto_inferred = parser.build_inferred_design(_auto_design)
+                if _auto_inferred.get("conditions"):
+                    st.session_state["inferred_design"] = _auto_inferred
+                    st.session_state["builder_parsed_design"] = _auto_design
+                    st.session_state["conversational_builder_complete"] = True
+                    st.session_state["selected_conditions"] = [c.name for c in _auto_conds]
+                    st.session_state["confirmed_scales"] = _auto_inferred.get("scales", [])
+                    st.session_state["scales_confirmed"] = True
+                    st.session_state["confirmed_open_ended"] = _auto_inferred.get("open_ended_questions", [])
+                    st.session_state["open_ended_confirmed"] = True
+                    _n_conds = max(len(_auto_conds), 1)
+                    _per_cell = _auto_sample // _n_conds
+                    _remainder = _auto_sample % _n_conds
+                    st.session_state["condition_allocation_n"] = {
+                        c.name: _per_cell + (1 if i < _remainder else 0)
+                        for i, c in enumerate(_auto_conds)
+                    }
+                    st.session_state["condition_allocation"] = _auto_inferred.get("condition_allocation", {})
+                    st.session_state["builder_design_type"] = _auto_inferred.get("design_type", "between")
+                    st.session_state["builder_sample_size"] = _auto_sample
+                    st.session_state["sample_size"] = _auto_sample
+                    # Collect synthetic QSF training data
+                    try:
+                        _raw_inputs = {
+                            "conditions_text": _pending["conditions"],
+                            "scales_text": _pending["scales"],
+                            "open_ended_text": _oe_pending,
+                            "study_title": _auto_title,
+                            "study_description": _pending_desc,
+                            "participant_desc": "",
+                            "design_type": "between",
+                            "sample_size": _auto_sample,
+                        }
+                        synthetic_qsf = generate_qsf_from_design(_auto_design, raw_inputs=_raw_inputs)
+                        safe_title = re.sub(r'[^a-zA-Z0-9_\- ]', '', _auto_title or 'untitled')[:60].strip().replace(' ', '_')
+                        _date_prefix = datetime.now().strftime("%Y_%m_%d")
+                        collect_qsf_async(f"{_date_prefix}_{safe_title}.qsf", synthetic_qsf)
+                    except Exception:
+                        pass
+                    st.rerun()
+        except Exception:
+            pass  # Fall through to manual builder if auto-build fails
+
+    # ── Pending scales autofill ──────────────────────────────────────
+    _pending_scales = st.session_state.pop("_pending_autofill_scales", None)
+    if _pending_scales:
+        st.session_state["builder_scales_text"] = _pending_scales
+        st.session_state["builder_scales_input"] = _pending_scales
+
     # Check if builder is already complete
     if st.session_state.get("conversational_builder_complete"):
         st.success("Study description complete — proceed to **Design** tab to review and generate")
@@ -3066,21 +3166,10 @@ def _render_conversational_builder() -> None:
         examples = SurveyDescriptionParser.generate_example_descriptions()
         for idx, ex in enumerate(examples):
             if st.button(f"Load: {ex['title']}", key=f"example_btn_{idx}"):
-                # Set BOTH the data keys AND the widget keys
-                # (Streamlit ignores the value= param once a widget key exists in session_state)
-                st.session_state["builder_conditions_text"] = ex["conditions"]
-                st.session_state["builder_conditions_input"] = ex["conditions"]
-                st.session_state["builder_scales_text"] = ex["scales"]
-                st.session_state["builder_scales_input"] = ex["scales"]
-                _oe = ex.get("open_ended", "")
-                st.session_state["builder_oe_text"] = _oe
-                st.session_state["builder_oe_input"] = _oe
-                st.session_state["study_title"] = ex["title"]
-                # Use rich description from example if available, otherwise generate one
-                st.session_state["study_description"] = ex.get(
-                    "description",
-                    f"Investigating {ex.get('domain', ex['title'].lower())}",
-                )
+                # Store the example data and rerun — the pending handler at the
+                # top of this function applies it BEFORE widgets render, which is
+                # the reliable Streamlit pattern for programmatic widget updates.
+                st.session_state["_pending_autofill_example"] = ex
                 st.rerun()
 
     # ── Section 1: Experimental Conditions ──────────────────────────────
@@ -3267,11 +3356,10 @@ def _render_conversational_builder() -> None:
                 st.markdown("**Suggested scales for your domain:**")
                 for _sug in _auto_scales[:4]:
                     st.caption(f"- **{_sug['name']}** ({_sug['items']} items, {_sug['range']}) -- {_sug['description']}")
-                # Auto-fill button
+                # Auto-fill button — uses pending pattern for reliable widget update
                 _auto_text = "\n".join(f"{s['name']}, {s['items']} items, {s['range']}" for s in _auto_scales[:3])
                 if st.button("Auto-fill suggested scales", key="auto_fill_scales_btn"):
-                    st.session_state["builder_scales_text"] = _auto_text
-                    st.session_state["builder_scales_input"] = _auto_text  # Must also set widget key
+                    st.session_state["_pending_autofill_scales"] = _auto_text
                     st.rerun()
 
     # ── Section 3: Open-Ended Questions (Optional) ─────────────────────
@@ -3589,6 +3677,7 @@ def _render_conversational_builder() -> None:
         }
         st.session_state["builder_design_type"] = inferred.get("design_type", "between")
         st.session_state["builder_sample_size"] = builder_sample
+        st.session_state["sample_size"] = builder_sample  # Ensure Generate tab readiness check passes
 
         # Generate design feedback suggestions
         _feedback = parser.generate_feedback(parsed_design)
@@ -4882,8 +4971,11 @@ def _render_scroll_to_top_button(tab_index: int, next_tab_label: str = "") -> No
 
 # Show compact progress bar
 completion = _get_step_completion()
-progress_items = ["study_title", "study_description", "sample_size", "qsf_uploaded",
-                  "primary_outcome", "independent_var", "conditions_set"]
+# Use core items that are relevant to BOTH QSF and builder paths.
+# primary_outcome/independent_var are only populated in Generate tab,
+# so they shouldn't block progress display on earlier tabs.
+progress_items = ["study_title", "study_description", "sample_size",
+                  "qsf_uploaded", "conditions_set", "design_ready"]
 completed_count = sum(1 for k in progress_items if completion.get(k, False))
 total_count = len(progress_items)
 progress_pct = int((completed_count / total_count) * 100)
@@ -5678,7 +5770,18 @@ with tab_design:
     _skip_qsf_design = False
 
     if not preview and not _builder_complete:
-        st.warning("Complete the **Study Input** tab first — upload a QSF file or describe your study using the builder")
+        # Tailor the message to the user's chosen input method
+        _user_input_mode = st.session_state.get("study_input_mode", "upload_qsf")
+        if _user_input_mode == "describe_study":
+            st.warning(
+                "Complete the **Study Input** tab first — describe your conditions and scales, "
+                "then click **Build Study Specification** to proceed."
+            )
+        else:
+            st.warning(
+                "Complete the **Study Input** tab first — upload a QSF file or describe your study "
+                "using the builder."
+            )
         _skip_qsf_design = True
     elif _builder_complete and not preview:
         # Conversational builder path — show review mode, skip QSF config
@@ -5835,8 +5938,8 @@ with tab_design:
             clean_names = [_clean_condition_name(c) for c in all_conditions]
             st.success(f"**{len(all_conditions)} condition(s) configured:** {', '.join(clean_names)}")
         else:
-            st.error("❌ No conditions defined. Please select or add at least one condition.")
-            all_conditions = ["Condition A"]  # Fallback
+            st.error("No conditions defined. Please go back and select or add at least 2 conditions.")
+            all_conditions = []
 
         # ========================================
         # STEP 2: DESIGN STRUCTURE
@@ -7060,11 +7163,19 @@ with tab_generate:
     )
 
     if not inferred:
-        st.warning(
-            "No experiment design configured yet. Please complete **Study Input** "
-            "to describe your study (or upload a QSF file), then **Design** to review "
-            "and confirm your experimental design before generating data."
-        )
+        _gen_input_mode = st.session_state.get("study_input_mode", "upload_qsf")
+        if _gen_input_mode == "describe_study":
+            st.warning(
+                "No experiment design configured yet. Please complete **Study Input** "
+                "to describe your conditions and scales, click **Build Study Specification**, "
+                "then review your design in the **Design** tab before generating data."
+            )
+        else:
+            st.warning(
+                "No experiment design configured yet. Please complete **Study Input** "
+                "to upload a QSF file (or describe your study), then configure your "
+                "design in the **Design** tab before generating data."
+            )
         col_back1, col_back2 = st.columns([1, 1])
         with col_back1:
             if st.button("Go to Step 2: Study Input", key="go_step2_from_generate", use_container_width=True):
@@ -7074,12 +7185,14 @@ with tab_generate:
                 _go_to_step(2)
         st.stop()
 
-    # Show readiness checklist
+    # Show readiness checklist — label adapts to input mode
+    _gen_mode = st.session_state.get("study_input_mode", "upload_qsf")
+    _input_label = "Study described" if _gen_mode == "describe_study" else "QSF uploaded"
     required_fields = {
         "Study title": bool(st.session_state.get("study_title", "").strip()),
         "Study description": bool(st.session_state.get("study_description", "").strip()),
         "Sample size (≥10)": int(st.session_state.get("sample_size", 0)) >= 10,
-        "Study input provided": bool(preview and preview.success) or bool(st.session_state.get("conversational_builder_complete")),
+        _input_label: bool(preview and preview.success) or bool(st.session_state.get("conversational_builder_complete")),
         "Design configured": bool(inferred),
     }
     completed = sum(required_fields.values())
@@ -7749,7 +7862,7 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
 
         # Additional validation: warn if no scales detected
         if not clean_scales:
-            st.warning("⚠️ No scales detected or confirmed. A default scale will be used. Please verify your QSF file contains scale questions.")
+            st.warning("No scales detected or confirmed. A default scale will be used. Please check your study configuration.")
             clean_scales = [{"name": "Main_DV", "variable_name": "Main_DV", "num_items": 5, "scale_points": 7, "reverse_items": [], "_validated": True}]
 
         clean_factors = _normalize_factor_specs(inferred.get("factors", []), inferred.get("conditions", []))
