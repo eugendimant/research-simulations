@@ -54,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.4.13"
-BUILD_ID = "20260208-v1413-state-management-ux-overhaul"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.4.14"
+BUILD_ID = "20260208-v1414-page-nav-builder-validation"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -109,7 +109,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF"
-APP_VERSION = "1.4.13"  # v1.4.13: State management overhaul, Start Over fix, widget key unification, UX improvements
+APP_VERSION = "1.4.14"  # v1.4.14: Page-based navigation, preflight validation, builder streamlining
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -2974,10 +2974,10 @@ st.markdown(
 )
 st.caption(f"Version {APP_VERSION} · Build {APP_BUILD_TIMESTAMP}")
 
-STEP_LABELS = ["Study Info", "Upload Files", "Design Setup", "Generate"]
+STEP_LABELS = ["Setup", "Study Input", "Design", "Generate"]
 STEP_DESCRIPTIONS = [
     "Enter study title, description & sample size",
-    "Upload your Qualtrics QSF survey file",
+    "Upload a QSF file or describe your study",
     "Review conditions, factors & outcome variables",
     "Generate simulated data package"
 ]
@@ -3042,6 +3042,110 @@ UI_GUIDANCE = {
 }
 
 
+def _finalize_builder_design(
+    parser: "SurveyDescriptionParser",
+    parsed_conditions: list,
+    parsed_scales: list,
+    parsed_oe: list,
+    design_type: str,
+    sample_size: int,
+    title: str,
+    description: str,
+    participant_desc: str = "",
+    raw_inputs: Optional[Dict[str, str]] = None,
+) -> bool:
+    """Build inferred_design from parsed builder data and store everything in session state.
+
+    This consolidates the shared logic between the auto-build path (example studies)
+    and the manual "Build Study Specification" submit path so neither can drift.
+
+    Returns True on success, False on failure (with st.error displayed).
+    """
+    _cond_text = " ".join(c.name for c in parsed_conditions)
+    _scale_text = " ".join(s.name for s in parsed_scales)
+    domain = parser.detect_research_domain(
+        title, description,
+        conditions_text=_cond_text, scales_text=_scale_text,
+    )
+    factors = parser.detect_factorial_structure(parsed_conditions)
+
+    parsed_design = ParsedDesign(
+        conditions=parsed_conditions,
+        scales=parsed_scales,
+        open_ended=parsed_oe,
+        factors=factors,
+        design_type=design_type,
+        sample_size=sample_size,
+        research_domain=domain,
+        study_title=title,
+        study_description=description,
+        participant_characteristics=participant_desc,
+    )
+
+    try:
+        inferred = parser.build_inferred_design(parsed_design)
+    except Exception as e:
+        st.error(f"Error building study design: {e}")
+        _log(f"build_inferred_design error: {e}", level="error")
+        return False
+
+    if not inferred.get("conditions"):
+        st.warning("No conditions detected. Please check your condition description.")
+        return False
+
+    # Core design state
+    st.session_state["inferred_design"] = inferred
+    st.session_state["builder_parsed_design"] = parsed_design
+    st.session_state["conversational_builder_complete"] = True
+
+    # Condition/scale/OE state for Design & Generate tabs
+    st.session_state["selected_conditions"] = [c.name for c in parsed_conditions]
+    st.session_state["confirmed_scales"] = inferred.get("scales", [])
+    st.session_state["scales_confirmed"] = True
+    st.session_state["confirmed_open_ended"] = inferred.get("open_ended_questions", [])
+    st.session_state["open_ended_confirmed"] = True
+
+    # Allocation
+    st.session_state["condition_allocation"] = inferred.get("condition_allocation", {})
+    _cond_names = [c.name for c in parsed_conditions]
+    _n_conds = max(len(_cond_names), 1)
+    _per_cell = sample_size // _n_conds
+    _remainder = sample_size % _n_conds
+    st.session_state["condition_allocation_n"] = {
+        c: _per_cell + (1 if i < _remainder else 0)
+        for i, c in enumerate(_cond_names)
+    }
+    st.session_state["builder_design_type"] = inferred.get("design_type", "between")
+    st.session_state["builder_sample_size"] = sample_size
+    st.session_state["sample_size"] = sample_size
+
+    # Design feedback suggestions
+    _feedback = parser.generate_feedback(parsed_design)
+    if _feedback:
+        st.session_state["_builder_feedback"] = _feedback
+
+    # Collect synthetic QSF training data (never block user on failure)
+    try:
+        _ri = raw_inputs or {
+            "conditions_text": _cond_text,
+            "scales_text": _scale_text,
+            "open_ended_text": " | ".join(q.question_text for q in parsed_oe) if parsed_oe else "",
+            "study_title": title,
+            "study_description": description,
+            "participant_desc": participant_desc,
+            "design_type": design_type,
+            "sample_size": sample_size,
+        }
+        synthetic_qsf = generate_qsf_from_design(parsed_design, raw_inputs=_ri)
+        safe_title = re.sub(r'[^a-zA-Z0-9_\- ]', '', title or 'untitled')[:60].strip().replace(' ', '_')
+        _date_prefix = datetime.now().strftime("%Y_%m_%d")
+        collect_qsf_async(f"{_date_prefix}_{safe_title}.qsf", synthetic_qsf)
+    except Exception:
+        pass  # Never let collection errors affect the user workflow
+
+    return True
+
+
 def _render_conversational_builder() -> None:
     """
     Render the conversational study builder interface.
@@ -3074,68 +3178,25 @@ def _render_conversational_builder() -> None:
         try:
             _auto_conds, _ = parser.parse_conditions(_pending["conditions"])
             _auto_scales = parser.parse_scales(_pending["scales"])
-            _auto_oe = parser.parse_open_ended(_oe_pending) if _oe_pending.strip() else []
+            _auto_oe = parser.parse_open_ended(_pending.get("open_ended", "")) if _pending.get("open_ended", "").strip() else []
             if len(_auto_conds) >= 2 and len(_auto_scales) >= 1:
-                _auto_factors = parser.detect_factorial_structure(_auto_conds)
                 _auto_sample = int(st.session_state.get("builder_sample_size", 100))
-                _auto_title = _pending["title"]
-                _cond_str = " ".join(c.name for c in _auto_conds)
-                _scale_str = " ".join(s.name for s in _auto_scales)
-                _auto_domain = parser.detect_research_domain(
-                    _auto_title, _pending_desc,
-                    conditions_text=_cond_str, scales_text=_scale_str,
-                )
-                _auto_design = ParsedDesign(
-                    conditions=_auto_conds,
-                    scales=_auto_scales,
-                    open_ended=_auto_oe,
-                    factors=_auto_factors,
-                    design_type="between",
-                    sample_size=_auto_sample,
-                    research_domain=_auto_domain,
-                    study_title=_auto_title,
-                    study_description=_pending_desc,
-                )
-                _auto_inferred = parser.build_inferred_design(_auto_design)
-                if _auto_inferred.get("conditions"):
-                    st.session_state["inferred_design"] = _auto_inferred
-                    st.session_state["builder_parsed_design"] = _auto_design
-                    st.session_state["conversational_builder_complete"] = True
-                    st.session_state["selected_conditions"] = [c.name for c in _auto_conds]
-                    st.session_state["confirmed_scales"] = _auto_inferred.get("scales", [])
-                    st.session_state["scales_confirmed"] = True
-                    st.session_state["confirmed_open_ended"] = _auto_inferred.get("open_ended_questions", [])
-                    st.session_state["open_ended_confirmed"] = True
-                    _n_conds = max(len(_auto_conds), 1)
-                    _per_cell = _auto_sample // _n_conds
-                    _remainder = _auto_sample % _n_conds
-                    st.session_state["condition_allocation_n"] = {
-                        c.name: _per_cell + (1 if i < _remainder else 0)
-                        for i, c in enumerate(_auto_conds)
-                    }
-                    st.session_state["condition_allocation"] = _auto_inferred.get("condition_allocation", {})
-                    st.session_state["builder_design_type"] = _auto_inferred.get("design_type", "between")
-                    st.session_state["builder_sample_size"] = _auto_sample
-                    st.session_state["sample_size"] = _auto_sample
-                    # Collect synthetic QSF training data
-                    try:
-                        _raw_inputs = {
-                            "conditions_text": _pending["conditions"],
-                            "scales_text": _pending["scales"],
-                            "open_ended_text": _oe_pending,
-                            "study_title": _auto_title,
-                            "study_description": _pending_desc,
-                            "participant_desc": "",
-                            "design_type": "between",
-                            "sample_size": _auto_sample,
-                        }
-                        synthetic_qsf = generate_qsf_from_design(_auto_design, raw_inputs=_raw_inputs)
-                        safe_title = re.sub(r'[^a-zA-Z0-9_\- ]', '', _auto_title or 'untitled')[:60].strip().replace(' ', '_')
-                        _date_prefix = datetime.now().strftime("%Y_%m_%d")
-                        collect_qsf_async(f"{_date_prefix}_{safe_title}.qsf", synthetic_qsf)
-                    except Exception:
-                        pass
-                    _rerun_on_tab(2)
+                _raw_inputs = {
+                    "conditions_text": _pending["conditions"],
+                    "scales_text": _pending["scales"],
+                    "open_ended_text": _pending.get("open_ended", ""),
+                    "study_title": _pending["title"],
+                    "study_description": _pending_desc,
+                    "participant_desc": "",
+                    "design_type": "between",
+                    "sample_size": _auto_sample,
+                }
+                if _finalize_builder_design(
+                    parser, _auto_conds, _auto_scales, _auto_oe,
+                    "between", _auto_sample, _pending["title"], _pending_desc,
+                    raw_inputs=_raw_inputs,
+                ):
+                    _navigate_to(2)
         except Exception:
             pass  # Fall through to manual builder if auto-build fails
 
@@ -3146,10 +3207,15 @@ def _render_conversational_builder() -> None:
 
     # Check if builder is already complete
     if st.session_state.get("conversational_builder_complete"):
-        st.success("Study description complete — proceed to **Design** tab to review and generate")
-        if st.checkbox("Edit my study description", value=False, key="edit_builder"):
-            st.session_state["conversational_builder_complete"] = False
-            _rerun_on_tab(1)
+        st.success("Study description complete — proceed to **Design** tab to review and generate.")
+        _done_col1, _done_col2 = st.columns(2)
+        with _done_col1:
+            if st.button("Go to Design →", key="builder_goto_design", type="primary", use_container_width=True):
+                _navigate_to(2)
+        with _done_col2:
+            if st.button("Edit my description", key="builder_reopen_edit", use_container_width=True):
+                st.session_state["conversational_builder_complete"] = False
+                st.rerun()
         return
 
     st.markdown("### Describe Your Experiment")
@@ -3181,7 +3247,7 @@ def _render_conversational_builder() -> None:
                 # top of this function applies it BEFORE widgets render, which is
                 # the reliable Streamlit pattern for programmatic widget updates.
                 st.session_state["_pending_autofill_example"] = ex
-                _rerun_on_tab(1)
+                _navigate_to(1)
 
     # ── Section 1: Experimental Conditions ──────────────────────────────
     st.markdown("---")
@@ -3335,7 +3401,7 @@ def _render_conversational_builder() -> None:
                 _auto_text = "\n".join(f"{s['name']}, {s['items']} items, {s['range']}" for s in _auto_scales[:3])
                 if st.button("Auto-fill suggested scales", key="auto_fill_scales_btn"):
                     st.session_state["_pending_autofill_scales"] = _auto_text
-                    _rerun_on_tab(1)
+                    _navigate_to(1)
 
     # ── Section 3: Open-Ended Questions (Optional) ─────────────────────
     st.markdown("---")
@@ -3556,7 +3622,6 @@ def _render_conversational_builder() -> None:
         disabled=not can_submit,
         key="builder_submit_btn",
     ):
-        # Build the parsed design
         title = st.session_state.get("study_title", "")
         desc = st.session_state.get("study_description", "")
 
@@ -3567,96 +3632,24 @@ def _render_conversational_builder() -> None:
             )
             st.session_state["study_description"] = desc
 
-        # Pass conditions and scales text for improved domain detection accuracy
-        _cond_text_for_domain = " ".join(c.name for c in parsed_conditions)
-        _scale_text_for_domain = " ".join(s.name for s in parsed_scales)
-        domain = parser.detect_research_domain(
-            title, desc,
-            conditions_text=_cond_text_for_domain,
-            scales_text=_scale_text_for_domain,
-        )
-
-        factors = parser.detect_factorial_structure(parsed_conditions)
-
-        parsed_design = ParsedDesign(
-            conditions=parsed_conditions,
-            scales=parsed_scales,
-            open_ended=parsed_oe,
-            factors=factors,
-            design_type=design_type,
-            sample_size=builder_sample,
-            research_domain=domain,
-            study_title=title,
-            study_description=desc,
-            participant_characteristics=participant_desc,
-        )
-
-        # Build the inferred_design dict (same format as QSF path)
-        try:
-            inferred = parser.build_inferred_design(parsed_design)
-        except Exception as e:
-            st.error(f"Error building study design: {e}")
-            _log(f"build_inferred_design error: {e}", level="error")
-            return
-
-        # Validate minimum required keys
-        if not inferred.get("conditions"):
-            st.warning("No conditions detected. Please check your condition description.")
-            return
-
-        st.session_state["inferred_design"] = inferred
-        st.session_state["builder_parsed_design"] = parsed_design
-        st.session_state["conversational_builder_complete"] = True
-
-        # Collect builder-generated QSF for training data (same folder as uploaded QSFs)
-        # Include raw NL inputs so collected files serve as training pairs:
-        #   raw_inputs (what user typed) → parsed output (what the parser inferred)
-        try:
-            _raw_inputs = {
-                "conditions_text": st.session_state.get("builder_conditions_text", ""),
-                "scales_text": st.session_state.get("builder_scales_text", ""),
-                "open_ended_text": st.session_state.get("builder_oe_text", ""),
-                "study_title": title,
-                "study_description": desc,
-                "participant_desc": participant_desc,
-                "design_type": design_type,
-                "sample_size": builder_sample,
-            }
-            synthetic_qsf = generate_qsf_from_design(parsed_design, raw_inputs=_raw_inputs)
-            safe_title = re.sub(r'[^a-zA-Z0-9_\- ]', '', parsed_design.study_title or 'untitled')[:60].strip().replace(' ', '_')
-            _date_prefix = datetime.now().strftime("%Y_%m_%d")
-            collect_qsf_async(f"{_date_prefix}_{safe_title}.qsf", synthetic_qsf)
-        except Exception:
-            pass  # Never let collection errors affect the user workflow
-
-        # Set conditions for Step 3/4 compatibility
-        st.session_state["selected_conditions"] = [c.name for c in parsed_conditions]
-        st.session_state["confirmed_scales"] = inferred.get("scales", [])
-        st.session_state["scales_confirmed"] = True
-        st.session_state["confirmed_open_ended"] = inferred.get("open_ended_questions", [])
-        st.session_state["open_ended_confirmed"] = True
-
-        # Set condition allocation and sample size for Generate tab
-        st.session_state["condition_allocation"] = inferred.get("condition_allocation", {})
-        _cond_names = [c.name for c in parsed_conditions]
-        _n_conds = max(len(_cond_names), 1)
-        _per_cell = builder_sample // _n_conds
-        _remainder = builder_sample % _n_conds
-        st.session_state["condition_allocation_n"] = {
-            c: _per_cell + (1 if i < _remainder else 0)
-            for i, c in enumerate(_cond_names)
+        _raw_inputs = {
+            "conditions_text": st.session_state.get("builder_conditions_text", ""),
+            "scales_text": st.session_state.get("builder_scales_text", ""),
+            "open_ended_text": st.session_state.get("builder_oe_text", ""),
+            "study_title": title,
+            "study_description": desc,
+            "participant_desc": participant_desc,
+            "design_type": design_type,
+            "sample_size": builder_sample,
         }
-        st.session_state["builder_design_type"] = inferred.get("design_type", "between")
-        st.session_state["builder_sample_size"] = builder_sample
-        st.session_state["sample_size"] = builder_sample  # Ensure Generate tab readiness check passes
-
-        # Generate design feedback suggestions
-        _feedback = parser.generate_feedback(parsed_design)
-        if _feedback:
-            st.session_state["_builder_feedback"] = _feedback
-
-        st.success("Study specification built successfully! Proceed to the **Design** tab to review.")
-        _rerun_on_tab(2)
+        if _finalize_builder_design(
+            parser, parsed_conditions, parsed_scales, parsed_oe,
+            design_type, builder_sample, title, desc,
+            participant_desc=participant_desc,
+            raw_inputs=_raw_inputs,
+        ):
+            st.success("Study specification built successfully! Proceed to the **Design** tab to review.")
+            _navigate_to(2)
 
 
 def _render_builder_design_review() -> None:
@@ -3676,7 +3669,7 @@ def _render_builder_design_review() -> None:
         st.session_state.pop("inferred_design", None)
         st.session_state.pop("builder_effect_sizes", None)
         st.session_state.pop("builder_parsed_design", None)
-        _rerun_on_tab(1)
+        _navigate_to(1)
 
     st.markdown("### Review Your Study Design")
     st.markdown("Review and edit the study specification extracted from your description.")
@@ -3951,7 +3944,7 @@ def _render_builder_design_review() -> None:
                 c: _per + (1 if i < _rem else 0) for i, c in enumerate(conditions)
             }
             st.session_state["condition_allocation"] = {c: round(100.0 / _n, 1) for c in conditions}
-            _rerun_on_tab(2)
+            _navigate_to(2)
     else:
         st.warning("No conditions found. Please go back and describe your conditions.")
 
@@ -4002,7 +3995,7 @@ def _render_builder_design_review() -> None:
                 c: _per + (1 if i < _rem else 0) for i, c in enumerate(conditions)
             }
             st.session_state["condition_allocation"] = {c: round(100.0 / _n, 1) for c in conditions}
-            _rerun_on_tab(2)
+            _navigate_to(2)
 
     # ── Factorial Structure ─────────────────────────────────────────────
     if factors:
@@ -4119,7 +4112,7 @@ def _render_builder_design_review() -> None:
             inferred["scales"] = scales
             st.session_state["inferred_design"] = inferred
             st.session_state["confirmed_scales"] = scales
-            _rerun_on_tab(2)
+            _navigate_to(2)
 
         inferred["scales"] = scales
         st.session_state["inferred_design"] = inferred
@@ -4168,7 +4161,7 @@ def _render_builder_design_review() -> None:
                                 inferred["scales"] = scales
                                 st.session_state["inferred_design"] = inferred
                                 st.session_state["confirmed_scales"] = scales
-                                _rerun_on_tab(2)
+                                _navigate_to(2)
     else:
         st.warning("No scales detected")
 
@@ -4203,7 +4196,7 @@ def _render_builder_design_review() -> None:
             inferred["open_ended_questions"] = open_ended
             st.session_state["inferred_design"] = inferred
             st.session_state["confirmed_open_ended"] = open_ended
-            _rerun_on_tab(2)
+            _navigate_to(2)
         # Persist edits
         inferred["open_ended_questions"] = open_ended
         st.session_state["inferred_design"] = inferred
@@ -4367,95 +4360,55 @@ def _get_step_completion() -> Dict[str, bool]:
     }
 
 
-def _save_step_state():
-    """Save current step state to ensure persistence across navigation.
+def _preflight_validation() -> List[str]:
+    """v1.4.14: Pre-generation validation. Returns list of error messages.
 
-    Enhanced (Iteration 9): More robust state capture with edge case handling.
-    This function captures all important state that should persist when
-    navigating between steps. Call before any step change.
+    Catches issues that would crash the simulation engine BEFORE starting
+    the expensive generation process. Returns an empty list if all checks pass.
     """
-    # Keys that should persist across step navigation
-    persist_keys = [
-        # Step 1: Study Info
-        "study_title", "study_description", "researcher_name", "researcher_email",
-        "team_name", "team_members_raw",
-        # Step 2: Upload / Conversational Builder
-        "qsf_preview", "enhanced_analysis", "inferred_design",
-        "qsf_content", "qsf_filename",
-        "conversational_builder_complete", "study_input_mode",
-        "builder_conditions_text", "builder_scales_text", "builder_oe_text",
-        "builder_design_type", "builder_sample_size",
-        "builder_parsed_design", "builder_participant_desc",
-        "prereg_text", "prereg_pdf_text", "prereg_files",
-        "prereg_outcomes", "prereg_iv",
-        "survey_pdf_content", "survey_pdf_name",
-        # Step 3: Design Setup
-        "selected_conditions", "custom_conditions", "condition_candidates",
-        "factorial_table_factors", "factorial_crossed_conditions",
-        "use_crossed_conditions", "use_factorial_table",
-        "condition_allocation", "condition_allocation_n",
-        "confirmed_scales", "scales_confirmed", "_dv_version",
-        "confirmed_open_ended", "open_ended_confirmed", "_oe_version",
-        "manual_attention_checks", "manual_manipulation_checks",
-        "design_type_select", "rand_level_select",
-        "qsf_identifiers", "variable_review_rows",
-        # Step 4: Generate
-        "sample_size", "effect_size_d",
-        "demographics_config", "data_quality_config",
-        # UI State
-        "_prev_sample_size", "_prev_n_conditions", "_prev_conditions",
-        "_alloc_version",
-    ]
+    errors = []
+    inferred = st.session_state.get("inferred_design", {})
+    if not inferred:
+        errors.append("No experiment design configured. Complete the Design page first.")
+        return errors
 
-    # Create a snapshot of current state with deep copy for mutable objects
-    state_snapshot = {}
-    for key in persist_keys:
-        if key in st.session_state:
-            value = st.session_state[key]
-            # Deep copy lists and dicts to prevent reference issues
-            if isinstance(value, (list, dict)):
-                import copy
-                try:
-                    state_snapshot[key] = copy.deepcopy(value)
-                except Exception:
-                    state_snapshot[key] = value  # Fallback for non-serializable
-            else:
-                state_snapshot[key] = value
+    # Check conditions
+    conditions = inferred.get("conditions", [])
+    if not conditions:
+        errors.append("No conditions defined. Go to Design to add conditions.")
 
-    st.session_state["_state_snapshot"] = state_snapshot
-    st.session_state["_state_saved_at"] = datetime.now().isoformat()
+    # Check scales
+    scales = inferred.get("scales", [])
+    if not scales:
+        errors.append("No scales/DVs defined. Go to Design to add dependent variables.")
+    for s in scales:
+        s_min = s.get("scale_min", 1)
+        s_max = s.get("scale_max", 7)
+        if isinstance(s_min, (int, float)) and isinstance(s_max, (int, float)):
+            if s_min >= s_max:
+                errors.append(f"Scale '{s.get('name', '?')}' has min ({s_min}) >= max ({s_max}). Fix in Design.")
+
+    # Check sample size
+    n = st.session_state.get("sample_size", 0)
+    if not isinstance(n, (int, float)) or n < 10:
+        errors.append(f"Sample size ({n}) is too small. Minimum is 10.")
+
+    # Check allocation sums
+    alloc_n = st.session_state.get("condition_allocation_n", {})
+    if alloc_n and conditions:
+        total = sum(alloc_n.values())
+        if total != n:
+            errors.append(
+                f"Condition allocation sums to {total} but sample size is {n}. "
+                "Go to Design and click 'Auto-balance'."
+            )
+
+    return errors
 
 
-def _restore_step_state():
-    """Restore previously saved state after navigation.
-
-    Enhanced (Iteration 9): Safer restoration with validation.
-    Call at the beginning of each step to restore any state that may have
-    been saved before navigating away.
-    """
-    snapshot = st.session_state.get("_state_snapshot", {})
-
-    # Validate snapshot age (prevent restoring very old state)
-    saved_at = st.session_state.get("_state_saved_at")
-    if saved_at:
-        try:
-            saved_time = datetime.fromisoformat(saved_at)
-            age_seconds = (datetime.now() - saved_time).total_seconds()
-            # Don't restore state older than 1 hour
-            if age_seconds > 3600:
-                return
-        except Exception:
-            pass
-
-    for key, value in snapshot.items():
-        # Only restore if key is missing AND value is valid
-        if key not in st.session_state:
-            # Validate certain keys before restoring
-            if key == "sample_size" and not isinstance(value, (int, float)):
-                continue
-            if key in ("selected_conditions", "custom_conditions") and not isinstance(value, list):
-                continue
-            st.session_state[key] = value
+# v1.4.14: _save_step_state() and _restore_step_state() REMOVED.
+# Page-based rendering keeps all state in st.session_state directly.
+# No snapshot/restore cycle needed since only one page renders at a time.
 
 
 def _get_smart_defaults(study_description: str = "", preview: Any = None) -> Dict[str, Any]:
@@ -4505,107 +4458,22 @@ def _get_smart_defaults(study_description: str = "", preview: Any = None) -> Dic
     return defaults
 
 
-def _go_to_step(step_index: int) -> None:
-    """Navigate to a specific step with scroll-to-top and state persistence.
+def _navigate_to(page_index: int) -> None:
+    """Navigate to a page by index and rerun.
 
-    v1.4.11: Uses _rerun_on_tab() to properly restore the target tab after
-    rerun instead of a bare st.rerun() which loses tab context.
+    v1.4.14: Replaces the old _navigate_to() + _navigate_to() + JavaScript
+    MutationObserver approach with a simple page-based navigation model.
+    Only one page renders at a time, so scrolling to the top is automatic
+    (Streamlit rerenders fresh content that starts at the top of the viewport).
     """
-    # Save current state before navigating
-    _save_step_state()
-    clamped = max(0, min(step_index, len(STEP_LABELS) - 1))
-    st.session_state["active_step"] = clamped
-    st.session_state["_scroll_to_top"] = True  # Flag to trigger scroll on next render
-    _rerun_on_tab(clamped)
-
-
-def _inject_scroll_to_top():
-    """Inject JavaScript to scroll to top and/or restore the active tab.
-
-    v1.4.11: ALWAYS renders an HTML component (even when idle) so the
-    DOM structure is consistent across reruns.  Without this, Streamlit's
-    frontend diff algorithm can lose track of which tab is active when the
-    component count changes between renders.
-
-    Uses MutationObserver to wait for Streamlit's tab elements before
-    clicking, then scrolls the main container to the very top.
-    """
-    _target_tab = st.session_state.pop("_restore_tab_index", None)
-    _do_scroll = st.session_state.pop("_scroll_to_top", False)
-
-    _tab_index = _target_tab if _target_tab is not None else -1
-    _need_action = _target_tab is not None or _do_scroll
-
-    # ALWAYS render the HTML component to keep the DOM structure stable.
-    # When no action is needed, render a no-op script.
-    if not _need_action:
-        _st_components.html("<script>/* noop — tab anchor */</script>", height=0)
-        return
-
-    _st_components.html(f"""
-        <script>
-        (function() {{
-            var TARGET = {_tab_index};
-            var DO_SCROLL = {'true' if _do_scroll else 'false'};
-            var doc = window.parent.document;
-            var done = false;
-
-            function scrollToTop() {{
-                ['section.main', '.stApp', '[data-testid="stAppViewBlockContainer"]',
-                 '[data-testid="stVerticalBlock"]', '.block-container', 'main'
-                ].forEach(function(s) {{
-                    doc.querySelectorAll(s).forEach(function(el) {{
-                        el.scrollTop = 0;
-                        try {{ el.scrollTo({{top:0, behavior:'instant'}}); }} catch(e) {{}}
-                    }});
-                }});
-                window.parent.scrollTo({{top:0, behavior:'instant'}});
-                doc.documentElement.scrollTop = 0;
-                doc.body.scrollTop = 0;
-            }}
-
-            function tryRestore() {{
-                if (done) return;
-                var tabList = doc.querySelector('[data-baseweb="tab-list"]');
-                if (!tabList) return false;
-                var tabs = tabList.querySelectorAll('[role="tab"]');
-                if (TARGET >= 0 && tabs.length > TARGET) {{
-                    var tab = tabs[TARGET];
-                    if (tab.getAttribute('aria-selected') !== 'true') {{
-                        tab.click();
-                    }}
-                }}
-                if (DO_SCROLL) scrollToTop();
-                done = true;
-                return true;
-            }}
-
-            if (tryRestore()) return;
-
-            var observer = new MutationObserver(function() {{
-                if (tryRestore()) observer.disconnect();
-            }});
-            observer.observe(doc.body, {{childList: true, subtree: true}});
-
-            setTimeout(function() {{
-                observer.disconnect();
-                tryRestore();
-                if (DO_SCROLL) setTimeout(scrollToTop, 100);
-            }}, 3000);
-        }})();
-        </script>
-    """, height=0)
-
-
-def _rerun_on_tab(tab_index: int) -> None:
-    """Save which tab the user is on, then rerun without losing tab context.
-
-    Call this instead of bare ``st.rerun()`` whenever the rerun happens
-    inside a tab's content block.  On the next render cycle the injected
-    JS will click the correct tab header so the user stays put.
-    """
-    st.session_state["_restore_tab_index"] = tab_index
+    clamped = max(0, min(page_index, len(STEP_LABELS) - 1))
+    st.session_state["active_page"] = clamped
     st.rerun()
+
+
+# v1.4.14: _inject_scroll_to_top() and _navigate_to() REMOVED.
+# Page-based rendering (one page at a time) eliminates the need for
+# JavaScript tab-restore hacks. Scroll position resets naturally.
 
 
 with st.expander("What this tool delivers", expanded=True):
@@ -4777,19 +4645,31 @@ with st.sidebar:
     steps_complete = sum([step1_ready, step2_ready, step3_ready, step4_ready])
     st.progress(steps_complete / 4, text=f"{steps_complete}/4 steps complete")
 
-    # Quick jump buttons for incomplete steps
-    if not step1_ready:
-        if st.button("Complete Step 1", key="jump_step1", use_container_width=True):
-            _go_to_step(0)
-    elif not step2_ready:
-        if st.button("Complete Step 2", key="jump_step2", use_container_width=True):
-            _go_to_step(1)
-    elif not step3_ready:
-        if st.button("Complete Step 3", key="jump_step3", use_container_width=True):
-            _go_to_step(2)
-    elif not step4_ready:
-        if st.button("Go to Generate", key="jump_step4", use_container_width=True):
-            _go_to_step(3)
+    # v1.4.14: Show ALL incomplete steps as a checklist (not just the first one)
+    _step_status = [
+        (step1_ready, "Setup", 0),
+        (step2_ready, "Study Input", 1),
+        (step3_ready, "Design", 2),
+        (step4_ready, "Generate", 3),
+    ]
+    _incomplete = [(label, idx) for ready, label, idx in _step_status if not ready]
+    if _incomplete:
+        for _label, _idx in _incomplete:
+            if st.button(f"→ {_label}", key=f"jump_step_{_idx}", use_container_width=True):
+                _navigate_to(_idx)
+    else:
+        st.success("All steps complete!")
+
+    # v1.4.14: Contextual tips based on current page
+    _current_page = st.session_state.get("active_page", 0)
+    _tips = {
+        0: "Fill in your study title and description to get started.",
+        1: "Upload a QSF file or describe your study to define conditions and scales.",
+        2: "Verify conditions, scales, and sample size. Confirm DVs to proceed.",
+        3: "Review the design summary and click Generate when ready.",
+    }
+    if _current_page in _tips:
+        st.caption(f"💡 {_tips[_current_page]}")
 
     # Start Over button with two-step confirmation
     st.divider()
@@ -4797,7 +4677,7 @@ with st.sidebar:
     if not _confirm_reset:
         if st.button("🔄 Start Over", key="start_over_btn", use_container_width=True, type="secondary"):
             st.session_state["_confirm_reset"] = True
-            _rerun_on_tab(0)
+            _navigate_to(0)
         st.caption("Clear all entries and start fresh")
     else:
         st.warning("Are you sure? This will clear all your entries and uploaded files.")
@@ -4808,11 +4688,11 @@ with st.sidebar:
                 # The handler at the top of the script clears all state
                 # BEFORE any widgets render, so fields appear empty.
                 st.session_state["_pending_reset"] = True
-                _rerun_on_tab(0)
+                _navigate_to(0)
         with _c2:
             if st.button("Cancel", key="confirm_reset_no", use_container_width=True):
                 st.session_state["_confirm_reset"] = False
-                _rerun_on_tab(0)
+                _navigate_to(0)
 
     # ── TEMPORARY: LLM Benchmark (one-click, auto-emails results) ─────
     # Set _SHOW_BENCHMARK = True to enable the sidebar benchmark button
@@ -4821,7 +4701,7 @@ with st.sidebar:
         st.divider()
         if st.button("Run LLM Benchmark", key="_sidebar_bench_btn", use_container_width=True):
             st.session_state["_run_llm_benchmark"] = True
-            _rerun_on_tab(3)
+            _navigate_to(3)
 
     if _SHOW_BENCHMARK and st.session_state.pop("_run_llm_benchmark", False):
         _bp = st.empty()
@@ -4977,10 +4857,12 @@ with st.sidebar:
     # ── END TEMPORARY BENCHMARK ──────────────────────────────────────
 
 
-if "active_step" not in st.session_state:
-    st.session_state["active_step"] = 0
+# v1.4.14: active_page is now initialized in the page-based navigation section below.
+# This block is kept for backward compatibility (stepper reads active_page).
+if "active_page" not in st.session_state:
+    st.session_state["active_page"] = 0
 
-active_step = st.session_state["active_step"]
+active_page_for_stepper = st.session_state["active_page"]
 
 # Get step completion status
 completion = _get_step_completion()
@@ -5068,7 +4950,7 @@ def _render_workflow_stepper():
         with cols[i]:
             # Determine step status
             is_completed = step_complete[i]
-            is_current = i == active_step
+            is_current = i == active_page_for_stepper
 
             # Step indicator and status
             if is_completed:
@@ -5094,57 +4976,27 @@ def _render_workflow_stepper():
             # Navigation button under each step
             if is_current:
                 st.caption("You are here")
-            elif is_completed or i <= active_step + 1:
+            elif is_completed or i <= active_page_for_stepper + 1:
                 if st.button(f"Go to Step {i + 1}", key=f"stepper_nav_{i}", use_container_width=True):
-                    _go_to_step(i)
+                    _navigate_to(i)
 
 
-def _render_scroll_to_top_button(tab_index: int, next_tab_label: str = "") -> None:
-    """Render a navigation button that switches to the next tab with scroll-to-top.
-
-    v1.4.5: Sets _scroll_to_top flag so _inject_scroll_to_top() fires on the next
-    rerun (after the tab click). Uses components.html() for reliable JS tab switching.
-    Only renders if there IS a next tab (no more "Done" button on the last tab).
-    """
-    # Only render if there's a next tab to navigate to
-    next_index = tab_index + 1  # 0-based index of the target tab
-    if not next_tab_label or next_index >= len(STEP_LABELS):
-        return  # No button on the last tab
-
-    st.markdown("---")
-
-    btn_label = f"Continue to {next_tab_label}"
-
-    # Native Streamlit button — guaranteed to work for click detection
-    if st.button(f"✓ {btn_label}", key=f"scroll_nav_{tab_index}", type="primary", use_container_width=True):
-        # Set scroll flag so _inject_scroll_to_top() fires on the NEXT rerun
-        # (the rerun triggered by the JS tab click below)
-        st.session_state["_scroll_to_top"] = True
-
-        # Use components.html() to click the next tab header reliably
-        _st_components.html(f"""
-            <script>
-            (function() {{
-                var doc = window.parent.document;
-                // Click the next tab header
-                var tabs = doc.querySelectorAll('[role=tab]');
-                if (tabs.length > {next_index}) {{ tabs[{next_index}].click(); }}
-            }})();
-            </script>
-        """, height=0)
+# v1.4.14: _render_scroll_to_top_button() REMOVED.
+# Navigation buttons are now inline at the bottom of each page via _render_step_navigation().
 
 
-# v1.4.13: Pending reset handler — MUST run before ANY widgets render.
+# v1.4.14: Pending reset handler — MUST run before ANY widgets render.
 # The "Start Over" button sets the flag; we clear state here so that
 # Streamlit widgets see empty session_state on this render cycle.
 if st.session_state.pop("_pending_reset", False):
-    _keys_to_preserve = {"_restore_tab_index", "_scroll_to_top", "_pending_reset"}
+    _keys_to_preserve = {"active_page"}
     for _k in list(st.session_state.keys()):
         if _k not in _keys_to_preserve:
             try:
                 del st.session_state[_k]
             except Exception:
                 pass
+    st.session_state["active_page"] = 0  # Reset to first page
 
 # Show compact progress bar
 completion = _get_step_completion()
@@ -5159,16 +5011,38 @@ progress_pct = int((completed_count / total_count) * 100)
 status_emoji = "🟢" if progress_pct == 100 else "🟡" if progress_pct >= 50 else "⚪"
 st.progress(completed_count / total_count, text=f"{status_emoji} Ready: {progress_pct}% ({completed_count}/{total_count})")
 
-# v1.3.5: Reserve feedback container before tabs
+# v1.3.5: Reserve feedback container before page content
 _feedback_container = st.container()
 
-# Create the main tabs
-TAB_LABELS = ["📋 Setup", "📁 Study Input", "⚙️ Design", "🚀 Generate"]
-tab_setup, tab_upload, tab_design, tab_generate = st.tabs(TAB_LABELS)
+# =====================================================================
+# v1.4.14: PAGE-BASED NAVIGATION — replaces buggy st.tabs() system.
+# Only one page renders at a time. When the user navigates, _navigate_to()
+# sets active_page and calls st.rerun(). The new content renders fresh,
+# starting at the top of the viewport — no JavaScript hacks needed.
+# =====================================================================
+PAGE_LABELS = ["Setup", "Study Input", "Design", "Generate"]
+PAGE_ICONS = ["1", "2", "3", "4"]
 
-# v1.4.11: Inject tab-restore + scroll-to-top JS AFTER tabs are created
-# so MutationObserver can find [data-baseweb="tab-list"] immediately.
-_inject_scroll_to_top()
+if "active_page" not in st.session_state:
+    st.session_state["active_page"] = 0
+active_page = st.session_state["active_page"]
+
+# Render navigation bar as styled buttons
+_nav_cols = st.columns(len(PAGE_LABELS))
+for _i, (_label, _icon) in enumerate(zip(PAGE_LABELS, PAGE_ICONS)):
+    with _nav_cols[_i]:
+        _is_active = _i == active_page
+        _btn_type = "primary" if _is_active else "secondary"
+        if st.button(
+            f"{_icon}. {_label}" if not _is_active else f"▸ {_icon}. {_label}",
+            key=f"nav_page_{_i}",
+            type=_btn_type,
+            use_container_width=True,
+        ):
+            if not _is_active:
+                _navigate_to(_i)
+
+st.markdown("---")
 
 
 def _get_condition_candidates(
@@ -5329,11 +5203,11 @@ def _render_step_navigation(step_index: int, can_next: bool, next_label: str) ->
         with col_back:
             if step_index > 0:
                 if st.button("← Previous Step", key=f"nav_back_{step_index}", use_container_width=True):
-                    _go_to_step(step_index - 1)
+                    _navigate_to(step_index - 1)
         with col_next:
             if can_next:
                 if st.button(f"Continue to {next_label} →", key=f"nav_next_{step_index}", type="primary", use_container_width=True):
-                    _go_to_step(step_index + 1)
+                    _navigate_to(step_index + 1)
             else:
                 st.button(f"Continue to {next_label} →", key=f"nav_next_disabled_{step_index}", disabled=True, use_container_width=True)
                 st.caption("Complete required fields above to continue")
@@ -5342,7 +5216,7 @@ def _render_step_navigation(step_index: int, can_next: bool, next_label: str) ->
         col_back, col_spacer = st.columns([1, 3])
         with col_back:
             if st.button("← Previous Step", key=f"nav_back_{step_index}", use_container_width=True):
-                _go_to_step(step_index - 1)
+                _navigate_to(step_index - 1)
 
 
 def _get_total_conditions() -> int:
@@ -5406,10 +5280,9 @@ def _render_status_panel():
 
 
 # =====================================================================
-# TAB 1: STUDY SETUP
+# PAGE 1: STUDY SETUP
 # =====================================================================
-with tab_setup:
-    _restore_step_state()  # Restore any saved state
+if active_page == 0:
     # Compact status indicator
     completion = _get_step_completion()
     step1_done = completion["study_title"] and completion["study_description"]
@@ -5455,15 +5328,14 @@ with tab_setup:
             key="team_members_raw",
         )
 
-    # v1.3.4: Scroll-to-top button at bottom of Setup tab
-    _render_scroll_to_top_button(0, next_tab_label="Study Input")
+    # v1.4.14: Step navigation at bottom of Setup page
+    _render_step_navigation(0, step1_done, "Study Input")
 
 
 # =====================================================================
-# TAB 2: FILE UPLOAD / STUDY BUILDER
+# PAGE 2: FILE UPLOAD / STUDY BUILDER
 # =====================================================================
-with tab_upload:
-    _restore_step_state()  # Restore any saved state
+if active_page == 1:
     completion = _get_step_completion()
     step1_done = completion["study_title"] and completion["study_description"]
     step2_done = completion["qsf_uploaded"]
@@ -5579,7 +5451,7 @@ with tab_upload:
                         )
                         if enhanced_analysis:
                             st.session_state["enhanced_analysis"] = enhanced_analysis
-                    _rerun_on_tab(1)
+                    _navigate_to(1)
                 else:
                     st.error("QSF parsed but validation failed. See warnings below.")
             except Exception as e:
@@ -5928,15 +5800,14 @@ with tab_upload:
         if selected_conditions:
             st.success(f"✓ Conditions: {', '.join(selected_conditions)}")
 
-    # v1.3.4: Scroll-to-top button at bottom of Study Input tab
-    _render_scroll_to_top_button(1, next_tab_label="Design")
+    # v1.4.14: Step navigation at bottom of Study Input page
+    _render_step_navigation(1, step2_done, "Design")
 
 
 # =====================================================================
-# TAB 3: DESIGN CONFIGURATION
+# PAGE 3: DESIGN CONFIGURATION
 # =====================================================================
-with tab_design:
-    _restore_step_state()  # Restore any saved state
+if active_page == 2:
     preview: Optional[QSFPreviewResult] = st.session_state.get("qsf_preview", None)
     enhanced_analysis: Optional[DesignAnalysisResult] = st.session_state.get("enhanced_analysis", None)
 
@@ -6086,7 +5957,7 @@ with tab_design:
                         if clean_id and clean_id not in custom_conditions:
                             custom_conditions.append(clean_id)
                             st.session_state["custom_conditions"] = custom_conditions
-                            _rerun_on_tab(2)
+                            _navigate_to(2)
 
             # --- Option 3: Manual text entry ---
             st.markdown("**Option 3: Type condition name manually**")
@@ -6106,7 +5977,7 @@ with tab_design:
                     if new_condition.strip() and new_condition.strip() not in custom_conditions:
                         custom_conditions.append(new_condition.strip())
                         st.session_state["custom_conditions"] = custom_conditions
-                        _rerun_on_tab(2)
+                        _navigate_to(2)
 
             # Show custom conditions with remove buttons
             if custom_conditions:
@@ -6124,7 +5995,7 @@ with tab_design:
                             if cc in custom_conditions:
                                 custom_conditions.remove(cc)
                                 st.session_state["custom_conditions"] = custom_conditions
-                            _rerun_on_tab(2)
+                            _navigate_to(2)
 
         # Combine selected and custom conditions
         custom_conditions = st.session_state.get("custom_conditions", [])
@@ -6337,7 +6208,7 @@ with tab_design:
                     st.session_state["condition_allocation_n"] = normalized
                     # Increment version to force widget refresh
                     st.session_state["_alloc_version"] = alloc_version + 1
-                    _rerun_on_tab(2)
+                    _navigate_to(2)
             else:
                 st.success(f"✓ Allocations sum to {sample_size}")
                 st.session_state["condition_allocation_n"] = new_allocation_n
@@ -6878,7 +6749,7 @@ with tab_design:
         if scales_to_remove:
             st.session_state["confirmed_scales"] = updated_scales
             st.session_state["_dv_version"] = dv_version + 1
-            _rerun_on_tab(2)
+            _navigate_to(2)
 
         # Add new DV button with helpful context
         st.markdown("---")
@@ -6907,7 +6778,7 @@ with tab_design:
             confirmed_scales.append(new_dv)
             st.session_state["confirmed_scales"] = confirmed_scales
             st.session_state["_dv_version"] = dv_version + 1
-            _rerun_on_tab(2)
+            _navigate_to(2)
 
         # Update session state with edited DVs
         st.session_state["confirmed_scales"] = updated_scales
@@ -7013,7 +6884,7 @@ with tab_design:
             if oe_to_remove:
                 st.session_state["confirmed_open_ended"] = updated_open_ended
                 st.session_state["_oe_version"] = oe_version + 1
-                _rerun_on_tab(2)
+                _navigate_to(2)
 
             if st.button("Add Open-Ended Question", key=f"add_oe_btn_v{oe_version}"):
                 new_oe = {
@@ -7025,9 +6896,15 @@ with tab_design:
                 confirmed_open_ended.append(new_oe)
                 st.session_state["confirmed_open_ended"] = confirmed_open_ended
                 st.session_state["_oe_version"] = oe_version + 1
-                _rerun_on_tab(2)
+                _navigate_to(2)
 
-            st.session_state["confirmed_open_ended"] = updated_open_ended
+            # Only update confirmed_open_ended if there were actual changes
+            # This prevents silent data loss from rendering edge cases
+            if updated_open_ended or not confirmed_open_ended:
+                st.session_state["confirmed_open_ended"] = updated_open_ended
+            elif confirmed_open_ended and not updated_open_ended:
+                # User cleared all variable names — warn but don't silently delete
+                st.warning("All open-ended question names are empty. Fill in names or remove them explicitly.")
 
             open_ended_confirmed = st.checkbox(
                 "I confirm these open-ended questions match my survey",
@@ -7131,8 +7008,11 @@ with tab_design:
                 oe_display += f" (+{oe_count - 5} more)"
             st.markdown(f"**Open-Ended Questions:** {oe_display}")
 
-        # Validate and lock design - require conditions, scales, AND scale confirmation
-        design_valid = len(display_conditions) >= 1 and len(scales) >= 1 and scales_confirmed
+        # Validate and lock design - require conditions, scales, scale confirmation, and correct allocation
+        _alloc_n = st.session_state.get("condition_allocation_n", {})
+        _alloc_sum = sum(_alloc_n.values()) if _alloc_n else 0
+        _alloc_ok = not _alloc_n or _alloc_sum == sample_size  # OK if no custom allocation or if sums match
+        design_valid = len(display_conditions) >= 1 and len(scales) >= 1 and scales_confirmed and _alloc_ok
 
         if design_valid:
             # Save to session state
@@ -7196,6 +7076,8 @@ with tab_design:
                 missing_bits.append("scales")
             if not scales_confirmed:
                 missing_bits.append("scale confirmation (check the box above)")
+            if not _alloc_ok:
+                missing_bits.append(f"condition allocation (sums to {_alloc_sum}, need {sample_size})")
             st.error("⚠️ Cannot proceed - missing: " + ", ".join(missing_bits))
 
         # ========================================
@@ -7297,15 +7179,15 @@ with tab_design:
 
             st.info(f"**Design Type:** {design_type} · **Total Cells:** {len(all_conditions)} · **N per cell:** ~{sample_n // max(1, len(all_conditions))}")
 
-    # v1.3.4: Scroll-to-top button at bottom of Design tab
-    _render_scroll_to_top_button(2, next_tab_label="Generate")
+    # v1.4.14: Step navigation at bottom of Design page
+    _design_can_next = bool(st.session_state.get("inferred_design"))
+    _render_step_navigation(2, _design_can_next, "Generate")
 
 
-    # =====================================================================
-# TAB 4: GENERATE SIMULATION
 # =====================================================================
-with tab_generate:
-    _restore_step_state()  # Restore any saved state
+# PAGE 4: GENERATE SIMULATION
+# =====================================================================
+if active_page == 3:
     inferred = st.session_state.get("inferred_design", None)
     preview: Optional[QSFPreviewResult] = st.session_state.get("qsf_preview", None)
 
@@ -7336,10 +7218,10 @@ with tab_generate:
         col_back1, col_back2 = st.columns([1, 1])
         with col_back1:
             if st.button("Go to Step 2: Study Input", key="go_step2_from_generate", use_container_width=True):
-                _go_to_step(1)
+                _navigate_to(1)
         with col_back2:
             if st.button("Go to Step 3: Design", key="go_step3_from_generate", use_container_width=True):
-                _go_to_step(2)
+                _navigate_to(2)
         st.stop()
 
     # Show readiness checklist — label adapts to input mode
@@ -7367,15 +7249,15 @@ with tab_generate:
         if _setup_missing:
             with col1:
                 if st.button("← Go to Setup", key="fix_setup_from_generate", use_container_width=True):
-                    _go_to_step(0)
+                    _navigate_to(0)
         if _input_missing:
             with col2:
                 if st.button("← Go to Study Input", key="fix_input_from_generate", use_container_width=True):
-                    _go_to_step(1)
+                    _navigate_to(1)
         if _design_missing or _sample_missing:
             with col3:
                 if st.button("← Go to Design", key="fix_design_from_generate", use_container_width=True):
-                    _go_to_step(2)
+                    _navigate_to(2)
     else:
         st.success("All required fields are complete. You can generate your simulation.")
 
@@ -7396,9 +7278,15 @@ with tab_generate:
 
     # ========================================
     # v1.0.0: DIFFICULTY LEVEL SELECTOR
+    # v1.4.14: Collapse config sections after generation completes
     # ========================================
-    st.markdown("---")
-    st.markdown("### Data Quality Difficulty")
+    _show_config = not _has_generated
+    if _has_generated:
+        st.markdown("---")
+
+    if _show_config:
+        st.markdown("---")
+        st.markdown("### Data Quality Difficulty")
 
     # Use builder_difficulty_level as fallback if set from design review
     _diff_options = ['easy', 'medium', 'hard', 'expert']
@@ -7762,8 +7650,9 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
     _is_generating = st.session_state.get("is_generating", False)
     _has_generated = st.session_state.get("has_generated", False)
 
-    # v1.4.5: Hide design summary during generation — show progress instead
-    if not _is_generating:
+    # v1.4.14: Hide design summary during generation AND after generation is complete.
+    # After generation, the download section is the primary focus.
+    if not _is_generating and not _has_generated:
         st.markdown("---")
         st.markdown("### Final Design Summary")
         st.caption("Please review your experimental design before generating data.")
@@ -7776,8 +7665,8 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
     confirmed_oe = st.session_state.get("confirmed_open_ended", [])
     oe_count = len(confirmed_oe)
 
-    # v1.4.5: Show design summary only when NOT generating
-    if not _is_generating:
+    # v1.4.14: Show design summary only when NOT generating AND NOT already generated
+    if not _is_generating and not _has_generated:
         # Design metrics row
         summary_cols = st.columns(5)
         summary_cols[0].metric("Conditions", len(display_conditions))
@@ -7919,7 +7808,7 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
                         del os.environ["LLM_API_KEY"]
                     # Clear cached status so it re-checks with the new key
                     st.session_state["_llm_connectivity_status"] = None
-                    _rerun_on_tab(3)
+                    _navigate_to(3)
                 st.markdown(
                     '<span style="color:#6b7280;font-size:0.8em;">'
                     'Your key is used only for this session, kept in memory only, '
@@ -8024,8 +7913,15 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
     </style>
     """, unsafe_allow_html=True)
 
+    # v1.4.14: Preflight validation — catch issues before expensive generation
+    _preflight_errors = _preflight_validation() if all_required_complete else []
+    if _preflight_errors and not is_generating and not has_generated:
+        st.error("**Pre-generation checks failed:**")
+        for _pe in _preflight_errors:
+            st.markdown(f"- {_pe}")
+
     # Button: disabled if not ready, generating, or already generated
-    can_generate = all_required_complete and not is_generating and not has_generated
+    can_generate = all_required_complete and not is_generating and not has_generated and not _preflight_errors
 
     # v1.4.5: No generate button during generation — just show the progress + reset
     if is_generating:
@@ -8041,7 +7937,7 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
             st.session_state["generated_metadata"] = None
             st.session_state["_quality_checks"] = []
             st.session_state["_validation_results"] = None
-            _rerun_on_tab(3)
+            _navigate_to(3)
     else:
         # Create button row with generate + reset
         btn_col1, btn_col2 = st.columns([2, 1])
@@ -8056,7 +7952,7 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
                     st.session_state["generation_requested"] = False
                     st.session_state["is_generating"] = True
                     st.session_state["_generation_phase"] = 1
-                    _rerun_on_tab(3)
+                    _navigate_to(3)
 
         with btn_col2:
             # Reset button - allows user to restart after generation
@@ -8072,14 +7968,14 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
                     st.session_state["generated_metadata"] = None
                     st.session_state["_quality_checks"] = []
                     st.session_state["_validation_results"] = None
-                    _rerun_on_tab(3)
+                    _navigate_to(3)
 
     # v1.2.1 / v1.3.4: Legacy fallback — handle generation_requested if set elsewhere
     if st.session_state.get("generation_requested") and not is_generating:
         st.session_state["generation_requested"] = False
         st.session_state["is_generating"] = True
         st.session_state["_generation_phase"] = 1
-        _rerun_on_tab(3)
+        _navigate_to(3)
 
     # Phase 2: Actually generate (progress UI is now visible)
     if is_generating and st.session_state.get("_generation_phase", 0) == 1:
@@ -8639,7 +8535,7 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
             status_placeholder.success("Simulation complete.")
             st.session_state["has_generated"] = True
             st.session_state["is_generating"] = False
-            _rerun_on_tab(3)  # Refresh to show download section
+            _navigate_to(3)  # Refresh to show download section
         except Exception as e:
             import traceback as _tb
             progress_bar.progress(100, text="Simulation failed.")
@@ -8741,7 +8637,7 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
 
 # ========================================
 # FEEDBACK BUTTON (Shown on all pages)
-# v1.3.5: Rendered into pre-reserved container so st.stop() in tabs can't block it
+# v1.4.14: Feedback button after page content
 # ========================================
 with _feedback_container:
     _render_feedback_button()

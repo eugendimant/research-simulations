@@ -22,7 +22,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 from dataclasses import dataclass, field
 
-__version__ = "1.4.13"
+__version__ = "1.4.14"
 
 
 # ─── Common scale anchors used in behavioral science ───────────────────────────

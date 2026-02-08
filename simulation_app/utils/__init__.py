@@ -2,7 +2,7 @@
 """
 Utility modules for the Behavioral Experiment Simulation Tool.
 
-Version: 1.4.13 - State management overhaul, Start Over fix, widget key unification
+Version: 1.4.14 - Page-based navigation, preflight validation, builder streamlining
 
 Changes (v1.0.0 - 20 Iterations of Comprehensive Improvements):
     === ENHANCED SCALE/MATRIX DETECTION ===
@@ -65,7 +65,7 @@ Modules:
 """
 
 # Package version - should match all module versions
-__version__ = "1.4.13"
+__version__ = "1.4.14"
 
 from .qsf_parser import parse_qsf_file, extract_survey_structure, generate_qsf_summary
 from .simulation_engine import SimulationEngine
