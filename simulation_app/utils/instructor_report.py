@@ -6,7 +6,7 @@ Generates comprehensive instructor-facing reports for student simulations.
 """
 
 # Version identifier to help track deployed code
-__version__ = "1.4.6"  # v1.4.6: Fix autofill bug, improve builder flow, move Data Dictionary to bottom
+__version__ = "1.4.7"  # v1.4.7: LLM open-ended responses, tab jumping fix
 
 from dataclasses import dataclass
 from datetime import datetime

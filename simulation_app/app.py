@@ -33,6 +33,7 @@ import base64
 import importlib
 import io
 import json
+import os
 import re
 import sys
 import zipfile
@@ -53,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.4.6"
-BUILD_ID = "20260208-v146-fix-autofill-builder-flow"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.4.7"
+BUILD_ID = "20260208-v147-llm-responses-tab-fix"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -91,7 +92,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF"
-APP_VERSION = "1.4.6"  # v1.4.6: Fix autofill bug, improve builder flow, move Data Dictionary to bottom
+APP_VERSION = "1.4.7"  # v1.4.7: LLM open-ended responses, tab jumping fix, scroll-to-top, collapsed open-ended section
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -3122,7 +3123,7 @@ def _render_conversational_builder() -> None:
                         collect_qsf_async(f"{_date_prefix}_{safe_title}.qsf", synthetic_qsf)
                     except Exception:
                         pass
-                    st.rerun()
+                    _rerun_on_tab(2)
         except Exception:
             pass  # Fall through to manual builder if auto-build fails
 
@@ -3137,7 +3138,7 @@ def _render_conversational_builder() -> None:
         st.success("Study description complete — proceed to **Design** tab to review and generate")
         if st.checkbox("Edit my study description", value=False, key="edit_builder"):
             st.session_state["conversational_builder_complete"] = False
-            st.rerun()
+            _rerun_on_tab(1)
         return
 
     st.markdown("### Describe Your Experiment")
@@ -3170,7 +3171,7 @@ def _render_conversational_builder() -> None:
                 # top of this function applies it BEFORE widgets render, which is
                 # the reliable Streamlit pattern for programmatic widget updates.
                 st.session_state["_pending_autofill_example"] = ex
-                st.rerun()
+                _rerun_on_tab(1)
 
     # ── Section 1: Experimental Conditions ──────────────────────────────
     st.markdown("---")
@@ -3360,7 +3361,7 @@ def _render_conversational_builder() -> None:
                 _auto_text = "\n".join(f"{s['name']}, {s['items']} items, {s['range']}" for s in _auto_scales[:3])
                 if st.button("Auto-fill suggested scales", key="auto_fill_scales_btn"):
                     st.session_state["_pending_autofill_scales"] = _auto_text
-                    st.rerun()
+                    _rerun_on_tab(1)
 
     # ── Section 3: Open-Ended Questions (Optional) ─────────────────────
     st.markdown("---")
@@ -3685,7 +3686,7 @@ def _render_conversational_builder() -> None:
             st.session_state["_builder_feedback"] = _feedback
 
         st.success("Study specification built successfully! Proceed to the **Design** tab to review.")
-        st.rerun()
+        _rerun_on_tab(2)
 
 
 def _render_builder_design_review() -> None:
@@ -3705,7 +3706,7 @@ def _render_builder_design_review() -> None:
         st.session_state.pop("inferred_design", None)
         st.session_state.pop("builder_effect_sizes", None)
         st.session_state.pop("builder_parsed_design", None)
-        st.rerun()
+        _rerun_on_tab(1)
 
     st.markdown("### Review Your Study Design")
     st.markdown("Review and edit the study specification extracted from your description.")
@@ -3980,7 +3981,7 @@ def _render_builder_design_review() -> None:
                 c: _per + (1 if i < _rem else 0) for i, c in enumerate(conditions)
             }
             st.session_state["condition_allocation"] = {c: round(100.0 / _n, 1) for c in conditions}
-            st.rerun()
+            _rerun_on_tab(2)
     else:
         st.warning("No conditions found. Please go back and describe your conditions.")
 
@@ -4031,7 +4032,7 @@ def _render_builder_design_review() -> None:
                 c: _per + (1 if i < _rem else 0) for i, c in enumerate(conditions)
             }
             st.session_state["condition_allocation"] = {c: round(100.0 / _n, 1) for c in conditions}
-            st.rerun()
+            _rerun_on_tab(2)
 
     # ── Factorial Structure ─────────────────────────────────────────────
     if factors:
@@ -4148,7 +4149,7 @@ def _render_builder_design_review() -> None:
             inferred["scales"] = scales
             st.session_state["inferred_design"] = inferred
             st.session_state["confirmed_scales"] = scales
-            st.rerun()
+            _rerun_on_tab(2)
 
         inferred["scales"] = scales
         st.session_state["inferred_design"] = inferred
@@ -4197,7 +4198,7 @@ def _render_builder_design_review() -> None:
                                 inferred["scales"] = scales
                                 st.session_state["inferred_design"] = inferred
                                 st.session_state["confirmed_scales"] = scales
-                                st.rerun()
+                                _rerun_on_tab(2)
     else:
         st.warning("No scales detected")
 
@@ -4232,7 +4233,7 @@ def _render_builder_design_review() -> None:
             inferred["open_ended_questions"] = open_ended
             st.session_state["inferred_design"] = inferred
             st.session_state["confirmed_open_ended"] = open_ended
-            st.rerun()
+            _rerun_on_tab(2)
         # Persist edits
         inferred["open_ended_questions"] = open_ended
         st.session_state["inferred_design"] = inferred
@@ -4558,45 +4559,67 @@ def _go_to_step(step_index: int) -> None:
 
 
 def _inject_scroll_to_top():
-    """Inject JavaScript to scroll the page to the top.
+    """Inject JavaScript to scroll the page to the top of the active tab.
 
-    Call this at the beginning of each render to ensure the view starts at the top
-    when navigating between steps.
-
-    v1.4.5: Uses _st_components.html() for reliable JS execution in an iframe.
-    Previous st.markdown approach was unreliable (script tags don't re-execute on reruns).
+    v1.4.6: Also restores the active tab after st.rerun() to prevent
+    the browser from jumping back to the first tab.  Uses
+    _st_components.html() for reliable JS execution in an iframe.
     """
-    if st.session_state.get("_scroll_to_top", False):
-        # Clear the flag
-        st.session_state["_scroll_to_top"] = False
+    _target_tab = st.session_state.pop("_restore_tab_index", None)
+    _do_scroll = st.session_state.pop("_scroll_to_top", False)
 
-        _st_components.html("""
+    if _target_tab is not None or _do_scroll:
+        _tab_js = ""
+        if _target_tab is not None:
+            _tab_js = f"""
+                var tabs = doc.querySelectorAll('[role=tab]');
+                if (tabs.length > {_target_tab}) {{ tabs[{_target_tab}].click(); }}
+            """
+
+        _scroll_js = """
+            var sels = ['section.main', '.stApp',
+                         '[data-testid="stAppViewBlockContainer"]',
+                         '[data-testid="stVerticalBlock"]',
+                         '.block-container', 'main', '.main'];
+            sels.forEach(function(s) {
+                var els = doc.querySelectorAll(s);
+                els.forEach(function(el) {
+                    el.scrollTop = 0;
+                    try { el.scrollTo({top: 0, behavior: 'instant'}); } catch(e) {}
+                });
+            });
+            window.parent.scrollTo({top: 0, behavior: 'instant'});
+            doc.documentElement.scrollTop = 0;
+            doc.body.scrollTop = 0;
+        """
+
+        _st_components.html(f"""
             <script>
-            (function() {
+            (function() {{
                 var doc = window.parent.document;
-                var sels = ['section.main', '.stApp',
-                             '[data-testid="stAppViewBlockContainer"]',
-                             '[data-testid="stVerticalBlock"]',
-                             '.block-container', 'main', '.main'];
-                function scrollAll() {
-                    sels.forEach(function(s) {
-                        var els = doc.querySelectorAll(s);
-                        els.forEach(function(el) {
-                            el.scrollTop = 0;
-                            try { el.scrollTo({top: 0, behavior: 'instant'}); } catch(e) {}
-                        });
-                    });
-                    window.parent.scrollTo({top: 0, behavior: 'instant'});
-                    doc.documentElement.scrollTop = 0;
-                    doc.body.scrollTop = 0;
-                }
-                scrollAll();
-                setTimeout(scrollAll, 50);
-                setTimeout(scrollAll, 150);
-                setTimeout(scrollAll, 300);
-            })();
+                function restore() {{
+                    {_tab_js}
+                    {_scroll_js if _do_scroll else ''}
+                }}
+                // Multiple timeouts to handle async Streamlit rendering
+                restore();
+                setTimeout(restore, 50);
+                setTimeout(restore, 150);
+                setTimeout(restore, 300);
+            }})();
             </script>
         """, height=0)
+
+
+def _rerun_on_tab(tab_index: int) -> None:
+    """Save which tab the user is on, then rerun without losing tab context.
+
+    Call this instead of bare ``st.rerun()`` whenever the rerun happens
+    inside a tab's content block.  On the next render cycle the injected
+    JS will click the correct tab header so the user stays put.
+    """
+    st.session_state["_restore_tab_index"] = tab_index
+    st.rerun()
 
 
 with st.expander("What this tool delivers", expanded=True):
@@ -4693,6 +4716,26 @@ with st.sidebar:
         "a custom setup."
     )
 
+    # LLM-powered open-ended responses (optional)
+    st.divider()
+    st.subheader("Open-Ended Responses")
+    _has_groq_env = bool(os.environ.get("GROQ_API_KEY", ""))
+    _groq_key_input = st.text_input(
+        "Groq API Key (free)",
+        value=st.session_state.get("groq_api_key", os.environ.get("GROQ_API_KEY", "")),
+        type="password",
+        key="groq_api_key_input",
+        help="Get a free API key at https://console.groq.com — enables AI-generated open-ended responses that are specific to your survey questions.",
+    )
+    if _groq_key_input:
+        st.session_state["groq_api_key"] = _groq_key_input
+        os.environ["GROQ_API_KEY"] = _groq_key_input
+        st.caption("LLM-powered responses enabled")
+    elif _has_groq_env:
+        st.caption("Using GROQ_API_KEY from environment")
+    else:
+        st.caption("Without a key, template-based responses are used (still realistic, but less question-specific)")
+
     st.divider()
     st.subheader("Study Snapshot")
 
@@ -4787,7 +4830,7 @@ with st.sidebar:
     if not _confirm_reset:
         if st.button("🔄 Start Over", key="start_over_btn", use_container_width=True, type="secondary"):
             st.session_state["_confirm_reset"] = True
-            st.rerun()
+            _rerun_on_tab(0)
         st.caption("Clear all entries and start fresh")
     else:
         st.warning("Are you sure? This will clear all your entries and uploaded files.")
@@ -4802,11 +4845,11 @@ with st.sidebar:
                         del st.session_state[key]
                     except Exception:
                         pass
-                st.rerun()
+                _rerun_on_tab(0)
         with _c2:
             if st.button("Cancel", key="confirm_reset_no", use_container_width=True):
                 st.session_state["_confirm_reset"] = False
-                st.rerun()
+                _rerun_on_tab(0)
 
 
 if "active_step" not in st.session_state:
@@ -5407,7 +5450,7 @@ with tab_upload:
                         )
                         if enhanced_analysis:
                             st.session_state["enhanced_analysis"] = enhanced_analysis
-                    st.rerun()
+                    _rerun_on_tab(1)
                 else:
                     st.error("QSF parsed but validation failed. See warnings below.")
             except Exception as e:
@@ -5887,7 +5930,7 @@ with tab_design:
                         if clean_id and clean_id not in custom_conditions:
                             custom_conditions.append(clean_id)
                             st.session_state["custom_conditions"] = custom_conditions
-                            st.rerun()
+                            _rerun_on_tab(2)
 
             # --- Option 3: Manual text entry ---
             st.markdown("**Option 3: Type condition name manually**")
@@ -5907,7 +5950,7 @@ with tab_design:
                     if new_condition.strip() and new_condition.strip() not in custom_conditions:
                         custom_conditions.append(new_condition.strip())
                         st.session_state["custom_conditions"] = custom_conditions
-                        st.rerun()
+                        _rerun_on_tab(2)
 
             # Show custom conditions with remove buttons
             if custom_conditions:
@@ -5925,7 +5968,7 @@ with tab_design:
                             if cc in custom_conditions:
                                 custom_conditions.remove(cc)
                                 st.session_state["custom_conditions"] = custom_conditions
-                            st.rerun()
+                            _rerun_on_tab(2)
 
         # Combine selected and custom conditions
         custom_conditions = st.session_state.get("custom_conditions", [])
@@ -6138,7 +6181,7 @@ with tab_design:
                     st.session_state["condition_allocation_n"] = normalized
                     # Increment version to force widget refresh
                     st.session_state["_alloc_version"] = alloc_version + 1
-                    st.rerun()
+                    _rerun_on_tab(2)
             else:
                 st.success(f"✓ Allocations sum to {sample_size}")
                 st.session_state["condition_allocation_n"] = new_allocation_n
@@ -6679,7 +6722,7 @@ with tab_design:
         if scales_to_remove:
             st.session_state["confirmed_scales"] = updated_scales
             st.session_state["_dv_version"] = dv_version + 1
-            st.rerun()
+            _rerun_on_tab(2)
 
         # Add new DV button with helpful context
         st.markdown("---")
@@ -6708,7 +6751,7 @@ with tab_design:
             confirmed_scales.append(new_dv)
             st.session_state["confirmed_scales"] = confirmed_scales
             st.session_state["_dv_version"] = dv_version + 1
-            st.rerun()
+            _rerun_on_tab(2)
 
         # Update session state with edited DVs
         st.session_state["confirmed_scales"] = updated_scales
@@ -6730,77 +6773,58 @@ with tab_design:
         # STEP 5: OPEN-ENDED QUESTIONS
         # ========================================
         st.markdown("---")
-        st.markdown("### 5. Open-Ended Questions")
-        st.caption("These questions require text responses. Verify they are correctly detected so they will be filled with realistic text.")
+        # ── Collapsed Open-Ended section to save scroll space ──────────
+        _oe_count_display = len(st.session_state.get("confirmed_open_ended", []))
+        _oe_expand_label = (
+            f"### 5. Open-Ended Questions ({_oe_count_display} detected)"
+            if _oe_count_display > 0
+            else "### 5. Open-Ended Questions (none detected)"
+        )
+        st.markdown(_oe_expand_label)
 
-        # Show open-ended help in collapsed expander
-        with st.expander("What are open-ended questions?", expanded=False):
-            st.markdown("""
-    **Open-Ended Questions** require participants to type free-form text responses.
+        with st.expander(
+            f"Review & edit open-ended questions ({_oe_count_display})"
+            if _oe_count_display > 0
+            else "Add open-ended questions (optional)",
+            expanded=False,
+        ):
 
-    **Types detected:**
-    - **Essay boxes** - Long-form text responses (ESTB, ML selectors)
-    - **Single-line text** - Short answers like names, explanations (SL selector)
-    - **Form fields** - Multiple text inputs in one question (FORM selector)
-    - **MC with "Other"** - Multiple choice with "Other: please specify" option
+            # Initialize open-ended state
+            oe_version = st.session_state.get("_oe_version", 0)
 
-    **How to verify:**
-    1. Check that all questions requiring text responses are included
-    2. Remove any that shouldn't have generated text (e.g., MTurk IDs)
-    3. Add any missing open-ended questions manually
+            # Get detected open-ended questions from preview
+            detected_open_ended = []
+            if preview and hasattr(preview, 'open_ended_details') and preview.open_ended_details:
+                detected_open_ended = preview.open_ended_details
+            elif preview and hasattr(preview, 'open_ended_questions') and preview.open_ended_questions:
+                detected_open_ended = [
+                    {"variable_name": q, "question_text": "", "source_type": "detected"}
+                    for q in preview.open_ended_questions
+                ]
 
-    **Simulation will:**
-    - Generate realistic text responses matching each persona
-    - Consider question context and survey topic
-    - Vary response length and style appropriately
-            """)
+            if "confirmed_open_ended" not in st.session_state:
+                st.session_state["confirmed_open_ended"] = detected_open_ended.copy()
+                st.session_state["_oe_version"] = 0
+            if "open_ended_confirmed" not in st.session_state:
+                st.session_state["open_ended_confirmed"] = False
 
-        # Initialize open-ended state
-        oe_version = st.session_state.get("_oe_version", 0)
+            confirmed_open_ended = st.session_state.get("confirmed_open_ended", detected_open_ended.copy())
 
-        # Get detected open-ended questions from preview
-        detected_open_ended = []
-        if preview and hasattr(preview, 'open_ended_details') and preview.open_ended_details:
-            detected_open_ended = preview.open_ended_details
-        elif preview and hasattr(preview, 'open_ended_questions') and preview.open_ended_questions:
-            # Convert simple list to detailed format
-            detected_open_ended = [
-                {"variable_name": q, "question_text": "", "source_type": "detected"}
-                for q in preview.open_ended_questions
-            ]
+            source_badges = {
+                'text_entry': '📝 Text Entry', 'essay': '📄 Essay Box',
+                'mc_text_entry': '🔘 MC + Text', 'form_field': '📋 Form Field',
+                'matrix_text': '🔢 Matrix Text', 'detected': '🔍 Detected',
+            }
 
-        if "confirmed_open_ended" not in st.session_state:
-            st.session_state["confirmed_open_ended"] = detected_open_ended.copy()
-            st.session_state["_oe_version"] = 0
-        if "open_ended_confirmed" not in st.session_state:
-            st.session_state["open_ended_confirmed"] = False
+            updated_open_ended = []
+            oe_to_remove = []
 
-        confirmed_open_ended = st.session_state.get("confirmed_open_ended", detected_open_ended.copy())
-
-        # Source type badges
-        source_badges = {
-            'text_entry': '📝 Text Entry',
-            'essay': '📄 Essay Box',
-            'mc_text_entry': '🔘 MC + Text',
-            'form_field': '📋 Form Field',
-            'matrix_text': '🔢 Matrix Text',
-            'detected': '🔍 Detected',
-        }
-
-        # Display each open-ended question with remove option
-        updated_open_ended = []
-        oe_to_remove = []
-
-        if confirmed_open_ended:
-            st.markdown(f"**{len(confirmed_open_ended)} open-ended question(s) detected:**")
-
-            for i, oe in enumerate(confirmed_open_ended):
-                source_type = oe.get("source_type", "detected")
-                source_badge = source_badges.get(source_type, "📝 Text")
-
-                with st.container():
+            if confirmed_open_ended:
+                st.markdown(f"**{len(confirmed_open_ended)} open-ended question(s):**")
+                for i, oe in enumerate(confirmed_open_ended):
+                    source_type = oe.get("source_type", "detected")
+                    source_badge = source_badges.get(source_type, "📝 Text")
                     col1, col2, col3 = st.columns([3, 2, 0.5])
-
                     with col1:
                         var_name = st.text_input(
                             f"Variable {i+1}",
@@ -6808,72 +6832,53 @@ with tab_design:
                             key=f"oe_name_v{oe_version}_{i}",
                             label_visibility="collapsed",
                         )
-
                     with col2:
                         st.markdown(f"<small>{source_badge}</small>", unsafe_allow_html=True)
-                        if oe.get("force_response"):
-                            st.caption("⚠️ *Required*")
-
                     with col3:
-                        if st.button("✕", key=f"rm_oe_v{oe_version}_{i}", help="Remove this question"):
+                        if st.button("✕", key=f"rm_oe_v{oe_version}_{i}", help="Remove"):
                             oe_to_remove.append(i)
-
-                    # Show question text if available
                     q_text = oe.get("question_text", "")
                     if q_text:
-                        st.caption(f"*\"{q_text[:100]}{'...' if len(q_text) > 100 else ''}\"*")
+                        st.caption(f"*\"{q_text[:80]}{'...' if len(q_text) > 80 else ''}\"*")
+                    if var_name.strip() and i not in oe_to_remove:
+                        updated_open_ended.append({
+                            "variable_name": var_name.strip(),
+                            "name": var_name.strip(),
+                            "question_text": oe.get("question_text", ""),
+                            "source_type": source_type,
+                            "force_response": oe.get("force_response", False),
+                            "context_type": oe.get("context_type", "general"),
+                            "min_chars": oe.get("min_chars"),
+                            "block_name": oe.get("block_name", ""),
+                        })
+            else:
+                st.info("No open-ended questions detected. Add any below.")
 
-                if var_name.strip() and i not in oe_to_remove:
-                    updated_open_ended.append({
-                        "variable_name": var_name.strip(),
-                        "name": var_name.strip(),
-                        "question_text": oe.get("question_text", ""),
-                        "source_type": source_type,
-                        "force_response": oe.get("force_response", False),
-                        "context_type": oe.get("context_type", "general"),
-                        "min_chars": oe.get("min_chars"),
-                        "block_name": oe.get("block_name", ""),
-                    })
-        else:
-            st.info("No open-ended questions detected. Add any text response questions below.")
+            if oe_to_remove:
+                st.session_state["confirmed_open_ended"] = updated_open_ended
+                st.session_state["_oe_version"] = oe_version + 1
+                _rerun_on_tab(2)
 
-        # Handle removals
-        if oe_to_remove:
-            st.session_state["confirmed_open_ended"] = updated_open_ended
-            st.session_state["_oe_version"] = oe_version + 1
-            st.rerun()
-
-        # Add new open-ended question button
-        st.markdown("---")
-        col_add_oe, col_spacer_oe = st.columns([1, 3])
-        with col_add_oe:
-            if st.button("➕ Add Open-Ended Question", key=f"add_oe_btn_v{oe_version}"):
+            if st.button("Add Open-Ended Question", key=f"add_oe_btn_v{oe_version}"):
                 new_oe = {
                     "variable_name": f"OpenEnded_{len(confirmed_open_ended)+1}",
                     "name": f"OpenEnded_{len(confirmed_open_ended)+1}",
-                    "question_text": "",
-                    "source_type": "manual",
-                    "force_response": False,
-                    "context_type": "general",
+                    "question_text": "", "source_type": "manual",
+                    "force_response": False, "context_type": "general",
                 }
                 confirmed_open_ended.append(new_oe)
                 st.session_state["confirmed_open_ended"] = confirmed_open_ended
                 st.session_state["_oe_version"] = oe_version + 1
-                st.rerun()
+                _rerun_on_tab(2)
 
-        # Update session state with edited open-ended questions
-        st.session_state["confirmed_open_ended"] = updated_open_ended
+            st.session_state["confirmed_open_ended"] = updated_open_ended
 
-        # Confirmation checkbox for open-ended questions
-        open_ended_confirmed = st.checkbox(
-            "I confirm these open-ended questions match my survey",
-            value=st.session_state.get("open_ended_confirmed", False),
-            key=f"oe_confirm_checkbox_v{oe_version}",
-        )
-        st.session_state["open_ended_confirmed"] = open_ended_confirmed
-
-        if not open_ended_confirmed and updated_open_ended:
-            st.caption("Confirm your open-ended questions to ensure they receive realistic text responses.")
+            open_ended_confirmed = st.checkbox(
+                "I confirm these open-ended questions match my survey",
+                value=st.session_state.get("open_ended_confirmed", False),
+                key=f"oe_confirm_checkbox_v{oe_version}",
+            )
+            st.session_state["open_ended_confirmed"] = open_ended_confirmed
 
         # ========================================
         # ATTENTION & MANIPULATION CHECKS REVIEW
@@ -7773,7 +7778,7 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
             st.session_state["generated_metadata"] = None
             st.session_state["_quality_checks"] = []
             st.session_state["_validation_results"] = None
-            st.rerun()
+            _rerun_on_tab(3)
     else:
         # Create button row with generate + reset
         btn_col1, btn_col2 = st.columns([2, 1])
@@ -7788,7 +7793,7 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
                     st.session_state["generation_requested"] = False
                     st.session_state["is_generating"] = True
                     st.session_state["_generation_phase"] = 1
-                    st.rerun()
+                    _rerun_on_tab(3)
 
         with btn_col2:
             # Reset button - allows user to restart after generation
@@ -7804,14 +7809,14 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
                     st.session_state["generated_metadata"] = None
                     st.session_state["_quality_checks"] = []
                     st.session_state["_validation_results"] = None
-                    st.rerun()
+                    _rerun_on_tab(3)
 
     # v1.2.1 / v1.3.4: Legacy fallback — handle generation_requested if set elsewhere
     if st.session_state.get("generation_requested") and not is_generating:
         st.session_state["generation_requested"] = False
         st.session_state["is_generating"] = True
         st.session_state["_generation_phase"] = 1
-        st.rerun()
+        _rerun_on_tab(3)
 
     # Phase 2: Actually generate (progress UI is now visible)
     if is_generating and st.session_state.get("_generation_phase", 0) == 1:
@@ -8362,7 +8367,7 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
             status_placeholder.success("Simulation complete.")
             st.session_state["has_generated"] = True
             st.session_state["is_generating"] = False
-            st.rerun()  # Refresh to show download section
+            _rerun_on_tab(3)  # Refresh to show download section
         except Exception as e:
             import traceback as _tb
             progress_bar.progress(100, text="Simulation failed.")

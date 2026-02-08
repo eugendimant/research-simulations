@@ -45,7 +45,7 @@ This module is designed to run inside a `utils/` package (i.e., imported as
 """
 
 # Version identifier to help track deployed code
-__version__ = "1.4.6"  # v1.4.6: Fix autofill bug, improve builder flow, move Data Dictionary to bottom
+__version__ = "1.4.7"  # v1.4.7: LLM open-ended responses, tab jumping fix
 
 # =============================================================================
 # SCIENTIFIC FOUNDATIONS FOR SIMULATION
@@ -2601,7 +2601,7 @@ class EnhancedSimulationEngine:
         ]
         if not self.conditions:
             if hasattr(self, '_log'):
-                self._log("WARNING", "CONDITIONS", "No conditions specified - defaulting to single 'Condition A'. Results may not match intended design.")
+                self._log("WARNING: No conditions specified - defaulting to single 'Condition A'. Results may not match intended design.")
             self.conditions = ["Condition A"]
         self.factors = _normalize_factors(factors, self.conditions)
         self.scales = _normalize_scales(scales)
@@ -2701,6 +2701,26 @@ class EnhancedSimulationEngine:
         self.column_info: List[Tuple[str, str]] = []
         self.validation_log: List[str] = []
         self._scale_generation_log: List[Dict[str, Any]] = []
+
+        # Initialize LLM-powered response generator (optional upgrade)
+        # Must come after validation_log init so _log() works
+        self.llm_generator = None
+        try:
+            from .llm_response_generator import LLMResponseGenerator
+            import os
+            _groq_key = os.environ.get("GROQ_API_KEY", "")
+            if _groq_key:
+                self.llm_generator = LLMResponseGenerator(
+                    api_key=_groq_key,
+                    study_title=self.study_title,
+                    study_description=self.study_description,
+                    seed=self.seed,
+                    fallback_generator=self.comprehensive_generator,
+                    batch_size=12,
+                )
+                self._log("LLM response generator initialized (Groq API)")
+        except Exception as _llm_err:
+            self._log(f"LLM generator not available (using templates): {_llm_err}")
 
     @staticmethod
     def _normalize_condition_allocation(
@@ -4574,15 +4594,30 @@ class EnhancedSimulationEngine:
         else:
             engagement = 0.5
 
+        # v1.4.6: Try LLM generator first (question-specific, persona-aligned)
+        if self.llm_generator is not None:
+            try:
+                resp = self.llm_generator.generate(
+                    question_text=question_text or response_type,
+                    sentiment=sentiment,
+                    persona_verbosity=verbosity,
+                    persona_formality=formality,
+                    persona_engagement=engagement,
+                    condition=condition,
+                    question_name=str(question_spec.get("name", "")),
+                    participant_seed=participant_seed,
+                )
+                if resp:
+                    return resp
+            except Exception:
+                pass  # Fall through to template generator
+
         # Try to use comprehensive response generator if available
         if self.comprehensive_generator is not None:
             try:
-                # v1.0.0 CRITICAL FIX: Always create a UNIQUE question identifier
-                # Combine name, variable name, question text to ensure uniqueness
                 base_name = str(question_spec.get("name", ""))
                 var_name = str(question_spec.get("variable_name", ""))
                 q_type = str(question_spec.get("type", ""))
-                # Create stable unique ID that will be different for ANY different question
                 unique_question_id = f"{base_name}|{var_name}|{q_type}|{question_text[:100]}"
                 return self.comprehensive_generator.generate(
                     question_text=question_text or response_type,
@@ -4591,11 +4626,10 @@ class EnhancedSimulationEngine:
                     persona_formality=formality,
                     persona_engagement=engagement,
                     condition=condition,
-                    question_name=unique_question_id,  # Use unique ID instead of just name
+                    question_name=unique_question_id,
                     participant_seed=participant_seed,
                 )
             except Exception:
-                # Fall back to basic generator on any error
                 pass
 
         # Fallback to basic text generator
@@ -5105,6 +5139,29 @@ class EnhancedSimulationEngine:
             data["Hedonic_Utilitarian"] = hedonic_values
             self.column_info.append(("Hedonic_Utilitarian", "Product type perception: 1=Utilitarian, 7=Hedonic"))
 
+        # v1.4.6: Pre-fill LLM response pool (batch API calls BEFORE per-participant loop)
+        if self.llm_generator and self.llm_generator.is_llm_available and self.open_ended_questions:
+            try:
+                _unique_conditions = list(set(conditions.tolist()))
+                _sents = ["very_positive", "positive", "neutral", "negative", "very_negative"]
+                _per_sent = max(5, n // (len(_unique_conditions) * len(_sents)) + 3)
+                for oq in self.open_ended_questions:
+                    _q_text = str(oq.get("question_text", oq.get("name", "")))
+                    for _cond in _unique_conditions:
+                        if self.survey_flow_handler.is_question_visible(
+                            _clean_column_name(str(oq.get("name", ""))), _cond
+                        ):
+                            self.llm_generator.prefill_pool(
+                                question_text=_q_text,
+                                condition=_cond,
+                                sentiments=_sents,
+                                count_per_sentiment=_per_sent,
+                            )
+                _stats = self.llm_generator.stats
+                self._log(f"LLM pre-filled pool: {_stats['llm_calls']} API calls")
+            except Exception as _pf_err:
+                self._log(f"WARNING: LLM pool prefill failed: {_pf_err}")
+
         # ONLY generate open-ended responses for questions actually in the QSF
         # Never create default/fake questions - this prevents fake variables like "Task_Summary"
         # v1.0.0: Use survey flow handler to determine question visibility per condition
@@ -5356,6 +5413,8 @@ class EnhancedSimulationEngine:
             "validation_issues_corrected": len(validation_issues),
             "scale_verification": self._build_scale_verification_report(df),
             "generation_warnings": self._check_generation_warnings(df),
+            # v1.4.6: LLM response generation stats
+            "llm_response_stats": self.llm_generator.stats if self.llm_generator else {"llm_calls": 0, "fallback_uses": 0},
             # v1.4.3: Column descriptions for data dictionary / codebook generation
             "column_descriptions": {col: desc for col, desc in self.column_info},
         }
