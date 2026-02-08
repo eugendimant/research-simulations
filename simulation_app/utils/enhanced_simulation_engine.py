@@ -45,7 +45,7 @@ This module is designed to run inside a `utils/` package (i.e., imported as
 """
 
 # Version identifier to help track deployed code
-__version__ = "1.4.7"  # v1.4.7: LLM open-ended responses, tab jumping fix
+__version__ = "1.4.8"  # v1.4.8: Multi-provider LLM, deep variation
 
 # =============================================================================
 # SCIENTIFIC FOUNDATIONS FOR SIMULATION
@@ -2707,18 +2707,22 @@ class EnhancedSimulationEngine:
         self.llm_generator = None
         try:
             from .llm_response_generator import LLMResponseGenerator
-            import os
-            _groq_key = os.environ.get("GROQ_API_KEY", "")
-            if _groq_key:
-                self.llm_generator = LLMResponseGenerator(
-                    api_key=_groq_key,
-                    study_title=self.study_title,
-                    study_description=self.study_description,
-                    seed=self.seed,
-                    fallback_generator=self.comprehensive_generator,
-                    batch_size=12,
-                )
-                self._log("LLM response generator initialized (Groq API)")
+            # LLMResponseGenerator has a built-in default API key;
+            # also picks up GROQ_API_KEY from env or user-provided key as fallback
+            _user_key = os.environ.get("GROQ_API_KEY", "")
+            self.llm_generator = LLMResponseGenerator(
+                api_key=_user_key or None,
+                study_title=self.study_title,
+                study_description=self.study_description,
+                seed=self.seed,
+                fallback_generator=self.comprehensive_generator,
+                batch_size=20,
+            )
+            if self.llm_generator.is_llm_available:
+                self._log("LLM response generator initialized (multi-provider)")
+            else:
+                self._log("LLM generator: no providers available, using templates")
+                self.llm_generator = None
         except Exception as _llm_err:
             self._log(f"LLM generator not available (using templates): {_llm_err}")
 
@@ -5139,12 +5143,11 @@ class EnhancedSimulationEngine:
             data["Hedonic_Utilitarian"] = hedonic_values
             self.column_info.append(("Hedonic_Utilitarian", "Product type perception: 1=Utilitarian, 7=Hedonic"))
 
-        # v1.4.6: Pre-fill LLM response pool (batch API calls BEFORE per-participant loop)
+        # v1.4.8: Pre-fill LLM response pool with smart scaling
         if self.llm_generator and self.llm_generator.is_llm_available and self.open_ended_questions:
             try:
                 _unique_conditions = list(set(conditions.tolist()))
                 _sents = ["very_positive", "positive", "neutral", "negative", "very_negative"]
-                _per_sent = max(5, n // (len(_unique_conditions) * len(_sents)) + 3)
                 for oq in self.open_ended_questions:
                     _q_text = str(oq.get("question_text", oq.get("name", "")))
                     for _cond in _unique_conditions:
@@ -5155,10 +5158,11 @@ class EnhancedSimulationEngine:
                                 question_text=_q_text,
                                 condition=_cond,
                                 sentiments=_sents,
-                                count_per_sentiment=_per_sent,
+                                sample_size=n,
+                                n_conditions=len(_unique_conditions),
                             )
                 _stats = self.llm_generator.stats
-                self._log(f"LLM pre-filled pool: {_stats['llm_calls']} API calls")
+                self._log(f"LLM pre-filled pool: {_stats['llm_calls']} API calls, {_stats['pool_size']} responses")
             except Exception as _pf_err:
                 self._log(f"WARNING: LLM pool prefill failed: {_pf_err}")
 

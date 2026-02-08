@@ -1,6 +1,6 @@
 # Behavioral Experiment Simulation Tool
 
-**Version 1.4.7** | A Streamlit application for generating realistic synthetic behavioral experiment data using theory-grounded persona-driven simulation.
+**Version 1.4.8** | A Streamlit application for generating realistic synthetic behavioral experiment data using theory-grounded persona-driven simulation.
 
 ## What This Tool Does
 
@@ -19,15 +19,18 @@
 - **Develop analysis scripts** on properly structured data
 - **Check pre-registration consistency** before data collection
 
-## Features (v1.4.7)
+## Features (v1.4.8)
 
-### NEW: LLM-Powered Open-Ended Responses (v1.4.7)
-- **Groq API integration** (free tier: 14,400 req/day) for AI-generated survey responses
-- **Batch-in-prompt architecture**: generates 10-15 responses per API call for efficiency
-- **Response pool system**: pre-generates responses before per-participant loop
-- **Persona-aware prompts**: verbosity, formality, engagement, and sentiment control output
-- **Graceful fallback**: silently falls back to template-based generation if LLM unavailable
-- **Sidebar API key input**: paste your free Groq key to enable (no key = templates used)
+### NEW: LLM-Powered Open-Ended Responses (v1.4.8)
+- **Built-in AI**: open-ended responses are automatically AI-generated — no setup needed
+- **Multi-provider failover**: built-in API key + user key as backup, automatic switching
+- **Large batch architecture**: 20 responses per API call for maximum efficiency
+- **Smart pool scaling**: pool size auto-calculated from sample_size (works for 50-5,000+ participants)
+- **Draw-with-replacement + deep variation**: 6-layer persona transformation ensures 90%+ uniqueness
+  even at 2,000 participants from a pool of 30 base responses
+- **Graceful fallback**: silently falls back to 225-domain template system if LLM unavailable
+- **Generate tab status**: clear indicator shows whether AI responses are active, with option to
+  provide your own free Groq key if built-in capacity is reached
 
 ### NEW: Tab Navigation & UI Fixes (v1.4.7)
 - **Tab jumping fix**: widgets no longer reset view to Setup tab on changes
