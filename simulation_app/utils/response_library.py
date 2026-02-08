@@ -5501,7 +5501,7 @@ class ComprehensiveResponseGenerator:
                 "positive": [" I generally try to give people the benefit of the doubt."],
                 "negative": [" Trust has to be earned.", " I'm cautious about trusting others."],
             },
-            StudyDomain.CONSUMER_BEHAVIOR: {
+            StudyDomain.CONSUMER: {
                 "positive": [" I enjoy shopping for things like this.", " Quality matters to me."],
                 "negative": [" I'm picky about what I buy.", " Value for money is important."],
             },

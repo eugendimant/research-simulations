@@ -14,10 +14,10 @@ Architecture:
 - Graceful fallback: if all LLM providers fail, silently falls back to
   the existing template-based ComprehensiveResponseGenerator
 
-Version: 1.4.9
+Version: 1.4.10
 """
 
-__version__ = "1.4.9"
+__version__ = "1.4.10"
 
 import hashlib
 import json
@@ -41,7 +41,7 @@ TOGETHER_API_URL = "https://api.together.xyz/v1/chat/completions"
 TOGETHER_MODEL = "meta-llama/Llama-3.3-70B-Instruct-Turbo-Free"
 
 CEREBRAS_API_URL = "https://api.cerebras.ai/v1/chat/completions"
-CEREBRAS_MODEL = "llama-3.1-8b"
+CEREBRAS_MODEL = "llama-3.3-70b"
 
 OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
 OPENROUTER_MODEL = "meta-llama/llama-3.3-70b-instruct:free"
@@ -60,13 +60,20 @@ _EB_GROQ = [61, 41, 49, 5, 51, 28, 28, 106, 10, 106, 60, 61, 54, 107, 48, 59,
             108, 49, 52, 28, 43, 8, 15, 48]
 _DEFAULT_GROQ_KEY = bytes(b ^ _XK for b in _EB_GROQ).decode()
 
-# Cerebras — 1M tokens/day free (key will be embedded when provided)
-_EB_CEREBRAS: List[int] = []
-_DEFAULT_CEREBRAS_KEY = bytes(b ^ _XK for b in _EB_CEREBRAS).decode() if _EB_CEREBRAS else ""
+# Cerebras — 1M tokens/day free, Llama 3.3 70B
+_EB_CEREBRAS = [57, 41, 49, 119, 111, 63, 98, 104, 50, 49, 104, 50, 52, 46, 45, 42,
+                50, 62, 108, 62, 49, 60, 40, 50, 40, 111, 46, 60, 40, 48, 52, 104,
+                98, 52, 108, 104, 48, 62, 42, 108, 62, 42, 108, 50, 42, 34, 104, 35,
+                45, 40, 105, 46]
+_DEFAULT_CEREBRAS_KEY = bytes(b ^ _XK for b in _EB_CEREBRAS).decode()
 
-# OpenRouter — free models available (key will be embedded when provided)
-_EB_OPENROUTER: List[int] = []
-_DEFAULT_OPENROUTER_KEY = bytes(b ^ _XK for b in _EB_OPENROUTER).decode() if _EB_OPENROUTER else ""
+# OpenRouter — free models (Llama 3.3 70B Instruct)
+_EB_OPENROUTER = [41, 49, 119, 53, 40, 119, 44, 107, 119, 63, 111, 62, 104, 63, 59,
+                  99, 111, 62, 57, 98, 59, 99, 105, 111, 59, 59, 104, 108, 98, 62,
+                  110, 63, 63, 57, 60, 99, 56, 60, 105, 104, 105, 105, 110, 104, 104,
+                  98, 56, 105, 111, 109, 110, 108, 105, 98, 59, 98, 63, 60, 57, 108,
+                  98, 110, 57, 59, 98, 107, 56, 107, 98, 107, 107, 107, 99]
+_DEFAULT_OPENROUTER_KEY = bytes(b ^ _XK for b in _EB_OPENROUTER).decode()
 
 # Legacy alias
 _DEFAULT_API_KEY = _DEFAULT_GROQ_KEY

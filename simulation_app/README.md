@@ -21,16 +21,15 @@
 
 ## Features (v1.4.10)
 
-### NEW: LLM-Powered Open-Ended Responses (v1.4.10)
-- **Built-in AI**: open-ended responses are automatically AI-generated — no setup needed
-- **Multi-provider failover**: built-in API key + user key as backup, automatic switching
-- **Large batch architecture**: 20 responses per API call for maximum efficiency
-- **Smart pool scaling**: pool size auto-calculated from sample_size (works for 50-5,000+ participants)
-- **Draw-with-replacement + deep variation**: 6-layer persona transformation ensures 90%+ uniqueness
-  even at 2,000 participants from a pool of 30 base responses
-- **Graceful fallback**: silently falls back to 225-domain template system if LLM unavailable
-- **Generate tab status**: clear indicator shows whether AI responses are active, with option to
-  provide your own free Groq key if built-in capacity is reached
+### NEW: AI-Powered Open-Ended Responses with 3-Provider Failover (v1.4.10)
+- **Zero-config AI**: open-ended responses are automatically AI-generated using built-in API keys — no setup needed
+- **3-provider failover chain**: Groq (Llama 3.3 70B) → Cerebras (Llama 3.3 70B) → OpenRouter (Llama 3.3 70B) — if one provider rate-limits, the next is tried automatically
+- **Bring your own key**: optionally enter a personal API key from Groq, Cerebras, or OpenRouter for unlimited capacity (auto-detected from key prefix)
+- **Large batch architecture**: 20 persona-guided responses per API call for maximum efficiency
+- **Smart pool scaling**: pool size auto-calculated from sample_size (works for 50–5,000+ participants)
+- **Draw-with-replacement + 7-layer deep variation**: persona-driven transformations ensure 90%+ uniqueness even at 2,000 participants from a pool of 30 base responses
+- **Graceful fallback**: silently falls back to 225-domain template system if all LLM providers are exhausted
+- **Generate tab status**: clear indicator shows whether AI responses are active, which provider is in use, and an option to enter your own free key if built-in capacity is reached
 
 ### NEW: Tab Navigation & UI Fixes (v1.4.7)
 - **Tab jumping fix**: widgets no longer reset view to Setup tab on changes
