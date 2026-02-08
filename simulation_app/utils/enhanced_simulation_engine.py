@@ -45,7 +45,7 @@ This module is designed to run inside a `utils/` package (i.e., imported as
 """
 
 # Version identifier to help track deployed code
-__version__ = "1.4.10"  # v1.4.10: Full provider chain failover
+__version__ = "1.4.12"  # v1.4.12: 5 quality improvements
 
 # =============================================================================
 # SCIENTIFIC FOUNDATIONS FOR SIMULATION
@@ -1140,6 +1140,53 @@ def _generate_correlated_items(
         responses.append(response)
 
     return responses
+
+
+def _inject_inter_item_correlation(
+    item_matrix: np.ndarray,
+    target_alpha: float,
+    scale_min: int,
+    scale_max: int,
+) -> np.ndarray:
+    """Inject inter-item correlation into independently generated scale items.
+
+    Uses a mixing approach: blend each item with a common factor (the
+    participant's row mean) to achieve the target Cronbach's alpha, then
+    round back to integer scale values while preserving per-item means/SDs.
+
+    v1.4.11: Called after independent per-item generation to add realistic
+    internal consistency without losing condition effects or persona variation.
+    """
+    n, k = item_matrix.shape
+    if k <= 1 or n <= 1:
+        return item_matrix
+
+    # Target average inter-item correlation from Spearman-Brown
+    denom = k - target_alpha * (k - 1)
+    r_bar = target_alpha / denom if abs(denom) > 1e-9 else 0.5
+    r_bar = float(np.clip(r_bar, 0.1, 0.9))
+
+    # Mixing weight: x_new = w * common + (1-w) * x_old
+    # Correlation between items ≈ w², so w = sqrt(r_bar)
+    w = float(np.sqrt(r_bar))
+
+    # Common factor = row mean
+    row_means = item_matrix.mean(axis=1, keepdims=True)
+
+    # Blend each item with the common factor
+    mixed = w * row_means + (1.0 - w) * item_matrix
+
+    # Restore original per-item means and SDs
+    for j in range(k):
+        orig_mean = float(item_matrix[:, j].mean())
+        orig_std = float(item_matrix[:, j].std())
+        mixed_std = float(mixed[:, j].std())
+        if mixed_std > 1e-9 and orig_std > 1e-9:
+            mixed[:, j] = ((mixed[:, j] - mixed[:, j].mean()) / mixed_std
+                           * orig_std + orig_mean)
+
+    # Round and clip to scale bounds
+    return np.clip(np.round(mixed), scale_min, scale_max).astype(int)
 
 
 # =============================================================================
@@ -2717,6 +2764,7 @@ class EnhancedSimulationEngine:
                 seed=self.seed,
                 fallback_generator=self.comprehensive_generator,
                 batch_size=20,
+                all_conditions=self.conditions if self.conditions else None,
             )
             if self.llm_generator.is_llm_available:
                 self._log(f"LLM response generator initialized ({self.llm_generator.provider_display_name})")
@@ -3033,10 +3081,11 @@ class EnhancedSimulationEngine:
         BUT we need stronger effects for pilot simulations where users expect
         to see differences. Use amplified conversion factor.
         """
-        # INCREASED effect multiplier for detectable differences
-        # This converts Cohen's d to a 0-1 normalized shift
-        # d=0.5 -> 0.20 shift (20% of scale range) = ~1.2 points on 7-point scale
-        COHENS_D_TO_NORMALIZED = 0.40  # Increased from 0.25 for detectable effects
+        # v1.4.11: Recalibrated effect multiplier for accuracy
+        # Converts Cohen's d to a 0-1 normalized shift
+        # d=0.5 -> 0.15 shift -> ~0.9 points on 7-point scale (observed d ≈ 0.5-0.7)
+        # Previous value of 0.40 produced observed d ~1.6x the specified d
+        COHENS_D_TO_NORMALIZED = 0.30
 
         # Check explicit effect size specifications -- accumulate ALL matching effects
         # for factorial designs where multiple effect specs may apply to one condition
@@ -3194,7 +3243,7 @@ class EnhancedSimulationEngine:
 
         # Default medium effect size parameters
         default_d = 0.5
-        COHENS_D_TO_NORMALIZED = 0.40
+        COHENS_D_TO_NORMALIZED = 0.30  # v1.4.11: recalibrated from 0.40
 
         # Initialize base effect at 0 (neutral)
         semantic_effect = 0.0
@@ -3994,8 +4043,9 @@ class EnhancedSimulationEngine:
         # STEP 4: Bound and scale the effect
         # =====================================================================
 
-        # Clamp to reasonable range (-0.7 to +0.7) - slightly wider for strong manipulations
-        semantic_effect = max(-0.7, min(0.7, semantic_effect))
+        # v1.4.11: Tightened cap from ±0.7 to ±0.5 to prevent keyword stacking
+        # from producing unrealistically large effects
+        semantic_effect = max(-0.5, min(0.5, semantic_effect))
 
         # Apply Cohen's d scaling
         return semantic_effect * default_d * COHENS_D_TO_NORMALIZED
@@ -4563,6 +4613,21 @@ class EnhancedSimulationEngine:
         question_text = str(question_spec.get("question_text", ""))
         context_type = str(question_spec.get("context_type", "general"))
 
+        # v1.4.11: If question_text looks like a variable name (no spaces),
+        # build a richer question from study context so LLM/template can
+        # generate contextually relevant responses.
+        if question_text and " " not in question_text.strip():
+            import re as _re
+            _humanized = _re.sub(r'[_\-]+', ' ', question_text).strip()
+            _study_topic = self.study_title or self.study_description or ""
+            if _study_topic:
+                question_text = (
+                    f"In the context of a study about {_study_topic}, "
+                    f"please share your thoughts on: {_humanized}"
+                )
+            else:
+                question_text = f"Please share your thoughts on: {_humanized}"
+
         rng = np.random.RandomState(participant_seed)
 
         # Determine sentiment from response mean
@@ -5065,6 +5130,25 @@ class EnhancedSimulationEngine:
                     (col_name, f'{scale_name_raw} item {item_num} ({scale_min}-{scale_max}){reverse_note}')
                 )
 
+            # v1.4.11: Inject inter-item correlation for multi-item scales
+            # This adds realistic Cronbach's alpha while preserving per-item
+            # condition effects, persona variation, and calibration.
+            if num_items >= 3:
+                target_alpha = float(scale.get("reliability", 0.85))
+                item_col_names = [f"{scale_name}_{j+1}" for j in range(num_items)]
+                try:
+                    _item_matrix = np.array(
+                        [data[c] for c in item_col_names], dtype=float
+                    ).T  # shape (n, num_items)
+                    _correlated = _inject_inter_item_correlation(
+                        _item_matrix, target_alpha, scale_min, scale_max,
+                    )
+                    for j, c in enumerate(item_col_names):
+                        data[c] = _correlated[:, j].tolist()
+                    self._log(f"Injected inter-item correlation for '{scale_name_raw}' (target alpha={target_alpha:.2f})")
+                except Exception as _corr_err:
+                    self._log(f"WARNING: Could not inject correlation for '{scale_name_raw}': {_corr_err}")
+
         # Store generation log for post-generation verification
         self._scale_generation_log = _scale_generation_log
 
@@ -5421,6 +5505,10 @@ class EnhancedSimulationEngine:
             "llm_response_stats": self.llm_generator.stats if self.llm_generator else {"llm_calls": 0, "fallback_uses": 0},
             # v1.4.3: Column descriptions for data dictionary / codebook generation
             "column_descriptions": {col: desc for col, desc in self.column_info},
+            # v1.4.11: Scale generation log — maps scale names to actual generated columns
+            # Downstream consumers (validation, instructor report) should use this
+            # instead of reconstructing column names, preventing mismatches.
+            "scale_generation_log": self._scale_generation_log,
         }
         return df, metadata
 
@@ -5461,7 +5549,11 @@ class EnhancedSimulationEngine:
 
         # ===== CHECK 1: Verify all expected scale columns exist =====
         for scale in self.scales:
-            scale_name = str(scale.get("name", "Scale")).strip().replace(" ", "_")
+            # v1.4.11: Use _clean_column_name (and prefer variable_name) to match
+            # how columns were actually generated in generate().
+            _raw_name = str(scale.get("name", "Scale")).strip()
+            _var_name = str(scale.get("variable_name", "")).strip()
+            scale_name = _clean_column_name(_var_name if _var_name else _raw_name)
             scale_points = _safe_numeric(scale.get("scale_points", 7), default=7, as_int=True)
             scale_points = max(2, min(1001, scale_points))
             num_items = _safe_numeric(scale.get("num_items", 5), default=5, as_int=True)
@@ -5579,7 +5671,9 @@ class EnhancedSimulationEngine:
 
         for scale in self.scales:
             scale_name = str(scale.get("name", "Scale")).strip()
-            scale_name_clean = scale_name.replace(" ", "_")
+            # v1.4.11: use _clean_column_name for consistency with generation
+            _var = str(scale.get("variable_name", "")).strip()
+            scale_name_clean = _clean_column_name(_var if _var else scale_name)
             spec_points = int(scale.get("scale_points", 7))
             spec_items = int(scale.get("num_items", 5))
 
@@ -5647,10 +5741,12 @@ class EnhancedSimulationEngine:
         if "CONDITION" not in df.columns or len(self.conditions) < 2:
             return observed_effects
 
-        # Get scale columns
+        # Get scale columns — v1.4.11: use _clean_column_name for consistency
         scale_cols = []
         for scale in self.scales:
-            scale_name = str(scale.get("name", "Scale")).replace(" ", "_")
+            _raw = str(scale.get("name", "Scale")).strip()
+            _var = str(scale.get("variable_name", "")).strip()
+            scale_name = _clean_column_name(_var if _var else _raw)
             num_items = _safe_numeric(scale.get("num_items", 5), default=5, as_int=True)
             for item_num in range(1, num_items + 1):
                 col_name = f"{scale_name}_{item_num}"
@@ -5659,7 +5755,9 @@ class EnhancedSimulationEngine:
 
         # Also check for scale means (if computed)
         for scale in self.scales:
-            scale_name = str(scale.get("name", "Scale")).replace(" ", "_")
+            _raw = str(scale.get("name", "Scale")).strip()
+            _var = str(scale.get("variable_name", "")).strip()
+            scale_name = _clean_column_name(_var if _var else _raw)
             mean_col = f"{scale_name}_mean"
             if mean_col in df.columns:
                 scale_cols.append((scale_name, mean_col))

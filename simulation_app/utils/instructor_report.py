@@ -6,7 +6,7 @@ Generates comprehensive instructor-facing reports for student simulations.
 """
 
 # Version identifier to help track deployed code
-__version__ = "1.4.10"  # v1.4.10: Full provider chain failover
+__version__ = "1.4.12"  # v1.4.12: 5 quality improvements
 
 from dataclasses import dataclass
 from datetime import datetime
@@ -2174,6 +2174,12 @@ class ComprehensiveInstructorReport:
         # Clean data for analysis
         df_clean = df[df["Exclude_Recommended"] == 0] if "Exclude_Recommended" in df.columns else df
 
+        # v1.4.11: Build column registry from scale_generation_log if available
+        _gen_log = metadata.get("scale_generation_log", [])
+        _col_registry: Dict[str, List[str]] = {}
+        for _entry in _gen_log:
+            _col_registry[str(_entry.get("name", ""))] = list(_entry.get("columns_generated", []))
+
         for scale in scales:
             scale_name = scale.get("name", "Scale")
             num_items = scale.get("num_items", 5)
@@ -2184,8 +2190,13 @@ class ComprehensiveInstructorReport:
             lines.append(f"Configuration: {num_items} items, {scale_points}-point scale")
             lines.append("")
 
-            # Find scale columns
-            scale_cols = [c for c in df_clean.columns if c.startswith(f"{scale_name.replace(' ', '_')}_") and c[-1].isdigit()]
+            # v1.4.11: Use column registry first, fall back to name heuristic
+            scale_cols = _col_registry.get(scale_name, [])
+            if not scale_cols:
+                # Fallback: search for columns matching the pattern
+                _prefix = scale_name.replace(' ', '_')
+                scale_cols = [c for c in df_clean.columns
+                              if c.startswith(f"{_prefix}_") and c[-1].isdigit()]
 
             if scale_cols:
                 # Item-level statistics
