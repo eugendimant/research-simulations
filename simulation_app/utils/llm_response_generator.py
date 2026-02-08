@@ -294,6 +294,9 @@ def _call_llm_api(
 ) -> Optional[str]:
     """Call an OpenAI-compatible chat completion API.
 
+    Uses the ``requests`` library when available (reliable on Streamlit Cloud),
+    with ``urllib.request`` as a fallback.
+
     Args:
         api_url: Full URL for the chat completions endpoint.
         api_key: Bearer token for authentication.
@@ -308,38 +311,64 @@ def _call_llm_api(
     """
     if not api_key or not api_key.strip():
         return None
+
+    temperature = max(0.0, min(2.0, temperature))
+
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+        "User-Agent": "BehavioralSimulationTool/1.4.10",
+    }
+
+    # OpenRouter requires/recommends HTTP-Referer and X-Title
+    if "openrouter.ai" in api_url:
+        headers["HTTP-Referer"] = "https://github.com/eugendimant/research-simulations"
+        headers["X-Title"] = "Behavioral Experiment Simulation Tool"
+
+    payload = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        "temperature": temperature,
+        "max_tokens": max_tokens,
+    }
+
+    # Strategy 1: Use 'requests' (reliable on Streamlit Cloud, handles SSL well)
+    try:
+        import requests as _requests
+        resp = _requests.post(
+            api_url,
+            headers=headers,
+            json=payload,
+            timeout=timeout,
+        )
+        resp.raise_for_status()
+        body = resp.json()
+        return body["choices"][0]["message"]["content"]
+    except ImportError:
+        pass  # Fall through to urllib
+    except Exception as exc:
+        logger.warning("LLM API call failed [requests] (%s %s): %s",
+                       api_url[:50], model, exc)
+        return None
+
+    # Strategy 2: Fallback to urllib.request
     try:
         import urllib.request
         import urllib.error
 
-        temperature = max(0.0, min(2.0, temperature))
-
-        payload = json.dumps({
-            "model": model,
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-            "temperature": temperature,
-            "max_tokens": max_tokens,
-        }).encode("utf-8")
-
+        data = json.dumps(payload).encode("utf-8")
         req = urllib.request.Request(
-            api_url,
-            data=payload,
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json",
-            },
-            method="POST",
+            api_url, data=data, headers=headers, method="POST",
         )
-
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             body = json.loads(resp.read().decode("utf-8"))
             return body["choices"][0]["message"]["content"]
-
     except Exception as exc:
-        logger.warning("LLM API call failed (%s): %s", api_url[:50], exc)
+        logger.warning("LLM API call failed [urllib] (%s %s): %s",
+                       api_url[:50], model, exc)
         return None
 
 
