@@ -1044,60 +1044,6 @@ class InstructorReportGenerator:
                 lines.append("_No scales/DVs listed in metadata. This may indicate a configuration issue._")
                 lines.append("")
 
-        # === v1.4.3.1: DATA DICTIONARY from column_descriptions metadata ===
-        column_descriptions = metadata.get("column_descriptions", {})
-        if column_descriptions and isinstance(column_descriptions, dict):
-            lines.append("## Data Dictionary")
-            lines.append("")
-            lines.append("Complete reference for every column in the output CSV:")
-            lines.append("")
-            lines.append("| Column | Description |")
-            lines.append("|--------|-------------|")
-            for col_name, col_desc in column_descriptions.items():
-                # Sanitize for markdown table (replace pipes)
-                safe_name = str(col_name).replace("|", "/")
-                safe_desc = str(col_desc).replace("|", "/")
-                lines.append(f"| `{safe_name}` | {safe_desc} |")
-            lines.append("")
-        elif df is not None and len(df.columns) > 0:
-            # Fallback: generate a basic data dictionary from DataFrame columns
-            lines.append("## Data Dictionary")
-            lines.append("")
-            lines.append("Columns present in the output CSV:")
-            lines.append("")
-            lines.append("| Column | Type | Description |")
-            lines.append("|--------|------|-------------|")
-            _col_desc_map = {
-                "PARTICIPANT_ID": "Unique participant identifier (1-N)",
-                "RUN_ID": "Simulation run identifier",
-                "CONDITION": "Experimental condition assignment",
-                "Age": "Participant age in years",
-                "Gender": "Participant gender (Male, Female, Non-binary, Prefer not to say)",
-                "Attention_Check_1": "Attention/manipulation check (1=Correct, 2=Incorrect)",
-                "Completion_Time_Seconds": "Survey completion time in seconds",
-                "Attention_Pass_Rate": "Proportion of attention checks passed (0-1)",
-                "Max_Straight_Line": "Longest run of identical consecutive responses",
-                "Flag_Speeder": "Speed flag: 1=unusually fast completion",
-                "Flag_StraightLine": "Straight-line flag: 1=repetitive pattern detected",
-                "Exclude_Recommended": "Recommended exclusion: 1=exclude, 0=retain",
-                "SIMULATION_MODE": "Simulation mode (pilot/full)",
-                "SIMULATION_SEED": "Random seed used for reproducibility",
-            }
-            for col in df.columns:
-                col_str = str(col)
-                dtype_str = str(df[col].dtype)
-                desc = _col_desc_map.get(col_str, "")
-                if not desc:
-                    # Infer description from column name patterns
-                    if col_str.endswith("_mean"):
-                        desc = "Composite mean score for scale"
-                    elif "_" in col_str and col_str.split("_")[-1].isdigit():
-                        desc = "Individual scale item response"
-                    elif col_str.startswith("OE_") or col_str.startswith("OpenEnded_"):
-                        desc = "Open-ended text response"
-                lines.append(f"| `{col_str}` | {dtype_str} | {desc} |")
-            lines.append("")
-
         # === v1.2.4: PRACTICAL DATA INTERPRETATION GUIDE ===
         lines.append("## How to Work With This Data")
         lines.append("")
@@ -1432,6 +1378,57 @@ class InstructorReportGenerator:
             lines.append("```stata")
             lines.append(self._generate_stata_script(metadata))
             lines.append("```")
+            lines.append("")
+
+        # === DATA DICTIONARY (placed at end for reference) ===
+        column_descriptions = metadata.get("column_descriptions", {})
+        if column_descriptions and isinstance(column_descriptions, dict):
+            lines.append("## Data Dictionary")
+            lines.append("")
+            lines.append("Complete reference for every column in the output CSV:")
+            lines.append("")
+            lines.append("| Column | Description |")
+            lines.append("|--------|-------------|")
+            for col_name, col_desc in column_descriptions.items():
+                safe_name = str(col_name).replace("|", "/")
+                safe_desc = str(col_desc).replace("|", "/")
+                lines.append(f"| `{safe_name}` | {safe_desc} |")
+            lines.append("")
+        elif df is not None and len(df.columns) > 0:
+            lines.append("## Data Dictionary")
+            lines.append("")
+            lines.append("Columns present in the output CSV:")
+            lines.append("")
+            lines.append("| Column | Type | Description |")
+            lines.append("|--------|------|-------------|")
+            _col_desc_map = {
+                "PARTICIPANT_ID": "Unique participant identifier (1-N)",
+                "RUN_ID": "Simulation run identifier",
+                "CONDITION": "Experimental condition assignment",
+                "Age": "Participant age in years",
+                "Gender": "Participant gender (Male, Female, Non-binary, Prefer not to say)",
+                "Attention_Check_1": "Attention/manipulation check (1=Correct, 2=Incorrect)",
+                "Completion_Time_Seconds": "Survey completion time in seconds",
+                "Attention_Pass_Rate": "Proportion of attention checks passed (0-1)",
+                "Max_Straight_Line": "Longest run of identical consecutive responses",
+                "Flag_Speeder": "Speed flag: 1=unusually fast completion",
+                "Flag_StraightLine": "Straight-line flag: 1=repetitive pattern detected",
+                "Exclude_Recommended": "Recommended exclusion: 1=exclude, 0=retain",
+                "SIMULATION_MODE": "Simulation mode (pilot/full)",
+                "SIMULATION_SEED": "Random seed used for reproducibility",
+            }
+            for col in df.columns:
+                col_str = str(col)
+                dtype_str = str(df[col].dtype)
+                desc = _col_desc_map.get(col_str, "")
+                if not desc:
+                    if col_str.endswith("_mean"):
+                        desc = "Composite mean score for scale"
+                    elif "_" in col_str and col_str.split("_")[-1].isdigit():
+                        desc = "Individual scale item response"
+                    elif col_str.startswith("OE_") or col_str.startswith("OpenEnded_"):
+                        desc = "Open-ended text response"
+                lines.append(f"| `{col_str}` | {dtype_str} | {desc} |")
             lines.append("")
 
         return "\n".join(lines)
@@ -1930,17 +1927,6 @@ class ComprehensiveInstructorReport:
                 scale_points = scale.get('scale_points', 7)
                 num_items = scale.get('num_items', 1)
                 lines.append(f"  - {scale_name} ({num_items} item{'s' if num_items > 1 else ''}, {scale_points}-point scale)")
-            lines.append("")
-
-        # v1.4.3.1: Data Dictionary from column_descriptions (comprehensive markdown)
-        _cd_comp = metadata.get("column_descriptions", {})
-        if _cd_comp and isinstance(_cd_comp, dict):
-            lines.append("### Data Dictionary")
-            lines.append("")
-            lines.append("| Column | Description |")
-            lines.append("|--------|-------------|")
-            for _cd_k, _cd_v in _cd_comp.items():
-                lines.append(f"| `{_cd_k}` | {_cd_v} |")
             lines.append("")
 
         # Effect Sizes (hypotheses)
