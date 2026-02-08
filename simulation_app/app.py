@@ -4906,7 +4906,7 @@ with st.sidebar:
             _BPROV = [
                 ("Groq (Llama 3.3 70B)", _GU, _GM, _GK),
                 ("Cerebras (Llama 3.3 70B)", _CU, _CM, _CK),
-                ("OpenRouter (Llama 3.3 70B)", _OU, _OM, _OK),
+                ("OpenRouter (Mistral Small 3.1 24B)", _OU, _OM, _OK),
             ]
             _tg = ComprehensiveResponseGenerator()
             _bl = []
