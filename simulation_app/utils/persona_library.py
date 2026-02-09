@@ -1477,156 +1477,371 @@ class PersonaLibrary:
         """Build keyword mappings for automatic domain detection.
 
         v1.0.0: Expanded with 30+ domains based on training on 210 QSF files.
+        v2.0.0: Restructured with tiered keywords (compound > two-word > specific single).
+                 Generic single words removed to prevent false positives.
+                 Used by detect_domains() Phase 2 for individual keyword scoring.
         """
         return {
             'consumer_behavior': [
-                'consumer', 'purchase', 'buying', 'shopping', 'product', 'brand',
-                'retail', 'e-commerce', 'customer', 'consumption', 'wtp', 'willingness to pay',
-                'shopping cart', 'checkout', 'price', 'promotion', 'discount',
-                'sweater', 'coffee shop', 'loyalty program', 't-shirt'  # v1.0.0: From QSF training
+                # Compound phrases (3+ words) - highest specificity
+                'willingness to pay', 'purchase intention study', 'consumer decision making',
+                'brand loyalty program', 'shopping cart abandonment', 'consumer trust in',
+                'product review credibility', 'online shopping behavior',
+                # Two-word phrases - high specificity
+                'consumer behavior', 'consumer trust', 'consumer preference', 'consumer choice',
+                'purchase intention', 'buying behavior', 'brand loyalty', 'brand perception',
+                'product review', 'product evaluation', 'product perception', 'product quality',
+                'shopping behavior', 'customer satisfaction', 'customer experience',
+                'retail experience', 'consumer confidence', 'consumer attitude',
+                # Domain-specific single words (unambiguous)
+                'consumer', 'purchase', 'buying', 'shopping', 'retail', 'e-commerce',
+                'customer', 'consumption', 'wtp', 'checkout', 'sweater', 'loyalty program',
+                't-shirt', 'coffee shop'
             ],
             'marketing': [
-                'marketing', 'advertising', 'ad', 'promotion', 'branding', 'brand',
-                'campaign', 'persuasion', 'message', 'appeal', 'endorsement',
-                'influencer', 'social media marketing', 'woke', 'woke-washed',  # v1.0.0
-                'advertisement', 'pitch', 'scientific pitch'
+                # Compound phrases
+                'social media marketing', 'advertising effectiveness study',
+                'brand positioning strategy', 'influencer marketing effect',
+                # Two-word phrases
+                'marketing strategy', 'advertising campaign', 'brand endorsement',
+                'marketing message', 'advertising appeal', 'marketing persuasion',
+                'influencer endorsement', 'marketing communication', 'woke washing',
+                'scientific pitch', 'ad campaign',
+                # Domain-specific single words
+                'marketing', 'advertising', 'advertisement', 'branding', 'endorsement',
+                'influencer', 'woke-washed', 'campaign'
             ],
             'ai': [
-                'ai', 'artificial intelligence', 'algorithm', 'machine learning',
-                'automation', 'robot', 'chatbot', 'recommendation system', 'personalization',
-                'ai-generated', 'ai recommendation', 'algorithm aversion', 'algorithm appreciation',
-                'ai tutor', 'ai doctor', 'ai manager', 'ai service', 'ai friend',  # v1.0.0: From QSF training
-                'human vs ai', 'ai vs human', 'ai disclosure', 'ai trust', 'ai told'
+                # Compound phrases
+                'artificial intelligence generated', 'ai generated content',
+                'algorithm aversion effect', 'algorithm appreciation effect',
+                'human versus ai', 'ai versus human', 'ai recommendation system',
+                'ai content detection', 'ai content labels',
+                # Two-word phrases
+                'artificial intelligence', 'machine learning', 'algorithm aversion',
+                'algorithm appreciation', 'ai generated', 'ai recommendation',
+                'ai disclosure', 'ai trust', 'ai tutor', 'ai doctor', 'ai manager',
+                'ai service', 'ai friend', 'ai told', 'chatbot interaction',
+                'recommendation system', 'ai labeling', 'ai detection',
+                # Domain-specific single words
+                'ai-generated', 'chatbot', 'automation', 'algorithm', 'robot'
             ],
             'technology': [
-                'technology', 'tech', 'digital', 'online', 'app', 'software',
-                'platform', 'interface', 'ux', 'user experience', 'adoption'
+                # Two-word phrases
+                'user experience', 'digital platform', 'technology adoption',
+                'software interface', 'digital technology', 'tech adoption',
+                # Domain-specific single words
+                'technology', 'digital', 'software', 'platform', 'interface'
             ],
             'behavioral_economics': [
-                'decision', 'choice', 'risk', 'loss', 'gain', 'framing', 'nudge',
-                'bias', 'heuristic', 'prospect theory', 'time preference', 'discount',
-                'intertemporal', 'self-control', 'commitment', 'default',
-                'default nudge', 'scarcity priming', 'abundance priming',  # v1.0.0
-                'debt priming', 'powerlessness priming', 'anchoring effect'
+                # Compound phrases
+                'prospect theory prediction', 'loss aversion effect', 'default option nudge',
+                'framing effect experiment', 'anchoring and adjustment', 'sunk cost fallacy',
+                'intertemporal choice task', 'nudging through defaults',
+                'retirement savings default', 'default enrollment option',
+                # Two-word phrases
+                'prospect theory', 'loss aversion', 'default nudge', 'framing effect',
+                'anchoring effect', 'scarcity priming', 'abundance priming',
+                'debt priming', 'powerlessness priming', 'time preference',
+                'intertemporal choice', 'sunk cost', 'choice architecture',
+                'nudge intervention', 'behavioral nudge', 'default option',
+                'retirement savings', 'savings behavior',
+                # Domain-specific single words
+                'nudge', 'nudging', 'heuristic', 'framing', 'intertemporal',
+                'self-control'
             ],
             'organizational_behavior': [
-                'employee', 'workplace', 'job', 'organization', 'manager', 'leader',
-                'leadership', 'team', 'motivation', 'engagement', 'satisfaction',
-                'turnover', 'commitment', 'performance', 'hr', 'human resources',
-                'subordinate', 'coach', 'organizer', 'teammate', 'gossip at work',  # v1.0.0
-                'strategic silence', 'politeness', 'rudeness', 'backlash'
+                # Compound phrases
+                'workplace gossip behavior', 'employee job satisfaction',
+                'organizational commitment study', 'leadership style effect',
+                'team performance dynamics', 'human resource management',
+                'wage gap in stem', 'gap in stem organizations',
+                'gender gap in organizations', 'diversity in organizations',
+                # Two-word phrases
+                'workplace behavior', 'employee engagement', 'job satisfaction',
+                'organizational commitment', 'leadership style', 'team performance',
+                'gossip at work', 'workplace dynamics', 'employee turnover',
+                'employee motivation', 'strategic silence', 'workplace rudeness',
+                'workplace politeness', 'human resources', 'manager subordinate',
+                'stem organizations', 'stem workforce', 'stem fields',
+                'organizational culture', 'organizational dynamics',
+                # Domain-specific single words
+                'employee', 'workplace', 'subordinate', 'teammate', 'turnover',
+                'hr', 'organization', 'organizations'
             ],
             'social_psychology': [
-                'social', 'group', 'norm', 'conformity', 'influence', 'persuasion',
-                'cooperation', 'competition', 'trust', 'fairness', 'reciprocity',
-                'prosocial', 'altruism', 'helping', 'identity',
-                'minimal group paradigm', 'ingroup', 'outgroup', 'social proof',  # v1.0.0
-                'deviance credit', 'social value orientation', 'oneness'
+                # Compound phrases
+                'minimal group paradigm experiment', 'social value orientation task',
+                'ingroup outgroup dynamics', 'bystander effect study',
+                'social identity theory', 'social categorization effect',
+                # Two-word phrases
+                'social influence', 'social proof', 'conformity pressure',
+                'social identity', 'group dynamics', 'social categorization',
+                'ingroup outgroup', 'bystander effect', 'social comparison',
+                'deviance credit', 'social value', 'social dilemma',
+                'prosocial behavior',
+                # Domain-specific single words
+                'conformity', 'ingroup', 'outgroup', 'prosocial', 'oneness'
             ],
-            # v1.0.0: NEW DOMAINS FROM QSF TRAINING
             'economic_games': [
-                'dictator game', 'trust game', 'public goods game', 'ultimatum',
-                'dg', 'pgg', 'contribution', 'endowment', 'allocation', 'transfer',
-                'sender', 'receiver', 'trustor', 'trustee', 'player a', 'player b',
-                'investment', 'earnings', 'payoff', 'payout', 'purse'
+                # Compound phrases
+                'public goods game contribution', 'dictator game allocation',
+                'trust game investment', 'ultimatum game offer',
+                'prisoner dilemma cooperation',
+                # Two-word phrases
+                'dictator game', 'trust game', 'public goods', 'ultimatum game',
+                'prisoner dilemma', 'player a', 'player b',
+                # Domain-specific single words
+                'trustor', 'trustee', 'endowment', 'payoff', 'payout', 'pgg', 'dg'
             ],
             'norm_elicitation': [
-                'norm', 'norms', 'empirical norm', 'normative expectations',
-                'injunctive norm', 'descriptive norm', 'norm elicitation',
-                'norm message', 'norm violation', 'appropriate', 'inappropriate',
-                'social norm', 'personal normative beliefs'
+                # Compound phrases
+                'personal normative beliefs study', 'social norm intervention effect',
+                'norm elicitation task', 'empirical expectations measurement',
+                # Two-word phrases
+                'norm elicitation', 'empirical norm', 'normative expectations',
+                'injunctive norm', 'descriptive norm', 'norm violation',
+                'norm message', 'social norm',
+                # Domain-specific single words
+                'norms'
             ],
             'political_psychology': [
-                'political', 'trump', 'biden', 'democrat', 'republican',
-                'partisan', 'liberal', 'conservative', 'ideology', 'voting',
-                'hate', 'love', 'polarization', 'political identity'
+                # Compound phrases
+                'political polarization effect', 'partisan identity threat',
+                'liberal conservative divide', 'democrat republican difference',
+                'affective polarization study', 'political attitude formation',
+                'echo chamber effect', 'political media consumption',
+                'social media echo chamber', 'political news consumption',
+                # Two-word phrases
+                'political polarization', 'political identity', 'partisan divide',
+                'political attitudes', 'political beliefs', 'political ideology',
+                'affective polarization', 'political trust', 'political participation',
+                'political engagement', 'voting behavior', 'partisan bias',
+                'political party', 'echo chamber', 'ideological divide',
+                'media polarization', 'political communication',
+                # Domain-specific single words
+                'political', 'partisan', 'polarization', 'democrat', 'republican',
+                'liberal', 'conservative', 'ideology', 'ideological', 'trump', 'biden'
             ],
             'dishonesty': [
+                # Compound phrases
+                'die roll reporting task', 'cheating behavior study',
+                'overclaiming test paradigm', 'honest reporting behavior',
+                # Two-word phrases
+                'die roll', 'cheating behavior', 'overclaiming test',
+                'truth telling', 'honest reporting', 'ethical behavior',
+                'unethical behavior',
+                # Domain-specific single words
                 'dishonesty', 'honesty', 'lying', 'liar', 'cheating', 'fraud',
-                'deception', 'truth', 'overclaiming', 'die roll', 'dice',
-                'reporting', 'misreporting', 'ethical', 'unethical'
+                'deception', 'overclaiming', 'misreporting'
             ],
             'punishment': [
-                'punishment', 'punisher', 'sanction', 'penalty', 'fine',
-                'third-party punishment', 'costly punishment', 'deterrence',
-                'norm enforcement', 'retribution', 'justice'
+                # Compound phrases
+                'third party punishment paradigm', 'costly punishment study',
+                'norm enforcement mechanism',
+                # Two-word phrases
+                'third-party punishment', 'costly punishment', 'norm enforcement',
+                'punitive justice', 'criminal punishment',
+                # Domain-specific single words
+                'punishment', 'punisher', 'sanction', 'deterrence', 'retribution'
             ],
             'gender': [
-                'gender', 'male', 'female', 'men', 'women', 'sex differences',
-                'masculinity', 'femininity', 'backlash', 'stereotype'
+                # Compound phrases
+                'gender wage gap study', 'sex differences in behavior',
+                'gender stereotype effect', 'gender bias experiment',
+                'gender role expectation', 'gender pay gap analysis',
+                # Two-word phrases
+                'gender differences', 'sex differences', 'gender stereotypes',
+                'gender bias', 'gender roles', 'gender identity', 'gender gap',
+                'gender pay', 'wage gap', 'gender discrimination', 'gender equality',
+                # Domain-specific single words
+                'gender', 'masculinity', 'femininity', 'sexism'
             ],
             'power_status': [
-                'power', 'status', 'hierarchy', 'dominance', 'authority',
-                'high power', 'low power', 'ses', 'socioeconomic status',
-                'wealth', 'income', 'class'
+                # Two-word phrases
+                'high power', 'low power', 'power dynamics', 'status hierarchy',
+                'socioeconomic status', 'social hierarchy', 'power imbalance',
+                # Domain-specific single words
+                'hierarchy', 'dominance', 'ses'
             ],
             'charitable_giving': [
-                'charity', 'donation', 'giving', 'charitable', 'philanthropy',
-                'warm glow', 'altruism', 'overhead', 'nonprofit', 'ngo',
-                'effective altruism', 'prosocial'
+                # Compound phrases
+                'charitable giving behavior', 'effective altruism donation',
+                'warm glow effect', 'donation behavior study',
+                # Two-word phrases
+                'charitable giving', 'donation behavior', 'warm glow',
+                'effective altruism', 'charitable donation',
+                # Domain-specific single words
+                'charity', 'donation', 'charitable', 'philanthropy', 'nonprofit', 'ngo'
             ],
             'covid': [
-                'covid', 'coronavirus', 'pandemic', 'vaccine', 'vaccination',
-                'mask', 'social distancing', 'lockdown', 'health behavior'
+                # Compound phrases
+                'covid-19 vaccine hesitancy', 'pandemic behavior change',
+                'social distancing compliance', 'mask wearing behavior',
+                # Two-word phrases
+                'vaccine hesitancy', 'social distancing', 'mask wearing',
+                'pandemic behavior', 'health behavior',
+                # Domain-specific single words
+                'covid', 'covid-19', 'coronavirus', 'pandemic', 'vaccine',
+                'vaccination', 'lockdown'
             ],
             'emotions': [
-                'emotion', 'affect', 'mood', 'sadness', 'happiness', 'anger',
-                'fear', 'anxiety', 'urgency', 'intensity', 'arousal'
+                # Compound phrases
+                'discrete emotions theory', 'emotional regulation strategy',
+                'mood induction procedure', 'affect intensity measure',
+                # Two-word phrases
+                'emotional regulation', 'mood induction', 'affect intensity',
+                'emotional contagion', 'discrete emotions', 'emotional response',
+                # Domain-specific single words
+                'emotion', 'mood', 'sadness', 'happiness', 'anger', 'anxiety',
+                'arousal'
             ],
             'deontology_utilitarianism': [
-                'deontology', 'utilitarianism', 'moral', 'ethics', 'ethical',
-                'trolley', 'consequentialist', 'deontological', 'moral foundations'
+                # Compound phrases
+                'trolley problem dilemma', 'moral foundations theory',
+                'deontological moral judgment', 'consequentialist reasoning',
+                # Two-word phrases
+                'moral foundations', 'trolley problem', 'moral judgment',
+                'moral reasoning', 'ethical dilemma',
+                # Domain-specific single words
+                'deontology', 'utilitarianism', 'deontological', 'consequentialist',
+                'trolley'
             ],
             'accuracy_misinformation': [
-                'accuracy', 'accurate', 'inaccurate', 'misinformation',
-                'conspiracy', 'fact check', 'belief', 'truth discernment'
+                # Compound phrases
+                'fake news detection accuracy', 'truth discernment ability',
+                'conspiracy belief formation', 'misinformation susceptibility study',
+                # Two-word phrases
+                'fake news', 'fact checking', 'truth discernment', 'conspiracy belief',
+                'belief accuracy', 'misinformation sharing', 'news accuracy',
+                # Domain-specific single words
+                'misinformation', 'conspiracy', 'disinformation', 'fake'
             ],
             'psychological_ownership': [
-                'ownership', 'psychological ownership', 'mine', 'possess', 'territory',
-                'endowment', 'attachment', 'self-extension', 'control'
+                # Two-word phrases
+                'psychological ownership', 'endowment effect', 'ownership feelings',
+                'self extension',
+                # Domain-specific single words
+                'possess', 'territory'
             ],
             'health_psychology': [
-                'health', 'wellness', 'nutrition', 'exercise', 'medical', 'disease',
-                'prevention', 'treatment', 'behavior change', 'habit', 'addiction'
+                # Compound phrases
+                'health behavior change intervention', 'patient adherence study',
+                'medical decision making', 'health risk perception',
+                'vaccine hesitancy among', 'health intervention effectiveness',
+                # Two-word phrases
+                'health behavior', 'behavior change', 'medical decision',
+                'health intervention', 'patient adherence', 'health risk',
+                'health communication', 'health literacy', 'health promotion',
+                # Domain-specific single words
+                'wellness', 'nutrition', 'exercise', 'disease', 'prevention',
+                'treatment', 'addiction', 'habit'
             ],
             'environmental': [
-                'environment', 'sustainability', 'green', 'eco', 'climate', 'carbon',
-                'recycling', 'waste', 'pollution', 'conservation', 'renewable',
-                'sustainable default', 'unsustainable', 'environmental', 'humanitarian'  # v1.0.0
+                # Compound phrases
+                'sustainable behavior intervention', 'green consumption choice',
+                'carbon footprint reduction', 'environmental attitude study',
+                'climate change belief', 'sustainable default option',
+                # Two-word phrases
+                'sustainable behavior', 'green consumption', 'carbon footprint',
+                'environmental attitude', 'climate change', 'sustainable default',
+                'environmental concern', 'renewable energy',
+                # Domain-specific single words
+                'sustainability', 'eco', 'recycling', 'pollution',
+                'conservation', 'renewable', 'unsustainable', 'environmental'
             ],
             'pricing': [
-                'price', 'pricing', 'cost', 'value', 'premium', 'discount',
-                'willingness to pay', 'wtp', 'auction', 'bid'
+                # Two-word phrases
+                'willingness to pay', 'price sensitivity', 'price perception',
+                'premium pricing', 'dynamic pricing',
+                # Domain-specific single words
+                'pricing', 'auction', 'bid'
             ],
             'hedonic_consumption': [
-                'hedonic', 'pleasure', 'enjoyment', 'fun', 'experience', 'aesthetic',
-                'emotional', 'excitement', 'entertainment', 'luxury'
+                # Two-word phrases
+                'hedonic consumption', 'hedonic value', 'hedonic experience',
+                # Domain-specific single words
+                'hedonic', 'luxury', 'aesthetic', 'entertainment'
             ],
             'utilitarian_consumption': [
-                'utilitarian', 'functional', 'practical', 'efficiency', 'useful',
-                'performance', 'quality', 'durability', 'necessity'
+                # Two-word phrases
+                'utilitarian consumption', 'utilitarian value', 'functional value',
+                # Domain-specific single words
+                'utilitarian', 'functional', 'durability', 'necessity'
             ],
             'privacy': [
-                'privacy', 'data', 'personal information', 'surveillance', 'tracking',
-                'consent', 'gdpr', 'data protection', 'anonymity'
+                # Compound phrases
+                'personal information disclosure', 'privacy paradox study',
+                'data protection concern', 'surveillance capitalism effect',
+                # Two-word phrases
+                'data privacy', 'personal information', 'privacy concern',
+                'privacy paradox', 'information disclosure', 'surveillance concern',
+                # Domain-specific single words
+                'privacy', 'surveillance', 'gdpr', 'anonymity'
             ],
             'fairness': [
-                'fairness', 'justice', 'equality', 'equity', 'distribution',
-                'procedural', 'distributive', 'inequality', 'bias',
-                'unequal', 'systemic', 'agent', 'favored', 'unfavored'  # v1.0.0
+                # Compound phrases
+                'distributive justice perception', 'procedural fairness study',
+                'inequality aversion experiment',
+                # Two-word phrases
+                'distributive justice', 'procedural fairness', 'inequality aversion',
+                'fairness perception', 'perceived fairness',
+                # Domain-specific single words
+                'fairness', 'equity', 'inequality', 'distributive'
             ],
-            # v1.0.0: More domains from QSF training
             'negotiation': [
-                'negotiation', 'bargaining', 'offer', 'counteroffer', 'deal',
-                'agreement', 'compromise', 'concession'
+                # Two-word phrases
+                'bargaining behavior', 'negotiation strategy', 'offer counteroffer',
+                # Domain-specific single words
+                'negotiation', 'bargaining', 'counteroffer', 'concession'
             ],
             'personalization': [
-                'personalized', 'personalization', 'tailored', 'customized',
-                'recommendation', 'preference', 'gift'
+                # Two-word phrases
+                'personalized recommendation', 'tailored content',
+                'customized experience',
+                # Domain-specific single words
+                'personalized', 'personalization', 'tailored', 'customized'
             ],
             'education': [
-                'education', 'learning', 'student', 'teacher', 'tutor',
-                'academic', 'school', 'course', 'knowledge'
+                # Two-word phrases
+                'educational intervention', 'student learning', 'academic performance',
+                'learning outcome',
+                # Domain-specific single words
+                'education', 'student', 'teacher', 'tutor', 'academic',
+                'school', 'course'
+            ],
+            'media_communication': [
+                # Compound phrases
+                'social media echo chamber', 'media framing effect',
+                'news consumption pattern', 'media influence on attitudes',
+                # Two-word phrases
+                'social media', 'media consumption', 'echo chamber',
+                'media framing', 'news consumption', 'media influence',
+                'media effects', 'media literacy', 'information environment',
+                # Domain-specific single words
+                'media'
+            ],
+            'risk_perception': [
+                # Compound phrases
+                'risk perception and behavior', 'perceived risk assessment',
+                'risk communication effect',
+                # Two-word phrases
+                'risk perception', 'perceived risk', 'risk communication',
+                'risk assessment', 'risk aversion', 'risk taking',
+                # Domain-specific single words
+                'risk-taking', 'hazard'
+            ],
+            'decision_making': [
+                # Compound phrases
+                'decision making under uncertainty', 'choice overload effect',
+                'decision fatigue study', 'nudging through default options',
+                'default option effect on',
+                # Two-word phrases
+                'decision making', 'choice overload', 'decision fatigue',
+                'choice architecture', 'decision quality', 'default option',
+                'default options', 'option selection', 'choice behavior',
+                # Domain-specific single words
+                'decision-making'
             ]
         }
 
@@ -1634,8 +1849,14 @@ class PersonaLibrary:
         """
         Automatically detect relevant research domains from study description.
 
-        v1.8.6: Improved with word-boundary matching, weighted scoring,
-        compound phrase priority, negative keywords, and top-N filtering.
+        v2.0.0: Major rewrite with 5-phase scoring algorithm:
+          Phase 1 - Compound phrase scoring (3+ words = 20pts, 2 words = 10pts)
+          Phase 2 - Individual keyword scoring with word-boundary matching
+          Phase 3 - Negative keyword penalties (expanded to all domains)
+          Phase 4 - Cross-domain suppression (strong signals penalize unrelated domains)
+          Phase 5 - Context-aware boosts for experimental manipulation patterns
+
+        Returns 1-3 genuinely relevant domains, never 0.
         """
         import re
 
@@ -1646,132 +1867,336 @@ class PersonaLibrary:
         if not combined_text.strip():
             return ['consumer_behavior']
 
-        # Compound phrases that strongly indicate specific domains (checked first)
-        compound_indicators = {
-            'political_psychology': ['political polarization', 'political identity', 'partisan divide',
-                                      'political attitudes', 'political beliefs', 'political ideology',
-                                      'liberal conservative', 'democrat republican', 'left right spectrum',
-                                      'ideological', 'voting behavior', 'political engagement',
-                                      'affective polarization', 'political trust', 'political participation'],
-            'norm_elicitation': ['norm elicitation', 'empirical norm', 'normative expectations',
-                                 'injunctive norm', 'descriptive norm', 'norm violation',
-                                 'personal normative beliefs', 'social norm intervention'],
-            'psychological_ownership': ['psychological ownership', 'endowment effect', 'self-extension',
-                                         'ownership feelings', 'mine effect'],
-            'organizational_behavior': ['workplace behavior', 'employee engagement', 'job satisfaction',
-                                         'organizational commitment', 'leadership style',
-                                         'workplace dynamics', 'team performance', 'gossip at work'],
-            'gender': ['gender differences', 'sex differences', 'gender stereotypes', 'gender bias',
-                       'gender roles', 'gender identity', 'masculinity femininity', 'gender pay gap'],
-            'ai': ['artificial intelligence', 'machine learning', 'algorithm aversion',
-                   'algorithm appreciation', 'ai generated', 'ai recommendation',
-                   'ai disclosure', 'ai trust', 'human vs ai', 'ai vs human',
-                   'ai tutor', 'ai doctor', 'chatbot interaction'],
-            'behavioral_economics': ['prospect theory', 'loss aversion', 'default nudge', 'framing effect',
-                                      'anchoring effect', 'scarcity priming', 'time preference',
-                                      'intertemporal choice', 'sunk cost'],
-            'social_psychology': ['social influence', 'social proof', 'conformity pressure',
-                                  'ingroup outgroup', 'minimal group paradigm', 'social identity',
-                                  'social value orientation', 'bystander effect'],
-            'consumer_behavior': ['purchase intention', 'buying behavior', 'brand loyalty',
-                                  'consumer preference', 'willingness to pay', 'shopping behavior'],
-            'charitable_giving': ['charitable giving', 'donation behavior', 'warm glow', 'effective altruism',
-                                  'philanthropy motivation'],
-            'dishonesty': ['die roll task', 'cheating behavior', 'overclaiming test',
-                           'truth telling', 'honest reporting'],
-            'economic_games': ['dictator game', 'trust game', 'public goods game',
-                               'ultimatum game', 'prisoner dilemma'],
-            'punishment': ['third-party punishment', 'costly punishment', 'norm enforcement',
-                           'punitive justice', 'sanctions and penalties'],
-            'emotions': ['emotional regulation', 'mood induction', 'affect intensity',
-                         'emotional contagion', 'discrete emotions'],
-            'health_psychology': ['health behavior', 'behavior change', 'medical decision',
-                                  'health intervention', 'patient adherence'],
-            'environmental': ['sustainable behavior', 'green consumption', 'carbon footprint',
-                              'environmental attitude', 'climate change belief'],
-            'accuracy_misinformation': ['misinformation', 'fake news', 'fact checking',
-                                         'truth discernment', 'conspiracy belief', 'belief accuracy'],
-            'fairness': ['distributive justice', 'procedural fairness', 'inequality aversion',
-                         'fairness perception'],
-            'privacy': ['data privacy', 'personal information', 'surveillance concern',
-                        'privacy paradox', 'information disclosure'],
-            'covid': ['covid-19', 'pandemic behavior', 'vaccine hesitancy', 'social distancing',
-                      'mask wearing'],
-        }
-
-        # Negative keywords: if present, penalize certain domains
-        domain_negative_keywords = {
-            'ai': ['polarization', 'partisan', 'democrat', 'republican', 'liberal', 'conservative',
-                   'ideology', 'voting', 'political party', 'election'],
-            'gender': ['polarization', 'partisan', 'democrat', 'republican', 'liberal', 'conservative',
-                       'ideology', 'voting', 'political party', 'election'],
+        # ----------------------------------------------------------------
+        # Negative keywords: presence of these penalizes a domain heavily.
+        # Organized per-domain to reduce false positives across all domains.
+        # ----------------------------------------------------------------
+        domain_negative_keywords: Dict[str, List[str]] = {
+            'ai': ['polarization', 'partisan', 'democrat', 'republican', 'liberal',
+                   'conservative', 'ideology', 'voting', 'political party', 'election',
+                   'gender wage', 'wage gap', 'stem organizations', 'charity', 'donation',
+                   'vaccine hesitancy', 'covid', 'pandemic', 'trolley', 'moral dilemma',
+                   'dictator game', 'public goods game'],
+            'gender': ['polarization', 'partisan', 'democrat', 'republican', 'liberal',
+                       'conservative', 'ideology', 'voting', 'political party', 'election',
+                       'ai generated', 'artificial intelligence', 'algorithm', 'chatbot',
+                       'vaccine', 'covid', 'pandemic', 'echo chamber', 'fake news',
+                       'nudge', 'default option', 'retirement savings'],
             'organizational_behavior': ['polarization', 'partisan', 'democrat', 'republican',
-                                         'election', 'ideology', 'liberal', 'conservative'],
+                                         'election', 'ideology', 'liberal', 'conservative',
+                                         'ai generated', 'artificial intelligence', 'vaccine',
+                                         'covid', 'pandemic', 'echo chamber',
+                                         'shopping', 'purchase', 'brand', 'charity', 'donation',
+                                         'trolley', 'moral dilemma'],
             'norm_elicitation': ['polarization', 'partisan', 'democrat', 'republican',
-                                 'election', 'ideology', 'voting'],
+                                 'election', 'ideology', 'voting', 'ai generated',
+                                 'artificial intelligence', 'consumer', 'purchase', 'brand',
+                                 'vaccine', 'covid', 'gender wage', 'wage gap',
+                                 'echo chamber', 'social media'],
             'psychological_ownership': ['polarization', 'partisan', 'democrat', 'republican',
-                                         'election', 'ideology', 'voting', 'political'],
+                                         'election', 'ideology', 'voting', 'political',
+                                         'ai generated', 'artificial intelligence', 'vaccine',
+                                         'covid', 'gender', 'wage gap', 'echo chamber'],
+            'consumer_behavior': ['polarization', 'partisan', 'democrat', 'republican',
+                                   'election', 'ideology', 'voting', 'vaccine', 'covid',
+                                   'pandemic', 'dictator game', 'public goods game',
+                                   'trolley', 'moral dilemma', 'gender wage', 'wage gap',
+                                   'echo chamber'],
+            'political_psychology': ['consumer', 'purchase', 'shopping', 'brand', 'product',
+                                      'charity', 'donation', 'dictator game', 'public goods',
+                                      'trolley', 'moral dilemma', 'gender wage', 'wage gap',
+                                      'stem organizations', 'nudge', 'retirement savings',
+                                      'default option'],
+            'behavioral_economics': ['polarization', 'partisan', 'democrat', 'republican',
+                                      'election', 'ideology', 'vaccine', 'covid', 'pandemic',
+                                      'ai generated', 'artificial intelligence', 'gender wage',
+                                      'wage gap', 'echo chamber', 'social media echo',
+                                      'dictator game', 'public goods game'],
+            'social_psychology': ['ai generated', 'artificial intelligence', 'algorithm',
+                                   'vaccine', 'covid', 'pandemic', 'purchase', 'shopping',
+                                   'consumer', 'brand', 'product review', 'retirement savings',
+                                   'nudge', 'default option', 'trolley', 'moral dilemma'],
+            'health_psychology': ['polarization', 'partisan', 'democrat', 'republican',
+                                   'election', 'ideology', 'consumer', 'purchase', 'shopping',
+                                   'brand', 'dictator game', 'public goods game', 'trolley',
+                                   'moral dilemma', 'echo chamber', 'nudge', 'default option',
+                                   'retirement savings', 'ai generated'],
+            'emotions': ['polarization', 'partisan', 'vaccine', 'covid', 'ai generated',
+                         'consumer', 'purchase', 'dictator game', 'trolley', 'nudge',
+                         'default option', 'echo chamber', 'gender wage', 'wage gap'],
+            'economic_games': ['polarization', 'partisan', 'consumer', 'purchase', 'brand',
+                                'ai generated', 'artificial intelligence', 'vaccine', 'covid',
+                                'echo chamber', 'gender wage', 'wage gap'],
+            'environmental': ['polarization', 'partisan', 'democrat', 'republican',
+                               'ai generated', 'artificial intelligence', 'consumer trust',
+                               'brand loyalty', 'dictator game', 'vaccine', 'covid',
+                               'gender wage', 'wage gap', 'echo chamber'],
+            'charitable_giving': ['polarization', 'partisan', 'ai generated',
+                                    'artificial intelligence', 'consumer', 'purchase',
+                                    'vaccine', 'covid', 'echo chamber', 'gender wage',
+                                    'nudge', 'default option', 'retirement savings'],
+            'dishonesty': ['polarization', 'partisan', 'consumer', 'purchase', 'brand',
+                            'ai generated', 'artificial intelligence', 'vaccine', 'covid',
+                            'echo chamber', 'gender wage', 'nudge', 'default option'],
+            'covid': ['polarization', 'partisan', 'consumer', 'purchase', 'brand',
+                       'ai generated', 'artificial intelligence', 'dictator game',
+                       'echo chamber', 'gender wage', 'nudge', 'default option',
+                       'retirement savings'],
+            'accuracy_misinformation': ['consumer', 'purchase', 'brand', 'shopping',
+                                         'dictator game', 'vaccine hesitancy', 'gender wage',
+                                         'wage gap', 'nudge', 'default option',
+                                         'retirement savings', 'ai generated content label'],
+            'fairness': ['polarization', 'partisan', 'ai generated', 'artificial intelligence',
+                          'consumer', 'purchase', 'vaccine', 'covid', 'echo chamber',
+                          'nudge', 'default option'],
+            'privacy': ['polarization', 'partisan', 'consumer', 'purchase', 'brand',
+                         'vaccine', 'covid', 'dictator game', 'echo chamber',
+                         'gender wage', 'wage gap', 'nudge', 'default option'],
+            'punishment': ['consumer', 'purchase', 'brand', 'ai generated',
+                            'artificial intelligence', 'vaccine', 'covid', 'echo chamber',
+                            'gender wage', 'nudge', 'default option'],
+            'deontology_utilitarianism': ['consumer', 'purchase', 'brand', 'ai generated',
+                                            'vaccine', 'covid', 'echo chamber', 'nudge',
+                                            'default option', 'gender wage', 'dictator game'],
+            'media_communication': ['consumer', 'purchase', 'brand', 'dictator game',
+                                      'vaccine hesitancy', 'gender wage', 'wage gap',
+                                      'nudge', 'default option', 'retirement savings',
+                                      'trolley', 'moral dilemma'],
+            'risk_perception': ['consumer', 'purchase', 'brand', 'ai generated',
+                                 'echo chamber', 'gender wage', 'dictator game',
+                                 'nudge', 'default option', 'trolley'],
+            'decision_making': ['polarization', 'partisan', 'echo chamber', 'gender wage',
+                                 'vaccine hesitancy', 'consumer', 'brand', 'dictator game'],
         }
 
-        domain_scores = {}
+        # ----------------------------------------------------------------
+        # Cross-domain suppression groups: when a "signal domain" scores
+        # highly, domains NOT in its affinity group get penalized.
+        # ----------------------------------------------------------------
+        domain_affinity_groups: Dict[str, List[str]] = {
+            'political_psychology': ['media_communication', 'accuracy_misinformation',
+                                      'social_psychology', 'emotions'],
+            'ai': ['technology', 'consumer_behavior', 'privacy', 'decision_making'],
+            'consumer_behavior': ['marketing', 'pricing', 'hedonic_consumption',
+                                   'utilitarian_consumption', 'ai', 'personalization'],
+            'health_psychology': ['covid', 'risk_perception', 'emotions',
+                                   'decision_making'],
+            'behavioral_economics': ['decision_making', 'pricing', 'consumer_behavior',
+                                      'risk_perception'],
+            'gender': ['organizational_behavior', 'fairness', 'social_psychology',
+                       'power_status'],
+            'environmental': ['behavioral_economics', 'consumer_behavior',
+                               'decision_making'],
+            'covid': ['health_psychology', 'risk_perception', 'media_communication'],
+            'media_communication': ['political_psychology', 'accuracy_misinformation',
+                                     'social_psychology', 'technology'],
+        }
 
-        # Phase 1: Score compound phrases (high weight)
-        for domain, phrases in compound_indicators.items():
-            for phrase in phrases:
-                if phrase in combined_text:
-                    domain_scores[domain] = domain_scores.get(domain, 0) + 10
-                    # Extra boost for title matches
-                    if phrase in title_text:
-                        domain_scores[domain] += 5
+        domain_scores: Dict[str, float] = {}
 
-        # Phase 2: Score individual keywords with word-boundary matching
+        # ================================================================
+        # PHASE 1: Score keywords from domain_keywords with tiered weighting
+        # Keywords are already organized into tiers within _build_domain_keywords:
+        #   - 3+ word phrases get weight 20
+        #   - 2-word phrases get weight 10
+        #   - Single words get weight 3
+        # ================================================================
         for domain, keywords in self.domain_keywords.items():
             for keyword in keywords:
                 kw = keyword.lower()
-                # Use word boundaries for short keywords (<=4 chars) to avoid false matches
-                if len(kw) <= 4:
-                    pattern = r'\b' + re.escape(kw) + r'\b'
-                    if re.search(pattern, combined_text):
-                        weight = len(kw.split())  # multi-word = higher weight
-                        domain_scores[domain] = domain_scores.get(domain, 0) + weight
-                        if re.search(pattern, title_text):
-                            domain_scores[domain] += weight  # double for title
+                word_count = len(kw.split())
+
+                # Determine weight based on phrase length (tier)
+                if word_count >= 3:
+                    weight = 20.0
+                elif word_count == 2:
+                    weight = 10.0
                 else:
-                    # Longer keywords can use substring match (less ambiguous)
-                    if kw in combined_text:
-                        weight = len(kw.split())
-                        domain_scores[domain] = domain_scores.get(domain, 0) + weight
-                        if kw in title_text:
-                            domain_scores[domain] += weight
+                    weight = 3.0
 
-        # Phase 3: Apply negative keyword penalties
+                # Always use word-boundary matching for precision
+                pattern = r'\b' + re.escape(kw) + r'\b'
+                if re.search(pattern, combined_text):
+                    domain_scores[domain] = domain_scores.get(domain, 0.0) + weight
+                    # Title matches get 50% bonus (title is more indicative)
+                    if title_text and re.search(pattern, title_text):
+                        domain_scores[domain] += weight * 0.5
+
+        # ================================================================
+        # PHASE 2: Apply negative keyword penalties
+        # Each negative keyword match subtracts points proportional to how
+        # strongly it contradicts the domain.
+        # ================================================================
+        domains_to_remove = []
         for domain, neg_keywords in domain_negative_keywords.items():
-            if domain in domain_scores:
-                penalty = 0
-                for neg_kw in neg_keywords:
-                    if neg_kw in combined_text:
-                        penalty += 3
-                if penalty > 0:
-                    domain_scores[domain] = max(0, domain_scores[domain] - penalty)
-                    # Remove if penalty wiped out the score
-                    if domain_scores[domain] <= 0:
-                        del domain_scores[domain]
+            if domain not in domain_scores:
+                continue
+            penalty = 0.0
+            for neg_kw in neg_keywords:
+                neg_pattern = r'\b' + re.escape(neg_kw) + r'\b'
+                if re.search(neg_pattern, combined_text):
+                    # Multi-word negative keywords are stronger signals
+                    neg_word_count = len(neg_kw.split())
+                    penalty += 5.0 * neg_word_count
+            if penalty > 0:
+                domain_scores[domain] = domain_scores[domain] - penalty
+                if domain_scores[domain] <= 0:
+                    domains_to_remove.append(domain)
+        for d in domains_to_remove:
+            del domain_scores[d]
 
-        # Phase 4: Filter to meaningful scores only
+        # ================================================================
+        # PHASE 3: Cross-domain suppression
+        # If a "signal domain" has a very strong score (>= 25), domains
+        # outside its affinity group get suppressed by 30%.
+        # This prevents unrelated domains from sneaking in due to generic
+        # keyword overlap.
+        # ================================================================
+        if domain_scores:
+            top_score = max(domain_scores.values())
+            strong_domains = [d for d, s in domain_scores.items() if s >= 25.0]
+
+            for signal_domain in strong_domains:
+                if signal_domain in domain_affinity_groups:
+                    affinity = set(domain_affinity_groups[signal_domain])
+                    affinity.add(signal_domain)  # The signal domain itself is always allowed
+                    for other_domain in list(domain_scores.keys()):
+                        if other_domain not in affinity:
+                            # Suppress by 30% for each strong signal that excludes it
+                            domain_scores[other_domain] *= 0.7
+
+        # ================================================================
+        # PHASE 4: Context-aware boosts
+        # Detect specific experimental patterns in the description and
+        # boost the most relevant domain(s).
+        # ================================================================
+        context_boost_patterns: Dict[str, List[tuple]] = {
+            # pattern -> (domain_to_boost, boost_amount)
+            'consumer_behavior': [
+                (r'product\s+review', 15.0),
+                (r'consumer\s+trust\s+in', 15.0),
+                (r'brand\s+evaluat', 10.0),
+                (r'purchase\s+decision', 15.0),
+                (r'willingness\s+to\s+pay', 15.0),
+            ],
+            'ai': [
+                (r'ai[\s-]generated\s+content', 20.0),
+                (r'ai[\s-]generated\s+label', 20.0),
+                (r'algorithm\s+(aversion|appreciation)', 15.0),
+                (r'human\s+vs\.?\s+ai', 15.0),
+                (r'ai\s+disclosure', 15.0),
+                (r'content\s+label', 10.0),
+            ],
+            'political_psychology': [
+                (r'political\s+polariz', 20.0),
+                (r'partisan\s+(divide|bias|identity)', 15.0),
+                (r'echo\s+chamber', 15.0),
+                (r'(liberal|conservative)\s+(media|news|voter)', 15.0),
+                (r'(democrat|republican)\s+(voter|supporter|participant)', 15.0),
+            ],
+            'behavioral_economics': [
+                (r'nudg(e|ing)\s+(retirement|savings|default|option)', 20.0),
+                (r'default\s+(option|enrollment|choice)', 15.0),
+                (r'framing\s+(effect|manipulation|condition)', 15.0),
+                (r'loss\s+aversion', 15.0),
+                (r'retirement\s+savings', 15.0),
+            ],
+            'health_psychology': [
+                (r'vaccine\s+hesitanc', 20.0),
+                (r'health\s+(intervention|behavior|risk)', 15.0),
+                (r'patient\s+(adherence|compliance)', 15.0),
+                (r'(medical|health)\s+decision', 15.0),
+            ],
+            'gender': [
+                (r'gender\s+(wage|pay)\s+gap', 20.0),
+                (r'wage\s+gap\s+in\s+stem', 20.0),
+                (r'sex\s+difference', 15.0),
+                (r'gender\s+(bias|stereotype|discrimination)', 15.0),
+                (r'stem\s+organizat', 10.0),
+            ],
+            'media_communication': [
+                (r'social\s+media\s+echo', 20.0),
+                (r'echo\s+chamber', 15.0),
+                (r'media\s+(consumption|influence|framing|effects)', 15.0),
+                (r'news\s+consumption', 15.0),
+            ],
+            'risk_perception': [
+                (r'risk\s+perception', 15.0),
+                (r'perceived\s+risk', 15.0),
+                (r'risk\s+(communicat|assess)', 10.0),
+            ],
+            'organizational_behavior': [
+                (r'stem\s+organizat', 15.0),
+                (r'(wage|pay)\s+gap\s+in\s+(stem|organizations)', 20.0),
+                (r'workplace\s+(behavior|dynamics|culture)', 15.0),
+                (r'employee\s+(engagement|satisfaction|turnover)', 15.0),
+                (r'(gender|diversity)\s+in\s+organizations', 15.0),
+            ],
+            'decision_making': [
+                (r'decision\s+making\s+under', 15.0),
+                (r'choice\s+(overload|architecture)', 15.0),
+                (r'default\s+option', 15.0),
+                (r'nudg(e|ing)\s+.{0,20}default', 15.0),
+                (r'through\s+default', 10.0),
+            ],
+            'covid': [
+                (r'covid[\s-]?19', 15.0),
+                (r'vaccine\s+hesitanc', 15.0),
+                (r'pandemic\s+behavior', 15.0),
+                (r'mask\s+wearing', 15.0),
+            ],
+            'environmental': [
+                (r'carbon\s+footprint', 15.0),
+                (r'climate\s+change', 15.0),
+                (r'sustainab(le|ility)\s+(behavior|choice|consumption)', 15.0),
+            ],
+            'charitable_giving': [
+                (r'charitab(le|ly)\s+giving', 15.0),
+                (r'donation\s+behavior', 15.0),
+                (r'warm\s+glow', 15.0),
+            ],
+            'accuracy_misinformation': [
+                (r'fake\s+news', 15.0),
+                (r'misinformation\s+(shar|suscept|spread)', 15.0),
+                (r'truth\s+discernment', 15.0),
+                (r'conspiracy\s+belief', 15.0),
+            ],
+        }
+
+        for domain, patterns in context_boost_patterns.items():
+            for pattern_str, boost in patterns:
+                if re.search(pattern_str, combined_text):
+                    domain_scores[domain] = domain_scores.get(domain, 0.0) + boost
+                    # Extra boost if found in title
+                    if title_text and re.search(pattern_str, title_text):
+                        domain_scores[domain] += boost * 0.5
+
+        # ================================================================
+        # PHASE 5: Filter and rank
+        # - Minimum absolute score threshold of 8 (avoids weak matches)
+        # - Must be at least 35% of the top score (relative threshold)
+        # - Cap at 3 domains
+        # - Always return at least 1 domain
+        # ================================================================
         if not domain_scores:
             return ['consumer_behavior']
 
         # Sort by score descending
         sorted_domains = sorted(domain_scores.items(), key=lambda x: x[1], reverse=True)
 
-        # Only keep domains with score >= 3 (avoids weak single-keyword matches)
         top_score = sorted_domains[0][1]
-        min_threshold = max(3, top_score * 0.25)  # Must be at least 25% of top score
+
+        # Minimum absolute threshold (must score at least 8)
+        # Relative threshold (must be at least 35% of top score)
+        min_threshold = max(8.0, top_score * 0.35)
 
         filtered = [d for d, s in sorted_domains if s >= min_threshold]
 
-        # Cap at top 3 domains
-        return filtered[:3] if filtered else ['consumer_behavior']
+        # Cap at 3 domains
+        result = filtered[:3] if filtered else [sorted_domains[0][0]]
+
+        # Ensure we never return an empty list
+        return result if result else ['consumer_behavior']
 
     def get_personas_for_domains(
         self,
