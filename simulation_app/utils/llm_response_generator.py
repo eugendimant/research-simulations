@@ -132,7 +132,47 @@ SYSTEM_PROMPT = (
     "that reflect their unique experimental experience. Someone in 'AI_label' "
     "mentions the AI label. Someone in 'Control' does NOT mention it because "
     "they never saw it. Someone in 'high_risk' references the risk they read "
-    "about. The condition shapes the content of every response."
+    "about. The condition shapes the content of every response.\n\n"
+    "===== RULE #5 — RATING-TEXT CONSISTENCY =====\n"
+    "When a participant's sentiment is given (very_positive, positive, neutral, "
+    "negative, very_negative), their text MUST match their quantitative ratings. "
+    "If they rated something very positively (6-7 on a 7-point scale), their "
+    "open-ended response should sound genuinely enthusiastic, use strong "
+    "positive language, and express clear satisfaction or approval. If they "
+    "rated something very negatively (1-2), their text should sound frustrated, "
+    "disappointed, or critical. A mismatch between ratings and text (e.g., "
+    "'it was okay I guess' from someone who rated 7/7) destroys data validity. "
+    "The intensity of language MUST match the intensity of the rating.\n\n"
+    "===== RULE #6 — NATURAL RESPONSE LENGTH VARIATION =====\n"
+    "Real survey response lengths follow a right-skewed distribution: most "
+    "people write 1-3 sentences, some write a paragraph, a few write multiple "
+    "paragraphs. Crucially, response length should NOT be uniform across "
+    "participants. Within any batch:\n"
+    "- ~20% should be very short (3-15 words): 'liked it a lot', 'the ai "
+    "thing was weird honestly'\n"
+    "- ~40% should be moderate (1-3 sentences)\n"
+    "- ~30% should be somewhat detailed (3-5 sentences)\n"
+    "- ~10% should be lengthy (5+ sentences, paragraph-style)\n"
+    "Do NOT make every response the same length. Length variation is essential "
+    "for realistic data.\n\n"
+    "===== RULE #7 — NEVER BREAK CHARACTER =====\n"
+    "You are generating text AS IF written by real humans. NEVER:\n"
+    "- Reference being an AI, language model, or simulation\n"
+    "- Use phrases like 'as a participant' or 'in this study I was asked'\n"
+    "- Write meta-commentary about the survey design\n"
+    "- Use quotation marks around condition names or technical terms\n"
+    "The participant simply experienced something and is reacting to it "
+    "naturally, as if telling a friend or typing quickly into a text box.\n\n"
+    "===== RULE #8 — SENTENCE STRUCTURE DIVERSITY =====\n"
+    "Do NOT start every response with 'I think...' or 'I feel...'. Real "
+    "people start responses in many ways:\n"
+    "- Direct statement: 'The price was way too high for what you get'\n"
+    "- Reaction first: 'Honestly surprised by how much I liked it'\n"
+    "- Topic reference: 'That article about climate change really got me'\n"
+    "- Hedged opener: 'Not sure exactly but I think the label made a difference'\n"
+    "- Colloquial: 'Ok so basically the whole thing felt kinda off to me'\n"
+    "- Emotional lead: 'Pretty frustrated with the whole experience tbh'\n"
+    "Vary the opening structure across participants to avoid repetitive patterns."
 )
 
 # ---------------------------------------------------------------------------
@@ -285,6 +325,138 @@ def _humanize_variable_name(name: str) -> str:
     return text
 
 
+def _question_type_style_guidance(question_type: str) -> str:
+    """Return response style guidance based on the question type category.
+
+    Different question types elicit fundamentally different response styles
+    from real survey participants. This maps question types to the writing
+    style the LLM should adopt.
+    """
+    # Group question types into categories
+    _explanatory = {"explanation", "justification", "reasoning", "causation", "motivation"}
+    _descriptive = {"description", "narration", "elaboration", "detail", "context"}
+    _evaluative = {"evaluation", "assessment", "comparison", "critique",
+                   "rating_explanation", "judgment", "appraisal"}
+    _reflective = {"reflection", "introspection", "memory", "experience", "recall"}
+    _opinion = {"opinion", "belief", "preference", "attitude", "value", "worldview"}
+    _forward = {"prediction", "intention", "suggestion", "recommendation", "advice"}
+    _associative = {"association", "impression", "perception"}
+    _feedback = {"feedback", "comment", "observation"}
+
+    qt = question_type.lower().strip()
+
+    if qt in _explanatory:
+        return (
+            "RESPONSE STYLE — EXPLANATORY: Participants are explaining WHY. "
+            "Use causal language: 'because', 'since', 'the reason is', "
+            "'that's why', 'it made me think that'. Structure as informal "
+            "reasoning — a chain of thought, not a formal argument. Some "
+            "participants give one clear reason, others ramble through multiple "
+            "half-formed reasons. Avoid tidy logical structures."
+        )
+    elif qt in _descriptive:
+        return (
+            "RESPONSE STYLE — DESCRIPTIVE: Participants are describing an "
+            "experience or scenario. Use vivid, specific details: sensory "
+            "language, concrete examples, specific moments. 'I remember when "
+            "I saw the price tag and was like wow', not 'the price was noted'. "
+            "Some participants paint rich pictures, others give bare-bones "
+            "descriptions. Vary the level of sensory detail."
+        )
+    elif qt in _evaluative:
+        return (
+            "RESPONSE STYLE — EVALUATIVE: Participants are judging or "
+            "assessing something. They express clear evaluative stances: "
+            "'it was pretty good but not great', 'honestly terrible', "
+            "'better than I expected'. Some give balanced assessments with "
+            "pros and cons (though NOT in a structured way), others give "
+            "one-sided strong opinions. Use evaluative adjectives freely."
+        )
+    elif qt in _reflective:
+        return (
+            "RESPONSE STYLE — REFLECTIVE: Participants are looking inward. "
+            "Use first-person introspective language: 'I felt', 'it made me "
+            "realize', 'looking back', 'I noticed myself'. Include personal "
+            "anecdotes and emotional reactions. Some participants are deeply "
+            "self-aware, others struggle to articulate their inner experience. "
+            "Reflective responses often have pauses and self-corrections: "
+            "'well actually now that I think about it...'"
+        )
+    elif qt in _opinion:
+        return (
+            "RESPONSE STYLE — OPINION/ATTITUDE: Participants are stating "
+            "what they believe or prefer. Use firm stances with personal "
+            "justification: 'I definitely think...', 'no way would I ever...', "
+            "'personally I prefer X because...'. Opinions range from tentative "
+            "('I kinda lean toward...') to extremely strong ('absolutely "
+            "unacceptable'). Include personal values and experiences as "
+            "justification, not abstract logic."
+        )
+    elif qt in _forward:
+        return (
+            "RESPONSE STYLE — FORWARD-LOOKING: Participants are speculating "
+            "or giving advice. Use future-oriented language: 'I would...', "
+            "'they should probably...', 'I think what will happen is...', "
+            "'my advice would be'. Mix confidence levels — some participants "
+            "are very sure of their predictions, others hedge heavily."
+        )
+    elif qt in _associative:
+        return (
+            "RESPONSE STYLE — ASSOCIATIVE: Participants are sharing first "
+            "impressions or associations. Use immediate, gut-reaction language: "
+            "'first thing I thought of was...', 'it reminded me of...', "
+            "'gives off major X vibes'. Responses should feel spontaneous "
+            "and unfiltered, like free association."
+        )
+    elif qt in _feedback:
+        return (
+            "RESPONSE STYLE — FEEDBACK: Participants are giving meta-feedback "
+            "about the study or experience. They may comment on design, length, "
+            "clarity, or interest level. Keep these grounded in specifics: "
+            "'the part about X was confusing', not just 'good study'."
+        )
+    else:
+        return (
+            "RESPONSE STYLE — GENERAL: Write naturally as a survey participant "
+            "responding to this question. Match the tone to what is being asked."
+        )
+
+
+def _persona_voice_guidance(persona_specs: List[Dict[str, Any]]) -> str:
+    """Generate persona-specific voice differentiation instructions.
+
+    When persona specs include demographic information (age_group, education,
+    domain_expertise), this generates instructions for the LLM to reflect
+    those demographics in writing style.
+    """
+    has_demographics = any(
+        spec.get("age_group") or spec.get("education") or spec.get("domain_expertise")
+        for spec in persona_specs
+    )
+    if not has_demographics:
+        return ""
+
+    return (
+        "\nPERSONA VOICE DIFFERENTIATION:\n"
+        "When age/education/expertise are specified for a participant, "
+        "reflect these in their writing voice:\n"
+        "- Younger (18-25): More casual, may use slang ('lowkey', 'ngl', "
+        "'tbh', 'fr'), shorter sentences, more direct, less nuanced\n"
+        "- Middle-aged (35-55): Mix of casual and thoughtful, references to "
+        "real-world experience, moderate sentence length\n"
+        "- Older (55+): More measured, potentially more formal, references "
+        "to life experience, longer and more complete sentences\n"
+        "- Low education: Simpler vocabulary, shorter sentences, concrete "
+        "rather than abstract reasoning, more colloquial\n"
+        "- High education (graduate+): Larger vocabulary, more nuanced "
+        "reasoning, may use technical or academic phrasing, longer sentences\n"
+        "- Domain expert: Uses field-specific jargon naturally, shows deeper "
+        "knowledge of the topic, more confident and specific assertions\n"
+        "- Domain novice: Relies on intuition and personal experience rather "
+        "than technical knowledge, may misuse terms\n"
+    )
+
+
 def _build_batch_prompt(
     question_text: str,
     condition: str,
@@ -292,11 +464,14 @@ def _build_batch_prompt(
     study_description: str,
     persona_specs: List[Dict[str, Any]],
     all_conditions: Optional[List[str]] = None,
+    question_type: str = "general",
 ) -> str:
     """Build a single prompt that asks the LLM to generate N responses at once.
 
     v1.4.11: Enhanced with richer study context and variable-name detection
     so responses are contextually grounded even when question_text is sparse.
+    v1.8.3: Enhanced with question-type-specific style guidance, persona voice
+    differentiation, condition behavioral cues, and diversity instructions.
     """
     n = len(persona_specs)
 
@@ -313,14 +488,19 @@ def _build_batch_prompt(
         s = spec.get("sentiment", "neutral")
 
         length_hint = (
-            "1-2 short sentences" if v < 0.3
-            else "2-4 sentences" if v < 0.7
-            else "4-8 detailed sentences"
+            "1-2 short sentences (3-15 words)" if v < 0.2
+            else "1-2 sentences" if v < 0.35
+            else "2-3 sentences" if v < 0.5
+            else "3-5 sentences with some detail" if v < 0.7
+            else "5-8 detailed sentences, paragraph-style" if v < 0.85
+            else "8+ sentences, extended thoughtful response"
         )
         style_hint = (
-            "very casual, uses contractions and slang" if f < 0.3
-            else "conversational, mostly standard English" if f < 0.7
-            else "formal, proper grammar, academic tone"
+            "very casual, uses contractions/slang/abbreviations, may drop capitals" if f < 0.25
+            else "casual, uses contractions, relaxed grammar" if f < 0.45
+            else "conversational, mostly standard English" if f < 0.65
+            else "semi-formal, complete sentences, good grammar" if f < 0.8
+            else "formal, proper grammar, academic tone, no contractions"
         )
         effort_hint = (
             "minimal effort, very brief, but STILL about the topic" if e < 0.3
@@ -329,10 +509,35 @@ def _build_batch_prompt(
         )
         sentiment_hint = _sentiment_label(s)
 
+        # v1.8.3: Add rating-consistency cue so text matches quantitative scores
+        rating_cue = ""
+        if s == "very_positive":
+            rating_cue = " | TONE: genuinely enthusiastic, strong approval, satisfied"
+        elif s == "positive":
+            rating_cue = " | TONE: generally favorable, mild approval, pleased"
+        elif s == "neutral":
+            rating_cue = " | TONE: balanced, neither excited nor upset, matter-of-fact"
+        elif s == "negative":
+            rating_cue = " | TONE: mildly critical, some disappointment, uneasy"
+        elif s == "very_negative":
+            rating_cue = " | TONE: clearly frustrated/critical, strong disapproval"
+
+        # v1.8.3: Include demographic hints if available
+        demo_hints = ""
+        age_group = spec.get("age_group", "")
+        education = spec.get("education", "")
+        expertise = spec.get("domain_expertise", "")
+        if age_group:
+            demo_hints += f" | age={age_group}"
+        if education:
+            demo_hints += f" | education={education}"
+        if expertise:
+            demo_hints += f" | expertise={expertise}"
+
         participant_lines.append(
             f"Participant {i}: length={length_hint} | "
             f"style={style_hint} | effort={effort_hint} | "
-            f"sentiment={sentiment_hint}"
+            f"sentiment={sentiment_hint}{rating_cue}{demo_hints}"
         )
 
     participants_block = "\n".join(participant_lines)
@@ -379,8 +584,57 @@ def _build_batch_prompt(
     if condition and " " not in condition.strip():
         _condition_display = re.sub(r'[_\-]+', ' ', condition).strip()
 
-    # v1.8.7.3: Build a richer condition explanation
+    # v1.8.7.3: Build a richer condition explanation with behavioral cues
     _condition_explanation = ""
+    _cond_lower = _condition_display.lower()
+
+    # v1.8.3: Infer behavioral cues from condition name to help LLM
+    _behavioral_cue = ""
+    if any(w in _cond_lower for w in ("control", "baseline", "no treatment", "neutral")):
+        _behavioral_cue = (
+            "BEHAVIORAL CUE: This is a CONTROL/BASELINE condition. The participant "
+            "had a neutral, unmanipulated experience. Their responses reflect "
+            "default attitudes and natural reactions — no special treatment or "
+            "manipulation was applied. Their emotional tone should be relatively "
+            "neutral unless they have strong pre-existing opinions on the topic."
+        )
+    elif any(w in _cond_lower for w in ("treatment", "experimental", "intervention")):
+        _behavioral_cue = (
+            "BEHAVIORAL CUE: This is a TREATMENT condition. The participant "
+            "experienced a specific manipulation or intervention. Their responses "
+            "should reflect being AFFECTED by what they saw/read/experienced. "
+            "They should reference the treatment they received, showing it had "
+            "an impact on their thinking or feelings."
+        )
+    elif any(w in _cond_lower for w in ("high", "strong", "extreme", "intense")):
+        _behavioral_cue = (
+            f"BEHAVIORAL CUE: This is a HIGH-intensity condition ('{_condition_display}'). "
+            "The participant experienced a strong/intense version of the stimulus. "
+            "Their responses should reflect a MORE pronounced reaction — stronger "
+            "opinions, more vivid descriptions, more extreme evaluations."
+        )
+    elif any(w in _cond_lower for w in ("low", "weak", "mild", "subtle")):
+        _behavioral_cue = (
+            f"BEHAVIORAL CUE: This is a LOW-intensity condition ('{_condition_display}'). "
+            "The participant experienced a weaker version of the stimulus. "
+            "Their responses should reflect a more MUTED reaction — less "
+            "extreme opinions, more hedging, more ambivalence."
+        )
+    elif any(w in _cond_lower for w in ("positive", "gain", "benefit", "reward")):
+        _behavioral_cue = (
+            f"BEHAVIORAL CUE: This is a POSITIVE-framed condition ('{_condition_display}'). "
+            "The participant was exposed to positively framed information. "
+            "Their responses should lean toward seeing benefits, opportunities, "
+            "and favorable outcomes."
+        )
+    elif any(w in _cond_lower for w in ("negative", "loss", "risk", "threat")):
+        _behavioral_cue = (
+            f"BEHAVIORAL CUE: This is a NEGATIVE-framed condition ('{_condition_display}'). "
+            "The participant was exposed to negatively framed information. "
+            "Their responses should lean toward noticing risks, downsides, "
+            "and concerns."
+        )
+
     if all_conditions and len(all_conditions) > 1:
         _humanized_conditions = []
         for c in all_conditions:
@@ -392,6 +646,20 @@ def _build_batch_prompt(
         _cond_list = ", ".join(
             f"'{hc}'" for hc in _humanized_conditions
         )
+
+        # v1.8.3: Build contrast guidance — explain how this condition
+        # differs from others so responses are properly differentiated
+        _other_conds = [hc for hc in _humanized_conditions if hc != _condition_display]
+        _contrast_line = ""
+        if _other_conds:
+            _contrast_line = (
+                f"KEY CONTRAST: Participants in '{_condition_display}' had a "
+                f"DIFFERENT experience from those in "
+                f"{', '.join(repr(c) for c in _other_conds[:3])}. "
+                f"Their responses should reflect THIS condition's unique effect, "
+                f"not a generic reaction.\n"
+            )
+
         _condition_explanation = (
             f"EXPERIMENTAL DESIGN:\n"
             f"This experiment has {len(all_conditions)} conditions: {_cond_list}.\n"
@@ -400,16 +668,27 @@ def _build_batch_prompt(
             f"(e.g., saw different stimuli, read different scenarios, or "
             f"received different information).\n"
             f">>> THIS participant was in the '{_condition_display}' condition. <<<\n"
+            f"{_contrast_line}"
             f"Their response should reflect what someone in the "
             f"'{_condition_display}' condition specifically experienced — "
             f"NOT what someone in another condition would say.\n"
         )
+        if _behavioral_cue:
+            _condition_explanation += f"\n{_behavioral_cue}\n"
     else:
         _condition_explanation = (
             f"Experimental condition: {_condition_display}\n"
             f"This participant experienced the '{_condition_display}' condition. "
             f"Their response should reflect that specific experience.\n"
         )
+        if _behavioral_cue:
+            _condition_explanation += f"\n{_behavioral_cue}\n"
+
+    # v1.8.3: Build question-type style guidance
+    _qtype_guidance = _question_type_style_guidance(question_type)
+
+    # v1.8.3: Build persona voice differentiation guidance
+    _voice_guidance = _persona_voice_guidance(persona_specs)
 
     prompt = (
         f'Study: "{study_title}"\n'
@@ -418,6 +697,8 @@ def _build_batch_prompt(
         f"{_condition_explanation}\n"
         f'Survey question: "{_q_display}"\n'
         f"{_question_context_block}\n"
+        f"{_qtype_guidance}\n\n"
+        f"{_voice_guidance}"
         f"Generate exactly {n} unique responses from {n} different survey "
         f"participants who just completed this experiment in the "
         f"'{_condition_display}' condition.\n"
@@ -445,10 +726,24 @@ def _build_batch_prompt(
         f"the other hand' essay structures. Write like someone typing "
         f"quickly into a survey text box: stream-of-consciousness, "
         f"lowercase ok, run-on sentences ok, incomplete thoughts ok.\n\n"
-        f"5. ALL DIFFERENT — Each response must be unique in content "
-        f"and phrasing, not just rearrangements of the same points.\n\n"
+        f"5. ALL DIFFERENT — Each response must be unique in content, "
+        f"phrasing, AND opening structure. Do NOT start multiple responses "
+        f"with the same phrase (e.g., 'I think', 'I feel', 'I believe'). "
+        f"Vary sentence openers: some start with a direct statement about "
+        f"the topic, some with a hedged opinion, some with an emotional "
+        f"reaction, some with a reference to what they experienced. "
+        f"Each response should read like it came from a genuinely "
+        f"different person with a different communication style.\n\n"
         f"6. MATCH PROFILES — Follow each participant's length, style, "
-        f"effort, and sentiment specifications exactly.\n\n"
+        f"effort, sentiment, and TONE specifications exactly. A participant "
+        f"with 'very positive' sentiment should sound genuinely enthusiastic, "
+        f"not just mildly agreeable. A participant with 'very negative' "
+        f"sentiment should sound genuinely frustrated or critical.\n\n"
+        f"7. NATURAL LENGTH DISTRIBUTION — Response lengths should vary "
+        f"dramatically across participants. Some people write 4 words, "
+        f"others write 4 sentences. Do NOT make responses uniformly "
+        f"similar in length. Follow each participant's length spec "
+        f"precisely.\n\n"
         f"Return ONLY a JSON array of {n} strings (one per participant), "
         f"no other text:\n"
         f'["response 1", "response 2", ...]'
