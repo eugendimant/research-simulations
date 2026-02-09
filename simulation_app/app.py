@@ -52,8 +52,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.8.6"
-BUILD_ID = "20260209-v186-domain-detection-word-boundary"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.8.7"
+BUILD_ID = "20260209-v187-domain-fix-llm-details-rename"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -107,7 +107,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.8.6"  # v1.8.6: Domain detection with word-boundary matching, negative keywords, top-N filtering
+APP_VERSION = "1.8.7"  # v1.8.7: Fix domain detection, add LLM details to reports, rename user_study_summary
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -8146,7 +8146,7 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
             # v1.2.3: Wrap report generation in try/except to prevent report errors
             # from crashing the entire simulation. Data generation succeeded at this point.
             try:
-                # Standard instructor report (included in download for students)
+                # User study summary (included in user's download ZIP)
                 instructor_report = InstructorReportGenerator().generate_markdown_report(
                     df=df,
                     metadata=metadata,
@@ -8163,7 +8163,7 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
                 instructor_bytes = instructor_report.encode("utf-8")
 
             try:
-                # COMPREHENSIVE instructor report (for instructor email ONLY - not included in student download)
+                # COMPREHENSIVE instructor report (for instructor email ONLY - not included in user download)
                 # This includes detailed statistical analysis, hypothesis testing, and recommendations
                 comprehensive_reporter = ComprehensiveInstructorReport()
                 team_info_dict = {
@@ -8200,7 +8200,7 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
             # Generate HTML version of study summary (easy to open and well-formatted)
             try:
                 study_title = metadata.get('study_title', 'Study Summary')
-                instructor_html = _markdown_to_html(instructor_report, title=f"Study Summary: {study_title}")
+                instructor_html = _markdown_to_html(instructor_report, title=f"User Study Summary: {study_title}")
                 instructor_html_bytes = instructor_html.encode("utf-8")
             except Exception:
                 instructor_html_bytes = f"<html><body><pre>{instructor_report}</pre></body></html>".encode("utf-8")
@@ -8215,8 +8215,8 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
                 "SPSS_Prepare_Data.sps": spss_bytes,  # v2.4.5: SPSS syntax file
                 "Stata_Prepare_Data.do": stata_bytes,  # v2.4.5: Stata do-file
                 "Schema_Validation.json": _safe_json(schema_results).encode("utf-8"),
-                "Study_Summary.md": instructor_bytes,  # Summary report in Markdown
-                "Study_Summary.html": instructor_html_bytes,  # Same summary in HTML (easy to view in browser)
+                "User_Study_Summary.md": instructor_bytes,  # Summary report in Markdown
+                "User_Study_Summary.html": instructor_html_bytes,  # Same summary in HTML (easy to view in browser)
             }
 
             # Include uploaded source files in "Source_Files" subfolder
@@ -8295,13 +8295,13 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
                     "COMPREHENSIVE INSTRUCTOR ANALYSIS ATTACHED\n"
                     "=========================================\n\n"
                     "This email includes detailed statistical analysis that students do NOT receive.\n"
-                    "Students get Study_Summary.md and Study_Summary.html (browser-viewable) in their download ZIP.\n\n"
+                    "Users get User_Study_Summary.md and User_Study_Summary.html (browser-viewable) in their download ZIP.\n\n"
                     "INSTRUCTOR ATTACHMENTS:\n"
                     "- INSTRUCTOR_Statistical_Report.html - Full visual report with charts, t-tests,\n"
                     "  ANOVA, Mann-Whitney, chi-squared, regression analysis, and effect sizes.\n"
                     "  Open in any web browser for best viewing.\n"
                     "- INSTRUCTOR_Detailed_Analysis.md - Text-based analysis (Markdown format)\n"
-                    "- Student_Study_Summary.md - What students receive (for reference)\n\n"
+                    "- User_Study_Summary.md - What users receive (for reference)\n\n"
                     f"Team: {st.session_state.get('team_name','')}\n"
                     f"Members:\n{st.session_state.get('team_members_raw','')}\n\n"
                     f"Study: {title}\n"
@@ -8312,8 +8312,8 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
                     "Files in ZIP (what students see):\n"
                     "- Simulated_Data.csv (the data)\n"
                     "- Data_Codebook_Handbook.txt (variable coding)\n"
-                    "- Study_Summary.md (basic summary in Markdown)\n"
-                    "- Study_Summary.html (same summary - opens in any browser)\n"
+                    "- User_Study_Summary.md (study summary in Markdown)\n"
+                    "- User_Study_Summary.html (same summary - opens in any browser)\n"
                     "- R_Prepare_Data.R (R script)\n"
                     "- Python_Prepare_Data.py (Python/pandas script)\n"
                     "- Julia_Prepare_Data.jl (Julia/DataFrames script)\n"
@@ -8334,7 +8334,7 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
                         ("simulation_output.zip", zip_bytes),
                         ("INSTRUCTOR_Statistical_Report.html", comprehensive_html_bytes),  # HTML report with visualizations
                         ("INSTRUCTOR_Detailed_Analysis.md", comprehensive_bytes),  # Markdown fallback
-                        ("Student_Study_Summary.md", instructor_bytes),  # What students see (for reference)
+                        ("User_Study_Summary.md", instructor_bytes),  # What users receive (for reference)
                     ],
                 )
                 if ok:
@@ -8398,7 +8398,7 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
         # v1.4.16: ZIP contents list
         st.caption(
             "Includes: Simulated_Data.csv, Data_Codebook_Handbook.txt, "
-            "Study_Summary.html, R/Python/Julia/SPSS/Stata scripts, "
+            "User_Study_Summary.html, R/Python/Julia/SPSS/Stata scripts, "
             "Metadata.json, Schema_Validation.json"
         )
 

@@ -33,7 +33,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 # Version identifier to help track deployed code
-__version__ = "1.8.6"  # v1.8.6: Domain detection with word-boundary matching, negative keywords, top-N filtering
+__version__ = "1.8.7"  # v1.8.7: Fix domain detection, add LLM details to reports, rename user_study_summary
 
 
 # ============================================================================

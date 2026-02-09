@@ -410,7 +410,7 @@ class InstructorReportGenerator:
     ) -> str:
         lines: List[str] = []
 
-        lines.append(f"# Instructor Report: {metadata.get('study_title', 'Untitled Study')}")
+        lines.append(f"# Study Summary: {metadata.get('study_title', 'Untitled Study')}")
         lines.append("")
         lines.append("## Generation Information")
         lines.append("")
@@ -428,10 +428,8 @@ class InstructorReportGenerator:
         lines.append("")
         study_desc = metadata.get('study_description', '')
         if study_desc:
-            # Clean and truncate description
-            clean_desc = study_desc.strip()[:500]
-            if len(study_desc) > 500:
-                clean_desc += "..."
+            # v1.8.7: Show full description (no truncation)
+            clean_desc = study_desc.strip()
             lines.append(f"**Description:** {clean_desc}")
             lines.append("")
 
@@ -2394,6 +2392,62 @@ class ComprehensiveInstructorReport:
                 lines.append("")
         else:
             lines.append("No open-ended questions were simulated in this dataset.")
+            lines.append("")
+
+        # v1.8.7: LLM Generation Details (in comprehensive report)
+        llm_stats = metadata.get('llm_stats', metadata.get('llm_response_stats', {}))
+        llm_calls = llm_stats.get('llm_calls', 0) if llm_stats else 0
+        open_ended_qs = metadata.get('open_ended_questions', [])
+        if open_ended_qs:
+            lines.append("### Response Generation Method")
+            lines.append("")
+            if llm_calls > 0:
+                pool_size = llm_stats.get('pool_size', 0)
+                fallback_uses = llm_stats.get('fallback_uses', 0)
+                active_provider = llm_stats.get('active_provider', 'unknown')
+                provider_details = llm_stats.get('providers', {})
+
+                lines.append("**Generation approach: AI-Powered (LLM)**")
+                lines.append("")
+                provider_display = {
+                    "groq_builtin": "Groq (built-in) — Llama 3.3 70B Versatile",
+                    "cerebras_builtin": "Cerebras (built-in) — Llama 3.3 70B",
+                    "openrouter_builtin": "OpenRouter (built-in) — Mistral Small 3.1 24B",
+                    "groq_user": "Groq (user key) — Llama 3.3 70B Versatile",
+                    "cerebras_user": "Cerebras (user key) — Llama 3.3 70B",
+                    "openrouter_user": "OpenRouter (user key)",
+                    "together": "Together AI — Llama 3.3 70B Turbo",
+                }
+                lines.append("| Provider | Status |")
+                lines.append("| --- | --- |")
+                for pname, pinfo in provider_details.items():
+                    calls = pinfo.get('calls', 0)
+                    available = pinfo.get('available', False)
+                    display = provider_display.get(pname, pname)
+                    if calls > 0:
+                        status = f"{calls} API call(s)"
+                    elif available:
+                        status = "available (not needed)"
+                    else:
+                        status = "exhausted/rate-limited"
+                    lines.append(f"| {display} | {status} |")
+                if not provider_details:
+                    lines.append(f"| {active_provider} | {llm_calls} API call(s) |")
+                lines.append("")
+                lines.append(f"- **Total LLM API calls:** {llm_calls}")
+                if pool_size > 0:
+                    lines.append(f"- **Response pool size:** {pool_size} base responses")
+                if fallback_uses > 0:
+                    total = llm_calls + fallback_uses
+                    pct = (fallback_uses / max(1, total)) * 100
+                    lines.append(f"- **Template fallback:** {fallback_uses} response(s) ({pct:.0f}%)")
+                else:
+                    lines.append("- **Template fallback:** None needed (all LLM-generated)")
+            else:
+                lines.append("**Generation approach: Template-Based (225+ Research Domains)**")
+                lines.append("")
+                lines.append("- No LLM API was available for this generation run")
+                lines.append("- Responses were generated using the built-in template engine")
             lines.append("")
 
         # =============================================================
@@ -4508,6 +4562,54 @@ class ComprehensiveInstructorReport:
                     _var_tag = f" <code>({var_name})</code>" if var_name else ""
                     html_parts.append(f"<li>{q_text[:120]}{_var_tag}</li>")
             html_parts.append("</ul>")
+
+        # v1.8.7: LLM Generation Details in HTML report
+        llm_stats_html = metadata.get('llm_stats', metadata.get('llm_response_stats', {}))
+        llm_calls_html = llm_stats_html.get('llm_calls', 0) if llm_stats_html else 0
+        if oe_questions:
+            html_parts.append("<h3 style='margin-top:20px;'>Response Generation Method</h3>")
+            if llm_calls_html > 0:
+                pool_size_h = llm_stats_html.get('pool_size', 0)
+                fallback_h = llm_stats_html.get('fallback_uses', 0)
+                provider_details_h = llm_stats_html.get('providers', {})
+                active_provider_h = llm_stats_html.get('active_provider', 'unknown')
+                html_parts.append("<p><strong>Generation approach:</strong> AI-Powered (LLM)</p>")
+                provider_display_h = {
+                    "groq_builtin": "Groq (built-in) — Llama 3.3 70B Versatile",
+                    "cerebras_builtin": "Cerebras (built-in) — Llama 3.3 70B",
+                    "openrouter_builtin": "OpenRouter (built-in) — Mistral Small 3.1 24B",
+                    "groq_user": "Groq (user key) — Llama 3.3 70B Versatile",
+                    "cerebras_user": "Cerebras (user key) — Llama 3.3 70B",
+                    "openrouter_user": "OpenRouter (user key)",
+                    "together": "Together AI — Llama 3.3 70B Turbo",
+                }
+                html_parts.append("<table><tr><th>Provider</th><th>Status</th></tr>")
+                for pname_h, pinfo_h in provider_details_h.items():
+                    calls_h = pinfo_h.get('calls', 0)
+                    available_h = pinfo_h.get('available', False)
+                    display_h = provider_display_h.get(pname_h, pname_h)
+                    if calls_h > 0:
+                        status_h = f"{calls_h} API call(s)"
+                    elif available_h:
+                        status_h = "available (not needed)"
+                    else:
+                        status_h = "exhausted/rate-limited"
+                    html_parts.append(f"<tr><td>{display_h}</td><td>{status_h}</td></tr>")
+                if not provider_details_h:
+                    html_parts.append(f"<tr><td>{active_provider_h}</td><td>{llm_calls_html} API call(s)</td></tr>")
+                html_parts.append("</table>")
+                html_parts.append(f"<p><strong>Total LLM API calls:</strong> {llm_calls_html}</p>")
+                if pool_size_h > 0:
+                    html_parts.append(f"<p><strong>Response pool size:</strong> {pool_size_h} base responses</p>")
+                if fallback_h > 0:
+                    total_h = llm_calls_html + fallback_h
+                    pct_h = (fallback_h / max(1, total_h)) * 100
+                    html_parts.append(f"<p><strong>Template fallback:</strong> {fallback_h} response(s) ({pct_h:.0f}%)</p>")
+                else:
+                    html_parts.append("<p><strong>Template fallback:</strong> None needed (all LLM-generated)</p>")
+            else:
+                html_parts.append("<p><strong>Generation approach:</strong> Template-Based (225+ Research Domains)</p>")
+                html_parts.append("<p>No LLM API was available for this generation run. Responses were generated using the built-in template engine.</p>")
 
         # Generation Details (still inside section-block)
         html_parts.append("<h3 style='margin-top:28px;padding-top:16px;border-top:1px solid #e2e8f0;'>Generation Details</h3>")
