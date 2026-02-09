@@ -52,8 +52,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.8.3"
-BUILD_ID = "20260209-v183-scroll-fix-research-links"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.8.4"
+BUILD_ID = "20260209-v184-layout-reorg-scroll-fix"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -107,7 +107,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.8.3"  # v1.8.3: Scroll-to-top fix, research links, expandable sections, notification cleanup
+APP_VERSION = "1.8.4"  # v1.8.4: Layout reorg, enhanced scroll-to-top, consistent navigation
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -4418,25 +4418,7 @@ section[data-testid="stSidebar"] .stCaption { line-height: 1.4; }
     flex-shrink: 0;
 }
 
-/* ─── Research foundations ─── */
-.research-section {
-    max-width: 780px;
-    margin: 0 auto 40px;
-    padding: 28px 24px;
-    background: linear-gradient(135deg, #FAFBFF 0%, #F8FAFC 100%);
-    border-radius: 12px;
-    border: 1px solid #E5E7EB;
-    text-align: center;
-    animation: cardsSlideUp 0.6s ease-out 0.45s both;
-}
-.research-section h3 {
-    font-size: 0.78rem;
-    font-weight: 600;
-    color: #374151;
-    margin: 0 0 16px 0;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-}
+/* ─── Research list (inside expander) ─── */
 .research-list {
     display: flex;
     flex-direction: column;
@@ -4680,6 +4662,7 @@ def _render_flow_nav(active: int, done: List[bool]) -> None:
 
 _SCROLL_TO_TOP_JS = """<script>
 (function() {
+    var doc = window.parent.document;
     var selectors = [
         'section.main',
         '[data-testid="stAppViewContainer"]',
@@ -4689,33 +4672,49 @@ _SCROLL_TO_TOP_JS = """<script>
     ];
     function scrollUp() {
         for (var i = 0; i < selectors.length; i++) {
-            var els = window.parent.document.querySelectorAll(selectors[i]);
+            var els = doc.querySelectorAll(selectors[i]);
             for (var j = 0; j < els.length; j++) {
                 els[j].scrollTop = 0;
             }
         }
         window.parent.scrollTo(0, 0);
-        try { window.parent.document.body.scrollTop = 0; } catch(e) {}
-        try { window.parent.document.documentElement.scrollTop = 0; } catch(e) {}
+        try { doc.body.scrollTop = 0; } catch(e) {}
+        try { doc.documentElement.scrollTop = 0; } catch(e) {}
     }
-    // Fire aggressively: immediate + 8 delays covering 0-2s render window.
-    // Heavy pages (Design) can take >500ms to fully render widgets.
-    var delays = [0, 30, 80, 150, 300, 500, 1000, 1500, 2000];
+    // Fire aggressively: 14 times over 3s to beat Streamlit's scroll restoration.
+    // Streamlit reruns can restore scroll position AFTER initial render, so we
+    // need to keep firing well past the initial widget render window.
+    var delays = [0, 10, 30, 60, 100, 150, 250, 400, 600, 900, 1300, 1800, 2400, 3000];
     for (var d = 0; d < delays.length; d++) {
         setTimeout(scrollUp, delays[d]);
     }
 })();
 </script>"""
 
+# v1.8.4: Additional inline scroll-to-top that can be injected via st.markdown
+# (works alongside the components.html version for double coverage)
+_SCROLL_TO_TOP_INLINE = """<script>
+(function(){
+    var doc = window.parent.document;
+    function s(){
+        doc.querySelectorAll('section.main,[data-testid="stAppViewContainer"]').forEach(function(e){e.scrollTop=0;});
+        window.parent.scrollTo(0,0);
+    }
+    [0,50,150,350,700,1200,2000,3000].forEach(function(d){setTimeout(s,d);});
+})();
+</script>"""
+
 
 def _inject_scroll_to_top_js() -> None:
-    """Inject a zero-height HTML component with JavaScript that scrolls to top.
+    """Inject scroll-to-top via both components.html and inline markdown.
 
-    Fires 9 times over 2 seconds to guarantee scroll resets even on heavy
-    pages where Streamlit widgets render asynchronously and reset scroll
-    position.
+    v1.8.4: Double injection strategy — uses both components.html (fires in
+    an iframe) and inline markdown (fires in the parent frame). This ensures
+    scroll resets even when one method is blocked or delayed by Streamlit's
+    rendering pipeline. Fires 14+ times over 3 seconds.
     """
     _st_components.html(_SCROLL_TO_TOP_JS, height=0)
+    st.markdown(_SCROLL_TO_TOP_INLINE, unsafe_allow_html=True)
 
 
 # v1.7.0: Restore persisted widget values EARLY — before sidebar or any code
@@ -4838,7 +4837,9 @@ active_page = max(-1, min(int(st.session_state.get("active_page", -1)), 3))
 st.session_state["active_page"] = active_page
 
 # ── Scroll to top on section change ──────────────────────────────────
-if st.session_state.pop("_page_just_changed", False):
+# v1.8.4: Fire scroll-to-top for both _page_just_changed AND _force_scroll_top
+# This ensures scrolling happens regardless of which navigation method was used
+if st.session_state.pop("_page_just_changed", False) or st.session_state.pop("_force_scroll_top", False):
     _inject_scroll_to_top_js()
 
 # ── Inject flow navigation CSS ───────────────────────────────────────
@@ -5050,7 +5051,7 @@ if active_page == -1:
         unsafe_allow_html=True,
     )
 
-    # Feature cards — rewritten as outcomes
+    # Feature cards
     st.markdown(
         '<div class="feature-grid">'
         '<div class="feature-card"><div class="fc-icon">\U0001F9EA</div>'
@@ -5076,33 +5077,9 @@ if active_page == -1:
         unsafe_allow_html=True,
     )
 
-    # Expandable details for each feature
-    with st.expander("Learn more about each capability"):
-        st.markdown("""
-**Test Before You Collect**
-Generate a publication-ready CSV with realistic Likert-scale responses, attention check failures,
-individual differences, and demographic distributions. The data mirrors real Qualtrics output format
-so your analysis scripts work identically on both simulated and real data.
-
-**Realistic Open-Ended Responses**
-Uses a 3-provider LLM failover chain (Groq, Cerebras, OpenRouter) with 50+ behavioral personas
-to generate unique, context-aware free-text responses. Each response aligns with the participant's
-numeric ratings and assigned persona characteristics. Supports 225+ research domains and 40 question types.
-
-**Ready-to-Run Analysis Code**
-Automatically generates scripts in R, Python, Julia, SPSS, and Stata — tailored to your specific
-experimental design. Includes data loading, variable coding, condition comparisons, and appropriate
-statistical tests (t-tests, ANOVAs, regressions, mediation analyses).
-
-**Built for Research & Teaching**
-Instructor-only reports include detailed statistical analysis with effect sizes, power estimates,
-and visualization charts that students don't see. Group management tracks team usage.
-Pre-registration consistency checks compare your design against OSF, AEA, or AsPredicted specifications.
-""")
-
     st.markdown('<div style="max-width:780px;margin:0 auto;padding:0 20px;"><hr style="border:none;border-top:1px solid #F3F4F6;margin:0;"></div>', unsafe_allow_html=True)
 
-    # How it works — with improved step descriptions
+    # How it works
     st.markdown(
         '<div class="how-it-works">'
         '<h3>How It Works</h3>'
@@ -5126,7 +5103,51 @@ Pre-registration consistency checks compare your design against OSF, AEA, or AsP
         unsafe_allow_html=True,
     )
 
-    # Expandable details for how it works
+    # Methods PDF download — right after how-it-works
+    methods_pdf_path = Path(__file__).resolve().parent.parent / "docs" / "papers" / "methods_summary.pdf"
+    if methods_pdf_path.exists():
+        _pdf_col1, _pdf_col2, _pdf_col3 = st.columns([1, 2, 1])
+        with _pdf_col2:
+            st.download_button(
+                "Download Methods PDF",
+                data=methods_pdf_path.read_bytes(),
+                file_name=methods_pdf_path.name,
+                mime="application/pdf",
+                use_container_width=True,
+            )
+
+    # Primary CTA — right after how-it-works + PDF
+    _cta_col1, _cta_col2, _cta_col3 = st.columns([1, 2, 1])
+    with _cta_col2:
+        if st.button("Start Your Simulation  \u2192", type="primary", use_container_width=True, key="landing_cta"):
+            _navigate_to(0)
+
+    # ── Reference sections (expandable, at the bottom) ──
+    st.markdown('<div style="max-width:780px;margin:24px auto 0;padding:0 20px;"><hr style="border:none;border-top:1px solid #F3F4F6;margin:0;"></div>', unsafe_allow_html=True)
+
+    with st.expander("Learn more about each capability"):
+        st.markdown("""
+**Test Before You Collect**
+Generate a publication-ready CSV with realistic Likert-scale responses, attention check failures,
+individual differences, and demographic distributions. The data mirrors real Qualtrics output format
+so your analysis scripts work identically on both simulated and real data.
+
+**Realistic Open-Ended Responses**
+Uses a 3-provider LLM failover chain (Groq, Cerebras, OpenRouter) with 50+ behavioral personas
+to generate unique, context-aware free-text responses. Each response aligns with the participant's
+numeric ratings and assigned persona characteristics. Supports 225+ research domains and 40 question types.
+
+**Ready-to-Run Analysis Code**
+Automatically generates scripts in R, Python, Julia, SPSS, and Stata — tailored to your specific
+experimental design. Includes data loading, variable coding, condition comparisons, and appropriate
+statistical tests (t-tests, ANOVAs, regressions, mediation analyses).
+
+**Built for Research & Teaching**
+Instructor-only reports include detailed statistical analysis with effect sizes, power estimates,
+and visualization charts that students don't see. Group management tracks team usage.
+Pre-registration consistency checks compare your design against OSF, AEA, or AsPredicted specifications.
+""")
+
     with st.expander("Step-by-step details"):
         st.markdown("""
 **Step 1 — Name Your Study:** Enter your study title and a description of your experiment's
@@ -5146,86 +5167,54 @@ attention check failure rates, and response quality. Generate your complete data
 a ZIP containing the CSV, codebook, analysis scripts in 5 languages, summary reports, and metadata.
 """)
 
-    st.markdown('<div style="max-width:780px;margin:0 auto;padding:0 20px;"><hr style="border:none;border-top:1px solid #F3F4F6;margin:0;"></div>', unsafe_allow_html=True)
+    with st.expander("Research foundations & citations"):
+        st.markdown(
+            '<div class="research-list">'
 
-    # Research foundations — with links and key insights
-    st.markdown(
-        '<div class="research-section">'
-        '<h3>Built on Peer-Reviewed Research</h3>'
-        '<div class="research-list">'
+            '<a class="research-item" href="https://doi.org/10.1017/pan.2023.2" target="_blank">'
+            '<span class="ri-authors">Argyle et al. (2023)</span>'
+            '<span class="ri-venue">Political Analysis</span>'
+            '<span class="ri-insight">LLMs replicate human survey responses across demographics</span></a>'
 
-        '<a class="research-item" href="https://doi.org/10.1017/pan.2023.2" target="_blank">'
-        '<span class="ri-authors">Argyle et al. (2023)</span>'
-        '<span class="ri-venue">Political Analysis</span>'
-        '<span class="ri-insight">LLMs replicate human survey responses across demographics</span></a>'
+            '<a class="research-item" href="https://www.nber.org/papers/w31122" target="_blank">'
+            '<span class="ri-authors">Horton (2023)</span>'
+            '<span class="ri-venue">NBER</span>'
+            '<span class="ri-insight">LLM agents as stand-ins for human subjects in experiments</span></a>'
 
-        '<a class="research-item" href="https://www.nber.org/papers/w31122" target="_blank">'
-        '<span class="ri-authors">Horton (2023)</span>'
-        '<span class="ri-venue">NBER</span>'
-        '<span class="ri-insight">LLM agents as stand-ins for human subjects in experiments</span></a>'
+            '<a class="research-item" href="https://doi.org/10.48550/arXiv.2301.07543" target="_blank">'
+            '<span class="ri-authors">Aher, Arriaga &amp; Kalai (2023)</span>'
+            '<span class="ri-venue">ICML</span>'
+            '<span class="ri-insight">Simulating classic behavioral experiments with LLMs</span></a>'
 
-        '<a class="research-item" href="https://doi.org/10.48550/arXiv.2301.07543" target="_blank">'
-        '<span class="ri-authors">Aher, Arriaga &amp; Kalai (2023)</span>'
-        '<span class="ri-venue">ICML</span>'
-        '<span class="ri-insight">Simulating classic behavioral experiments with LLMs</span></a>'
+            '<a class="research-item" href="https://doi.org/10.1145/3586183.3606763" target="_blank">'
+            '<span class="ri-authors">Park et al. (2023)</span>'
+            '<span class="ri-venue">ACM UIST</span>'
+            '<span class="ri-insight">Generative agents with believable human behavior</span></a>'
 
-        '<a class="research-item" href="https://doi.org/10.1145/3586183.3606763" target="_blank">'
-        '<span class="ri-authors">Park et al. (2023)</span>'
-        '<span class="ri-venue">ACM UIST</span>'
-        '<span class="ri-insight">Generative agents with believable human behavior</span></a>'
+            '<a class="research-item" href="https://doi.org/10.1073/pnas.2218523120" target="_blank">'
+            '<span class="ri-authors">Binz &amp; Schulz (2023)</span>'
+            '<span class="ri-venue">PNAS</span>'
+            '<span class="ri-insight">LLMs match human cognitive biases and decision-making</span></a>'
 
-        '<a class="research-item" href="https://doi.org/10.1073/pnas.2218523120" target="_blank">'
-        '<span class="ri-authors">Binz &amp; Schulz (2023)</span>'
-        '<span class="ri-venue">PNAS</span>'
-        '<span class="ri-insight">LLMs match human cognitive biases and decision-making</span></a>'
+            '<a class="research-item" href="https://doi.org/10.1016/j.tics.2023.04.008" target="_blank">'
+            '<span class="ri-authors">Dillion et al. (2023)</span>'
+            '<span class="ri-venue">Trends in Cognitive Sciences</span>'
+            '<span class="ri-insight">Can AI language models replace human participants?</span></a>'
 
-        '<a class="research-item" href="https://doi.org/10.1016/j.tics.2023.04.008" target="_blank">'
-        '<span class="ri-authors">Dillion et al. (2023)</span>'
-        '<span class="ri-venue">Trends in Cognitive Sciences</span>'
-        '<span class="ri-insight">Can AI language models replace human participants?</span></a>'
+            '<a class="research-item" href="https://doi.org/10.1073/pnas.2317245121" target="_blank">'
+            '<span class="ri-authors">Westwood (2025)</span>'
+            '<span class="ri-venue">PNAS</span>'
+            '<span class="ri-insight">Validating LLM-generated survey responses at scale</span></a>'
 
-        '<a class="research-item" href="https://doi.org/10.1073/pnas.2317245121" target="_blank">'
-        '<span class="ri-authors">Westwood (2025)</span>'
-        '<span class="ri-venue">PNAS</span>'
-        '<span class="ri-insight">Validating LLM-generated survey responses at scale</span></a>'
+            '</div>',
+            unsafe_allow_html=True,
+        )
 
-        '</div></div>',
-        unsafe_allow_html=True,
-    )
-
-    # Use cases summary
-    st.markdown(
-        '<div style="text-align:center;max-width:600px;margin:0 auto 24px;padding:0 20px;">'
-        '<p style="font-size:0.88rem;color:#6B7280;line-height:1.6;margin:0;">'
-        'Whether you\'re piloting a behavioral economics experiment, '
-        'teaching research methods, or pre-testing a clinical trial survey — '
-        'generate your complete data package in minutes.</p></div>',
-        unsafe_allow_html=True,
-    )
-
-    # CTA
-    _cta_col1, _cta_col2, _cta_col3 = st.columns([1, 2, 1])
-    with _cta_col2:
-        if st.button("Start Your Simulation  \u2192", type="primary", use_container_width=True, key="landing_cta"):
-            _navigate_to(0)
-
-    # Footer with version + date + methods PDF
+    # Footer
     st.markdown(
         f'<div class="landing-footer">v{APP_VERSION} &middot; February 2026</div>',
         unsafe_allow_html=True,
     )
-
-    methods_pdf_path = Path(__file__).resolve().parent.parent / "docs" / "papers" / "methods_summary.pdf"
-    if methods_pdf_path.exists():
-        _pdf_col1, _pdf_col2, _pdf_col3 = st.columns([1, 2, 1])
-        with _pdf_col2:
-            st.download_button(
-                "Download Methods PDF",
-                data=methods_pdf_path.read_bytes(),
-                file_name=methods_pdf_path.name,
-                mime="application/pdf",
-                use_container_width=True,
-            )
 
 
 # =====================================================================
@@ -5780,11 +5769,19 @@ if active_page == 1:
     # v1.6.1: Section-complete banner with prominent CTA
     if step2_done:
         st.markdown(
-            '<div class="section-done-banner">✓ Study input complete — ready to configure your design</div>',
+            '<div class="section-done-banner">\u2713 Study input complete — ready to configure your design</div>',
             unsafe_allow_html=True,
         )
-        if st.button("Continue to Design  \u2192", key="auto_advance_1", type="primary"):
-            _navigate_to(2)
+
+    _nav_left1, _nav_right1 = st.columns([1, 1])
+    with _nav_left1:
+        if st.button("\u2190 Setup", key="back_1", type="secondary"):
+            _navigate_to(0)
+    with _nav_right1:
+        if step2_done:
+            if st.button("Design \u2192", key="auto_advance_1", type="primary", use_container_width=True):
+                _navigate_to(2)
+
     st.markdown('</div>', unsafe_allow_html=True)
 
 
@@ -5792,10 +5789,8 @@ if active_page == 1:
 # PAGE 3: DESIGN CONFIGURATION
 # =====================================================================
 if active_page == 2:
-    # Always inject scroll-to-top on page transitions — fires multiple times over 2s
-    # to counteract Streamlit's scroll position restoration after rerun
-    if st.session_state.pop("_page_just_changed_design", None) or st.session_state.get("_force_scroll_top"):
-        st.session_state.pop("_force_scroll_top", None)
+    # v1.8.4: Extra scroll-to-top for the heavy Design page (widgets render async)
+    if st.session_state.pop("_page_just_changed_design", None):
         _inject_scroll_to_top_js()
     st.markdown('<div class="flow-section">', unsafe_allow_html=True)
     st.markdown(
@@ -6958,15 +6953,23 @@ if active_page == 2:
                     )
                     st.session_state["variable_review_rows"] = variable_df.to_dict(orient="records")
 
-    # ── Bottom CTA ───────────────────────────────────────────────────
+    # ── Bottom navigation ───────────────────────────────────────────
     _design_can_next = bool(st.session_state.get("inferred_design"))
     if _design_can_next:
         st.markdown(
             '<div class="section-done-banner">\u2713 Design configured — ready to generate</div>',
             unsafe_allow_html=True,
         )
-        if st.button("Continue to Generate  \u2192", key="auto_advance_2", type="primary"):
-            _navigate_to(3)
+
+    _nav_left2, _nav_right2 = st.columns([1, 1])
+    with _nav_left2:
+        if st.button("\u2190 Study Input", key="back_2", type="secondary"):
+            _navigate_to(1)
+    with _nav_right2:
+        if _design_can_next:
+            if st.button("Generate \u2192", key="auto_advance_2", type="primary", use_container_width=True):
+                _navigate_to(3)
+
     st.markdown('</div>', unsafe_allow_html=True)
 
 
@@ -6974,10 +6977,6 @@ if active_page == 2:
 # PAGE 4: GENERATE SIMULATION
 # =====================================================================
 if active_page == 3:
-    # Inject scroll-to-top on page transition
-    if st.session_state.get("_force_scroll_top"):
-        st.session_state.pop("_force_scroll_top", None)
-        _inject_scroll_to_top_js()
     st.markdown('<div class="flow-section">', unsafe_allow_html=True)
     st.markdown(
         '<div class="section-guide">Choose your difficulty level, review the design summary, '
