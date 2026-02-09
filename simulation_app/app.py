@@ -52,8 +52,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.8.7.4"
-BUILD_ID = "20260209-v1874-direct-nav-llm-prompts"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.8.7.5"
+BUILD_ID = "20260209-v1875-backtotop-bugfixes"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -107,7 +107,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.8.7.4"  # v1.8.7.4: Direct nav buttons, improved LLM prompts
+APP_VERSION = "1.8.7.5"  # v1.8.7.5: Back-to-top button, scroll fixes, bug fixes
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -4213,34 +4213,9 @@ def _navigate_to(page_index: int) -> None:
     st.rerun()
 
 
-def _scroll_then_navigate(target_page: int) -> None:
-    """Two-phase navigation: scroll to top first, navigate on next rerun.
-
-    v1.8.5: When called from a button at the bottom of a long page,
-    Phase 1 scrolls the current page to the top and reruns.
-    Phase 2 (handled at the top of the script) actually navigates.
-    This ensures users always see pages start at the top.
-    """
-    # Persist widget values (same as _navigate_to)
-    for _wk in ["study_title", "study_description", "team_name", "team_members_raw"]:
-        _wv = st.session_state.get(_wk)
-        if _wv is not None:
-            st.session_state[f"_p_{_wk}"] = _wv
-    st.session_state["_scroll_then_nav_target"] = max(-1, min(target_page, 3))
-    st.session_state["_force_scroll_top"] = True
-    st.rerun()
-
-
-def _scroll_to_top_only() -> None:
-    """Scroll the current page to the top without navigating.
-
-    v1.8.7.2: Used by bottom-of-page buttons to bring the user back to the
-    top so they can review their entries before proceeding.  Sets a flag
-    that highlights the top "Continue" button.
-    """
-    st.session_state["_force_scroll_top"] = True
-    st.session_state["_review_at_top"] = True
-    st.rerun()
+    # v1.8.7.5: _scroll_then_navigate and _scroll_to_top_only removed
+    # (scroll-up-first caused widget re-initialization; replaced with
+    #  direct navigation + pure-JS "Back to top" button)
 
 
 # ── Section metadata for flow navigation ──────────────────────────────
@@ -4700,36 +4675,30 @@ def _render_flow_nav(active: int, done: List[bool]) -> None:
 _SCROLL_TO_TOP_JS = """<script>
 (function() {
     var doc = window.parent.document;
-    var selectors = [
-        'section.main',
-        '[data-testid="stAppViewContainer"]',
-        '[data-testid="stVerticalBlock"]',
-        '.main .block-container',
-        '.main'
-    ];
     function scrollUp() {
-        for (var i = 0; i < selectors.length; i++) {
-            var els = doc.querySelectorAll(selectors[i]);
-            for (var j = 0; j < els.length; j++) {
-                els[j].scrollTop = 0;
-            }
-        }
+        doc.querySelectorAll('section.main,[data-testid="stAppViewContainer"],[data-testid="stVerticalBlock"],.main .block-container,.main').forEach(function(e){e.scrollTop=0;});
         window.parent.scrollTo(0, 0);
-        try { doc.body.scrollTop = 0; } catch(e) {}
-        try { doc.documentElement.scrollTop = 0; } catch(e) {}
-        // v1.8.7.2: Also try scrollIntoView on the first element in main content
+        try { doc.body.scrollTop = 0; doc.documentElement.scrollTop = 0; } catch(e) {}
         try {
             var first = doc.querySelector('.main .block-container > div:first-child, [data-testid="stVerticalBlock"] > div:first-child');
             if (first) first.scrollIntoView({behavior: 'instant', block: 'start'});
         } catch(e) {}
     }
-    // Fire aggressively: 14 times over 3s to beat Streamlit's scroll restoration.
-    // Streamlit reruns can restore scroll position AFTER initial render, so we
-    // need to keep firing well past the initial widget render window.
-    var delays = [0, 10, 30, 60, 100, 150, 250, 400, 600, 900, 1300, 1800, 2400, 3000];
-    for (var d = 0; d < delays.length; d++) {
-        setTimeout(scrollUp, delays[d]);
-    }
+    // v1.8.7.5: Fire aggressively with timers AND a MutationObserver.
+    // The observer catches Streamlit's async widget rendering which can
+    // restore scroll position after our initial scrollUp calls.
+    var delays = [0, 10, 30, 60, 100, 200, 400, 700, 1200, 2000, 3000];
+    for (var d = 0; d < delays.length; d++) { setTimeout(scrollUp, delays[d]); }
+    // MutationObserver: keep scrolling to top for 4s as DOM changes
+    try {
+        var target = doc.querySelector('section.main') || doc.body;
+        var endTime = Date.now() + 4000;
+        var obs = new MutationObserver(function() {
+            if (Date.now() < endTime) { scrollUp(); } else { obs.disconnect(); }
+        });
+        obs.observe(target, {childList: true, subtree: true});
+        setTimeout(function(){ obs.disconnect(); }, 4500);
+    } catch(e) {}
 })();
 </script>"""
 
@@ -4741,9 +4710,13 @@ _SCROLL_TO_TOP_INLINE = """<script>
     function s(){
         doc.querySelectorAll('section.main,[data-testid="stAppViewContainer"]').forEach(function(e){e.scrollTop=0;});
         window.parent.scrollTo(0,0);
+        try{doc.documentElement.scrollTop=0;}catch(e){}
         try{var f=doc.querySelector('.main .block-container > div:first-child');if(f)f.scrollIntoView({behavior:'instant',block:'start'});}catch(e){}
     }
     [0,50,150,350,700,1200,2000,3000].forEach(function(d){setTimeout(s,d);});
+    try{var t=doc.querySelector('section.main')||doc.body;var end=Date.now()+4000;
+    var o=new MutationObserver(function(){if(Date.now()<end){s();}else{o.disconnect();}});
+    o.observe(t,{childList:true,subtree:true});setTimeout(function(){o.disconnect();},4500);}catch(e){}
 })();
 </script>"""
 
@@ -4755,9 +4728,37 @@ def _inject_scroll_to_top_js() -> None:
     an iframe) and inline markdown (fires in the parent frame). This ensures
     scroll resets even when one method is blocked or delayed by Streamlit's
     rendering pipeline. Fires 14+ times over 3 seconds.
+    v1.8.7.5: Added MutationObserver to keep scrolling as widgets render.
     """
     _st_components.html(_SCROLL_TO_TOP_JS, height=0)
     st.markdown(_SCROLL_TO_TOP_INLINE, unsafe_allow_html=True)
+
+
+# v1.8.7.5: Pure-JS "Back to top" button for long pages.
+# Rendered via components.html so clicking it does NOT trigger st.rerun().
+# This avoids the re-initialization problem with _scroll_to_top_only().
+_BACK_TO_TOP_BUTTON_HTML = """
+<div style="text-align:center;padding:16px 0 4px 0;">
+  <button onclick="
+    var doc = window.parent.document;
+    doc.querySelectorAll('section.main,[data-testid=&quot;stAppViewContainer&quot;]').forEach(function(e){e.scrollTop=0;});
+    window.parent.scrollTo(0,0);
+    try{doc.documentElement.scrollTop=0;}catch(e){}
+    try{var f=doc.querySelector('.main .block-container > div:first-child,[data-testid=&quot;stVerticalBlock&quot;] > div:first-child');if(f)f.scrollIntoView({behavior:'smooth',block:'start'});}catch(e){}
+  " style="
+    background:none; border:1px solid #D1D5DB; border-radius:8px;
+    padding:8px 24px; cursor:pointer; font-size:0.84rem; color:#4B5563;
+    font-weight:500; transition:all 0.15s ease;
+  " onmouseover="this.style.background='#F9FAFB';this.style.borderColor='#9CA3AF';"
+     onmouseout="this.style.background='none';this.style.borderColor='#D1D5DB';"
+  >\u2191 Back to top</button>
+</div>
+"""
+
+
+def _render_back_to_top_button() -> None:
+    """Render a pure-JS scroll-to-top button (no Streamlit rerun)."""
+    _st_components.html(_BACK_TO_TOP_BUTTON_HTML, height=60)
 
 
 # v1.7.0: Restore persisted widget values EARLY — before sidebar or any code
@@ -4868,18 +4869,10 @@ if st.session_state.pop("_pending_reset", False):
 # One visual ribbon + one row of buttons. No redundant navigation.
 # =====================================================================
 
-# ── Two-phase navigation: scroll to top FIRST, then navigate ──────
-# v1.8.5: When user clicks a forward button at the bottom of a page,
-# Phase 1: scroll to top + rerun (so user sees current page scroll up)
-# Phase 2: on next rerun, actually navigate to the target page
-_scroll_then_nav = st.session_state.pop("_scroll_then_nav_target", None)
-if _scroll_then_nav is not None:
-    # Phase 2: now actually navigate
-    st.session_state["_pending_nav"] = _scroll_then_nav
-    st.session_state["_page_just_changed"] = True
-    st.session_state["_force_scroll_top"] = True
-    if _scroll_then_nav == 2:
-        st.session_state["_page_just_changed_design"] = True
+# v1.8.7.5: Two-phase scroll-then-nav removed (replaced with direct navigation)
+# Clean up any stale flags from previous versions
+st.session_state.pop("_scroll_then_nav_target", None)
+st.session_state.pop("_review_at_top", None)
 
 # ── Apply pending navigation (from auto-advance or _navigate_to) ─────
 _pending_nav = st.session_state.pop("_pending_nav", None)
@@ -5832,6 +5825,9 @@ if active_page == 1:
         if step2_done:
             if st.button("Continue to Design \u2192", key="auto_advance_1", type="primary", use_container_width=True):
                 _navigate_to(2)
+
+    # v1.8.7.5: Pure-JS "Back to top" — no rerun, no re-initialization
+    _render_back_to_top_button()
 
     st.markdown('</div>', unsafe_allow_html=True)
 
@@ -7036,6 +7032,9 @@ if active_page == 2:
             if st.button("Continue to Generate \u2192", key="auto_advance_2", type="primary", use_container_width=True):
                 _navigate_to(3)
 
+    # v1.8.7.5: Pure-JS "Back to top" — no rerun, no re-initialization
+    _render_back_to_top_button()
+
     st.markdown('</div>', unsafe_allow_html=True)
 
 
@@ -7164,6 +7163,9 @@ if active_page == 3:
     else:
         # After generation / during generation: read from session state key
         difficulty_level = st.session_state.get("difficulty_level", _diff_default)
+        # v1.8.7.5: Guard against corrupted session state values
+        if difficulty_level not in DIFFICULTY_LEVELS:
+            difficulty_level = _diff_default
 
     # ========================================
     # v1.0.0: PRE-REGISTRATION CONSISTENCY CHECK
@@ -7245,7 +7247,8 @@ if active_page == 3:
 
     if 'preview_df' in st.session_state and st.session_state['preview_df'] is not None:
         st.dataframe(st.session_state['preview_df'], use_container_width=True, height=200)
-        st.caption(f"Preview generated at difficulty level: **{DIFFICULTY_LEVELS[difficulty_level]['name']}**")
+        _diff_info = DIFFICULTY_LEVELS.get(difficulty_level, DIFFICULTY_LEVELS.get("medium", {}))
+        st.caption(f"Preview generated at difficulty level: **{_diff_info.get('name', difficulty_level)}**")
 
     st.markdown("")
 
