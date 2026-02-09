@@ -697,6 +697,8 @@ class InstructorReportGenerator:
                     "together": "Together AI — Llama 3.3 70B Turbo",
                 }
                 used_providers = []
+                lines.append("| Provider | Status |")
+                lines.append("| --- | --- |")
                 for pname, pinfo in provider_details.items():
                     calls = pinfo.get('calls', 0)
                     available = pinfo.get('available', False)
