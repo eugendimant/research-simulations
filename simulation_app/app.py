@@ -52,8 +52,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.6.1"
-BUILD_ID = "20260209-v161-polish-fixes"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.7.0"
+BUILD_ID = "20260209-v170-ux-redesign"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -107,7 +107,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.6.1"  # v1.6.1: Critical fixes, visual polish, heading consistency
+APP_VERSION = "1.7.0"  # v1.7.0: Fix state persistence, professional UX redesign, stepper alignment, Design page declutter
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -4093,8 +4093,8 @@ def _get_step_completion() -> Dict[str, bool]:
     has_independent_var = any(r.get("Role") == "Condition" for r in variable_rows)
 
     return {
-        "study_title": bool(st.session_state.get("study_title", "").strip()),
-        "study_description": bool(st.session_state.get("study_description", "").strip()),
+        "study_title": bool((st.session_state.get("study_title") or st.session_state.get("_p_study_title", "")).strip()),
+        "study_description": bool((st.session_state.get("study_description") or st.session_state.get("_p_study_description", "")).strip()),
         "sample_size": int(st.session_state.get("sample_size", 0)) >= 10,
         "qsf_uploaded": bool(preview and preview.success) or bool(st.session_state.get("conversational_builder_complete")),
         "conditions_set": bool(st.session_state.get("selected_conditions") or st.session_state.get("custom_conditions")),
@@ -4178,12 +4178,20 @@ def _reset_generation_state() -> None:
 def _navigate_to(page_index: int) -> None:
     """Navigate to a section by index and rerun.
 
-    v1.6.1: Uses pending-nav pattern for reliable section switching.
-    Sets _page_just_changed flag so the render cycle injects JS to
-    scroll the browser viewport to the top.  Also sets a per-page
-    flag for heavy pages (Design) that inject scroll-to-top a second
-    time at the start of their content block.
+    v1.7.0: Persists widget values before rerun so they survive when
+    their widgets are not rendered on the target page.  Uses pending-nav
+    pattern for reliable section switching.
     """
+    # v1.7.0: Persist widget values that would be lost when their page
+    # is not rendered (Streamlit removes unrendered widget keys).
+    _widget_persist_keys = [
+        "study_title", "study_description", "team_name", "team_members_raw",
+    ]
+    for _wk in _widget_persist_keys:
+        _wv = st.session_state.get(_wk)
+        if _wv is not None:
+            st.session_state[f"_p_{_wk}"] = _wv
+
     clamped = max(0, min(page_index, 3))
     st.session_state["_pending_nav"] = clamped
     st.session_state["_page_just_changed"] = True
@@ -4204,7 +4212,7 @@ SECTION_META: List[Dict[str, str]] = [
 def _section_summary(idx: int) -> str:
     """One-line summary for a completed section."""
     if idx == 0:
-        title = st.session_state.get("study_title", "")
+        title = st.session_state.get("study_title") or st.session_state.get("_p_study_title", "")
         if title:
             return f'"{title[:28]}…"' if len(title) > 28 else f'"{title}"'
         return ""
@@ -4225,197 +4233,200 @@ def _section_summary(idx: int) -> str:
     return ""
 
 
-# ── Flow navigation CSS (v1.6.0 — Modern Stepper) ───────────────────
+# ── Flow navigation CSS (v1.7.0 — Professional minimal design) ───────
 _FLOW_NAV_CSS = """<style>
-/* === Global Readability (v1.6.0) === */
+/* === v1.7.0: Professional minimal design === */
 section.main .block-container {
-    max-width: 1080px;
-    padding-top: 1.5rem;
+    max-width: 960px;
+    padding-top: 1.2rem;
 }
-section.main h1 { font-size: 2rem; font-weight: 800; letter-spacing: -0.02em; }
-section.main h2 { font-size: 1.5rem; font-weight: 700; }
-section.main h3 { font-size: 1.2rem; font-weight: 600; }
-section.main h4 { font-size: 1.05rem; font-weight: 600; margin-bottom: 0.5rem; }
-/* Tighter sidebar */
+section.main h1 { font-size: 1.75rem; font-weight: 700; letter-spacing: -0.02em; color: #111827; }
+section.main h2 { font-size: 1.35rem; font-weight: 600; color: #1F2937; }
+section.main h3 { font-size: 1.1rem; font-weight: 600; color: #1F2937; }
+section.main h4 { font-size: 0.95rem; font-weight: 600; margin-bottom: 0.4rem; color: #374151; }
 section[data-testid="stSidebar"] .stCaption { line-height: 1.4; }
-/* === Progress Stepper (v1.6.1 — unified dot+button) === */
-.stepper {
-    display: flex;
+
+/* === Stepper grid: dots + lines + labels in one aligned grid === */
+.stepper-grid {
+    display: grid;
+    grid-template-columns: auto 1fr auto 1fr auto 1fr auto;
+    grid-template-rows: auto auto;
     align-items: center;
-    justify-content: center;
-    padding: 4px 0 0 0;
-    margin: 0 0 2px 0;
+    gap: 0;
+    padding: 8px 0 0 0;
+    margin: 0 0 4px 0;
 }
-.stepper-step {
-    display: flex;
-    align-items: center;
-    flex: 1;
-}
-.stepper-step:last-child { flex: 0 0 auto; }
-.stepper-dot {
-    width: 30px;
-    height: 30px;
+.sg-dot {
+    width: 28px; height: 28px;
     border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 12px;
-    font-weight: 700;
-    flex-shrink: 0;
-    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-    margin: 0 auto;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 11px; font-weight: 700;
+    transition: all 0.2s ease;
+    justify-self: center;
 }
-.stepper-dot.active {
-    background: linear-gradient(135deg, #FF4B4B 0%, #D93636 100%);
-    color: white;
-    box-shadow: 0 0 0 3px rgba(255,75,75,0.12);
+.sg-dot.active {
+    background: #FF4B4B; color: white;
+    box-shadow: 0 0 0 3px rgba(255,75,75,0.15);
 }
-.stepper-dot.done {
-    background: linear-gradient(135deg, #21C354 0%, #1BA94C 100%);
-    color: white;
+.sg-dot.done { background: #22C55E; color: white; }
+.sg-dot.pending {
+    background: #F9FAFB; color: #9CA3AF;
+    border: 1.5px solid #E5E7EB;
 }
-.stepper-dot.pending {
-    background: #F3F4F6;
-    color: #B0B5BE;
-    border: 2px solid #E5E7EB;
-}
-.stepper-line {
-    flex: 1;
-    height: 2px;
-    margin: 0 8px;
-    border-radius: 1px;
-    background: #E5E7EB;
+.sg-line {
+    height: 2px; border-radius: 1px;
+    background: #E5E7EB; margin: 0 6px;
     transition: background 0.3s ease;
 }
-.stepper-line.done  { background: #21C354; }
-.stepper-line.half  { background: linear-gradient(90deg, #21C354 0%, #FF4B4B 50%, #E5E7EB 100%); }
-/* Completed-section summary chips */
-.done-chips {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-    margin: 4px 0 10px 0;
+.sg-line.done { background: #22C55E; }
+.sg-line.half {
+    background: linear-gradient(90deg, #22C55E 0%, #E5E7EB 100%);
 }
-.done-chip {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    padding: 4px 12px;
-    background: #F0FDF4;
-    border-radius: 20px;
-    border: 1px solid #BBF7D0;
-    font-size: 11px;
-    color: #166534;
+.sg-label {
+    font-size: 11px; font-weight: 500;
+    text-align: center; padding-top: 5px;
+    color: #9CA3AF;
     white-space: nowrap;
+    justify-self: center;
 }
-.done-chip-check { font-weight: 700; color: #15803D; }
+.sg-label.active { color: #FF4B4B; font-weight: 600; }
+.sg-label.done { color: #16A34A; }
+.sg-spacer { /* empty grid cell for line row in labels row */ }
+
 /* Overall progress bar */
 .progress-track {
-    height: 4px;
-    background: #F3F4F6;
-    border-radius: 2px;
-    margin: 0 0 6px 0;
+    height: 3px; background: #F3F4F6;
+    border-radius: 2px; margin: 0 0 4px 0;
     overflow: hidden;
 }
 .progress-fill {
-    height: 100%;
-    border-radius: 2px;
-    background: linear-gradient(90deg, #FF4B4B 0%, #21C354 100%);
-    transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+    height: 100%; border-radius: 2px;
+    background: linear-gradient(90deg, #FF4B4B 0%, #22C55E 100%);
+    transition: width 0.5s ease;
 }
+
+/* Completed-section summary chips */
+.done-chips {
+    display: flex; flex-wrap: wrap; gap: 6px;
+    margin: 2px 0 8px 0;
+}
+.done-chip {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 3px 10px; background: #F0FDF4;
+    border-radius: 16px; border: 1px solid #D1FAE5;
+    font-size: 11px; color: #166534;
+}
+.done-chip-check { font-weight: 700; color: #16A34A; }
+
 /* Section wrapper */
 .flow-section {
-    padding-top: 8px;
-    animation: sectionEnter 0.3s ease-out;
+    padding-top: 4px;
+    animation: sectionEnter 0.25s ease-out;
 }
 @keyframes sectionEnter {
-    from { opacity: 0; transform: translateY(8px); }
+    from { opacity: 0; transform: translateY(6px); }
     to   { opacity: 1; transform: translateY(0); }
 }
+
 /* Section guidance tagline */
 .section-guide {
-    font-size: 13px;
-    color: #6B7280;
-    margin: 0 0 16px 0;
+    font-size: 13px; color: #6B7280;
+    margin: 0 0 14px 0;
     padding: 8px 14px;
     background: #F9FAFB;
+    border-radius: 6px;
+    border-left: 3px solid #E5E7EB;
+}
+
+/* Hero intro card on Setup page */
+.hero-card {
+    padding: 16px 20px;
+    background: linear-gradient(135deg, #FAFBFF 0%, #F8FAFC 100%);
+    border: 1px solid #E5E7EB;
     border-radius: 8px;
-    border-left: 3px solid #FF4B4B;
+    margin: 0 0 16px 0;
 }
-/* Continue CTA — prominent + pulse */
-.continue-cta {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    padding: 10px 24px;
-    background: linear-gradient(135deg, #FF4B4B 0%, #D93636 100%);
-    color: white !important;
-    border-radius: 10px;
-    font-weight: 700;
-    font-size: 14px;
-    cursor: pointer;
-    border: none;
-    box-shadow: 0 2px 12px rgba(255,75,75,0.25);
-    animation: ctaPulse 2s ease-in-out infinite;
-    text-decoration: none;
+.hero-card h3 {
+    font-size: 0.95rem; font-weight: 600;
+    color: #1F2937; margin: 0 0 6px 0;
 }
-@keyframes ctaPulse {
-    0%, 100% { box-shadow: 0 2px 12px rgba(255,75,75,0.25); }
-    50% { box-shadow: 0 2px 20px rgba(255,75,75,0.45); }
+.hero-card p {
+    font-size: 13px; color: #6B7280;
+    margin: 0; line-height: 1.5;
 }
+.hero-features {
+    display: flex; flex-wrap: wrap; gap: 8px;
+    margin-top: 10px;
+}
+.hero-feat {
+    display: inline-flex; align-items: center; gap: 4px;
+    font-size: 12px; color: #374151;
+    padding: 4px 10px;
+    background: white; border: 1px solid #E5E7EB;
+    border-radius: 6px;
+}
+
 /* Section complete banner */
 .section-done-banner {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 10px 16px;
-    background: linear-gradient(135deg, #F0FDF4 0%, #ECFDF5 100%);
-    border: 1px solid #BBF7D0;
-    border-radius: 10px;
-    margin: 16px 0 4px 0;
-    font-size: 13px;
-    color: #166534;
-    font-weight: 500;
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 14px;
+    background: #F0FDF4;
+    border: 1px solid #D1FAE5;
+    border-radius: 8px;
+    margin: 12px 0 4px 0;
+    font-size: 13px; color: #166534; font-weight: 500;
 }
+
+/* Design page cards */
+.design-card {
+    padding: 14px 16px;
+    background: white;
+    border: 1px solid #E5E7EB;
+    border-radius: 8px;
+    margin: 8px 0;
+}
+.design-card-header {
+    font-size: 0.9rem; font-weight: 600;
+    color: #1F2937; margin: 0 0 8px 0;
+}
+.config-status {
+    display: inline-flex; align-items: center; gap: 4px;
+    font-size: 11px; padding: 2px 8px;
+    border-radius: 12px;
+}
+.config-status.ready {
+    background: #F0FDF4; color: #166534;
+    border: 1px solid #D1FAE5;
+}
+.config-status.needed {
+    background: #FEF3C7; color: #92400E;
+    border: 1px solid #FDE68A;
+}
+
+/* Nav button styling (integrated with stepper) */
+.nav-btn-row .stButton button {
+    font-size: 0 !important;
+    height: 2px !important; min-height: 2px !important;
+    padding: 0 !important; margin: 0 !important;
+    border: none !important; background: transparent !important;
+    box-shadow: none !important; opacity: 0 !important;
+    overflow: hidden !important;
+}
+
 /* Compact feedback link */
 .feedback-bar {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    padding: 8px 16px;
-    margin-top: 24px;
+    display: flex; align-items: center; justify-content: center;
+    gap: 8px; padding: 8px 16px; margin-top: 20px;
     border-top: 1px solid #F3F4F6;
-    font-size: 12px;
-    color: #9CA3AF;
+    font-size: 11px; color: #9CA3AF;
 }
 .feedback-bar a { color: #6B7280; text-decoration: none; }
-.feedback-bar a:hover { color: #FF4B4B; text-decoration: underline; }
-/* Nav step labels — flat, borderless, integrated with stepper */
-div[data-testid="stHorizontalBlock"]:first-of-type .stButton button {
-    font-size: 12px !important;
-    padding: 4px 6px !important;
-    border: none !important;
-    background: transparent !important;
-    color: #6B7280 !important;
-    box-shadow: none !important;
-    font-weight: 500 !important;
-    letter-spacing: 0.01em !important;
-}
-div[data-testid="stHorizontalBlock"]:first-of-type .stButton button:hover {
-    color: #FF4B4B !important;
-    background: rgba(255,75,75,0.04) !important;
-}
-div[data-testid="stHorizontalBlock"]:first-of-type .stButton button[kind="primary"] {
-    color: #FF4B4B !important;
-    font-weight: 700 !important;
-    background: rgba(255,75,75,0.06) !important;
-    border-radius: 8px !important;
-}
+.feedback-bar a:hover { color: #FF4B4B; }
+
 /* Responsive */
 @media (max-width: 768px) {
-    .stepper-dot { width: 24px; height: 24px; font-size: 10px; }
-    .stepper-line { margin: 0 4px; }
+    .sg-dot { width: 22px; height: 22px; font-size: 10px; }
+    .sg-label { font-size: 10px; }
     .done-chips { flex-direction: column; }
 }
 </style>"""
@@ -4424,9 +4435,9 @@ div[data-testid="stHorizontalBlock"]:first-of-type .stButton button[kind="primar
 def _render_flow_nav(active: int, done: List[bool]) -> None:
     """Render a unified progress stepper with integrated clickable navigation.
 
-    v1.6.1: Single visual component — dots + lines + labels are ONE unit.
-    No separate button row or section header cards.  Completed sections
-    show a compact summary chip below the stepper.
+    v1.7.0: CSS-grid stepper for pixel-perfect alignment of dots, lines,
+    and labels.  Invisible Streamlit buttons provide click handling.
+    Completed sections show a compact summary chip below the stepper.
     """
     while len(done) < len(SECTION_META):
         done.append(False)
@@ -4434,60 +4445,62 @@ def _render_flow_nav(active: int, done: List[bool]) -> None:
     # ── Overall progress bar ──────────────────────────────────────────
     n_done = sum(1 for d in done if d)
     pct = int(100 * (n_done + (0.5 if not done[active] else 0)) / len(SECTION_META))
-    pct = max(5, min(pct, 100))  # never 0 width
+    pct = max(5, min(pct, 100))
     st.markdown(
         f'<div class="progress-track"><div class="progress-fill" style="width:{pct}%"></div></div>',
         unsafe_allow_html=True,
     )
 
-    # ── Build stepper-only HTML (dots + connecting lines, NO labels) ──
-    dots_html = ""
+    # ── Build CSS-grid stepper (dots + lines row, then labels row) ───
+    grid_html = '<div class="stepper-grid">'
+
+    # Row 1: Dots and lines
     for i, meta in enumerate(SECTION_META):
         if i < active and done[i]:
-            state = "done"
-            badge = "✓"
+            state, badge = "done", "\u2713"
         elif i == active:
-            state = "active"
-            badge = str(i + 1)
+            state, badge = "active", str(i + 1)
         else:
-            state = "pending"
-            badge = str(i + 1)
-
-        dots_html += (
-            f'<div class="stepper-step">'
-            f'<div class="stepper-dot {state}">{badge}</div>'
-        )
-        # Connector line (not after last)
+            state, badge = "pending", str(i + 1)
+        grid_html += f'<div class="sg-dot {state}">{badge}</div>'
         if i < len(SECTION_META) - 1:
             if i < active and done[i]:
-                line_state = "done"
+                line_cls = "done"
             elif i == active - 1:
-                line_state = "half"
+                line_cls = "half"
             else:
-                line_state = ""
-            dots_html += f'<div class="stepper-line {line_state}"></div>'
-        dots_html += "</div>"
+                line_cls = ""
+            grid_html += f'<div class="sg-line {line_cls}"></div>'
 
-    st.markdown(f'<div class="stepper">{dots_html}</div>', unsafe_allow_html=True)
+    # Row 2: Labels (matching grid columns)
+    for i, meta in enumerate(SECTION_META):
+        if i < active and done[i]:
+            label, lcls = f"\u2713 {meta['title']}", "done"
+        elif i == active:
+            label, lcls = meta["title"], "active"
+        else:
+            label, lcls = meta["title"], ""
+        grid_html += f'<div class="sg-label {lcls}">{label}</div>'
+        if i < len(SECTION_META) - 1:
+            grid_html += '<div class="sg-spacer"></div>'
 
-    # ── Clickable step labels (flat, borderless — visually part of stepper) ──
+    grid_html += '</div>'
+    st.markdown(grid_html, unsafe_allow_html=True)
+
+    # ── Invisible clickable buttons for navigation ────────────────────
+    st.markdown('<div class="nav-btn-row">', unsafe_allow_html=True)
     nav_cols = st.columns(len(SECTION_META), gap="small")
     for i, meta in enumerate(SECTION_META):
         with nav_cols[i]:
-            if i < active and done[i]:
-                label = f"✓ {meta['title']}"
-            elif i == active:
-                label = meta["title"]
-            else:
-                label = meta["title"]
             if st.button(
-                label,
+                meta["title"],
                 key=f"nav_{i}",
-                type="primary" if i == active else "secondary",
+                type="secondary",
                 use_container_width=True,
             ):
                 if i != active:
                     _navigate_to(i)
+    st.markdown('</div>', unsafe_allow_html=True)
 
     # ── Completed-section summary chips ─────────────────────────────
     chips = []
@@ -4498,7 +4511,7 @@ def _render_flow_nav(active: int, done: List[bool]) -> None:
                 meta = SECTION_META[i]
                 chips.append(
                     f'<span class="done-chip">'
-                    f'<span class="done-chip-check">✓</span>'
+                    f'<span class="done-chip-check">\u2713</span>'
                     f'{meta["title"]}: {summary}'
                     f'</span>'
                 )
@@ -4549,6 +4562,14 @@ def _inject_scroll_to_top_js() -> None:
     _st_components.html(_SCROLL_TO_TOP_JS, height=0)
 
 
+# v1.7.0: Restore persisted widget values EARLY — before sidebar or any code
+# that reads study_title, study_description, etc.  Streamlit removes widget keys
+# from session_state when their widgets are not rendered on the current page.
+for _pk in ["study_title", "study_description", "team_name", "team_members_raw"]:
+    _saved_val = st.session_state.get(f"_p_{_pk}")
+    if _saved_val is not None and _pk not in st.session_state:
+        st.session_state[_pk] = _saved_val
+
 with st.sidebar:
     advanced_mode = st.toggle("Advanced mode", value=st.session_state.get("advanced_mode", False))
     st.session_state["advanced_mode"] = advanced_mode
@@ -4566,7 +4587,7 @@ with st.sidebar:
     inferred = st.session_state.get("inferred_design", {})
     snapshot_scales = inferred.get("scales", [])
 
-    title = st.session_state.get('study_title', '') or ''
+    title = st.session_state.get('study_title') or st.session_state.get('_p_study_title', '') or ''
     sample_size = st.session_state.get('sample_size', 0)
 
     if title:
@@ -4865,130 +4886,79 @@ def _get_total_conditions() -> int:
 # =====================================================================
 if active_page == 0:
     st.markdown('<div class="flow-section">', unsafe_allow_html=True)
+
+    # v1.7.0: Concise hero card — key value prop without clutter
+    st.markdown(
+        '<div class="hero-card">'
+        '<p>Generate a complete synthetic dataset — realistic response patterns, '
+        'individual differences, and attention check failures — to '
+        '<strong>build and test your analysis pipeline before collecting real data.</strong></p>'
+        '<div class="hero-features">'
+        '<span class="hero-feat">Publication-ready CSV</span>'
+        '<span class="hero-feat">AI-generated free-text</span>'
+        '<span class="hero-feat">Analysis scripts</span>'
+        '<span class="hero-feat">Instructor report</span>'
+        '</div>'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+
     st.markdown(
         '<div class="section-guide">Name your study and describe the experiment — '
         'this information appears in your final report and data outputs.</div>',
         unsafe_allow_html=True,
     )
 
-    # v1.6.1: Intro expanders inside the page 0 block (avoids nav timing bug)
-    with st.expander("What this tool delivers", expanded=True):
-        st.markdown(
-            "Generate a complete synthetic dataset — realistic response patterns, "
-            "individual differences, and attention check failures — to **build and test "
-            "your analysis pipeline before collecting real data.**"
-        )
-        _wt_c1, _wt_c2 = st.columns(2)
-        with _wt_c1:
-            st.markdown(
-                "**Upload a QSF** &nbsp; Auto-detects conditions, scales, "
-                "and factors from your Qualtrics export"
-            )
-        with _wt_c2:
-            st.markdown(
-                "**Or describe your study** &nbsp; Explain your design in "
-                "plain text — we build the rest"
-            )
-        st.markdown(
-            "- **Publication-ready CSV** — condition assignments, scale responses, open-ended text\n"
-            "- **AI-generated free-text** — persona-driven LLM responses (Llama 3.3 70B); template fallback if AI unavailable\n"
-            "- **Analysis scripts** — pre-configured for your specific design\n"
-            "- **Instructor report** — full documentation of design, parameters, and expected patterns"
-        )
-
-    with st.expander("Research foundations and citations", expanded=False):
-        st.markdown("""
-#### Methodological foundations
-
-This tool implements simulation approaches validated in recent computational social science research:
-
-**Core LLM Simulation Research:**
-- **Argyle et al. (2023)** - "Out of One, Many: Using Language Models to Simulate Human Samples" *Political Analysis*, 31(3), 337-351. [DOI: 10.1017/pan.2023.2](https://doi.org/10.1017/pan.2023.2)
-- **Horton (2023)** - "Large Language Models as Simulated Economic Agents: What Can We Learn from Homo Silicus?" *NBER Working Paper* No. 31122. [DOI: 10.3386/w31122](https://doi.org/10.3386/w31122)
-- **Aher, Arriaga & Kalai (2023)** - "Using Large Language Models to Simulate Multiple Humans and Replicate Human Subject Studies" *ICML*, PMLR 202:337-371. [Paper](https://proceedings.mlr.press/v202/aher23a.html)
-
-**High-Impact Validation Studies:**
-- **Park et al. (2023)** - "Generative Agents: Interactive Simulacra of Human Behavior" *ACM UIST*. [DOI: 10.1145/3586183.3606763](https://doi.org/10.1145/3586183.3606763)
-- **Binz & Schulz (2023)** - "Using cognitive psychology to understand GPT-3" *PNAS*, 120(6). [DOI: 10.1073/pnas.2218523120](https://doi.org/10.1073/pnas.2218523120)
-- **Dillion et al. (2023)** - "Can AI language models replace human participants?" *Trends in Cognitive Sciences*, 27, 597-600. [DOI: 10.1016/j.tics.2023.04.008](https://doi.org/10.1016/j.tics.2023.04.008)
-
-**On LLM Detection & Survey Validity:**
-- **Westwood (2025)** - "The potential existential threat of large language models to online survey research" *PNAS*, 122(47). [DOI: 10.1073/pnas.2518075122](https://doi.org/10.1073/pnas.2518075122) — Demonstrates why rigorous simulation standards matter for distinguishing human from AI responses.
-
-#### How personas work
-
-The simulator automatically assigns behavioral personas to simulated participants based on the study domain. Each persona has trait parameters calibrated from computational social science research on LLM response patterns. This creates realistic individual differences without requiring manual configuration.
-""")
-        # Prefer PDF over markdown for methods summary
-        methods_pdf_path = Path(__file__).resolve().parent.parent / "docs" / "papers" / "methods_summary.pdf"
-        methods_md_path = Path(__file__).resolve().parent.parent / "docs" / "methods_summary.md"
-
-        if methods_pdf_path.exists():
-            methods_updated = datetime.utcfromtimestamp(methods_pdf_path.stat().st_mtime).strftime("%Y-%m-%d")
-            st.caption(f"Methods summary (PDF) · Last updated: {methods_updated}")
-            st.download_button(
-                "Download Methods PDF",
-                data=methods_pdf_path.read_bytes(),
-                file_name=methods_pdf_path.name,
-                mime="application/pdf",
-                help="Click to download the methods summary PDF."
-            )
-        elif methods_md_path.exists():
-            methods_updated = datetime.utcfromtimestamp(methods_md_path.stat().st_mtime).strftime("%Y-%m-%d %H:%M UTC")
-            st.caption(f"Methods summary updated: {methods_updated}")
-            st.download_button(
-                "Download Markdown",
-                data=methods_md_path.read_bytes(),
-                file_name=methods_md_path.name,
-                mime="text/markdown",
-            )
-
     completion = _get_step_completion()
     step1_done = completion["study_title"] and completion["study_description"]
 
-    col1, col2 = st.columns([3, 2], gap="large")
+    # v1.7.0: Clean form — study details first, team optional below
+    study_title = st.text_input(
+        "Study title *",
+        placeholder="e.g., Effect of AI Labels on Consumer Trust",
+        help="Appears in the report and simulated data outputs.",
+        key="study_title",
+    )
+    study_description = st.text_area(
+        "Study description *",
+        height=120,
+        placeholder=(
+            "Describe your study's purpose, manipulation, and main outcomes.\n"
+            "Example: 'We examine whether AI-generated content labels "
+            "affect consumer trust in product reviews, comparing labeled vs. "
+            "unlabeled conditions on a 7-point trust scale.'"
+        ),
+        help="Include your manipulation, population, and intended outcomes.",
+        key="study_description",
+    )
 
-    with col1:
-        st.markdown("#### Study Details")
-        study_title = st.text_input(
-            "Study title *",
-            placeholder="e.g., Effect of AI Labels on Consumer Trust",
-            help="Appears in the report and simulated data outputs.",
-            key="study_title",
-        )
-        study_description = st.text_area(
-            "Study description *",
-            height=150,
-            placeholder=(
-                "Describe your study's purpose, manipulation, and main outcomes.\n"
-                "For example: 'We examine whether AI-generated content labels "
-                "affect consumer trust in product reviews, comparing labeled vs. "
-                "unlabeled conditions on a 7-point trust scale.'"
-            ),
-            help="Include your manipulation, population, and intended outcomes.",
-            key="study_description",
-        )
+    # v1.7.0: Persist widget values immediately after rendering
+    if study_title:
+        st.session_state["_p_study_title"] = study_title
+    if study_description:
+        st.session_state["_p_study_description"] = study_description
 
-    with col2:
-        st.markdown("#### Team (optional)")
-        team_name = st.text_input(
-            "Team name",
-            placeholder="e.g., Team Alpha",
-            help="Optional. Helps instructors identify your team.",
-            key="team_name",
-        )
-        members = st.text_area(
-            "Team members (one per line)",
-            height=100,
-            placeholder="John Doe\nJane Smith",
-            help="Optional. List team members for the report.",
-            key="team_members_raw",
-        )
+    with st.expander("Team information (optional)"):
+        _t1, _t2 = st.columns(2)
+        with _t1:
+            team_name = st.text_input(
+                "Team name",
+                placeholder="e.g., Team Alpha",
+                help="Helps instructors identify your team.",
+                key="team_name",
+            )
+        with _t2:
+            members = st.text_area(
+                "Team members (one per line)",
+                height=80,
+                placeholder="John Doe\nJane Smith",
+                key="team_members_raw",
+            )
 
-    # v1.6.1: Section-complete banner with prominent CTA
+    # Continue CTA
     if step1_done:
         st.markdown(
-            '<div class="section-done-banner">✓ Setup complete — ready for the next step</div>',
+            '<div class="section-done-banner">\u2713 Setup complete</div>',
             unsafe_allow_html=True,
         )
         if st.button("Continue to Study Input  \u2192", key="auto_advance_0", type="primary"):
@@ -5001,6 +4971,24 @@ The simulator automatically assigns behavioral personas to simulated participant
             _missing.append("study description")
         if _missing:
             st.caption(f"Fill in {' and '.join(_missing)} to continue.")
+
+    # v1.7.0: Research citations collapsed at bottom — out of the way
+    with st.expander("Research foundations and citations"):
+        st.markdown("""
+**Core Research:** Argyle et al. (2023) *Political Analysis*; Horton (2023) *NBER*;
+Aher, Arriaga & Kalai (2023) *ICML* · **Validation:** Park et al. (2023) *ACM UIST*;
+Binz & Schulz (2023) *PNAS*; Dillion et al. (2023) *Trends in Cognitive Sciences* ·
+**Survey Validity:** Westwood (2025) *PNAS*
+""")
+        methods_pdf_path = Path(__file__).resolve().parent.parent / "docs" / "papers" / "methods_summary.pdf"
+        if methods_pdf_path.exists():
+            st.download_button(
+                "Download Methods PDF",
+                data=methods_pdf_path.read_bytes(),
+                file_name=methods_pdf_path.name,
+                mime="application/pdf",
+            )
+
     st.markdown('</div>', unsafe_allow_html=True)
 
 
@@ -5043,9 +5031,6 @@ if active_page == 1:
 
     # PATH B: QSF FILE UPLOAD
     _show_qsf_upload = (input_mode == "upload_qsf")
-
-    if _show_qsf_upload and not step2_done:
-        st.info("Upload your Qualtrics QSF file below")
 
     if _show_qsf_upload:
         st.markdown("#### Upload Qualtrics Survey File")
@@ -5525,24 +5510,13 @@ if active_page == 2:
         # If we reach here, preview exists (QSF path)
         inferred = st.session_state.get("inferred_design", {})
 
-        # v1.6.0: Design tab — compact status + metrics
+        # v1.7.0: Compact status at top — no redundant banner
         _design_conds = st.session_state.get("selected_conditions", [])
         _design_scales = st.session_state.get("confirmed_scales", [])
         _design_n = st.session_state.get("sample_size", 0)
         _design_ready = bool(_design_conds) and len(_design_conds) >= 1 and bool(_design_scales) and st.session_state.get("scales_confirmed", False)
 
-        if _design_ready:
-            st.markdown(
-                '<div class="section-done-banner">✓ Design configured — ready to generate</div>',
-                unsafe_allow_html=True,
-            )
-            _ds_c1, _ds_c2, _ds_c3 = st.columns(3)
-            _ds_c1.metric("Conditions", len(_design_conds))
-            _ds_c2.metric("DVs", len(_design_scales))
-            _ds_c3.metric("Sample N", _design_n)
-            if st.button("Continue to Generate  \u2192", key="design_to_generate", type="primary"):
-                _navigate_to(3)
-        else:
+        if not _design_ready:
             _missing = []
             if not _design_conds:
                 _missing.append("conditions")
@@ -5553,17 +5527,10 @@ if active_page == 2:
             if _missing:
                 st.caption(f"Still needed: {', '.join(_missing)}")
 
-        # ========================================
-        # STEP 1: CONDITION SETUP
-        # ========================================
-        st.markdown("")
+        # ── Conditions ─────────────────────────────────────────────────
         st.markdown("#### Experimental Conditions")
-        st.caption(
-            "Auto-detected from your QSF randomizer. "
-            "Select the ones to include, or add custom conditions."
-        )
 
-        # Condition selection (OUTSIDE the help expander)
+        # Condition selection
         condition_candidates = st.session_state.get("condition_candidates")
         if not condition_candidates:
             condition_candidates = _get_condition_candidates(preview, enhanced_analysis)
@@ -5579,18 +5546,12 @@ if active_page == 2:
 
         # Initialize selected conditions in session state
         if "selected_conditions" not in st.session_state:
-            # Default to QSF-detected conditions if any
             st.session_state["selected_conditions"] = condition_candidates[:] if condition_candidates else []
 
         # Get current custom conditions
         custom_conditions = st.session_state.get("custom_conditions", [])
 
-        # --- Option 1: Auto-detected conditions (multiselect) ---
         if all_possible_conditions:
-            st.markdown("**Option 1: Select from auto-detected conditions**")
-            st.caption(
-                "These were detected from your QSF file's randomizer and block structure."
-            )
 
             # Multi-select from available options
             selected = st.multiselect(
@@ -5606,13 +5567,11 @@ if active_page == 2:
             selected = []
             st.session_state["selected_conditions"] = []
 
-        # --- Options 2 & 3: Additional ways to add conditions ---
+        # Additional ways to add conditions
         with st.expander("Add more conditions", expanded=not bool(all_possible_conditions) or not bool(selected)):
 
-            # --- Option 2: Select from all QSF identifiers ---
             if qsf_identifiers:
-                st.markdown("**Option 2: Select from QSF identifiers**")
-                st.caption("All blocks, embedded data fields, and question IDs from your QSF (alphabetically sorted).")
+                st.markdown("**From QSF identifiers**")
 
                 col_id1, col_id2 = st.columns([3, 1])
                 with col_id1:
@@ -5638,9 +5597,7 @@ if active_page == 2:
                             st.session_state["custom_conditions"] = custom_conditions
                             _navigate_to(2)
 
-            # --- Option 3: Manual text entry ---
-            st.markdown("**Option 3: Type condition name manually**")
-            st.caption("Enter custom condition names if they aren't in the QSF or were not detected.")
+            st.markdown("**Type manually**")
 
             col_add1, col_add2 = st.columns([3, 1])
             with col_add1:
@@ -5690,12 +5647,8 @@ if active_page == 2:
             st.error("No conditions defined. Please go back and select or add at least 2 conditions.")
             all_conditions = []
 
-        # ========================================
-        # STEP 2: DESIGN STRUCTURE
-        # ========================================
-        st.markdown("")
+        # ── Design Structure ────────────────────────────────────────────
         st.markdown("#### Design Structure")
-
         col_design1, col_design2 = st.columns(2)
 
         # Auto-detect factors from condition names
@@ -5738,40 +5691,21 @@ if active_page == 2:
                 help="How participants are assigned to conditions.",
             )
 
-        # ========================================
-        # SAMPLE SIZE AND CONDITION ALLOCATION
-        # ========================================
-        st.markdown("")
-        st.markdown("#### Sample Size & Allocation")
-
-        # Sample size input (moved from Step 1)
-        # Use consistent key for state persistence
+        # ── Sample Size & Allocation ────────────────────────────────────
+        st.markdown("#### Sample Size")
         default_sample_size = int(st.session_state.get("sample_size", 200))
-
         sample_size = st.number_input(
-            "Target sample size (N) * — based on power analysis",
+            "Target sample size (N)",
             min_value=10,
             max_value=MAX_SIMULATED_N,
             value=default_sample_size,
             step=10,
-            help=(
-                "Enter the sample size from your power analysis (a priori power calculation). "
-                "This should be the N required to detect your expected effect size with adequate power (typically 80%). "
-                f"Maximum: {MAX_SIMULATED_N:,}."
-            ),
+            help=f"From your power analysis. Max: {MAX_SIMULATED_N:,}.",
             key="sample_size_step3",
         )
-        # Sync to canonical session state key
         st.session_state["sample_size"] = int(sample_size)
-        st.caption("💡 Use your power analysis result (e.g., from G*Power) to determine the appropriate N.")
 
-        # Condition allocation (rebalancing) with number inputs
         if all_conditions and len(all_conditions) > 1:
-            st.markdown("##### Condition Allocation")
-            st.caption(
-                "Participants are divided equally by default. "
-                "Adjust per-condition counts below (must sum to total N)."
-            )
 
             n_conditions = len(all_conditions)
             prev_sample_size = st.session_state.get("_prev_sample_size", 0)
@@ -5892,18 +5826,6 @@ if active_page == 2:
                 st.success(f"✓ Allocations sum to {sample_size}")
                 st.session_state["condition_allocation_n"] = new_allocation_n
 
-            # Show allocation summary with percentages
-            st.markdown("**Allocation summary:**")
-            summary_parts = []
-            for cond in all_conditions:
-                n = new_allocation_n.get(cond, sample_size // n_conditions)
-                pct = (n / sample_size * 100) if sample_size > 0 else 0
-                clean_name = _clean_condition_name(cond)
-                if len(clean_name) > 18:
-                    clean_name = clean_name[:16] + "..."
-                summary_parts.append(f"{clean_name}: **{n}** ({pct:.1f}%)")
-            st.markdown(" | ".join(summary_parts))
-
             # Convert to percentage-based allocation for the simulation engine
             st.session_state["condition_allocation"] = {
                 cond: (new_allocation_n.get(cond, 0) / sample_size * 100) if sample_size > 0 else 0
@@ -5916,14 +5838,7 @@ if active_page == 2:
             st.session_state["condition_allocation"] = {all_conditions[0]: 100}
             st.session_state["condition_allocation_n"] = {all_conditions[0]: sample_size}
 
-        # Factor configuration with clear explanation
-        st.markdown("")
         st.markdown("#### Factor Structure")
-        st.caption(
-            "**Factors** are the independent variables you manipulate. "
-            "A 2×2 design has 2 factors (e.g., AI presence × Product type). "
-            "Supports up to 3×3×3 designs (3 factors, 3 levels each)."
-        )
 
         # Detect design type
         design_options = [
@@ -6171,30 +6086,9 @@ if active_page == 2:
         if not scales:
             scales = [{"name": "Main_DV", "num_items": 5, "scale_points": 7}]
 
-        # ========================================
-        # STEP 4: DEPENDENT VARIABLES (DVs)
-        # ========================================
-        st.markdown("")
-        st.markdown("#### Dependent Variables (DVs)")
-        st.caption("Outcome measures in your study. Verify each DV matches your QSF survey.")
-
-        # Show DV help in collapsed expander
-        with st.expander("What are DVs and how to verify them?", expanded=False):
-            st.markdown("""
-    **Dependent Variables (DVs)** are what you measure as outcomes in your experiment.
-
-    **Types of DVs detected:**
-    - **Matrix scales** - Multi-item Likert scales (e.g., Trust Scale with 5 items)
-    - **Single-item DVs** - Individual rating questions
-    - **Sliders** - Visual analog scales (0-100)
-    - **Numeric inputs** - Open-ended numeric responses (e.g., willingness to pay)
-
-    **How to verify:**
-    1. Check the variable name matches your QSF question ID
-    2. Verify the scale points (e.g., 7 for a 1-7 scale)
-    3. Remove any DVs that aren't actual outcome measures
-    4. Add any missing DVs using the button below
-            """)
+        # ── Dependent Variables ──────────────────────────────────────────
+        st.markdown("#### Dependent Variables")
+        st.caption("Verify each DV matches your QSF survey. Adjust names, scale ranges, or remove incorrect detections.")
 
         # Initialize DV state - use a version counter to handle deletions
         dv_version = st.session_state.get("_dv_version", 0)
@@ -6430,13 +6324,7 @@ if active_page == 2:
             st.session_state["_dv_version"] = dv_version + 1
             _navigate_to(2)
 
-        # Add new DV button with helpful context
-        st.markdown("")
-        col_add, col_help = st.columns([1, 3])
-        with col_add:
-            add_clicked = st.button("➕ Add DV", key=f"add_dv_btn_v{dv_version}", help="Add a new dependent variable manually. Use this if automatic detection missed a scale or if you want to add custom measures.")
-        with col_help:
-            st.caption("DVs (dependent variables) are the outcomes you measure. The simulation will generate realistic responses for each DV based on your experimental conditions.")
+        add_clicked = st.button("+ Add DV", key=f"add_dv_btn_v{dv_version}", help="Add a new dependent variable manually.")
 
         if add_clicked:
             new_dv = {
@@ -6587,100 +6475,60 @@ if active_page == 2:
             )
             st.session_state["open_ended_confirmed"] = open_ended_confirmed
 
-        # ========================================
-        # ATTENTION & MANIPULATION CHECKS REVIEW
-        # ========================================
-        st.markdown("")
-        st.markdown("#### Attention & Manipulation Checks")
-
-        # Get detected checks from QSF preview
+        # ── Attention & Manipulation Checks (collapsed) ──────────────
         preview = st.session_state.get("qsf_preview")
         detected_attention = preview.attention_checks if preview and hasattr(preview, 'attention_checks') else []
-        detected_manipulation = []  # Will need to extract from analysis
-
-        # Try to get from enhanced analysis
+        detected_manipulation = []
         enhanced_analysis = st.session_state.get("enhanced_analysis")
         if enhanced_analysis and hasattr(enhanced_analysis, 'manipulation_checks'):
             detected_manipulation = enhanced_analysis.manipulation_checks
 
-        col_attn, col_manip = st.columns(2)
-
-        with col_attn:
-            st.markdown("**Attention Checks**")
-            if detected_attention:
-                st.success(f"✓ {len(detected_attention)} attention check(s) detected")
-                for i, check in enumerate(detected_attention[:5]):  # Show first 5
-                    st.caption(f"  • {check[:50]}..." if len(str(check)) > 50 else f"  • {check}")
-            else:
-                st.warning("No attention checks detected in QSF")
-
-            # Allow manual addition
-            with st.expander("Add/Edit Attention Checks"):
-                st.caption("Specify attention check question IDs or descriptions")
+        _attn_count = len(detected_attention)
+        _manip_count = len(detected_manipulation)
+        _checks_label = f"Attention & manipulation checks ({_attn_count + _manip_count} detected)" if (_attn_count + _manip_count) > 0 else "Attention & manipulation checks"
+        with st.expander(_checks_label, expanded=False):
+            col_attn, col_manip = st.columns(2)
+            with col_attn:
+                st.markdown("**Attention Checks**")
+                if detected_attention:
+                    for check in detected_attention[:5]:
+                        st.caption(f"\u2713 {check[:50]}{'...' if len(str(check)) > 50 else ''}")
+                else:
+                    st.caption("None detected")
                 manual_attention = st.text_area(
-                    "Attention check questions (one per line)",
+                    "Add attention checks (one per line)",
                     key="manual_attention_checks",
-                    height=100,
-                    placeholder="e.g., Q15_Attention\nPlease select 'Agree' for this question"
+                    height=80,
+                    placeholder="Q15_Attention"
                 )
-
-        with col_manip:
-            st.markdown("**Manipulation Checks**")
-            if detected_manipulation:
-                st.success(f"✓ {len(detected_manipulation)} manipulation check(s) detected")
-                for i, check in enumerate(detected_manipulation[:5]):
-                    st.caption(f"  • {check[:50]}..." if len(str(check)) > 50 else f"  • {check}")
-            else:
-                st.info("No manipulation checks detected (optional)")
-
-            # Allow manual addition
-            with st.expander("Add/Edit Manipulation Checks"):
-                st.caption("Specify manipulation check question IDs or descriptions")
+            with col_manip:
+                st.markdown("**Manipulation Checks**")
+                if detected_manipulation:
+                    for check in detected_manipulation[:5]:
+                        st.caption(f"\u2713 {check[:50]}{'...' if len(str(check)) > 50 else ''}")
+                else:
+                    st.caption("None detected (optional)")
                 manual_manipulation = st.text_area(
-                    "Manipulation check questions (one per line)",
+                    "Add manipulation checks (one per line)",
                     key="manual_manipulation_checks",
-                    height=100,
-                    placeholder="e.g., Q20_ManipCheck\nWhat condition were you assigned to?"
+                    height=80,
+                    placeholder="Q20_ManipCheck"
                 )
 
-        st.caption("💡 *Attention checks help identify careless responders. Manipulation checks verify participants understood the experimental condition.*")
+        # ── Design Summary ──────────────────────────────────────────────
+        st.markdown("---")
 
-        # ========================================
-        # FINAL SUMMARY & LOCK DESIGN
-        # ========================================
-        st.markdown("")
-        st.markdown("#### Design Summary")
-
-        # Check if using crossed factorial conditions
         display_conditions = all_conditions
         if st.session_state.get("use_crossed_conditions") and st.session_state.get("factorial_crossed_conditions"):
             display_conditions = st.session_state["factorial_crossed_conditions"]
 
-        # Get confirmed open-ended count
         confirmed_oe = st.session_state.get("confirmed_open_ended", [])
         oe_count = len(confirmed_oe)
 
-        summary_cols = st.columns(5)
-        summary_cols[0].metric("Conditions", len(display_conditions))
-        summary_cols[1].metric("Factors", len(factors))
-        summary_cols[2].metric("DVs", len(scales))
-        summary_cols[3].metric("Open-Ended", oe_count)
-        summary_cols[4].metric("Design", design_type.split("(")[0].strip())
-
-        # Show condition list and detected scales (cleaned names)
-        clean_cond_names = [_clean_condition_name(c) for c in display_conditions]
-        if st.session_state.get("use_crossed_conditions"):
-            st.markdown(f"**Factorial Conditions (crossed):** {', '.join(clean_cond_names)}")
-        else:
-            st.markdown(f"**Conditions:** {', '.join(clean_cond_names)}")
-        scale_names = [s.get('name', 'Unknown') for s in scales if s.get('name')]
-        st.markdown(f"**DVs:** {', '.join(scale_names) if scale_names else 'Main_DV (default)'}")
-        if oe_count > 0:
-            oe_names = [oe.get('variable_name', oe.get('name', '')) for oe in confirmed_oe[:5]]
-            oe_display = ', '.join(oe_names)
-            if oe_count > 5:
-                oe_display += f" (+{oe_count - 5} more)"
-            st.markdown(f"**Open-Ended Questions:** {oe_display}")
+        _sm1, _sm2, _sm3 = st.columns(3)
+        _sm1.metric("Conditions", len(display_conditions))
+        _sm2.metric("DVs", len(scales))
+        _sm3.metric("Sample N", st.session_state.get("sample_size", 0))
 
         # Validate and lock design - require conditions, scales, scale confirmation, and correct allocation
         _alloc_n = st.session_state.get("condition_allocation_n", {})
@@ -6754,110 +6602,42 @@ if active_page == 2:
                 missing_bits.append(f"condition allocation (sums to {_alloc_sum}, need {sample_size})")
             st.error("⚠️ Cannot proceed - missing: " + ", ".join(missing_bits))
 
-        # ========================================
-        # ADVANCED: Variable Review (collapsed)
-        # ========================================
-        with st.expander("Advanced: Review All Variables"):
-            st.caption("View and edit all detected survey variables and their roles.")
-
-            prereg_outcomes = st.session_state.get("prereg_outcomes", "")
-            prereg_iv = st.session_state.get("prereg_iv", "")
-            default_rows = _build_variable_review_rows(inferred, prereg_outcomes, prereg_iv, enhanced_analysis)
-            current_rows = st.session_state.get("variable_review_rows")
-
-            if not current_rows:
-                current_rows = default_rows
-
-            # Simple filter
-            show_timing = st.checkbox("Include timing/meta variables", value=False, key="adv_filter_timing")
-
-            if not show_timing:
+        # v1.7.0: Variable review — hidden behind Advanced toggle
+        if st.session_state.get("advanced_mode", False):
+            with st.expander("Variable roles (advanced)"):
+                prereg_outcomes = st.session_state.get("prereg_outcomes", "")
+                prereg_iv = st.session_state.get("prereg_iv", "")
+                default_rows = _build_variable_review_rows(inferred, prereg_outcomes, prereg_iv, enhanced_analysis)
+                current_rows = st.session_state.get("variable_review_rows")
+                if not current_rows:
+                    current_rows = default_rows
                 filtered_rows = [r for r in current_rows if r.get("Type") != "Timing/Meta"]
-            else:
-                filtered_rows = current_rows
+                if filtered_rows:
+                    variable_df = st.data_editor(
+                        pd.DataFrame(filtered_rows),
+                        num_rows="fixed",
+                        use_container_width=True,
+                        column_config={
+                            "Variable": st.column_config.TextColumn("Variable", disabled=True),
+                            "Display Name": st.column_config.TextColumn("Name", disabled=True),
+                            "Type": st.column_config.TextColumn("Type", disabled=True),
+                            "Role": st.column_config.SelectboxColumn(
+                                "Role",
+                                options=["Primary outcome", "Secondary outcome", "Condition", "Mediator",
+                                         "Moderator", "Attention check", "Demographics", "Timing/Meta", "Other"],
+                            ),
+                            "Question Text": st.column_config.TextColumn("Question", disabled=True),
+                        },
+                        key="adv_variable_editor",
+                        height=300,
+                    )
+                    st.session_state["variable_review_rows"] = variable_df.to_dict(orient="records")
 
-            if filtered_rows:
-                variable_df = st.data_editor(
-                    pd.DataFrame(filtered_rows),
-                    num_rows="fixed",
-                    use_container_width=True,
-                    column_config={
-                        "Variable": st.column_config.TextColumn("Variable", disabled=True),
-                        "Display Name": st.column_config.TextColumn("Name", disabled=True),
-                        "Type": st.column_config.TextColumn("Type", disabled=True),
-                        "Role": st.column_config.SelectboxColumn(
-                            "Role",
-                            options=["Primary outcome", "Secondary outcome", "Condition", "Mediator",
-                                     "Moderator", "Attention check", "Demographics", "Timing/Meta", "Other"],
-                        ),
-                        "Question Text": st.column_config.TextColumn("Question", disabled=True),
-                    },
-                    key="adv_variable_editor",
-                    height=300,
-                )
-                st.session_state["variable_review_rows"] = variable_df.to_dict(orient="records")
-
-        # ========================================
-        # v2.4.5: DESIGN PREVIEW SUMMARY
-        # ========================================
-        if design_valid:
-            st.markdown("")
-            st.markdown("#### Design Preview")
-            st.caption("Review your experiment configuration before generating data")
-
-            preview_col1, preview_col2 = st.columns(2)
-            with preview_col1:
-                st.markdown("**Study Details**")
-                study_title = st.session_state.get("study_title", "Untitled Study")
-                sample_n = st.session_state.get("sample_size", 100)
-                st.markdown(f"- **Title:** {study_title[:60]}{'...' if len(study_title) > 60 else ''}")
-                st.markdown(f"- **Sample Size:** N = {sample_n}")
-
-                st.markdown("**Experimental Design**")
-                st.markdown(f"- **Conditions:** {len(all_conditions)}")
-                if all_conditions:
-                    cond_preview = ", ".join(all_conditions[:4])
-                    if len(all_conditions) > 4:
-                        cond_preview += f", +{len(all_conditions) - 4} more"
-                    st.markdown(f"  _{cond_preview}_")
-
-            with preview_col2:
-                st.markdown("**Dependent Variables**")
-                st.markdown(f"- **Scales/DVs:** {len(scales)}")
-                if scales:
-                    for s in scales[:3]:
-                        s_name = s.get("name", "Scale")[:30]
-                        s_type = s.get("type", "unknown")
-                        st.markdown(f"  - {s_name} _({s_type})_")
-                    if len(scales) > 3:
-                        st.markdown(f"  - _+{len(scales) - 3} more_")
-
-                # v1.0.0: Only show effect size if user has explicitly configured one
-                # Don't show default 0.5 as it's misleading when no hypothesis specified
-                if st.session_state.get("add_effect_checkbox", False):
-                    effect_size = st.session_state.get("effect_size", 0.5)
-                    st.markdown(f"**Effect Size:** d = {effect_size:.2f}")
-
-            # Design type detection
-            design_type = "Between-subjects"
-            if len(all_conditions) == 1:
-                design_type = "Single group"
-            elif len(all_conditions) == 2:
-                design_type = "2-group comparison"
-            elif len(all_conditions) == 4:
-                design_type = "2×2 factorial"
-            elif len(all_conditions) == 6:
-                design_type = "2×3 factorial"
-            elif len(all_conditions) == 9:
-                design_type = "3×3 factorial"
-
-            st.info(f"**Design Type:** {design_type} · **Total Cells:** {len(all_conditions)} · **N per cell:** ~{sample_n // max(1, len(all_conditions))}")
-
-    # v1.6.1: Bottom CTA with completion banner
+    # ── Bottom CTA ───────────────────────────────────────────────────
     _design_can_next = bool(st.session_state.get("inferred_design"))
     if _design_can_next:
         st.markdown(
-            '<div class="section-done-banner">✓ Design configured — ready to generate</div>',
+            '<div class="section-done-banner">\u2713 Design configured — ready to generate</div>',
             unsafe_allow_html=True,
         )
         if st.button("Continue to Generate  \u2192", key="auto_advance_2", type="primary"):
