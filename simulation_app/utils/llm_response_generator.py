@@ -82,27 +82,30 @@ _DEFAULT_API_KEY = _DEFAULT_GROQ_KEY
 SYSTEM_PROMPT = (
     "You are simulating survey participants for behavioral science research. "
     "You generate realistic open-ended survey responses that mimic real human "
-    "participants.  Each response should sound natural, contain typical human "
-    "imperfections (hedging, incomplete thoughts, colloquialisms where appropriate), "
-    "and vary in quality and detail based on the participant profile provided.\n\n"
-    "CRITICAL: Every response MUST be grounded in the specific study topic, "
-    "experimental condition, and survey question provided.  A participant in a "
-    "political polarization study should talk about political feelings and partisan "
-    "dynamics, NOT generic 'the study was interesting' filler.  A participant in a "
-    "trust study should reference trust-related thoughts.  The study context, "
-    "condition, and question are your primary guide for response content.\n\n"
-    "IMPORTANT: When a 'question context' is provided by the researcher, it is "
-    "the MOST important piece of information for generating the response. The "
-    "context explains exactly what the question is asking about. For example, if "
-    "the question is 'explain_feel_donald' and the context says 'participants "
-    "describe their feelings toward Donald Trump after reading a polarizing news "
-    "article', EVERY response must specifically discuss feelings about Donald Trump. "
-    "Never ignore or dilute the question context.\n\n"
-    "Responses must be realistic survey responses, NOT polished essays.  "
-    "Real participants write informally, sometimes go off-topic slightly, and vary "
-    "significantly in effort and detail.  Careless participants give very short "
-    "but still topic-relevant answers.  Engaged participants give thoughtful, "
-    "specific answers referencing their experimental experience."
+    "participants.\n\n"
+    "ABSOLUTE PRIORITY — CONTENT GROUNDING:\n"
+    "1. When 'QUESTION CONTEXT' is provided by the researcher, it is the #1 signal. "
+    "Every single response MUST directly address that context. If the context says "
+    "'participants describe their feelings toward Donald Trump', every response MUST "
+    "specifically discuss Donald Trump — not politics in general, not the study, not "
+    "abstract concepts. The context tells you EXACTLY what to write about.\n"
+    "2. The study topic, description, and experimental condition tell you the frame "
+    "of reference. A participant in condition 'AI_label' in a consumer trust study "
+    "should reference AI labels on products. A participant in condition 'Control' "
+    "did NOT receive the treatment — their response reflects the baseline.\n"
+    "3. Responses must reference SPECIFIC things from the study: the manipulation "
+    "they experienced, the product/scenario they read about, the article they saw, "
+    "the person/policy they evaluated. Vague filler like 'the study was interesting' "
+    "or 'I found it engaging' is NEVER acceptable.\n\n"
+    "REALISM REQUIREMENTS:\n"
+    "- Real survey participants write informally with hedging, incomplete thoughts, "
+    "and varying effort levels.\n"
+    "- Careless participants give short but still topic-specific answers (e.g., "
+    "'trump is ok i guess' not 'the study was fine').\n"
+    "- Engaged participants give thoughtful, specific answers referencing concrete "
+    "aspects of their experimental experience.\n"
+    "- Responses should NOT read like polished essays or AI-generated text. Include "
+    "natural imperfections: run-on sentences, missing capitals, hedging language."
 )
 
 # ---------------------------------------------------------------------------
@@ -321,41 +324,74 @@ def _build_batch_prompt(
     # v1.8.7.1: Extract question context if embedded in the question text
     # The engine may embed "Question: ...\nContext: ...\nStudy topic: ..." format
     _question_context_block = ""
+    _study_topic_line = ""
     if "\nContext: " in _q_display:
         _parts = _q_display.split("\n")
         _q_line = _parts[0].replace("Question: ", "").strip() if _parts else _q_display
         _ctx_lines = [p for p in _parts[1:] if p.startswith("Context: ")]
+        _topic_lines = [p for p in _parts[1:] if p.startswith("Study topic: ")]
         _ctx_text = _ctx_lines[0].replace("Context: ", "").strip() if _ctx_lines else ""
+        _topic_text = _topic_lines[0].replace("Study topic: ", "").strip() if _topic_lines else ""
         if _ctx_text:
             _question_context_block = (
-                f"\nIMPORTANT question context (provided by the researcher): {_ctx_text}\n"
-                f"Responses MUST directly address this context. "
-                f"For example, if the context says 'participants explain their feelings toward Donald Trump', "
-                f"every response must be specifically about feelings toward Donald Trump.\n"
+                f"\n*** QUESTION CONTEXT (from the researcher — THIS IS YOUR #1 PRIORITY): ***\n"
+                f"{_ctx_text}\n"
+                f"Every response MUST directly and specifically address the above context. "
+                f"Do NOT write vague or off-topic responses.\n"
             )
             _q_display = _q_line  # Use the clean question name for display
+        if _topic_text:
+            _study_topic_line = f"Study topic: {_topic_text}\n"
+
+    # v1.8.7.3: Humanize condition name for better LLM understanding
+    _condition_display = condition
+    if condition and " " not in condition.strip():
+        import re as _re
+        _condition_display = _re.sub(r'[_\-]+', ' ', condition).strip()
+
+    # v1.8.7.3: Build a richer condition explanation
+    _condition_explanation = ""
+    if all_conditions and len(all_conditions) > 1:
+        _humanized_conditions = []
+        for c in all_conditions:
+            if " " not in c.strip():
+                import re as _re
+                _humanized_conditions.append(_re.sub(r'[_\-]+', ' ', c).strip())
+            else:
+                _humanized_conditions.append(c)
+        _condition_explanation = (
+            f"Experimental conditions: {', '.join(_humanized_conditions)}\n"
+            f"THIS participant was in the '{_condition_display}' condition.\n"
+        )
+    else:
+        _condition_explanation = f"Experimental condition: {_condition_display}\n"
 
     prompt = (
         f'Study: "{study_title}"\n'
-        f"Study description: {study_description[:500]}\n"
-        f"{conditions_block}\n"
+        f"Study description: {study_description[:800]}\n"
+        f"{_study_topic_line}"
+        f"{_condition_explanation}\n"
         f'Survey question: "{_q_display}"\n'
         f"{_question_context_block}\n"
         f"Generate exactly {n} unique responses from {n} different survey "
-        f"participants who just completed this experiment.\n"
+        f"participants who just completed this experiment in the "
+        f"'{_condition_display}' condition.\n"
         f"Each participant's profile controls their response style:\n\n"
         f"{participants_block}\n\n"
         f"Rules:\n"
         f"- Each response MUST be different from every other response.\n"
-        f"- Responses MUST be grounded in the specific study topic "
-        f"(\"{study_title}\") and the participant's assigned condition "
-        f"(\"{condition}\").\n"
-        f"- Participants should write AS IF they actually experienced the "
-        f"experimental manipulation. Reference specific aspects of the study, "
-        f"condition, or topic — do not give generic 'the study was fine' answers.\n"
+        f"- Every response MUST reference specific content from the study: "
+        f"the manipulation they experienced, the scenario they read, the "
+        f"person/product/policy they evaluated — NOT generic filler.\n"
+        f"- Participants write AS IF they actually experienced the "
+        f"'{_condition_display}' condition. Their answers reflect that "
+        f"specific experimental experience.\n"
         f"- Do NOT use bullet points, numbered lists, or markdown formatting "
-        f"inside responses — just plain text as a survey participant would write.\n"
-        f"- Match each participant's length, style, effort, and sentiment exactly.\n\n"
+        f"— just plain text as a survey participant would write.\n"
+        f"- Match each participant's length, style, effort, and sentiment exactly.\n"
+        f"- Short responses from low-effort participants should still be "
+        f"topic-specific (e.g., 'the ai label made me trust it less' NOT "
+        f"'it was fine').\n\n"
         f"Return ONLY a JSON array of {n} strings (one per participant), "
         f"no other text:\n"
         f'["response 1", "response 2", ...]'

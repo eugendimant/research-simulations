@@ -52,8 +52,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.8.7.2"
-BUILD_ID = "20260209-v1872-scroll-up-first-navigation"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.8.7.3"
+BUILD_ID = "20260209-v1873-nav-cleanup-domain-llm"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -107,7 +107,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.8.7.2"  # v1.8.7.2: Scroll-up-first navigation with top continue button
+APP_VERSION = "1.8.7.3"  # v1.8.7.3: Nav cleanup, domain detection, LLM prompt improvements
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
