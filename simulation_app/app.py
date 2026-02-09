@@ -29,8 +29,6 @@ Gmail Setup:
 
 from __future__ import annotations
 
-import base64
-import importlib
 import io
 import json
 import os
@@ -54,8 +52,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.4.16"
-BUILD_ID = "20260208-v1416-bugfixes-polish"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.5.0"
+BUILD_ID = "20260209-v150-flow-navigation"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -109,7 +107,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF"
-APP_VERSION = "1.4.16"  # v1.4.16: Fix NameError bug, stepper completion, reset helper, download UX, dead code removal
+APP_VERSION = "1.5.0"  # v1.5.0: Modern flow navigation, HTML leak fix, dead code removal, UX polish
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -145,210 +143,9 @@ def _safe_json(obj: Any) -> str:
     return json.dumps(obj, indent=2, ensure_ascii=False, default=str)
 
 
-# =============================================================================
-# INPUT VALIDATION HELPERS (Iteration 1: Enhanced validation)
-# =============================================================================
-def _validate_study_title(title: str) -> Tuple[bool, str]:
-    """Validate study title with helpful feedback."""
-    if not title or not title.strip():
-        return False, "Study title is required"
-    title = title.strip()
-    if len(title) < 5:
-        return False, "Title should be at least 5 characters"
-    if len(title) > 200:
-        return False, f"Title is too long ({len(title)} chars, max 200)"
-    # Check for placeholder text
-    placeholders = ["test", "untitled", "my study", "example", "xxx", "asdf"]
-    if title.lower() in placeholders:
-        return False, "Please enter a descriptive study title"
-    return True, "Valid"
+# v1.5.0: Removed unused validation helpers, SimulationError class, and related
+# dead code (~180 lines). Validation is handled inline where needed.
 
-
-def _validate_study_description(desc: str) -> Tuple[bool, str, List[str]]:
-    """Validate study description with quality suggestions."""
-    suggestions = []
-    if not desc or not desc.strip():
-        return False, "Study description is required", suggestions
-    desc = desc.strip()
-    if len(desc) < 20:
-        return False, "Description should be at least 20 characters", suggestions
-    if len(desc) > 5000:
-        return False, f"Description is too long ({len(desc)} chars, max 5000)", suggestions
-
-    # Quality suggestions
-    key_elements = {
-        "manipulation": ["manipulate", "condition", "treatment", "vary", "experimental"],
-        "outcome": ["measure", "outcome", "dependent", "dv", "effect"],
-        "population": ["participant", "sample", "population", "respondent", "subject"],
-    }
-
-    desc_lower = desc.lower()
-    for element, keywords in key_elements.items():
-        if not any(kw in desc_lower for kw in keywords):
-            suggestions.append(f"Consider mentioning your {element}")
-
-    return True, "Valid", suggestions
-
-
-def _validate_sample_size(n: int, n_conditions: int = 1) -> Tuple[bool, str, List[str]]:
-    """Validate sample size with power analysis guidance."""
-    warnings = []
-    if n < 10:
-        return False, "Sample size must be at least 10", warnings
-    if n > MAX_SIMULATED_N:
-        return False, f"Sample size cannot exceed {MAX_SIMULATED_N:,}", warnings
-
-    # Power analysis guidance
-    per_condition = n // max(1, n_conditions)
-    if per_condition < 20:
-        warnings.append(f"Only {per_condition} per condition may have low power")
-    elif per_condition < 30:
-        warnings.append(f"{per_condition} per condition - consider if sufficient for your effect size")
-
-    if n % n_conditions != 0:
-        warnings.append("Sample size doesn't divide evenly across conditions")
-
-    return True, "Valid", warnings
-
-
-def _validate_condition_name(name: str) -> Tuple[bool, str]:
-    """Validate a condition name."""
-    if not name or not name.strip():
-        return False, "Condition name cannot be empty"
-    name = name.strip()
-    if len(name) > 100:
-        return False, "Condition name is too long (max 100 chars)"
-    # Check for problematic characters
-    if any(c in name for c in ['<', '>', '&', '"', "'"]):
-        return False, "Condition name contains invalid characters"
-    return True, "Valid"
-
-
-def _get_validation_summary(completion: Dict[str, bool]) -> Dict[str, Any]:
-    """Generate a comprehensive validation summary."""
-    total_required = 7  # Number of required fields
-    completed = sum(1 for v in list(completion.values())[:total_required] if v)
-
-    status = "complete" if completed == total_required else "incomplete"
-    percentage = int((completed / total_required) * 100)
-
-    missing_items = []
-    if not completion.get("study_title"):
-        missing_items.append({"field": "Study title", "step": 1, "priority": "required"})
-    if not completion.get("study_description"):
-        missing_items.append({"field": "Study description", "step": 1, "priority": "required"})
-    if not completion.get("qsf_uploaded"):
-        missing_items.append({"field": "Study input (QSF or description)", "step": 2, "priority": "required"})
-    if not completion.get("conditions_set"):
-        missing_items.append({"field": "Conditions", "step": 3, "priority": "required"})
-    if not completion.get("sample_size"):
-        missing_items.append({"field": "Sample size", "step": 3, "priority": "required"})
-
-    return {
-        "status": status,
-        "percentage": percentage,
-        "completed": completed,
-        "total": total_required,
-        "missing": missing_items,
-        "ready_to_generate": status == "complete"
-    }
-
-
-# =============================================================================
-# UNIFIED ERROR HANDLING (Iteration 3: Consolidate error messages)
-# =============================================================================
-class SimulationError:
-    """Unified error/warning message container."""
-    INFO = "info"
-    WARNING = "warning"
-    ERROR = "error"
-    SUCCESS = "success"
-
-    def __init__(self, level: str, message: str, details: str = "", fix_action: str = ""):
-        self.level = level
-        self.message = message
-        self.details = details
-        self.fix_action = fix_action
-
-    def render(self):
-        """Render the error message using Streamlit components."""
-        if self.level == self.ERROR:
-            st.error(self.message)
-        elif self.level == self.WARNING:
-            st.warning(self.message)
-        elif self.level == self.SUCCESS:
-            st.success(self.message)
-        else:
-            st.info(self.message)
-
-        if self.details:
-            st.caption(self.details)
-        if self.fix_action:
-            st.caption(f"Suggested fix: {self.fix_action}")
-
-
-def _show_step_error(step_name: str, missing_step: int, missing_fields: List[str]) -> None:
-    """Show a consistent error message for incomplete prerequisite steps."""
-    step_names = ["Study Info", "Upload Files", "Design Setup", "Generate"]
-    target_step = step_names[missing_step] if 0 <= missing_step < len(step_names) else "previous step"
-
-    st.error(f"Please complete **Step {missing_step + 1}: {target_step}** before proceeding to {step_name}.")
-
-    if missing_fields:
-        st.caption(f"Missing: {', '.join(missing_fields)}")
-
-
-def _show_validation_summary(completion: Dict[str, bool], show_details: bool = True) -> bool:
-    """Render a comprehensive validation summary (Iteration 10).
-
-    Returns True if all validations pass.
-    """
-    summary = _get_validation_summary(completion)
-
-    # Progress indicator
-    if summary["percentage"] == 100:
-        st.success(f"All {summary['total']} requirements complete. Ready to generate simulation.")
-        return True
-    else:
-        st.progress(summary["percentage"] / 100, text=f"Setup: {summary['completed']}/{summary['total']} complete ({summary['percentage']}%)")
-
-        if show_details and summary["missing"]:
-            missing_by_step = {}
-            for item in summary["missing"]:
-                step = item["step"]
-                if step not in missing_by_step:
-                    missing_by_step[step] = []
-                missing_by_step[step].append(item["field"])
-
-            for step_num, fields in sorted(missing_by_step.items()):
-                st.caption(f"Step {step_num}: {', '.join(fields)}")
-
-        return False
-
-
-def _render_readiness_checklist() -> Dict[str, bool]:
-    """Render a visual readiness checklist for simulation generation."""
-    completion = _get_step_completion()
-
-    checks = [
-        ("Study title", completion.get("study_title", False)),
-        ("Study description", completion.get("study_description", False)),
-        ("Study input provided", completion.get("qsf_uploaded", False)),
-        ("Conditions defined", completion.get("conditions_set", False)),
-        ("Sample size set (≥10)", completion.get("sample_size", False)),
-    ]
-
-    all_passed = all(c[1] for c in checks)
-
-    # Compact checklist display
-    check_items = []
-    for label, passed in checks:
-        icon = "✓" if passed else "○"
-        check_items.append(f"{icon} {label}")
-
-    st.caption(" | ".join(check_items))
-
-    return {"all_passed": all_passed, "checks": dict(checks)}
 
 
 def _markdown_to_html(markdown_text: str, title: str = "Study Summary") -> str:
@@ -1935,13 +1732,12 @@ FEEDBACK_EMAIL = "edimant@sas.upenn.edu"
 
 def _render_feedback_button() -> None:
     """
-    Render a prominent feedback/bug report button at the bottom of each page.
-    Users can report bugs, send recommendations, or a mix of both.
+    Render a compact feedback/bug report section at the bottom of each page.
+    v1.5.0: Made compact — no more bulky header, just a clean expander.
     """
     st.markdown("---")
-    st.markdown("### 📬 Feedback & Bug Reports")
 
-    with st.expander("**Report a bug or send feedback**", expanded=False):
+    with st.expander("Report a bug or send feedback", expanded=False):
         feedback_type = st.radio(
             "What would you like to do?",
             options=["Report a bug 🐛", "Send a recommendation 💡", "Both (bug + recommendation) 🔧"],
@@ -2966,61 +2762,19 @@ def _get_qsf_preview_parser() -> QSFPreviewParser:
 # -----------------------------
 st.set_page_config(page_title=APP_TITLE, layout="wide")
 
-st.title(APP_TITLE)
-st.caption(APP_SUBTITLE)
-st.markdown(
-    "Created by Dr. [Eugen Dimant](https://eugendimant.github.io/) · "
-    "This tool is designed to make behavioral experiment simulation fast, comparable, and reproducible."
-)
-st.caption(f"Version {APP_VERSION} · Build {APP_BUILD_TIMESTAMP}")
+# ── Compact header ────────────────────────────────────────────────────
+_hdr_left, _hdr_right = st.columns([3, 1])
+with _hdr_left:
+    st.markdown(f"## {APP_TITLE}")
+    st.caption(
+        f"{APP_SUBTITLE} · "
+        f"Created by Dr. [Eugen Dimant](https://eugendimant.github.io/)"
+    )
+with _hdr_right:
+    st.caption(f"v{APP_VERSION}")
 
-STEP_LABELS = ["Setup", "Study Input", "Design", "Generate"]
-STEP_DESCRIPTIONS = [
-    "Enter study title, description & sample size",
-    "Upload a QSF file or describe your study",
-    "Review conditions, factors & outcome variables",
-    "Generate simulated data package"
-]
-
-# v1.1.0: Enhanced step guidance with specific help text
-STEP_HELP = {
-    0: {
-        "title": "Study Information",
-        "tips": [
-            "Use a descriptive title that captures your study's main purpose",
-            "Include key variables, manipulations, or hypotheses in your description",
-            "Sample size should be at least 30 per condition for reliable analyses",
-        ],
-        "common_issues": "Tip: The description helps the simulator understand your research domain.",
-    },
-    1: {
-        "title": "File Upload",
-        "tips": [
-            "Export your survey from Qualtrics as a .qsf file (Survey → Tools → Import/Export)",
-            "The QSF file contains all question structures, conditions, and flow logic",
-            "Optionally upload your preregistration PDF for consistency checking",
-        ],
-        "common_issues": "Tip: Make sure to export the survey, not just the data.",
-    },
-    2: {
-        "title": "Design Configuration",
-        "tips": [
-            "Review auto-detected conditions and scales for accuracy",
-            "Add any conditions that weren't detected from the survey flow",
-            "Verify scale ranges match your actual survey (e.g., 1-7 Likert)",
-        ],
-        "common_issues": "Tip: Hover over detected items to see their QSF question IDs.",
-    },
-    3: {
-        "title": "Data Generation",
-        "tips": [
-            "Final mode produces full-quality data; Pilot mode is faster for testing",
-            "The output includes CSV data, R analysis script, and instructor report",
-            "Generated data simulates realistic response patterns and demographics",
-        ],
-        "common_issues": "Tip: Use 'Pilot' mode first to verify your setup is correct.",
-    },
-}
+# v1.5.0: Removed legacy STEP_LABELS, STEP_DESCRIPTIONS, STEP_HELP constants
+# (replaced by SECTION_META in flow navigation)
 
 # User guidance messages for better UX
 UI_GUIDANCE = {
@@ -4411,52 +4165,6 @@ def _preflight_validation() -> List[str]:
 # No snapshot/restore cycle needed since only one page renders at a time.
 
 
-def _get_smart_defaults(study_description: str = "", preview: Any = None) -> Dict[str, Any]:
-    """Generate smart defaults based on study context (Iteration 6).
-
-    Analyzes study description and QSF structure to suggest appropriate defaults.
-    """
-    defaults = {
-        "sample_size": 200,
-        "effect_size_d": 0.5,  # Medium effect
-        "attention_rate": 0.95,
-        "random_responder_rate": 0.05,
-    }
-
-    desc_lower = study_description.lower() if study_description else ""
-
-    # Adjust defaults based on study type keywords
-    if any(kw in desc_lower for kw in ["online", "mturk", "prolific", "crowdsource"]):
-        defaults["attention_rate"] = 0.90  # Lower for online samples
-        defaults["random_responder_rate"] = 0.08
-
-    if any(kw in desc_lower for kw in ["lab", "laboratory", "in-person"]):
-        defaults["attention_rate"] = 0.98  # Higher for lab studies
-        defaults["random_responder_rate"] = 0.02
-
-    if any(kw in desc_lower for kw in ["small effect", "subtle", "weak"]):
-        defaults["effect_size_d"] = 0.2  # Small effect
-        defaults["sample_size"] = 400  # Need more power
-
-    if any(kw in desc_lower for kw in ["large effect", "strong", "robust"]):
-        defaults["effect_size_d"] = 0.8  # Large effect
-        defaults["sample_size"] = 100  # Fewer needed
-
-    if any(kw in desc_lower for kw in ["pilot", "preliminary", "exploratory"]):
-        defaults["sample_size"] = 50  # Smaller for pilots
-
-    if any(kw in desc_lower for kw in ["replication", "replicate", "confirm"]):
-        defaults["sample_size"] = 300  # Larger for replications
-
-    # Adjust based on detected conditions if preview available
-    if preview and hasattr(preview, 'detected_conditions'):
-        n_conditions = len(preview.detected_conditions) if preview.detected_conditions else 1
-        # Ensure at least 30 per cell for basic power
-        min_n = n_conditions * 30
-        defaults["sample_size"] = max(defaults["sample_size"], min_n)
-
-    return defaults
-
 
 def _reset_generation_state() -> None:
     """Reset all generation-related state to allow a fresh generation run.
@@ -4478,16 +4186,295 @@ def _reset_generation_state() -> None:
 
 
 def _navigate_to(page_index: int) -> None:
-    """Navigate to a page by index and rerun.
+    """Navigate to a section by index and rerun.
 
-    v1.4.15: Sets a _page_just_changed flag so that the render cycle
-    can inject JavaScript to scroll the browser viewport to the very top.
-    Streamlit's st.rerun() preserves scroll position; only JS can reset it.
+    v1.5.0: Uses pending-nav pattern for reliable section switching.
+    Sets _page_just_changed flag so the render cycle injects JS to
+    scroll the browser viewport to the top.
     """
-    clamped = max(0, min(page_index, len(STEP_LABELS) - 1))
-    st.session_state["active_page"] = clamped
+    clamped = max(0, min(page_index, 3))
+    st.session_state["_pending_nav"] = clamped
     st.session_state["_page_just_changed"] = True
     st.rerun()
+
+
+# ── Section metadata for flow navigation ──────────────────────────────
+SECTION_META: List[Dict[str, str]] = [
+    {"title": "Setup", "icon": "📋", "desc": "Study details & team"},
+    {"title": "Study Input", "icon": "📁", "desc": "Upload QSF or describe study"},
+    {"title": "Design", "icon": "🔬", "desc": "Conditions, factors & outcomes"},
+    {"title": "Generate", "icon": "⚡", "desc": "Run simulation & download"},
+]
+
+
+def _section_summary(idx: int) -> str:
+    """One-line summary for a completed section."""
+    if idx == 0:
+        title = st.session_state.get("study_title", "")
+        if title:
+            return f'"{title[:28]}…"' if len(title) > 28 else f'"{title}"'
+        return ""
+    elif idx == 1:
+        if st.session_state.get("conversational_builder_complete"):
+            return "Builder complete"
+        if st.session_state.get("qsf_preview"):
+            return "QSF uploaded"
+        return ""
+    elif idx == 2:
+        conds = st.session_state.get("selected_conditions", [])
+        n = len(conds)
+        if n:
+            return f"{n} condition{'s' if n != 1 else ''}"
+        return ""
+    elif idx == 3:
+        return "Data ready" if st.session_state.get("has_generated") else ""
+    return ""
+
+
+# ── Flow navigation CSS ──────────────────────────────────────────────
+_FLOW_NAV_CSS = """<style>
+/* === Flow Navigation Ribbon (v1.5.0) === */
+.flow-ribbon {
+    display: flex;
+    align-items: stretch;
+    gap: 2px;
+    background: linear-gradient(135deg, #F8F9FA 0%, #F1F3F5 100%);
+    border-radius: 16px;
+    padding: 4px;
+    margin: 0 0 8px 0;
+    border: 1px solid rgba(0,0,0,0.05);
+    box-shadow: 0 1px 4px rgba(0,0,0,0.03);
+}
+.flow-pill {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    border-radius: 12px;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    min-width: 0;
+}
+.flow-pill.active {
+    background: white;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.07);
+}
+.flow-pill.done {
+    opacity: 0.72;
+}
+.flow-pill.locked {
+    opacity: 0.38;
+}
+.flow-pill-badge {
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    font-weight: 700;
+    flex-shrink: 0;
+    transition: all 0.2s ease;
+}
+.flow-pill-badge.active {
+    background: linear-gradient(135deg, #FF4B4B 0%, #E03E3E 100%);
+    color: white;
+    box-shadow: 0 2px 8px rgba(255,75,75,0.25);
+}
+.flow-pill-badge.done {
+    background: linear-gradient(135deg, #21C354 0%, #1BA94C 100%);
+    color: white;
+}
+.flow-pill-badge.locked {
+    background: #E5E7EB;
+    color: #9CA3AF;
+}
+.flow-pill-text {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+.flow-pill-title {
+    font-weight: 600;
+    font-size: 13px;
+    color: #374151;
+    line-height: 1.3;
+}
+.flow-pill.active .flow-pill-title {
+    color: #FF4B4B;
+}
+.flow-pill.done .flow-pill-title {
+    color: #059669;
+}
+.flow-pill-sub {
+    font-size: 11px;
+    color: #6B7280;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    line-height: 1.4;
+}
+/* Dot connectors between pills */
+.flow-pill:not(:last-child)::after {
+    content: '';
+    position: absolute;
+    right: -3px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: #D1D5DB;
+}
+.flow-pill.done:not(:last-child)::after {
+    background: #21C354;
+}
+.flow-pill {
+    position: relative;
+}
+/* Section content animation + border accent */
+@keyframes flowEnter {
+    from { opacity: 0; transform: translateY(5px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+/* Section header card */
+.section-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    background: linear-gradient(135deg, rgba(255,75,75,0.04) 0%, rgba(255,75,75,0.01) 100%);
+    border-radius: 12px;
+    border-left: 3px solid #FF4B4B;
+    margin-bottom: 16px;
+}
+.section-header-icon {
+    font-size: 20px;
+}
+.section-header-text h3 {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 700;
+    color: #1F2937;
+}
+.section-header-text p {
+    margin: 2px 0 0 0;
+    font-size: 12px;
+    color: #6B7280;
+}
+/* Compact feedback link */
+.feedback-bar {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 8px 16px;
+    margin-top: 24px;
+    border-top: 1px solid #F3F4F6;
+    font-size: 12px;
+    color: #9CA3AF;
+}
+.feedback-bar a {
+    color: #6B7280;
+    text-decoration: none;
+}
+.feedback-bar a:hover {
+    color: #FF4B4B;
+    text-decoration: underline;
+}
+/* Responsive: hide subtitles on narrow screens */
+@media (max-width: 768px) {
+    .flow-pill-sub { display: none; }
+    .flow-pill { padding: 8px 10px; gap: 6px; }
+    .flow-pill-badge { width: 26px; height: 26px; font-size: 11px; }
+    .flow-pill-title { font-size: 11px; }
+    .section-header { padding: 8px 12px; }
+    .section-header-icon { font-size: 16px; }
+    .section-header-text h3 { font-size: 14px; }
+}
+/* Done pill hover: show it's clickable */
+.flow-pill.done:hover {
+    opacity: 0.9;
+    background: rgba(255,255,255,0.5);
+}
+/* Active section border glow */
+.flow-section {
+    border-top: 2px solid transparent;
+    border-image: linear-gradient(90deg, #FF4B4B 0%, transparent 100%) 1;
+    padding-top: 8px;
+}
+</style>"""
+
+
+def _render_flow_nav(active: int, done: List[bool]) -> None:
+    """Render the modern flow navigation ribbon.
+
+    v1.5.0: Replaces the old wizard stepper + button row with a single
+    cohesive navigation component. Visual ribbon (HTML/CSS) for status
+    display, Streamlit buttons below for click handling.
+    """
+    # Build ribbon HTML (ensure done list is padded to correct length)
+    while len(done) < len(SECTION_META):
+        done.append(False)
+    pills_html = ""
+    for i, meta in enumerate(SECTION_META):
+        if i < active and done[i]:
+            state = "done"
+            badge = "✓"
+            sub = _section_summary(i) or meta["desc"]
+        elif i == active:
+            state = "active"
+            badge = meta["icon"]
+            sub = meta["desc"]
+        else:
+            state = "locked"
+            badge = str(i + 1)
+            sub = meta["desc"]
+
+        pills_html += f'''<div class="flow-pill {state}">
+            <div class="flow-pill-badge {state}">{badge}</div>
+            <div class="flow-pill-text">
+                <span class="flow-pill-title">{meta["title"]}</span>
+                <span class="flow-pill-sub">{sub}</span>
+            </div>
+        </div>'''
+
+    st.markdown(f'<div class="flow-ribbon">{pills_html}</div>', unsafe_allow_html=True)
+
+    # Clickable navigation buttons
+    nav_cols = st.columns(len(SECTION_META), gap="small")
+    for i, meta in enumerate(SECTION_META):
+        with nav_cols[i]:
+            is_active = i == active
+            btn_label = meta["title"]
+            if done[i] and not is_active:
+                btn_label = f"✓ {meta['title']}"
+            if st.button(
+                btn_label,
+                key=f"nav_{i}",
+                type="primary" if is_active else "secondary",
+                use_container_width=True,
+            ):
+                if not is_active:
+                    _navigate_to(i)
+
+
+def _render_section_header(idx: int) -> None:
+    """Render a section header card with icon and description."""
+    if idx < 0 or idx >= len(SECTION_META):
+        return
+    meta = SECTION_META[idx]
+    st.markdown(
+        f'''<div class="section-header">
+            <div class="section-header-icon">{meta["icon"]}</div>
+            <div class="section-header-text">
+                <h3>{meta["title"]}</h3>
+                <p>{meta["desc"]}</p>
+            </div>
+        </div>''',
+        unsafe_allow_html=True,
+    )
 
 
 _SCROLL_TO_TOP_JS = """<script>
@@ -4533,17 +4520,15 @@ def _inject_scroll_to_top_js() -> None:
     _st_components.html(_SCROLL_TO_TOP_JS, height=0)
 
 
-# v1.4.16: Only show intro content on the Setup page (page 0) to reduce clutter
+# v1.5.0: Show intro only on Setup page — compact format
 if st.session_state.get("active_page", 0) == 0:
-    with st.expander("What this tool delivers", expanded=True):
+    with st.expander("What this tool delivers", expanded=False):
         st.markdown("""
-### Simulate realistic pilot data for your behavioral experiment
-
-Generate a complete synthetic dataset — with realistic response patterns, individual differences, and attention check failures — so you can build and test your analysis pipeline before collecting real data.
+Generate a complete synthetic dataset — with realistic response patterns, individual differences, and attention check failures — to build and test your analysis pipeline before collecting real data.
 
 **Two ways to get started:**
-1. **Upload a Qualtrics (.qsf) file** — the tool automatically detects your conditions, scales, and factors
-2. **Describe your study in plain text** — just tell us your design (e.g., "2×2 between-subjects with a 7-point Likert DV") and the tool builds it for you
+1. **Upload a Qualtrics (.qsf) file** — auto-detects conditions, scales, and factors
+2. **Describe your study in plain text** — just tell us your design and the tool builds it
 
 **What you get:**
 - **Publication-ready CSV data** with condition assignments, scale responses, and open-ended text — ready for immediate statistical analysis in any software
@@ -4616,22 +4601,16 @@ The simulator automatically assigns behavioral personas to simulated participant
                     st.markdown(methods_md_path.read_text(encoding="utf-8"))
 
 with st.sidebar:
-    st.subheader("Mode")
-
     advanced_mode = st.toggle("Advanced mode", value=st.session_state.get("advanced_mode", False))
     st.session_state["advanced_mode"] = advanced_mode
-
-    st.divider()
-    st.subheader("Simple vs. Advanced")
-    st.write(
-        "- **Simple mode** uses standardized defaults for demographics, attention checks, and exclusions "
-        "so outputs are comparable across teams.\n"
-        "- **Advanced mode** unlocks controls for demographics, exclusions, and effect sizes when you need "
-        "a custom setup."
+    st.caption(
+        "Advanced mode unlocks demographics, exclusions, and effect size controls."
+        if not advanced_mode else
+        "Full control over demographics, exclusions, and effect sizes."
     )
 
     st.divider()
-    st.subheader("Study Snapshot")
+    st.markdown("**Study Snapshot**")
 
     # Gather all snapshot data
     snapshot_conditions = st.session_state.get("selected_conditions") or []
@@ -4693,43 +4672,30 @@ with st.sidebar:
         st.caption(f"Factors: {factors_text}")
 
     st.divider()
-    st.subheader("Progress")
+    st.markdown("**Progress**")
     completion = _get_step_completion()
-    # v1.4.16: sample_size is configured on the Design page, not Setup
     step1_ready = completion["study_title"] and completion["study_description"]
     step2_ready = completion["qsf_uploaded"]
     step3_ready = completion["conditions_set"] and completion["sample_size"]
     step4_ready = completion["design_ready"]
 
-    # Calculate overall progress
     steps_complete = sum([step1_ready, step2_ready, step3_ready, step4_ready])
-    st.progress(steps_complete / 4, text=f"{steps_complete}/4 steps complete")
+    st.progress(steps_complete / 4, text=f"{steps_complete}/4 sections")
 
-    # v1.4.14: Show ALL incomplete steps as a checklist (not just the first one)
+    # Checklist with clickable links to incomplete sections
     _step_status = [
         (step1_ready, "Setup", 0),
         (step2_ready, "Study Input", 1),
         (step3_ready, "Design", 2),
         (step4_ready, "Generate", 3),
     ]
-    _incomplete = [(label, idx) for ready, label, idx in _step_status if not ready]
-    if _incomplete:
-        for _label, _idx in _incomplete:
-            if st.button(f"→ {_label}", key=f"jump_step_{_idx}", use_container_width=True):
+    for _ready, _label, _idx in _step_status:
+        _icon = "✅" if _ready else "⬜"
+        if not _ready:
+            if st.button(f"{_icon} {_label}", key=f"jump_{_idx}", use_container_width=True):
                 _navigate_to(_idx)
-    else:
-        st.success("All steps complete!")
-
-    # v1.4.14: Contextual tips based on current page
-    _current_page = st.session_state.get("active_page", 0)
-    _tips = {
-        0: "Fill in your study title and description to get started.",
-        1: "Upload a QSF file or describe your study to define conditions and scales.",
-        2: "Verify conditions, scales, and sample size. Confirm DVs to proceed.",
-        3: "Review the design summary and click Generate when ready.",
-    }
-    if _current_page in _tips:
-        st.caption(f"💡 {_tips[_current_page]}")
+        else:
+            st.caption(f"{_icon} {_label}")
 
     # Start Over button with two-step confirmation
     st.divider()
@@ -4757,10 +4723,6 @@ with st.sidebar:
     # v1.4.16: Removed dead benchmark code (~160 lines) that was permanently disabled
 
 
-if "active_page" not in st.session_state:
-    st.session_state["active_page"] = 0
-
-
 # v1.4.14: Pending reset handler — MUST run before ANY widgets render.
 # The "Start Over" button sets the flag; we clear state here so that
 # Streamlit widgets see empty session_state on this render cycle.
@@ -4775,41 +4737,31 @@ if st.session_state.pop("_pending_reset", False):
     st.session_state["active_page"] = 0  # Reset to first page
     st.session_state["_page_just_changed"] = True  # Scroll to top
 
-# Show compact progress bar
-completion = _get_step_completion()
-# Use core items that are relevant to BOTH QSF and builder paths.
-# primary_outcome/independent_var are only populated in Generate tab,
-# so they shouldn't block progress display on earlier tabs.
-progress_items = ["study_title", "study_description", "sample_size",
-                  "qsf_uploaded", "conditions_set", "design_ready"]
-completed_count = sum(1 for k in progress_items if completion.get(k, False))
-total_count = len(progress_items)
-progress_pct = int((completed_count / total_count) * 100)
-status_emoji = "🟢" if progress_pct == 100 else "🟡" if progress_pct >= 50 else "⚪"
-st.progress(completed_count / total_count, text=f"{status_emoji} Ready: {progress_pct}% ({completed_count}/{total_count})")
-
-# v1.3.5: Reserve feedback container before page content
-_feedback_container = st.container()
-
 # =====================================================================
-# v1.4.15: PAGE-BASED NAVIGATION with CSS Wizard Stepper.
-# Only one page renders at a time. When the user navigates, _navigate_to()
-# sets active_page, flags _page_just_changed, and calls st.rerun().
-# A JavaScript snippet scrolls the browser to the very top.
+# v1.5.0: FLOW NAVIGATION — Modern section-based single-page flow.
+# Replaces the old wizard stepper + clickable buttons + Next/Back.
+# One visual ribbon + one row of buttons. No redundant navigation.
 # =====================================================================
-PAGE_LABELS = ["Setup", "Study Input", "Design", "Generate"]
-PAGE_ICONS = ["1", "2", "3", "4"]
+
+# ── Apply pending navigation (from auto-advance or _navigate_to) ─────
+_pending_nav = st.session_state.pop("_pending_nav", None)
+if _pending_nav is not None:
+    st.session_state["active_page"] = _pending_nav
 
 if "active_page" not in st.session_state:
     st.session_state["active_page"] = 0
-active_page = st.session_state["active_page"]
+# Guard: clamp active_page to valid range
+active_page = max(0, min(int(st.session_state.get("active_page", 0)), 3))
+st.session_state["active_page"] = active_page
 
-# ── Scroll to top on page change ─────────────────────────────────────
-# MUST fire BEFORE any visible content so the user sees the page from the top.
+# ── Scroll to top on section change ──────────────────────────────────
 if st.session_state.pop("_page_just_changed", False):
     _inject_scroll_to_top_js()
 
-# ── Completion status for stepper badges ──────────────────────────────
+# ── Inject flow navigation CSS ───────────────────────────────────────
+st.markdown(_FLOW_NAV_CSS, unsafe_allow_html=True)
+
+# ── Completion status (single call, reused for ribbon + nav) ──────────
 _step_completion = _get_step_completion()
 _step_done = [
     _step_completion["study_title"] and _step_completion["study_description"],
@@ -4818,131 +4770,15 @@ _step_done = [
     bool(st.session_state.get("has_generated")),
 ]
 
-# ── Modern CSS Wizard Stepper ─────────────────────────────────────────
-def _render_wizard_stepper(active: int, done: list) -> None:
-    """Render a modern CSS wizard progress stepper."""
-    steps_html = ""
-    for i, (label, icon) in enumerate(zip(PAGE_LABELS, PAGE_ICONS)):
-        if i < active and done[i]:
-            state = "completed"
-            circle_content = "&#10003;"  # checkmark
-        elif i == active:
-            state = "active"
-            circle_content = icon
-        else:
-            state = "pending"
-            circle_content = icon
+# ── Compact progress indicator ────────────────────────────────────────
+_progress_keys = ["study_title", "study_description", "sample_size",
+                  "qsf_uploaded", "conditions_set", "design_ready"]
+_completed_count = sum(1 for k in _progress_keys if _step_completion.get(k, False))
+_progress_pct = int((_completed_count / len(_progress_keys)) * 100)
+st.progress(_completed_count / len(_progress_keys), text=f"Ready: {_progress_pct}%")
 
-        # Connector line (not for last step)
-        line_html = ""
-        if i < len(PAGE_LABELS) - 1:
-            line_state = "completed" if (i < active and done[i]) else "pending"
-            line_html = f'<div class="wz-line {line_state}"></div>'
-
-        steps_html += f"""
-        <div class="wz-step">
-            <div class="wz-circle {state}">{circle_content}</div>
-            <div class="wz-label {state}">{label}</div>
-            {line_html}
-        </div>"""
-
-    st.markdown(f"""
-    <style>
-    .wz-container {{
-        display: flex;
-        justify-content: center;
-        align-items: flex-start;
-        padding: 16px 8px 8px 8px;
-        margin-bottom: 4px;
-    }}
-    .wz-step {{
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        position: relative;
-        flex: 1;
-        min-width: 0;
-    }}
-    .wz-circle {{
-        width: 42px;
-        height: 42px;
-        border-radius: 50%;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-weight: 700;
-        font-size: 16px;
-        z-index: 2;
-        transition: all 0.2s ease;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.08);
-    }}
-    .wz-circle.active {{
-        background: linear-gradient(135deg, #FF4B4B 0%, #E03E3E 100%);
-        color: white;
-        box-shadow: 0 4px 14px rgba(255,75,75,0.35);
-        transform: scale(1.1);
-    }}
-    .wz-circle.completed {{
-        background: linear-gradient(135deg, #21C354 0%, #1BA94C 100%);
-        color: white;
-        box-shadow: 0 2px 8px rgba(33,195,84,0.25);
-    }}
-    .wz-circle.pending {{
-        background: #F0F2F6;
-        color: #9CA3AF;
-        border: 2px solid #E5E7EB;
-    }}
-    .wz-label {{
-        margin-top: 8px;
-        font-size: 12px;
-        font-weight: 600;
-        text-align: center;
-        letter-spacing: 0.3px;
-    }}
-    .wz-label.active {{ color: #FF4B4B; }}
-    .wz-label.completed {{ color: #21C354; }}
-    .wz-label.pending {{ color: #9CA3AF; }}
-    .wz-line {{
-        position: absolute;
-        top: 21px;
-        left: calc(50% + 24px);
-        right: calc(-50% + 24px);
-        height: 3px;
-        border-radius: 2px;
-        z-index: 1;
-    }}
-    .wz-line.completed {{ background: linear-gradient(90deg, #21C354, #21C354); }}
-    .wz-line.pending {{ background: #E5E7EB; }}
-    /* Fade-in animation for page content */
-    @keyframes wzFadeIn {{
-        from {{ opacity: 0; transform: translateY(8px); }}
-        to {{ opacity: 1; transform: translateY(0); }}
-    }}
-    .wz-page-enter {{
-        animation: wzFadeIn 0.25s ease-out;
-    }}
-    </style>
-    <div class="wz-container">{steps_html}</div>
-    """, unsafe_allow_html=True)
-
-_render_wizard_stepper(active_page, _step_done)
-
-# ── Clickable navigation buttons (below the visual stepper) ──────────
-_nav_cols = st.columns(len(PAGE_LABELS))
-for _i, _label in enumerate(PAGE_LABELS):
-    with _nav_cols[_i]:
-        _is_active = _i == active_page
-        _btn_type = "primary" if _is_active else "secondary"
-        if st.button(
-            _label if _is_active else _label,
-            key=f"nav_page_{_i}",
-            type=_btn_type,
-            use_container_width=True,
-        ):
-            if not _is_active:
-                _navigate_to(_i)
-
-st.markdown("---")
+# ── Flow navigation ──────────────────────────────────────────────────
+_render_flow_nav(active_page, _step_done)
 
 
 def _get_condition_candidates(
@@ -5092,43 +4928,7 @@ def _get_qsf_identifiers(preview: Optional[QSFPreviewResult]) -> List[str]:
     return sorted(unique_ids, key=lambda x: x.lower().lstrip('['))
 
 
-def _render_step_navigation(step_index: int, can_next: bool, next_label: str) -> None:
-    """Render a modern bottom navigation bar with Previous/Continue actions."""
-    st.markdown("---")
-
-    # Step indicator: "Step X of 4"
-    st.caption(f"Step {step_index + 1} of {len(PAGE_LABELS)}")
-
-    if step_index < len(PAGE_LABELS) - 1:
-        # Not on final step — show back + continue
-        col_back, col_spacer, col_next = st.columns([1.2, 0.6, 2])
-        with col_back:
-            if step_index > 0:
-                if st.button("← Back", key=f"nav_back_{step_index}", use_container_width=True):
-                    _navigate_to(step_index - 1)
-        with col_next:
-            if can_next:
-                if st.button(
-                    f"Continue to {next_label} →",
-                    key=f"nav_next_{step_index}",
-                    type="primary",
-                    use_container_width=True,
-                ):
-                    _navigate_to(step_index + 1)
-            else:
-                st.button(
-                    f"Continue to {next_label} →",
-                    key=f"nav_next_disabled_{step_index}",
-                    disabled=True,
-                    use_container_width=True,
-                )
-                st.caption("Complete required fields above to continue")
-    else:
-        # On final step — just show back
-        col_back, col_spacer = st.columns([1, 3])
-        with col_back:
-            if st.button("← Back", key=f"nav_back_{step_index}", use_container_width=True):
-                _navigate_to(step_index - 1)
+# v1.5.0: _render_step_navigation removed — top flow nav handles all navigation
 
 
 def _get_total_conditions() -> int:
@@ -5143,14 +4943,13 @@ def _get_total_conditions() -> int:
 # PAGE 1: STUDY SETUP
 # =====================================================================
 if active_page == 0:
-    st.markdown('<div class="wz-page-enter">', unsafe_allow_html=True)
+    st.markdown('<div class="flow-section">', unsafe_allow_html=True)
+    _render_section_header(0)
     completion = _get_step_completion()
     step1_done = completion["study_title"] and completion["study_description"]
 
     if step1_done:
-        st.success("Study info complete — proceed to **Study Input**")
-    else:
-        st.info("Enter study title and description below")
+        st.success("Ready — use the navigation above to continue to **Study Input**.")
 
     col1, col2 = st.columns([1, 1], gap="large")
 
@@ -5188,24 +4987,29 @@ if active_page == 0:
             key="team_members_raw",
         )
 
-    # v1.4.14: Step navigation at bottom of Setup page
-    _render_step_navigation(0, step1_done, "Study Input")
+    # v1.5.0: Auto-advance hint when setup complete
+    if step1_done:
+        st.markdown("---")
+        if st.button("Continue to Study Input →", key="auto_advance_0", type="primary"):
+            _navigate_to(1)
+    st.markdown('</div>', unsafe_allow_html=True)
 
 
 # =====================================================================
 # PAGE 2: FILE UPLOAD / STUDY BUILDER
 # =====================================================================
 if active_page == 1:
-    st.markdown('<div class="wz-page-enter">', unsafe_allow_html=True)
+    st.markdown('<div class="flow-section">', unsafe_allow_html=True)
+    _render_section_header(1)
     completion = _get_step_completion()
     step1_done = completion["study_title"] and completion["study_description"]
     step2_done = completion["qsf_uploaded"]
 
     if not step1_done:
-        st.warning("Complete the **Setup** step first (study title & description)")
+        st.warning("Complete **Setup** first — enter your study title and description, then return here.")
 
     if step2_done:
-        st.success("Study input complete — proceed to **Design**")
+        st.success("Ready — use the navigation above to continue to **Design**.")
 
     # ========================================
     # MODE SELECTOR: QSF Upload vs Conversational Builder
@@ -5661,15 +5465,20 @@ if active_page == 1:
         if selected_conditions:
             st.success(f"✓ Conditions: {', '.join(selected_conditions)}")
 
-    # v1.4.14: Step navigation at bottom of Study Input page
-    _render_step_navigation(1, step2_done, "Design")
+    # v1.5.0: Auto-advance hint when study input complete
+    if step2_done:
+        st.markdown("---")
+        if st.button("Continue to Design →", key="auto_advance_1", type="primary"):
+            _navigate_to(2)
+    st.markdown('</div>', unsafe_allow_html=True)
 
 
 # =====================================================================
 # PAGE 3: DESIGN CONFIGURATION
 # =====================================================================
 if active_page == 2:
-    st.markdown('<div class="wz-page-enter">', unsafe_allow_html=True)
+    st.markdown('<div class="flow-section">', unsafe_allow_html=True)
+    _render_section_header(2)
     preview: Optional[QSFPreviewResult] = st.session_state.get("qsf_preview", None)
     enhanced_analysis: Optional[DesignAnalysisResult] = st.session_state.get("enhanced_analysis", None)
 
@@ -7041,16 +6850,21 @@ if active_page == 2:
 
             st.info(f"**Design Type:** {design_type} · **Total Cells:** {len(all_conditions)} · **N per cell:** ~{sample_n // max(1, len(all_conditions))}")
 
-    # v1.4.14: Step navigation at bottom of Design page
+    # v1.5.0: Auto-advance hint when design is ready
     _design_can_next = bool(st.session_state.get("inferred_design"))
-    _render_step_navigation(2, _design_can_next, "Generate")
+    if _design_can_next:
+        st.markdown("---")
+        if st.button("Continue to Generate →", key="auto_advance_2", type="primary"):
+            _navigate_to(3)
+    st.markdown('</div>', unsafe_allow_html=True)
 
 
 # =====================================================================
 # PAGE 4: GENERATE SIMULATION
 # =====================================================================
 if active_page == 3:
-    st.markdown('<div class="wz-page-enter">', unsafe_allow_html=True)
+    st.markdown('<div class="flow-section">', unsafe_allow_html=True)
+    _render_section_header(3)
     inferred = st.session_state.get("inferred_design", None)
     preview: Optional[QSFPreviewResult] = st.session_state.get("qsf_preview", None)
 
@@ -8504,10 +8318,10 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
                 st.caption("Instructor email not configured in secrets (INSTRUCTOR_NOTIFICATION_EMAIL).")
 
     # v1.4.5: Removed "Done — scroll back to top" button (was unreliable, not needed on last tab)
+    st.markdown('</div>', unsafe_allow_html=True)
 
 # ========================================
-# FEEDBACK BUTTON (Shown on all pages)
-# v1.4.14: Feedback button after page content
+# FEEDBACK (Shown on all pages, compact)
+# v1.5.0: Compact feedback — no more bulky expander at top
 # ========================================
-with _feedback_container:
-    _render_feedback_button()
+_render_feedback_button()
