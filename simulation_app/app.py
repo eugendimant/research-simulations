@@ -52,8 +52,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.5.0"
-BUILD_ID = "20260209-v150-flow-navigation"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.6.0"
+BUILD_ID = "20260209-v160-modern-stepper"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -106,8 +106,8 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # App constants
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
-APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF"
-APP_VERSION = "1.5.0"  # v1.5.0: Modern flow navigation, HTML leak fix, dead code removal, UX polish
+APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
+APP_VERSION = "1.6.0"  # v1.6.0: Modern stepper nav, progressive reveal, builder UX, readability overhaul
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -2961,10 +2961,10 @@ def _render_conversational_builder() -> None:
 
     # Check if builder is already complete
     if st.session_state.get("conversational_builder_complete"):
-        st.success("Study description complete — proceed to **Design** to review and generate.")
+        st.success("Study design built. Proceed to **Design** to review, or edit below.")
         _done_col1, _done_col2 = st.columns(2)
         with _done_col1:
-            if st.button("Go to Design →", key="builder_goto_design", type="primary", use_container_width=True):
+            if st.button("Continue to Design  \u2192", key="builder_goto_design", type="primary", use_container_width=True):
                 _navigate_to(2)
         with _done_col2:
             if st.button("Edit my description", key="builder_reopen_edit", use_container_width=True):
@@ -2972,52 +2972,53 @@ def _render_conversational_builder() -> None:
                 st.rerun()
         return
 
-    st.markdown("### Describe Your Experiment")
-    st.markdown(
-        "Tell us about your study in plain language. "
-        "Fill in the **conditions** and **scales** sections below, then click **Build Study Specification**."
-    )
-
-    # Progress indicator
+    # v1.6.0: Cleaner builder intro with inline progress
     _has_conds = bool(st.session_state.get("builder_conditions_text", "").strip())
     _has_scales = bool(st.session_state.get("builder_scales_text", "").strip())
     _filled_sections = sum([_has_conds, _has_scales])
-    st.progress(_filled_sections / 2, text=f"Core sections: {_filled_sections}/2 complete (conditions + scales required)")
 
-    # Getting-started message when nothing has been filled in yet
+    st.markdown("### Describe Your Experiment")
+    st.caption(
+        "Fill in **conditions** and **scales** below, then click Build. "
+        "Only these two are required — everything else is optional."
+    )
+    st.progress(
+        _filled_sections / 2,
+        text=f"{'Conditions' if not _has_conds else '~~Conditions~~'} · "
+             f"{'Scales' if not _has_scales else '~~Scales~~'} — "
+             f"{_filled_sections}/2 required"
+    )
+
+    # v1.6.0: Examples always visible when builder is empty — helps discoverability
     if not _has_conds and not _has_scales:
-        st.info(
-            "**Quick start:** Describe your conditions (e.g., 'Control, Treatment A, Treatment B'), "
-            "add your scales (e.g., 'Trust scale, 5 items, 1-7'), and click Build. "
-            "Or click an example below to see how it works."
-        )
-
-    # Example studies for inspiration
-    with st.expander("Need inspiration? Click an example to auto-fill", expanded=False):
+        st.markdown("**Quick start — load an example:**")
         examples = SurveyDescriptionParser.generate_example_descriptions()
+        _ex_cols = st.columns(min(len(examples), 3))
         for idx, ex in enumerate(examples):
-            if st.button(f"Load: {ex['title']}", key=f"example_btn_{idx}"):
-                # Store the example data and rerun — the pending handler at the
-                # top of this function applies it BEFORE widgets render, which is
-                # the reliable Streamlit pattern for programmatic widget updates.
-                st.session_state["_pending_autofill_example"] = ex
-                _navigate_to(1)
+            with _ex_cols[idx % len(_ex_cols)]:
+                if st.button(ex["title"], key=f"example_btn_{idx}", use_container_width=True):
+                    st.session_state["_pending_autofill_example"] = ex
+                    _navigate_to(1)
+    else:
+        with st.expander("Load an example study", expanded=False):
+            examples = SurveyDescriptionParser.generate_example_descriptions()
+            for idx, ex in enumerate(examples):
+                if st.button(f"Load: {ex['title']}", key=f"example_btn_{idx}"):
+                    st.session_state["_pending_autofill_example"] = ex
+                    _navigate_to(1)
 
     # ── Section 1: Experimental Conditions ──────────────────────────────
     st.markdown("---")
     st.markdown("#### 1. Experimental Conditions")
-    st.markdown(
-        "What are the groups or conditions in your experiment? "
-        "List them separated by commas, or describe the design."
+    st.caption(
+        "List your experimental groups separated by commas, or describe a factorial design. "
+        "The parser auto-detects NxM notation, factor labels, and crossed conditions."
     )
 
     conditions_placeholder = (
-        "Examples:\n"
-        "• Control, Treatment\n"
-        "• AI-generated, Human-written, No message\n"
-        "• Trust (high, low) and Risk (high, low)\n"
-        "• 3 (Source: AI vs Human vs None) × 2 (Product: Hedonic vs Utilitarian)\n"
-        "• 2x2x2 with Frame (Gain/Loss), Source (Expert/Peer), Time (Immediate/Delayed)"
+        "Control, Treatment A, Treatment B\n"
+        "\n"
+        "Or factorial: 2 (Source: AI vs Human) × 3 (Frame: Gain, Loss, Neutral)"
     )
 
     conditions_text = st.text_area(
@@ -3091,18 +3092,16 @@ def _render_conversational_builder() -> None:
 
     # ── Section 2: Dependent Variables / Scales ─────────────────────────
     st.markdown("---")
-    st.markdown("#### 2. What Do You Measure?")
-    st.markdown(
-        "Describe the scales or measures in your study. "
-        "Include the name, number of items, and scale range if possible."
+    st.markdown("#### 2. Scales / Dependent Variables")
+    st.caption(
+        "Describe each scale or measure. Include name, item count, and range when possible. "
+        "Known instruments (e.g., 'Big Five', 'PANAS') are auto-recognized."
     )
 
     scales_placeholder = (
-        "Examples:\n"
-        "• Trust scale, 5 items, 1-7 Likert\n"
-        "• Purchase intention (3 items, 7-point scale)\n"
-        "• Willingness to pay in dollars (0-100)\n"
-        "• Satisfaction slider from 0 to 100"
+        "Trust scale, 5 items, 1-7 Likert\n"
+        "Purchase intention, 3 items, 7-point\n"
+        "Willingness to pay in dollars (0-100)"
     )
 
     scales_text = st.text_area(
@@ -3159,8 +3158,8 @@ def _render_conversational_builder() -> None:
 
     # ── Section 3: Open-Ended Questions (Optional) ─────────────────────
     st.markdown("---")
-    st.markdown("#### 3. Open-Ended Questions (Optional)")
-    st.markdown("Are there any open-ended or free-text questions in your study?")
+    st.markdown("#### 3. Open-Ended Questions *(optional)*")
+    st.caption("Free-text questions to simulate. Leave empty if your study has none.")
 
     oe_text = st.text_area(
         "Open-ended questions",
@@ -3179,132 +3178,110 @@ def _render_conversational_builder() -> None:
     if parsed_oe:
         st.caption(f"Detected **{len(parsed_oe)}** open-ended question(s)")
 
-    # ── Section 4: Sample Size ──────────────────────────────────────────
+    # ── Section 4 & 5: Sample Size + Design Type (side by side) ────────
     st.markdown("---")
-    st.markdown("#### 4. Sample Size")
+    _cfg_col1, _cfg_col2 = st.columns([1, 1], gap="large")
 
-    builder_sample = st.number_input(
-        "How many participants should be simulated?",
-        min_value=10,
-        max_value=10000,
-        value=int(st.session_state.get("builder_sample_size", 100)),
-        step=10,
-        key="builder_sample_input",
-        help="Total number of simulated participants across all conditions.",
-    )
-    st.session_state["builder_sample_size"] = builder_sample
-    st.session_state["sample_size"] = builder_sample
+    with _cfg_col1:
+        st.markdown("#### 4. Sample Size")
+        builder_sample = st.number_input(
+            "Total participants to simulate",
+            min_value=10,
+            max_value=10000,
+            value=int(st.session_state.get("builder_sample_size", 100)),
+            step=10,
+            key="builder_sample_input",
+            help="Total simulated participants across all conditions.",
+        )
+        st.session_state["builder_sample_size"] = builder_sample
+        st.session_state["sample_size"] = builder_sample
 
-    # Power-based sample size guidance
-    if parsed_conditions:
-        n_conds = len(parsed_conditions)
-        recommended_min = max(30 * n_conds, 50)  # At least 30 per cell
-        recommended_good = max(50 * n_conds, 100)  # 50 per cell for good power
-        if builder_sample < recommended_min:
-            st.warning(
-                f"With {n_conds} conditions, a minimum of **{recommended_min}** participants "
-                f"(~{recommended_min // n_conds} per condition) is recommended for adequate statistical power."
-            )
-        elif builder_sample < recommended_good:
-            st.info(
-                f"Sample size of {builder_sample} is adequate. For strong power (~.80), "
-                f"consider **{recommended_good}** ({recommended_good // n_conds} per condition)."
-            )
-        else:
-            st.success(f"Good sample size: ~{builder_sample // n_conds} participants per condition.")
+        # Compact power guidance
+        if parsed_conditions:
+            n_conds = len(parsed_conditions)
+            per_cell = builder_sample // max(n_conds, 1)
+            recommended_min = max(30 * n_conds, 50)
+            if builder_sample < recommended_min:
+                st.warning(f"~{per_cell}/cell. Recommend {recommended_min}+ ({30}+ per condition).")
+            else:
+                st.caption(f"~{per_cell} participants per condition")
 
-    # ── Section 5: Design Type ──────────────────────────────────────────
+    with _cfg_col2:
+        st.markdown("#### 5. Design Type")
+        # Auto-detect design type from condition structure
+        _auto_design: str = "between"
+        if parsed_conditions:
+            cond_names_lower = " ".join(c.name.lower() for c in parsed_conditions)
+            if any(w in cond_names_lower for w in [
+                "pre", "post", "before", "after", "time 1", "time 2",
+                "baseline", "follow", "wave 1", "wave 2", "session 1", "session 2",
+            ]):
+                _auto_design = "within"
+            elif any(w in cond_names_lower for w in ["mixed", "repeated"]):
+                _auto_design = "mixed"
+        if not st.session_state.get("_design_type_manually_set"):
+            st.session_state["builder_design_type"] = _auto_design
+
+        design_options = {
+            "between": "Between-subjects",
+            "within": "Within-subjects",
+            "mixed": "Mixed design",
+        }
+        design_type = st.radio(
+            "Experimental design",
+            options=list(design_options.keys()),
+            format_func=lambda x: design_options[x],
+            index=["between", "within", "mixed"].index(
+                st.session_state.get("builder_design_type", "between")
+            ),
+            key="builder_design_type_input",
+            help=(
+                "Between = each participant sees one condition. "
+                "Within = each participant sees all conditions. "
+                "Mixed = combination of both."
+            ),
+        )
+        st.session_state["builder_design_type"] = design_type
+        if design_type != _auto_design:
+            st.session_state["_design_type_manually_set"] = True
+
+    # ── Section 6 & 7: Demographics + Participants (collapsible) ────────
     st.markdown("---")
-    st.markdown("#### 5. Design Type")
-
-    # Auto-detect design type from condition structure
-    _auto_design: str = "between"  # Default
-    if parsed_conditions:
-        cond_names_lower = " ".join(c.name.lower() for c in parsed_conditions)
-        if any(w in cond_names_lower for w in [
-            "pre", "post", "before", "after", "time 1", "time 2",
-            "baseline", "follow", "wave 1", "wave 2", "session 1", "session 2",
-        ]):
-            _auto_design = "within"
-        elif any(w in cond_names_lower for w in ["mixed", "repeated"]):
-            _auto_design = "mixed"
-    # Use auto-detected if user hasn't explicitly changed it
-    if not st.session_state.get("_design_type_manually_set"):
-        st.session_state["builder_design_type"] = _auto_design
-
-    design_options = {
-        "between": "Between-subjects (each participant sees one condition)",
-        "within": "Within-subjects (each participant sees all conditions)",
-        "mixed": "Mixed design (some factors between, some within)",
-    }
-    design_type = st.radio(
-        "What type of experimental design is this?",
-        options=list(design_options.keys()),
-        format_func=lambda x: design_options[x],
-        index=["between", "within", "mixed"].index(
-            st.session_state.get("builder_design_type", "between")
-        ),
-        key="builder_design_type_input",
-    )
-    st.session_state["builder_design_type"] = design_type
-    # Track manual override so auto-detection doesn't overwrite user choice
-    if design_type != _auto_design:
-        st.session_state["_design_type_manually_set"] = True
-
-    # ── Section 6: Demographics (Optional) ──────────────────────────────
-    with st.expander("6. Demographics Configuration (Optional)", expanded=False):
-        st.caption("Configure the demographics of your simulated sample.")
-        col_age, col_gender = st.columns(2)
-        with col_age:
+    with st.expander("6. Demographics & Participants *(optional — defaults work well)*", expanded=False):
+        _demo_col1, _demo_col2, _demo_col3 = st.columns(3)
+        with _demo_col1:
             age_mean = st.number_input(
                 "Mean age", min_value=18, max_value=80, value=35,
                 key="builder_age_mean",
             )
+        with _demo_col2:
             age_sd = st.number_input(
                 "Age SD", min_value=1, max_value=30, value=12,
                 key="builder_age_sd",
             )
-        with col_gender:
+        with _demo_col3:
             gender_pct = st.slider(
                 "Male %", min_value=0, max_value=100, value=50,
                 key="builder_gender_pct",
-                help="Percentage of male participants in the sample (engine uses this as gender_quota)",
+                help="Percentage of male participants (engine uses this as gender_quota)",
             )
-        # v1.4.0: gender_quota represents Male % throughout the app and engine
         st.session_state["demographics_config"] = {
             "age_mean": age_mean,
             "age_sd": age_sd,
             "gender_quota": gender_pct,
         }
 
-    # ── Section 7: Participant Characteristics (Optional) ─────────────
-    st.markdown("---")
-    st.markdown("#### 7. Expected Participants (Optional)")
-    st.markdown(
-        "Describe the type of participants you expect. "
-        "This helps calibrate the simulation personas to match your sample."
-    )
-
-    participant_desc = st.text_area(
-        "Participant characteristics",
-        placeholder=(
-            "Examples:\n"
-            "- College students taking introductory psychology\n"
-            "- Tech-savvy professionals familiar with AI tools\n"
-            "- Health-conscious consumers aged 25-45\n"
-            "- MTurk workers (general population)"
-        ),
-        height=80,
-        key="builder_participant_desc",
-        help=(
-            "Describe who your participants are. This helps select appropriate "
-            "behavioral personas and calibrate response patterns."
-        ),
-    )
+        participant_desc = st.text_area(
+            "Expected participant type *(optional)*",
+            placeholder="e.g., College students, MTurk workers, tech professionals...",
+            height=60,
+            key="builder_participant_desc",
+            help="Helps calibrate behavioral personas. Leave blank for general population defaults.",
+        )
 
     # ── Validation & Submission ─────────────────────────────────────────
     st.markdown("---")
-    st.markdown("#### Review & Submit")
+    st.markdown("#### Review & Build")
 
     # Build a preliminary ParsedDesign for validation
     _pre_factors = parser.detect_factorial_structure(parsed_conditions) if parsed_conditions else []
@@ -3323,41 +3300,49 @@ def _render_conversational_builder() -> None:
     if not parsed_oe:
         warnings.append("No open-ended questions detected (this is fine if your study doesn't have any)")
 
-    # Show summary
+    # Show summary — compact metrics + detail
     if parsed_conditions and parsed_scales:
-        with st.expander("Study Summary Preview", expanded=True):
-            st.markdown(f"**Conditions ({len(parsed_conditions)}):** {', '.join(c.name for c in parsed_conditions)}")
-            st.markdown(f"**Scales ({len(parsed_scales)}):**")
+        # v1.6.0: Metrics row for at-a-glance summary
+        _mc1, _mc2, _mc3, _mc4 = st.columns(4)
+        _mc1.metric("Conditions", len(parsed_conditions))
+        _mc2.metric("Scales", len(parsed_scales))
+        _mc3.metric("Open-ended", len(parsed_oe))
+        _mc4.metric("N", builder_sample)
+
+        # Detect domain
+        title = st.session_state.get("study_title", "")
+        desc = st.session_state.get("study_description", "")
+        _cond_str = " ".join(c.name for c in parsed_conditions)
+        _scale_str = " ".join(s.name for s in parsed_scales)
+        domain = parser.detect_research_domain(
+            title, desc,
+            conditions_text=_cond_str,
+            scales_text=_scale_str,
+        )
+
+        # Recommended analysis
+        if len(parsed_conditions) == 2 and len(parsed_scales) >= 1:
+            _rec_analysis = "Independent samples t-test"
+        elif len(parsed_conditions) > 2 and not any(" \u00d7 " in c.name for c in parsed_conditions):
+            _rec_analysis = "One-way ANOVA"
+        elif any(" \u00d7 " in c.name for c in parsed_conditions):
+            n_factors = len(parsed_conditions[0].name.split(" \u00d7 "))
+            _rec_analysis = f"{n_factors}-way factorial ANOVA"
+        else:
+            _rec_analysis = ""
+
+        _summary_parts = [f"**Design:** {design_options[design_type]}", f"**Domain:** `{domain}`"]
+        if _rec_analysis:
+            _summary_parts.append(f"**Suggested analysis:** {_rec_analysis}")
+        st.caption(" · ".join(_summary_parts))
+
+        with st.expander("Full design details", expanded=False):
+            st.markdown(f"**Conditions:** {', '.join(c.name for c in parsed_conditions)}")
             for s in parsed_scales:
-                st.markdown(f"- {s.name}: {s.num_items} item(s), {s.scale_min}-{s.scale_max} ({s.scale_type})")
+                st.caption(f"- {s.name}: {s.num_items} item(s), {s.scale_min}-{s.scale_max} ({s.scale_type})")
             if parsed_oe:
-                st.markdown(f"**Open-ended questions ({len(parsed_oe)}):**")
                 for q in parsed_oe:
-                    st.markdown(f"- {q.question_text[:80]}...")
-            st.markdown(f"**Sample size:** {builder_sample}")
-
-            # Show recommended statistical test
-            if len(parsed_conditions) == 2 and len(parsed_scales) >= 1:
-                st.caption("Recommended analysis: **Independent samples t-test** (or Mann-Whitney U)")
-            elif len(parsed_conditions) > 2 and not any(" × " in c.name for c in parsed_conditions):
-                st.caption("Recommended analysis: **One-way ANOVA** (or Kruskal-Wallis)")
-            elif any(" × " in c.name for c in parsed_conditions):
-                n_factors = len(parsed_conditions[0].name.split(" × "))
-                st.caption(f"Recommended analysis: **{n_factors}-way factorial ANOVA**")
-
-            st.markdown(f"**Design:** {design_options[design_type]}")
-
-            # Detect domain with visual badge (pass all text for better accuracy)
-            title = st.session_state.get("study_title", "")
-            desc = st.session_state.get("study_description", "")
-            _cond_str = " ".join(c.name for c in parsed_conditions)
-            _scale_str = " ".join(s.name for s in parsed_scales)
-            domain = parser.detect_research_domain(
-                title, desc,
-                conditions_text=_cond_str,
-                scales_text=_scale_str,
-            )
-            st.markdown(f"**Domain:** `{domain}`")
+                    st.caption(f"- {q.question_text[:80]}")
 
     for w in warnings:
         st.warning(w)
@@ -3426,7 +3411,6 @@ def _render_builder_design_review() -> None:
         _navigate_to(1)
 
     st.markdown("### Review Your Study Design")
-    st.markdown("Review and edit the study specification extracted from your description.")
 
     # ── Quick design summary metrics ──────────────────────────────────
     _summary_conditions = inferred.get("conditions", [])
@@ -3452,7 +3436,10 @@ def _render_builder_design_review() -> None:
     if _design_issues:
         st.warning("Design incomplete: " + "; ".join(_design_issues))
     else:
-        st.success("Design looks complete. Review the details below, then proceed to **Generate**.")
+        # v1.6.0: CTA at top when design is ready — most important action first
+        if st.button("Continue to Generate  \u2192", key="review_to_generate", type="primary"):
+            _navigate_to(3)
+        st.caption("Review the settings below, or proceed directly to generate your data.")
 
     # Show design improvement suggestions if available
     _builder_feedback = st.session_state.get("_builder_feedback", [])
@@ -4231,43 +4218,41 @@ def _section_summary(idx: int) -> str:
     return ""
 
 
-# ── Flow navigation CSS ──────────────────────────────────────────────
+# ── Flow navigation CSS (v1.6.0 — Modern Stepper) ───────────────────
 _FLOW_NAV_CSS = """<style>
-/* === Flow Navigation Ribbon (v1.5.0) === */
-.flow-ribbon {
-    display: flex;
-    align-items: stretch;
-    gap: 2px;
-    background: linear-gradient(135deg, #F8F9FA 0%, #F1F3F5 100%);
-    border-radius: 16px;
-    padding: 4px;
-    margin: 0 0 8px 0;
-    border: 1px solid rgba(0,0,0,0.05);
-    box-shadow: 0 1px 4px rgba(0,0,0,0.03);
+/* === Global Readability (v1.6.0) === */
+section.main .block-container {
+    max-width: 1080px;
+    padding-top: 1.5rem;
 }
-.flow-pill {
+section.main h1 { font-size: 2rem; font-weight: 800; letter-spacing: -0.02em; }
+section.main h2 { font-size: 1.5rem; font-weight: 700; }
+section.main h3 { font-size: 1.2rem; font-weight: 600; }
+section.main h4 { font-size: 1.05rem; font-weight: 600; margin-bottom: 0.5rem; }
+/* Tighter sidebar */
+section[data-testid="stSidebar"] .stCaption { line-height: 1.4; }
+/* === Progress Stepper (v1.6.0) === */
+.stepper {
+    display: flex;
+    align-items: center;
+    padding: 0 0 4px 0;
+    margin: 0 0 4px 0;
+}
+.stepper-step {
+    display: flex;
+    align-items: center;
     flex: 1;
+}
+.stepper-step:last-child { flex: 0 0 auto; }
+.stepper-node {
     display: flex;
     align-items: center;
     gap: 10px;
-    padding: 10px 14px;
-    border-radius: 12px;
-    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-    min-width: 0;
+    white-space: nowrap;
 }
-.flow-pill.active {
-    background: white;
-    box-shadow: 0 2px 10px rgba(0,0,0,0.07);
-}
-.flow-pill.done {
-    opacity: 0.72;
-}
-.flow-pill.locked {
-    opacity: 0.38;
-}
-.flow-pill-badge {
-    width: 30px;
-    height: 30px;
+.stepper-dot {
+    width: 34px;
+    height: 34px;
     border-radius: 50%;
     display: flex;
     align-items: center;
@@ -4275,91 +4260,109 @@ _FLOW_NAV_CSS = """<style>
     font-size: 13px;
     font-weight: 700;
     flex-shrink: 0;
-    transition: all 0.2s ease;
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
-.flow-pill-badge.active {
-    background: linear-gradient(135deg, #FF4B4B 0%, #E03E3E 100%);
+.stepper-dot.active {
+    background: linear-gradient(135deg, #FF4B4B 0%, #D93636 100%);
     color: white;
-    box-shadow: 0 2px 8px rgba(255,75,75,0.25);
+    box-shadow: 0 0 0 4px rgba(255,75,75,0.10), 0 2px 8px rgba(255,75,75,0.18);
 }
-.flow-pill-badge.done {
+.stepper-dot.done {
     background: linear-gradient(135deg, #21C354 0%, #1BA94C 100%);
     color: white;
 }
-.flow-pill-badge.locked {
-    background: #E5E7EB;
-    color: #9CA3AF;
+.stepper-dot.pending {
+    background: #F3F4F6;
+    color: #B0B5BE;
+    border: 2px solid #E5E7EB;
 }
-.flow-pill-text {
-    display: flex;
-    flex-direction: column;
-    min-width: 0;
-}
-.flow-pill-title {
-    font-weight: 600;
+.stepper-label {
     font-size: 13px;
+    font-weight: 600;
+    line-height: 1.2;
     color: #374151;
-    line-height: 1.3;
 }
-.flow-pill.active .flow-pill-title {
-    color: #FF4B4B;
-}
-.flow-pill.done .flow-pill-title {
-    color: #059669;
-}
-.flow-pill-sub {
+.stepper-label.active { color: #FF4B4B; }
+.stepper-label.done   { color: #059669; }
+.stepper-label.pending { color: #B0B5BE; }
+.stepper-sub {
     font-size: 11px;
     color: #6B7280;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    line-height: 1.4;
+    font-weight: 400;
 }
-/* Dot connectors between pills */
-.flow-pill:not(:last-child)::after {
-    content: '';
-    position: absolute;
-    right: -3px;
-    top: 50%;
-    transform: translateY(-50%);
-    width: 4px;
-    height: 4px;
-    border-radius: 50%;
-    background: #D1D5DB;
+.stepper-line {
+    flex: 1;
+    height: 2px;
+    margin: 0 14px;
+    border-radius: 1px;
+    background: #E5E7EB;
+    transition: background 0.3s ease;
 }
-.flow-pill.done:not(:last-child)::after {
-    background: #21C354;
+.stepper-line.done  { background: #21C354; }
+.stepper-line.half  { background: linear-gradient(90deg, #21C354 0%, #FF4B4B 50%, #E5E7EB 100%); }
+/* Completed section summary cards */
+.done-cards {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 12px;
 }
-.flow-pill {
-    position: relative;
+.done-card {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 14px;
+    background: #F0FDF4;
+    border-radius: 8px;
+    border: 1px solid #BBF7D0;
+    font-size: 12px;
+    color: #166534;
+    flex: 1 1 auto;
+    min-width: 140px;
 }
-/* Section content animation + border accent */
-@keyframes flowEnter {
-    from { opacity: 0; transform: translateY(5px); }
-    to { opacity: 1; transform: translateY(0); }
+.done-card-icon {
+    font-size: 14px;
+    flex-shrink: 0;
+}
+.done-card-label {
+    font-weight: 600;
+}
+.done-card-summary {
+    color: #15803D;
+    font-weight: 400;
+    margin-left: 2px;
+}
+/* Section wrapper */
+.flow-section {
+    border-top: 2px solid transparent;
+    border-image: linear-gradient(90deg, #FF4B4B 0%, transparent 100%) 1;
+    padding-top: 12px;
+    animation: sectionEnter 0.25s ease-out;
+}
+@keyframes sectionEnter {
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: translateY(0); }
 }
 /* Section header card */
 .section-header {
     display: flex;
     align-items: center;
-    gap: 12px;
-    padding: 12px 16px;
-    background: linear-gradient(135deg, rgba(255,75,75,0.04) 0%, rgba(255,75,75,0.01) 100%);
+    gap: 14px;
+    padding: 14px 20px;
+    background: linear-gradient(135deg, rgba(255,75,75,0.05) 0%, rgba(255,75,75,0.01) 100%);
     border-radius: 12px;
     border-left: 3px solid #FF4B4B;
-    margin-bottom: 16px;
+    margin-bottom: 20px;
 }
-.section-header-icon {
-    font-size: 20px;
-}
+.section-header-icon { font-size: 22px; }
 .section-header-text h3 {
     margin: 0;
-    font-size: 16px;
+    font-size: 18px;
     font-weight: 700;
     color: #1F2937;
 }
 .section-header-text p {
-    margin: 2px 0 0 0;
+    margin: 3px 0 0 0;
     font-size: 12px;
     color: #6B7280;
 }
@@ -4375,89 +4378,109 @@ _FLOW_NAV_CSS = """<style>
     font-size: 12px;
     color: #9CA3AF;
 }
-.feedback-bar a {
-    color: #6B7280;
-    text-decoration: none;
+.feedback-bar a { color: #6B7280; text-decoration: none; }
+.feedback-bar a:hover { color: #FF4B4B; text-decoration: underline; }
+/* Nav button row — compact and aligned */
+div[data-testid="stHorizontalBlock"] .stButton button {
+    font-size: 13px !important;
+    padding: 6px 10px !important;
 }
-.feedback-bar a:hover {
-    color: #FF4B4B;
-    text-decoration: underline;
-}
-/* Responsive: hide subtitles on narrow screens */
+/* Responsive */
 @media (max-width: 768px) {
-    .flow-pill-sub { display: none; }
-    .flow-pill { padding: 8px 10px; gap: 6px; }
-    .flow-pill-badge { width: 26px; height: 26px; font-size: 11px; }
-    .flow-pill-title { font-size: 11px; }
-    .section-header { padding: 8px 12px; }
-    .section-header-icon { font-size: 16px; }
-    .section-header-text h3 { font-size: 14px; }
-}
-/* Done pill hover: show it's clickable */
-.flow-pill.done:hover {
-    opacity: 0.9;
-    background: rgba(255,255,255,0.5);
-}
-/* Active section border glow */
-.flow-section {
-    border-top: 2px solid transparent;
-    border-image: linear-gradient(90deg, #FF4B4B 0%, transparent 100%) 1;
-    padding-top: 8px;
+    .stepper-sub { display: none; }
+    .stepper-label { font-size: 11px; }
+    .stepper-dot { width: 28px; height: 28px; font-size: 11px; }
+    .stepper-line { margin: 0 8px; }
+    .done-cards { flex-direction: column; }
+    .section-header { padding: 10px 14px; }
+    .section-header-icon { font-size: 18px; }
+    .section-header-text h3 { font-size: 15px; }
 }
 </style>"""
 
 
 def _render_flow_nav(active: int, done: List[bool]) -> None:
-    """Render the modern flow navigation ribbon.
+    """Render the modern progress stepper with clickable navigation.
 
-    v1.5.0: Replaces the old wizard stepper + button row with a single
-    cohesive navigation component. Visual ribbon (HTML/CSS) for status
-    display, Streamlit buttons below for click handling.
+    v1.6.0: Clean horizontal stepper (dot-line-dot) replaces the old
+    pill ribbon + separate button row. Single visual component that is
+    both informative and interactive.
     """
-    # Build ribbon HTML (ensure done list is padded to correct length)
     while len(done) < len(SECTION_META):
         done.append(False)
-    pills_html = ""
+
+    # ── Build stepper HTML ──────────────────────────────────────────
+    steps_html = ""
     for i, meta in enumerate(SECTION_META):
         if i < active and done[i]:
             state = "done"
             badge = "✓"
-            sub = _section_summary(i) or meta["desc"]
+            summary = _section_summary(i) or meta["desc"]
         elif i == active:
             state = "active"
-            badge = meta["icon"]
-            sub = meta["desc"]
-        else:
-            state = "locked"
             badge = str(i + 1)
-            sub = meta["desc"]
+            summary = meta["desc"]
+        else:
+            state = "pending"
+            badge = str(i + 1)
+            summary = meta["desc"]
 
-        pills_html += f'''<div class="flow-pill {state}">
-            <div class="flow-pill-badge {state}">{badge}</div>
-            <div class="flow-pill-text">
-                <span class="flow-pill-title">{meta["title"]}</span>
-                <span class="flow-pill-sub">{sub}</span>
-            </div>
-        </div>'''
+        steps_html += f'''<div class="stepper-step">
+            <div class="stepper-node">
+                <div class="stepper-dot {state}">{badge}</div>
+                <div>
+                    <div class="stepper-label {state}">{meta["title"]}</div>
+                    <div class="stepper-sub">{summary}</div>
+                </div>
+            </div>'''
 
-    st.markdown(f'<div class="flow-ribbon">{pills_html}</div>', unsafe_allow_html=True)
+        # Connector line between steps (not after last)
+        if i < len(SECTION_META) - 1:
+            if i < active and done[i]:
+                line_state = "done"
+            elif i == active - 1:
+                line_state = "half"
+            else:
+                line_state = ""
+            steps_html += f'<div class="stepper-line {line_state}"></div>'
 
-    # Clickable navigation buttons
+        steps_html += "</div>"
+
+    st.markdown(f'<div class="stepper">{steps_html}</div>', unsafe_allow_html=True)
+
+    # ── Clickable buttons (compact, aligned under stepper) ──────────
     nav_cols = st.columns(len(SECTION_META), gap="small")
     for i, meta in enumerate(SECTION_META):
         with nav_cols[i]:
             is_active = i == active
-            btn_label = meta["title"]
+            label = meta["title"]
             if done[i] and not is_active:
-                btn_label = f"✓ {meta['title']}"
+                label = f"✓ {meta['title']}"
             if st.button(
-                btn_label,
+                label,
                 key=f"nav_{i}",
                 type="primary" if is_active else "secondary",
                 use_container_width=True,
             ):
                 if not is_active:
                     _navigate_to(i)
+
+    # ── Completed section summary cards ─────────────────────────────
+    cards_html = ""
+    for i in range(active):
+        if done[i]:
+            summary = _section_summary(i)
+            if summary:
+                meta = SECTION_META[i]
+                cards_html += (
+                    f'<div class="done-card">'
+                    f'<span class="done-card-icon">✓</span>'
+                    f'<span class="done-card-label">{meta["title"]}:</span>'
+                    f'<span class="done-card-summary">{summary}</span>'
+                    f'</div>'
+                )
+    if cards_html:
+        st.markdown(f'<div class="done-cards">{cards_html}</div>', unsafe_allow_html=True)
 
 
 def _render_section_header(idx: int) -> None:
@@ -4520,28 +4543,23 @@ def _inject_scroll_to_top_js() -> None:
     _st_components.html(_SCROLL_TO_TOP_JS, height=0)
 
 
-# v1.5.0: Show intro only on Setup page — compact format
+# v1.6.0: Concise intro on Setup page — expanded by default for discoverability
 if st.session_state.get("active_page", 0) == 0:
-    with st.expander("What this tool delivers", expanded=False):
+    with st.expander("What this tool delivers", expanded=True):
         st.markdown("""
-Generate a complete synthetic dataset — with realistic response patterns, individual differences, and attention check failures — to build and test your analysis pipeline before collecting real data.
+Generate a complete synthetic dataset — with realistic response patterns, individual differences, and attention check failures — to build and test your analysis pipeline **before** collecting real data.
 
-**Two ways to get started:**
-1. **Upload a Qualtrics (.qsf) file** — auto-detects conditions, scales, and factors
-2. **Describe your study in plain text** — just tell us your design and the tool builds it
+| | |
+|---|---|
+| **Upload a QSF** | Auto-detects conditions, scales, and factors from your Qualtrics export |
+| **Or describe your study** | Just explain your design in plain text — we build the rest |
 
-**What you get:**
-- **Publication-ready CSV data** with condition assignments, scale responses, and open-ended text — ready for immediate statistical analysis in any software
-- **AI-generated open-ended responses** — powered by LLMs (Llama 3.3 70B) that follow each simulated participant's persona profile (verbosity, formality, engagement, sentiment), producing realistic free-text answers tailored to your specific survey questions and experimental conditions. Works automatically with built-in API keys; falls back to a 225-domain template engine if AI is unavailable
-- **Pre-configured analysis scripts** for your specific design, ready to run in your preferred statistical software
-- **Comprehensive instructor report** documenting the simulated design, parameters, and expected patterns — ideal for teaching and preregistration planning
-- **Behaviorally grounded personas** (satisficers, extreme responders, engaged participants) calibrated from computational social science research to create realistic individual differences and variance structures
-
-**Why use simulated data?**
-- **Build your entire analysis pipeline before data collection** — catch coding errors, verify statistical power, and refine your hypotheses risk-free
-- **Practice with realistic data** — unlike random noise, simulated responses reflect known psychological patterns (acquiescence bias, scale anchoring, satisficing)
-- **Iterate faster** — generate unlimited samples in seconds to stress-test your analysis plan across different effect sizes and sample compositions
-- **Teach experimental methods** — give students hands-on experience with realistic datasets that have known ground truth for answer keys
+**Your output package includes:**
+- **Publication-ready CSV** — condition assignments, scale responses, open-ended text
+- **AI-generated free-text** — LLM-powered (Llama 3.3 70B) persona-driven responses; falls back to 225-domain template engine if AI unavailable
+- **Analysis scripts** — pre-configured for your specific design
+- **Instructor report** — full documentation of design, parameters, and expected patterns
+- **Grounded personas** — satisficers, extreme responders, and engaged participants calibrated from behavioral science research
 """)
 
     with st.expander("Research foundations and citations", expanded=False):
@@ -4604,75 +4622,58 @@ with st.sidebar:
     advanced_mode = st.toggle("Advanced mode", value=st.session_state.get("advanced_mode", False))
     st.session_state["advanced_mode"] = advanced_mode
     st.caption(
-        "Advanced mode unlocks demographics, exclusions, and effect size controls."
+        "Unlocks demographics, exclusions, and effect size controls."
         if not advanced_mode else
         "Full control over demographics, exclusions, and effect sizes."
     )
 
+    # v1.6.0: Cleaner study snapshot — table-like layout
     st.divider()
-    st.markdown("**Study Snapshot**")
-
-    # Gather all snapshot data
     snapshot_conditions = st.session_state.get("selected_conditions") or []
     snapshot_conditions = snapshot_conditions + st.session_state.get("custom_conditions", [])
     snapshot_conditions = list(dict.fromkeys([c for c in snapshot_conditions if str(c).strip()]))
     inferred = st.session_state.get("inferred_design", {})
     snapshot_scales = inferred.get("scales", [])
-    snapshot_factors = inferred.get("factors", [])
 
-    # Study title
-    title = st.session_state.get('study_title', '—') or '—'
-    st.markdown(f"**{title[:50]}{'...' if len(title) > 50 else ''}**")
+    title = st.session_state.get('study_title', '') or ''
+    sample_size = st.session_state.get('sample_size', 0)
 
-    # Key metrics in compact format
-    sample_size = st.session_state.get('sample_size', '—')
-    st.caption(f"N = {sample_size}")
+    if title:
+        st.markdown(f"**{title[:48]}{'...' if len(title) > 48 else ''}**")
+    else:
+        st.caption("No study configured yet")
 
-    # Detect design type from conditions
+    # Compact key metrics
     detected_factors = _infer_factors_from_conditions(snapshot_conditions) if snapshot_conditions else []
-    if len(detected_factors) == 1:
-        design_hint = f"{len(snapshot_conditions)}-condition"
-    elif len(detected_factors) == 2:
+    if len(detected_factors) == 2:
         f1_levels = len(detected_factors[0].get("levels", []))
         f2_levels = len(detected_factors[1].get("levels", []))
-        design_hint = f"{f1_levels}×{f2_levels} factorial"
+        design_hint = f"{f1_levels}\u00d7{f2_levels} factorial"
     elif len(detected_factors) > 2:
         design_hint = f"{len(detected_factors)}-factor"
+    elif snapshot_conditions:
+        design_hint = f"{len(snapshot_conditions)}-condition"
     else:
-        design_hint = "—"
+        design_hint = "\u2014"
 
-    st.caption(f"Design: {design_hint}")
-
-    # Conditions (collapsible if many)
-    if snapshot_conditions:
-        if len(snapshot_conditions) <= 4:
-            st.caption(f"Conditions: {', '.join(snapshot_conditions)}")
-        else:
-            with st.expander(f"Conditions ({len(snapshot_conditions)})"):
-                for c in snapshot_conditions:
-                    st.caption(f"• {c}")
-
-    # Scales with scale points
+    _snapshot_lines = []
+    _snapshot_lines.append(f"N = {sample_size}" if sample_size else "N = \u2014")
+    _snapshot_lines.append(f"Design: {design_hint}")
+    if snapshot_conditions and len(snapshot_conditions) <= 5:
+        _snapshot_lines.append(f"Conditions: {', '.join(snapshot_conditions)}")
+    elif snapshot_conditions:
+        _snapshot_lines.append(f"Conditions: {len(snapshot_conditions)} groups")
     if snapshot_scales:
-        scale_summary = []
-        for s in snapshot_scales[:3]:
-            name = s.get("name", "Scale")[:20]
-            pts = s.get("scale_points", "?")
-            scale_summary.append(f"{name} ({pts}pt)")
-        scales_text = ", ".join(scale_summary)
-        if len(snapshot_scales) > 3:
-            scales_text += f" +{len(snapshot_scales) - 3} more"
-        st.caption(f"DVs: {scales_text}")
-    else:
-        st.caption("DVs: Not configured")
+        _n_scales = len(snapshot_scales)
+        _first = snapshot_scales[0].get("name", "Scale")[:18] if snapshot_scales else ""
+        _snapshot_lines.append(
+            f"DVs: {_first}" + (f" +{_n_scales - 1} more" if _n_scales > 1 else "")
+        )
+    for _sl in _snapshot_lines:
+        st.caption(_sl)
 
-    # Factors (if detected)
-    if len(detected_factors) > 1:
-        factors_text = " × ".join([f.get("name", "Factor") for f in detected_factors[:3]])
-        st.caption(f"Factors: {factors_text}")
-
+    # v1.6.0: Compact progress — stepper handles navigation, sidebar just shows status
     st.divider()
-    st.markdown("**Progress**")
     completion = _get_step_completion()
     step1_ready = completion["study_title"] and completion["study_description"]
     step2_ready = completion["qsf_uploaded"]
@@ -4680,22 +4681,18 @@ with st.sidebar:
     step4_ready = completion["design_ready"]
 
     steps_complete = sum([step1_ready, step2_ready, step3_ready, step4_ready])
-    st.progress(steps_complete / 4, text=f"{steps_complete}/4 sections")
+    st.progress(steps_complete / 4, text=f"{steps_complete}/4 ready")
 
-    # Checklist with clickable links to incomplete sections
-    _step_status = [
-        (step1_ready, "Setup", 0),
-        (step2_ready, "Study Input", 1),
-        (step3_ready, "Design", 2),
-        (step4_ready, "Generate", 3),
+    _sidebar_steps = [
+        (step1_ready, "Setup"),
+        (step2_ready, "Study Input"),
+        (step3_ready, "Design"),
+        (step4_ready, "Generate"),
     ]
-    for _ready, _label, _idx in _step_status:
-        _icon = "✅" if _ready else "⬜"
-        if not _ready:
-            if st.button(f"{_icon} {_label}", key=f"jump_{_idx}", use_container_width=True):
-                _navigate_to(_idx)
-        else:
-            st.caption(f"{_icon} {_label}")
+    _sidebar_line = "  ".join(
+        f"{'✅' if ok else '○'} {lbl}" for ok, lbl in _sidebar_steps
+    )
+    st.caption(_sidebar_line)
 
     # Start Over button with two-step confirmation
     st.divider()
@@ -4770,14 +4767,7 @@ _step_done = [
     bool(st.session_state.get("has_generated")),
 ]
 
-# ── Compact progress indicator ────────────────────────────────────────
-_progress_keys = ["study_title", "study_description", "sample_size",
-                  "qsf_uploaded", "conditions_set", "design_ready"]
-_completed_count = sum(1 for k in _progress_keys if _step_completion.get(k, False))
-_progress_pct = int((_completed_count / len(_progress_keys)) * 100)
-st.progress(_completed_count / len(_progress_keys), text=f"Ready: {_progress_pct}%")
-
-# ── Flow navigation ──────────────────────────────────────────────────
+# ── Flow navigation (v1.6.0: stepper + summary cards) ────────────────
 _render_flow_nav(active_page, _step_done)
 
 
@@ -4948,15 +4938,10 @@ if active_page == 0:
     completion = _get_step_completion()
     step1_done = completion["study_title"] and completion["study_description"]
 
-    if step1_done:
-        st.success("Ready — use the navigation above to continue to **Study Input**.")
-
-    col1, col2 = st.columns([1, 1], gap="large")
+    col1, col2 = st.columns([3, 2], gap="large")
 
     with col1:
         st.markdown("#### Study Details")
-        # v1.4.13: Widget keys now match session state keys exactly.
-        # This eliminates duplicate state and ensures Start Over clears properly.
         study_title = st.text_input(
             "Study title *",
             placeholder="e.g., Effect of AI Labels on Consumer Trust",
@@ -4966,7 +4951,12 @@ if active_page == 0:
         study_description = st.text_area(
             "Study description *",
             height=150,
-            placeholder="Describe your study's purpose, manipulation, and main outcomes.",
+            placeholder=(
+                "Describe your study's purpose, manipulation, and main outcomes.\n"
+                "For example: 'We examine whether AI-generated content labels "
+                "affect consumer trust in product reviews, comparing labeled vs. "
+                "unlabeled conditions on a 7-point trust scale.'"
+            ),
             help="Include your manipulation, population, and intended outcomes.",
             key="study_description",
         )
@@ -4987,11 +4977,19 @@ if active_page == 0:
             key="team_members_raw",
         )
 
-    # v1.5.0: Auto-advance hint when setup complete
+    # v1.6.0: Continue button — prominent CTA when ready
     if step1_done:
-        st.markdown("---")
-        if st.button("Continue to Study Input →", key="auto_advance_0", type="primary"):
+        st.markdown("")
+        if st.button("Continue to Study Input  \u2192", key="auto_advance_0", type="primary"):
             _navigate_to(1)
+    else:
+        _missing = []
+        if not completion["study_title"]:
+            _missing.append("study title")
+        if not completion["study_description"]:
+            _missing.append("study description")
+        if _missing:
+            st.caption(f"Fill in {' and '.join(_missing)} to continue.")
     st.markdown('</div>', unsafe_allow_html=True)
 
 
@@ -5008,37 +5006,27 @@ if active_page == 1:
     if not step1_done:
         st.warning("Complete **Setup** first — enter your study title and description, then return here.")
 
-    if step2_done:
-        st.success("Ready — use the navigation above to continue to **Design**.")
-
-    # ========================================
-    # MODE SELECTOR: QSF Upload vs Conversational Builder
-    # ========================================
-    st.markdown("### How would you like to set up your study?")
-
+    # v1.6.0: Cleaner mode selector with descriptive labels
+    _mode_options = {
+        "upload_qsf": "Upload QSF file",
+        "describe_study": "Describe in words",
+    }
     input_mode = st.radio(
-        "Choose your input method",
-        options=["upload_qsf", "describe_study"],
-        format_func=lambda x: {
-            "upload_qsf": "Upload a Qualtrics QSF file",
-            "describe_study": "Describe my study in words (no QSF needed)",
-        }[x],
+        "How would you like to provide your study design?",
+        options=list(_mode_options.keys()),
+        format_func=lambda x: _mode_options[x],
         index=0 if st.session_state.get("study_input_mode", "upload_qsf") == "upload_qsf" else 1,
         key="study_input_mode_radio",
         horizontal=True,
-        help="Choose 'Describe my study' if you don't have a QSF file — just explain your experiment and we'll set up the simulation for you.",
+        help="No QSF? Choose 'Describe in words' to set up your experiment through a guided form.",
     )
     st.session_state["study_input_mode"] = input_mode
 
-    # ========================================
     # PATH A: CONVERSATIONAL STUDY BUILDER
-    # ========================================
     if input_mode == "describe_study":
         _render_conversational_builder()
 
-    # ========================================
-    # PATH B: QSF FILE UPLOAD (Original Flow)
-    # ========================================
+    # PATH B: QSF FILE UPLOAD
     _show_qsf_upload = (input_mode == "upload_qsf")
 
     if _show_qsf_upload and not step2_done:
@@ -5465,10 +5453,10 @@ if active_page == 1:
         if selected_conditions:
             st.success(f"✓ Conditions: {', '.join(selected_conditions)}")
 
-    # v1.5.0: Auto-advance hint when study input complete
+    # v1.6.0: Continue CTA when study input is complete
     if step2_done:
-        st.markdown("---")
-        if st.button("Continue to Design →", key="auto_advance_1", type="primary"):
+        st.markdown("")
+        if st.button("Continue to Design  \u2192", key="auto_advance_1", type="primary"):
             _navigate_to(2)
     st.markdown('</div>', unsafe_allow_html=True)
 
@@ -5511,17 +5499,19 @@ if active_page == 2:
         # If we reach here, preview exists (QSF path)
         inferred = st.session_state.get("inferred_design", {})
 
-        # v1.4.13: Design tab progress banner
+        # v1.6.0: Design tab — compact status + metrics
         _design_conds = st.session_state.get("selected_conditions", [])
         _design_scales = st.session_state.get("confirmed_scales", [])
         _design_n = st.session_state.get("sample_size", 0)
         _design_ready = bool(_design_conds) and len(_design_conds) >= 1 and bool(_design_scales) and st.session_state.get("scales_confirmed", False)
+
         if _design_ready:
-            st.success(
-                f"Design configured: **{len(_design_conds)}** conditions, "
-                f"**{len(_design_scales)}** DVs, N={_design_n}. "
-                "Review below or proceed to **Generate**."
-            )
+            _ds_c1, _ds_c2, _ds_c3 = st.columns(3)
+            _ds_c1.metric("Conditions", len(_design_conds))
+            _ds_c2.metric("DVs", len(_design_scales))
+            _ds_c3.metric("Sample N", _design_n)
+            if st.button("Continue to Generate  \u2192", key="design_to_generate", type="primary"):
+                _navigate_to(3)
         else:
             _missing = []
             if not _design_conds:
@@ -5531,29 +5521,18 @@ if active_page == 2:
             if not st.session_state.get("scales_confirmed", False) and _design_scales:
                 _missing.append("scale confirmation")
             if _missing:
-                st.info(f"Configure your design below. Still needed: {', '.join(_missing)}")
+                st.caption(f"Still needed: {', '.join(_missing)}")
 
         st.markdown("---")
 
         # ========================================
         # STEP 1: CONDITION SETUP
         # ========================================
-        st.markdown("### 1. Define Your Experimental Conditions")
-
-        # Help text in expander (separate from selection)
-        with st.expander("ℹ️ What are conditions? (click for help)", expanded=False):
-            st.markdown("""
-    **Conditions** are the different groups/treatments in your experiment.
-
-    **Examples:**
-    - A simple A/B test has 2 conditions: Control vs. Treatment
-    - A 2x2 design has 4 conditions: Control-Low, Control-High, Treatment-Low, Treatment-High
-
-    **Where do conditions come from?**
-    - The simulator detects conditions from your QSF file's **Randomizer** or **BlockRandomizer** elements
-    - If your QSF doesn't use randomization, select the block names that represent your conditions
-    - Condition names should match what's in your QSF (they appear in the dropdown below)
-    """)
+        st.markdown("### 1. Experimental Conditions")
+        st.caption(
+            "Conditions are auto-detected from your QSF randomizer. "
+            "Select the ones to include, or add custom conditions."
+        )
 
         # Condition selection (OUTSIDE the help expander)
         condition_candidates = st.session_state.get("condition_candidates")
@@ -6850,11 +6829,11 @@ if active_page == 2:
 
             st.info(f"**Design Type:** {design_type} · **Total Cells:** {len(all_conditions)} · **N per cell:** ~{sample_n // max(1, len(all_conditions))}")
 
-    # v1.5.0: Auto-advance hint when design is ready
+    # v1.6.0: Bottom CTA when design is ready
     _design_can_next = bool(st.session_state.get("inferred_design"))
     if _design_can_next:
-        st.markdown("---")
-        if st.button("Continue to Generate →", key="auto_advance_2", type="primary"):
+        st.markdown("")
+        if st.button("Continue to Generate  \u2192", key="auto_advance_2", type="primary"):
             _navigate_to(3)
     st.markdown('</div>', unsafe_allow_html=True)
 
@@ -6910,57 +6889,39 @@ if active_page == 3:
                 _navigate_to(2)
         st.stop()
 
-    # Show readiness checklist — label adapts to input mode
+    # v1.6.0: Readiness checklist — compact inline
     _gen_mode = st.session_state.get("study_input_mode", "upload_qsf")
     _input_label = "Study described" if _gen_mode == "describe_study" else "QSF uploaded"
     required_fields = {
         "Study title": bool(st.session_state.get("study_title", "").strip()),
         "Study description": bool(st.session_state.get("study_description", "").strip()),
-        "Sample size (≥10)": int(st.session_state.get("sample_size", 0)) >= 10,
+        "Sample size (\u226510)": int(st.session_state.get("sample_size", 0)) >= 10,
         _input_label: bool(preview and preview.success) or bool(st.session_state.get("conversational_builder_complete")),
         "Design configured": bool(inferred),
     }
-    completed = sum(required_fields.values())
-    total_required = len(required_fields)
 
     missing_fields = [label for label, ok in required_fields.items() if not ok]
     if missing_fields:
-        st.warning(f"**Missing required fields:** {', '.join(missing_fields)}")
-        # Direct user to the right tab based on what's missing
-        _setup_missing = any(f in ("Study title", "Study description") for f in missing_fields)
-        _input_missing = _input_label in missing_fields
-        _sample_missing = "Sample size (≥10)" in missing_fields
-        _design_missing = "Design configured" in missing_fields
-        col1, col2, col3 = st.columns([1, 1, 1])
-        if _setup_missing:
-            with col1:
-                if st.button("← Go to Setup", key="fix_setup_from_generate", use_container_width=True):
-                    _navigate_to(0)
-        if _input_missing:
-            with col2:
-                if st.button("← Go to Study Input", key="fix_input_from_generate", use_container_width=True):
-                    _navigate_to(1)
-        if _design_missing or _sample_missing:
-            with col3:
-                if st.button("← Go to Design", key="fix_design_from_generate", use_container_width=True):
-                    _navigate_to(2)
-    else:
-        st.success("All required fields are complete. You can generate your simulation.")
+        st.warning(f"Missing: {', '.join(missing_fields)}")
+        _fix_cols = st.columns(len(missing_fields), gap="small")
+        for _fi, _field in enumerate(missing_fields):
+            with _fix_cols[_fi]:
+                _target = 0 if _field in ("Study title", "Study description") else (1 if _field == _input_label else 2)
+                if st.button(f"\u2190 Fix: {_field}", key=f"fix_{_fi}_from_gen", use_container_width=True):
+                    _navigate_to(_target)
 
-    config_col1, config_col2 = st.columns(2)
+    # Quick summary — metrics row
     conditions = inferred.get('conditions', [])
-    # Use confirmed scales if available (from scale confirmation UI), otherwise use inferred scales
     scales = st.session_state.get('confirmed_scales', []) or inferred.get('scales', [])
-    factors = inferred.get('factors', [])  # Get factors for Advanced Mode effect size configuration
+    factors = inferred.get('factors', [])
     scale_names = [s.get('name', 'Unknown') for s in scales if s.get('name')]
+    _sample_n = st.session_state.get('sample_size', 0)
 
-    with config_col1:
-        st.markdown(f"**Study:** {st.session_state.get('study_title', 'Untitled')}")
-        st.markdown(f"**Sample Size:** {st.session_state.get('sample_size', 0)} participants")
-
-    with config_col2:
-        st.markdown(f"**Conditions:** {', '.join(conditions) if conditions else 'Not detected'}")
-        st.markdown(f"**Scales:** {', '.join(scale_names[:3])}{' ...' if len(scale_names) > 3 else ''}" if scale_names else "**Scales:** Default (Main_DV)")
+    _gc1, _gc2, _gc3, _gc4 = st.columns(4)
+    _gc1.metric("Study", st.session_state.get('study_title', 'Untitled')[:24])
+    _gc2.metric("N", _sample_n)
+    _gc3.metric("Conditions", len(conditions))
+    _gc4.metric("Scales", len(scale_names))
 
     # ========================================
     # v1.0.0: DIFFICULTY LEVEL SELECTOR

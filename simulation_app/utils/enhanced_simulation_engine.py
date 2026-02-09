@@ -45,7 +45,7 @@ This module is designed to run inside a `utils/` package (i.e., imported as
 """
 
 # Version identifier to help track deployed code
-__version__ = "1.5.0"  # v1.5.0: Modern flow navigation, HTML leak fix
+__version__ = "1.6.0"  # v1.6.0: Modern stepper nav, progressive reveal
 
 # =============================================================================
 # SCIENTIFIC FOUNDATIONS FOR SIMULATION
