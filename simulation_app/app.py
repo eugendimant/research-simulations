@@ -4641,11 +4641,13 @@ def _render_flow_nav(active: int, done: List[bool]) -> None:
     segments_html += '</div>'
     st.markdown(segments_html, unsafe_allow_html=True)
 
-    # Step label
+    # Step label with completion summary
     meta = SECTION_META[active]
+    n_done = sum(1 for d in done if d)
+    completion_text = f" \u00b7 {n_done}/{len(SECTION_META)} complete" if n_done > 0 else ""
     st.markdown(
         f'<div class="step-label">Step {active + 1} of {len(SECTION_META)}'
-        f' \u2014 <strong>{meta["title"]}</strong></div>',
+        f' \u2014 <strong>{meta["title"]}</strong>{completion_text}</div>',
         unsafe_allow_html=True,
     )
 
@@ -8340,7 +8342,9 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
     st.markdown('</div>', unsafe_allow_html=True)
 
 # ========================================
-# FEEDBACK (Shown on all pages, compact)
+# FEEDBACK (Shown on wizard pages only)
 # v1.5.0: Compact feedback — no more bulky expander at top
+# v1.8.2: Only show on wizard pages, not landing page
 # ========================================
-_render_feedback_button()
+if active_page >= 0:
+    _render_feedback_button()
