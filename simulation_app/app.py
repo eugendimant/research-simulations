@@ -52,8 +52,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.8.2"
-BUILD_ID = "20260209-v182-ux-sidebar-polish"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.8.3"
+BUILD_ID = "20260209-v183-scroll-fix-research-links"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -107,7 +107,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.8.2"  # v1.8.2: UX polish — home button, CTA styling, sidebar cleanup
+APP_VERSION = "1.8.3"  # v1.8.3: Scroll-to-top fix, research links, expandable sections, notification cleanup
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -2765,20 +2765,13 @@ st.set_page_config(page_title=APP_TITLE, layout="wide")
 # ── Compact header (only on wizard pages, not landing page) ───────────
 _current_page = st.session_state.get("active_page", -1)
 if _current_page >= 0:
-    _hdr_col1, _hdr_col2 = st.columns([6, 1])
-    with _hdr_col1:
-        st.markdown(
-            f'<div style="display:flex;align-items:baseline;gap:12px;margin-bottom:0;">'
-            f'<h2 style="margin:0;padding:0;font-size:1.35rem;">{APP_TITLE}</h2>'
-            f'<span style="font-size:0.75rem;color:#D1D5DB;">v{APP_VERSION}</span>'
-            f'</div>',
-            unsafe_allow_html=True,
-        )
-    with _hdr_col2:
-        if st.button("Home", key="home_btn", type="secondary"):
-            st.session_state["_pending_nav"] = -1
-            st.session_state["_page_just_changed"] = True
-            st.rerun()
+    st.markdown(
+        f'<div style="display:flex;align-items:baseline;gap:12px;margin-bottom:0;">'
+        f'<h2 style="margin:0;padding:0;font-size:1.35rem;">{APP_TITLE}</h2>'
+        f'<span style="font-size:0.75rem;color:#D1D5DB;">v{APP_VERSION}</span>'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
 
 # v1.5.0: Removed legacy STEP_LABELS, STEP_DESCRIPTIONS, STEP_HELP constants
 # (replaced by SECTION_META in flow navigation)
@@ -4202,6 +4195,7 @@ def _navigate_to(page_index: int) -> None:
     clamped = max(-1, min(page_index, 3))
     st.session_state["_pending_nav"] = clamped
     st.session_state["_page_just_changed"] = True
+    st.session_state["_force_scroll_top"] = True
     if clamped == 2:
         st.session_state["_page_just_changed_design"] = True
     st.rerun()
@@ -4443,30 +4437,47 @@ section[data-testid="stSidebar"] .stCaption { line-height: 1.4; }
     text-transform: uppercase;
     letter-spacing: 0.06em;
 }
-.research-papers {
+.research-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-width: 640px;
+    margin: 0 auto;
+    text-align: left;
+}
+.research-item {
     display: flex;
     flex-wrap: wrap;
-    justify-content: center;
-    gap: 8px;
-}
-.research-paper {
-    display: inline-flex;
-    align-items: center;
-    padding: 5px 14px;
+    align-items: baseline;
+    gap: 6px 10px;
+    padding: 10px 14px;
     background: white;
     border: 1px solid #E5E7EB;
-    border-radius: 20px;
-    font-size: 0.78rem;
-    color: #374151;
-    transition: border-color 0.15s ease;
+    border-radius: 10px;
+    text-decoration: none;
+    transition: all 0.15s ease;
+    cursor: pointer;
 }
-.research-paper:hover {
+.research-item:hover {
     border-color: #D1D5DB;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+    transform: translateY(-1px);
 }
-.research-paper .rp-venue {
+.ri-authors {
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: #1F2937;
+}
+.ri-venue {
+    font-size: 0.72rem;
     color: #9CA3AF;
-    margin-left: 4px;
     font-style: italic;
+}
+.ri-insight {
+    font-size: 0.78rem;
+    color: #6B7280;
+    width: 100%;
+    line-height: 1.4;
 }
 
 /* ─── Landing footer ─── */
@@ -5065,6 +5076,30 @@ if active_page == -1:
         unsafe_allow_html=True,
     )
 
+    # Expandable details for each feature
+    with st.expander("Learn more about each capability"):
+        st.markdown("""
+**Test Before You Collect**
+Generate a publication-ready CSV with realistic Likert-scale responses, attention check failures,
+individual differences, and demographic distributions. The data mirrors real Qualtrics output format
+so your analysis scripts work identically on both simulated and real data.
+
+**Realistic Open-Ended Responses**
+Uses a 3-provider LLM failover chain (Groq, Cerebras, OpenRouter) with 50+ behavioral personas
+to generate unique, context-aware free-text responses. Each response aligns with the participant's
+numeric ratings and assigned persona characteristics. Supports 225+ research domains and 40 question types.
+
+**Ready-to-Run Analysis Code**
+Automatically generates scripts in R, Python, Julia, SPSS, and Stata — tailored to your specific
+experimental design. Includes data loading, variable coding, condition comparisons, and appropriate
+statistical tests (t-tests, ANOVAs, regressions, mediation analyses).
+
+**Built for Research & Teaching**
+Instructor-only reports include detailed statistical analysis with effect sizes, power estimates,
+and visualization charts that students don't see. Group management tracks team usage.
+Pre-registration consistency checks compare your design against OSF, AEA, or AsPredicted specifications.
+""")
+
     st.markdown('<div style="max-width:780px;margin:0 auto;padding:0 20px;"><hr style="border:none;border-top:1px solid #F3F4F6;margin:0;"></div>', unsafe_allow_html=True)
 
     # How it works — with improved step descriptions
@@ -5091,20 +5126,69 @@ if active_page == -1:
         unsafe_allow_html=True,
     )
 
+    # Expandable details for how it works
+    with st.expander("Step-by-step details"):
+        st.markdown("""
+**Step 1 — Name Your Study:** Enter your study title and a description of your experiment's
+purpose, manipulation, and main outcomes. This information is embedded in all generated outputs
+(data files, analysis scripts, reports). Optionally add team member names for group tracking.
+
+**Step 2 — Provide Your Design:** Upload a Qualtrics .qsf file for automatic detection of conditions,
+scales, randomizers, and embedded data. Or describe your study in plain text using the guided builder —
+it parses natural language descriptions of your experimental design.
+
+**Step 3 — Configure Experiment:** Review auto-detected conditions, add custom conditions, configure
+factorial designs (2x2, 2x3, etc.), set sample sizes with per-condition allocation, and verify
+dependent variables. The tool detects matrix scales, Likert items, sliders, and numeric inputs.
+
+**Step 4 — Generate & Download:** Choose a difficulty level (easy to expert) that controls noise,
+attention check failure rates, and response quality. Generate your complete data package and download
+a ZIP containing the CSV, codebook, analysis scripts in 5 languages, summary reports, and metadata.
+""")
+
     st.markdown('<div style="max-width:780px;margin:0 auto;padding:0 20px;"><hr style="border:none;border-top:1px solid #F3F4F6;margin:0;"></div>', unsafe_allow_html=True)
 
-    # Research foundations
+    # Research foundations — with links and key insights
     st.markdown(
         '<div class="research-section">'
         '<h3>Built on Peer-Reviewed Research</h3>'
-        '<div class="research-papers">'
-        '<span class="research-paper">Argyle et al. (2023) <span class="rp-venue">Political Analysis</span></span>'
-        '<span class="research-paper">Horton (2023) <span class="rp-venue">NBER</span></span>'
-        '<span class="research-paper">Aher, Arriaga &amp; Kalai (2023) <span class="rp-venue">ICML</span></span>'
-        '<span class="research-paper">Park et al. (2023) <span class="rp-venue">ACM UIST</span></span>'
-        '<span class="research-paper">Binz &amp; Schulz (2023) <span class="rp-venue">PNAS</span></span>'
-        '<span class="research-paper">Dillion et al. (2023) <span class="rp-venue">Trends in Cognitive Sciences</span></span>'
-        '<span class="research-paper">Westwood (2025) <span class="rp-venue">PNAS</span></span>'
+        '<div class="research-list">'
+
+        '<a class="research-item" href="https://doi.org/10.1017/pan.2023.2" target="_blank">'
+        '<span class="ri-authors">Argyle et al. (2023)</span>'
+        '<span class="ri-venue">Political Analysis</span>'
+        '<span class="ri-insight">LLMs replicate human survey responses across demographics</span></a>'
+
+        '<a class="research-item" href="https://www.nber.org/papers/w31122" target="_blank">'
+        '<span class="ri-authors">Horton (2023)</span>'
+        '<span class="ri-venue">NBER</span>'
+        '<span class="ri-insight">LLM agents as stand-ins for human subjects in experiments</span></a>'
+
+        '<a class="research-item" href="https://doi.org/10.48550/arXiv.2301.07543" target="_blank">'
+        '<span class="ri-authors">Aher, Arriaga &amp; Kalai (2023)</span>'
+        '<span class="ri-venue">ICML</span>'
+        '<span class="ri-insight">Simulating classic behavioral experiments with LLMs</span></a>'
+
+        '<a class="research-item" href="https://doi.org/10.1145/3586183.3606763" target="_blank">'
+        '<span class="ri-authors">Park et al. (2023)</span>'
+        '<span class="ri-venue">ACM UIST</span>'
+        '<span class="ri-insight">Generative agents with believable human behavior</span></a>'
+
+        '<a class="research-item" href="https://doi.org/10.1073/pnas.2218523120" target="_blank">'
+        '<span class="ri-authors">Binz &amp; Schulz (2023)</span>'
+        '<span class="ri-venue">PNAS</span>'
+        '<span class="ri-insight">LLMs match human cognitive biases and decision-making</span></a>'
+
+        '<a class="research-item" href="https://doi.org/10.1016/j.tics.2023.04.008" target="_blank">'
+        '<span class="ri-authors">Dillion et al. (2023)</span>'
+        '<span class="ri-venue">Trends in Cognitive Sciences</span>'
+        '<span class="ri-insight">Can AI language models replace human participants?</span></a>'
+
+        '<a class="research-item" href="https://doi.org/10.1073/pnas.2317245121" target="_blank">'
+        '<span class="ri-authors">Westwood (2025)</span>'
+        '<span class="ri-venue">PNAS</span>'
+        '<span class="ri-insight">Validating LLM-generated survey responses at scale</span></a>'
+
         '</div></div>',
         unsafe_allow_html=True,
     )
@@ -5125,16 +5209,11 @@ if active_page == -1:
         if st.button("Start Your Simulation  \u2192", type="primary", use_container_width=True, key="landing_cta"):
             _navigate_to(0)
 
-    # Trust line
+    # Footer with version + date + methods PDF
     st.markdown(
-        '<div style="text-align:center;padding:16px 0 4px;font-size:0.78rem;color:#9CA3AF;">'
-        'Used by researchers in behavioral economics, social psychology, marketing, and 30+ domains'
-        '</div>',
+        f'<div class="landing-footer">v{APP_VERSION} &middot; February 2026</div>',
         unsafe_allow_html=True,
     )
-
-    # Footer with version + methods PDF
-    st.markdown(f'<div class="landing-footer">v{APP_VERSION}</div>', unsafe_allow_html=True)
 
     methods_pdf_path = Path(__file__).resolve().parent.parent / "docs" / "papers" / "methods_summary.pdf"
     if methods_pdf_path.exists():
@@ -5713,9 +5792,10 @@ if active_page == 1:
 # PAGE 3: DESIGN CONFIGURATION
 # =====================================================================
 if active_page == 2:
-    # Extra scroll-to-top for the heavy Design page (widgets can reset scroll)
-    if st.session_state.get("_page_just_changed_design"):
-        st.session_state.pop("_page_just_changed_design", None)
+    # Always inject scroll-to-top on page transitions — fires multiple times over 2s
+    # to counteract Streamlit's scroll position restoration after rerun
+    if st.session_state.pop("_page_just_changed_design", None) or st.session_state.get("_force_scroll_top"):
+        st.session_state.pop("_force_scroll_top", None)
         _inject_scroll_to_top_js()
     st.markdown('<div class="flow-section">', unsafe_allow_html=True)
     st.markdown(
@@ -6894,6 +6974,10 @@ if active_page == 2:
 # PAGE 4: GENERATE SIMULATION
 # =====================================================================
 if active_page == 3:
+    # Inject scroll-to-top on page transition
+    if st.session_state.get("_force_scroll_top"):
+        st.session_state.pop("_force_scroll_top", None)
+        _inject_scroll_to_top_js()
     st.markdown('<div class="flow-section">', unsafe_allow_html=True)
     st.markdown(
         '<div class="section-guide">Choose your difficulty level, review the design summary, '
@@ -6975,7 +7059,8 @@ if active_page == 3:
     _sample_n = st.session_state.get('sample_size', 0)
 
     _gc1, _gc2, _gc3, _gc4 = st.columns(4)
-    _gc1.metric("Study", st.session_state.get('study_title', 'Untitled')[:24])
+    _study_title_display = st.session_state.get('study_title', 'Untitled')
+    _gc1.metric("Study", _study_title_display[:40] + ('...' if len(_study_title_display) > 40 else ''))
     _gc2.metric("N", _sample_n)
     _gc3.metric("Conditions", len(conditions))
     _gc4.metric("Scales", len(scale_names))
@@ -7062,16 +7147,18 @@ if active_page == 3:
         else:
             st.success("No consistency issues detected between pre-registration and design.")
 
-        # Show detected variables from pre-registration
-        with st.expander("View detected pre-registration variables"):
-            if prereg_variables.get('ivs'):
-                st.markdown(f"**Independent Variables:** {', '.join(prereg_variables['ivs'][:5])}")
-            if prereg_variables.get('dvs'):
-                st.markdown(f"**Dependent Variables:** {', '.join(prereg_variables['dvs'][:5])}")
-            if prereg_variables.get('mediators'):
-                st.markdown(f"**Mediators:** {', '.join(prereg_variables['mediators'][:3])}")
-            if prereg_variables.get('moderators'):
-                st.markdown(f"**Moderators:** {', '.join(prereg_variables['moderators'][:3])}")
+        # Show detected variables from pre-registration (only if any found)
+        _has_prereg_vars = any(prereg_variables.get(k) for k in ('ivs', 'dvs', 'mediators', 'moderators'))
+        if _has_prereg_vars:
+            with st.expander("View detected pre-registration variables"):
+                if prereg_variables.get('ivs'):
+                    st.markdown(f"**Independent Variables:** {', '.join(prereg_variables['ivs'][:5])}")
+                if prereg_variables.get('dvs'):
+                    st.markdown(f"**Dependent Variables:** {', '.join(prereg_variables['dvs'][:5])}")
+                if prereg_variables.get('mediators'):
+                    st.markdown(f"**Mediators:** {', '.join(prereg_variables['mediators'][:3])}")
+                if prereg_variables.get('moderators'):
+                    st.markdown(f"**Moderators:** {', '.join(prereg_variables['moderators'][:3])}")
 
     # ========================================
     # v1.0.0: LIVE DATA PREVIEW
@@ -8133,8 +8220,8 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
             st.session_state["last_zip"] = zip_bytes
             st.session_state["last_metadata"] = metadata
 
-            progress_bar.progress(85, text="Step 5/5 — Sending notifications...")
-            status_placeholder.info("Finalizing notifications...")
+            progress_bar.progress(85, text="Step 5/5 — Finalizing output...")
+            status_placeholder.info("Packaging your data...")
             st.success("Simulation generated.")
             st.markdown("[Jump to download](#download)")
 
@@ -8160,10 +8247,7 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
             )
 
             if not smtp_configured:
-                st.info(
-                    f"Email notification skipped: SMTP not configured. "
-                    "Download the ZIP file manually."
-                )
+                pass  # SMTP not configured — skip instructor notification silently
             else:
                 body = (
                     "COMPREHENSIVE INSTRUCTOR ANALYSIS ATTACHED\n"
@@ -8198,7 +8282,7 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
                 )
 
                 # Log the email attempt for debugging
-                status_placeholder.info(f"Sending instructor notification to {instructor_email}...")
+                # Instructor notification sent silently (user should not see this)
 
                 ok, msg = _send_email(
                     to_email=instructor_email,
@@ -8212,9 +8296,9 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
                     ],
                 )
                 if ok:
-                    st.success(f"Instructor auto-email sent to {instructor_email}.")
+                    pass  # Instructor notification sent silently
                 else:
-                    st.error(f"Instructor auto-email failed: {msg}")
+                    pass  # Instructor notification failed silently — not shown to user
 
             progress_bar.progress(100, text="Complete — your dataset is ready to download.")
             status_placeholder.success("Simulation complete.")
