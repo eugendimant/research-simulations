@@ -45,7 +45,7 @@ This module is designed to run inside a `utils/` package (i.e., imported as
 """
 
 # Version identifier to help track deployed code
-__version__ = "1.4.15"  # v1.4.15: JS scroll-to-top, wizard stepper
+__version__ = "1.4.16"  # v1.4.16: Bug fixes, download UX, dead code removal
 
 # =============================================================================
 # SCIENTIFIC FOUNDATIONS FOR SIMULATION
