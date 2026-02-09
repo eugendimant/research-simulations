@@ -52,8 +52,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.8.7.3"
-BUILD_ID = "20260209-v1873-nav-cleanup-domain-llm"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.8.7.4"
+BUILD_ID = "20260209-v1874-direct-nav-llm-prompts"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -107,7 +107,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.8.7.3"  # v1.8.7.3: Nav cleanup, domain detection, LLM prompt improvements
+APP_VERSION = "1.8.7.4"  # v1.8.7.4: Direct nav buttons, improved LLM prompts
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -2969,8 +2969,8 @@ def _render_conversational_builder() -> None:
         )
         _done_col1, _done_col2 = st.columns(2)
         with _done_col1:
-            if st.button("\u2191 Review & Continue to Design", key="builder_goto_design", type="primary", use_container_width=True):
-                _scroll_to_top_only()
+            if st.button("Continue to Design \u2192", key="builder_goto_design", type="primary", use_container_width=True):
+                _navigate_to(2)
         with _done_col2:
             if st.button("Edit my description", key="builder_reopen_edit", use_container_width=True):
                 st.session_state["conversational_builder_complete"] = False
@@ -3440,9 +3440,8 @@ def _render_builder_design_review() -> None:
         st.warning("Design incomplete: " + "; ".join(_design_issues))
     else:
         # v1.6.0: CTA at top when design is ready — most important action first
-        if st.button("\u2191 Review & Continue to Generate", key="review_to_generate", type="primary"):
-            _scroll_to_top_only()
-        st.caption("Review the settings below, or proceed directly to generate your data.")
+        if st.button("Continue to Generate \u2192", key="review_to_generate", type="primary"):
+            _navigate_to(3)
 
     # Show design improvement suggestions if available
     _builder_feedback = st.session_state.get("_builder_feedback", [])
@@ -4611,15 +4610,7 @@ section[data-testid="stSidebar"] .stCaption { line-height: 1.4; }
     border: 1px solid #FDE68A;
 }
 
-/* Nav button styling */
-.nav-btn-row .stButton button {
-    font-size: 0 !important;
-    height: 2px !important; min-height: 2px !important;
-    padding: 0 !important; margin: 0 !important;
-    border: none !important; background: transparent !important;
-    box-shadow: none !important; opacity: 0 !important;
-    overflow: hidden !important;
-}
+/* v1.8.7.4: nav-btn-row removed (CSS selector never matched Streamlit DOM) */
 
 /* Compact feedback link */
 .feedback-bar {
@@ -4665,39 +4656,7 @@ section[data-testid="stSidebar"] .stCaption { line-height: 1.4; }
     .research-section { padding: 20px 16px; }
 }
 
-/* ─── v1.8.7.2: Top continue button (highlighted after scroll-up) ─── */
-.top-continue-banner {
-    background: linear-gradient(135deg, #1e3a5f 0%, #2563eb 100%);
-    border-radius: 12px;
-    padding: 14px 20px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 18px;
-    box-shadow: 0 4px 16px rgba(37,99,235,0.25);
-    animation: banner-glow 2s ease-in-out infinite;
-}
-.top-continue-banner .banner-text {
-    color: #e0ecff;
-    font-size: 0.92rem;
-    font-weight: 500;
-}
-.top-continue-banner .banner-text strong {
-    color: #ffffff;
-}
-@keyframes banner-glow {
-    0%, 100% { box-shadow: 0 4px 16px rgba(37,99,235,0.25); }
-    50% { box-shadow: 0 4px 24px rgba(37,99,235,0.45); }
-}
-
-/* Bottom scroll-up button styling */
-.scroll-up-hint {
-    text-align: center;
-    color: #6b7280;
-    font-size: 0.82rem;
-    margin-top: 4px;
-    margin-bottom: 0;
-}
+/* v1.8.7.4: Removed top-continue-banner, scroll-up-hint (scroll-up-first removed) */
 </style>"""
 
 
@@ -4705,7 +4664,9 @@ def _render_flow_nav(active: int, done: List[bool]) -> None:
     """Render modern segmented progress bar with step label.
 
     v1.8.0: Thin segmented bar replaces dots+lines stepper.
-    v1.8.7.2: Added highlighted top "Continue" banner for scroll-up-first flow.
+    v1.8.7.4: Simplified — progress bar + label only.
+    Removed blue banner, invisible nav button row, and top continue button.
+    Navigation is handled entirely by bottom-of-page buttons.
     """
     while len(done) < len(SECTION_META):
         done.append(False)
@@ -4732,45 +4693,8 @@ def _render_flow_nav(active: int, done: List[bool]) -> None:
         f' \u2014 <strong>{meta["title"]}</strong>{completion_text}</div>',
         unsafe_allow_html=True,
     )
-
-    # v1.8.7.2: Prominent "Continue to next step" banner at the top.
-    # Shown when the current step is done. Highlighted with glow animation
-    # when user scrolled up from the bottom (_review_at_top flag).
-    _review_mode = st.session_state.pop("_review_at_top", False)
-    if active < 3 and done[active]:
-        _next_step_name = SECTION_META[active + 1]["title"]
-        if _review_mode:
-            st.markdown(
-                f'<div class="top-continue-banner">'
-                f'<span class="banner-text">Review complete? '
-                f'<strong>Continue to {_next_step_name}</strong> when ready.</span>'
-                f'</div>',
-                unsafe_allow_html=True,
-            )
-        _bc_left, _bc_right = st.columns([3, 2])
-        with _bc_right:
-            if st.button(
-                f"Continue to {_next_step_name} \u2192",
-                key=f"top_continue_{active}",
-                type="primary",
-                use_container_width=True,
-            ):
-                _navigate_to(active + 1)
-
-    # Invisible clickable buttons for navigation (same technique, just styled differently)
-    st.markdown('<div class="nav-btn-row">', unsafe_allow_html=True)
-    nav_cols = st.columns(len(SECTION_META), gap="small")
-    for i, meta in enumerate(SECTION_META):
-        with nav_cols[i]:
-            if st.button(
-                meta["title"],
-                key=f"nav_{i}",
-                type="secondary",
-                use_container_width=True,
-            ):
-                if i != active:
-                    _navigate_to(i)
-    st.markdown('</div>', unsafe_allow_html=True)
+    # Clean up stale scroll-review flag (no longer used)
+    st.session_state.pop("_review_at_top", None)
 
 
 _SCROLL_TO_TOP_JS = """<script>
@@ -5408,13 +5332,8 @@ if active_page == 0:
                 key="team_members_raw",
             )
 
-    # Navigation
-    if step1_done:
-        st.markdown(
-            '<div class="section-done-banner">\u2713 Setup complete</div>',
-            unsafe_allow_html=True,
-        )
-    else:
+    # Navigation (v1.8.7.4: minimal — just back + continue, no scroll-up-first)
+    if not step1_done:
         _missing = []
         if not completion["study_title"]:
             _missing.append("study title")
@@ -5429,10 +5348,8 @@ if active_page == 0:
             _navigate_to(-1)
     with _nav_right:
         if step1_done:
-            if st.button("\u2191 Review & Continue", key="auto_advance_0", type="primary", use_container_width=True):
-                _scroll_to_top_only()
-    if step1_done:
-        st.markdown('<p class="scroll-up-hint">Scrolls to top so you can review, then continue from there.</p>', unsafe_allow_html=True)
+            if st.button("Continue to Study Input \u2192", key="auto_advance_0", type="primary", use_container_width=True):
+                _navigate_to(1)
 
     # v1.8.0: Research citations moved to landing page
 
@@ -5900,10 +5817,10 @@ if active_page == 1:
         if selected_conditions:
             st.success(f"✓ Conditions: {', '.join(selected_conditions)}")
 
-    # v1.6.1: Section-complete banner with prominent CTA
+    # v1.8.7.4: Direct navigation — no scroll-up-first (caused re-initialization)
     if step2_done:
         st.markdown(
-            '<div class="section-done-banner">\u2713 Study input complete — ready to configure your design</div>',
+            '<div class="section-done-banner">\u2713 Study input complete</div>',
             unsafe_allow_html=True,
         )
 
@@ -5913,10 +5830,8 @@ if active_page == 1:
             _navigate_to(0)
     with _nav_right1:
         if step2_done:
-            if st.button("\u2191 Review & Continue", key="auto_advance_1", type="primary", use_container_width=True):
-                _scroll_to_top_only()
-    if step2_done:
-        st.markdown('<p class="scroll-up-hint">Scrolls to top so you can review, then continue from there.</p>', unsafe_allow_html=True)
+            if st.button("Continue to Design \u2192", key="auto_advance_1", type="primary", use_container_width=True):
+                _navigate_to(2)
 
     st.markdown('</div>', unsafe_allow_html=True)
 
@@ -7104,11 +7019,11 @@ if active_page == 2:
                     )
                     st.session_state["variable_review_rows"] = variable_df.to_dict(orient="records")
 
-    # ── Bottom navigation ───────────────────────────────────────────
+    # ── Bottom navigation (v1.8.7.4: direct navigate, no scroll-up-first) ──
     _design_can_next = bool(st.session_state.get("inferred_design"))
     if _design_can_next:
         st.markdown(
-            '<div class="section-done-banner">\u2713 Design configured — ready to generate</div>',
+            '<div class="section-done-banner">\u2713 Design configured</div>',
             unsafe_allow_html=True,
         )
 
@@ -7118,10 +7033,8 @@ if active_page == 2:
             _navigate_to(1)
     with _nav_right2:
         if _design_can_next:
-            if st.button("\u2191 Review & Continue", key="auto_advance_2", type="primary", use_container_width=True):
-                _scroll_to_top_only()
-    if _design_can_next:
-        st.markdown('<p class="scroll-up-hint">Scrolls to top so you can review, then continue from there.</p>', unsafe_allow_html=True)
+            if st.button("Continue to Generate \u2192", key="auto_advance_2", type="primary", use_container_width=True):
+                _navigate_to(3)
 
     st.markdown('</div>', unsafe_allow_html=True)
 
