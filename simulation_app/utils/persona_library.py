@@ -1634,28 +1634,144 @@ class PersonaLibrary:
         """
         Automatically detect relevant research domains from study description.
 
-        Args:
-            study_description: Text describing the research study
-            study_title: Optional title of the study
-
-        Returns:
-            List of detected domain names, sorted by relevance
+        v1.8.6: Improved with word-boundary matching, weighted scoring,
+        compound phrase priority, negative keywords, and top-N filtering.
         """
-        combined_text = f"{study_title} {study_description}".lower()
+        import re
+
+        title_text = study_title.lower().strip()
+        desc_text = study_description.lower().strip()
+        combined_text = f"{title_text} {desc_text}"
+
+        if not combined_text.strip():
+            return ['consumer_behavior']
+
+        # Compound phrases that strongly indicate specific domains (checked first)
+        compound_indicators = {
+            'political_psychology': ['political polarization', 'political identity', 'partisan divide',
+                                      'political attitudes', 'political beliefs', 'political ideology',
+                                      'liberal conservative', 'democrat republican', 'left right spectrum',
+                                      'ideological', 'voting behavior', 'political engagement',
+                                      'affective polarization', 'political trust', 'political participation'],
+            'norm_elicitation': ['norm elicitation', 'empirical norm', 'normative expectations',
+                                 'injunctive norm', 'descriptive norm', 'norm violation',
+                                 'personal normative beliefs', 'social norm intervention'],
+            'psychological_ownership': ['psychological ownership', 'endowment effect', 'self-extension',
+                                         'ownership feelings', 'mine effect'],
+            'organizational_behavior': ['workplace behavior', 'employee engagement', 'job satisfaction',
+                                         'organizational commitment', 'leadership style',
+                                         'workplace dynamics', 'team performance', 'gossip at work'],
+            'gender': ['gender differences', 'sex differences', 'gender stereotypes', 'gender bias',
+                       'gender roles', 'gender identity', 'masculinity femininity', 'gender pay gap'],
+            'ai': ['artificial intelligence', 'machine learning', 'algorithm aversion',
+                   'algorithm appreciation', 'ai generated', 'ai recommendation',
+                   'ai disclosure', 'ai trust', 'human vs ai', 'ai vs human',
+                   'ai tutor', 'ai doctor', 'chatbot interaction'],
+            'behavioral_economics': ['prospect theory', 'loss aversion', 'default nudge', 'framing effect',
+                                      'anchoring effect', 'scarcity priming', 'time preference',
+                                      'intertemporal choice', 'sunk cost'],
+            'social_psychology': ['social influence', 'social proof', 'conformity pressure',
+                                  'ingroup outgroup', 'minimal group paradigm', 'social identity',
+                                  'social value orientation', 'bystander effect'],
+            'consumer_behavior': ['purchase intention', 'buying behavior', 'brand loyalty',
+                                  'consumer preference', 'willingness to pay', 'shopping behavior'],
+            'charitable_giving': ['charitable giving', 'donation behavior', 'warm glow', 'effective altruism',
+                                  'philanthropy motivation'],
+            'dishonesty': ['die roll task', 'cheating behavior', 'overclaiming test',
+                           'truth telling', 'honest reporting'],
+            'economic_games': ['dictator game', 'trust game', 'public goods game',
+                               'ultimatum game', 'prisoner dilemma'],
+            'punishment': ['third-party punishment', 'costly punishment', 'norm enforcement',
+                           'punitive justice', 'sanctions and penalties'],
+            'emotions': ['emotional regulation', 'mood induction', 'affect intensity',
+                         'emotional contagion', 'discrete emotions'],
+            'health_psychology': ['health behavior', 'behavior change', 'medical decision',
+                                  'health intervention', 'patient adherence'],
+            'environmental': ['sustainable behavior', 'green consumption', 'carbon footprint',
+                              'environmental attitude', 'climate change belief'],
+            'accuracy_misinformation': ['misinformation', 'fake news', 'fact checking',
+                                         'truth discernment', 'conspiracy belief', 'belief accuracy'],
+            'fairness': ['distributive justice', 'procedural fairness', 'inequality aversion',
+                         'fairness perception'],
+            'privacy': ['data privacy', 'personal information', 'surveillance concern',
+                        'privacy paradox', 'information disclosure'],
+            'covid': ['covid-19', 'pandemic behavior', 'vaccine hesitancy', 'social distancing',
+                      'mask wearing'],
+        }
+
+        # Negative keywords: if present, penalize certain domains
+        domain_negative_keywords = {
+            'ai': ['polarization', 'partisan', 'democrat', 'republican', 'liberal', 'conservative',
+                   'ideology', 'voting', 'political party', 'election'],
+            'gender': ['polarization', 'partisan', 'democrat', 'republican', 'liberal', 'conservative',
+                       'ideology', 'voting', 'political party', 'election'],
+            'organizational_behavior': ['polarization', 'partisan', 'democrat', 'republican',
+                                         'election', 'ideology', 'liberal', 'conservative'],
+            'norm_elicitation': ['polarization', 'partisan', 'democrat', 'republican',
+                                 'election', 'ideology', 'voting'],
+            'psychological_ownership': ['polarization', 'partisan', 'democrat', 'republican',
+                                         'election', 'ideology', 'voting', 'political'],
+        }
 
         domain_scores = {}
-        for domain, keywords in self.domain_keywords.items():
-            score = 0
-            for keyword in keywords:
-                if keyword.lower() in combined_text:
-                    # Weight by keyword length (longer = more specific)
-                    score += len(keyword.split())
-            if score > 0:
-                domain_scores[domain] = score
 
-        # Sort by score and return
-        sorted_domains = sorted(domain_scores.keys(), key=lambda x: domain_scores[x], reverse=True)
-        return sorted_domains if sorted_domains else ['consumer_behavior']  # Default
+        # Phase 1: Score compound phrases (high weight)
+        for domain, phrases in compound_indicators.items():
+            for phrase in phrases:
+                if phrase in combined_text:
+                    domain_scores[domain] = domain_scores.get(domain, 0) + 10
+                    # Extra boost for title matches
+                    if phrase in title_text:
+                        domain_scores[domain] += 5
+
+        # Phase 2: Score individual keywords with word-boundary matching
+        for domain, keywords in self.domain_keywords.items():
+            for keyword in keywords:
+                kw = keyword.lower()
+                # Use word boundaries for short keywords (<=4 chars) to avoid false matches
+                if len(kw) <= 4:
+                    pattern = r'\b' + re.escape(kw) + r'\b'
+                    if re.search(pattern, combined_text):
+                        weight = len(kw.split())  # multi-word = higher weight
+                        domain_scores[domain] = domain_scores.get(domain, 0) + weight
+                        if re.search(pattern, title_text):
+                            domain_scores[domain] += weight  # double for title
+                else:
+                    # Longer keywords can use substring match (less ambiguous)
+                    if kw in combined_text:
+                        weight = len(kw.split())
+                        domain_scores[domain] = domain_scores.get(domain, 0) + weight
+                        if kw in title_text:
+                            domain_scores[domain] += weight
+
+        # Phase 3: Apply negative keyword penalties
+        for domain, neg_keywords in domain_negative_keywords.items():
+            if domain in domain_scores:
+                penalty = 0
+                for neg_kw in neg_keywords:
+                    if neg_kw in combined_text:
+                        penalty += 3
+                if penalty > 0:
+                    domain_scores[domain] = max(0, domain_scores[domain] - penalty)
+                    # Remove if penalty wiped out the score
+                    if domain_scores[domain] <= 0:
+                        del domain_scores[domain]
+
+        # Phase 4: Filter to meaningful scores only
+        if not domain_scores:
+            return ['consumer_behavior']
+
+        # Sort by score descending
+        sorted_domains = sorted(domain_scores.items(), key=lambda x: x[1], reverse=True)
+
+        # Only keep domains with score >= 3 (avoids weak single-keyword matches)
+        top_score = sorted_domains[0][1]
+        min_threshold = max(3, top_score * 0.25)  # Must be at least 25% of top score
+
+        filtered = [d for d, s in sorted_domains if s >= min_threshold]
+
+        # Cap at top 3 domains
+        return filtered[:3] if filtered else ['consumer_behavior']
 
     def get_personas_for_domains(
         self,

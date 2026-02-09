@@ -52,8 +52,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.8.4"
-BUILD_ID = "20260209-v184-layout-reorg-scroll-fix"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.8.6"
+BUILD_ID = "20260209-v186-domain-detection-word-boundary"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -107,7 +107,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.8.4"  # v1.8.4: Layout reorg, enhanced scroll-to-top, consistent navigation
+APP_VERSION = "1.8.6"  # v1.8.6: Domain detection with word-boundary matching, negative keywords, top-N filtering
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -2970,7 +2970,7 @@ def _render_conversational_builder() -> None:
         _done_col1, _done_col2 = st.columns(2)
         with _done_col1:
             if st.button("Continue to Design  \u2192", key="builder_goto_design", type="primary", use_container_width=True):
-                _navigate_to(2)
+                _scroll_then_navigate(2)
         with _done_col2:
             if st.button("Edit my description", key="builder_reopen_edit", use_container_width=True):
                 st.session_state["conversational_builder_complete"] = False
@@ -3441,7 +3441,7 @@ def _render_builder_design_review() -> None:
     else:
         # v1.6.0: CTA at top when design is ready — most important action first
         if st.button("Continue to Generate  \u2192", key="review_to_generate", type="primary"):
-            _navigate_to(3)
+            _scroll_then_navigate(3)
         st.caption("Review the settings below, or proceed directly to generate your data.")
 
     # Show design improvement suggestions if available
@@ -4201,6 +4201,24 @@ def _navigate_to(page_index: int) -> None:
     st.rerun()
 
 
+def _scroll_then_navigate(target_page: int) -> None:
+    """Two-phase navigation: scroll to top first, navigate on next rerun.
+
+    v1.8.5: When called from a button at the bottom of a long page,
+    Phase 1 scrolls the current page to the top and reruns.
+    Phase 2 (handled at the top of the script) actually navigates.
+    This ensures users always see pages start at the top.
+    """
+    # Persist widget values (same as _navigate_to)
+    for _wk in ["study_title", "study_description", "team_name", "team_members_raw"]:
+        _wv = st.session_state.get(_wk)
+        if _wv is not None:
+            st.session_state[f"_p_{_wk}"] = _wv
+    st.session_state["_scroll_then_nav_target"] = max(-1, min(target_page, 3))
+    st.session_state["_force_scroll_top"] = True
+    st.rerun()
+
+
 # ── Section metadata for flow navigation ──────────────────────────────
 SECTION_META: List[Dict[str, str]] = [
     {"title": "Setup", "icon": "📋", "desc": "Study details & team"},
@@ -4590,14 +4608,26 @@ section[data-testid="stSidebar"] .stCaption { line-height: 1.4; }
 
 /* ─── Wizard page nav buttons ─── */
 .stButton button[kind="secondary"] {
-    border-radius: 8px !important;
+    border-radius: 10px !important;
     font-size: 0.85rem !important;
-    transition: all 0.15s ease !important;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+    padding: 8px 20px !important;
+}
+.stButton button[kind="secondary"]:hover {
+    transform: translateY(-2px) !important;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.08) !important;
+    border-color: #9CA3AF !important;
 }
 .stButton button[kind="primary"] {
-    border-radius: 8px !important;
+    border-radius: 10px !important;
     font-size: 0.85rem !important;
-    transition: all 0.15s ease !important;
+    font-weight: 600 !important;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+    padding: 8px 20px !important;
+}
+.stButton button[kind="primary"]:hover {
+    transform: translateY(-2px) !important;
+    box-shadow: 0 4px 16px rgba(255,75,75,0.3) !important;
 }
 
 /* ─── Responsive ─── */
@@ -4824,6 +4854,19 @@ if st.session_state.pop("_pending_reset", False):
 # Replaces the old wizard stepper + clickable buttons + Next/Back.
 # One visual ribbon + one row of buttons. No redundant navigation.
 # =====================================================================
+
+# ── Two-phase navigation: scroll to top FIRST, then navigate ──────
+# v1.8.5: When user clicks a forward button at the bottom of a page,
+# Phase 1: scroll to top + rerun (so user sees current page scroll up)
+# Phase 2: on next rerun, actually navigate to the target page
+_scroll_then_nav = st.session_state.pop("_scroll_then_nav_target", None)
+if _scroll_then_nav is not None:
+    # Phase 2: now actually navigate
+    st.session_state["_pending_nav"] = _scroll_then_nav
+    st.session_state["_page_just_changed"] = True
+    st.session_state["_force_scroll_top"] = True
+    if _scroll_then_nav == 2:
+        st.session_state["_page_just_changed_design"] = True
 
 # ── Apply pending navigation (from auto-advance or _navigate_to) ─────
 _pending_nav = st.session_state.pop("_pending_nav", None)
@@ -5133,7 +5176,7 @@ individual differences, and demographic distributions. The data mirrors real Qua
 so your analysis scripts work identically on both simulated and real data.
 
 **Realistic Open-Ended Responses**
-Uses a 3-provider LLM failover chain (Groq, Cerebras, OpenRouter) with 50+ behavioral personas
+Uses a multi-provider LLM failover chain with 50+ behavioral personas
 to generate unique, context-aware free-text responses. Each response aligns with the participant's
 numeric ratings and assigned persona characteristics. Supports 225+ research domains and 40 question types.
 
@@ -5298,7 +5341,7 @@ if active_page == 0:
     with _nav_right:
         if step1_done:
             if st.button("Study Input \u2192", key="auto_advance_0", type="primary", use_container_width=True):
-                _navigate_to(1)
+                _scroll_then_navigate(1)
 
     # v1.8.0: Research citations moved to landing page
 
@@ -5780,7 +5823,7 @@ if active_page == 1:
     with _nav_right1:
         if step2_done:
             if st.button("Design \u2192", key="auto_advance_1", type="primary", use_container_width=True):
-                _navigate_to(2)
+                _scroll_then_navigate(2)
 
     st.markdown('</div>', unsafe_allow_html=True)
 
@@ -6968,7 +7011,7 @@ if active_page == 2:
     with _nav_right2:
         if _design_can_next:
             if st.button("Generate \u2192", key="auto_advance_2", type="primary", use_container_width=True):
-                _navigate_to(3)
+                _scroll_then_navigate(3)
 
     st.markdown('</div>', unsafe_allow_html=True)
 
