@@ -52,8 +52,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.7.0"
-BUILD_ID = "20260209-v170-ux-redesign"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.8.0"
+BUILD_ID = "20260209-v180-landing-page"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -107,7 +107,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.7.0"  # v1.7.0: Fix state persistence, professional UX redesign, stepper alignment, Design page declutter
+APP_VERSION = "1.8.0"  # v1.8.0: Landing page redesign, segmented progress bar, front page overhaul
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -2762,16 +2762,18 @@ def _get_qsf_preview_parser() -> QSFPreviewParser:
 # -----------------------------
 st.set_page_config(page_title=APP_TITLE, layout="wide")
 
-# ── Compact header ────────────────────────────────────────────────────
-_hdr_left, _hdr_right = st.columns([3, 1])
-with _hdr_left:
-    st.markdown(f"## {APP_TITLE}")
-    st.caption(
-        f"{APP_SUBTITLE} · "
-        f"Created by Dr. [Eugen Dimant](https://eugendimant.github.io/)"
-    )
-with _hdr_right:
-    st.caption(f"v{APP_VERSION}")
+# ── Compact header (only on wizard pages, not landing page) ───────────
+_current_page = st.session_state.get("active_page", -1)
+if _current_page >= 0:
+    _hdr_left, _hdr_right = st.columns([3, 1])
+    with _hdr_left:
+        st.markdown(f"## {APP_TITLE}")
+        st.caption(
+            f"{APP_SUBTITLE} · "
+            f"Created by Dr. [Eugen Dimant](https://eugendimant.github.io/)"
+        )
+    with _hdr_right:
+        st.caption(f"v{APP_VERSION}")
 
 # v1.5.0: Removed legacy STEP_LABELS, STEP_DESCRIPTIONS, STEP_HELP constants
 # (replaced by SECTION_META in flow navigation)
@@ -4192,7 +4194,7 @@ def _navigate_to(page_index: int) -> None:
         if _wv is not None:
             st.session_state[f"_p_{_wk}"] = _wv
 
-    clamped = max(0, min(page_index, 3))
+    clamped = max(-1, min(page_index, 3))
     st.session_state["_pending_nav"] = clamped
     st.session_state["_page_just_changed"] = True
     if clamped == 2:
@@ -4235,7 +4237,7 @@ def _section_summary(idx: int) -> str:
 
 # ── Flow navigation CSS (v1.7.0 — Professional minimal design) ───────
 _FLOW_NAV_CSS = """<style>
-/* === v1.7.0: Professional minimal design === */
+/* === v1.8.0: Landing page + segmented progress bar design === */
 section.main .block-container {
     max-width: 960px;
     padding-top: 1.2rem;
@@ -4246,77 +4248,203 @@ section.main h3 { font-size: 1.1rem; font-weight: 600; color: #1F2937; }
 section.main h4 { font-size: 0.95rem; font-weight: 600; margin-bottom: 0.4rem; color: #374151; }
 section[data-testid="stSidebar"] .stCaption { line-height: 1.4; }
 
-/* === Stepper grid: dots + lines + labels in one aligned grid === */
-.stepper-grid {
-    display: grid;
-    grid-template-columns: auto 1fr auto 1fr auto 1fr auto;
-    grid-template-rows: auto auto;
-    align-items: center;
-    gap: 0;
-    padding: 8px 0 0 0;
-    margin: 0 0 4px 0;
+/* Landing page */
+.landing-hero {
+    text-align: center;
+    padding: 48px 20px 32px;
+    max-width: 720px;
+    margin: 0 auto;
 }
-.sg-dot {
-    width: 28px; height: 28px;
-    border-radius: 50%;
-    display: flex; align-items: center; justify-content: center;
-    font-size: 11px; font-weight: 700;
-    transition: all 0.2s ease;
-    justify-self: center;
+.landing-hero h1 {
+    font-size: 2.4rem;
+    font-weight: 800;
+    color: #111827;
+    letter-spacing: -0.03em;
+    margin: 0 0 12px 0;
+    line-height: 1.15;
 }
-.sg-dot.active {
-    background: #FF4B4B; color: white;
-    box-shadow: 0 0 0 3px rgba(255,75,75,0.15);
+.landing-hero .subtitle {
+    font-size: 1.15rem;
+    color: #6B7280;
+    font-weight: 400;
+    margin: 0 0 6px 0;
+    line-height: 1.5;
 }
-.sg-dot.done { background: #22C55E; color: white; }
-.sg-dot.pending {
-    background: #F9FAFB; color: #9CA3AF;
-    border: 1.5px solid #E5E7EB;
-}
-.sg-line {
-    height: 2px; border-radius: 1px;
-    background: #E5E7EB; margin: 0 6px;
-    transition: background 0.3s ease;
-}
-.sg-line.done { background: #22C55E; }
-.sg-line.half {
-    background: linear-gradient(90deg, #22C55E 0%, #E5E7EB 100%);
-}
-.sg-label {
-    font-size: 11px; font-weight: 500;
-    text-align: center; padding-top: 5px;
+.landing-hero .creator {
+    font-size: 0.85rem;
     color: #9CA3AF;
-    white-space: nowrap;
-    justify-self: center;
+    margin: 0 0 32px 0;
 }
-.sg-label.active { color: #FF4B4B; font-weight: 600; }
-.sg-label.done { color: #16A34A; }
-.sg-spacer { /* empty grid cell for line row in labels row */ }
-
-/* Overall progress bar */
-.progress-track {
-    height: 3px; background: #F3F4F6;
-    border-radius: 2px; margin: 0 0 4px 0;
-    overflow: hidden;
+.landing-hero .creator a {
+    color: #6B7280;
+    text-decoration: underline;
+    text-decoration-color: #D1D5DB;
+    text-underline-offset: 2px;
 }
-.progress-fill {
-    height: 100%; border-radius: 2px;
-    background: linear-gradient(90deg, #FF4B4B 0%, #22C55E 100%);
-    transition: width 0.5s ease;
+.landing-hero .creator a:hover {
+    color: #FF4B4B;
 }
 
-/* Completed-section summary chips */
-.done-chips {
-    display: flex; flex-wrap: wrap; gap: 6px;
-    margin: 2px 0 8px 0;
+/* Feature cards grid */
+.feature-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 16px;
+    max-width: 780px;
+    margin: 0 auto 36px;
+    padding: 0 20px;
 }
-.done-chip {
-    display: inline-flex; align-items: center; gap: 4px;
-    padding: 3px 10px; background: #F0FDF4;
-    border-radius: 16px; border: 1px solid #D1FAE5;
-    font-size: 11px; color: #166534;
+.feature-card {
+    padding: 20px;
+    background: white;
+    border: 1px solid #E5E7EB;
+    border-radius: 10px;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
-.done-chip-check { font-weight: 700; color: #16A34A; }
+.feature-card:hover {
+    border-color: #D1D5DB;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+}
+.feature-card .fc-icon {
+    font-size: 1.5rem;
+    margin-bottom: 8px;
+}
+.feature-card h4 {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: #1F2937;
+    margin: 0 0 6px 0;
+}
+.feature-card p {
+    font-size: 0.82rem;
+    color: #6B7280;
+    margin: 0;
+    line-height: 1.5;
+}
+
+/* How it works */
+.how-it-works {
+    max-width: 780px;
+    margin: 0 auto 36px;
+    padding: 0 20px;
+    text-align: center;
+}
+.how-it-works h3 {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: #1F2937;
+    margin: 0 0 20px 0;
+}
+.hiw-steps {
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    gap: 8px;
+}
+.hiw-step {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    flex: 1;
+    max-width: 160px;
+}
+.hiw-num {
+    width: 32px; height: 32px;
+    border-radius: 50%;
+    background: #F3F4F6;
+    color: #6B7280;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 13px; font-weight: 700;
+    margin-bottom: 8px;
+}
+.hiw-step .hiw-title {
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: #374151;
+    margin: 0 0 2px 0;
+}
+.hiw-step .hiw-desc {
+    font-size: 0.75rem;
+    color: #9CA3AF;
+}
+.hiw-arrow {
+    color: #D1D5DB;
+    font-size: 18px;
+    margin-top: 6px;
+    flex-shrink: 0;
+}
+
+/* Research foundations on landing page */
+.research-section {
+    max-width: 780px;
+    margin: 0 auto 36px;
+    padding: 24px;
+    background: #F9FAFB;
+    border-radius: 10px;
+    border: 1px solid #E5E7EB;
+    text-align: center;
+}
+.research-section h3 {
+    font-size: 1rem;
+    font-weight: 600;
+    color: #1F2937;
+    margin: 0 0 12px 0;
+}
+.research-papers {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 8px;
+}
+.research-paper {
+    display: inline-flex;
+    padding: 4px 12px;
+    background: white;
+    border: 1px solid #E5E7EB;
+    border-radius: 6px;
+    font-size: 0.78rem;
+    color: #374151;
+}
+.research-paper .rp-venue {
+    color: #9CA3AF;
+    margin-left: 4px;
+    font-style: italic;
+}
+
+/* Modern segmented progress bar (replaces old stepper) */
+.seg-progress {
+    display: flex;
+    gap: 4px;
+    padding: 12px 0 4px;
+}
+.seg-bar {
+    flex: 1;
+    height: 4px;
+    border-radius: 2px;
+    background: #E5E7EB;
+    cursor: pointer;
+    transition: background 0.3s ease;
+    position: relative;
+}
+.seg-bar.active {
+    background: #FF4B4B;
+}
+.seg-bar.done {
+    background: #22C55E;
+}
+.seg-bar:hover {
+    opacity: 0.8;
+}
+.step-label {
+    text-align: center;
+    font-size: 0.82rem;
+    color: #6B7280;
+    padding: 6px 0 8px;
+    font-weight: 500;
+}
+.step-label strong {
+    color: #1F2937;
+}
 
 /* Section wrapper */
 .flow-section {
@@ -4336,34 +4464,6 @@ section[data-testid="stSidebar"] .stCaption { line-height: 1.4; }
     background: #F9FAFB;
     border-radius: 6px;
     border-left: 3px solid #E5E7EB;
-}
-
-/* Hero intro card on Setup page */
-.hero-card {
-    padding: 16px 20px;
-    background: linear-gradient(135deg, #FAFBFF 0%, #F8FAFC 100%);
-    border: 1px solid #E5E7EB;
-    border-radius: 8px;
-    margin: 0 0 16px 0;
-}
-.hero-card h3 {
-    font-size: 0.95rem; font-weight: 600;
-    color: #1F2937; margin: 0 0 6px 0;
-}
-.hero-card p {
-    font-size: 13px; color: #6B7280;
-    margin: 0; line-height: 1.5;
-}
-.hero-features {
-    display: flex; flex-wrap: wrap; gap: 8px;
-    margin-top: 10px;
-}
-.hero-feat {
-    display: inline-flex; align-items: center; gap: 4px;
-    font-size: 12px; color: #374151;
-    padding: 4px 10px;
-    background: white; border: 1px solid #E5E7EB;
-    border-radius: 6px;
 }
 
 /* Section complete banner */
@@ -4403,7 +4503,7 @@ section[data-testid="stSidebar"] .stCaption { line-height: 1.4; }
     border: 1px solid #FDE68A;
 }
 
-/* Nav button styling (integrated with stepper) */
+/* Nav button styling (integrated with progress bar) */
 .nav-btn-row .stButton button {
     font-size: 0 !important;
     height: 2px !important; min-height: 2px !important;
@@ -4425,69 +4525,45 @@ section[data-testid="stSidebar"] .stCaption { line-height: 1.4; }
 
 /* Responsive */
 @media (max-width: 768px) {
-    .sg-dot { width: 22px; height: 22px; font-size: 10px; }
-    .sg-label { font-size: 10px; }
-    .done-chips { flex-direction: column; }
+    .feature-grid { grid-template-columns: 1fr; }
+    .hiw-steps { flex-direction: column; align-items: center; }
+    .hiw-arrow { transform: rotate(90deg); }
+    .landing-hero h1 { font-size: 1.8rem; }
 }
 </style>"""
 
 
 def _render_flow_nav(active: int, done: List[bool]) -> None:
-    """Render a unified progress stepper with integrated clickable navigation.
+    """Render modern segmented progress bar with step label.
 
-    v1.7.0: CSS-grid stepper for pixel-perfect alignment of dots, lines,
-    and labels.  Invisible Streamlit buttons provide click handling.
-    Completed sections show a compact summary chip below the stepper.
+    v1.8.0: Thin segmented bar replaces dots+lines stepper.
+    Clickable segments for navigation, centered step label below.
     """
     while len(done) < len(SECTION_META):
         done.append(False)
 
-    # ── Overall progress bar ──────────────────────────────────────────
-    n_done = sum(1 for d in done if d)
-    pct = int(100 * (n_done + (0.5 if not done[active] else 0)) / len(SECTION_META))
-    pct = max(5, min(pct, 100))
+    # Build segmented progress bar
+    segments_html = '<div class="seg-progress">'
+    for i in range(len(SECTION_META)):
+        if i < active and done[i]:
+            cls = "done"
+        elif i == active:
+            cls = "active"
+        else:
+            cls = ""
+        segments_html += f'<div class="seg-bar {cls}" data-step="{i}"></div>'
+    segments_html += '</div>'
+    st.markdown(segments_html, unsafe_allow_html=True)
+
+    # Step label
+    meta = SECTION_META[active]
     st.markdown(
-        f'<div class="progress-track"><div class="progress-fill" style="width:{pct}%"></div></div>',
+        f'<div class="step-label">Step {active + 1} of {len(SECTION_META)}'
+        f' \u2014 <strong>{meta["title"]}</strong></div>',
         unsafe_allow_html=True,
     )
 
-    # ── Build CSS-grid stepper (dots + lines row, then labels row) ───
-    grid_html = '<div class="stepper-grid">'
-
-    # Row 1: Dots and lines
-    for i, meta in enumerate(SECTION_META):
-        if i < active and done[i]:
-            state, badge = "done", "\u2713"
-        elif i == active:
-            state, badge = "active", str(i + 1)
-        else:
-            state, badge = "pending", str(i + 1)
-        grid_html += f'<div class="sg-dot {state}">{badge}</div>'
-        if i < len(SECTION_META) - 1:
-            if i < active and done[i]:
-                line_cls = "done"
-            elif i == active - 1:
-                line_cls = "half"
-            else:
-                line_cls = ""
-            grid_html += f'<div class="sg-line {line_cls}"></div>'
-
-    # Row 2: Labels (matching grid columns)
-    for i, meta in enumerate(SECTION_META):
-        if i < active and done[i]:
-            label, lcls = f"\u2713 {meta['title']}", "done"
-        elif i == active:
-            label, lcls = meta["title"], "active"
-        else:
-            label, lcls = meta["title"], ""
-        grid_html += f'<div class="sg-label {lcls}">{label}</div>'
-        if i < len(SECTION_META) - 1:
-            grid_html += '<div class="sg-spacer"></div>'
-
-    grid_html += '</div>'
-    st.markdown(grid_html, unsafe_allow_html=True)
-
-    # ── Invisible clickable buttons for navigation ────────────────────
+    # Invisible clickable buttons for navigation (same technique, just styled differently)
     st.markdown('<div class="nav-btn-row">', unsafe_allow_html=True)
     nav_cols = st.columns(len(SECTION_META), gap="small")
     for i, meta in enumerate(SECTION_META):
@@ -4501,25 +4577,6 @@ def _render_flow_nav(active: int, done: List[bool]) -> None:
                 if i != active:
                     _navigate_to(i)
     st.markdown('</div>', unsafe_allow_html=True)
-
-    # ── Completed-section summary chips ─────────────────────────────
-    chips = []
-    for i in range(active):
-        if done[i]:
-            summary = _section_summary(i)
-            if summary:
-                meta = SECTION_META[i]
-                chips.append(
-                    f'<span class="done-chip">'
-                    f'<span class="done-chip-check">\u2713</span>'
-                    f'{meta["title"]}: {summary}'
-                    f'</span>'
-                )
-    if chips:
-        st.markdown(
-            f'<div class="done-chips">{"".join(chips)}</div>',
-            unsafe_allow_html=True,
-        )
 
 
 _SCROLL_TO_TOP_JS = """<script>
@@ -4624,27 +4681,7 @@ with st.sidebar:
     for _sl in _snapshot_lines:
         st.caption(_sl)
 
-    # v1.6.0: Compact progress — stepper handles navigation, sidebar just shows status
-    st.divider()
-    completion = _get_step_completion()
-    step1_ready = completion["study_title"] and completion["study_description"]
-    step2_ready = completion["qsf_uploaded"]
-    step3_ready = completion["conditions_set"] and completion["sample_size"]
-    step4_ready = completion["design_ready"]
-
-    steps_complete = sum([step1_ready, step2_ready, step3_ready, step4_ready])
-    st.progress(steps_complete / 4, text=f"{steps_complete}/4 ready")
-
-    _sidebar_steps = [
-        (step1_ready, "Setup"),
-        (step2_ready, "Study Input"),
-        (step3_ready, "Design"),
-        (step4_ready, "Generate"),
-    ]
-    _sidebar_line = "  ".join(
-        f"{'✅' if ok else '○'} {lbl}" for ok, lbl in _sidebar_steps
-    )
-    st.caption(_sidebar_line)
+    # v1.8.0: Removed sidebar progress bar and step status — segmented bar handles this
 
     # Start Over button with two-step confirmation
     st.divider()
@@ -4652,7 +4689,7 @@ with st.sidebar:
     if not _confirm_reset:
         if st.button("🔄 Start Over", key="start_over_btn", use_container_width=True, type="secondary"):
             st.session_state["_confirm_reset"] = True
-            _navigate_to(0)
+            _navigate_to(-1)
         st.caption("Clear all entries and start fresh")
     else:
         st.warning("Are you sure? This will clear all your entries and uploaded files.")
@@ -4663,11 +4700,11 @@ with st.sidebar:
                 # The handler at the top of the script clears all state
                 # BEFORE any widgets render, so fields appear empty.
                 st.session_state["_pending_reset"] = True
-                _navigate_to(0)
+                _navigate_to(-1)
         with _c2:
             if st.button("Cancel", key="confirm_reset_no", use_container_width=True):
                 st.session_state["_confirm_reset"] = False
-                _navigate_to(0)
+                _navigate_to(-1)
 
     # v1.4.16: Removed dead benchmark code (~160 lines) that was permanently disabled
 
@@ -4683,7 +4720,7 @@ if st.session_state.pop("_pending_reset", False):
                 del st.session_state[_k]
             except Exception:
                 pass
-    st.session_state["active_page"] = 0  # Reset to first page
+    st.session_state["active_page"] = -1  # Reset to landing page
     st.session_state["_page_just_changed"] = True  # Scroll to top
 
 # =====================================================================
@@ -4698,9 +4735,9 @@ if _pending_nav is not None:
     st.session_state["active_page"] = _pending_nav
 
 if "active_page" not in st.session_state:
-    st.session_state["active_page"] = 0
-# Guard: clamp active_page to valid range
-active_page = max(0, min(int(st.session_state.get("active_page", 0)), 3))
+    st.session_state["active_page"] = -1  # Landing page
+# Guard: clamp active_page to valid range (-1 = landing, 0-3 = wizard)
+active_page = max(-1, min(int(st.session_state.get("active_page", -1)), 3))
 st.session_state["active_page"] = active_page
 
 # ── Scroll to top on section change ──────────────────────────────────
@@ -4719,8 +4756,9 @@ _step_done = [
     bool(st.session_state.get("has_generated")),
 ]
 
-# ── Flow navigation (v1.6.0: stepper + summary cards) ────────────────
-_render_flow_nav(active_page, _step_done)
+# ── Flow navigation (v1.8.0: segmented progress bar, only on wizard pages) ──
+if active_page >= 0:
+    _render_flow_nav(active_page, _step_done)
 
 
 def _get_condition_candidates(
@@ -4882,27 +4920,127 @@ def _get_total_conditions() -> int:
 
 
 # =====================================================================
-# PAGE 1: STUDY SETUP
+# LANDING PAGE (active_page == -1)
 # =====================================================================
-if active_page == 0:
-    st.markdown('<div class="flow-section">', unsafe_allow_html=True)
+if active_page == -1:
+    # Hide sidebar on landing page
+    st.markdown("""<style>
+        section[data-testid="stSidebar"] { display: none; }
+        section.main .block-container { max-width: 1000px; }
+    </style>""", unsafe_allow_html=True)
 
-    # v1.7.0: Concise hero card — key value prop without clutter
+    # Hero
     st.markdown(
-        '<div class="hero-card">'
-        '<p>Generate a complete synthetic dataset — realistic response patterns, '
-        'individual differences, and attention check failures — to '
-        '<strong>build and test your analysis pipeline before collecting real data.</strong></p>'
-        '<div class="hero-features">'
-        '<span class="hero-feat">Publication-ready CSV</span>'
-        '<span class="hero-feat">AI-generated free-text</span>'
-        '<span class="hero-feat">Analysis scripts</span>'
-        '<span class="hero-feat">Instructor report</span>'
+        '<div class="landing-hero">'
+        '<h1>Behavioral Experiment<br>Simulation Tool</h1>'
+        '<p class="subtitle">Generate realistic pilot datasets to test your analysis pipeline<br>'
+        'before collecting real data</p>'
+        '<p class="creator">Created by Dr. <a href="https://eugendimant.github.io/">Eugen Dimant</a></p>'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+
+    # Feature cards
+    st.markdown(
+        '<div class="feature-grid">'
+        '<div class="feature-card"><div class="fc-icon">\U0001F4CA</div>'
+        '<h4>Publication-Ready Data</h4>'
+        '<p>Generate realistic CSV datasets with response patterns, individual differences, '
+        'and attention check failures \u2014 structured exactly like real Qualtrics output.</p></div>'
+
+        '<div class="feature-card"><div class="fc-icon">\U0001F4AC</div>'
+        '<h4>AI-Generated Free-Text</h4>'
+        '<p>Open-ended responses that match numeric ratings, powered by persona-based '
+        'text generation across 225+ research domains.</p></div>'
+
+        '<div class="feature-card"><div class="fc-icon">\U0001F4C8</div>'
+        '<h4>Ready-Made Analysis Scripts</h4>'
+        '<p>R and Python scripts tailored to your experimental design \u2014 ANOVAs, t-tests, '
+        'regressions \u2014 ready to run immediately.</p></div>'
+
+        '<div class="feature-card"><div class="fc-icon">\U0001F4CB</div>'
+        '<h4>Instructor Reports</h4>'
+        '<p>Comprehensive simulation reports documenting methodology, parameters, '
+        'and quality checks for classroom or review use.</p></div>'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+
+    # How it works
+    st.markdown(
+        '<div class="how-it-works">'
+        '<h3>How It Works</h3>'
+        '<div class="hiw-steps">'
+        '<div class="hiw-step"><div class="hiw-num">1</div>'
+        '<div class="hiw-title">Name Your Study</div>'
+        '<div class="hiw-desc">Title & description</div></div>'
+        '<div class="hiw-arrow">\u2192</div>'
+        '<div class="hiw-step"><div class="hiw-num">2</div>'
+        '<div class="hiw-title">Provide Design</div>'
+        '<div class="hiw-desc">Upload QSF or describe</div></div>'
+        '<div class="hiw-arrow">\u2192</div>'
+        '<div class="hiw-step"><div class="hiw-num">3</div>'
+        '<div class="hiw-title">Configure</div>'
+        '<div class="hiw-desc">Conditions & outcomes</div></div>'
+        '<div class="hiw-arrow">\u2192</div>'
+        '<div class="hiw-step"><div class="hiw-num">4</div>'
+        '<div class="hiw-title">Generate</div>'
+        '<div class="hiw-desc">Download data package</div></div>'
         '</div>'
         '</div>',
         unsafe_allow_html=True,
     )
 
+    # Research foundations (PROMOTED from hidden expander)
+    st.markdown(
+        '<div class="research-section">'
+        '<h3>Built on Peer-Reviewed Research</h3>'
+        '<div class="research-papers">'
+        '<span class="research-paper">Argyle et al. (2023) <span class="rp-venue">Political Analysis</span></span>'
+        '<span class="research-paper">Horton (2023) <span class="rp-venue">NBER</span></span>'
+        '<span class="research-paper">Aher, Arriaga & Kalai (2023) <span class="rp-venue">ICML</span></span>'
+        '<span class="research-paper">Park et al. (2023) <span class="rp-venue">ACM UIST</span></span>'
+        '<span class="research-paper">Binz & Schulz (2023) <span class="rp-venue">PNAS</span></span>'
+        '<span class="research-paper">Dillion et al. (2023) <span class="rp-venue">Trends in Cognitive Sciences</span></span>'
+        '<span class="research-paper">Westwood (2025) <span class="rp-venue">PNAS</span></span>'
+        '</div>'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+
+    # CTA
+    _cta_col1, _cta_col2, _cta_col3 = st.columns([1, 2, 1])
+    with _cta_col2:
+        if st.button("Start Your Simulation  \u2192", type="primary", use_container_width=True, key="landing_cta"):
+            _navigate_to(0)
+
+    # Version footer
+    st.markdown(
+        f'<div style="text-align:center;padding:24px 0 8px;font-size:0.75rem;color:#D1D5DB;">v{APP_VERSION}</div>',
+        unsafe_allow_html=True,
+    )
+
+    # Methods PDF download
+    methods_pdf_path = Path(__file__).resolve().parent.parent / "docs" / "papers" / "methods_summary.pdf"
+    if methods_pdf_path.exists():
+        _pdf_col1, _pdf_col2, _pdf_col3 = st.columns([1, 2, 1])
+        with _pdf_col2:
+            st.download_button(
+                "Download Methods PDF",
+                data=methods_pdf_path.read_bytes(),
+                file_name=methods_pdf_path.name,
+                mime="application/pdf",
+                use_container_width=True,
+            )
+
+
+# =====================================================================
+# PAGE 1: STUDY SETUP
+# =====================================================================
+if active_page == 0:
+    st.markdown('<div class="flow-section">', unsafe_allow_html=True)
+
+    # v1.8.0: Hero card removed — now on landing page
     st.markdown(
         '<div class="section-guide">Name your study and describe the experiment — '
         'this information appears in your final report and data outputs.</div>',
@@ -4972,22 +5110,7 @@ if active_page == 0:
         if _missing:
             st.caption(f"Fill in {' and '.join(_missing)} to continue.")
 
-    # v1.7.0: Research citations collapsed at bottom — out of the way
-    with st.expander("Research foundations and citations"):
-        st.markdown("""
-**Core Research:** Argyle et al. (2023) *Political Analysis*; Horton (2023) *NBER*;
-Aher, Arriaga & Kalai (2023) *ICML* · **Validation:** Park et al. (2023) *ACM UIST*;
-Binz & Schulz (2023) *PNAS*; Dillion et al. (2023) *Trends in Cognitive Sciences* ·
-**Survey Validity:** Westwood (2025) *PNAS*
-""")
-        methods_pdf_path = Path(__file__).resolve().parent.parent / "docs" / "papers" / "methods_summary.pdf"
-        if methods_pdf_path.exists():
-            st.download_button(
-                "Download Methods PDF",
-                data=methods_pdf_path.read_bytes(),
-                file_name=methods_pdf_path.name,
-                mime="application/pdf",
-            )
+    # v1.8.0: Research citations moved to landing page
 
     st.markdown('</div>', unsafe_allow_html=True)
 
