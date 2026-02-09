@@ -52,8 +52,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.8.7.1"
-BUILD_ID = "20260209-v1871-question-context-explainer"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.8.7.2"
+BUILD_ID = "20260209-v1872-scroll-up-first-navigation"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -107,7 +107,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.8.7.1"  # v1.8.7.1: Question context/explainer for better LLM responses
+APP_VERSION = "1.8.7.2"  # v1.8.7.2: Scroll-up-first navigation with top continue button
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -2969,8 +2969,8 @@ def _render_conversational_builder() -> None:
         )
         _done_col1, _done_col2 = st.columns(2)
         with _done_col1:
-            if st.button("Continue to Design  \u2192", key="builder_goto_design", type="primary", use_container_width=True):
-                _scroll_then_navigate(2)
+            if st.button("\u2191 Review & Continue to Design", key="builder_goto_design", type="primary", use_container_width=True):
+                _scroll_to_top_only()
         with _done_col2:
             if st.button("Edit my description", key="builder_reopen_edit", use_container_width=True):
                 st.session_state["conversational_builder_complete"] = False
@@ -3440,8 +3440,8 @@ def _render_builder_design_review() -> None:
         st.warning("Design incomplete: " + "; ".join(_design_issues))
     else:
         # v1.6.0: CTA at top when design is ready — most important action first
-        if st.button("Continue to Generate  \u2192", key="review_to_generate", type="primary"):
-            _scroll_then_navigate(3)
+        if st.button("\u2191 Review & Continue to Generate", key="review_to_generate", type="primary"):
+            _scroll_to_top_only()
         st.caption("Review the settings below, or proceed directly to generate your data.")
 
     # Show design improvement suggestions if available
@@ -4232,6 +4232,18 @@ def _scroll_then_navigate(target_page: int) -> None:
     st.rerun()
 
 
+def _scroll_to_top_only() -> None:
+    """Scroll the current page to the top without navigating.
+
+    v1.8.7.2: Used by bottom-of-page buttons to bring the user back to the
+    top so they can review their entries before proceeding.  Sets a flag
+    that highlights the top "Continue" button.
+    """
+    st.session_state["_force_scroll_top"] = True
+    st.session_state["_review_at_top"] = True
+    st.rerun()
+
+
 # ── Section metadata for flow navigation ──────────────────────────────
 SECTION_META: List[Dict[str, str]] = [
     {"title": "Setup", "icon": "📋", "desc": "Study details & team"},
@@ -4652,6 +4664,40 @@ section[data-testid="stSidebar"] .stCaption { line-height: 1.4; }
     .landing-hero { padding: 32px 16px 24px; }
     .research-section { padding: 20px 16px; }
 }
+
+/* ─── v1.8.7.2: Top continue button (highlighted after scroll-up) ─── */
+.top-continue-banner {
+    background: linear-gradient(135deg, #1e3a5f 0%, #2563eb 100%);
+    border-radius: 12px;
+    padding: 14px 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 18px;
+    box-shadow: 0 4px 16px rgba(37,99,235,0.25);
+    animation: banner-glow 2s ease-in-out infinite;
+}
+.top-continue-banner .banner-text {
+    color: #e0ecff;
+    font-size: 0.92rem;
+    font-weight: 500;
+}
+.top-continue-banner .banner-text strong {
+    color: #ffffff;
+}
+@keyframes banner-glow {
+    0%, 100% { box-shadow: 0 4px 16px rgba(37,99,235,0.25); }
+    50% { box-shadow: 0 4px 24px rgba(37,99,235,0.45); }
+}
+
+/* Bottom scroll-up button styling */
+.scroll-up-hint {
+    text-align: center;
+    color: #6b7280;
+    font-size: 0.82rem;
+    margin-top: 4px;
+    margin-bottom: 0;
+}
 </style>"""
 
 
@@ -4659,7 +4705,7 @@ def _render_flow_nav(active: int, done: List[bool]) -> None:
     """Render modern segmented progress bar with step label.
 
     v1.8.0: Thin segmented bar replaces dots+lines stepper.
-    Clickable segments for navigation, centered step label below.
+    v1.8.7.2: Added highlighted top "Continue" banner for scroll-up-first flow.
     """
     while len(done) < len(SECTION_META):
         done.append(False)
@@ -4686,6 +4732,30 @@ def _render_flow_nav(active: int, done: List[bool]) -> None:
         f' \u2014 <strong>{meta["title"]}</strong>{completion_text}</div>',
         unsafe_allow_html=True,
     )
+
+    # v1.8.7.2: Prominent "Continue to next step" banner at the top.
+    # Shown when the current step is done. Highlighted with glow animation
+    # when user scrolled up from the bottom (_review_at_top flag).
+    _review_mode = st.session_state.pop("_review_at_top", False)
+    if active < 3 and done[active]:
+        _next_step_name = SECTION_META[active + 1]["title"]
+        if _review_mode:
+            st.markdown(
+                f'<div class="top-continue-banner">'
+                f'<span class="banner-text">Review complete? '
+                f'<strong>Continue to {_next_step_name}</strong> when ready.</span>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+        _bc_left, _bc_right = st.columns([3, 2])
+        with _bc_right:
+            if st.button(
+                f"Continue to {_next_step_name} \u2192",
+                key=f"top_continue_{active}",
+                type="primary",
+                use_container_width=True,
+            ):
+                _navigate_to(active + 1)
 
     # Invisible clickable buttons for navigation (same technique, just styled differently)
     st.markdown('<div class="nav-btn-row">', unsafe_allow_html=True)
@@ -4723,6 +4793,11 @@ _SCROLL_TO_TOP_JS = """<script>
         window.parent.scrollTo(0, 0);
         try { doc.body.scrollTop = 0; } catch(e) {}
         try { doc.documentElement.scrollTop = 0; } catch(e) {}
+        // v1.8.7.2: Also try scrollIntoView on the first element in main content
+        try {
+            var first = doc.querySelector('.main .block-container > div:first-child, [data-testid="stVerticalBlock"] > div:first-child');
+            if (first) first.scrollIntoView({behavior: 'instant', block: 'start'});
+        } catch(e) {}
     }
     // Fire aggressively: 14 times over 3s to beat Streamlit's scroll restoration.
     // Streamlit reruns can restore scroll position AFTER initial render, so we
@@ -4742,6 +4817,7 @@ _SCROLL_TO_TOP_INLINE = """<script>
     function s(){
         doc.querySelectorAll('section.main,[data-testid="stAppViewContainer"]').forEach(function(e){e.scrollTop=0;});
         window.parent.scrollTo(0,0);
+        try{var f=doc.querySelector('.main .block-container > div:first-child');if(f)f.scrollIntoView({behavior:'instant',block:'start'});}catch(e){}
     }
     [0,50,150,350,700,1200,2000,3000].forEach(function(d){setTimeout(s,d);});
 })();
@@ -5353,8 +5429,10 @@ if active_page == 0:
             _navigate_to(-1)
     with _nav_right:
         if step1_done:
-            if st.button("Study Input \u2192", key="auto_advance_0", type="primary", use_container_width=True):
-                _scroll_then_navigate(1)
+            if st.button("\u2191 Review & Continue", key="auto_advance_0", type="primary", use_container_width=True):
+                _scroll_to_top_only()
+    if step1_done:
+        st.markdown('<p class="scroll-up-hint">Scrolls to top so you can review, then continue from there.</p>', unsafe_allow_html=True)
 
     # v1.8.0: Research citations moved to landing page
 
@@ -5835,8 +5913,10 @@ if active_page == 1:
             _navigate_to(0)
     with _nav_right1:
         if step2_done:
-            if st.button("Design \u2192", key="auto_advance_1", type="primary", use_container_width=True):
-                _scroll_then_navigate(2)
+            if st.button("\u2191 Review & Continue", key="auto_advance_1", type="primary", use_container_width=True):
+                _scroll_to_top_only()
+    if step2_done:
+        st.markdown('<p class="scroll-up-hint">Scrolls to top so you can review, then continue from there.</p>', unsafe_allow_html=True)
 
     st.markdown('</div>', unsafe_allow_html=True)
 
@@ -7038,8 +7118,10 @@ if active_page == 2:
             _navigate_to(1)
     with _nav_right2:
         if _design_can_next:
-            if st.button("Generate \u2192", key="auto_advance_2", type="primary", use_container_width=True):
-                _scroll_then_navigate(3)
+            if st.button("\u2191 Review & Continue", key="auto_advance_2", type="primary", use_container_width=True):
+                _scroll_to_top_only()
+    if _design_can_next:
+        st.markdown('<p class="scroll-up-hint">Scrolls to top so you can review, then continue from there.</p>', unsafe_allow_html=True)
 
     st.markdown('</div>', unsafe_allow_html=True)
 
