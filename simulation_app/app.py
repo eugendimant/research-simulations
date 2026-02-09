@@ -52,8 +52,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.8.0"
-BUILD_ID = "20260209-v180-landing-page"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.8.1"
+BUILD_ID = "20260209-v181-visual-polish"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -107,7 +107,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.8.0"  # v1.8.0: Landing page redesign, segmented progress bar, front page overhaul
+APP_VERSION = "1.8.1"  # v1.8.1: Visual polish — premium CSS, animated landing, compact header
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -2765,15 +2765,13 @@ st.set_page_config(page_title=APP_TITLE, layout="wide")
 # ── Compact header (only on wizard pages, not landing page) ───────────
 _current_page = st.session_state.get("active_page", -1)
 if _current_page >= 0:
-    _hdr_left, _hdr_right = st.columns([3, 1])
-    with _hdr_left:
-        st.markdown(f"## {APP_TITLE}")
-        st.caption(
-            f"{APP_SUBTITLE} · "
-            f"Created by Dr. [Eugen Dimant](https://eugendimant.github.io/)"
-        )
-    with _hdr_right:
-        st.caption(f"v{APP_VERSION}")
+    st.markdown(
+        f'<div style="display:flex;align-items:baseline;gap:12px;margin-bottom:4px;">'
+        f'<h2 style="margin:0;padding:0;">{APP_TITLE}</h2>'
+        f'<span style="font-size:0.78rem;color:#9CA3AF;">v{APP_VERSION}</span>'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
 
 # v1.5.0: Removed legacy STEP_LABELS, STEP_DESCRIPTIONS, STEP_HELP constants
 # (replaced by SECTION_META in flow navigation)
@@ -4237,7 +4235,9 @@ def _section_summary(idx: int) -> str:
 
 # ── Flow navigation CSS (v1.7.0 — Professional minimal design) ───────
 _FLOW_NAV_CSS = """<style>
-/* === v1.8.0: Landing page + segmented progress bar design === */
+/* === v1.8.0: Premium landing page + segmented progress === */
+
+/* Base layout */
 section.main .block-container {
     max-width: 960px;
     padding-top: 1.2rem;
@@ -4248,98 +4248,133 @@ section.main h3 { font-size: 1.1rem; font-weight: 600; color: #1F2937; }
 section.main h4 { font-size: 0.95rem; font-weight: 600; margin-bottom: 0.4rem; color: #374151; }
 section[data-testid="stSidebar"] .stCaption { line-height: 1.4; }
 
-/* Landing page */
+/* ─── Landing page hero ─── */
 .landing-hero {
     text-align: center;
-    padding: 48px 20px 32px;
+    padding: 56px 20px 36px;
     max-width: 720px;
     margin: 0 auto;
+    animation: heroFadeIn 0.6s ease-out;
+}
+@keyframes heroFadeIn {
+    from { opacity: 0; transform: translateY(12px); }
+    to   { opacity: 1; transform: translateY(0); }
 }
 .landing-hero h1 {
-    font-size: 2.4rem;
+    font-size: 2.6rem;
     font-weight: 800;
     color: #111827;
-    letter-spacing: -0.03em;
-    margin: 0 0 12px 0;
-    line-height: 1.15;
+    letter-spacing: -0.035em;
+    margin: 0 0 16px 0;
+    line-height: 1.1;
+    background: linear-gradient(135deg, #111827 0%, #374151 50%, #111827 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
 }
 .landing-hero .subtitle {
-    font-size: 1.15rem;
+    font-size: 1.2rem;
     color: #6B7280;
     font-weight: 400;
-    margin: 0 0 6px 0;
-    line-height: 1.5;
+    margin: 0 0 8px 0;
+    line-height: 1.6;
 }
 .landing-hero .creator {
     font-size: 0.85rem;
     color: #9CA3AF;
-    margin: 0 0 32px 0;
+    margin: 0 0 36px 0;
 }
 .landing-hero .creator a {
     color: #6B7280;
     text-decoration: underline;
     text-decoration-color: #D1D5DB;
-    text-underline-offset: 2px;
+    text-underline-offset: 3px;
+    transition: color 0.15s ease;
 }
-.landing-hero .creator a:hover {
-    color: #FF4B4B;
-}
+.landing-hero .creator a:hover { color: #FF4B4B; }
 
-/* Feature cards grid */
+/* ─── Feature cards ─── */
 .feature-grid {
     display: grid;
     grid-template-columns: repeat(2, 1fr);
     gap: 16px;
     max-width: 780px;
-    margin: 0 auto 36px;
+    margin: 0 auto 40px;
     padding: 0 20px;
+    animation: cardsSlideUp 0.6s ease-out 0.15s both;
+}
+@keyframes cardsSlideUp {
+    from { opacity: 0; transform: translateY(16px); }
+    to   { opacity: 1; transform: translateY(0); }
 }
 .feature-card {
-    padding: 20px;
+    padding: 22px 20px;
     background: white;
     border: 1px solid #E5E7EB;
-    border-radius: 10px;
-    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    border-radius: 12px;
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+    overflow: hidden;
+}
+.feature-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, #FF4B4B, #FF8585);
+    opacity: 0;
+    transition: opacity 0.25s ease;
 }
 .feature-card:hover {
     border-color: #D1D5DB;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+    box-shadow: 0 4px 16px rgba(0,0,0,0.06);
+    transform: translateY(-2px);
 }
+.feature-card:hover::before { opacity: 1; }
 .feature-card .fc-icon {
-    font-size: 1.5rem;
-    margin-bottom: 8px;
+    width: 40px; height: 40px;
+    display: flex; align-items: center; justify-content: center;
+    background: #F9FAFB;
+    border-radius: 10px;
+    font-size: 1.3rem;
+    margin-bottom: 12px;
 }
 .feature-card h4 {
     font-size: 0.95rem;
-    font-weight: 600;
-    color: #1F2937;
+    font-weight: 650;
+    color: #111827;
     margin: 0 0 6px 0;
+    letter-spacing: -0.01em;
 }
 .feature-card p {
     font-size: 0.82rem;
     color: #6B7280;
     margin: 0;
-    line-height: 1.5;
+    line-height: 1.55;
 }
 
-/* How it works */
+/* ─── How it works ─── */
 .how-it-works {
     max-width: 780px;
-    margin: 0 auto 36px;
+    margin: 0 auto 40px;
     padding: 0 20px;
     text-align: center;
+    animation: cardsSlideUp 0.6s ease-out 0.3s both;
 }
 .how-it-works h3 {
-    font-size: 1.1rem;
+    font-size: 1.05rem;
     font-weight: 600;
-    color: #1F2937;
-    margin: 0 0 20px 0;
+    color: #374151;
+    margin: 0 0 24px 0;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-size: 0.78rem;
 }
 .hiw-steps {
     display: flex;
     align-items: flex-start;
     justify-content: center;
-    gap: 8px;
+    gap: 0;
 }
 .hiw-step {
     display: flex;
@@ -4347,48 +4382,60 @@ section[data-testid="stSidebar"] .stCaption { line-height: 1.4; }
     align-items: center;
     flex: 1;
     max-width: 160px;
+    padding: 0 8px;
 }
 .hiw-num {
-    width: 32px; height: 32px;
+    width: 36px; height: 36px;
     border-radius: 50%;
-    background: #F3F4F6;
+    background: linear-gradient(135deg, #F9FAFB, #F3F4F6);
     color: #6B7280;
     display: flex; align-items: center; justify-content: center;
-    font-size: 13px; font-weight: 700;
-    margin-bottom: 8px;
+    font-size: 14px; font-weight: 700;
+    margin-bottom: 10px;
+    border: 1.5px solid #E5E7EB;
+    transition: all 0.2s ease;
+}
+.hiw-step:hover .hiw-num {
+    background: #FF4B4B;
+    color: white;
+    border-color: #FF4B4B;
 }
 .hiw-step .hiw-title {
     font-size: 0.82rem;
     font-weight: 600;
     color: #374151;
-    margin: 0 0 2px 0;
+    margin: 0 0 3px 0;
 }
 .hiw-step .hiw-desc {
     font-size: 0.75rem;
     color: #9CA3AF;
+    line-height: 1.4;
 }
 .hiw-arrow {
     color: #D1D5DB;
-    font-size: 18px;
-    margin-top: 6px;
+    font-size: 16px;
+    margin-top: 10px;
     flex-shrink: 0;
 }
 
-/* Research foundations on landing page */
+/* ─── Research foundations ─── */
 .research-section {
     max-width: 780px;
-    margin: 0 auto 36px;
-    padding: 24px;
-    background: #F9FAFB;
-    border-radius: 10px;
+    margin: 0 auto 40px;
+    padding: 28px 24px;
+    background: linear-gradient(135deg, #FAFBFF 0%, #F8FAFC 100%);
+    border-radius: 12px;
     border: 1px solid #E5E7EB;
     text-align: center;
+    animation: cardsSlideUp 0.6s ease-out 0.45s both;
 }
 .research-section h3 {
-    font-size: 1rem;
+    font-size: 0.78rem;
     font-weight: 600;
-    color: #1F2937;
-    margin: 0 0 12px 0;
+    color: #374151;
+    margin: 0 0 16px 0;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
 }
 .research-papers {
     display: flex;
@@ -4398,12 +4445,17 @@ section[data-testid="stSidebar"] .stCaption { line-height: 1.4; }
 }
 .research-paper {
     display: inline-flex;
-    padding: 4px 12px;
+    align-items: center;
+    padding: 5px 14px;
     background: white;
     border: 1px solid #E5E7EB;
-    border-radius: 6px;
+    border-radius: 20px;
     font-size: 0.78rem;
     color: #374151;
+    transition: border-color 0.15s ease;
+}
+.research-paper:hover {
+    border-color: #D1D5DB;
 }
 .research-paper .rp-venue {
     color: #9CA3AF;
@@ -4411,11 +4463,19 @@ section[data-testid="stSidebar"] .stCaption { line-height: 1.4; }
     font-style: italic;
 }
 
-/* Modern segmented progress bar (replaces old stepper) */
+/* ─── Landing footer ─── */
+.landing-footer {
+    text-align: center;
+    padding: 24px 0 8px;
+    font-size: 0.75rem;
+    color: #D1D5DB;
+}
+
+/* ─── Segmented progress bar ─── */
 .seg-progress {
     display: flex;
     gap: 4px;
-    padding: 12px 0 4px;
+    padding: 14px 0 4px;
 }
 .seg-bar {
     flex: 1;
@@ -4423,67 +4483,73 @@ section[data-testid="stSidebar"] .stCaption { line-height: 1.4; }
     border-radius: 2px;
     background: #E5E7EB;
     cursor: pointer;
-    transition: background 0.3s ease;
+    transition: all 0.3s ease;
     position: relative;
 }
 .seg-bar.active {
     background: #FF4B4B;
+    box-shadow: 0 0 8px rgba(255,75,75,0.2);
 }
 .seg-bar.done {
     background: #22C55E;
 }
 .seg-bar:hover {
-    opacity: 0.8;
+    transform: scaleY(1.5);
+    opacity: 0.85;
 }
 .step-label {
     text-align: center;
     font-size: 0.82rem;
     color: #6B7280;
-    padding: 6px 0 8px;
+    padding: 6px 0 10px;
     font-weight: 500;
 }
 .step-label strong {
     color: #1F2937;
 }
 
-/* Section wrapper */
+/* ─── Section wrapper ─── */
 .flow-section {
     padding-top: 4px;
-    animation: sectionEnter 0.25s ease-out;
+    animation: sectionEnter 0.3s ease-out;
 }
 @keyframes sectionEnter {
-    from { opacity: 0; transform: translateY(6px); }
+    from { opacity: 0; transform: translateY(8px); }
     to   { opacity: 1; transform: translateY(0); }
 }
 
 /* Section guidance tagline */
 .section-guide {
     font-size: 13px; color: #6B7280;
-    margin: 0 0 14px 0;
-    padding: 8px 14px;
-    background: #F9FAFB;
-    border-radius: 6px;
-    border-left: 3px solid #E5E7EB;
+    margin: 0 0 16px 0;
+    padding: 10px 16px;
+    background: linear-gradient(135deg, #FAFBFF 0%, #F8FAFC 100%);
+    border-radius: 8px;
+    border-left: 3px solid #FF4B4B;
 }
 
 /* Section complete banner */
 .section-done-banner {
     display: flex; align-items: center; gap: 8px;
-    padding: 8px 14px;
-    background: #F0FDF4;
+    padding: 10px 16px;
+    background: linear-gradient(135deg, #F0FDF4 0%, #ECFDF5 100%);
     border: 1px solid #D1FAE5;
-    border-radius: 8px;
-    margin: 12px 0 4px 0;
+    border-radius: 10px;
+    margin: 14px 0 6px 0;
     font-size: 13px; color: #166534; font-weight: 500;
 }
 
 /* Design page cards */
 .design-card {
-    padding: 14px 16px;
+    padding: 16px 18px;
     background: white;
     border: 1px solid #E5E7EB;
-    border-radius: 8px;
+    border-radius: 10px;
     margin: 8px 0;
+    transition: border-color 0.15s ease;
+}
+.design-card:hover {
+    border-color: #D1D5DB;
 }
 .design-card-header {
     font-size: 0.9rem; font-weight: 600;
@@ -4503,7 +4569,7 @@ section[data-testid="stSidebar"] .stCaption { line-height: 1.4; }
     border: 1px solid #FDE68A;
 }
 
-/* Nav button styling (integrated with progress bar) */
+/* Nav button styling */
 .nav-btn-row .stButton button {
     font-size: 0 !important;
     height: 2px !important; min-height: 2px !important;
@@ -4523,12 +4589,14 @@ section[data-testid="stSidebar"] .stCaption { line-height: 1.4; }
 .feedback-bar a { color: #6B7280; text-decoration: none; }
 .feedback-bar a:hover { color: #FF4B4B; }
 
-/* Responsive */
+/* ─── Responsive ─── */
 @media (max-width: 768px) {
     .feature-grid { grid-template-columns: 1fr; }
-    .hiw-steps { flex-direction: column; align-items: center; }
+    .hiw-steps { flex-direction: column; align-items: center; gap: 12px; }
     .hiw-arrow { transform: rotate(90deg); }
     .landing-hero h1 { font-size: 1.8rem; }
+    .landing-hero { padding: 32px 16px 24px; }
+    .research-section { padding: 20px 16px; }
 }
 </style>"""
 
@@ -4933,78 +5001,76 @@ if active_page == -1:
     st.markdown(
         '<div class="landing-hero">'
         '<h1>Behavioral Experiment<br>Simulation Tool</h1>'
-        '<p class="subtitle">Generate realistic pilot datasets to test your analysis pipeline<br>'
-        'before collecting real data</p>'
+        '<p class="subtitle">Generate realistic pilot datasets to build and test<br>'
+        'your analysis pipeline before collecting real data</p>'
         '<p class="creator">Created by Dr. <a href="https://eugendimant.github.io/">Eugen Dimant</a></p>'
         '</div>',
         unsafe_allow_html=True,
     )
 
-    # Feature cards
+    # Feature cards — rewritten as outcomes
     st.markdown(
         '<div class="feature-grid">'
-        '<div class="feature-card"><div class="fc-icon">\U0001F4CA</div>'
-        '<h4>Publication-Ready Data</h4>'
-        '<p>Generate realistic CSV datasets with response patterns, individual differences, '
-        'and attention check failures \u2014 structured exactly like real Qualtrics output.</p></div>'
+        '<div class="feature-card"><div class="fc-icon">\U0001F9EA</div>'
+        '<h4>Test Before You Collect</h4>'
+        '<p>Catch analysis errors, verify variable coding, and debug scripts '
+        'on realistic synthetic data — before spending resources on real participants.</p></div>'
 
         '<div class="feature-card"><div class="fc-icon">\U0001F4AC</div>'
-        '<h4>AI-Generated Free-Text</h4>'
-        '<p>Open-ended responses that match numeric ratings, powered by persona-based '
-        'text generation across 225+ research domains.</p></div>'
+        '<h4>Realistic Open-Ended Responses</h4>'
+        '<p>AI-generated free-text answers that match numeric ratings, '
+        'built from 50+ behavioral personas across 225+ research domains.</p></div>'
 
-        '<div class="feature-card"><div class="fc-icon">\U0001F4C8</div>'
-        '<h4>Ready-Made Analysis Scripts</h4>'
-        '<p>R and Python scripts tailored to your experimental design \u2014 ANOVAs, t-tests, '
-        'regressions \u2014 ready to run immediately.</p></div>'
+        '<div class="feature-card"><div class="fc-icon">\U0001F4CA</div>'
+        '<h4>Ready-to-Run Analysis Code</h4>'
+        '<p>Get R and Python scripts tailored to your exact design — ANOVAs, t-tests, '
+        'regressions, mediation — ready for immediate execution.</p></div>'
 
-        '<div class="feature-card"><div class="fc-icon">\U0001F4CB</div>'
-        '<h4>Instructor Reports</h4>'
-        '<p>Comprehensive simulation reports documenting methodology, parameters, '
-        'and quality checks for classroom or review use.</p></div>'
+        '<div class="feature-card"><div class="fc-icon">\U0001F393</div>'
+        '<h4>Built for Research & Teaching</h4>'
+        '<p>Instructor reports, group management, and pre-registration consistency checks '
+        'make this ideal for both active research and classroom use.</p></div>'
         '</div>',
         unsafe_allow_html=True,
     )
 
-    # How it works
+    # How it works — with improved step descriptions
     st.markdown(
         '<div class="how-it-works">'
         '<h3>How It Works</h3>'
         '<div class="hiw-steps">'
         '<div class="hiw-step"><div class="hiw-num">1</div>'
         '<div class="hiw-title">Name Your Study</div>'
-        '<div class="hiw-desc">Title & description</div></div>'
+        '<div class="hiw-desc">Title, description &amp; team</div></div>'
         '<div class="hiw-arrow">\u2192</div>'
         '<div class="hiw-step"><div class="hiw-num">2</div>'
-        '<div class="hiw-title">Provide Design</div>'
-        '<div class="hiw-desc">Upload QSF or describe</div></div>'
+        '<div class="hiw-title">Provide Your Design</div>'
+        '<div class="hiw-desc">Upload QSF or describe in words</div></div>'
         '<div class="hiw-arrow">\u2192</div>'
         '<div class="hiw-step"><div class="hiw-num">3</div>'
-        '<div class="hiw-title">Configure</div>'
-        '<div class="hiw-desc">Conditions & outcomes</div></div>'
+        '<div class="hiw-title">Configure Experiment</div>'
+        '<div class="hiw-desc">Conditions, factors &amp; DVs</div></div>'
         '<div class="hiw-arrow">\u2192</div>'
         '<div class="hiw-step"><div class="hiw-num">4</div>'
-        '<div class="hiw-title">Generate</div>'
-        '<div class="hiw-desc">Download data package</div></div>'
-        '</div>'
-        '</div>',
+        '<div class="hiw-title">Generate &amp; Download</div>'
+        '<div class="hiw-desc">CSV, scripts &amp; reports</div></div>'
+        '</div></div>',
         unsafe_allow_html=True,
     )
 
-    # Research foundations (PROMOTED from hidden expander)
+    # Research foundations
     st.markdown(
         '<div class="research-section">'
         '<h3>Built on Peer-Reviewed Research</h3>'
         '<div class="research-papers">'
         '<span class="research-paper">Argyle et al. (2023) <span class="rp-venue">Political Analysis</span></span>'
         '<span class="research-paper">Horton (2023) <span class="rp-venue">NBER</span></span>'
-        '<span class="research-paper">Aher, Arriaga & Kalai (2023) <span class="rp-venue">ICML</span></span>'
+        '<span class="research-paper">Aher, Arriaga &amp; Kalai (2023) <span class="rp-venue">ICML</span></span>'
         '<span class="research-paper">Park et al. (2023) <span class="rp-venue">ACM UIST</span></span>'
-        '<span class="research-paper">Binz & Schulz (2023) <span class="rp-venue">PNAS</span></span>'
+        '<span class="research-paper">Binz &amp; Schulz (2023) <span class="rp-venue">PNAS</span></span>'
         '<span class="research-paper">Dillion et al. (2023) <span class="rp-venue">Trends in Cognitive Sciences</span></span>'
         '<span class="research-paper">Westwood (2025) <span class="rp-venue">PNAS</span></span>'
-        '</div>'
-        '</div>',
+        '</div></div>',
         unsafe_allow_html=True,
     )
 
@@ -5014,13 +5080,9 @@ if active_page == -1:
         if st.button("Start Your Simulation  \u2192", type="primary", use_container_width=True, key="landing_cta"):
             _navigate_to(0)
 
-    # Version footer
-    st.markdown(
-        f'<div style="text-align:center;padding:24px 0 8px;font-size:0.75rem;color:#D1D5DB;">v{APP_VERSION}</div>',
-        unsafe_allow_html=True,
-    )
+    # Footer with version + methods PDF
+    st.markdown(f'<div class="landing-footer">v{APP_VERSION}</div>', unsafe_allow_html=True)
 
-    # Methods PDF download
     methods_pdf_path = Path(__file__).resolve().parent.parent / "docs" / "papers" / "methods_summary.pdf"
     if methods_pdf_path.exists():
         _pdf_col1, _pdf_col2, _pdf_col3 = st.columns([1, 2, 1])
@@ -5042,8 +5104,8 @@ if active_page == 0:
 
     # v1.8.0: Hero card removed — now on landing page
     st.markdown(
-        '<div class="section-guide">Name your study and describe the experiment — '
-        'this information appears in your final report and data outputs.</div>',
+        '<div class="section-guide">Let\'s set up your study. Enter a title and description — '
+        'these appear in your final report, data outputs, and analysis scripts.</div>',
         unsafe_allow_html=True,
     )
 
