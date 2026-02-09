@@ -82,30 +82,57 @@ _DEFAULT_API_KEY = _DEFAULT_GROQ_KEY
 SYSTEM_PROMPT = (
     "You are simulating survey participants for behavioral science research. "
     "You generate realistic open-ended survey responses that mimic real human "
-    "participants.\n\n"
-    "ABSOLUTE PRIORITY — CONTENT GROUNDING:\n"
-    "1. When 'QUESTION CONTEXT' is provided by the researcher, it is the #1 signal. "
-    "Every single response MUST directly address that context. If the context says "
-    "'participants describe their feelings toward Donald Trump', every response MUST "
-    "specifically discuss Donald Trump — not politics in general, not the study, not "
-    "abstract concepts. The context tells you EXACTLY what to write about.\n"
-    "2. The study topic, description, and experimental condition tell you the frame "
-    "of reference. A participant in condition 'AI_label' in a consumer trust study "
-    "should reference AI labels on products. A participant in condition 'Control' "
-    "did NOT receive the treatment — their response reflects the baseline.\n"
-    "3. Responses must reference SPECIFIC things from the study: the manipulation "
-    "they experienced, the product/scenario they read about, the article they saw, "
-    "the person/policy they evaluated. Vague filler like 'the study was interesting' "
-    "or 'I found it engaging' is NEVER acceptable.\n\n"
-    "REALISM REQUIREMENTS:\n"
-    "- Real survey participants write informally with hedging, incomplete thoughts, "
-    "and varying effort levels.\n"
-    "- Careless participants give short but still topic-specific answers (e.g., "
-    "'trump is ok i guess' not 'the study was fine').\n"
-    "- Engaged participants give thoughtful, specific answers referencing concrete "
-    "aspects of their experimental experience.\n"
-    "- Responses should NOT read like polished essays or AI-generated text. Include "
-    "natural imperfections: run-on sentences, missing capitals, hedging language."
+    "participants who just completed an experiment.\n\n"
+    "===== RULE #1 — CONTENT GROUNDING (ABSOLUTE HIGHEST PRIORITY) =====\n"
+    "Every response you generate MUST be grounded in the SPECIFIC content of "
+    "the study. This is non-negotiable and overrides all other instructions.\n\n"
+    "A. QUESTION CONTEXT is your #1 signal. When the prompt includes a "
+    "'QUESTION CONTEXT' block from the researcher, it tells you EXACTLY what "
+    "the participant is responding about. Every single response MUST directly "
+    "and specifically address that context.\n"
+    "   - If context says 'describe feelings toward Donald Trump' → write about "
+    "Donald Trump specifically, not 'politics' or 'the study'.\n"
+    "   - If context says 'explain your product choice' → write about the "
+    "specific product from the study, not abstract preferences.\n"
+    "   - NEVER substitute the specific topic with a vague generalization.\n\n"
+    "B. CONDITION = THE PARTICIPANT'S EXPERIENCE. The experimental condition "
+    "tells you what this participant actually saw/read/experienced. A participant "
+    "in condition 'AI_label' saw an AI label on a product. A participant in "
+    "condition 'Control' did NOT receive any special treatment — they respond "
+    "from baseline experience. A participant in condition 'high_price' saw a "
+    "high price. ALWAYS write as if the participant lived through that specific "
+    "condition.\n\n"
+    "C. STUDY DESCRIPTION = THE SCENARIO. The study title and description tell "
+    "you the scenario, stimuli, and setting. Responses must reference SPECIFIC "
+    "things: the manipulation they experienced, the product/scenario they read "
+    "about, the article they saw, the person/policy they evaluated. Vague "
+    "filler like 'the study was interesting' or 'I found it engaging' is "
+    "NEVER acceptable.\n\n"
+    "===== RULE #2 — SOUND LIKE A REAL HUMAN, NOT AN AI =====\n"
+    "Real survey participants do NOT write like AI. Their responses have:\n"
+    "- Incomplete thoughts, trailing off mid-sentence\n"
+    "- Hedging: 'I think', 'I guess', 'idk maybe', 'sort of'\n"
+    "- Run-on sentences, comma splices, missing periods\n"
+    "- Lowercase text, missing capitals, occasional typos\n"
+    "- NO bullet points, NO numbered lists, NO markdown\n"
+    "- NO perfectly balanced 'on one hand... on the other hand' structures\n"
+    "- NO thesis-statement-then-supporting-evidence essay format\n"
+    "- NO concluding summary sentences that restate the main point\n"
+    "People type stream-of-consciousness in survey text boxes. They don't "
+    "draft, revise, or proofread. Write like that.\n\n"
+    "===== RULE #3 — LOW-EFFORT ≠ OFF-TOPIC =====\n"
+    "When a participant has low effort/engagement, they write SHORT responses "
+    "but they still write about THE ACTUAL TOPIC. A careless participant in a "
+    "Trump study writes 'trump is ok i guess' — NOT 'the study was fine'. "
+    "A careless participant in an AI trust study writes 'didnt really trust "
+    "it' — NOT 'it was interesting'. Short and lazy is fine. Off-topic is "
+    "NEVER fine. Even a one-word answer should be a topic-relevant word.\n\n"
+    "===== RULE #4 — CONDITION-SPECIFIC RESPONSES =====\n"
+    "Participants in DIFFERENT conditions should give DIFFERENT responses "
+    "that reflect their unique experimental experience. Someone in 'AI_label' "
+    "mentions the AI label. Someone in 'Control' does NOT mention it because "
+    "they never saw it. Someone in 'high_risk' references the risk they read "
+    "about. The condition shapes the content of every response."
 )
 
 # ---------------------------------------------------------------------------
@@ -245,9 +272,8 @@ def _humanize_variable_name(name: str) -> str:
         # Already has spaces → likely a real question, return as-is
         return name
     # Replace underscores/camelCase with spaces
-    import re as _re
-    text = _re.sub(r'[_\-]+', ' ', name)
-    text = _re.sub(r'([a-z])([A-Z])', r'\1 \2', text).lower().strip()
+    text = re.sub(r'[_\-]+', ' ', name)
+    text = re.sub(r'([a-z])([A-Z])', r'\1 \2', text).lower().strip()
     if not text:
         return name
     # Add a question frame if the text doesn't look like a question already
@@ -297,9 +323,9 @@ def _build_batch_prompt(
             else "formal, proper grammar, academic tone"
         )
         effort_hint = (
-            "minimal effort, vague, possibly off-topic" if e < 0.3
-            else "moderate effort, mostly on-topic" if e < 0.7
-            else "thoughtful, specific, clearly on-topic"
+            "minimal effort, very brief, but STILL about the topic" if e < 0.3
+            else "moderate effort, on-topic with some detail" if e < 0.7
+            else "thoughtful, specific, clearly on-topic with concrete references"
         )
         sentiment_hint = _sentiment_label(s)
 
@@ -334,10 +360,15 @@ def _build_batch_prompt(
         _topic_text = _topic_lines[0].replace("Study topic: ", "").strip() if _topic_lines else ""
         if _ctx_text:
             _question_context_block = (
-                f"\n*** QUESTION CONTEXT (from the researcher — THIS IS YOUR #1 PRIORITY): ***\n"
-                f"{_ctx_text}\n"
-                f"Every response MUST directly and specifically address the above context. "
-                f"Do NOT write vague or off-topic responses.\n"
+                f"\n╔══════════════════════════════════════════════════════════╗\n"
+                f"║ *** QUESTION CONTEXT — THIS IS YOUR #1 PRIORITY ***     ║\n"
+                f"╚══════════════════════════════════════════════════════════╝\n"
+                f"The researcher says: \"{_ctx_text}\"\n\n"
+                f"THIS CONTROLS WHAT EVERY RESPONSE IS ABOUT. Each response "
+                f"MUST directly and specifically address the above context. "
+                f"A response that ignores this context is WRONG, no matter "
+                f"how well-written it is. Even a 3-word low-effort response "
+                f"must be about THIS specific topic.\n"
             )
             _q_display = _q_line  # Use the clean question name for display
         if _topic_text:
@@ -346,8 +377,7 @@ def _build_batch_prompt(
     # v1.8.7.3: Humanize condition name for better LLM understanding
     _condition_display = condition
     if condition and " " not in condition.strip():
-        import re as _re
-        _condition_display = _re.sub(r'[_\-]+', ' ', condition).strip()
+        _condition_display = re.sub(r'[_\-]+', ' ', condition).strip()
 
     # v1.8.7.3: Build a richer condition explanation
     _condition_explanation = ""
@@ -355,16 +385,31 @@ def _build_batch_prompt(
         _humanized_conditions = []
         for c in all_conditions:
             if " " not in c.strip():
-                import re as _re
-                _humanized_conditions.append(_re.sub(r'[_\-]+', ' ', c).strip())
+                _humanized_conditions.append(re.sub(r'[_\-]+', ' ', c).strip())
             else:
                 _humanized_conditions.append(c)
+        # Build a design overview so the LLM understands the full experiment
+        _cond_list = ", ".join(
+            f"'{hc}'" for hc in _humanized_conditions
+        )
         _condition_explanation = (
-            f"Experimental conditions: {', '.join(_humanized_conditions)}\n"
-            f"THIS participant was in the '{_condition_display}' condition.\n"
+            f"EXPERIMENTAL DESIGN:\n"
+            f"This experiment has {len(all_conditions)} conditions: {_cond_list}.\n"
+            f"Each participant was randomly assigned to ONE condition. "
+            f"Participants in different conditions had different experiences "
+            f"(e.g., saw different stimuli, read different scenarios, or "
+            f"received different information).\n"
+            f">>> THIS participant was in the '{_condition_display}' condition. <<<\n"
+            f"Their response should reflect what someone in the "
+            f"'{_condition_display}' condition specifically experienced — "
+            f"NOT what someone in another condition would say.\n"
         )
     else:
-        _condition_explanation = f"Experimental condition: {_condition_display}\n"
+        _condition_explanation = (
+            f"Experimental condition: {_condition_display}\n"
+            f"This participant experienced the '{_condition_display}' condition. "
+            f"Their response should reflect that specific experience.\n"
+        )
 
     prompt = (
         f'Study: "{study_title}"\n'
@@ -378,20 +423,32 @@ def _build_batch_prompt(
         f"'{_condition_display}' condition.\n"
         f"Each participant's profile controls their response style:\n\n"
         f"{participants_block}\n\n"
-        f"Rules:\n"
-        f"- Each response MUST be different from every other response.\n"
-        f"- Every response MUST reference specific content from the study: "
-        f"the manipulation they experienced, the scenario they read, the "
-        f"person/product/policy they evaluated — NOT generic filler.\n"
-        f"- Participants write AS IF they actually experienced the "
-        f"'{_condition_display}' condition. Their answers reflect that "
-        f"specific experimental experience.\n"
-        f"- Do NOT use bullet points, numbered lists, or markdown formatting "
-        f"— just plain text as a survey participant would write.\n"
-        f"- Match each participant's length, style, effort, and sentiment exactly.\n"
-        f"- Short responses from low-effort participants should still be "
-        f"topic-specific (e.g., 'the ai label made me trust it less' NOT "
-        f"'it was fine').\n\n"
+        f"MANDATORY RULES (violations make the output unusable):\n\n"
+        f"1. CONTENT GROUNDING — Every response MUST reference something "
+        f"specific from this study: the manipulation, the scenario, the "
+        f"stimulus, the product/person/policy. Responses like 'the study "
+        f"was interesting', 'I thought it was fine', or 'it was a good "
+        f"experience' are FORBIDDEN. If you cannot think of specific "
+        f"content, re-read the study description and condition above.\n\n"
+        f"2. CONDITION-SPECIFIC — These participants were in the "
+        f"'{_condition_display}' condition. They write about what THEY "
+        f"experienced in that condition. They do NOT describe the study "
+        f"in general or mention conditions they were not in.\n\n"
+        f"3. SHORT ≠ OFF-TOPIC — Low-effort participants write BRIEF "
+        f"responses (1-5 words is fine) but the words MUST be about the "
+        f"topic. Examples of GOOD short responses: 'trump is ok i guess', "
+        f"'didnt trust the ai label', 'too expensive imo'. Examples of "
+        f"BAD short responses: 'it was fine', 'interesting study', "
+        f"'no comment', 'idk'.\n\n"
+        f"4. SOUND HUMAN — No bullet points, no numbered lists, no "
+        f"markdown. No perfect grammar. No balanced 'on one hand / on "
+        f"the other hand' essay structures. Write like someone typing "
+        f"quickly into a survey text box: stream-of-consciousness, "
+        f"lowercase ok, run-on sentences ok, incomplete thoughts ok.\n\n"
+        f"5. ALL DIFFERENT — Each response must be unique in content "
+        f"and phrasing, not just rearrangements of the same points.\n\n"
+        f"6. MATCH PROFILES — Follow each participant's length, style, "
+        f"effort, and sentiment specifications exactly.\n\n"
         f"Return ONLY a JSON array of {n} strings (one per participant), "
         f"no other text:\n"
         f'["response 1", "response 2", ...]'
