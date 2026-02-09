@@ -4612,11 +4612,26 @@ class EnhancedSimulationEngine:
         response_type = str(question_spec.get("type", "general"))
         question_text = str(question_spec.get("question_text", ""))
         context_type = str(question_spec.get("context_type", "general"))
+        question_context = str(question_spec.get("question_context", "")).strip()
 
-        # v1.4.11: If question_text looks like a variable name (no spaces),
-        # build a richer question from study context so LLM/template can
-        # generate contextually relevant responses.
-        if question_text and " " not in question_text.strip():
+        # v1.8.7.1: Use user-provided question context to enrich the prompt.
+        # This is critical for questions like "explain_feel_donald" where
+        # the variable name alone doesn't convey what's really being asked.
+        if question_context:
+            # User provided explicit context — use it directly
+            import re as _re
+            _humanized = _re.sub(r'[_\-]+', ' ', question_text).strip() if question_text and " " not in question_text.strip() else question_text
+            _study_topic = self.study_title or self.study_description or ""
+            question_text = (
+                f"Question: {_humanized}\n"
+                f"Context: {question_context}"
+            )
+            if _study_topic:
+                question_text += f"\nStudy topic: {_study_topic}"
+        elif question_text and " " not in question_text.strip():
+            # v1.4.11: If question_text looks like a variable name (no spaces),
+            # build a richer question from study context so LLM/template can
+            # generate contextually relevant responses.
             import re as _re
             _humanized = _re.sub(r'[_\-]+', ' ', question_text).strip()
             _study_topic = self.study_title or self.study_description or ""
@@ -5234,6 +5249,23 @@ class EnhancedSimulationEngine:
                 _sents = ["very_positive", "positive", "neutral", "negative", "very_negative"]
                 for oq in self.open_ended_questions:
                     _q_text = str(oq.get("question_text", oq.get("name", "")))
+                    _q_ctx = str(oq.get("question_context", "")).strip()
+                    # v1.8.7.1: Enrich pool pre-fill with user-provided context
+                    if _q_ctx:
+                        import re as _re_pool
+                        _humanized_pool = _re_pool.sub(r'[_\-]+', ' ', _q_text).strip() if _q_text and " " not in _q_text.strip() else _q_text
+                        _topic_pool = self.study_title or self.study_description or ""
+                        _q_text = f"Question: {_humanized_pool}\nContext: {_q_ctx}"
+                        if _topic_pool:
+                            _q_text += f"\nStudy topic: {_topic_pool}"
+                    elif _q_text and " " not in _q_text.strip():
+                        import re as _re_pool
+                        _humanized_pool = _re_pool.sub(r'[_\-]+', ' ', _q_text).strip()
+                        _topic_pool = self.study_title or self.study_description or ""
+                        if _topic_pool:
+                            _q_text = f"In the context of a study about {_topic_pool}, please share your thoughts on: {_humanized_pool}"
+                        else:
+                            _q_text = f"Please share your thoughts on: {_humanized_pool}"
                     for _cond in _unique_conditions:
                         if self.survey_flow_handler.is_question_visible(
                             _clean_column_name(str(oq.get("name", ""))), _cond
@@ -5501,6 +5533,16 @@ class EnhancedSimulationEngine:
             "validation_issues_corrected": len(validation_issues),
             "scale_verification": self._build_scale_verification_report(df),
             "generation_warnings": self._check_generation_warnings(df),
+            # v1.8.7.1: Include open-ended questions with context in metadata
+            "open_ended_questions": [
+                {
+                    "name": q.get("name", ""),
+                    "variable_name": q.get("variable_name", q.get("name", "")),
+                    "question_text": q.get("question_text", ""),
+                    "question_context": q.get("question_context", ""),
+                }
+                for q in self.open_ended_questions
+            ],
             # v1.4.6: LLM response generation stats
             "llm_response_stats": self.llm_generator.stats if self.llm_generator else {"llm_calls": 0, "fallback_uses": 0},
             # v1.4.3: Column descriptions for data dictionary / codebook generation

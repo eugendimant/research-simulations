@@ -91,6 +91,13 @@ SYSTEM_PROMPT = (
     "dynamics, NOT generic 'the study was interesting' filler.  A participant in a "
     "trust study should reference trust-related thoughts.  The study context, "
     "condition, and question are your primary guide for response content.\n\n"
+    "IMPORTANT: When a 'question context' is provided by the researcher, it is "
+    "the MOST important piece of information for generating the response. The "
+    "context explains exactly what the question is asking about. For example, if "
+    "the question is 'explain_feel_donald' and the context says 'participants "
+    "describe their feelings toward Donald Trump after reading a polarizing news "
+    "article', EVERY response must specifically discuss feelings about Donald Trump. "
+    "Never ignore or dilute the question context.\n\n"
     "Responses must be realistic survey responses, NOT polished essays.  "
     "Real participants write informally, sometimes go off-topic slightly, and vary "
     "significantly in effort and detail.  Careless participants give very short "
@@ -311,11 +318,29 @@ def _build_batch_prompt(
     else:
         conditions_block = f"Experimental condition: {condition}\n"
 
+    # v1.8.7.1: Extract question context if embedded in the question text
+    # The engine may embed "Question: ...\nContext: ...\nStudy topic: ..." format
+    _question_context_block = ""
+    if "\nContext: " in _q_display:
+        _parts = _q_display.split("\n")
+        _q_line = _parts[0].replace("Question: ", "").strip() if _parts else _q_display
+        _ctx_lines = [p for p in _parts[1:] if p.startswith("Context: ")]
+        _ctx_text = _ctx_lines[0].replace("Context: ", "").strip() if _ctx_lines else ""
+        if _ctx_text:
+            _question_context_block = (
+                f"\nIMPORTANT question context (provided by the researcher): {_ctx_text}\n"
+                f"Responses MUST directly address this context. "
+                f"For example, if the context says 'participants explain their feelings toward Donald Trump', "
+                f"every response must be specifically about feelings toward Donald Trump.\n"
+            )
+            _q_display = _q_line  # Use the clean question name for display
+
     prompt = (
         f'Study: "{study_title}"\n'
         f"Study description: {study_description[:500]}\n"
         f"{conditions_block}\n"
-        f'Survey question: "{_q_display}"\n\n'
+        f'Survey question: "{_q_display}"\n'
+        f"{_question_context_block}\n"
         f"Generate exactly {n} unique responses from {n} different survey "
         f"participants who just completed this experiment.\n"
         f"Each participant's profile controls their response style:\n\n"

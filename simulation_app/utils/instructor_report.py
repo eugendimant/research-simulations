@@ -749,10 +749,13 @@ class InstructorReportGenerator:
             for i, q in enumerate(open_ended_details[:5], 1):
                 q_name = q.get('variable_name', q.get('name', f'Q{i}'))
                 q_text = q.get('question_text', '')[:60]
+                q_ctx = q.get('question_context', '')
                 if q_text:
-                    lines.append(f"- **{q_name}**: \"{q_text}...\"")
+                    lines.append(f"- **{q_name}**: \"{q_text}{'...' if len(q.get('question_text', '')) > 60 else ''}\"")
                 else:
                     lines.append(f"- **{q_name}**")
+                if q_ctx:
+                    lines.append(f"  - *Context:* {q_ctx}")
             if len(open_ended_details) > 5:
                 lines.append(f"- _...and {len(open_ended_details) - 5} more_")
             lines.append("")
@@ -4558,9 +4561,11 @@ class ComprehensiveInstructorReport:
             for oe in oe_questions:
                 q_text = oe.get("question_text", oe.get("name", "")) if isinstance(oe, dict) else str(oe)
                 var_name = oe.get("variable_name", "") if isinstance(oe, dict) else ""
+                q_ctx = oe.get("question_context", "") if isinstance(oe, dict) else ""
                 if q_text:
                     _var_tag = f" <code>({var_name})</code>" if var_name else ""
-                    html_parts.append(f"<li>{q_text[:120]}{_var_tag}</li>")
+                    _ctx_tag = f"<br><small style='color:#666;'>Context: {q_ctx}</small>" if q_ctx else ""
+                    html_parts.append(f"<li>{q_text[:120]}{_var_tag}{_ctx_tag}</li>")
             html_parts.append("</ul>")
 
         # v1.8.7: LLM Generation Details in HTML report
