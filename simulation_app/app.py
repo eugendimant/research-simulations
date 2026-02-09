@@ -52,8 +52,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.6.0"
-BUILD_ID = "20260209-v160-modern-stepper"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.6.1"
+BUILD_ID = "20260209-v161-polish-fixes"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -107,7 +107,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.6.0"  # v1.6.0: Modern stepper nav, progressive reveal, builder UX, readability overhaul
+APP_VERSION = "1.6.1"  # v1.6.1: Critical fixes, visual polish, heading consistency
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -2961,7 +2961,12 @@ def _render_conversational_builder() -> None:
 
     # Check if builder is already complete
     if st.session_state.get("conversational_builder_complete"):
-        st.success("Study design built. Proceed to **Design** to review, or edit below.")
+        st.markdown(
+            '<div class="section-done-banner">'
+            '✓ Study specification built — proceed to Design to review your configuration'
+            '</div>',
+            unsafe_allow_html=True,
+        )
         _done_col1, _done_col2 = st.columns(2)
         with _done_col1:
             if st.button("Continue to Design  \u2192", key="builder_goto_design", type="primary", use_container_width=True):
@@ -2972,47 +2977,44 @@ def _render_conversational_builder() -> None:
                 st.rerun()
         return
 
-    # v1.6.0: Cleaner builder intro with inline progress
+    # v1.6.1: Cleaner builder intro with inline checklist
     _has_conds = bool(st.session_state.get("builder_conditions_text", "").strip())
     _has_scales = bool(st.session_state.get("builder_scales_text", "").strip())
-    _filled_sections = sum([_has_conds, _has_scales])
 
     st.markdown("### Describe Your Experiment")
-    st.caption(
-        "Fill in **conditions** and **scales** below, then click Build. "
-        "Only these two are required — everything else is optional."
-    )
-    st.progress(
-        _filled_sections / 2,
-        text=f"{'Conditions' if not _has_conds else '~~Conditions~~'} · "
-             f"{'Scales' if not _has_scales else '~~Scales~~'} — "
-             f"{_filled_sections}/2 required"
+    _check_conds = "✅" if _has_conds else "⬜"
+    _check_scales = "✅" if _has_scales else "⬜"
+    st.markdown(
+        f"Fill in the two required fields to build your study specification:  \n"
+        f"{_check_conds} Conditions &nbsp;&nbsp; {_check_scales} Scales/DVs"
     )
 
-    # v1.6.0: Examples always visible when builder is empty — helps discoverability
+    # v1.6.1: Examples — prominent when empty, compact when filled
+    examples = SurveyDescriptionParser.generate_example_descriptions()
     if not _has_conds and not _has_scales:
-        st.markdown("**Quick start — load an example:**")
-        examples = SurveyDescriptionParser.generate_example_descriptions()
+        st.markdown("**Quick start — click any example to auto-fill everything:**")
         _ex_cols = st.columns(min(len(examples), 3))
         for idx, ex in enumerate(examples):
             with _ex_cols[idx % len(_ex_cols)]:
-                if st.button(ex["title"], key=f"example_btn_{idx}", use_container_width=True):
+                _ex_label = ex["title"]
+                if st.button(_ex_label, key=f"example_btn_{idx}", use_container_width=True):
                     st.session_state["_pending_autofill_example"] = ex
                     _navigate_to(1)
     else:
-        with st.expander("Load an example study", expanded=False):
-            examples = SurveyDescriptionParser.generate_example_descriptions()
+        with st.expander("Load a different example study", expanded=False):
+            _ex_cols = st.columns(min(len(examples), 3))
             for idx, ex in enumerate(examples):
-                if st.button(f"Load: {ex['title']}", key=f"example_btn_{idx}"):
-                    st.session_state["_pending_autofill_example"] = ex
-                    _navigate_to(1)
+                with _ex_cols[idx % len(_ex_cols)]:
+                    if st.button(ex["title"], key=f"example_btn_{idx}", use_container_width=True):
+                        st.session_state["_pending_autofill_example"] = ex
+                        _navigate_to(1)
 
     # ── Section 1: Experimental Conditions ──────────────────────────────
-    st.markdown("---")
-    st.markdown("#### 1. Experimental Conditions")
+    st.markdown("")
+    st.markdown("#### Experimental Conditions *")
     st.caption(
-        "List your experimental groups separated by commas, or describe a factorial design. "
-        "The parser auto-detects NxM notation, factor labels, and crossed conditions."
+        "List your groups (comma-separated) or describe a factorial design. "
+        "NxM notation, factor labels, and crossed conditions are auto-detected."
     )
 
     conditions_placeholder = (
@@ -3091,11 +3093,11 @@ def _render_conversational_builder() -> None:
             )
 
     # ── Section 2: Dependent Variables / Scales ─────────────────────────
-    st.markdown("---")
-    st.markdown("#### 2. Scales / Dependent Variables")
+    st.markdown("")
+    st.markdown("#### Scales / DVs *")
     st.caption(
-        "Describe each scale or measure. Include name, item count, and range when possible. "
-        "Known instruments (e.g., 'Big Five', 'PANAS') are auto-recognized."
+        "One scale per line. Include name, item count, and range. "
+        "Validated instruments (Big Five, PANAS, etc.) are auto-recognized."
     )
 
     scales_placeholder = (
@@ -3157,8 +3159,8 @@ def _render_conversational_builder() -> None:
                     _navigate_to(1)
 
     # ── Section 3: Open-Ended Questions (Optional) ─────────────────────
-    st.markdown("---")
-    st.markdown("#### 3. Open-Ended Questions *(optional)*")
+    st.markdown("")
+    st.markdown("#### Open-Ended Questions *(optional)*")
     st.caption("Free-text questions to simulate. Leave empty if your study has none.")
 
     oe_text = st.text_area(
@@ -3179,11 +3181,11 @@ def _render_conversational_builder() -> None:
         st.caption(f"Detected **{len(parsed_oe)}** open-ended question(s)")
 
     # ── Section 4 & 5: Sample Size + Design Type (side by side) ────────
-    st.markdown("---")
+    st.markdown("")
     _cfg_col1, _cfg_col2 = st.columns([1, 1], gap="large")
 
     with _cfg_col1:
-        st.markdown("#### 4. Sample Size")
+        st.markdown("#### Sample Size")
         builder_sample = st.number_input(
             "Total participants to simulate",
             min_value=10,
@@ -3207,7 +3209,7 @@ def _render_conversational_builder() -> None:
                 st.caption(f"~{per_cell} participants per condition")
 
     with _cfg_col2:
-        st.markdown("#### 5. Design Type")
+        st.markdown("#### Design Type")
         # Auto-detect design type from condition structure
         _auto_design: str = "between"
         if parsed_conditions:
@@ -3245,9 +3247,9 @@ def _render_conversational_builder() -> None:
         if design_type != _auto_design:
             st.session_state["_design_type_manually_set"] = True
 
-    # ── Section 6 & 7: Demographics + Participants (collapsible) ────────
-    st.markdown("---")
-    with st.expander("6. Demographics & Participants *(optional — defaults work well)*", expanded=False):
+    # ── Demographics + Participants (collapsible) ─────────────────────
+    st.markdown("")
+    with st.expander("Demographics & Participants *(optional — defaults work well)*", expanded=False):
         _demo_col1, _demo_col2, _demo_col3 = st.columns(3)
         with _demo_col1:
             age_mean = st.number_input(
@@ -3280,7 +3282,7 @@ def _render_conversational_builder() -> None:
         )
 
     # ── Validation & Submission ─────────────────────────────────────────
-    st.markdown("---")
+    st.markdown("")
     st.markdown("#### Review & Build")
 
     # Build a preliminary ParsedDesign for validation
@@ -3331,7 +3333,7 @@ def _render_conversational_builder() -> None:
         else:
             _rec_analysis = ""
 
-        _summary_parts = [f"**Design:** {design_options[design_type]}", f"**Domain:** `{domain}`"]
+        _summary_parts = [f"**Design:** {design_options[design_type]}", f"**Domain:** {domain}"]
         if _rec_analysis:
             _summary_parts.append(f"**Suggested analysis:** {_rec_analysis}")
         st.caption(" · ".join(_summary_parts))
@@ -3342,7 +3344,8 @@ def _render_conversational_builder() -> None:
                 st.caption(f"- {s.name}: {s.num_items} item(s), {s.scale_min}-{s.scale_max} ({s.scale_type})")
             if parsed_oe:
                 for q in parsed_oe:
-                    st.caption(f"- {q.question_text[:80]}")
+                    _qt = q.question_text
+                    st.caption(f"- {_qt[:80]}{'...' if len(_qt) > 80 else ''}")
 
     for w in warnings:
         st.warning(w)
@@ -4175,13 +4178,17 @@ def _reset_generation_state() -> None:
 def _navigate_to(page_index: int) -> None:
     """Navigate to a section by index and rerun.
 
-    v1.5.0: Uses pending-nav pattern for reliable section switching.
+    v1.6.1: Uses pending-nav pattern for reliable section switching.
     Sets _page_just_changed flag so the render cycle injects JS to
-    scroll the browser viewport to the top.
+    scroll the browser viewport to the top.  Also sets a per-page
+    flag for heavy pages (Design) that inject scroll-to-top a second
+    time at the start of their content block.
     """
     clamped = max(0, min(page_index, 3))
     st.session_state["_pending_nav"] = clamped
     st.session_state["_page_just_changed"] = True
+    if clamped == 2:
+        st.session_state["_page_just_changed_design"] = True
     st.rerun()
 
 
@@ -4231,12 +4238,13 @@ section.main h3 { font-size: 1.2rem; font-weight: 600; }
 section.main h4 { font-size: 1.05rem; font-weight: 600; margin-bottom: 0.5rem; }
 /* Tighter sidebar */
 section[data-testid="stSidebar"] .stCaption { line-height: 1.4; }
-/* === Progress Stepper (v1.6.0) === */
+/* === Progress Stepper (v1.6.1 — unified dot+button) === */
 .stepper {
     display: flex;
     align-items: center;
-    padding: 0 0 4px 0;
-    margin: 0 0 4px 0;
+    justify-content: center;
+    padding: 4px 0 0 0;
+    margin: 0 0 2px 0;
 }
 .stepper-step {
     display: flex;
@@ -4244,28 +4252,23 @@ section[data-testid="stSidebar"] .stCaption { line-height: 1.4; }
     flex: 1;
 }
 .stepper-step:last-child { flex: 0 0 auto; }
-.stepper-node {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    white-space: nowrap;
-}
 .stepper-dot {
-    width: 34px;
-    height: 34px;
+    width: 30px;
+    height: 30px;
     border-radius: 50%;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 13px;
+    font-size: 12px;
     font-weight: 700;
     flex-shrink: 0;
     transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    margin: 0 auto;
 }
 .stepper-dot.active {
     background: linear-gradient(135deg, #FF4B4B 0%, #D93636 100%);
     color: white;
-    box-shadow: 0 0 0 4px rgba(255,75,75,0.10), 0 2px 8px rgba(255,75,75,0.18);
+    box-shadow: 0 0 0 3px rgba(255,75,75,0.12);
 }
 .stepper-dot.done {
     background: linear-gradient(135deg, #21C354 0%, #1BA94C 100%);
@@ -4276,95 +4279,103 @@ section[data-testid="stSidebar"] .stCaption { line-height: 1.4; }
     color: #B0B5BE;
     border: 2px solid #E5E7EB;
 }
-.stepper-label {
-    font-size: 13px;
-    font-weight: 600;
-    line-height: 1.2;
-    color: #374151;
-}
-.stepper-label.active { color: #FF4B4B; }
-.stepper-label.done   { color: #059669; }
-.stepper-label.pending { color: #B0B5BE; }
-.stepper-sub {
-    font-size: 11px;
-    color: #6B7280;
-    font-weight: 400;
-}
 .stepper-line {
     flex: 1;
     height: 2px;
-    margin: 0 14px;
+    margin: 0 8px;
     border-radius: 1px;
     background: #E5E7EB;
     transition: background 0.3s ease;
 }
 .stepper-line.done  { background: #21C354; }
 .stepper-line.half  { background: linear-gradient(90deg, #21C354 0%, #FF4B4B 50%, #E5E7EB 100%); }
-/* Completed section summary cards */
-.done-cards {
+/* Completed-section summary chips */
+.done-chips {
     display: flex;
     flex-wrap: wrap;
-    gap: 8px;
-    margin-bottom: 12px;
+    gap: 6px;
+    margin: 4px 0 10px 0;
 }
-.done-card {
-    display: flex;
+.done-chip {
+    display: inline-flex;
     align-items: center;
-    gap: 8px;
-    padding: 7px 14px;
+    gap: 5px;
+    padding: 4px 12px;
     background: #F0FDF4;
-    border-radius: 8px;
+    border-radius: 20px;
     border: 1px solid #BBF7D0;
-    font-size: 12px;
+    font-size: 11px;
     color: #166534;
-    flex: 1 1 auto;
-    min-width: 140px;
+    white-space: nowrap;
 }
-.done-card-icon {
-    font-size: 14px;
-    flex-shrink: 0;
+.done-chip-check { font-weight: 700; color: #15803D; }
+/* Overall progress bar */
+.progress-track {
+    height: 4px;
+    background: #F3F4F6;
+    border-radius: 2px;
+    margin: 0 0 6px 0;
+    overflow: hidden;
 }
-.done-card-label {
-    font-weight: 600;
-}
-.done-card-summary {
-    color: #15803D;
-    font-weight: 400;
-    margin-left: 2px;
+.progress-fill {
+    height: 100%;
+    border-radius: 2px;
+    background: linear-gradient(90deg, #FF4B4B 0%, #21C354 100%);
+    transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
 }
 /* Section wrapper */
 .flow-section {
-    border-top: 2px solid transparent;
-    border-image: linear-gradient(90deg, #FF4B4B 0%, transparent 100%) 1;
-    padding-top: 12px;
-    animation: sectionEnter 0.25s ease-out;
+    padding-top: 8px;
+    animation: sectionEnter 0.3s ease-out;
 }
 @keyframes sectionEnter {
-    from { opacity: 0; transform: translateY(6px); }
+    from { opacity: 0; transform: translateY(8px); }
     to   { opacity: 1; transform: translateY(0); }
 }
-/* Section header card */
-.section-header {
+/* Section guidance tagline */
+.section-guide {
+    font-size: 13px;
+    color: #6B7280;
+    margin: 0 0 16px 0;
+    padding: 8px 14px;
+    background: #F9FAFB;
+    border-radius: 8px;
+    border-left: 3px solid #FF4B4B;
+}
+/* Continue CTA — prominent + pulse */
+.continue-cta {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 24px;
+    background: linear-gradient(135deg, #FF4B4B 0%, #D93636 100%);
+    color: white !important;
+    border-radius: 10px;
+    font-weight: 700;
+    font-size: 14px;
+    cursor: pointer;
+    border: none;
+    box-shadow: 0 2px 12px rgba(255,75,75,0.25);
+    animation: ctaPulse 2s ease-in-out infinite;
+    text-decoration: none;
+}
+@keyframes ctaPulse {
+    0%, 100% { box-shadow: 0 2px 12px rgba(255,75,75,0.25); }
+    50% { box-shadow: 0 2px 20px rgba(255,75,75,0.45); }
+}
+/* Section complete banner */
+.section-done-banner {
     display: flex;
     align-items: center;
-    gap: 14px;
-    padding: 14px 20px;
-    background: linear-gradient(135deg, rgba(255,75,75,0.05) 0%, rgba(255,75,75,0.01) 100%);
-    border-radius: 12px;
-    border-left: 3px solid #FF4B4B;
-    margin-bottom: 20px;
-}
-.section-header-icon { font-size: 22px; }
-.section-header-text h3 {
-    margin: 0;
-    font-size: 18px;
-    font-weight: 700;
-    color: #1F2937;
-}
-.section-header-text p {
-    margin: 3px 0 0 0;
-    font-size: 12px;
-    color: #6B7280;
+    gap: 10px;
+    padding: 10px 16px;
+    background: linear-gradient(135deg, #F0FDF4 0%, #ECFDF5 100%);
+    border: 1px solid #BBF7D0;
+    border-radius: 10px;
+    margin: 16px 0 4px 0;
+    font-size: 13px;
+    color: #166534;
+    font-weight: 500;
 }
 /* Compact feedback link */
 .feedback-bar {
@@ -4380,61 +4391,73 @@ section[data-testid="stSidebar"] .stCaption { line-height: 1.4; }
 }
 .feedback-bar a { color: #6B7280; text-decoration: none; }
 .feedback-bar a:hover { color: #FF4B4B; text-decoration: underline; }
-/* Nav button row — compact and aligned */
-div[data-testid="stHorizontalBlock"] .stButton button {
-    font-size: 13px !important;
-    padding: 6px 10px !important;
+/* Nav step labels — flat, borderless, integrated with stepper */
+div[data-testid="stHorizontalBlock"]:first-of-type .stButton button {
+    font-size: 12px !important;
+    padding: 4px 6px !important;
+    border: none !important;
+    background: transparent !important;
+    color: #6B7280 !important;
+    box-shadow: none !important;
+    font-weight: 500 !important;
+    letter-spacing: 0.01em !important;
+}
+div[data-testid="stHorizontalBlock"]:first-of-type .stButton button:hover {
+    color: #FF4B4B !important;
+    background: rgba(255,75,75,0.04) !important;
+}
+div[data-testid="stHorizontalBlock"]:first-of-type .stButton button[kind="primary"] {
+    color: #FF4B4B !important;
+    font-weight: 700 !important;
+    background: rgba(255,75,75,0.06) !important;
+    border-radius: 8px !important;
 }
 /* Responsive */
 @media (max-width: 768px) {
-    .stepper-sub { display: none; }
-    .stepper-label { font-size: 11px; }
-    .stepper-dot { width: 28px; height: 28px; font-size: 11px; }
-    .stepper-line { margin: 0 8px; }
-    .done-cards { flex-direction: column; }
-    .section-header { padding: 10px 14px; }
-    .section-header-icon { font-size: 18px; }
-    .section-header-text h3 { font-size: 15px; }
+    .stepper-dot { width: 24px; height: 24px; font-size: 10px; }
+    .stepper-line { margin: 0 4px; }
+    .done-chips { flex-direction: column; }
 }
 </style>"""
 
 
 def _render_flow_nav(active: int, done: List[bool]) -> None:
-    """Render the modern progress stepper with clickable navigation.
+    """Render a unified progress stepper with integrated clickable navigation.
 
-    v1.6.0: Clean horizontal stepper (dot-line-dot) replaces the old
-    pill ribbon + separate button row. Single visual component that is
-    both informative and interactive.
+    v1.6.1: Single visual component — dots + lines + labels are ONE unit.
+    No separate button row or section header cards.  Completed sections
+    show a compact summary chip below the stepper.
     """
     while len(done) < len(SECTION_META):
         done.append(False)
 
-    # ── Build stepper HTML ──────────────────────────────────────────
-    steps_html = ""
+    # ── Overall progress bar ──────────────────────────────────────────
+    n_done = sum(1 for d in done if d)
+    pct = int(100 * (n_done + (0.5 if not done[active] else 0)) / len(SECTION_META))
+    pct = max(5, min(pct, 100))  # never 0 width
+    st.markdown(
+        f'<div class="progress-track"><div class="progress-fill" style="width:{pct}%"></div></div>',
+        unsafe_allow_html=True,
+    )
+
+    # ── Build stepper-only HTML (dots + connecting lines, NO labels) ──
+    dots_html = ""
     for i, meta in enumerate(SECTION_META):
         if i < active and done[i]:
             state = "done"
             badge = "✓"
-            summary = _section_summary(i) or meta["desc"]
         elif i == active:
             state = "active"
             badge = str(i + 1)
-            summary = meta["desc"]
         else:
             state = "pending"
             badge = str(i + 1)
-            summary = meta["desc"]
 
-        steps_html += f'''<div class="stepper-step">
-            <div class="stepper-node">
-                <div class="stepper-dot {state}">{badge}</div>
-                <div>
-                    <div class="stepper-label {state}">{meta["title"]}</div>
-                    <div class="stepper-sub">{summary}</div>
-                </div>
-            </div>'''
-
-        # Connector line between steps (not after last)
+        dots_html += (
+            f'<div class="stepper-step">'
+            f'<div class="stepper-dot {state}">{badge}</div>'
+        )
+        # Connector line (not after last)
         if i < len(SECTION_META) - 1:
             if i < active and done[i]:
                 line_state = "done"
@@ -4442,67 +4465,52 @@ def _render_flow_nav(active: int, done: List[bool]) -> None:
                 line_state = "half"
             else:
                 line_state = ""
-            steps_html += f'<div class="stepper-line {line_state}"></div>'
+            dots_html += f'<div class="stepper-line {line_state}"></div>'
+        dots_html += "</div>"
 
-        steps_html += "</div>"
+    st.markdown(f'<div class="stepper">{dots_html}</div>', unsafe_allow_html=True)
 
-    st.markdown(f'<div class="stepper">{steps_html}</div>', unsafe_allow_html=True)
-
-    # ── Clickable buttons (compact, aligned under stepper) ──────────
+    # ── Clickable step labels (flat, borderless — visually part of stepper) ──
     nav_cols = st.columns(len(SECTION_META), gap="small")
     for i, meta in enumerate(SECTION_META):
         with nav_cols[i]:
-            is_active = i == active
-            label = meta["title"]
-            if done[i] and not is_active:
+            if i < active and done[i]:
                 label = f"✓ {meta['title']}"
+            elif i == active:
+                label = meta["title"]
+            else:
+                label = meta["title"]
             if st.button(
                 label,
                 key=f"nav_{i}",
-                type="primary" if is_active else "secondary",
+                type="primary" if i == active else "secondary",
                 use_container_width=True,
             ):
-                if not is_active:
+                if i != active:
                     _navigate_to(i)
 
-    # ── Completed section summary cards ─────────────────────────────
-    cards_html = ""
+    # ── Completed-section summary chips ─────────────────────────────
+    chips = []
     for i in range(active):
         if done[i]:
             summary = _section_summary(i)
             if summary:
                 meta = SECTION_META[i]
-                cards_html += (
-                    f'<div class="done-card">'
-                    f'<span class="done-card-icon">✓</span>'
-                    f'<span class="done-card-label">{meta["title"]}:</span>'
-                    f'<span class="done-card-summary">{summary}</span>'
-                    f'</div>'
+                chips.append(
+                    f'<span class="done-chip">'
+                    f'<span class="done-chip-check">✓</span>'
+                    f'{meta["title"]}: {summary}'
+                    f'</span>'
                 )
-    if cards_html:
-        st.markdown(f'<div class="done-cards">{cards_html}</div>', unsafe_allow_html=True)
-
-
-def _render_section_header(idx: int) -> None:
-    """Render a section header card with icon and description."""
-    if idx < 0 or idx >= len(SECTION_META):
-        return
-    meta = SECTION_META[idx]
-    st.markdown(
-        f'''<div class="section-header">
-            <div class="section-header-icon">{meta["icon"]}</div>
-            <div class="section-header-text">
-                <h3>{meta["title"]}</h3>
-                <p>{meta["desc"]}</p>
-            </div>
-        </div>''',
-        unsafe_allow_html=True,
-    )
+    if chips:
+        st.markdown(
+            f'<div class="done-chips">{"".join(chips)}</div>',
+            unsafe_allow_html=True,
+        )
 
 
 _SCROLL_TO_TOP_JS = """<script>
-function _stScrollToTop() {
-    // Target every known scroll container across Streamlit versions
+(function() {
     var selectors = [
         'section.main',
         '[data-testid="stAppViewContainer"]',
@@ -4510,113 +4518,36 @@ function _stScrollToTop() {
         '.main .block-container',
         '.main'
     ];
-    for (var i = 0; i < selectors.length; i++) {
-        var els = window.parent.document.querySelectorAll(selectors[i]);
-        for (var j = 0; j < els.length; j++) {
-            els[j].scrollTop = 0;
+    function scrollUp() {
+        for (var i = 0; i < selectors.length; i++) {
+            var els = window.parent.document.querySelectorAll(selectors[i]);
+            for (var j = 0; j < els.length; j++) {
+                els[j].scrollTop = 0;
+            }
         }
+        window.parent.scrollTo(0, 0);
+        try { window.parent.document.body.scrollTop = 0; } catch(e) {}
+        try { window.parent.document.documentElement.scrollTop = 0; } catch(e) {}
     }
-    window.parent.scrollTo(0, 0);
-    // Also try the iframe's parent document body
-    try { window.parent.document.body.scrollTop = 0; } catch(e) {}
-    try { window.parent.document.documentElement.scrollTop = 0; } catch(e) {}
-}
-// Fire 5 times with increasing delays to catch all rendering stages
-_stScrollToTop();
-setTimeout(_stScrollToTop, 30);
-setTimeout(_stScrollToTop, 100);
-setTimeout(_stScrollToTop, 250);
-setTimeout(_stScrollToTop, 500);
+    // Fire aggressively: immediate + 8 delays covering 0-2s render window.
+    // Heavy pages (Design) can take >500ms to fully render widgets.
+    var delays = [0, 30, 80, 150, 300, 500, 1000, 1500, 2000];
+    for (var d = 0; d < delays.length; d++) {
+        setTimeout(scrollUp, delays[d]);
+    }
+})();
 </script>"""
 
 
 def _inject_scroll_to_top_js() -> None:
     """Inject a zero-height HTML component with JavaScript that scrolls to top.
 
-    This is the ONLY reliable way to scroll to the top of a Streamlit app
-    after st.rerun(). Streamlit preserves scroll position across reruns,
-    so we must use JavaScript to override it.
-
-    Targets multiple scroll containers for maximum compatibility across
-    Streamlit versions (Cloud, local, embedded).
+    Fires 9 times over 2 seconds to guarantee scroll resets even on heavy
+    pages where Streamlit widgets render asynchronously and reset scroll
+    position.
     """
     _st_components.html(_SCROLL_TO_TOP_JS, height=0)
 
-
-# v1.6.0: Concise intro on Setup page — expanded by default for discoverability
-if st.session_state.get("active_page", 0) == 0:
-    with st.expander("What this tool delivers", expanded=True):
-        st.markdown("""
-Generate a complete synthetic dataset — with realistic response patterns, individual differences, and attention check failures — to build and test your analysis pipeline **before** collecting real data.
-
-| | |
-|---|---|
-| **Upload a QSF** | Auto-detects conditions, scales, and factors from your Qualtrics export |
-| **Or describe your study** | Just explain your design in plain text — we build the rest |
-
-**Your output package includes:**
-- **Publication-ready CSV** — condition assignments, scale responses, open-ended text
-- **AI-generated free-text** — LLM-powered (Llama 3.3 70B) persona-driven responses; falls back to 225-domain template engine if AI unavailable
-- **Analysis scripts** — pre-configured for your specific design
-- **Instructor report** — full documentation of design, parameters, and expected patterns
-- **Grounded personas** — satisficers, extreme responders, and engaged participants calibrated from behavioral science research
-""")
-
-    with st.expander("Research foundations and citations", expanded=False):
-        st.markdown("""
-### Methodological foundations
-
-This tool implements simulation approaches validated in recent computational social science research:
-
-**Core LLM Simulation Research:**
-- **Argyle et al. (2023)** - "Out of One, Many: Using Language Models to Simulate Human Samples" *Political Analysis*, 31(3), 337-351. [DOI: 10.1017/pan.2023.2](https://doi.org/10.1017/pan.2023.2)
-- **Horton (2023)** - "Large Language Models as Simulated Economic Agents: What Can We Learn from Homo Silicus?" *NBER Working Paper* No. 31122. [DOI: 10.3386/w31122](https://doi.org/10.3386/w31122)
-- **Aher, Arriaga & Kalai (2023)** - "Using Large Language Models to Simulate Multiple Humans and Replicate Human Subject Studies" *ICML*, PMLR 202:337-371. [Paper](https://proceedings.mlr.press/v202/aher23a.html)
-
-**High-Impact Validation Studies:**
-- **Park et al. (2023)** - "Generative Agents: Interactive Simulacra of Human Behavior" *ACM UIST*. [DOI: 10.1145/3586183.3606763](https://doi.org/10.1145/3586183.3606763)
-- **Binz & Schulz (2023)** - "Using cognitive psychology to understand GPT-3" *PNAS*, 120(6). [DOI: 10.1073/pnas.2218523120](https://doi.org/10.1073/pnas.2218523120)
-- **Dillion et al. (2023)** - "Can AI language models replace human participants?" *Trends in Cognitive Sciences*, 27, 597-600. [DOI: 10.1016/j.tics.2023.04.008](https://doi.org/10.1016/j.tics.2023.04.008)
-
-**On LLM Detection & Survey Validity:**
-- **Westwood (2025)** - "The potential existential threat of large language models to online survey research" *PNAS*, 122(47). [DOI: 10.1073/pnas.2518075122](https://doi.org/10.1073/pnas.2518075122) — Demonstrates why rigorous simulation standards matter for distinguishing human from AI responses.
-
-### How personas work
-
-The simulator automatically assigns behavioral personas to simulated participants based on the study domain. Each persona has trait parameters calibrated from computational social science research on LLM response patterns. This creates realistic individual differences without requiring manual configuration.
-""")
-        # Prefer PDF over markdown for methods summary
-        # PDF and docs moved to project-root docs/ directory during repo reorganization
-        methods_pdf_path = Path(__file__).resolve().parent.parent / "docs" / "papers" / "methods_summary.pdf"
-        methods_md_path = Path(__file__).resolve().parent.parent / "docs" / "methods_summary.md"
-
-        if methods_pdf_path.exists():
-            methods_updated = datetime.utcfromtimestamp(methods_pdf_path.stat().st_mtime).strftime("%Y-%m-%d")
-            st.caption(f"Methods summary (PDF) · Last updated: {methods_updated}")
-
-            # Download button for PDF - most reliable cross-browser option
-            st.download_button(
-                "📥 Download Methods PDF",
-                data=methods_pdf_path.read_bytes(),
-                file_name=methods_pdf_path.name,
-                mime="application/pdf",
-                help="Click to download the methods summary PDF. Opens in your default PDF viewer."
-            )
-            st.caption("*Click the button above to download and view the methods summary.*")
-        elif methods_md_path.exists():
-            methods_updated = datetime.utcfromtimestamp(methods_md_path.stat().st_mtime).strftime("%Y-%m-%d %H:%M UTC")
-            st.caption(f"Methods summary updated: {methods_updated}")
-            col_m1, col_m2 = st.columns(2)
-            with col_m1:
-                st.download_button(
-                    "Download Markdown",
-                    data=methods_md_path.read_bytes(),
-                    file_name=methods_md_path.name,
-                    mime="text/markdown",
-                )
-            with col_m2:
-                with st.expander("View Methods Summary"):
-                    st.markdown(methods_md_path.read_text(encoding="utf-8"))
 
 with st.sidebar:
     advanced_mode = st.toggle("Advanced mode", value=st.session_state.get("advanced_mode", False))
@@ -4934,7 +4865,84 @@ def _get_total_conditions() -> int:
 # =====================================================================
 if active_page == 0:
     st.markdown('<div class="flow-section">', unsafe_allow_html=True)
-    _render_section_header(0)
+    st.markdown(
+        '<div class="section-guide">Name your study and describe the experiment — '
+        'this information appears in your final report and data outputs.</div>',
+        unsafe_allow_html=True,
+    )
+
+    # v1.6.1: Intro expanders inside the page 0 block (avoids nav timing bug)
+    with st.expander("What this tool delivers", expanded=True):
+        st.markdown(
+            "Generate a complete synthetic dataset — realistic response patterns, "
+            "individual differences, and attention check failures — to **build and test "
+            "your analysis pipeline before collecting real data.**"
+        )
+        _wt_c1, _wt_c2 = st.columns(2)
+        with _wt_c1:
+            st.markdown(
+                "**Upload a QSF** &nbsp; Auto-detects conditions, scales, "
+                "and factors from your Qualtrics export"
+            )
+        with _wt_c2:
+            st.markdown(
+                "**Or describe your study** &nbsp; Explain your design in "
+                "plain text — we build the rest"
+            )
+        st.markdown(
+            "- **Publication-ready CSV** — condition assignments, scale responses, open-ended text\n"
+            "- **AI-generated free-text** — persona-driven LLM responses (Llama 3.3 70B); template fallback if AI unavailable\n"
+            "- **Analysis scripts** — pre-configured for your specific design\n"
+            "- **Instructor report** — full documentation of design, parameters, and expected patterns"
+        )
+
+    with st.expander("Research foundations and citations", expanded=False):
+        st.markdown("""
+#### Methodological foundations
+
+This tool implements simulation approaches validated in recent computational social science research:
+
+**Core LLM Simulation Research:**
+- **Argyle et al. (2023)** - "Out of One, Many: Using Language Models to Simulate Human Samples" *Political Analysis*, 31(3), 337-351. [DOI: 10.1017/pan.2023.2](https://doi.org/10.1017/pan.2023.2)
+- **Horton (2023)** - "Large Language Models as Simulated Economic Agents: What Can We Learn from Homo Silicus?" *NBER Working Paper* No. 31122. [DOI: 10.3386/w31122](https://doi.org/10.3386/w31122)
+- **Aher, Arriaga & Kalai (2023)** - "Using Large Language Models to Simulate Multiple Humans and Replicate Human Subject Studies" *ICML*, PMLR 202:337-371. [Paper](https://proceedings.mlr.press/v202/aher23a.html)
+
+**High-Impact Validation Studies:**
+- **Park et al. (2023)** - "Generative Agents: Interactive Simulacra of Human Behavior" *ACM UIST*. [DOI: 10.1145/3586183.3606763](https://doi.org/10.1145/3586183.3606763)
+- **Binz & Schulz (2023)** - "Using cognitive psychology to understand GPT-3" *PNAS*, 120(6). [DOI: 10.1073/pnas.2218523120](https://doi.org/10.1073/pnas.2218523120)
+- **Dillion et al. (2023)** - "Can AI language models replace human participants?" *Trends in Cognitive Sciences*, 27, 597-600. [DOI: 10.1016/j.tics.2023.04.008](https://doi.org/10.1016/j.tics.2023.04.008)
+
+**On LLM Detection & Survey Validity:**
+- **Westwood (2025)** - "The potential existential threat of large language models to online survey research" *PNAS*, 122(47). [DOI: 10.1073/pnas.2518075122](https://doi.org/10.1073/pnas.2518075122) — Demonstrates why rigorous simulation standards matter for distinguishing human from AI responses.
+
+#### How personas work
+
+The simulator automatically assigns behavioral personas to simulated participants based on the study domain. Each persona has trait parameters calibrated from computational social science research on LLM response patterns. This creates realistic individual differences without requiring manual configuration.
+""")
+        # Prefer PDF over markdown for methods summary
+        methods_pdf_path = Path(__file__).resolve().parent.parent / "docs" / "papers" / "methods_summary.pdf"
+        methods_md_path = Path(__file__).resolve().parent.parent / "docs" / "methods_summary.md"
+
+        if methods_pdf_path.exists():
+            methods_updated = datetime.utcfromtimestamp(methods_pdf_path.stat().st_mtime).strftime("%Y-%m-%d")
+            st.caption(f"Methods summary (PDF) · Last updated: {methods_updated}")
+            st.download_button(
+                "Download Methods PDF",
+                data=methods_pdf_path.read_bytes(),
+                file_name=methods_pdf_path.name,
+                mime="application/pdf",
+                help="Click to download the methods summary PDF."
+            )
+        elif methods_md_path.exists():
+            methods_updated = datetime.utcfromtimestamp(methods_md_path.stat().st_mtime).strftime("%Y-%m-%d %H:%M UTC")
+            st.caption(f"Methods summary updated: {methods_updated}")
+            st.download_button(
+                "Download Markdown",
+                data=methods_md_path.read_bytes(),
+                file_name=methods_md_path.name,
+                mime="text/markdown",
+            )
+
     completion = _get_step_completion()
     step1_done = completion["study_title"] and completion["study_description"]
 
@@ -4977,9 +4985,12 @@ if active_page == 0:
             key="team_members_raw",
         )
 
-    # v1.6.0: Continue button — prominent CTA when ready
+    # v1.6.1: Section-complete banner with prominent CTA
     if step1_done:
-        st.markdown("")
+        st.markdown(
+            '<div class="section-done-banner">✓ Setup complete — ready for the next step</div>',
+            unsafe_allow_html=True,
+        )
         if st.button("Continue to Study Input  \u2192", key="auto_advance_0", type="primary"):
             _navigate_to(1)
     else:
@@ -4998,7 +5009,11 @@ if active_page == 0:
 # =====================================================================
 if active_page == 1:
     st.markdown('<div class="flow-section">', unsafe_allow_html=True)
-    _render_section_header(1)
+    st.markdown(
+        '<div class="section-guide">Provide your experiment design — either upload '
+        'a Qualtrics QSF export or describe your study in plain text.</div>',
+        unsafe_allow_html=True,
+    )
     completion = _get_step_completion()
     step1_done = completion["study_title"] and completion["study_description"]
     step2_done = completion["qsf_uploaded"]
@@ -5033,7 +5048,7 @@ if active_page == 1:
         st.info("Upload your Qualtrics QSF file below")
 
     if _show_qsf_upload:
-        st.markdown("### 1. Upload Qualtrics Survey File *")
+        st.markdown("#### Upload Qualtrics Survey File")
 
     # QSF file upload section (only shown in upload_qsf mode)
     if _show_qsf_upload:
@@ -5453,9 +5468,12 @@ if active_page == 1:
         if selected_conditions:
             st.success(f"✓ Conditions: {', '.join(selected_conditions)}")
 
-    # v1.6.0: Continue CTA when study input is complete
+    # v1.6.1: Section-complete banner with prominent CTA
     if step2_done:
-        st.markdown("")
+        st.markdown(
+            '<div class="section-done-banner">✓ Study input complete — ready to configure your design</div>',
+            unsafe_allow_html=True,
+        )
         if st.button("Continue to Design  \u2192", key="auto_advance_1", type="primary"):
             _navigate_to(2)
     st.markdown('</div>', unsafe_allow_html=True)
@@ -5465,8 +5483,16 @@ if active_page == 1:
 # PAGE 3: DESIGN CONFIGURATION
 # =====================================================================
 if active_page == 2:
+    # Extra scroll-to-top for the heavy Design page (widgets can reset scroll)
+    if st.session_state.get("_page_just_changed_design"):
+        st.session_state.pop("_page_just_changed_design", None)
+        _inject_scroll_to_top_js()
     st.markdown('<div class="flow-section">', unsafe_allow_html=True)
-    _render_section_header(2)
+    st.markdown(
+        '<div class="section-guide">Review and configure your experimental conditions, '
+        'dependent variables, and sample allocation.</div>',
+        unsafe_allow_html=True,
+    )
     preview: Optional[QSFPreviewResult] = st.session_state.get("qsf_preview", None)
     enhanced_analysis: Optional[DesignAnalysisResult] = st.session_state.get("enhanced_analysis", None)
 
@@ -5506,6 +5532,10 @@ if active_page == 2:
         _design_ready = bool(_design_conds) and len(_design_conds) >= 1 and bool(_design_scales) and st.session_state.get("scales_confirmed", False)
 
         if _design_ready:
+            st.markdown(
+                '<div class="section-done-banner">✓ Design configured — ready to generate</div>',
+                unsafe_allow_html=True,
+            )
             _ds_c1, _ds_c2, _ds_c3 = st.columns(3)
             _ds_c1.metric("Conditions", len(_design_conds))
             _ds_c2.metric("DVs", len(_design_scales))
@@ -5523,14 +5553,13 @@ if active_page == 2:
             if _missing:
                 st.caption(f"Still needed: {', '.join(_missing)}")
 
-        st.markdown("---")
-
         # ========================================
         # STEP 1: CONDITION SETUP
         # ========================================
-        st.markdown("### 1. Experimental Conditions")
+        st.markdown("")
+        st.markdown("#### Experimental Conditions")
         st.caption(
-            "Conditions are auto-detected from your QSF randomizer. "
+            "Auto-detected from your QSF randomizer. "
             "Select the ones to include, or add custom conditions."
         )
 
@@ -5652,7 +5681,7 @@ if active_page == 2:
         all_conditions = list(dict.fromkeys(selected + custom_conditions))
 
         # Show final conditions summary
-        st.markdown("---")
+        st.markdown("")
         if all_conditions:
             # Display cleaned condition names
             clean_names = [_clean_condition_name(c) for c in all_conditions]
@@ -5664,8 +5693,8 @@ if active_page == 2:
         # ========================================
         # STEP 2: DESIGN STRUCTURE
         # ========================================
-        st.markdown("---")
-        st.markdown("### 2. Configure Design Structure")
+        st.markdown("")
+        st.markdown("#### Design Structure")
 
         col_design1, col_design2 = st.columns(2)
 
@@ -5712,8 +5741,8 @@ if active_page == 2:
         # ========================================
         # SAMPLE SIZE AND CONDITION ALLOCATION
         # ========================================
-        st.markdown("---")
-        st.markdown("### 3. Sample Size & Condition Allocation")
+        st.markdown("")
+        st.markdown("#### Sample Size & Allocation")
 
         # Sample size input (moved from Step 1)
         # Use consistent key for state persistence
@@ -5738,10 +5767,10 @@ if active_page == 2:
 
         # Condition allocation (rebalancing) with number inputs
         if all_conditions and len(all_conditions) > 1:
-            st.markdown("#### Condition Allocation")
+            st.markdown("##### Condition Allocation")
             st.caption(
-                "By default, participants are divided equally across conditions. "
-                "Adjust the number of participants per condition below (must sum to total N)."
+                "Participants are divided equally by default. "
+                "Adjust per-condition counts below (must sum to total N)."
             )
 
             n_conditions = len(all_conditions)
@@ -5888,7 +5917,7 @@ if active_page == 2:
             st.session_state["condition_allocation_n"] = {all_conditions[0]: sample_size}
 
         # Factor configuration with clear explanation
-        st.markdown("---")
+        st.markdown("")
         st.markdown("#### Factor Structure")
         st.caption(
             "**Factors** are the independent variables you manipulate. "
@@ -6145,9 +6174,9 @@ if active_page == 2:
         # ========================================
         # STEP 4: DEPENDENT VARIABLES (DVs)
         # ========================================
-        st.markdown("---")
-        st.markdown("### 4. Dependent Variables (DVs)")
-        st.caption("These are the outcome measures in your study. Verify each DV matches your QSF survey.")
+        st.markdown("")
+        st.markdown("#### Dependent Variables (DVs)")
+        st.caption("Outcome measures in your study. Verify each DV matches your QSF survey.")
 
         # Show DV help in collapsed expander
         with st.expander("What are DVs and how to verify them?", expanded=False):
@@ -6402,7 +6431,7 @@ if active_page == 2:
             _navigate_to(2)
 
         # Add new DV button with helpful context
-        st.markdown("---")
+        st.markdown("")
         col_add, col_help = st.columns([1, 3])
         with col_add:
             add_clicked = st.button("➕ Add DV", key=f"add_dv_btn_v{dv_version}", help="Add a new dependent variable manually. Use this if automatic detection missed a scale or if you want to add custom measures.")
@@ -6449,15 +6478,10 @@ if active_page == 2:
         # ========================================
         # STEP 5: OPEN-ENDED QUESTIONS
         # ========================================
-        st.markdown("---")
-        # ── Collapsed Open-Ended section to save scroll space ──────────
+        st.markdown("")
         _oe_count_display = len(st.session_state.get("confirmed_open_ended", []))
-        _oe_expand_label = (
-            f"### 5. Open-Ended Questions ({_oe_count_display} detected)"
-            if _oe_count_display > 0
-            else "### 5. Open-Ended Questions (none detected)"
-        )
-        st.markdown(_oe_expand_label)
+        _oe_label = f"#### Open-Ended Questions ({_oe_count_display})" if _oe_count_display > 0 else "#### Open-Ended Questions"
+        st.markdown(_oe_label)
 
         with st.expander(
             f"Review & edit open-ended questions ({_oe_count_display})"
@@ -6566,8 +6590,8 @@ if active_page == 2:
         # ========================================
         # ATTENTION & MANIPULATION CHECKS REVIEW
         # ========================================
-        st.markdown("---")
-        st.markdown("### 📋 Review: Attention & Manipulation Checks")
+        st.markdown("")
+        st.markdown("#### Attention & Manipulation Checks")
 
         # Get detected checks from QSF preview
         preview = st.session_state.get("qsf_preview")
@@ -6624,8 +6648,8 @@ if active_page == 2:
         # ========================================
         # FINAL SUMMARY & LOCK DESIGN
         # ========================================
-        st.markdown("---")
-        st.markdown("### Design Summary")
+        st.markdown("")
+        st.markdown("#### Design Summary")
 
         # Check if using crossed factorial conditions
         display_conditions = all_conditions
@@ -6777,8 +6801,8 @@ if active_page == 2:
         # v2.4.5: DESIGN PREVIEW SUMMARY
         # ========================================
         if design_valid:
-            st.markdown("---")
-            st.markdown("### 📋 Design Preview")
+            st.markdown("")
+            st.markdown("#### Design Preview")
             st.caption("Review your experiment configuration before generating data")
 
             preview_col1, preview_col2 = st.columns(2)
@@ -6829,10 +6853,13 @@ if active_page == 2:
 
             st.info(f"**Design Type:** {design_type} · **Total Cells:** {len(all_conditions)} · **N per cell:** ~{sample_n // max(1, len(all_conditions))}")
 
-    # v1.6.0: Bottom CTA when design is ready
+    # v1.6.1: Bottom CTA with completion banner
     _design_can_next = bool(st.session_state.get("inferred_design"))
     if _design_can_next:
-        st.markdown("")
+        st.markdown(
+            '<div class="section-done-banner">✓ Design configured — ready to generate</div>',
+            unsafe_allow_html=True,
+        )
         if st.button("Continue to Generate  \u2192", key="auto_advance_2", type="primary"):
             _navigate_to(3)
     st.markdown('</div>', unsafe_allow_html=True)
@@ -6843,7 +6870,11 @@ if active_page == 2:
 # =====================================================================
 if active_page == 3:
     st.markdown('<div class="flow-section">', unsafe_allow_html=True)
-    _render_section_header(3)
+    st.markdown(
+        '<div class="section-guide">Choose your difficulty level, review the design summary, '
+        'and generate your simulated dataset.</div>',
+        unsafe_allow_html=True,
+    )
     inferred = st.session_state.get("inferred_design", None)
     preview: Optional[QSFPreviewResult] = st.session_state.get("qsf_preview", None)
 
@@ -6887,6 +6918,7 @@ if active_page == 3:
         with col_back2:
             if st.button("Go to Design", key="go_step3_from_generate", use_container_width=True):
                 _navigate_to(2)
+        st.markdown('</div>', unsafe_allow_html=True)
         st.stop()
 
     # v1.6.0: Readiness checklist — compact inline
@@ -6934,8 +6966,8 @@ if active_page == 3:
     _diff_index = _diff_options.index(_diff_default)
 
     if not _has_generated and not _is_generating:
-        st.markdown("---")
-        st.markdown("### Data Quality Difficulty")
+        st.markdown("")
+        st.markdown("#### Data Quality Difficulty")
 
         difficulty_col1, difficulty_col2 = st.columns([1, 2])
         with difficulty_col1:
@@ -6965,8 +6997,8 @@ if active_page == 3:
     prereg_pdf_names = st.session_state.get("prereg_pdf_names", [])
 
     if prereg_text or prereg_pdf_names:
-        st.markdown("---")
-        st.markdown("### Pre-registration Consistency Check")
+        st.markdown("")
+        st.markdown("#### Pre-registration Consistency Check")
 
         # Parse the pre-registration
         prereg_format = _detect_prereg_format(prereg_text)
@@ -7019,8 +7051,8 @@ if active_page == 3:
     # ========================================
     # v1.0.0: LIVE DATA PREVIEW
     # ========================================
-    st.markdown("---")
-    st.markdown("### Live Data Preview")
+    st.markdown("")
+    st.markdown("#### Live Data Preview")
     st.caption("Preview 5 rows of simulated data before full generation")
 
     if st.button("Generate Preview (5 rows)", key="preview_button"):
@@ -7038,7 +7070,7 @@ if active_page == 3:
         st.dataframe(st.session_state['preview_df'], use_container_width=True, height=200)
         st.caption(f"Preview generated at difficulty level: **{DIFFICULTY_LEVELS[difficulty_level]['name']}**")
 
-    st.markdown("---")
+    st.markdown("")
 
     if not st.session_state.get("advanced_mode", False):
         # v1.0.0: Use difficulty level settings
@@ -7120,7 +7152,7 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
                     st.markdown("- No directional effects (null hypothesis)")
                     st.caption("Specify effects in the Design tab or enable Advanced mode")
     else:
-        st.markdown("### Advanced settings")
+        st.markdown("#### Advanced Settings")
 
         c1, c2, c3 = st.columns(3)
         with c1:
@@ -7146,7 +7178,7 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
                 exclude_careless_responders=False,
             )
 
-        st.markdown("### Expected Effect Sizes (Optional)")
+        st.markdown("#### Expected Effect Sizes *(optional)*")
         st.caption(
             "Specify the expected effect size for your main hypothesis. "
             "This makes the simulated data reflect a directional hypothesis rather than a null effect."
@@ -7293,9 +7325,9 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
     # v1.4.14: Hide design summary during generation AND after generation is complete.
     # After generation, the download section is the primary focus.
     if not _is_generating and not _has_generated:
-        st.markdown("---")
-        st.markdown("### Final Design Summary")
-        st.caption("Please review your experimental design before generating data.")
+        st.markdown("")
+        st.markdown("#### Final Design Summary")
+        st.caption("Review your experimental design before generating data.")
 
     # Get all relevant design info (needed for both display and generation)
     display_conditions = conditions
@@ -7375,7 +7407,7 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
     # GENERATE BUTTON - with proper state management
     # v1.4.5: Progress spinner shown FIRST, design summary hidden during generation
     # ========================================
-    st.markdown("---")
+    st.markdown("")
 
     # v1.4.9: LLM status indicator with multi-provider support and single key input
     _has_open_ended = bool(st.session_state.get("inferred_design", {}).get("open_ended", []))
@@ -8188,9 +8220,12 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
     zip_bytes = st.session_state.get("last_zip", None)
     df = st.session_state.get("last_df", None)
     if zip_bytes and df is not None:
-        st.divider()
+        st.markdown(
+            '<div class="section-done-banner">✓ Simulation complete — download your dataset below</div>',
+            unsafe_allow_html=True,
+        )
         st.markdown('<div id="download"></div>', unsafe_allow_html=True)
-        st.subheader("Download")
+        st.markdown("#### Download")
 
         # v1.4.16: Quick data summary before download button
         _dl_meta = st.session_state.get("last_metadata", {}) or {}
@@ -8226,8 +8261,8 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
                 for check in quality_checks:
                     st.markdown(check)
 
-        st.divider()
-        st.subheader("Email (optional)")
+        st.markdown("")
+        st.markdown("#### Email *(optional)*")
 
         to_email = st.text_input("Send to email", value=st.session_state.get("send_to_email", ""))
         st.session_state["send_to_email"] = to_email

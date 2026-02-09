@@ -4,7 +4,7 @@ from __future__ import annotations
 Enhanced Simulation Engine for Behavioral Experiment Simulation Tool
 =============================================================================
 
-Version 1.4.10 - 3-provider LLM failover, deep persona variation, smart pool scaling
+Version 1.6.1 - Critical fixes, visual polish, heading consistency
 
 Advanced simulation engine with:
 - Theory-grounded persona library integration (7 persona dimensions)
@@ -45,7 +45,7 @@ This module is designed to run inside a `utils/` package (i.e., imported as
 """
 
 # Version identifier to help track deployed code
-__version__ = "1.6.0"  # v1.6.0: Modern stepper nav, progressive reveal
+__version__ = "1.6.1"  # v1.6.1: Critical fixes, visual polish
 
 # =============================================================================
 # SCIENTIFIC FOUNDATIONS FOR SIMULATION
