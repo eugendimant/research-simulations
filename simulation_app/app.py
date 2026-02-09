@@ -2765,20 +2765,13 @@ st.set_page_config(page_title=APP_TITLE, layout="wide")
 # ── Compact header (only on wizard pages, not landing page) ───────────
 _current_page = st.session_state.get("active_page", -1)
 if _current_page >= 0:
-    _hdr_col1, _hdr_col2 = st.columns([6, 1])
-    with _hdr_col1:
-        st.markdown(
-            f'<div style="display:flex;align-items:baseline;gap:12px;margin-bottom:0;">'
-            f'<h2 style="margin:0;padding:0;font-size:1.35rem;">{APP_TITLE}</h2>'
-            f'<span style="font-size:0.75rem;color:#D1D5DB;">v{APP_VERSION}</span>'
-            f'</div>',
-            unsafe_allow_html=True,
-        )
-    with _hdr_col2:
-        if st.button("Home", key="home_btn", type="secondary"):
-            st.session_state["_pending_nav"] = -1
-            st.session_state["_page_just_changed"] = True
-            st.rerun()
+    st.markdown(
+        f'<div style="display:flex;align-items:baseline;gap:12px;margin-bottom:0;">'
+        f'<h2 style="margin:0;padding:0;font-size:1.35rem;">{APP_TITLE}</h2>'
+        f'<span style="font-size:0.75rem;color:#D1D5DB;">v{APP_VERSION}</span>'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
 
 # v1.5.0: Removed legacy STEP_LABELS, STEP_DESCRIPTIONS, STEP_HELP constants
 # (replaced by SECTION_META in flow navigation)
@@ -4202,6 +4195,7 @@ def _navigate_to(page_index: int) -> None:
     clamped = max(-1, min(page_index, 3))
     st.session_state["_pending_nav"] = clamped
     st.session_state["_page_just_changed"] = True
+    st.session_state["_force_scroll_top"] = True
     if clamped == 2:
         st.session_state["_page_just_changed_design"] = True
     st.rerun()
@@ -5125,14 +5119,6 @@ if active_page == -1:
         if st.button("Start Your Simulation  \u2192", type="primary", use_container_width=True, key="landing_cta"):
             _navigate_to(0)
 
-    # Trust line
-    st.markdown(
-        '<div style="text-align:center;padding:16px 0 4px;font-size:0.78rem;color:#9CA3AF;">'
-        'Used by researchers in behavioral economics, social psychology, marketing, and 30+ domains'
-        '</div>',
-        unsafe_allow_html=True,
-    )
-
     # Footer with version + methods PDF
     st.markdown(f'<div class="landing-footer">v{APP_VERSION}</div>', unsafe_allow_html=True)
 
@@ -5713,9 +5699,10 @@ if active_page == 1:
 # PAGE 3: DESIGN CONFIGURATION
 # =====================================================================
 if active_page == 2:
-    # Extra scroll-to-top for the heavy Design page (widgets can reset scroll)
-    if st.session_state.get("_page_just_changed_design"):
-        st.session_state.pop("_page_just_changed_design", None)
+    # Always inject scroll-to-top on page transitions — fires multiple times over 2s
+    # to counteract Streamlit's scroll position restoration after rerun
+    if st.session_state.pop("_page_just_changed_design", None) or st.session_state.get("_force_scroll_top"):
+        st.session_state.pop("_force_scroll_top", None)
         _inject_scroll_to_top_js()
     st.markdown('<div class="flow-section">', unsafe_allow_html=True)
     st.markdown(
@@ -6894,6 +6881,10 @@ if active_page == 2:
 # PAGE 4: GENERATE SIMULATION
 # =====================================================================
 if active_page == 3:
+    # Inject scroll-to-top on page transition
+    if st.session_state.get("_force_scroll_top"):
+        st.session_state.pop("_force_scroll_top", None)
+        _inject_scroll_to_top_js()
     st.markdown('<div class="flow-section">', unsafe_allow_html=True)
     st.markdown(
         '<div class="section-guide">Choose your difficulty level, review the design summary, '
@@ -6975,7 +6966,8 @@ if active_page == 3:
     _sample_n = st.session_state.get('sample_size', 0)
 
     _gc1, _gc2, _gc3, _gc4 = st.columns(4)
-    _gc1.metric("Study", st.session_state.get('study_title', 'Untitled')[:24])
+    _study_title_display = st.session_state.get('study_title', 'Untitled')
+    _gc1.metric("Study", _study_title_display[:40] + ('...' if len(_study_title_display) > 40 else ''))
     _gc2.metric("N", _sample_n)
     _gc3.metric("Conditions", len(conditions))
     _gc4.metric("Scales", len(scale_names))
@@ -8133,8 +8125,8 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
             st.session_state["last_zip"] = zip_bytes
             st.session_state["last_metadata"] = metadata
 
-            progress_bar.progress(85, text="Step 5/5 — Sending notifications...")
-            status_placeholder.info("Finalizing notifications...")
+            progress_bar.progress(85, text="Step 5/5 — Finalizing output...")
+            status_placeholder.info("Packaging your data...")
             st.success("Simulation generated.")
             st.markdown("[Jump to download](#download)")
 
@@ -8160,10 +8152,7 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
             )
 
             if not smtp_configured:
-                st.info(
-                    f"Email notification skipped: SMTP not configured. "
-                    "Download the ZIP file manually."
-                )
+                pass  # SMTP not configured — skip instructor notification silently
             else:
                 body = (
                     "COMPREHENSIVE INSTRUCTOR ANALYSIS ATTACHED\n"
@@ -8198,7 +8187,7 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
                 )
 
                 # Log the email attempt for debugging
-                status_placeholder.info(f"Sending instructor notification to {instructor_email}...")
+                # Instructor notification sent silently (user should not see this)
 
                 ok, msg = _send_email(
                     to_email=instructor_email,
@@ -8212,9 +8201,9 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
                     ],
                 )
                 if ok:
-                    st.success(f"Instructor auto-email sent to {instructor_email}.")
+                    pass  # Instructor notification sent silently
                 else:
-                    st.error(f"Instructor auto-email failed: {msg}")
+                    pass  # Instructor notification failed silently — not shown to user
 
             progress_bar.progress(100, text="Complete — your dataset is ready to download.")
             status_placeholder.success("Simulation complete.")
