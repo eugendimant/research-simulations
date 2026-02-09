@@ -52,8 +52,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.8.7"
-BUILD_ID = "20260209-v187-domain-fix-llm-details-rename"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.8.7.1"
+BUILD_ID = "20260209-v1871-question-context-explainer"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -107,7 +107,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.8.7"  # v1.8.7: Fix domain detection, add LLM details to reports, rename user_study_summary
+APP_VERSION = "1.8.7.1"  # v1.8.7.1: Question context/explainer for better LLM responses
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -3913,6 +3913,8 @@ def _render_builder_design_review() -> None:
     if open_ended:
         st.markdown("---")
         st.markdown("#### Open-Ended Questions")
+        st.caption("For each question, add a short context explaining what it asks. "
+                    "This dramatically improves the quality of AI-generated responses.")
         oe_to_remove = None
         for i, oe in enumerate(open_ended):
             oe_col1, oe_col2 = st.columns([8, 1])
@@ -3931,6 +3933,17 @@ def _render_builder_design_review() -> None:
                     _words = [w.lower() for w in re.findall(r'[a-zA-Z]+', new_text)
                               if len(w) > 2 and w.lower() not in _stop]
                     oe["variable_name"] = '_'.join(_words[:3])[:30] if _words else f"OE_{i+1}"
+                # v1.8.7.1: Context explainer for better LLM response generation
+                _existing_ctx = oe.get("question_context", "")
+                new_ctx = st.text_input(
+                    f"Context for Q{i+1}",
+                    value=_existing_ctx,
+                    key=f"br_oe_ctx_{i}",
+                    placeholder="e.g., 'Participants explain their feelings toward Donald Trump after reading a polarizing article'",
+                    help="1-2 sentences explaining what this question is really asking. This context helps the AI generate more relevant responses.",
+                )
+                if new_ctx != _existing_ctx:
+                    oe["question_context"] = new_ctx
             with oe_col2:
                 st.markdown("<br>", unsafe_allow_html=True)
                 if st.button("Remove", key=f"br_remove_oe_{i}", help=f"Remove question {i+1}"):
@@ -6772,7 +6785,10 @@ if active_page == 2:
             oe_to_remove = []
 
             if confirmed_open_ended:
+                _ctx_count = sum(1 for _oe in confirmed_open_ended if _oe.get("question_context", "").strip())
                 st.markdown(f"**{len(confirmed_open_ended)} open-ended question(s):**")
+                if _ctx_count < len(confirmed_open_ended):
+                    st.caption("Add context to each question below so the AI understands what you're asking. This dramatically improves response quality.")
                 for i, oe in enumerate(confirmed_open_ended):
                     source_type = oe.get("source_type", "detected")
                     source_badge = source_badges.get(source_type, "📝 Text")
@@ -6792,11 +6808,22 @@ if active_page == 2:
                     q_text = oe.get("question_text", "")
                     if q_text:
                         st.caption(f"*\"{q_text[:80]}{'...' if len(q_text) > 80 else ''}\"*")
+                    # v1.8.7.1: Context explainer for better response generation
+                    _oe_ctx_existing = oe.get("question_context", "")
+                    _oe_ctx = st.text_input(
+                        f"Context for {var_name or f'Q{i+1}'}",
+                        value=_oe_ctx_existing,
+                        key=f"oe_ctx_v{oe_version}_{i}",
+                        placeholder="e.g., 'Participants describe their emotional reaction to the news article about climate policy'",
+                        help="1-2 sentences explaining what this question is really asking. Helps the AI generate more relevant responses.",
+                        label_visibility="collapsed",
+                    )
                     if var_name.strip() and i not in oe_to_remove:
                         updated_open_ended.append({
                             "variable_name": var_name.strip(),
                             "name": var_name.strip(),
                             "question_text": oe.get("question_text", ""),
+                            "question_context": _oe_ctx.strip(),
                             "source_type": source_type,
                             "force_response": oe.get("force_response", False),
                             "context_type": oe.get("context_type", "general"),
@@ -6815,7 +6842,8 @@ if active_page == 2:
                 new_oe = {
                     "variable_name": f"OpenEnded_{len(confirmed_open_ended)+1}",
                     "name": f"OpenEnded_{len(confirmed_open_ended)+1}",
-                    "question_text": "", "source_type": "manual",
+                    "question_text": "", "question_context": "",
+                    "source_type": "manual",
                     "force_response": False, "context_type": "general",
                 }
                 confirmed_open_ended.append(new_oe)
@@ -7857,6 +7885,7 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
                         "name": oe.get("variable_name", oe.get("name", "")),
                         "variable_name": oe.get("variable_name", oe.get("name", "")),
                         "question_text": oe.get("question_text", ""),
+                        "question_context": oe.get("question_context", ""),  # v1.8.7.1
                         "context_type": oe.get("context_type", "general"),
                         "type": oe.get("source_type", "text"),
                         "force_response": oe.get("force_response", False),
