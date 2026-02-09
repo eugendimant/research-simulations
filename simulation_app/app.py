@@ -4631,17 +4631,30 @@ section[data-testid="stSidebar"] .stCaption { line-height: 1.4; }
     .research-section { padding: 20px 16px; }
 }
 
-/* v1.8.7.4: Removed top-continue-banner, scroll-up-hint (scroll-up-first removed) */
+/* v1.8.7.6: Top continue button — subtle glow pulse to draw attention */
+@keyframes gentle-pulse {
+    0%, 100% { box-shadow: 0 2px 8px rgba(255,75,75,0.15); }
+    50% { box-shadow: 0 4px 18px rgba(255,75,75,0.38); }
+}
+/* Pulse on all primary buttons — they're always the main forward CTA */
+.stButton button[kind="primary"] {
+    animation: gentle-pulse 2.5s ease-in-out infinite;
+}
+.stButton button[kind="primary"]:hover {
+    animation: none !important;
+    transform: translateY(-3px) !important;
+    box-shadow: 0 6px 24px rgba(255,75,75,0.4) !important;
+}
 </style>"""
 
 
 def _render_flow_nav(active: int, done: List[bool]) -> None:
-    """Render modern segmented progress bar with step label.
+    """Render segmented progress bar, step label, and top Continue button.
 
     v1.8.0: Thin segmented bar replaces dots+lines stepper.
-    v1.8.7.4: Simplified — progress bar + label only.
-    Removed blue banner, invisible nav button row, and top continue button.
-    Navigation is handled entirely by bottom-of-page buttons.
+    v1.8.7.6: Top "Continue to [Next Step]" button restored for pages 1-2.
+    Users scroll to top via "Back to top" at the bottom, then proceed here.
+    Page 0 (Setup) uses a direct bottom button since it's short.
     """
     while len(done) < len(SECTION_META):
         done.append(False)
@@ -4668,8 +4681,20 @@ def _render_flow_nav(active: int, done: List[bool]) -> None:
         f' \u2014 <strong>{meta["title"]}</strong>{completion_text}</div>',
         unsafe_allow_html=True,
     )
-    # Clean up stale scroll-review flag (no longer used)
-    st.session_state.pop("_review_at_top", None)
+
+    # v1.8.7.6: Top "Continue" button for pages 1-2 when step is complete.
+    # This is the ONLY forward-navigation button — bottom has only "Back to top".
+    if active in (1, 2) and done[active]:
+        _next_step_name = SECTION_META[active + 1]["title"]
+        _spacer, _btn_col = st.columns([3, 2])
+        with _btn_col:
+            if st.button(
+                f"Continue to {_next_step_name} \u2192",
+                key=f"top_continue_{active}",
+                type="primary",
+                use_container_width=True,
+            ):
+                _navigate_to(active + 1)
 
 
 _SCROLL_TO_TOP_JS = """<script>
@@ -4733,32 +4758,6 @@ def _inject_scroll_to_top_js() -> None:
     _st_components.html(_SCROLL_TO_TOP_JS, height=0)
     st.markdown(_SCROLL_TO_TOP_INLINE, unsafe_allow_html=True)
 
-
-# v1.8.7.5: Pure-JS "Back to top" button for long pages.
-# Rendered via components.html so clicking it does NOT trigger st.rerun().
-# This avoids the re-initialization problem with _scroll_to_top_only().
-_BACK_TO_TOP_BUTTON_HTML = """
-<div style="text-align:center;padding:16px 0 4px 0;">
-  <button onclick="
-    var doc = window.parent.document;
-    doc.querySelectorAll('section.main,[data-testid=&quot;stAppViewContainer&quot;]').forEach(function(e){e.scrollTop=0;});
-    window.parent.scrollTo(0,0);
-    try{doc.documentElement.scrollTop=0;}catch(e){}
-    try{var f=doc.querySelector('.main .block-container > div:first-child,[data-testid=&quot;stVerticalBlock&quot;] > div:first-child');if(f)f.scrollIntoView({behavior:'smooth',block:'start'});}catch(e){}
-  " style="
-    background:none; border:1px solid #D1D5DB; border-radius:8px;
-    padding:8px 24px; cursor:pointer; font-size:0.84rem; color:#4B5563;
-    font-weight:500; transition:all 0.15s ease;
-  " onmouseover="this.style.background='#F9FAFB';this.style.borderColor='#9CA3AF';"
-     onmouseout="this.style.background='none';this.style.borderColor='#D1D5DB';"
-  >\u2191 Back to top</button>
-</div>
-"""
-
-
-def _render_back_to_top_button() -> None:
-    """Render a pure-JS scroll-to-top button (no Streamlit rerun)."""
-    _st_components.html(_BACK_TO_TOP_BUTTON_HTML, height=60)
 
 
 # v1.7.0: Restore persisted widget values EARLY — before sidebar or any code
@@ -5810,24 +5809,24 @@ if active_page == 1:
         if selected_conditions:
             st.success(f"✓ Conditions: {', '.join(selected_conditions)}")
 
-    # v1.8.7.4: Direct navigation — no scroll-up-first (caused re-initialization)
+    # v1.8.7.6: Bottom nav — back button + "Back to top" only.
+    # Forward navigation is at the TOP via _render_flow_nav() so users
+    # must scroll up first to confirm their edits before proceeding.
     if step2_done:
         st.markdown(
-            '<div class="section-done-banner">\u2713 Study input complete</div>',
+            '<div class="section-done-banner">\u2713 Study input complete \u2014 scroll up to continue</div>',
             unsafe_allow_html=True,
         )
 
-    _nav_left1, _nav_right1 = st.columns([1, 1])
+    st.markdown("---")
+    _nav_left1, _nav_btt1 = st.columns([1, 1])
     with _nav_left1:
         if st.button("\u2190 Setup", key="back_1", type="secondary"):
             _navigate_to(0)
-    with _nav_right1:
-        if step2_done:
-            if st.button("Continue to Design \u2192", key="auto_advance_1", type="primary", use_container_width=True):
-                _navigate_to(2)
-
-    # v1.8.7.5: Pure-JS "Back to top" — no rerun, no re-initialization
-    _render_back_to_top_button()
+    with _nav_btt1:
+        if st.button("\u2191 Back to top", key="back_to_top_1", type="secondary", use_container_width=True):
+            st.session_state["_force_scroll_top"] = True
+            st.rerun()
 
     st.markdown('</div>', unsafe_allow_html=True)
 
@@ -7015,25 +7014,25 @@ if active_page == 2:
                     )
                     st.session_state["variable_review_rows"] = variable_df.to_dict(orient="records")
 
-    # ── Bottom navigation (v1.8.7.4: direct navigate, no scroll-up-first) ──
+    # v1.8.7.6: Bottom nav — back button + "Back to top" only.
+    # Forward navigation is at the TOP via _render_flow_nav() so users
+    # must scroll up first to confirm their edits before proceeding.
     _design_can_next = bool(st.session_state.get("inferred_design"))
     if _design_can_next:
         st.markdown(
-            '<div class="section-done-banner">\u2713 Design configured</div>',
+            '<div class="section-done-banner">\u2713 Design configured \u2014 scroll up to continue</div>',
             unsafe_allow_html=True,
         )
 
-    _nav_left2, _nav_right2 = st.columns([1, 1])
+    st.markdown("---")
+    _nav_left2, _nav_btt2 = st.columns([1, 1])
     with _nav_left2:
         if st.button("\u2190 Study Input", key="back_2", type="secondary"):
             _navigate_to(1)
-    with _nav_right2:
-        if _design_can_next:
-            if st.button("Continue to Generate \u2192", key="auto_advance_2", type="primary", use_container_width=True):
-                _navigate_to(3)
-
-    # v1.8.7.5: Pure-JS "Back to top" — no rerun, no re-initialization
-    _render_back_to_top_button()
+    with _nav_btt2:
+        if st.button("\u2191 Back to top", key="back_to_top_2", type="secondary", use_container_width=True):
+            st.session_state["_force_scroll_top"] = True
+            st.rerun()
 
     st.markdown('</div>', unsafe_allow_html=True)
 
