@@ -6,7 +6,7 @@ Generates comprehensive instructor-facing reports for student simulations.
 """
 
 # Version identifier to help track deployed code
-__version__ = "1.5.0"  # v1.5.0: Modern flow navigation, HTML leak fix
+__version__ = "1.6.0"  # v1.6.0: Modern stepper nav, progressive reveal
 
 from dataclasses import dataclass
 from datetime import datetime
