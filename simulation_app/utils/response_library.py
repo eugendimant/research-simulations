@@ -60,10 +60,10 @@ introspection, memory, experience, recall, opinion, belief, preference, attitude
 value, worldview, prediction, intention, suggestion, recommendation, advice,
 association, impression, perception, feedback, comment, observation, general
 
-Version: 1.2.2 - New tab-based UI
+Version: 1.8.5 - Improved domain detection with weighted scoring and disambiguation
 """
 
-__version__ = "1.8.4"
+__version__ = "1.8.7"
 
 import random
 import re
@@ -4517,29 +4517,443 @@ DOMAIN_KEYWORDS: Dict[StudyDomain, List[str]] = {
 }
 
 
+# ============================================================================
+# COMPOUND DOMAIN PHRASES - High-confidence multi-word indicators
+# ============================================================================
+# These phrases are strong domain signals. When found, they receive very high
+# scores (10 points) to ensure the correct domain wins over incidental keyword
+# matches from other domains.
+
+COMPOUND_DOMAIN_PHRASES: Dict[StudyDomain, List[str]] = {
+    # Political Science - compound phrases that strongly indicate political content
+    StudyDomain.POLITICAL: [
+        'political polarization', 'political attitudes', 'political ideology',
+        'political beliefs', 'political identity', 'political behavior',
+        'political engagement', 'political participation', 'political opinion',
+        'political discourse', 'political communication', 'political psychology',
+        'political preferences', 'political affiliation', 'political orientation',
+        'political views', 'political climate', 'political division',
+    ],
+    StudyDomain.POLARIZATION: [
+        'political polarization', 'partisan polarization', 'ideological polarization',
+        'affective polarization', 'attitude polarization', 'group polarization',
+        'opinion polarization', 'polarized attitudes', 'increasingly divided',
+        'partisan divide', 'ideological divide', 'political divide',
+    ],
+    StudyDomain.PARTISANSHIP: [
+        'partisan identity', 'party identification', 'partisan bias',
+        'party loyalty', 'partisan media', 'cross-party', 'bipartisan',
+    ],
+    StudyDomain.MISINFORMATION: [
+        'fake news', 'misinformation spread', 'fact checking', 'false information',
+        'news credibility', 'media literacy', 'information accuracy',
+        'misinformation belief', 'conspiracy theory', 'debunking myths',
+    ],
+
+    # Consumer/Marketing - compound phrases for consumer studies
+    StudyDomain.CONSUMER: [
+        'consumer trust', 'consumer behavior', 'consumer attitudes',
+        'consumer preferences', 'consumer decision', 'consumer perception',
+        'consumer confidence', 'buying behavior', 'purchase behavior',
+        'consumer choice', 'consumer experience', 'consumer research',
+        'consumer psychology', 'consumer response', 'consumer willingness',
+    ],
+    StudyDomain.BRAND: [
+        'brand trust', 'brand perception', 'brand awareness', 'brand loyalty',
+        'brand attitude', 'brand preference', 'brand image',
+    ],
+    StudyDomain.ADVERTISING: [
+        'advertising effectiveness', 'ad exposure', 'marketing message',
+        'promotional content', 'advertising appeal', 'ad credibility',
+    ],
+    StudyDomain.PRODUCT_EVALUATION: [
+        'product quality', 'product review', 'product rating', 'product trust',
+        'product label', 'product information', 'product evaluation',
+    ],
+
+    # Technology/AI - compound phrases specific to tech-as-subject studies
+    StudyDomain.AI_ATTITUDES: [
+        'artificial intelligence attitudes', 'ai ethics', 'ai trust',
+        'ai adoption', 'trust in ai', 'ai decision making', 'ai bias',
+        'ai fairness', 'ai transparency', 'ai regulation', 'ai governance',
+        'ai anxiety', 'ai literacy', 'autonomous vehicle', 'self-driving car',
+        'robot interaction', 'ai-generated', 'machine learning model',
+    ],
+    StudyDomain.HUMAN_AI_INTERACTION: [
+        'human-ai interaction', 'human ai interaction', 'human-robot interaction',
+        'chatbot interaction', 'virtual assistant use', 'ai assistant',
+        'conversational agent', 'talk to robot',
+    ],
+
+    # Behavioral Economics
+    StudyDomain.BEHAVIORAL_ECONOMICS: [
+        'behavioral economics', 'economic decision', 'economic game',
+        'experimental economics', 'economic behavior',
+    ],
+    StudyDomain.DICTATOR_GAME: [
+        'dictator game', 'allocation decision', 'give or keep',
+    ],
+    StudyDomain.TRUST_GAME: [
+        'trust game', 'investment game', 'send and return',
+    ],
+    StudyDomain.PROSOCIAL: [
+        'prosocial behavior', 'prosocial motivation', 'helping behavior',
+        'charitable giving', 'altruistic behavior', 'dictator game',
+    ],
+
+    # Clinical Psychology
+    StudyDomain.CLINICAL: [
+        'clinical psychology', 'psychological treatment', 'clinical intervention',
+        'clinical trial', 'clinical assessment', 'mental health treatment',
+    ],
+    StudyDomain.ANXIETY: [
+        'anxiety disorder', 'anxiety symptoms', 'anxiety treatment',
+        'generalized anxiety', 'social anxiety', 'anxiety intervention',
+        'mindfulness for anxiety', 'anxiety reduction', 'anxiety management',
+    ],
+    StudyDomain.DEPRESSION: [
+        'major depression', 'depressive symptoms', 'depression treatment',
+        'clinical depression', 'depression intervention',
+    ],
+    StudyDomain.THERAPY_ATTITUDES: [
+        'therapy attitudes', 'therapy seeking', 'mental health treatment',
+        'counseling attitudes', 'psychotherapy attitudes',
+        'mindfulness intervention', 'mindfulness-based',
+    ],
+
+    # Social Psychology
+    StudyDomain.INTERGROUP: [
+        'intergroup relations', 'intergroup conflict', 'intergroup bias',
+        'intergroup contact', 'us versus them', 'outgroup attitudes',
+    ],
+    StudyDomain.SOCIAL_INFLUENCE: [
+        'social influence', 'social pressure', 'social proof', 'peer influence',
+    ],
+
+    # Health Psychology
+    StudyDomain.HEALTH: [
+        'health behavior', 'health outcomes', 'health intervention',
+        'public health', 'health promotion', 'health education',
+    ],
+    StudyDomain.MENTAL_HEALTH: [
+        'mental health', 'psychological wellbeing', 'emotional wellbeing',
+        'mental wellness', 'mental health awareness', 'mental health stigma',
+    ],
+    StudyDomain.WELLBEING: [
+        'subjective wellbeing', 'psychological wellbeing', 'life satisfaction',
+        'quality of life', 'emotional wellbeing',
+    ],
+
+    # Education
+    StudyDomain.EDUCATION: [
+        'educational intervention', 'learning outcomes', 'educational psychology',
+        'student learning', 'academic performance',
+    ],
+
+    # Environmental
+    StudyDomain.ENVIRONMENTAL: [
+        'environmental attitudes', 'environmental behavior', 'climate change',
+        'environmental concern', 'environmental policy',
+    ],
+    StudyDomain.CLIMATE_ATTITUDES: [
+        'climate change', 'global warming', 'climate attitudes', 'climate policy',
+        'climate action', 'carbon footprint',
+    ],
+}
+
+
+# ============================================================================
+# DOMAIN NEGATIVE KEYWORDS - Prevent misidentification
+# ============================================================================
+# When these keywords are present alongside a domain's positive keywords,
+# they indicate the text is NOT primarily about that domain. Each entry maps
+# a domain to keywords that, when co-occurring with domain keywords, should
+# reduce confidence in that domain assignment.
+
+DOMAIN_NEGATIVE_KEYWORDS: Dict[StudyDomain, List[str]] = {
+    # Technology/AI should NOT match when the study is primarily about:
+    StudyDomain.AI_ATTITUDES: [
+        'political polarization', 'partisan', 'voting behavior', 'election',
+        'political attitudes', 'political ideology', 'democrat', 'republican',
+        'dictator game', 'ultimatum game', 'public goods game',
+        'prosocial behavior', 'charitable giving',
+        'mindfulness intervention', 'anxiety treatment', 'therapy',
+        'clinical trial', 'depression treatment',
+    ],
+    StudyDomain.AUTOMATION: [
+        'political polarization', 'partisan', 'voting behavior',
+        'dictator game', 'prosocial behavior',
+    ],
+    StudyDomain.ALGORITHM_AVERSION: [
+        'political polarization', 'partisan', 'voting behavior',
+    ],
+
+    # Political domains should NOT match for pure tech/AI studies
+    StudyDomain.POLITICAL: [
+        'autonomous vehicle', 'self-driving', 'robot interaction',
+        'chatbot', 'neural network', 'machine learning model',
+        'deep learning', 'language model',
+    ],
+
+    # Social Psychology TRUST should not override political trust or consumer trust
+    StudyDomain.TRUST: [
+        'autonomous vehicle', 'self-driving', 'ai system',
+    ],
+
+    # Consumer/Marketing should not match for political studies
+    StudyDomain.CONSUMER: [
+        'political polarization', 'partisan divide', 'voting behavior',
+        'political ideology', 'election outcome',
+    ],
+
+    # Clinical should not match for general health behavior studies
+    StudyDomain.CLINICAL: [
+        'consumer behavior', 'product evaluation', 'brand loyalty',
+        'purchase intent', 'advertising',
+    ],
+}
+
+
+# ============================================================================
+# DOMAIN CATEGORY GROUPS - For priority ordering
+# ============================================================================
+# Maps high-level categories to their constituent domains. When a category
+# accumulates enough signal, its domains get a priority boost.
+
+DOMAIN_CATEGORIES: Dict[str, List[StudyDomain]] = {
+    'political_science': [
+        StudyDomain.POLITICAL, StudyDomain.POLARIZATION, StudyDomain.PARTISANSHIP,
+        StudyDomain.VOTING, StudyDomain.MEDIA, StudyDomain.POLICY_ATTITUDES,
+        StudyDomain.CIVIC_ENGAGEMENT, StudyDomain.POLITICAL_TRUST,
+        StudyDomain.IDEOLOGY, StudyDomain.MISINFORMATION,
+    ],
+    'consumer_marketing': [
+        StudyDomain.CONSUMER, StudyDomain.BRAND, StudyDomain.ADVERTISING,
+        StudyDomain.PRODUCT_EVALUATION, StudyDomain.PURCHASE_INTENT,
+        StudyDomain.BRAND_LOYALTY, StudyDomain.PRICE_PERCEPTION,
+        StudyDomain.SERVICE_QUALITY, StudyDomain.CUSTOMER_SATISFACTION,
+        StudyDomain.WORD_OF_MOUTH,
+    ],
+    'technology_ai': [
+        StudyDomain.TECHNOLOGY, StudyDomain.AI_ATTITUDES, StudyDomain.PRIVACY,
+        StudyDomain.AUTOMATION, StudyDomain.ALGORITHM_AVERSION,
+        StudyDomain.TECHNOLOGY_ADOPTION, StudyDomain.SOCIAL_MEDIA,
+        StudyDomain.DIGITAL_WELLBEING, StudyDomain.HUMAN_AI_INTERACTION,
+        StudyDomain.CYBERSECURITY,
+    ],
+    'behavioral_economics': [
+        StudyDomain.BEHAVIORAL_ECONOMICS, StudyDomain.DICTATOR_GAME,
+        StudyDomain.PUBLIC_GOODS, StudyDomain.TRUST_GAME,
+        StudyDomain.ULTIMATUM_GAME, StudyDomain.PRISONERS_DILEMMA,
+        StudyDomain.RISK_PREFERENCE, StudyDomain.TIME_PREFERENCE,
+        StudyDomain.LOSS_AVERSION, StudyDomain.FRAMING_EFFECTS,
+        StudyDomain.ANCHORING, StudyDomain.SUNK_COST,
+    ],
+    'clinical_psychology': [
+        StudyDomain.CLINICAL, StudyDomain.ANXIETY, StudyDomain.DEPRESSION,
+        StudyDomain.COPING, StudyDomain.THERAPY_ATTITUDES, StudyDomain.STRESS,
+    ],
+    'social_psychology': [
+        StudyDomain.SOCIAL_PSYCHOLOGY, StudyDomain.INTERGROUP,
+        StudyDomain.IDENTITY, StudyDomain.NORMS, StudyDomain.CONFORMITY,
+        StudyDomain.PROSOCIAL, StudyDomain.TRUST, StudyDomain.FAIRNESS,
+        StudyDomain.COOPERATION, StudyDomain.SOCIAL_INFLUENCE,
+        StudyDomain.ATTRIBUTION, StudyDomain.STEREOTYPE,
+        StudyDomain.PREJUDICE, StudyDomain.SELF_ESTEEM, StudyDomain.EMPATHY,
+    ],
+    'health_psychology': [
+        StudyDomain.HEALTH, StudyDomain.MEDICAL_DECISION, StudyDomain.WELLBEING,
+        StudyDomain.HEALTH_BEHAVIOR, StudyDomain.MENTAL_HEALTH,
+        StudyDomain.VACCINATION, StudyDomain.PAIN_MANAGEMENT,
+        StudyDomain.HEALTH_ANXIETY, StudyDomain.PATIENT_PROVIDER,
+        StudyDomain.CHRONIC_ILLNESS,
+    ],
+}
+
+
+def _keyword_matches(keyword: str, text: str) -> bool:
+    """Check if a keyword matches in text, using word boundaries for short keywords.
+
+    Short keywords (< 4 characters) like 'ai', 'ad', 'ux' are matched with
+    word boundary checks to prevent false positives (e.g., 'ai' matching
+    inside 'certain', 'explain', 'contain').
+
+    Longer keywords use simple substring matching since they are specific
+    enough to avoid false positives.
+    """
+    if len(keyword) < 4:
+        # Word boundary matching for short keywords to prevent false positives
+        pattern = r'\b' + re.escape(keyword) + r'\b'
+        return bool(re.search(pattern, text))
+    else:
+        return keyword in text
+
+
+def _keyword_score(keyword: str) -> float:
+    """Score a keyword match based on its specificity.
+
+    Multi-word phrases are more specific signals than single words.
+    Longer phrases indicate stronger domain affinity.
+
+    Weighted scoring system:
+    - Compound phrases (2+ words): 5.0 points (domain-specific, e.g., 'political polarization')
+    - 3+ word phrases: 7.0 points (very specific, e.g., 'fundamental attribution error')
+    - Domain-unique single keyword (6+ chars): 2.0 points (e.g., 'polarization')
+    - Generic/common single keyword (< 6 chars): 1.0 point (e.g., 'trust', 'bias')
+    """
+    word_count = len(keyword.split())
+    if word_count >= 3:
+        return 7.0
+    elif word_count == 2:
+        return 5.0
+    elif len(keyword) >= 6:
+        return 2.0
+    else:
+        return 1.0
+
+
+def _score_text_for_domain(
+    text: str,
+    domain: StudyDomain,
+    keywords: List[str],
+    multiplier: float = 1.0,
+) -> float:
+    """Score a text segment for a given domain with an optional multiplier.
+
+    Args:
+        text: The lowercased text to search in.
+        domain: The domain being scored.
+        keywords: The keyword list from DOMAIN_KEYWORDS.
+        multiplier: Score multiplier (e.g., 3.0 for title text).
+
+    Returns:
+        Weighted score for this domain in this text segment.
+    """
+    score = 0.0
+    for kw in keywords:
+        if _keyword_matches(kw, text):
+            score += _keyword_score(kw) * multiplier
+    return score
+
+
 def detect_study_domain(study_context: Dict[str, Any], question_text: str) -> StudyDomain:
-    """Detect the most appropriate domain for response generation."""
-    # Combine all available context
-    all_text = []
+    """Detect the most appropriate domain for response generation.
+
+    Uses a 5-layer scoring system for accurate domain identification:
+
+    1. Title-weighted compound phrase matching (10 pts * 3x in title)
+       - Multi-word phrases like 'political polarization' are the strongest signals
+    2. Title-weighted keyword matching (1-7 pts * 3x in title)
+       - Keywords found in the study title score 3x those in the description
+    3. Negative keyword penalties (-3 pts each)
+       - Prevent misidentification when contextual clues exclude a domain
+    4. Category-level boosting
+       - Multiple sibling domains scoring strengthens the category signal
+    5. Tie-breaking by domain specificity
+       - Prefer more specific domains (e.g., POLARIZATION over POLITICAL)
+
+    Short keywords (< 4 chars) use word-boundary matching to avoid false
+    positives (e.g., 'ai' matching inside 'certain', 'explain', etc.).
+    """
+    # --- Extract title and description separately for differential weighting ---
+    title_text = ''
+    description_parts: List[str] = []
 
     if study_context:
-        all_text.append(study_context.get('survey_name', ''))
-        all_text.extend(study_context.get('topics', []))
-        all_text.append(study_context.get('instructions_text', ''))
-        all_text.extend(study_context.get('main_questions', []))
+        # Survey name / study title gets 3x weight
+        title_text = str(study_context.get('survey_name', '')).lower()
+        # Topics also get elevated weight (treated as title-level)
+        topics = study_context.get('topics', [])
+        if topics:
+            title_text += ' ' + ' '.join(str(t) for t in topics).lower()
+        # Instructions and questions are description-level (1x weight)
+        instructions = str(study_context.get('instructions_text', '')).lower()
+        if instructions:
+            description_parts.append(instructions)
+        main_questions = study_context.get('main_questions', [])
+        if main_questions:
+            description_parts.append(' '.join(str(q) for q in main_questions).lower())
 
-    all_text.append(question_text)
-    combined = ' '.join(str(t) for t in all_text).lower()
+    question_lower = str(question_text).lower()
+    description_parts.append(question_lower)
+    description_text = ' '.join(description_parts)
 
-    # Score each domain
-    domain_scores: Dict[StudyDomain, int] = {}
+    # Full combined text for compound phrase and negative keyword checks
+    combined = (title_text + ' ' + description_text).strip()
+
+    # --- Layer 1: Compound phrase matching (highest priority) ---
+    # Compound phrases score 10 pts each, 3x if found in title
+    domain_scores: Dict[StudyDomain, float] = {}
+    for domain, phrases in COMPOUND_DOMAIN_PHRASES.items():
+        for phrase in phrases:
+            if phrase in title_text:
+                domain_scores[domain] = domain_scores.get(domain, 0.0) + 30.0  # 10 * 3x
+            elif phrase in combined:
+                domain_scores[domain] = domain_scores.get(domain, 0.0) + 10.0
+
+    # --- Layer 2: Title-weighted keyword matching ---
+    # Keywords in title get 3x multiplier; keywords in description get 1x
     for domain, keywords in DOMAIN_KEYWORDS.items():
-        score = sum(1 for kw in keywords if kw in combined)
-        if score > 0:
-            domain_scores[domain] = score
+        title_score = _score_text_for_domain(title_text, domain, keywords, multiplier=3.0)
+        desc_score = _score_text_for_domain(description_text, domain, keywords, multiplier=1.0)
+        total = title_score + desc_score
+        if total > 0:
+            domain_scores[domain] = domain_scores.get(domain, 0.0) + total
 
     if not domain_scores:
         return StudyDomain.GENERAL
+
+    # --- Layer 3: Negative keyword penalties ---
+    # Each negative keyword match reduces domain score by 3 pts
+    for domain, neg_keywords in DOMAIN_NEGATIVE_KEYWORDS.items():
+        if domain in domain_scores:
+            penalty = 0.0
+            for neg_kw in neg_keywords:
+                if neg_kw in combined:
+                    penalty += 3.0
+            if penalty > 0:
+                domain_scores[domain] = max(0.0, domain_scores[domain] - penalty)
+                if domain_scores[domain] <= 0:
+                    del domain_scores[domain]
+
+    if not domain_scores:
+        return StudyDomain.GENERAL
+
+    # --- Layer 4: Category-level boosting ---
+    # When 2+ domains in the same category score, boost all domains in that
+    # category by 20% per additional scoring sibling. This helps political
+    # studies where POLITICAL + POLARIZATION both score to outrank a single
+    # AI_ATTITUDES domain that accumulated incidental keyword matches.
+    for _cat_name, cat_domains in DOMAIN_CATEGORIES.items():
+        scoring_siblings = [d for d in cat_domains if d in domain_scores]
+        if len(scoring_siblings) >= 2:
+            boost_factor = 1.0 + (len(scoring_siblings) - 1) * 0.2
+            for d in scoring_siblings:
+                domain_scores[d] *= boost_factor
+
+    # --- Layer 5: Tie-breaking by domain specificity ---
+    # When scores are very close (within 5%), prefer the more specific domain.
+    # Specific domains (sub-domains) are preferred over broad parent domains.
+    # This prevents POLITICAL from beating POLARIZATION when both score similarly.
+    top_score = max(domain_scores.values())
+    threshold = top_score * 0.95  # Within 5%
+    top_candidates = {d: s for d, s in domain_scores.items() if s >= threshold}
+
+    if len(top_candidates) > 1:
+        # Among near-tied candidates, prefer sub-domains (those with more
+        # specific keywords). Use the compound phrase count as a proxy for
+        # specificity -- domains with compound phrase matches are more specific.
+        def _specificity_key(item: Tuple[StudyDomain, float]) -> Tuple[float, int]:
+            domain, score = item
+            compound_count = 0
+            if domain in COMPOUND_DOMAIN_PHRASES:
+                for phrase in COMPOUND_DOMAIN_PHRASES[domain]:
+                    if phrase in combined:
+                        compound_count += 1
+            # Sort by (score, compound_count) descending
+            return (score, compound_count)
+
+        return max(top_candidates.items(), key=_specificity_key)[0]
 
     # Return domain with highest score
     return max(domain_scores.items(), key=lambda x: x[1])[0]
@@ -5617,4 +6031,7 @@ __all__ = [
     'detect_study_domain',
     'DOMAIN_TEMPLATES',
     'DOMAIN_KEYWORDS',
+    'COMPOUND_DOMAIN_PHRASES',
+    'DOMAIN_NEGATIVE_KEYWORDS',
+    'DOMAIN_CATEGORIES',
 ]
