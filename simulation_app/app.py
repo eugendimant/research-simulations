@@ -52,8 +52,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.8.1"
-BUILD_ID = "20260209-v181-visual-polish"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.8.2"
+BUILD_ID = "20260209-v182-ux-sidebar-polish"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -107,7 +107,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.8.1"  # v1.8.1: Visual polish — premium CSS, animated landing, compact header
+APP_VERSION = "1.8.2"  # v1.8.2: UX polish — home button, CTA styling, sidebar cleanup
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -2765,13 +2765,20 @@ st.set_page_config(page_title=APP_TITLE, layout="wide")
 # ── Compact header (only on wizard pages, not landing page) ───────────
 _current_page = st.session_state.get("active_page", -1)
 if _current_page >= 0:
-    st.markdown(
-        f'<div style="display:flex;align-items:baseline;gap:12px;margin-bottom:4px;">'
-        f'<h2 style="margin:0;padding:0;">{APP_TITLE}</h2>'
-        f'<span style="font-size:0.78rem;color:#9CA3AF;">v{APP_VERSION}</span>'
-        f'</div>',
-        unsafe_allow_html=True,
-    )
+    _hdr_col1, _hdr_col2 = st.columns([6, 1])
+    with _hdr_col1:
+        st.markdown(
+            f'<div style="display:flex;align-items:baseline;gap:12px;margin-bottom:0;">'
+            f'<h2 style="margin:0;padding:0;font-size:1.35rem;">{APP_TITLE}</h2>'
+            f'<span style="font-size:0.75rem;color:#D1D5DB;">v{APP_VERSION}</span>'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+    with _hdr_col2:
+        if st.button("Home", key="home_btn", type="secondary"):
+            st.session_state["_pending_nav"] = -1
+            st.session_state["_page_just_changed"] = True
+            st.rerun()
 
 # v1.5.0: Removed legacy STEP_LABELS, STEP_DESCRIPTIONS, STEP_HELP constants
 # (replaced by SECTION_META in flow navigation)
@@ -4362,13 +4369,12 @@ section[data-testid="stSidebar"] .stCaption { line-height: 1.4; }
     animation: cardsSlideUp 0.6s ease-out 0.3s both;
 }
 .how-it-works h3 {
-    font-size: 1.05rem;
+    font-size: 0.78rem;
     font-weight: 600;
     color: #374151;
     margin: 0 0 24px 0;
     text-transform: uppercase;
     letter-spacing: 0.06em;
-    font-size: 0.78rem;
 }
 .hiw-steps {
     display: flex;
@@ -4589,6 +4595,18 @@ section[data-testid="stSidebar"] .stCaption { line-height: 1.4; }
 .feedback-bar a { color: #6B7280; text-decoration: none; }
 .feedback-bar a:hover { color: #FF4B4B; }
 
+/* ─── Wizard page nav buttons ─── */
+.stButton button[kind="secondary"] {
+    border-radius: 8px !important;
+    font-size: 0.85rem !important;
+    transition: all 0.15s ease !important;
+}
+.stButton button[kind="primary"] {
+    border-radius: 8px !important;
+    font-size: 0.85rem !important;
+    transition: all 0.15s ease !important;
+}
+
 /* ─── Responsive ─── */
 @media (max-width: 768px) {
     .feature-grid { grid-template-columns: 1fr; }
@@ -4696,31 +4714,37 @@ for _pk in ["study_title", "study_description", "team_name", "team_members_raw"]
         st.session_state[_pk] = _saved_val
 
 with st.sidebar:
+    # Mini brand
+    st.markdown(
+        f'<div style="font-size:0.82rem;font-weight:600;color:#374151;padding:0 0 4px 0;">'
+        f'{APP_TITLE}</div>',
+        unsafe_allow_html=True,
+    )
+
     advanced_mode = st.toggle("Advanced mode", value=st.session_state.get("advanced_mode", False))
     st.session_state["advanced_mode"] = advanced_mode
     st.caption(
-        "Unlocks demographics, exclusions, and effect size controls."
-        if not advanced_mode else
         "Full control over demographics, exclusions, and effect sizes."
+        if advanced_mode else
+        "Unlocks demographics, exclusions, and effect size controls."
     )
 
-    # v1.6.0: Cleaner study snapshot — table-like layout
     st.divider()
+
+    # Study snapshot
+    title = st.session_state.get('study_title') or st.session_state.get('_p_study_title', '') or ''
+    sample_size = st.session_state.get('sample_size', 0)
     snapshot_conditions = st.session_state.get("selected_conditions") or []
     snapshot_conditions = snapshot_conditions + st.session_state.get("custom_conditions", [])
     snapshot_conditions = list(dict.fromkeys([c for c in snapshot_conditions if str(c).strip()]))
     inferred = st.session_state.get("inferred_design", {})
     snapshot_scales = inferred.get("scales", [])
 
-    title = st.session_state.get('study_title') or st.session_state.get('_p_study_title', '') or ''
-    sample_size = st.session_state.get('sample_size', 0)
-
     if title:
         st.markdown(f"**{title[:48]}{'...' if len(title) > 48 else ''}**")
     else:
         st.caption("No study configured yet")
 
-    # Compact key metrics
     detected_factors = _infer_factors_from_conditions(snapshot_conditions) if snapshot_conditions else []
     if len(detected_factors) == 2:
         f1_levels = len(detected_factors[0].get("levels", []))
@@ -4749,32 +4773,24 @@ with st.sidebar:
     for _sl in _snapshot_lines:
         st.caption(_sl)
 
-    # v1.8.0: Removed sidebar progress bar and step status — segmented bar handles this
-
-    # Start Over button with two-step confirmation
+    # Start Over — compact
     st.divider()
     _confirm_reset = st.session_state.get("_confirm_reset", False)
     if not _confirm_reset:
-        if st.button("🔄 Start Over", key="start_over_btn", use_container_width=True, type="secondary"):
+        if st.button("Start Over", key="start_over_btn", use_container_width=True, type="secondary"):
             st.session_state["_confirm_reset"] = True
             _navigate_to(-1)
-        st.caption("Clear all entries and start fresh")
     else:
-        st.warning("Are you sure? This will clear all your entries and uploaded files.")
+        st.warning("Clear all entries and start fresh?")
         _c1, _c2 = st.columns(2)
         with _c1:
-            if st.button("Yes, clear everything", key="confirm_reset_yes", use_container_width=True, type="primary"):
-                # v1.4.13: Use pending pattern — set flag then rerun.
-                # The handler at the top of the script clears all state
-                # BEFORE any widgets render, so fields appear empty.
+            if st.button("Yes, clear", key="confirm_reset_yes", use_container_width=True, type="primary"):
                 st.session_state["_pending_reset"] = True
                 _navigate_to(-1)
         with _c2:
             if st.button("Cancel", key="confirm_reset_no", use_container_width=True):
                 st.session_state["_confirm_reset"] = False
                 _navigate_to(-1)
-
-    # v1.4.16: Removed dead benchmark code (~160 lines) that was permanently disabled
 
 
 # v1.4.14: Pending reset handler — MUST run before ANY widgets render.
@@ -4995,6 +5011,19 @@ if active_page == -1:
     st.markdown("""<style>
         section[data-testid="stSidebar"] { display: none; }
         section.main .block-container { max-width: 1000px; }
+        /* Landing page CTA button styling */
+        [data-testid="stButton"] button[kind="primary"] {
+            font-size: 1.05rem !important;
+            padding: 12px 32px !important;
+            border-radius: 10px !important;
+            font-weight: 600 !important;
+            letter-spacing: 0.01em !important;
+            transition: all 0.2s ease !important;
+        }
+        [data-testid="stButton"] button[kind="primary"]:hover {
+            transform: translateY(-1px) !important;
+            box-shadow: 0 4px 12px rgba(255,75,75,0.3) !important;
+        }
     </style>""", unsafe_allow_html=True)
 
     # Hero
@@ -5034,6 +5063,8 @@ if active_page == -1:
         unsafe_allow_html=True,
     )
 
+    st.markdown('<div style="max-width:780px;margin:0 auto;padding:0 20px;"><hr style="border:none;border-top:1px solid #F3F4F6;margin:0;"></div>', unsafe_allow_html=True)
+
     # How it works — with improved step descriptions
     st.markdown(
         '<div class="how-it-works">'
@@ -5058,6 +5089,8 @@ if active_page == -1:
         unsafe_allow_html=True,
     )
 
+    st.markdown('<div style="max-width:780px;margin:0 auto;padding:0 20px;"><hr style="border:none;border-top:1px solid #F3F4F6;margin:0;"></div>', unsafe_allow_html=True)
+
     # Research foundations
     st.markdown(
         '<div class="research-section">'
@@ -5074,11 +5107,29 @@ if active_page == -1:
         unsafe_allow_html=True,
     )
 
+    # Use cases summary
+    st.markdown(
+        '<div style="text-align:center;max-width:600px;margin:0 auto 24px;padding:0 20px;">'
+        '<p style="font-size:0.88rem;color:#6B7280;line-height:1.6;margin:0;">'
+        'Whether you\'re piloting a behavioral economics experiment, '
+        'teaching research methods, or pre-testing a clinical trial survey — '
+        'generate your complete data package in minutes.</p></div>',
+        unsafe_allow_html=True,
+    )
+
     # CTA
     _cta_col1, _cta_col2, _cta_col3 = st.columns([1, 2, 1])
     with _cta_col2:
         if st.button("Start Your Simulation  \u2192", type="primary", use_container_width=True, key="landing_cta"):
             _navigate_to(0)
+
+    # Trust line
+    st.markdown(
+        '<div style="text-align:center;padding:16px 0 4px;font-size:0.78rem;color:#9CA3AF;">'
+        'Used by researchers in behavioral economics, social psychology, marketing, and 30+ domains'
+        '</div>',
+        unsafe_allow_html=True,
+    )
 
     # Footer with version + methods PDF
     st.markdown(f'<div class="landing-footer">v{APP_VERSION}</div>', unsafe_allow_html=True)
@@ -5155,14 +5206,12 @@ if active_page == 0:
                 key="team_members_raw",
             )
 
-    # Continue CTA
+    # Navigation
     if step1_done:
         st.markdown(
             '<div class="section-done-banner">\u2713 Setup complete</div>',
             unsafe_allow_html=True,
         )
-        if st.button("Continue to Study Input  \u2192", key="auto_advance_0", type="primary"):
-            _navigate_to(1)
     else:
         _missing = []
         if not completion["study_title"]:
@@ -5171,6 +5220,15 @@ if active_page == 0:
             _missing.append("study description")
         if _missing:
             st.caption(f"Fill in {' and '.join(_missing)} to continue.")
+
+    _nav_left, _nav_right = st.columns([1, 1])
+    with _nav_left:
+        if st.button("\u2190 Home", key="back_0", type="secondary"):
+            _navigate_to(-1)
+    with _nav_right:
+        if step1_done:
+            if st.button("Study Input \u2192", key="auto_advance_0", type="primary", use_container_width=True):
+                _navigate_to(1)
 
     # v1.8.0: Research citations moved to landing page
 
@@ -5183,8 +5241,8 @@ if active_page == 0:
 if active_page == 1:
     st.markdown('<div class="flow-section">', unsafe_allow_html=True)
     st.markdown(
-        '<div class="section-guide">Provide your experiment design — either upload '
-        'a Qualtrics QSF export or describe your study in plain text.</div>',
+        '<div class="section-guide">Provide your experiment design — upload a Qualtrics '
+        '.qsf export for automatic detection, or describe your study in plain text.</div>',
         unsafe_allow_html=True,
     )
     completion = _get_step_completion()
