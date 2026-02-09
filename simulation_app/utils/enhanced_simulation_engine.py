@@ -45,7 +45,7 @@ This module is designed to run inside a `utils/` package (i.e., imported as
 """
 
 # Version identifier to help track deployed code
-__version__ = "1.6.1"  # v1.6.1: Critical fixes, visual polish
+__version__ = "1.7.0"  # v1.7.0: Fix state persistence, professional UX redesign
 
 # =============================================================================
 # SCIENTIFIC FOUNDATIONS FOR SIMULATION

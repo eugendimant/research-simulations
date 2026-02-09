@@ -63,7 +63,7 @@ association, impression, perception, feedback, comment, observation, general
 Version: 1.2.2 - New tab-based UI
 """
 
-__version__ = "1.6.1"
+__version__ = "1.7.0"
 
 import random
 import re
