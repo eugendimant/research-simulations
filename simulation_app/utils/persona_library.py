@@ -1502,11 +1502,14 @@ class PersonaLibrary:
                 # Compound phrases
                 'social media marketing', 'advertising effectiveness study',
                 'brand positioning strategy', 'influencer marketing effect',
+                'celebrity endorsement effectiveness study', 'persuasion knowledge model test',
+                'corporate social responsibility marketing',
                 # Two-word phrases
                 'marketing strategy', 'advertising campaign', 'brand endorsement',
                 'marketing message', 'advertising appeal', 'marketing persuasion',
                 'influencer endorsement', 'marketing communication', 'woke washing',
-                'scientific pitch', 'ad campaign',
+                'scientific pitch', 'ad campaign', 'persuasion knowledge',
+                'celebrity endorsement', 'brand authenticity',
                 # Domain-specific single words
                 'marketing', 'advertising', 'advertisement', 'branding', 'endorsement',
                 'influencer', 'woke-washed', 'campaign'
@@ -1527,11 +1530,16 @@ class PersonaLibrary:
                 'ai-generated', 'chatbot', 'automation', 'algorithm', 'robot'
             ],
             'technology': [
+                # Compound phrases
+                'technology adoption model study', 'user experience design evaluation',
+                'human computer interaction experiment', 'technology acceptance model',
+                'digital platform usage behavior',
                 # Two-word phrases
                 'user experience', 'digital platform', 'technology adoption',
                 'software interface', 'digital technology', 'tech adoption',
+                'human computer', 'technology acceptance', 'usability testing',
                 # Domain-specific single words
-                'technology', 'digital', 'software', 'platform', 'interface'
+                'technology', 'software', 'platform', 'interface', 'usability'
             ],
             'behavioral_economics': [
                 # Compound phrases
@@ -1574,14 +1582,19 @@ class PersonaLibrary:
                 'minimal group paradigm experiment', 'social value orientation task',
                 'ingroup outgroup dynamics', 'bystander effect study',
                 'social identity theory', 'social categorization effect',
+                'implicit association test measure', 'stereotype threat experiment',
+                'cognitive dissonance reduction task', 'social desirability bias measure',
+                'self serving bias in attribution',
                 # Two-word phrases
                 'social influence', 'social proof', 'conformity pressure',
                 'social identity', 'group dynamics', 'social categorization',
                 'ingroup outgroup', 'bystander effect', 'social comparison',
                 'deviance credit', 'social value', 'social dilemma',
-                'prosocial behavior',
+                'prosocial behavior', 'implicit association', 'stereotype threat',
+                'cognitive dissonance', 'social desirability', 'attribution bias',
                 # Domain-specific single words
-                'conformity', 'ingroup', 'outgroup', 'prosocial', 'oneness'
+                'conformity', 'ingroup', 'outgroup', 'prosocial', 'oneness',
+                'stereotype', 'prejudice', 'attribution'
             ],
             'economic_games': [
                 # Compound phrases
@@ -1658,11 +1671,16 @@ class PersonaLibrary:
                 'gender', 'masculinity', 'femininity', 'sexism'
             ],
             'power_status': [
+                # Compound phrases
+                'high power low power manipulation', 'social dominance orientation scale',
+                'power priming manipulation task', 'socioeconomic status effect on',
+                'status hierarchy perception study',
                 # Two-word phrases
                 'high power', 'low power', 'power dynamics', 'status hierarchy',
                 'socioeconomic status', 'social hierarchy', 'power imbalance',
+                'social dominance', 'power priming', 'status threat',
                 # Domain-specific single words
-                'hierarchy', 'dominance', 'ses'
+                'hierarchy', 'dominance', 'ses', 'powerlessness'
             ],
             'charitable_giving': [
                 # Compound phrases
@@ -1718,11 +1736,16 @@ class PersonaLibrary:
                 'misinformation', 'conspiracy', 'disinformation', 'fake'
             ],
             'psychological_ownership': [
+                # Compound phrases
+                'psychological ownership of product', 'endowment effect experiment',
+                'mere ownership effect study', 'virtual ownership feeling',
+                'touch effect on ownership',
                 # Two-word phrases
                 'psychological ownership', 'endowment effect', 'ownership feelings',
-                'self extension',
+                'self extension', 'mere ownership', 'virtual ownership',
+                'perceived ownership',
                 # Domain-specific single words
-                'possess', 'territory'
+                'possess', 'territory', 'ownership', 'endowment'
             ],
             'health_psychology': [
                 # Compound phrases
@@ -1751,23 +1774,36 @@ class PersonaLibrary:
                 'conservation', 'renewable', 'unsustainable', 'environmental'
             ],
             'pricing': [
+                # Compound phrases
+                'willingness to pay measure', 'price sensitivity measurement study',
+                'pay what you want pricing', 'reference price effect experiment',
+                'price fairness perception study',
                 # Two-word phrases
                 'willingness to pay', 'price sensitivity', 'price perception',
-                'premium pricing', 'dynamic pricing',
+                'premium pricing', 'dynamic pricing', 'price fairness',
+                'reference price', 'price framing',
                 # Domain-specific single words
-                'pricing', 'auction', 'bid'
+                'pricing', 'auction', 'bid', 'wtp'
             ],
             'hedonic_consumption': [
+                # Compound phrases
+                'hedonic versus utilitarian product choice', 'hedonic consumption experience study',
+                'luxury brand perception experiment', 'pleasure seeking consumption behavior',
                 # Two-word phrases
                 'hedonic consumption', 'hedonic value', 'hedonic experience',
+                'luxury consumption', 'hedonic motivation', 'pleasure seeking',
                 # Domain-specific single words
-                'hedonic', 'luxury', 'aesthetic', 'entertainment'
+                'hedonic', 'luxury', 'aesthetic', 'entertainment', 'indulgence'
             ],
             'utilitarian_consumption': [
+                # Compound phrases
+                'utilitarian versus hedonic product choice', 'functional product evaluation study',
+                'utilitarian purchase motivation experiment', 'practical value assessment task',
                 # Two-word phrases
                 'utilitarian consumption', 'utilitarian value', 'functional value',
+                'utilitarian product', 'practical value', 'functional benefit',
                 # Domain-specific single words
-                'utilitarian', 'functional', 'durability', 'necessity'
+                'utilitarian', 'functional', 'durability', 'necessity', 'practical'
             ],
             'privacy': [
                 # Compound phrases
@@ -1790,25 +1826,39 @@ class PersonaLibrary:
                 'fairness', 'equity', 'inequality', 'distributive'
             ],
             'negotiation': [
+                # Compound phrases
+                'negotiation strategy effectiveness study', 'first offer anchoring effect',
+                'distributive bargaining task experiment', 'integrative negotiation outcome',
                 # Two-word phrases
                 'bargaining behavior', 'negotiation strategy', 'offer counteroffer',
+                'first offer', 'negotiation outcome', 'integrative negotiation',
+                'distributive bargaining',
                 # Domain-specific single words
                 'negotiation', 'bargaining', 'counteroffer', 'concession'
             ],
             'personalization': [
+                # Compound phrases
+                'personalized recommendation system effect', 'tailored content delivery study',
+                'customized user experience experiment', 'personalization privacy tradeoff',
                 # Two-word phrases
                 'personalized recommendation', 'tailored content',
-                'customized experience',
+                'customized experience', 'personalized marketing',
+                'recommendation engine', 'content personalization',
                 # Domain-specific single words
                 'personalized', 'personalization', 'tailored', 'customized'
             ],
             'education': [
+                # Compound phrases
+                'educational intervention effectiveness study', 'student learning outcome measure',
+                'growth mindset intervention experiment', 'classroom behavior management study',
+                'academic performance motivation effect',
                 # Two-word phrases
                 'educational intervention', 'student learning', 'academic performance',
-                'learning outcome',
+                'learning outcome', 'growth mindset', 'classroom behavior',
+                'student motivation', 'academic achievement', 'test anxiety',
                 # Domain-specific single words
                 'education', 'student', 'teacher', 'tutor', 'academic',
-                'school', 'course'
+                'school', 'course', 'classroom'
             ],
             'media_communication': [
                 # Compound phrases
@@ -1842,6 +1892,89 @@ class PersonaLibrary:
                 'default options', 'option selection', 'choice behavior',
                 # Domain-specific single words
                 'decision-making'
+            ],
+            # ---- New domains added for broader behavioral research coverage ----
+            'moral_psychology': [
+                # Compound phrases
+                'moral foundations theory test', 'moral judgment paradigm',
+                'moral identity centrality measure', 'moral disengagement scale',
+                'moral licensing effect study', 'moral cleansing behavior',
+                # Two-word phrases
+                'moral judgment', 'moral identity', 'moral reasoning',
+                'moral intuition', 'moral foundations', 'moral disengagement',
+                'moral licensing', 'moral cleansing', 'moral conviction',
+                'moral outrage', 'ethical judgment', 'moral dilemma',
+                'moral emotion', 'moral cognition',
+                # Domain-specific single words
+                'morality', 'moral', 'ethical', 'virtue', 'wrongness'
+            ],
+            'prosocial_behavior': [
+                # Compound phrases
+                'prosocial behavior motivation study', 'altruistic punishment paradigm',
+                'bystander intervention effect', 'helping behavior experiment',
+                'volunteer motivation study', 'empathy altruism hypothesis',
+                # Two-word phrases
+                'prosocial behavior', 'altruistic behavior', 'helping behavior',
+                'cooperative behavior', 'volunteer behavior', 'empathic concern',
+                'altruistic motivation', 'prosocial motivation', 'social cooperation',
+                'empathy altruism',
+                # Domain-specific single words
+                'altruism', 'altruistic', 'prosocial', 'volunteering',
+                'helping', 'cooperation', 'empathy'
+            ],
+            'cultural_psychology': [
+                # Compound phrases
+                'cross cultural comparison study', 'individualism collectivism dimension',
+                'cultural tightness looseness measure', 'hofstede cultural dimension',
+                'independent self construal measure', 'cultural value orientation',
+                # Two-word phrases
+                'cross cultural', 'cultural differences', 'cultural values',
+                'individualism collectivism', 'cultural norms', 'cultural tightness',
+                'cultural looseness', 'self construal', 'cultural identity',
+                'cultural psychology', 'acculturation stress',
+                # Domain-specific single words
+                'cross-cultural', 'multicultural', 'collectivism', 'individualism',
+                'acculturation', 'bicultural', 'ethnocentrism'
+            ],
+            'computational_social_science': [
+                # Compound phrases
+                'online behavior tracking study', 'digital trace data analysis',
+                'social media behavior analysis', 'computational text analysis',
+                'online experiment platform', 'digital footprint analysis',
+                # Two-word phrases
+                'digital behavior', 'online behavior', 'computational analysis',
+                'digital trace', 'social network', 'online experiment',
+                'digital footprint', 'web scraping', 'text mining',
+                'sentiment analysis', 'network analysis',
+                # Domain-specific single words
+                'computational', 'digital', 'algorithmic', 'bot', 'tweet'
+            ],
+            'sports_psychology': [
+                # Compound phrases
+                'athletic performance under pressure', 'mental toughness training effect',
+                'choking under pressure study', 'team cohesion performance link',
+                'sport motivation climate study',
+                # Two-word phrases
+                'sports performance', 'athletic performance', 'mental toughness',
+                'choking under', 'team cohesion', 'sport motivation',
+                'performance anxiety', 'sport psychology', 'motor performance',
+                'competition anxiety', 'exercise motivation',
+                # Domain-specific single words
+                'athlete', 'athletic', 'coaching', 'sportsman', 'referee'
+            ],
+            'behavioral_neuroscience': [
+                # Compound phrases
+                'neural correlates of decision', 'brain imaging study of',
+                'cognitive load manipulation task', 'working memory capacity task',
+                'dual process theory test', 'executive function assessment',
+                # Two-word phrases
+                'cognitive load', 'working memory', 'executive function',
+                'neural correlates', 'brain imaging', 'cognitive control',
+                'dual process', 'implicit cognition', 'cognitive resources',
+                'response time', 'reaction time',
+                # Domain-specific single words
+                'neuroimaging', 'fmri', 'eeg', 'neurocognitive', 'cortisol',
+                'psychophysiology', 'biomarker'
             ]
         }
 
@@ -1920,10 +2053,16 @@ class PersonaLibrary:
                                    'election', 'ideology', 'consumer', 'purchase', 'shopping',
                                    'brand', 'dictator game', 'public goods game', 'trolley',
                                    'moral dilemma', 'echo chamber', 'nudge', 'default option',
-                                   'retirement savings', 'ai generated'],
+                                   'retirement savings', 'ai generated',
+                                   # Context: "health product marketing" is marketing, not health psych
+                                   'health product marketing', 'health food brand',
+                                   'health claim advertising', 'health supplement market'],
             'emotions': ['polarization', 'partisan', 'vaccine', 'covid', 'ai generated',
                          'consumer', 'purchase', 'dictator game', 'trolley', 'nudge',
-                         'default option', 'echo chamber', 'gender wage', 'wage gap'],
+                         'default option', 'echo chamber', 'gender wage', 'wage gap',
+                         # Context: "emotional appeal in advertising" is marketing
+                         'emotional appeal advertising', 'emotional branding',
+                         'emotional marketing strategy'],
             'economic_games': ['polarization', 'partisan', 'consumer', 'purchase', 'brand',
                                 'ai generated', 'artificial intelligence', 'vaccine', 'covid',
                                 'echo chamber', 'gender wage', 'wage gap'],
@@ -1967,6 +2106,60 @@ class PersonaLibrary:
                                  'nudge', 'default option', 'trolley'],
             'decision_making': ['polarization', 'partisan', 'echo chamber', 'gender wage',
                                  'vaccine hesitancy', 'consumer', 'brand', 'dictator game'],
+            # --- Negative keywords for previously uncovered domains ---
+            'marketing': ['polarization', 'partisan', 'democrat', 'republican',
+                          'vaccine', 'covid', 'pandemic', 'dictator game', 'public goods',
+                          'trolley', 'moral dilemma', 'gender wage', 'wage gap',
+                          'retirement savings', 'echo chamber'],
+            'technology': ['polarization', 'partisan', 'vaccine', 'covid', 'charity',
+                           'donation', 'dictator game', 'trolley', 'moral dilemma',
+                           'gender wage', 'wage gap', 'echo chamber'],
+            'pricing': ['polarization', 'partisan', 'vaccine', 'covid', 'echo chamber',
+                         'gender wage', 'trolley', 'moral dilemma', 'dictator game'],
+            'hedonic_consumption': ['polarization', 'partisan', 'vaccine', 'covid',
+                                      'echo chamber', 'gender wage', 'dictator game',
+                                      'trolley', 'moral dilemma'],
+            'utilitarian_consumption': ['polarization', 'partisan', 'vaccine', 'covid',
+                                          'echo chamber', 'gender wage', 'dictator game',
+                                          'trolley', 'moral dilemma'],
+            'negotiation': ['polarization', 'partisan', 'vaccine', 'covid', 'echo chamber',
+                             'consumer', 'brand', 'ai generated', 'gender wage',
+                             'trolley', 'moral dilemma'],
+            'personalization': ['polarization', 'partisan', 'vaccine', 'covid',
+                                 'echo chamber', 'dictator game', 'trolley',
+                                 'gender wage', 'wage gap'],
+            'education': ['polarization', 'partisan', 'consumer', 'purchase', 'brand',
+                           'vaccine hesitancy', 'dictator game', 'echo chamber',
+                           'gender wage', 'trolley', 'moral dilemma'],
+            'power_status': ['vaccine', 'covid', 'ai generated', 'echo chamber',
+                              'consumer', 'purchase', 'brand', 'trolley', 'dictator game'],
+            # --- Negative keywords for new domains ---
+            'moral_psychology': ['consumer', 'purchase', 'brand', 'ai generated',
+                                   'vaccine hesitancy', 'echo chamber', 'gender wage',
+                                   'nudge', 'default option', 'retirement savings',
+                                   'dictator game', 'public goods game'],
+            'prosocial_behavior': ['consumer', 'purchase', 'brand', 'ai generated',
+                                     'vaccine', 'covid', 'echo chamber', 'gender wage',
+                                     'polarization', 'partisan', 'trolley',
+                                     'nudge', 'default option'],
+            'cultural_psychology': ['consumer', 'purchase', 'brand', 'ai generated',
+                                      'vaccine', 'covid', 'echo chamber', 'dictator game',
+                                      'trolley', 'nudge', 'default option',
+                                      'retirement savings'],
+            'computational_social_science': ['trolley', 'moral dilemma', 'dictator game',
+                                                'gender wage', 'retirement savings',
+                                                'nudge', 'default option'],
+            'sports_psychology': ['consumer', 'purchase', 'brand', 'ai generated',
+                                    'vaccine', 'covid', 'echo chamber', 'polarization',
+                                    'partisan', 'trolley', 'dictator game', 'gender wage',
+                                    'nudge', 'default option', 'retirement savings'],
+            'behavioral_neuroscience': ['consumer', 'purchase', 'brand', 'echo chamber',
+                                          'polarization', 'partisan', 'dictator game',
+                                          'gender wage', 'retirement savings',
+                                          'nudge', 'default option'],
+            # --- Context-aware negative keywords for cross-domain false positives ---
+            # "health" in marketing context should not trigger health_psychology
+            # Adding marketing-specific health phrases as negatives for health_psychology
         }
 
         # ----------------------------------------------------------------
@@ -1976,20 +2169,38 @@ class PersonaLibrary:
         domain_affinity_groups: Dict[str, List[str]] = {
             'political_psychology': ['media_communication', 'accuracy_misinformation',
                                       'social_psychology', 'emotions'],
-            'ai': ['technology', 'consumer_behavior', 'privacy', 'decision_making'],
+            'ai': ['technology', 'consumer_behavior', 'privacy', 'decision_making',
+                   'computational_social_science'],
             'consumer_behavior': ['marketing', 'pricing', 'hedonic_consumption',
                                    'utilitarian_consumption', 'ai', 'personalization'],
             'health_psychology': ['covid', 'risk_perception', 'emotions',
-                                   'decision_making'],
+                                   'decision_making', 'behavioral_neuroscience'],
             'behavioral_economics': ['decision_making', 'pricing', 'consumer_behavior',
-                                      'risk_perception'],
+                                      'risk_perception', 'economic_games'],
             'gender': ['organizational_behavior', 'fairness', 'social_psychology',
-                       'power_status'],
+                       'power_status', 'cultural_psychology'],
             'environmental': ['behavioral_economics', 'consumer_behavior',
-                               'decision_making'],
+                               'decision_making', 'prosocial_behavior'],
             'covid': ['health_psychology', 'risk_perception', 'media_communication'],
             'media_communication': ['political_psychology', 'accuracy_misinformation',
-                                     'social_psychology', 'technology'],
+                                     'social_psychology', 'technology',
+                                     'computational_social_science'],
+            'social_psychology': ['moral_psychology', 'prosocial_behavior', 'emotions',
+                                   'cultural_psychology', 'power_status', 'norm_elicitation'],
+            'moral_psychology': ['deontology_utilitarianism', 'social_psychology',
+                                  'dishonesty', 'punishment', 'prosocial_behavior'],
+            'prosocial_behavior': ['charitable_giving', 'social_psychology',
+                                    'moral_psychology', 'economic_games'],
+            'cultural_psychology': ['social_psychology', 'moral_psychology',
+                                     'organizational_behavior'],
+            'behavioral_neuroscience': ['decision_making', 'emotions',
+                                         'health_psychology', 'sports_psychology'],
+            'sports_psychology': ['behavioral_neuroscience', 'emotions',
+                                   'education'],
+            'economic_games': ['behavioral_economics', 'fairness',
+                                'prosocial_behavior', 'punishment'],
+            'computational_social_science': ['media_communication', 'ai',
+                                               'technology', 'political_psychology'],
         }
 
         domain_scores: Dict[str, float] = {}
@@ -2064,6 +2275,64 @@ class PersonaLibrary:
                         if other_domain not in affinity:
                             # Suppress by 30% for each strong signal that excludes it
                             domain_scores[other_domain] *= 0.7
+
+        # ================================================================
+        # PHASE 3b: Cross-domain synergy boosting
+        # When two related domains are both detected, boost them together
+        # since they commonly co-occur in real behavioral research.
+        # Each pair: (domain_a, domain_b, boost_amount)
+        # ================================================================
+        synergy_pairs: list = [
+            # Economics + Consumer
+            ('behavioral_economics', 'consumer_behavior', 8.0),
+            ('behavioral_economics', 'decision_making', 8.0),
+            ('behavioral_economics', 'pricing', 6.0),
+            # Consumer + Marketing
+            ('consumer_behavior', 'marketing', 8.0),
+            ('consumer_behavior', 'pricing', 6.0),
+            ('consumer_behavior', 'personalization', 5.0),
+            # Political + Media
+            ('political_psychology', 'media_communication', 8.0),
+            ('political_psychology', 'accuracy_misinformation', 7.0),
+            # Social + Moral/Prosocial
+            ('social_psychology', 'moral_psychology', 7.0),
+            ('social_psychology', 'prosocial_behavior', 7.0),
+            ('social_psychology', 'cultural_psychology', 6.0),
+            ('social_psychology', 'emotions', 6.0),
+            # Health related
+            ('health_psychology', 'covid', 8.0),
+            ('health_psychology', 'risk_perception', 6.0),
+            # Economics / Games
+            ('economic_games', 'behavioral_economics', 6.0),
+            ('economic_games', 'fairness', 6.0),
+            ('economic_games', 'prosocial_behavior', 5.0),
+            # Moral / Ethics
+            ('moral_psychology', 'deontology_utilitarianism', 8.0),
+            ('moral_psychology', 'dishonesty', 6.0),
+            ('moral_psychology', 'punishment', 5.0),
+            # Environmental
+            ('environmental', 'behavioral_economics', 5.0),
+            ('environmental', 'prosocial_behavior', 5.0),
+            # Gender + Organization
+            ('gender', 'organizational_behavior', 7.0),
+            ('gender', 'fairness', 5.0),
+            # Tech / AI
+            ('ai', 'technology', 7.0),
+            ('ai', 'privacy', 5.0),
+            # Neuroscience
+            ('behavioral_neuroscience', 'decision_making', 6.0),
+            ('behavioral_neuroscience', 'emotions', 5.0),
+            # Charitable + Prosocial
+            ('charitable_giving', 'prosocial_behavior', 7.0),
+            # Cultural
+            ('cultural_psychology', 'moral_psychology', 5.0),
+        ]
+
+        for domain_a, domain_b, boost in synergy_pairs:
+            if domain_a in domain_scores and domain_b in domain_scores:
+                # Both domains detected -> boost each by the synergy amount
+                domain_scores[domain_a] += boost
+                domain_scores[domain_b] += boost
 
         # ================================================================
         # PHASE 4: Context-aware boosts
@@ -2161,6 +2430,42 @@ class PersonaLibrary:
                 (r'truth\s+discernment', 15.0),
                 (r'conspiracy\s+belief', 15.0),
             ],
+            # --- Context boosts for new domains ---
+            'moral_psychology': [
+                (r'moral\s+(foundation|judgment|reasoning)', 15.0),
+                (r'moral\s+(identity|licensing|disengagement)', 15.0),
+                (r'ethical\s+(dilemma|judgment)', 10.0),
+            ],
+            'prosocial_behavior': [
+                (r'prosocial\s+behavior', 15.0),
+                (r'altruistic\s+(behavior|punishment|motivation)', 15.0),
+                (r'helping\s+behavior', 15.0),
+                (r'empathy[\s-]altruism', 15.0),
+            ],
+            'cultural_psychology': [
+                (r'cross[\s-]cultural\s+(comparison|difference|study)', 20.0),
+                (r'individualism[\s-]collectivism', 15.0),
+                (r'cultural\s+(tightness|looseness|values|norms)', 15.0),
+                (r'self[\s-]construal', 15.0),
+            ],
+            'computational_social_science': [
+                (r'digital\s+(trace|footprint|behavior)', 15.0),
+                (r'online\s+(behavior|experiment)', 15.0),
+                (r'(text|sentiment|network)\s+analysis', 10.0),
+            ],
+            'sports_psychology': [
+                (r'(athletic|sport)\s+performance', 15.0),
+                (r'mental\s+toughness', 15.0),
+                (r'choking\s+under\s+pressure', 20.0),
+                (r'team\s+cohesion', 15.0),
+            ],
+            'behavioral_neuroscience': [
+                (r'cognitive\s+load', 15.0),
+                (r'working\s+memory', 15.0),
+                (r'neural\s+correlat', 15.0),
+                (r'dual[\s-]process', 15.0),
+                (r'executive\s+function', 15.0),
+            ],
         }
 
         for domain, patterns in context_boost_patterns.items():
@@ -2172,9 +2477,13 @@ class PersonaLibrary:
                         domain_scores[domain] += boost * 0.5
 
         # ================================================================
-        # PHASE 5: Filter and rank
+        # PHASE 5: Adaptive filter and rank
         # - Minimum absolute score threshold of 8 (avoids weak matches)
-        # - Must be at least 35% of the top score (relative threshold)
+        # - Relative threshold adapts based on score distribution:
+        #   * If top domain dominates (large gap to #2), lower threshold
+        #     to be more inclusive of weaker secondary domains
+        #   * If many domains score similarly, raise threshold to be
+        #     more selective and avoid noisy results
         # - Cap at 3 domains
         # - Always return at least 1 domain
         # ================================================================
@@ -2186,9 +2495,27 @@ class PersonaLibrary:
 
         top_score = sorted_domains[0][1]
 
-        # Minimum absolute threshold (must score at least 8)
-        # Relative threshold (must be at least 35% of top score)
-        min_threshold = max(8.0, top_score * 0.35)
+        # Adaptive relative threshold based on score concentration
+        if len(sorted_domains) >= 2:
+            second_score = sorted_domains[1][1]
+            # Ratio of second-highest to highest score
+            concentration_ratio = second_score / top_score if top_score > 0 else 0.0
+
+            if concentration_ratio < 0.3:
+                # One domain dominates strongly - be more inclusive of
+                # secondary domains (lower the relative threshold)
+                relative_pct = 0.25
+            elif concentration_ratio > 0.7:
+                # Many domains score similarly - be more selective
+                # to avoid returning too many loosely-related domains
+                relative_pct = 0.45
+            else:
+                # Normal distribution - use standard threshold
+                relative_pct = 0.35
+        else:
+            relative_pct = 0.35
+
+        min_threshold = max(8.0, top_score * relative_pct)
 
         filtered = [d for d, s in sorted_domains if s >= min_threshold]
 

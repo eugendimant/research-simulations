@@ -52,8 +52,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.8.7.5"
-BUILD_ID = "20260209-v1875-backtotop-bugfixes"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.8.7.7"
+BUILD_ID = "20260209-v1877-anchor-nav-domain-llm"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -107,7 +107,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.8.7.5"  # v1.8.7.5: Back-to-top button, scroll fixes, bug fixes
+APP_VERSION = "1.8.7.7"  # v1.8.7.7: HTML anchor back-to-top, domain detection, LLM improvements
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -4597,6 +4597,31 @@ section[data-testid="stSidebar"] .stCaption { line-height: 1.4; }
 .feedback-bar a { color: #6B7280; text-decoration: none; }
 .feedback-bar a:hover { color: #FF4B4B; }
 
+/* ─── "Back to top" HTML anchor link styled as button ─── */
+.btt-link {
+    display: block;
+    text-align: center;
+    padding: 8px 20px;
+    border: 1px solid #D1D5DB;
+    border-radius: 10px;
+    color: #374151 !important;
+    text-decoration: none !important;
+    font-size: 0.85rem;
+    font-weight: 500;
+    background: white;
+    cursor: pointer;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    width: 100%;
+    box-sizing: border-box;
+}
+.btt-link:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+    border-color: #9CA3AF;
+    color: #111827 !important;
+    text-decoration: none !important;
+}
+
 /* ─── Wizard page nav buttons ─── */
 .stButton button[kind="secondary"] {
     border-radius: 10px !important;
@@ -4652,12 +4677,17 @@ def _render_flow_nav(active: int, done: List[bool]) -> None:
     """Render segmented progress bar, step label, and top Continue button.
 
     v1.8.0: Thin segmented bar replaces dots+lines stepper.
-    v1.8.7.6: Top "Continue to [Next Step]" button restored for pages 1-2.
+    v1.8.7.7: Top "Continue to [Next Step]" button restored for pages 1-2.
     Users scroll to top via "Back to top" at the bottom, then proceed here.
     Page 0 (Setup) uses a direct bottom button since it's short.
     """
     while len(done) < len(SECTION_META):
         done.append(False)
+
+    # v1.8.7.7: Anchor target for "Back to top" HTML links at the bottom.
+    # Using an HTML anchor avoids st.rerun() and Streamlit scroll-restoration
+    # issues entirely — pure client-side scrollIntoView().
+    st.markdown('<div id="btt-anchor"></div>', unsafe_allow_html=True)
 
     # Build segmented progress bar
     segments_html = '<div class="seg-progress">'
@@ -5824,9 +5854,15 @@ if active_page == 1:
         if st.button("\u2190 Setup", key="back_1", type="secondary"):
             _navigate_to(0)
     with _nav_btt1:
-        if st.button("\u2191 Back to top", key="back_to_top_1", type="secondary", use_container_width=True):
-            st.session_state["_force_scroll_top"] = True
-            st.rerun()
+        # v1.8.7.7: Pure HTML anchor link — no st.rerun(), no scroll JS.
+        # Uses scrollIntoView() on the #btt-anchor div at the top of _render_flow_nav().
+        st.markdown(
+            '<a href="#btt-anchor" '
+            'onclick="var el=document.getElementById(\'btt-anchor\');'
+            'if(el){el.scrollIntoView({behavior:\'smooth\',block:\'start\'});}return false;" '
+            'class="btt-link">\u2191 Back to top</a>',
+            unsafe_allow_html=True,
+        )
 
     st.markdown('</div>', unsafe_allow_html=True)
 
@@ -7030,9 +7066,14 @@ if active_page == 2:
         if st.button("\u2190 Study Input", key="back_2", type="secondary"):
             _navigate_to(1)
     with _nav_btt2:
-        if st.button("\u2191 Back to top", key="back_to_top_2", type="secondary", use_container_width=True):
-            st.session_state["_force_scroll_top"] = True
-            st.rerun()
+        # v1.8.7.7: Pure HTML anchor link — no st.rerun(), no scroll JS.
+        st.markdown(
+            '<a href="#btt-anchor" '
+            'onclick="var el=document.getElementById(\'btt-anchor\');'
+            'if(el){el.scrollIntoView({behavior:\'smooth\',block:\'start\'});}return false;" '
+            'class="btt-link">\u2191 Back to top</a>',
+            unsafe_allow_html=True,
+        )
 
     st.markdown('</div>', unsafe_allow_html=True)
 
