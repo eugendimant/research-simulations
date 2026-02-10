@@ -53,8 +53,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.0.2.2"
-BUILD_ID = "20260210-v1022-visual-stepper-bottom-nav"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.0.2.3"
+BUILD_ID = "20260210-v1023-top-nav-no-bottom-continue"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -119,7 +119,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.0.2.2"  # v1.0.2.2: Visual-only stepper, bottom nav primary, UX polish
+APP_VERSION = "1.0.2.3"  # v1.0.2.3: Top nav buttons, no bottom Continue, checkbox fix, consistent metrics
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -3620,18 +3620,13 @@ def _render_conversational_builder() -> None:
     if st.session_state.get("conversational_builder_complete"):
         st.markdown(
             '<div class="section-done-banner">'
-            '✓ Study specification built — proceed to Design to review your configuration'
+            '\u2705 Study specification built \u2014 use the navigation at the top to proceed to Design'
             '</div>',
             unsafe_allow_html=True,
         )
-        _done_col1, _done_col2 = st.columns(2)
-        with _done_col1:
-            if st.button("Continue to Design \u2192", key="builder_goto_design", type="primary", use_container_width=True):
-                _navigate_to(2)
-        with _done_col2:
-            if st.button("Edit my description", key="builder_reopen_edit", use_container_width=True):
-                st.session_state["conversational_builder_complete"] = False
-                st.rerun()
+        if st.button("Edit my description", key="builder_reopen_edit"):
+            st.session_state["conversational_builder_complete"] = False
+            st.rerun()
         return
 
     # v1.6.1: Cleaner builder intro with inline checklist
@@ -3961,12 +3956,16 @@ def _render_conversational_builder() -> None:
 
     # Show summary — compact metrics + detail
     if parsed_conditions and parsed_scales:
-        # v1.6.0: Metrics row for at-a-glance summary
-        _mc1, _mc2, _mc3, _mc4 = st.columns(4)
-        _mc1.metric("Conditions", len(parsed_conditions))
-        _mc2.metric("Scales", len(parsed_scales))
-        _mc3.metric("Open-ended", len(parsed_oe))
-        _mc4.metric("N", builder_sample)
+        # v1.0.2.3: Compact inline metrics (consistent styling)
+        st.markdown(
+            f'<div style="display:flex;gap:20px;font-size:0.85rem;color:#6B7280;margin-bottom:4px;">'
+            f'<span><strong style="color:#374151;">{len(parsed_conditions)}</strong> conditions</span>'
+            f'<span><strong style="color:#374151;">{len(parsed_scales)}</strong> scales</span>'
+            f'<span><strong style="color:#374151;">{len(parsed_oe)}</strong> open-ended</span>'
+            f'<span><strong style="color:#374151;">{builder_sample}</strong> participants</span>'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
 
         # Detect domain
         title = st.session_state.get("study_title", "")
@@ -4047,7 +4046,7 @@ def _render_conversational_builder() -> None:
             participant_desc=participant_desc,
             raw_inputs=_raw_inputs,
         ):
-            st.success("Study specification built successfully! Proceed to **Design** to review.")
+            st.success("Study specification built successfully! Use the buttons at the top to proceed to **Design**.")
             _navigate_to(2)
 
 
@@ -4081,11 +4080,16 @@ def _render_builder_design_review() -> None:
     _n_oe = len(_summary_oe) if isinstance(_summary_oe, list) else 0
     _n_sample = st.session_state.get("sample_size", st.session_state.get("builder_sample_size", 100))
 
-    _sum_c1, _sum_c2, _sum_c3, _sum_c4 = st.columns(4)
-    _sum_c1.metric("Conditions", _n_conds)
-    _sum_c2.metric("Scales/DVs", _n_scales)
-    _sum_c3.metric("Open-ended", _n_oe)
-    _sum_c4.metric("Sample Size", _n_sample)
+    # v1.0.2.3: Compact inline metrics (consistent styling)
+    st.markdown(
+        f'<div style="display:flex;gap:20px;font-size:0.85rem;color:#6B7280;margin-bottom:4px;">'
+        f'<span><strong style="color:#374151;">{_n_conds}</strong> conditions</span>'
+        f'<span><strong style="color:#374151;">{_n_scales}</strong> scales/DVs</span>'
+        f'<span><strong style="color:#374151;">{_n_oe}</strong> open-ended</span>'
+        f'<span><strong style="color:#374151;">{_n_sample}</strong> sample size</span>'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
 
     # Design completeness check
     _design_issues: list[str] = []
@@ -4099,8 +4103,8 @@ def _render_builder_design_review() -> None:
     if _design_issues:
         st.warning("Design incomplete: " + "; ".join(_design_issues))
     else:
-        # v1.0.2.0: Design ready — stepper at top handles navigation
-        st.success("Design complete! Use the stepper at the top to proceed to **Generate**.")
+        # v1.0.2.3: Design ready — top nav buttons handle navigation
+        st.success("Design complete! Use the buttons at the top to proceed to **Generate**.")
 
     # Show design improvement suggestions if available
     _builder_feedback = st.session_state.get("_builder_feedback", [])
@@ -4808,8 +4812,8 @@ def _render_builder_design_review() -> None:
             f"**{sample}** participants."
         )
         st.info(
-            "Your design is fully configured. You can proceed directly to the "
-            "**Generate** step to simulate your data."
+            "Your design is fully configured. Use the buttons at the top to proceed to "
+            "**Generate** and simulate your data."
         )
     else:
         st.error("Design incomplete. Please go back and provide conditions and scales.")
@@ -5714,28 +5718,31 @@ section[data-testid="stSidebar"] .stCaption { line-height: 1.4; }
 .feedback-bar a:hover { color: #FF4B4B; }
 
 /* ─── "Back to top" HTML anchor link styled as button ─── */
+/* v1.0.2.3: Sole bottom nav element on pages 2-4 — centered, prominent */
 .btt-link {
     display: block;
     text-align: center;
-    padding: 8px 16px;
-    border: 1px solid #E5E7EB;
+    padding: 10px 24px;
+    border: 1px solid #D1D5DB;
     border-radius: 10px;
     color: #6B7280 !important;
     text-decoration: none !important;
-    font-size: 0.82rem;
+    font-size: 0.85rem;
     font-weight: 500;
-    background: #FAFAFA;
+    background: linear-gradient(135deg, #FAFAFA 0%, #F5F5F5 100%);
     cursor: pointer;
     transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-    width: 100%;
+    max-width: 320px;
+    margin: 0 auto;
     box-sizing: border-box;
 }
 .btt-link:hover {
-    transform: translateY(-1px);
-    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
-    border-color: #D1D5DB;
+    transform: translateY(-2px);
+    box-shadow: 0 3px 12px rgba(0,0,0,0.08);
+    border-color: #9CA3AF;
     color: #374151 !important;
     text-decoration: none !important;
+    background: linear-gradient(135deg, #FFFFFF 0%, #FAFAFA 100%);
 }
 
 /* ─── Wizard page nav buttons ─── */
@@ -6124,6 +6131,24 @@ _step_done = [
 # ── Flow navigation (v1.8.0: segmented progress bar, only on wizard pages) ──
 if active_page >= 0:
     _render_flow_nav(active_page, _step_done)
+
+    # v1.0.2.3: Top navigation buttons below stepper for pages 2-4.
+    # Page 1 (Setup) is short — uses bottom nav instead.
+    # Pages 2-4: ALL navigation (Back + Continue) lives here at the top.
+    if active_page >= 1:
+        _prev_labels = {1: "\u2190 Setup", 2: "\u2190 Study Input", 3: "\u2190 Design"}
+        _next_labels = {1: "Design \u2192", 2: "Generate \u2192"}
+        _tnl, _tnr = st.columns([1, 1])
+        with _tnl:
+            if st.button(_prev_labels.get(active_page, "\u2190 Back"), key=f"top_back_{active_page}", type="secondary"):
+                _navigate_to(active_page - 1)
+        with _tnr:
+            if active_page < 3 and _step_done[active_page]:
+                if st.button(_next_labels.get(active_page, "Next \u2192"), key=f"top_fwd_{active_page}", type="primary", use_container_width=True):
+                    _navigate_to(active_page + 1)
+            elif active_page < 3:
+                _step_hints = {1: "Complete this step to unlock Design", 2: "Complete this step to unlock Generate"}
+                st.caption(_step_hints.get(active_page, "Complete this step to continue"))
 
 
 def _get_condition_candidates(
@@ -6697,7 +6722,7 @@ if active_page == 1:
     if step2_done:
         st.markdown(
             '<div class="section-done-banner">'
-            '\u2705 Study input complete \u2014 continue to Design'
+            '\u2705 Study input complete \u2014 use the buttons above to proceed'
             '</div>',
             unsafe_allow_html=True,
         )
@@ -7098,12 +7123,17 @@ if active_page == 1:
         _n_scales = int(len(getattr(preview, "detected_scales", []) or []))
         _n_candidates = int(len(st.session_state.get("condition_candidates", []) or []))
         warnings = getattr(preview, "validation_warnings", []) or []
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Questions", _n_questions)
-        c2.metric("Scales", _n_scales)
-        c3.metric("Conditions", _n_candidates)
+        # v1.0.2.3: Compact inline metrics (consistent across all pages)
+        st.markdown(
+            f'<div style="display:flex;gap:20px;font-size:0.85rem;color:#6B7280;margin-bottom:4px;">'
+            f'<span><strong style="color:#374151;">{_n_questions}</strong> questions</span>'
+            f'<span><strong style="color:#374151;">{_n_scales}</strong> scales</span>'
+            f'<span><strong style="color:#374151;">{_n_candidates}</strong> conditions</span>'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
         if _n_questions > 0 and not warnings:
-            st.caption(f"QSF parsed. Proceed to **Design** to configure.")
+            st.caption(f"QSF parsed. Use the buttons at the top to proceed to **Design**.")
 
         errors = getattr(preview, "validation_errors", []) or []
 
@@ -7156,13 +7186,10 @@ if active_page == 1:
         if selected_conditions:
             st.success(f"✓ Conditions: {', '.join(selected_conditions)}")
 
-    # v1.0.2.1: Consistent 3-column bottom nav: Back | Back to top | Continue
+    # v1.0.2.3: Bottom nav — ONLY "Back to top" (navigation is at the top)
     st.markdown("---")
-    _nav_l1, _nav_m1, _nav_r1 = st.columns([1, 1, 1])
-    with _nav_l1:
-        if st.button("\u2190 Setup", key="back_1", type="secondary"):
-            _navigate_to(0)
-    with _nav_m1:
+    _nav_m1_col, = st.columns([1])
+    with _nav_m1_col:
         st.markdown(
             '<a href="#btt-anchor" '
             'onclick="var el=document.getElementById(\'btt-anchor\');'
@@ -7170,12 +7197,6 @@ if active_page == 1:
             'class="btt-link">\u2191 Back to top</a>',
             unsafe_allow_html=True,
         )
-    with _nav_r1:
-        if _step_done[1]:
-            if st.button("Continue to Design \u2192", key="auto_advance_1", type="primary", use_container_width=True):
-                _navigate_to(2)
-        else:
-            st.caption("Upload QSF or describe study to continue")
 
     st.markdown('</div>', unsafe_allow_html=True)
 
@@ -7199,7 +7220,7 @@ if active_page == 2:
     if _step_done[2]:
         st.markdown(
             '<div class="section-done-banner">'
-            '\u2705 Design complete \u2014 continue to Generate'
+            '\u2705 Design complete \u2014 use the buttons above to proceed'
             '</div>',
             unsafe_allow_html=True,
         )
@@ -8072,17 +8093,11 @@ if active_page == 2:
         st.session_state["confirmed_scales"] = updated_scales
         scales = updated_scales if updated_scales else scales
 
-        # v1.0.2.0: Confirmation with visual checkpoint styling
+        # v1.0.2.3: Confirmation with visual checkpoint — uses placeholder to avoid one-rerun-lag bug
         _n_updated = len(updated_scales)
         _confirm_label = f"I confirm these {_n_updated} DV(s) match my survey" if _n_updated > 0 else "I confirm my DV configuration"
         _dv_confirmed_val = st.session_state.get("scales_confirmed", False)
-        _dv_chk_cls = "confirmed" if _dv_confirmed_val else ""
-        st.markdown(
-            f'<div class="confirm-checkpoint {_dv_chk_cls}">'
-            f'<div class="confirm-checkpoint-label">{"Confirmed" if _dv_confirmed_val else "Required Confirmation"}</div>'
-            '</div>',
-            unsafe_allow_html=True,
-        )
+        _dv_banner_ph = st.empty()  # Placeholder — filled AFTER checkbox returns current value
         scales_confirmed = st.checkbox(
             _confirm_label,
             value=_dv_confirmed_val,
@@ -8090,6 +8105,13 @@ if active_page == 2:
             help="Check this box once you have verified that the variable names, item counts, and scale ranges match your actual Qualtrics survey."
         )
         st.session_state["scales_confirmed"] = scales_confirmed
+        _dv_chk_cls = "confirmed" if scales_confirmed else ""
+        _dv_banner_ph.markdown(
+            f'<div class="confirm-checkpoint {_dv_chk_cls}">'
+            f'<div class="confirm-checkpoint-label">{"Confirmed" if scales_confirmed else "Required Confirmation"}</div>'
+            '</div>',
+            unsafe_allow_html=True,
+        )
 
         if not scales_confirmed and updated_scales:
             st.caption("Verify the DVs above match your survey, then check the box.")
@@ -8277,22 +8299,23 @@ if active_page == 2:
                 st.caption(f"{_ctx_filled}/{len(_oe_final)} questions have context. Adding context to the rest improves AI response quality.")
             else:
                 st.caption("No questions have context yet. Expand above to add 1-2 sentences per question (recommended).")
-        # v1.0.2.0: OE confirmation with visual checkpoint styling
+        # v1.0.2.3: OE confirmation — uses placeholder to avoid one-rerun-lag bug
         if _oe_final:
             _oe_confirmed_val = st.session_state.get("open_ended_confirmed", False)
-            _oe_chk_cls = "confirmed" if _oe_confirmed_val else ""
-            st.markdown(
-                f'<div class="confirm-checkpoint {_oe_chk_cls}">'
-                f'<div class="confirm-checkpoint-label">{"Confirmed" if _oe_confirmed_val else "Required Confirmation"}</div>'
-                '</div>',
-                unsafe_allow_html=True,
-            )
+            _oe_banner_ph = st.empty()  # Placeholder — filled AFTER checkbox returns current value
             open_ended_confirmed = st.checkbox(
                 "I confirm these open-ended questions match my survey",
                 value=_oe_confirmed_val,
                 key=f"oe_confirm_checkbox_v{_oe_version_outer}",
             )
             st.session_state["open_ended_confirmed"] = open_ended_confirmed
+            _oe_chk_cls = "confirmed" if open_ended_confirmed else ""
+            _oe_banner_ph.markdown(
+                f'<div class="confirm-checkpoint {_oe_chk_cls}">'
+                f'<div class="confirm-checkpoint-label">{"Confirmed" if open_ended_confirmed else "Required Confirmation"}</div>'
+                '</div>',
+                unsafe_allow_html=True,
+            )
         else:
             st.session_state["open_ended_confirmed"] = True  # Nothing to confirm
 
@@ -8346,10 +8369,16 @@ if active_page == 2:
         confirmed_oe = st.session_state.get("confirmed_open_ended", [])
         oe_count = len(confirmed_oe)
 
-        _sm1, _sm2, _sm3 = st.columns(3)
-        _sm1.metric("Conditions", len(display_conditions))
-        _sm2.metric("DVs", len(scales))
-        _sm3.metric("Sample N", st.session_state.get("sample_size", 0))
+        # v1.0.2.3: Compact inline summary (consistent with page 4 styling)
+        _summary_n = st.session_state.get("sample_size", 0)
+        st.markdown(
+            f'<div style="display:flex;gap:20px;font-size:0.85rem;color:#6B7280;margin-bottom:4px;">'
+            f'<span><strong style="color:#374151;">{len(display_conditions)}</strong> conditions</span>'
+            f'<span><strong style="color:#374151;">{len(scales)}</strong> DVs</span>'
+            f'<span><strong style="color:#374151;">{_summary_n}</strong> participants</span>'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
 
         # Validate and lock design - require conditions, scales, scale confirmation, and correct allocation
         _alloc_n = st.session_state.get("condition_allocation_n", {})
@@ -8528,7 +8557,7 @@ if active_page == 2:
             st.session_state["inferred_design"]["missing_data_rate"] = _missing_rate
             st.session_state["inferred_design"]["dropout_rate"] = _dropout_rate
 
-            st.caption("Design ready. Use the stepper at the top to proceed to **Generate**.")
+            st.caption("Design ready. Use the buttons at the top to proceed to **Generate**.")
         else:
             # v1.0.2.0: Clearer progress checklist for remaining items
             missing_bits = []
@@ -8580,13 +8609,10 @@ if active_page == 2:
                     )
                     st.session_state["variable_review_rows"] = variable_df.to_dict(orient="records")
 
-    # v1.0.2.1: Consistent 3-column bottom nav: Back | Back to top | Continue
+    # v1.0.2.3: Bottom nav — ONLY "Back to top" (navigation is at the top)
     st.markdown("---")
-    _nav_l2, _nav_m2, _nav_r2 = st.columns([1, 1, 1])
-    with _nav_l2:
-        if st.button("\u2190 Study Input", key="back_2", type="secondary"):
-            _navigate_to(1)
-    with _nav_m2:
+    _nav_m2_col, = st.columns([1])
+    with _nav_m2_col:
         st.markdown(
             '<a href="#btt-anchor" '
             'onclick="var el=document.getElementById(\'btt-anchor\');'
@@ -8594,12 +8620,6 @@ if active_page == 2:
             'class="btt-link">\u2191 Back to top</a>',
             unsafe_allow_html=True,
         )
-    with _nav_r2:
-        if _step_done[2]:
-            if st.button("Continue to Generate \u2192", key="auto_advance_2", type="primary", use_container_width=True):
-                _navigate_to(3)
-        else:
-            st.caption("Configure conditions & DVs to continue")
 
     st.markdown('</div>', unsafe_allow_html=True)
 
@@ -8683,17 +8703,18 @@ if active_page == 3:
     scale_names = [s.get('name', 'Unknown') for s in scales if s.get('name')]
     _sample_n = st.session_state.get('sample_size', 0)
 
-    # v1.0.1.8: Compact study title + 3-column metrics
+    # v1.0.2.3: Compact study title + inline metrics with consistent sizing
     _study_title_display = st.session_state.get('study_title', 'Untitled')
+    _per_cell = _sample_n // max(len(conditions), 1) if _sample_n else 0
     st.markdown(
-        f'<div style="font-size:1.1rem;font-weight:600;color:#1F2937;margin-bottom:8px;">{_study_title_display}</div>',
+        f'<div style="font-size:0.95rem;font-weight:600;color:#1F2937;margin-bottom:4px;">{_study_title_display}</div>'
+        f'<div style="display:flex;gap:24px;font-size:0.85rem;color:#6B7280;margin-bottom:8px;">'
+        f'<span><strong style="color:#374151;">{_sample_n}</strong> participants ({_per_cell}/cell)</span>'
+        f'<span><strong style="color:#374151;">{len(conditions)}</strong> conditions</span>'
+        f'<span><strong style="color:#374151;">{len(scale_names)}</strong> DVs</span>'
+        f'</div>',
         unsafe_allow_html=True,
     )
-    _per_cell = _sample_n // max(len(conditions), 1) if _sample_n else 0
-    _gc1, _gc2, _gc3 = st.columns(3)
-    _gc1.metric("N", f"{_sample_n} ({_per_cell}/cell)")
-    _gc2.metric("Conditions", len(conditions))
-    _gc3.metric("DVs", len(scale_names))
 
     # ========================================
     # v1.0.0: DIFFICULTY LEVEL SELECTOR
@@ -9083,30 +9104,31 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
     confirmed_oe = st.session_state.get("confirmed_open_ended", [])
     oe_count = len(confirmed_oe)
 
-    # v1.4.14: Show design summary only when NOT generating AND NOT already generated
+    # v1.0.2.3: Consistent inline metrics (no st.metric — avoids large font inconsistency)
     if not _is_generating and not _has_generated:
-        # Design metrics row
-        summary_cols = st.columns(5)
-        summary_cols[0].metric("Conditions", len(display_conditions))
-        summary_cols[1].metric("Factors", len(factors))
-        summary_cols[2].metric("DVs", len(scales))
-        summary_cols[3].metric("Open-Ended", oe_count)
-
-        # Determine design type for display
         n_conds = len(display_conditions)
         if n_conds == 1:
             design_type_str = "Single group"
         elif n_conds == 2:
             design_type_str = "2-group"
         elif n_conds == 4:
-            design_type_str = "2×2 factorial"
+            design_type_str = "2\u00d72 factorial"
         elif n_conds == 6:
-            design_type_str = "2×3 factorial"
+            design_type_str = "2\u00d73 factorial"
         elif n_conds == 9:
-            design_type_str = "3×3 factorial"
+            design_type_str = "3\u00d73 factorial"
         else:
             design_type_str = f"{n_conds}-cell"
-        summary_cols[4].metric("Design", design_type_str)
+        st.markdown(
+            f'<div style="display:flex;flex-wrap:wrap;gap:20px;font-size:0.85rem;color:#6B7280;margin-bottom:8px;">'
+            f'<span><strong style="color:#374151;">{len(display_conditions)}</strong> conditions</span>'
+            f'<span><strong style="color:#374151;">{len(factors)}</strong> factors</span>'
+            f'<span><strong style="color:#374151;">{len(scales)}</strong> DVs</span>'
+            f'<span><strong style="color:#374151;">{oe_count}</strong> open-ended</span>'
+            f'<span><strong style="color:#374151;">{design_type_str}</strong> design</span>'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
 
         # Detailed breakdown
         detail_col1, detail_col2 = st.columns(2)
@@ -10014,23 +10036,30 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
         st.markdown('<div id="download"></div>', unsafe_allow_html=True)
         st.markdown("#### Download")
 
-        # v1.4.16 / v1.9.1: Quick data summary with defensive checks
+        # v1.0.2.3: Compact inline download summary (consistent styling)
         _dl_meta = st.session_state.get("last_metadata", {}) or {}
-        _dl_cols = st.columns(4)
         try:
-            _dl_cols[0].metric("Rows", f"{len(df):,}")
-            _dl_cols[1].metric("Columns", f"{len(df.columns):,}")
+            _dl_rows = f"{len(df):,}"
+            _dl_cols_n = f"{len(df.columns):,}"
         except Exception:
-            _dl_cols[0].metric("Rows", "N/A")
-            _dl_cols[1].metric("Columns", "N/A")
+            _dl_rows = "N/A"
+            _dl_cols_n = "N/A"
         _dl_n_conds = 0
         try:
             _dl_n_conds = df["CONDITION"].nunique() if "CONDITION" in df.columns else 0
         except Exception:
             _dl_n_conds = 0
-        _dl_cols[2].metric("Conditions", _dl_n_conds)
         _dl_zip_kb = len(zip_bytes) / 1024 if zip_bytes else 0
-        _dl_cols[3].metric("ZIP Size", f"{_dl_zip_kb:.0f} KB" if _dl_zip_kb < 1024 else f"{_dl_zip_kb/1024:.1f} MB")
+        _dl_zip_str = f"{_dl_zip_kb:.0f} KB" if _dl_zip_kb < 1024 else f"{_dl_zip_kb/1024:.1f} MB"
+        st.markdown(
+            f'<div style="display:flex;flex-wrap:wrap;gap:20px;font-size:0.85rem;color:#6B7280;margin-bottom:8px;">'
+            f'<span><strong style="color:#374151;">{_dl_rows}</strong> rows</span>'
+            f'<span><strong style="color:#374151;">{_dl_cols_n}</strong> columns</span>'
+            f'<span><strong style="color:#374151;">{_dl_n_conds}</strong> conditions</span>'
+            f'<span><strong style="color:#374151;">{_dl_zip_str}</strong> ZIP</span>'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
 
         # Data realism badges (correlation + missing data)
         _gen_meta = st.session_state.get("last_metadata", {}) or {}
@@ -10161,13 +10190,10 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
             else:
                 st.caption("Instructor email not configured in secrets (INSTRUCTOR_NOTIFICATION_EMAIL).")
 
-    # v1.0.2.1: Consistent bottom nav on Generate page: Back | Back to top
+    # v1.0.2.3: Bottom nav — ONLY "Back to top" (navigation is at the top)
     st.markdown("---")
-    _nav_l3, _nav_m3, _nav_r3 = st.columns([1, 1, 1])
-    with _nav_l3:
-        if st.button("\u2190 Design", key="back_3", type="secondary"):
-            _navigate_to(2)
-    with _nav_m3:
+    _nav_m3_col, = st.columns([1])
+    with _nav_m3_col:
         st.markdown(
             '<a href="#btt-anchor" '
             'onclick="var el=document.getElementById(\'btt-anchor\');'
