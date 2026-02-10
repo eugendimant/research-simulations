@@ -692,7 +692,7 @@ class InstructorReportGenerator:
                     "groq_user": "Groq (user key) — Llama 3.3 70B Versatile",
                     "cerebras_user": "Cerebras (user key) — Llama 3.3 70B",
                     "openrouter_user": "OpenRouter (user key)",
-                    "google_ai": "Google AI Studio — Gemini 2.0 Flash (Free)",
+                    "google_ai": "Google AI Studio — Gemini 2.5 Flash Lite (Free)",
                     "sambanova": "SambaNova Cloud — Llama 3.1 70B (Free)",
                 }
                 used_providers = []
@@ -2420,7 +2420,7 @@ class ComprehensiveInstructorReport:
                     "groq_user": "Groq (user key) — Llama 3.3 70B Versatile",
                     "cerebras_user": "Cerebras (user key) — Llama 3.3 70B",
                     "openrouter_user": "OpenRouter (user key)",
-                    "google_ai": "Google AI Studio — Gemini 2.0 Flash (Free)",
+                    "google_ai": "Google AI Studio — Gemini 2.5 Flash Lite (Free)",
                     "sambanova": "SambaNova Cloud — Llama 3.1 70B (Free)",
                 }
                 lines.append("| Provider | Status |")
@@ -4588,7 +4588,7 @@ class ComprehensiveInstructorReport:
                     "groq_user": "Groq (user key) — Llama 3.3 70B Versatile",
                     "cerebras_user": "Cerebras (user key) — Llama 3.3 70B",
                     "openrouter_user": "OpenRouter (user key)",
-                    "google_ai": "Google AI Studio — Gemini 2.0 Flash (Free)",
+                    "google_ai": "Google AI Studio — Gemini 2.5 Flash Lite (Free)",
                     "sambanova": "SambaNova Cloud — Llama 3.1 70B (Free)",
                 }
                 html_parts.append("<table><tr><th>Provider</th><th>Status</th></tr>")
