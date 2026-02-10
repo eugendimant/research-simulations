@@ -53,8 +53,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.0.1.5"
-BUILD_ID = "20260210-v1015-builder-stale-keys-qsf-reset"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.0.1.6"
+BUILD_ID = "20260210-v1016-nav-oe-confirm-title-warnings"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -119,7 +119,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.0.1.5"  # v1.0.1.5: Builder widget key versioning, QSF upload state reset, persist fallbacks
+APP_VERSION = "1.0.1.6"  # v1.0.1.6: Clickable nav, OE confirmation enforcement, title fix, warning filter
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -5446,7 +5446,7 @@ section[data-testid="stSidebar"] .stCaption { line-height: 1.4; }
 .seg-progress {
     display: flex;
     gap: 4px;
-    padding: 14px 0 4px;
+    padding: 14px 0 0;
 }
 .seg-bar {
     flex: 1;
@@ -5467,6 +5467,34 @@ section[data-testid="stSidebar"] .stCaption { line-height: 1.4; }
 .seg-bar:hover {
     transform: scaleY(1.5);
     opacity: 0.85;
+}
+/* v1.0.1.6: Clickable step labels under progress bar */
+.seg-labels {
+    display: flex;
+    gap: 4px;
+    padding: 4px 0 2px;
+}
+.seg-label-item {
+    flex: 1;
+    text-align: center;
+    font-size: 0.72rem;
+    color: #9CA3AF;
+    padding: 2px 0;
+    cursor: pointer;
+    border-radius: 4px;
+    transition: all 0.15s ease;
+    user-select: none;
+}
+.seg-label-item:hover {
+    background: #F3F4F6;
+    color: #4B5563;
+}
+.seg-label-item.lbl-active {
+    color: #1F2937;
+    font-weight: 600;
+}
+.seg-label-item.lbl-done {
+    color: #16A34A;
 }
 .step-label {
     text-align: center;
@@ -5655,7 +5683,13 @@ def _render_flow_nav(active: int, done: List[bool]) -> None:
             cls = ""
         segments_html += f'<div class="seg-bar {cls}" data-step="{i}"></div>'
     segments_html += '</div>'
-    st.markdown(segments_html, unsafe_allow_html=True)
+    # v1.0.1.6: Clickable step labels under progress bar segments
+    labels_html = '<div class="seg-labels">'
+    for i, sm in enumerate(SECTION_META):
+        lbl_cls = "lbl-active" if i == active else ("lbl-done" if i < active and done[i] else "")
+        labels_html += f'<div class="seg-label-item {lbl_cls}" data-nav-step="{i}">{sm["title"]}</div>'
+    labels_html += '</div>'
+    st.markdown(segments_html + labels_html, unsafe_allow_html=True)
 
     # Step label with completion summary
     meta = SECTION_META[active]
@@ -5666,6 +5700,30 @@ def _render_flow_nav(active: int, done: List[bool]) -> None:
         f' \u2014 <strong>{meta["title"]}</strong>{completion_text}</div>',
         unsafe_allow_html=True,
     )
+
+    # v1.0.1.6: Clickable step navigation — hidden buttons triggered by label clicks
+    _nav_cols = st.columns(len(SECTION_META))
+    for _si, _sc in enumerate(_nav_cols):
+        with _sc:
+            # Allow clicking to any completed step or the current step
+            _can_nav = (_si < active) or (_si == active) or (_si <= active + 1 and done[active])
+            if _can_nav and _si != active:
+                if st.button(
+                    SECTION_META[_si]["title"],
+                    key=f"nav_step_{_si}",
+                    type="secondary",
+                    use_container_width=True,
+                ):
+                    _navigate_to(_si)
+            else:
+                # Current step or unreachable — show as disabled text
+                _clr = "#1F2937" if _si == active else "#D1D5DB"
+                _fw = "700" if _si == active else "400"
+                st.markdown(
+                    f'<div style="text-align:center;padding:6px 0;font-size:0.82rem;'
+                    f'color:{_clr};font-weight:{_fw};">{SECTION_META[_si]["title"]}</div>',
+                    unsafe_allow_html=True,
+                )
 
     # v1.8.7.6: Top "Continue" button for pages 1-2 when step is complete.
     # This is the ONLY forward-navigation button — bottom has only "Back to top".
@@ -8182,7 +8240,9 @@ if active_page == 2:
         _alloc_n = st.session_state.get("condition_allocation_n", {})
         _alloc_sum = sum(_alloc_n.values()) if _alloc_n else 0
         _alloc_ok = not _alloc_n or _alloc_sum == sample_size  # OK if no custom allocation or if sums match
-        design_valid = len(display_conditions) >= 1 and len(scales) >= 1 and scales_confirmed and _alloc_ok
+        # v1.0.1.6: Also require OE confirmation when open-ended questions exist
+        _oe_confirmed_ok = st.session_state.get("open_ended_confirmed", True)
+        design_valid = len(display_conditions) >= 1 and len(scales) >= 1 and scales_confirmed and _alloc_ok and _oe_confirmed_ok
 
         if design_valid:
             # Save to session state
@@ -8354,19 +8414,6 @@ if active_page == 2:
             st.session_state["inferred_design"]["dropout_rate"] = _dropout_rate
 
             st.success("✅ Design configuration complete. Proceed to the **Generate** step to run the simulation.")
-
-            # v1.0.1.4: Inline Continue button — ensures the user can always proceed
-            # even on the first render where inferred_design was just set (the top
-            # _render_flow_nav button depends on the PREVIOUS rerun's session state).
-            _inline_spacer, _inline_btn = st.columns([3, 2])
-            with _inline_btn:
-                if st.button(
-                    "Continue to Generate →",
-                    key="inline_continue_to_generate",
-                    type="primary",
-                    use_container_width=True,
-                ):
-                    _navigate_to(3)
         else:
             missing_bits = []
             if not all_conditions:
@@ -8377,6 +8424,8 @@ if active_page == 2:
                 missing_bits.append("scale confirmation (check the box above)")
             if not _alloc_ok:
                 missing_bits.append(f"condition allocation (sums to {_alloc_sum}, need {sample_size})")
+            if not _oe_confirmed_ok:
+                missing_bits.append("open-ended question confirmation (check the box above)")
             st.error("⚠️ Cannot proceed - missing: " + ", ".join(missing_bits))
 
         # v1.7.0: Variable review — hidden behind Advanced toggle
@@ -8416,7 +8465,7 @@ if active_page == 2:
     _design_can_next = bool(st.session_state.get("inferred_design"))
     if _design_can_next:
         st.markdown(
-            '<div class="section-done-banner">\u2713 Design configured \u2014 use the Continue button above to proceed</div>',
+            '<div class="section-done-banner">\u2713 Design configured \u2014 scroll to top to continue</div>',
             unsafe_allow_html=True,
         )
 
@@ -8527,9 +8576,14 @@ if active_page == 3:
     scale_names = [s.get('name', 'Unknown') for s in scales if s.get('name')]
     _sample_n = st.session_state.get('sample_size', 0)
 
-    _gc1, _gc2, _gc3, _gc4, _gc5 = st.columns(5)
+    # v1.0.1.6: Full-width study title (no truncation) + 4-column metrics
     _study_title_display = st.session_state.get('study_title', 'Untitled')
-    _gc1.metric("Study", _study_title_display[:30] + ('...' if len(_study_title_display) > 30 else ''))
+    st.markdown(
+        f'<div style="font-size:0.78rem;color:#6B7280;margin-bottom:2px;">Study</div>'
+        f'<div style="font-size:1.45rem;font-weight:600;color:#1F2937;margin-bottom:12px;">{_study_title_display}</div>',
+        unsafe_allow_html=True,
+    )
+    _gc2, _gc3, _gc4, _gc5 = st.columns(4)
     _gc2.metric("N", _sample_n)
     _gc3.metric("Conditions", len(conditions))
     _gc4.metric("Scales", len(scale_names))
@@ -9489,7 +9543,10 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
                 for err in validation_results["errors"]:
                     st.error(err)
                 st.warning("⚠️ Simulation validation found issues. Data may need review.")
+            # v1.0.1.6: Filter out low-uniqueness warnings (noisy for non-LLM OE columns)
             for warn in validation_results.get("warnings", []):
+                if "unique responses" in warn:
+                    continue  # suppress — these are expected for template-based OE generation
                 st.warning(warn)
 
             # v1.2.5: Show quick data quality summary
