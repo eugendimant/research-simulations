@@ -2577,7 +2577,7 @@ class QSFPreviewParser:
                             matched_condition = self._match_to_condition(block_name, conditions)
                             if matched_condition:
                                 condition_blocks[matched_condition].append(block_id)
-                            randomizer_block_ids.add(block_id)
+                                randomizer_block_ids.add(block_id)
 
             elif flow_type == 'Randomizer':
                 # Similar to BlockRandomizer
@@ -2591,7 +2591,7 @@ class QSFPreviewParser:
                             matched_condition = self._match_to_condition(block_name, conditions)
                             if matched_condition:
                                 condition_blocks[matched_condition].append(block_id)
-                            randomizer_block_ids.add(block_id)
+                                randomizer_block_ids.add(block_id)
                     elif sub_item.get('Type') == 'Group':
                         group_name = sub_item.get('Description', '')
                         matched_condition = self._match_to_condition(group_name, conditions)
