@@ -692,7 +692,8 @@ class InstructorReportGenerator:
                     "groq_user": "Groq (user key) — Llama 3.3 70B Versatile",
                     "cerebras_user": "Cerebras (user key) — Llama 3.3 70B",
                     "openrouter_user": "OpenRouter (user key)",
-                    "together": "Together AI — Llama 3.3 70B Turbo",
+                    "together": "Together AI — Llama 3.3 70B Turbo (Free)",
+                    "sambanova": "SambaNova Cloud — Llama 3.1 70B (Free)",
                 }
                 used_providers = []
                 lines.append("| Provider | Status |")
@@ -2419,7 +2420,8 @@ class ComprehensiveInstructorReport:
                     "groq_user": "Groq (user key) — Llama 3.3 70B Versatile",
                     "cerebras_user": "Cerebras (user key) — Llama 3.3 70B",
                     "openrouter_user": "OpenRouter (user key)",
-                    "together": "Together AI — Llama 3.3 70B Turbo",
+                    "together": "Together AI — Llama 3.3 70B Turbo (Free)",
+                    "sambanova": "SambaNova Cloud — Llama 3.1 70B (Free)",
                 }
                 lines.append("| Provider | Status |")
                 lines.append("| --- | --- |")
@@ -4586,7 +4588,8 @@ class ComprehensiveInstructorReport:
                     "groq_user": "Groq (user key) — Llama 3.3 70B Versatile",
                     "cerebras_user": "Cerebras (user key) — Llama 3.3 70B",
                     "openrouter_user": "OpenRouter (user key)",
-                    "together": "Together AI — Llama 3.3 70B Turbo",
+                    "together": "Together AI — Llama 3.3 70B Turbo (Free)",
+                    "sambanova": "SambaNova Cloud — Llama 3.1 70B (Free)",
                 }
                 html_parts.append("<table><tr><th>Provider</th><th>Status</th></tr>")
                 for pname_h, pinfo_h in provider_details_h.items():

@@ -5826,7 +5826,9 @@ class EnhancedSimulationEngine:
             self.column_info.append(("Hedonic_Utilitarian", "Product type perception: 1=Utilitarian, 7=Hedonic"))
 
         # v1.4.8: Pre-fill LLM response pool with smart scaling
-        if self.llm_generator and self.llm_generator.is_llm_available and self.open_ended_questions:
+        # v1.9.1: Always try prefill if generator exists — providers may recover
+        # during actual generation even if initial check was uncertain
+        if self.llm_generator and self.open_ended_questions:
             try:
                 _unique_conditions = list(set(conditions.tolist()))
                 _sents = ["very_positive", "positive", "neutral", "negative", "very_negative"]
@@ -5861,9 +5863,23 @@ class EnhancedSimulationEngine:
                                 n_conditions=len(_unique_conditions),
                             )
                 _stats = self.llm_generator.stats
-                self._log(f"LLM pre-filled pool: {_stats['llm_calls']} API calls, {_stats['pool_size']} responses")
+                if _stats['pool_size'] > 0:
+                    self._log(f"LLM pre-filled pool: {_stats['llm_calls']} API calls, "
+                              f"{_stats['pool_size']} responses via {_stats.get('active_provider', 'unknown')}")
+                else:
+                    self._log(f"LLM prefill: {_stats['llm_calls']} API calls but 0 responses — "
+                              f"will retry on-demand during generation. "
+                              f"Providers: {_stats.get('providers', {})}")
+                    # v1.9.1: Reset providers for a fresh start during individual generation
+                    if hasattr(self.llm_generator, '_reset_all_providers'):
+                        self.llm_generator._reset_all_providers()
+                        self.llm_generator._api_available = True
             except Exception as _pf_err:
                 self._log(f"WARNING: LLM pool prefill failed: {_pf_err}")
+                # v1.9.1: Don't give up — reset providers so on-demand generation can try
+                if hasattr(self.llm_generator, '_reset_all_providers'):
+                    self.llm_generator._reset_all_providers()
+                    self.llm_generator._api_available = True
 
         # ONLY generate open-ended responses for questions actually in the QSF
         # Never create default/fake questions - this prevents fake variables like "Task_Summary"
