@@ -1367,23 +1367,14 @@ class LLMResponseGenerator:
 
     @property
     def provider_display_name(self) -> str:
-        """Human-readable name of the active provider for UI display."""
-        names = {
-            "google_ai_builtin": "Google AI Studio (Gemini 2.5 Flash Lite)",
-            "google_ai_gemma": "Google AI Studio (Gemma 3 27B)",
-            "groq_builtin": "Groq (built-in)",
-            "cerebras_builtin": "Cerebras (built-in)",
-            "openrouter_builtin": "OpenRouter (built-in)",
-            "groq_user": "Groq (your key)",
-            "cerebras_user": "Cerebras (your key)",
-            "openrouter_user": "OpenRouter (your key)",
-            "google_ai_user": "Google AI Studio (your key)",
-            "sambanova": "SambaNova Cloud (free Llama 3.1 70B)",
-            "cerebras_env": "Cerebras",
-            "openrouter_env": "OpenRouter",
-        }
-        active = self.active_provider_name
-        return names.get(active, active)
+        """Human-readable name of the active provider for UI display.
+
+        Note: Does not expose specific model names to end users.
+        """
+        for p in self._providers:
+            if p.available and p.api_key:
+                return "AI Language Model"
+        return "none"
 
     @property
     def user_key_provider(self) -> str:
