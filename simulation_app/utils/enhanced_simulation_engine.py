@@ -238,6 +238,29 @@ try:
 except ImportError:
     HAS_RESPONSE_LIBRARY = False
 
+# Import cross-DV correlation module for realistic between-scale correlations
+try:
+    from .correlation_matrix import (
+        infer_correlation_matrix,
+        generate_latent_scores,
+        detect_construct_types,
+    )
+    HAS_CORRELATION_MATRIX = True
+except ImportError:
+    HAS_CORRELATION_MATRIX = False
+
+    def infer_correlation_matrix(scales: Any) -> Tuple[Any, Any]:  # type: ignore[misc]
+        """Fallback stub when correlation_matrix module is unavailable."""
+        raise ImportError("correlation_matrix module not available")
+
+    def generate_latent_scores(n: int, corr: Any, seed: int) -> Any:  # type: ignore[misc]
+        """Fallback stub when correlation_matrix module is unavailable."""
+        raise ImportError("correlation_matrix module not available")
+
+    def detect_construct_types(scales: Any) -> Any:  # type: ignore[misc]
+        """Fallback stub when correlation_matrix module is unavailable."""
+        raise ImportError("correlation_matrix module not available")
+
 
 def _stable_int_hash(s: str) -> int:
     """Stable, cross-run integer hash for strings.
@@ -1215,6 +1238,9 @@ def _detect_careless_patterns(
     Returns:
         Dict with pattern detection results and flags
     """
+    # Filter out any NaN values that may result from missing data injection
+    responses = [r for r in responses if not (isinstance(r, float) and np.isnan(r))]
+
     if len(responses) < 3:
         return {'careless_detected': False, 'patterns': [], 'confidence': 0.0}
 
@@ -2636,6 +2662,13 @@ class EnhancedSimulationEngine:
         # v1.0.0: Pre-computed visibility map from QSF parser
         # Format: {condition: {question_id: True/False}}
         precomputed_visibility: Optional[Dict[str, Dict[str, bool]]] = None,
+        # Cross-DV correlation structure (optional)
+        # If provided, used to generate correlated latent scores across scales
+        correlation_matrix: Optional[np.ndarray] = None,
+        # Missing data simulation parameters
+        missing_data_rate: float = 0.0,  # 0.0 = none; 0.04 = 4% item-level missingness
+        dropout_rate: float = 0.0,  # 0.0 = none; 0.07 = 7% participant dropout
+        missing_data_mechanism: str = "realistic",  # "none", "mcar", "realistic"
     ):
         self.study_title = str(study_title or "").strip()
         self.study_description = str(study_description or "").strip()
@@ -2665,6 +2698,15 @@ class EnhancedSimulationEngine:
             condition_allocation, self.conditions
         )  # Dict[condition_name, percentage 0-100]
         self.precomputed_visibility = precomputed_visibility or {}  # v1.0.0: From QSF parser
+        # Cross-DV correlation structure
+        self.correlation_matrix = correlation_matrix
+        # Missing data simulation
+        self.missing_data_rate = float(np.clip(missing_data_rate, 0.0, 0.50))
+        self.dropout_rate = float(np.clip(dropout_rate, 0.0, 0.50))
+        self.missing_data_mechanism = (
+            missing_data_mechanism if missing_data_mechanism in ("none", "mcar", "realistic")
+            else "realistic"
+        )
         self.mode = (mode or "pilot").strip().lower()
         if self.mode not in ("pilot", "final"):
             self.mode = "pilot"
@@ -2865,6 +2907,243 @@ class EnhancedSimulationEngine:
     def _log(self, message: str) -> None:
         """Append a message to the validation log for debugging and verification."""
         self.validation_log.append(message)
+
+    # =================================================================
+    # MISSING DATA & DROPOUT SIMULATION
+    # =================================================================
+
+    def _should_be_missing(
+        self,
+        participant_idx: int,
+        item_position: int,
+        total_items: int,
+        traits: Dict[str, float],
+        condition: str,
+    ) -> bool:
+        """Determine if this item should be missing for this participant.
+
+        Uses a blended model:
+        - Base rate from self.missing_data_rate
+        - Persona-driven: careless responders skip more (attention_level < 0.4 -> 3x base rate)
+        - Fatigue: later items have higher skip probability
+        - All bounded to keep data usable
+
+        Args:
+            participant_idx: Index of participant (0-based)
+            item_position: Position of item in overall survey (0-based)
+            total_items: Total number of items in the survey
+            traits: Participant trait dictionary
+            condition: Participant's experimental condition
+
+        Returns:
+            True if this item should be marked as missing (np.nan)
+        """
+        if self.missing_data_rate <= 0 or self.missing_data_mechanism == "none":
+            return False
+
+        base_rate = self.missing_data_rate
+
+        if self.missing_data_mechanism == "mcar":
+            # Missing Completely At Random: constant probability
+            rng = np.random.RandomState(
+                (self.seed + participant_idx * 317 + item_position * 53) % (2**31)
+            )
+            return bool(rng.random() < base_rate)
+
+        # --- "realistic" mechanism ---
+        # (1) Persona-driven adjustment: careless responders skip more
+        attention = _safe_trait_value(traits.get("attention_level"), 0.7)
+        if attention < 0.4:
+            rate = base_rate * 3.0  # 3x more missing for careless
+        elif attention < 0.6:
+            rate = base_rate * 1.5
+        else:
+            rate = base_rate
+
+        # (2) Fatigue: later items have higher skip probability
+        if total_items > 1:
+            progress = item_position / max(total_items - 1, 1)
+            # At end of survey, up to 2x the base rate
+            fatigue_multiplier = 1.0 + progress * 1.0
+            rate *= fatigue_multiplier
+
+        # (3) Cap so we never exceed 25% per item (keeps data usable)
+        rate = min(rate, 0.25)
+
+        rng = np.random.RandomState(
+            (self.seed + participant_idx * 317 + item_position * 53) % (2**31)
+        )
+        return bool(rng.random() < rate)
+
+    def _should_dropout(
+        self,
+        participant_idx: int,
+        traits: Dict[str, float],
+    ) -> Optional[int]:
+        """Determine if and when this participant drops out.
+
+        Returns:
+            Item position (0-based) at which dropout occurs, or None for completion.
+            Uses survival function: P(drop) increases with position.
+            Careless responders (attention < 0.4) have 3x dropout rate.
+
+        The dropout point is sampled from a geometric-like distribution
+        weighted toward later survey positions (most dropouts happen in
+        the second half).
+
+        Args:
+            participant_idx: Index of participant (0-based)
+            traits: Participant trait dictionary
+        """
+        if self.dropout_rate <= 0:
+            return None
+
+        attention = _safe_trait_value(traits.get("attention_level"), 0.7)
+        effective_rate = self.dropout_rate
+        if attention < 0.4:
+            effective_rate *= 3.0
+        elif attention < 0.6:
+            effective_rate *= 1.5
+
+        # Cap at 40%
+        effective_rate = min(effective_rate, 0.40)
+
+        rng = np.random.RandomState(
+            (self.seed + participant_idx * 997 + 77777) % (2**31)
+        )
+
+        # Will this participant drop out at all?
+        if rng.random() >= effective_rate:
+            return None  # Completes the survey
+
+        # Sample dropout point using a Beta(2, 1.5) distribution
+        # This skews toward the latter part of the survey (mean ~ 0.57)
+        dropout_fraction = float(rng.beta(2.0, 1.5))
+        # Ensure dropout is at least 10% into the survey and at most 95%
+        dropout_fraction = float(np.clip(dropout_fraction, 0.10, 0.95))
+        return dropout_fraction  # Will be multiplied by total_items in _apply_missing_data
+
+    def _apply_missing_data(
+        self,
+        data: Dict[str, List],
+        all_traits: List[Dict],
+        conditions: "pd.Series",
+        n: int,
+    ) -> None:
+        """Apply missing data patterns to the generated data dict in-place.
+
+        Phase 1: Determine dropout points for each participant
+        Phase 2: For dropouts, set all items after dropout point to np.nan
+        Phase 3: For remaining participants, apply item-level missingness
+        Phase 4: Recompute composite means to handle NaN (use nanmean)
+
+        Does NOT apply missing data to: PARTICIPANT_ID, CONDITION, RUN_ID,
+        SIMULATION_MODE, SIMULATION_SEED, Gender, Age, Exclude_Recommended,
+        attention check columns, metadata columns.
+
+        Args:
+            data: The generated data dictionary (modified in-place)
+            all_traits: List of participant trait dicts
+            conditions: Pandas Series of condition assignments
+            n: Number of participants
+        """
+        # Protected columns that should NEVER have missing data
+        _PROTECTED_COLUMNS: Set[str] = {
+            "PARTICIPANT_ID", "CONDITION", "RUN_ID", "SIMULATION_MODE",
+            "SIMULATION_SEED", "Gender", "Age", "Exclude_Recommended",
+            "Completion_Time_Seconds", "Attention_Pass_Rate",
+            "Max_Straight_Line", "Flag_Speed", "Flag_Attention",
+            "Flag_StraightLine",
+        }
+        # Also protect attention check columns
+        for col in list(data.keys()):
+            if "Attention_Check" in col or "attention_check" in col.lower():
+                _PROTECTED_COLUMNS.add(col)
+
+        # Identify eligible columns (numeric, not protected, not open-ended strings)
+        eligible_cols: List[str] = []
+        for col in data:
+            if col in _PROTECTED_COLUMNS:
+                continue
+            values = data[col]
+            if not values:
+                continue
+            # Check if column is numeric (int or float)
+            sample = values[0]
+            if isinstance(sample, (int, float)) and not isinstance(sample, bool):
+                eligible_cols.append(col)
+
+        if not eligible_cols:
+            self._log("Missing data: no eligible columns found, skipping")
+            return
+
+        total_items = len(eligible_cols)
+        dropout_count = 0
+        total_missing_cells = 0
+        total_eligible_cells = n * total_items
+        per_col_missing: Dict[str, int] = {col: 0 for col in eligible_cols}
+
+        # --- Phase 1: Determine dropout points ---
+        dropout_points: Dict[int, int] = {}  # participant_idx -> item_position of dropout
+        for i in range(n):
+            dropout_frac = self._should_dropout(i, all_traits[i])
+            if dropout_frac is not None:
+                dropout_item = max(1, int(float(dropout_frac) * total_items))
+                dropout_points[i] = dropout_item
+                dropout_count += 1
+
+        # --- Phase 2: Apply dropout (set all items after dropout point to NaN) ---
+        for i, dropout_pos in dropout_points.items():
+            for col_idx in range(dropout_pos, total_items):
+                col = eligible_cols[col_idx]
+                data[col][i] = np.nan
+                per_col_missing[col] += 1
+                total_missing_cells += 1
+
+        # --- Phase 3: Apply item-level missingness for non-dropout participants ---
+        if self.missing_data_rate > 0 and self.missing_data_mechanism != "none":
+            for i in range(n):
+                if i in dropout_points:
+                    continue  # Already handled by dropout
+                condition = str(conditions.iloc[i]) if hasattr(conditions, 'iloc') else str(conditions[i])
+                for col_idx, col in enumerate(eligible_cols):
+                    if self._should_be_missing(i, col_idx, total_items, all_traits[i], condition):
+                        data[col][i] = np.nan
+                        per_col_missing[col] += 1
+                        total_missing_cells += 1
+
+        # --- Phase 4: Recompute composite means using nanmean ---
+        for col in list(data.keys()):
+            if col.endswith("_mean"):
+                # Find the corresponding item columns
+                prefix = col[:-5]  # Remove "_mean"
+                item_cols = [c for c in eligible_cols if c.startswith(prefix + "_") and c != col]
+                if item_cols:
+                    for i in range(n):
+                        item_vals = []
+                        for ic in item_cols:
+                            v = data[ic][i]
+                            if v is not None and not (isinstance(v, float) and np.isnan(v)):
+                                item_vals.append(float(v))
+                        if item_vals:
+                            data[col][i] = round(float(np.nanmean(item_vals)), 2)
+                        else:
+                            data[col][i] = np.nan
+                            per_col_missing[col] = per_col_missing.get(col, 0) + 1
+
+        # --- Store stats for metadata ---
+        actual_rate = total_missing_cells / max(total_eligible_cells, 1)
+        self._actual_missing_rate = round(actual_rate, 4)
+        self._actual_dropout_count = dropout_count
+        self._per_scale_missing_rate = {
+            col: round(count / max(n, 1), 4)
+            for col, count in per_col_missing.items()
+            if count > 0
+        }
+        self._log(
+            f"Missing data applied: {total_missing_cells}/{total_eligible_cells} cells "
+            f"({actual_rate:.1%}), {dropout_count} dropouts"
+        )
 
     def _adjust_persona_weights_for_study(self) -> None:
         """
@@ -4466,6 +4745,36 @@ class EnhancedSimulationEngine:
         # Apply effect to tendency (normalized to 0-1 scale)
         adjusted_tendency = float(np.clip(base_tendency + condition_effect, 0.08, 0.92))
 
+        # =====================================================================
+        # STEP 4b: Apply cross-DV latent correlation effect
+        # Creates realistic between-scale correlations driven by construct
+        # relationships (e.g., Trust and Satisfaction positively correlated).
+        #
+        # Weight is persona-adaptive:
+        #   - Engaged responders (high consistency) show stronger cross-scale
+        #     covariance (weight ~0.20) because attentive participants respond
+        #     more coherently across related constructs.
+        #   - Careless responders (low attention) show weaker covariance
+        #     (weight ~0.08) because random noise dilutes latent structure.
+        #   - Average participants: weight ~0.15
+        #
+        # Empirically calibrated so that target r = 0.50 yields realised
+        # r ≈ 0.35-0.50 after all persona noise is added — consistent with
+        # typical survey attenuation (Schmitt & Hunter, 1996).
+        # =====================================================================
+        _latent_dvs = traits.get("_latent_dvs", {})
+        _latent_z = _latent_dvs.get(variable_name, 0.0)
+        if _latent_z != 0.0:
+            # Persona-adaptive weight: scale by consistency and attention
+            _consistency = _safe_trait_value(traits.get("consistency"), 0.65)
+            _attention = _safe_trait_value(traits.get("attention_level"), 0.70)
+            # Base weight 0.15, boosted up to 0.22 for highly consistent/attentive,
+            # reduced down to 0.08 for careless/inattentive
+            _latent_weight = 0.15 + (_consistency - 0.5) * 0.10 + (_attention - 0.5) * 0.06
+            _latent_weight = float(np.clip(_latent_weight, 0.08, 0.22))
+            _latent_effect = _latent_z * _latent_weight
+            adjusted_tendency = float(np.clip(adjusted_tendency + _latent_effect, 0.08, 0.92))
+
         # Calculate response center
         center = scale_min + (adjusted_tendency * scale_range)
 
@@ -4902,7 +5211,10 @@ class EnhancedSimulationEngine:
         max_alternating = 0
         current_streak = 1
         alternating_streak = 1
-        vals = [int(v) for v in (participant_item_responses or [])]
+        # Filter out any NaN values defensively (should not occur since exclusion
+        # flags are computed before missing data injection, but guards against refactors)
+        vals = [int(v) for v in (participant_item_responses or [])
+                if not (isinstance(v, float) and np.isnan(v))]
 
         if len(vals) >= 2:
             for i in range(1, len(vals)):
@@ -4991,6 +5303,36 @@ class EnhancedSimulationEngine:
             all_traits.append(traits)
 
         data["_PERSONA"] = assigned_personas
+
+        # =================================================================
+        # CROSS-DV LATENT CORRELATION SCORES
+        # Generate correlated z-scores across scales so that conceptually
+        # related DVs (e.g., Trust and Satisfaction) co-vary realistically.
+        # =================================================================
+        _scale_names = [s.get("variable_name", s["name"]) for s in self.scales]
+        if self.correlation_matrix is not None:
+            _corr_matrix = self.correlation_matrix
+        else:
+            # Auto-infer from scale names
+            try:
+                _corr_matrix, _ = infer_correlation_matrix(self.scales)
+            except Exception:
+                _corr_matrix = None
+
+        if _corr_matrix is not None and len(_scale_names) > 1:
+            try:
+                _latent_scores = generate_latent_scores(n, _corr_matrix, self.seed)
+                # Store latent z-scores in each participant's traits
+                for i in range(n):
+                    all_traits[i]["_latent_dvs"] = {
+                        _scale_names[j]: float(_latent_scores[i, j])
+                        for j in range(min(len(_scale_names), _latent_scores.shape[1]))
+                    }
+                self._log(f"Generated cross-DV latent scores for {len(_scale_names)} scales")
+            except Exception as e:
+                self._log(f"WARNING: Failed to generate correlated latent scores: {e}")
+        else:
+            self._log("Cross-DV correlation: skipped (single scale or no correlation matrix)")
 
         participant_item_responses: List[List[int]] = [[] for _ in range(n)]
 
@@ -5406,6 +5748,14 @@ class EnhancedSimulationEngine:
             ]
         )
 
+        # =================================================================
+        # MISSING DATA & DROPOUT APPLICATION
+        # Applied after all data generation, before DataFrame assembly.
+        # Introduces realistic item-level missingness and survey dropout.
+        # =================================================================
+        if self.missing_data_rate > 0 or self.dropout_rate > 0:
+            self._apply_missing_data(data, all_traits, conditions, n)
+
         if "_PERSONA" in data:
             del data["_PERSONA"]
 
@@ -5419,8 +5769,11 @@ class EnhancedSimulationEngine:
                 col = issue["column"]
                 col_min = issue["expected_min"]
                 col_max = issue["expected_max"]
-                # Auto-correct out-of-bounds values
-                df[col] = df[col].clip(lower=col_min, upper=col_max).astype(int)
+                # Auto-correct out-of-bounds values (preserve NaN from missing data)
+                col_series = df[col]
+                mask = col_series.notna()
+                if mask.any():
+                    df.loc[mask, col] = col_series[mask].clip(lower=col_min, upper=col_max).astype(int)
                 self._log(f"  Corrected {col}: clipped to [{col_min}, {col_max}]")
 
         # Compute observed effect sizes to validate simulation quality
@@ -5478,18 +5831,28 @@ class EnhancedSimulationEngine:
             trait_keys = list(traits_list[0].keys()) if traits_list else []
             trait_averages_by_condition[cond] = {}
             for trait_key in trait_keys:
+                # Skip non-numeric trait values (e.g., _latent_dvs is a dict)
+                if trait_key.startswith("_"):
+                    continue
                 values = [t.get(trait_key, 0.0) for t in traits_list if trait_key in t]
-                if values:
-                    trait_averages_by_condition[cond][trait_key] = round(float(np.mean(values)), 4)
+                # Filter to numeric values only
+                numeric_values = [v for v in values if isinstance(v, (int, float)) and not (isinstance(v, float) and np.isnan(v))]
+                if numeric_values:
+                    trait_averages_by_condition[cond][trait_key] = round(float(np.mean(numeric_values)), 4)
 
         # 6. Overall trait averages (across all participants)
         overall_trait_averages: Dict[str, float] = {}
         if all_traits:
             trait_keys = list(all_traits[0].keys()) if all_traits else []
             for trait_key in trait_keys:
+                # Skip non-numeric trait values (e.g., _latent_dvs is a dict)
+                if trait_key.startswith("_"):
+                    continue
                 values = [t.get(trait_key, 0.0) for t in all_traits if trait_key in t]
-                if values:
-                    overall_trait_averages[trait_key] = round(float(np.mean(values)), 4)
+                # Filter to numeric values only
+                numeric_values = [v for v in values if isinstance(v, (int, float)) and not (isinstance(v, float) and np.isnan(v))]
+                if numeric_values:
+                    overall_trait_averages[trait_key] = round(float(np.mean(numeric_values)), 4)
 
         metadata = {
             "run_id": self.run_id,
@@ -5551,6 +5914,27 @@ class EnhancedSimulationEngine:
             # Downstream consumers (validation, instructor report) should use this
             # instead of reconstructing column names, preventing mismatches.
             "scale_generation_log": self._scale_generation_log,
+            # Cross-DV correlation info
+            "cross_dv_correlation": {
+                "enabled": _corr_matrix is not None and len(_scale_names) > 1,
+                "num_scales": len(_scale_names),
+                "scale_names": _scale_names,
+                "correlation_matrix": _corr_matrix.tolist() if _corr_matrix is not None and hasattr(_corr_matrix, 'tolist') else None,
+                "construct_types": (
+                    {name: str(ct) for name, ct in detect_construct_types(self.scales).items()}
+                    if HAS_CORRELATION_MATRIX and len(_scale_names) > 1
+                    else {}
+                ),
+            },
+            # Missing data simulation info
+            "missing_data": {
+                "missing_data_rate": self.missing_data_rate,
+                "dropout_rate": self.dropout_rate,
+                "mechanism": self.missing_data_mechanism,
+                "total_missing_rate": getattr(self, '_actual_missing_rate', 0.0),
+                "dropout_count": getattr(self, '_actual_dropout_count', 0),
+                "per_scale_missing_rate": getattr(self, '_per_scale_missing_rate', {}),
+            },
         }
         return df, metadata
 
@@ -5615,8 +5999,12 @@ class EnhancedSimulationEngine:
                     self._log(f"VALIDATION WARNING: Column '{col_name}' has non-numeric dtype {col_data.dtype}, skipping bounds check")
                     continue
 
-                actual_min = int(col_data.min())
-                actual_max = int(col_data.max())
+                # Drop NaN values before computing min/max (missing data may have been injected)
+                col_valid = col_data.dropna()
+                if len(col_valid) == 0:
+                    continue
+                actual_min = int(col_valid.min())
+                actual_max = int(col_valid.max())
 
                 # CHECK 1b: Bounds validation
                 if actual_min < 1 or actual_max > scale_points:
@@ -5667,8 +6055,12 @@ class EnhancedSimulationEngine:
             if col_data.dtype == object or not np.issubdtype(col_data.dtype, np.number):
                 self._log(f"VALIDATION WARNING: Additional var '{var_name}' has non-numeric dtype, skipping")
                 continue
-            actual_min = int(col_data.min())
-            actual_max = int(col_data.max())
+            # Drop NaN values before computing min/max (missing data may have been injected)
+            col_valid = col_data.dropna()
+            if len(col_valid) == 0:
+                continue
+            actual_min = int(col_valid.min())
+            actual_max = int(col_valid.max())
             if actual_min < var_min or actual_max > var_max:
                 issues.append({
                     "column": var_name,
@@ -5690,8 +6082,12 @@ class EnhancedSimulationEngine:
             if col_data.dtype == object or not np.issubdtype(col_data.dtype, np.number):
                 self._log(f"VALIDATION WARNING: Demographic '{col_name}' has non-numeric dtype, skipping")
                 continue
-            actual_min = int(col_data.min())
-            actual_max = int(col_data.max())
+            # Drop NaN values before computing min/max (missing data may have been injected)
+            col_valid = col_data.dropna()
+            if len(col_valid) == 0:
+                continue
+            actual_min = int(col_valid.min())
+            actual_max = int(col_valid.max())
             if actual_min < expected_range[0] or actual_max > expected_range[1]:
                 issues.append({
                     "column": col_name,
