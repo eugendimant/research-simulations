@@ -14,10 +14,10 @@ Architecture:
 - Graceful fallback: if all LLM providers fail, silently falls back to
   the existing template-based ComprehensiveResponseGenerator
 
-Version: 1.4.10
+Version: 1.9.1
 """
 
-__version__ = "1.4.10"
+__version__ = "1.9.1"
 
 import hashlib
 import json
@@ -45,6 +45,9 @@ CEREBRAS_MODEL = "llama-3.3-70b"
 
 OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
 OPENROUTER_MODEL = "mistralai/mistral-small-3.1-24b-instruct:free"
+
+SAMBANOVA_API_URL = "https://api.sambanova.ai/v1/chat/completions"
+SAMBANOVA_MODEL = "Meta-Llama-3.1-70B-Instruct"
 
 # ---------------------------------------------------------------------------
 # Built-in API keys (XOR-encoded for repository secret scanning compliance)
@@ -769,17 +772,8 @@ def _call_llm_api(
     Uses the ``requests`` library when available (reliable on Streamlit Cloud),
     with ``urllib.request`` as a fallback.
 
-    Args:
-        api_url: Full URL for the chat completions endpoint.
-        api_key: Bearer token for authentication.
-        model: Model identifier string.
-        system_prompt: System message content.
-        user_prompt: User message content.
-        temperature: Sampling temperature (clamped to 0.0-2.0).
-        max_tokens: Max response tokens.
-        timeout: Request timeout in seconds.
-
-    Returns the response text or None on any error.
+    v1.9.1: Enhanced error diagnostics — logs HTTP status codes, response
+    previews, and specific error types to help debug connectivity issues.
     """
     if not api_key or not api_key.strip():
         return None
@@ -789,7 +783,7 @@ def _call_llm_api(
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
-        "User-Agent": "BehavioralSimulationTool/1.4.10",
+        "User-Agent": "BehavioralSimulationTool/1.9.1",
     }
 
     # OpenRouter requires/recommends HTTP-Referer and X-Title
@@ -816,11 +810,40 @@ def _call_llm_api(
             json=payload,
             timeout=timeout,
         )
-        resp.raise_for_status()
-        body = resp.json()
-        return body["choices"][0]["message"]["content"]
+        if resp.status_code == 200:
+            body = resp.json()
+            content = body.get("choices", [{}])[0].get("message", {}).get("content", "")
+            if content:
+                return content
+            logger.warning("LLM API returned 200 but empty content: %s (model: %s)",
+                           api_url[:50], model)
+            return None
+        elif resp.status_code == 429:
+            retry_after = resp.headers.get("Retry-After", "unknown")
+            logger.warning("LLM API rate-limited (429) %s model=%s retry-after=%s",
+                           api_url[:50], model, retry_after)
+            return None
+        elif resp.status_code in (401, 403):
+            _body_preview = resp.text[:200] if resp.text else "(empty)"
+            logger.warning("LLM API auth error (%d) %s model=%s — key may be invalid. "
+                           "Response: %s", resp.status_code, api_url[:50], model, _body_preview)
+            return None
+        else:
+            _body_preview = resp.text[:200] if resp.text else "(empty)"
+            logger.warning("LLM API error (%d) %s model=%s — Response: %s",
+                           resp.status_code, api_url[:50], model, _body_preview)
+            return None
     except ImportError:
         pass  # Fall through to urllib
+    except _requests.exceptions.Timeout:
+        logger.warning("LLM API timeout (%ds) %s model=%s", timeout, api_url[:50], model)
+        return None
+    except _requests.exceptions.ConnectionError as exc:
+        logger.warning("LLM API connection error %s model=%s: %s", api_url[:50], model, exc)
+        return None
+    except _requests.exceptions.SSLError as exc:
+        logger.warning("LLM API SSL error %s model=%s: %s", api_url[:50], model, exc)
+        return None
     except Exception as exc:
         logger.warning("LLM API call failed [requests] (%s %s): %s",
                        api_url[:50], model, exc)
@@ -837,7 +860,20 @@ def _call_llm_api(
         )
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             body = json.loads(resp.read().decode("utf-8"))
-            return body["choices"][0]["message"]["content"]
+            content = body.get("choices", [{}])[0].get("message", {}).get("content", "")
+            if content:
+                return content
+            logger.warning("LLM API returned empty content via urllib: %s", api_url[:50])
+            return None
+    except urllib.error.HTTPError as exc:
+        _body_preview = ""
+        try:
+            _body_preview = exc.read().decode("utf-8")[:200]
+        except Exception:
+            pass
+        logger.warning("LLM API HTTP error (%d) [urllib] %s model=%s: %s",
+                       exc.code, api_url[:50], model, _body_preview)
+        return None
     except Exception as exc:
         logger.warning("LLM API call failed [urllib] (%s %s): %s",
                        api_url[:50], model, exc)
@@ -847,8 +883,15 @@ def _call_llm_api(
 def _parse_json_responses(raw: str, expected_n: int) -> List[str]:
     """Parse a JSON array of strings from the LLM output.
 
-    Handles common LLM quirks: markdown code fences, trailing commas,
-    single quotes, escaped quotes, and short responses.
+    v1.9.1: Enhanced with additional fallback strategies for robustness:
+    - Standard JSON array
+    - Markdown-fenced JSON
+    - Trailing-comma fix
+    - Single-quote fix
+    - Truncated JSON recovery
+    - Numbered list format (1. "response")
+    - Newline-delimited responses
+    - Quoted string extraction (last resort)
     """
     if not raw or not raw.strip():
         return []
@@ -860,39 +903,91 @@ def _parse_json_responses(raw: str, expected_n: int) -> List[str]:
         cleaned = re.sub(r"\s*```\s*$", "", cleaned)
     cleaned = cleaned.strip()
 
-    # Try standard JSON parse
+    # Strategy 1: Standard JSON parse
     try:
         parsed = json.loads(cleaned)
         if isinstance(parsed, list):
-            return [str(r).strip() for r in parsed if str(r).strip()]
+            result = [str(r).strip() for r in parsed if str(r).strip()]
+            if result:
+                return result
     except json.JSONDecodeError:
         pass
 
-    # Fix trailing commas
+    # Strategy 2: Fix trailing commas
     try:
         fixed = re.sub(r",\s*]", "]", cleaned)
         parsed = json.loads(fixed)
         if isinstance(parsed, list):
-            return [str(r).strip() for r in parsed if str(r).strip()]
+            result = [str(r).strip() for r in parsed if str(r).strip()]
+            if result:
+                return result
     except json.JSONDecodeError:
         pass
 
-    # Try replacing single quotes with double quotes (some LLMs do this)
+    # Strategy 3: Replace single quotes with double quotes
     if cleaned.startswith("[") and "'" in cleaned:
         try:
             sq_fixed = cleaned.replace("'", '"')
             parsed = json.loads(sq_fixed)
             if isinstance(parsed, list):
-                return [str(r).strip() for r in parsed if str(r).strip()]
+                result = [str(r).strip() for r in parsed if str(r).strip()]
+                if result:
+                    return result
         except json.JSONDecodeError:
             pass
 
-    # Last resort: extract quoted strings (min 3 chars to accept short responses)
+    # Strategy 4: Handle truncated JSON (response cut off mid-array)
+    if cleaned.startswith("[") and not cleaned.endswith("]"):
+        # Try to close the array at the last complete string
+        _trunc = cleaned
+        # Find the last complete quoted string
+        _last_quote = _trunc.rfind('"')
+        if _last_quote > 0:
+            _trunc = _trunc[:_last_quote + 1] + "]"
+            # Remove any trailing comma before the closing bracket
+            _trunc = re.sub(r",\s*]", "]", _trunc)
+            try:
+                parsed = json.loads(_trunc)
+                if isinstance(parsed, list):
+                    result = [str(r).strip() for r in parsed if str(r).strip()]
+                    if result:
+                        logger.info("Recovered %d responses from truncated JSON", len(result))
+                        return result
+            except json.JSONDecodeError:
+                pass
+
+    # Strategy 5: Numbered list format (1. "response" or 1) "response")
+    numbered = re.findall(r'^\s*\d+[\.\)]\s*["\'](.+?)["\']?\s*$', cleaned, re.MULTILINE)
+    if len(numbered) >= max(1, expected_n // 2):
+        return [r.strip() for r in numbered if r.strip()]
+
+    # Strategy 6: Numbered list without quotes (1. response text)
+    numbered_nq = re.findall(r'^\s*\d+[\.\)]\s+(.{10,}?)\s*$', cleaned, re.MULTILINE)
+    if len(numbered_nq) >= max(1, expected_n // 2):
+        return [r.strip().strip('"').strip("'") for r in numbered_nq if r.strip()]
+
+    # Strategy 7: Extract all quoted strings (min 3 chars)
     matches = re.findall(r'"([^"]{3,})"', cleaned)
     if matches:
         return [m.strip() for m in matches if m.strip()]
 
-    logger.warning("Could not parse LLM response as JSON array")
+    # Strategy 8: Newline-delimited responses (each line is a response)
+    lines = [l.strip() for l in cleaned.split("\n") if l.strip() and len(l.strip()) >= 5]
+    # Filter out lines that look like instructions/metadata
+    response_lines = [
+        l.strip('"').strip("'").strip()
+        for l in lines
+        if not l.startswith("{") and not l.startswith("[")
+        and not l.lower().startswith("participant")
+        and not l.lower().startswith("response")
+        and not l.lower().startswith("here")
+        and not l.lower().startswith("note")
+    ]
+    if len(response_lines) >= max(1, expected_n // 3):
+        return response_lines
+
+    logger.warning("Could not parse LLM response as JSON array (raw length: %d, expected %d). "
+                   "First 200 chars: %s", len(raw), expected_n, raw[:200])
     return []
 
 
@@ -913,6 +1008,10 @@ def detect_provider_from_key(api_key: str) -> Optional[Dict[str, str]]:
         return {"name": "cerebras", "api_url": CEREBRAS_API_URL, "model": CEREBRAS_MODEL}
     elif key.startswith("sk-or-"):
         return {"name": "openrouter", "api_url": OPENROUTER_API_URL, "model": OPENROUTER_MODEL}
+    elif key.startswith("tgai-") or key.startswith("tog-"):
+        return {"name": "together", "api_url": TOGETHER_API_URL, "model": TOGETHER_MODEL}
+    elif key.startswith("snova-") or key.startswith("sambanova-"):
+        return {"name": "sambanova", "api_url": SAMBANOVA_API_URL, "model": SAMBANOVA_MODEL}
     elif len(key) > 30:
         # Default to Groq for unrecognized long keys
         return {"name": "groq", "api_url": GROQ_API_URL, "model": GROQ_MODEL}
@@ -943,6 +1042,20 @@ def get_supported_providers() -> List[Dict[str, str]]:
             "free_tier": "Free models available",
             "recommended": False,
         },
+        {
+            "name": "Together AI",
+            "prefix": "tgai-...",
+            "url": "https://api.together.xyz",
+            "free_tier": "Free Llama 3.3 70B model",
+            "recommended": False,
+        },
+        {
+            "name": "SambaNova",
+            "prefix": "(any key)",
+            "url": "https://cloud.sambanova.ai",
+            "free_tier": "Free Llama 3.1 70B",
+            "recommended": False,
+        },
     ]
 
 
@@ -950,7 +1063,11 @@ def get_supported_providers() -> List[Dict[str, str]]:
 # Provider abstraction
 # ---------------------------------------------------------------------------
 class _LLMProvider:
-    """Represents a single LLM API provider with automatic failure tracking."""
+    """Represents a single LLM API provider with automatic failure tracking.
+
+    v1.9.0: Improved resilience — higher failure threshold, retry with backoff,
+    and soft-disable that allows periodic re-attempts.
+    """
 
     def __init__(self, name: str, api_url: str, model: str, api_key: str) -> None:
         self.name = name
@@ -960,23 +1077,53 @@ class _LLMProvider:
         self.available = True
         self.call_count = 0
         self._consecutive_failures = 0
-        self._max_failures = 3  # Disable after 3 consecutive failures
+        self._max_failures = 6  # v1.9.0: More tolerant (was 3)
+        self._total_failures = 0
+        self._last_failure_time = 0.0
+        self._cooldown_seconds = 30.0  # Re-try after 30s cooldown
 
     def call(self, system_prompt: str, user_prompt: str,
              temperature: float = 0.7, max_tokens: int = 4000) -> Optional[str]:
-        if not self.available or not self.api_key:
+        if not self.api_key:
             return None
-        result = _call_llm_api(
-            self.api_url, self.api_key, self.model,
-            system_prompt, user_prompt, temperature, max_tokens,
-        )
+        # v1.9.0: Auto-recover after cooldown period
+        if not self.available:
+            elapsed = time.time() - self._last_failure_time
+            if elapsed >= self._cooldown_seconds:
+                logger.info("Provider '%s' cooldown expired (%.0fs), re-enabling",
+                            self.name, elapsed)
+                self.available = True
+                self._consecutive_failures = 0
+            else:
+                return None
+
+        # v1.9.0: Retry with backoff (up to 2 retries per call)
+        result = None
+        for attempt in range(3):
+            result = _call_llm_api(
+                self.api_url, self.api_key, self.model,
+                system_prompt, user_prompt, temperature, max_tokens,
+            )
+            if result is not None:
+                break
+            if attempt < 2:
+                _backoff = 1.5 * (attempt + 1)  # 1.5s, 3.0s
+                logger.debug("Provider '%s' attempt %d failed, retrying in %.1fs...",
+                             self.name, attempt + 1, _backoff)
+                time.sleep(_backoff)
+
         self.call_count += 1
         if result is None:
             self._consecutive_failures += 1
+            self._total_failures += 1
+            self._last_failure_time = time.time()
             if self._consecutive_failures >= self._max_failures:
                 self.available = False
-                logger.info("Provider '%s' disabled after %d consecutive failures",
-                            self.name, self._consecutive_failures)
+                # v1.9.0: Increase cooldown exponentially
+                self._cooldown_seconds = min(300.0, self._cooldown_seconds * 2)
+                logger.info("Provider '%s' disabled after %d consecutive failures "
+                            "(cooldown: %.0fs)",
+                            self.name, self._consecutive_failures, self._cooldown_seconds)
         else:
             self._consecutive_failures = 0  # Reset on success
         return result
@@ -985,6 +1132,7 @@ class _LLMProvider:
         """Re-enable the provider (e.g., after rate-limit window expires)."""
         self.available = True
         self._consecutive_failures = 0
+        self._cooldown_seconds = 30.0
 
 
 # ---------------------------------------------------------------------------
@@ -1042,9 +1190,10 @@ class LLMResponseGenerator:
         self._pool = _ResponsePool()
         self._rate_limiter = _RateLimiter(max_rpm=28)
         self._fallback_count = 0
+        self._batch_failure_count = 0
 
-        # Build provider chain — all built-in keys first, then user key last.
-        # When Groq rate-limits → auto-switch to Cerebras → OpenRouter → user key.
+        # Build provider chain — built-in keys first, then env-var providers,
+        # then user key last. Priority: Groq -> Cerebras -> Together -> OpenRouter -> user
         self._providers: List[_LLMProvider] = []
         user_key = api_key or os.environ.get("LLM_API_KEY", "") or os.environ.get("GROQ_API_KEY", "")
         _all_builtin_keys = {_DEFAULT_GROQ_KEY, _DEFAULT_CEREBRAS_KEY, _DEFAULT_OPENROUTER_KEY}
@@ -1059,6 +1208,28 @@ class LLMResponseGenerator:
                 self._providers.append(_LLMProvider(
                     name=name, api_url=url, model=model, api_key=key,
                 ))
+
+        # v1.9.1: Env-var providers inserted BEFORE OpenRouter for better failover
+        # Together AI (free Llama 3.3 70B) — excellent free tier
+        _together_key = os.environ.get("TOGETHER_API_KEY", "")
+        if _together_key and not any(p.api_key == _together_key for p in self._providers):
+            # Insert before OpenRouter (position -1 if openrouter exists)
+            _or_idx = next((i for i, p in enumerate(self._providers)
+                           if p.name == "openrouter_builtin"), len(self._providers))
+            self._providers.insert(_or_idx, _LLMProvider(
+                name="together", api_url=TOGETHER_API_URL,
+                model=TOGETHER_MODEL, api_key=_together_key,
+            ))
+
+        # SambaNova Cloud (free Llama 3.1 70B) — generous free tier
+        _sambanova_key = os.environ.get("SAMBANOVA_API_KEY", "")
+        if _sambanova_key:
+            _or_idx = next((i for i, p in enumerate(self._providers)
+                           if p.name == "openrouter_builtin"), len(self._providers))
+            self._providers.insert(_or_idx, _LLMProvider(
+                name="sambanova", api_url=SAMBANOVA_API_URL,
+                model=SAMBANOVA_MODEL, api_key=_sambanova_key,
+            ))
 
         # User-provided key (appended AFTER built-ins so it's tried last —
         # we want to use the tool's own capacity first)
@@ -1081,7 +1252,6 @@ class LLMResponseGenerator:
 
         # Extra env-var providers (if someone configures them manually)
         for env_var, name, url, model in [
-            ("TOGETHER_API_KEY", "together", TOGETHER_API_URL, TOGETHER_MODEL),
             ("CEREBRAS_API_KEY", "cerebras_env", CEREBRAS_API_URL, CEREBRAS_MODEL),
             ("OPENROUTER_API_KEY", "openrouter_env", OPENROUTER_API_URL, OPENROUTER_MODEL),
         ]:
@@ -1092,6 +1262,15 @@ class LLMResponseGenerator:
                 ))
 
         self._api_available = any(p.available and p.api_key for p in self._providers)
+
+        # v1.9.1: Diagnostic logging — log provider chain for debugging
+        _provider_summary = []
+        for p in self._providers:
+            _key_prefix = p.api_key[:8] + "..." if p.api_key else "(none)"
+            _provider_summary.append(f"{p.name}({_key_prefix})")
+        logger.info("LLM provider chain: %s | api_available=%s",
+                    " → ".join(_provider_summary) if _provider_summary else "(empty)",
+                    self._api_available)
 
     @property
     def is_llm_available(self) -> bool:
@@ -1142,7 +1321,8 @@ class LLMResponseGenerator:
             "groq_user": "Groq (your key)",
             "cerebras_user": "Cerebras (your key)",
             "openrouter_user": "OpenRouter (your key)",
-            "together": "Together AI",
+            "together": "Together AI (free Llama 3.3 70B)",
+            "sambanova": "SambaNova Cloud (free Llama 3.1 70B)",
             "cerebras_env": "Cerebras",
             "openrouter_env": "OpenRouter",
         }
@@ -1255,7 +1435,7 @@ class LLMResponseGenerator:
             all_conditions=self._all_conditions or None,
         )
 
-        # Try every provider in the chain
+        # v1.9.0: Try every provider in the chain with improved resilience
         tried: set = set()
         while True:
             provider = self._get_active_provider()
@@ -1269,17 +1449,34 @@ class LLMResponseGenerator:
             if raw is not None:
                 responses = _parse_json_responses(raw, len(persona_specs))
                 if responses:
+                    self._batch_failure_count = 0  # Reset on success
                     return responses
                 logger.warning("Provider '%s' returned unparseable response, trying next...",
                                provider.name)
             else:
                 logger.info("Provider '%s' failed, trying next...", provider.name)
 
-        # All providers failed
-        self._api_available = False
-        logger.warning("All %d LLM providers exhausted — falling back to templates",
-                       len(self._providers))
+        # All providers failed for THIS batch — DON'T permanently disable
+        # v1.9.0: Track batch failures separately; only disable after sustained failures
+        self._batch_failure_count += 1
+        if self._batch_failure_count >= 5:
+            # Only disable after 5 consecutive batch failures (was instant before)
+            self._api_available = False
+            logger.warning("All %d LLM providers exhausted after %d batch failures — "
+                           "falling back to templates",
+                           len(self._providers), self._batch_failure_count)
+        else:
+            logger.info("Batch %d failed across all providers, will retry next batch "
+                        "(reset providers for next attempt)",
+                        self._batch_failure_count)
+            # Reset providers so they're tried again on next batch
+            self._reset_all_providers()
         return []
+
+    def _reset_all_providers(self) -> None:
+        """Reset all providers to available state for retry."""
+        for p in self._providers:
+            p.reset()
 
     # ------------------------------------------------------------------
     # Single-response generation with deep variation (D)
@@ -1557,8 +1754,8 @@ class LLMResponseGenerator:
     def check_connectivity(self, timeout: int = 15) -> Dict[str, Any]:
         """Quick connectivity test — loops through ALL providers.
 
-        Tries each provider in order until one responds.  This ensures we
-        find a working provider even when earlier ones are rate-limited.
+        v1.9.0: Does NOT permanently disable providers during check.
+        Tries each provider in order until one responds.
 
         Args:
             timeout: Max seconds per individual provider check (default 15).
@@ -1569,13 +1766,11 @@ class LLMResponseGenerator:
             return {"available": False, "provider": "none", "error": "No API keys configured"}
 
         last_error = "No providers available"
-        tried: set = set()
-        while True:
-            provider = self._get_active_provider()
-            if not provider or provider.name in tried:
-                break
-            tried.add(provider.name)
+        _failed_providers: List[str] = []
 
+        for provider in self._providers:
+            if not provider.api_key:
+                continue
             try:
                 raw = _call_llm_api(
                     provider.api_url, provider.api_key, provider.model,
@@ -1583,12 +1778,20 @@ class LLMResponseGenerator:
                     temperature=0.0, max_tokens=10, timeout=timeout,
                 )
                 if raw is not None:
+                    # v1.9.0: Reset all providers so generation starts fresh
+                    for p in self._providers:
+                        p.reset()
                     return {"available": True, "provider": provider.name, "error": None}
-                # Mark failed so _get_active_provider skips it next loop
-                provider.available = False
+                _failed_providers.append(provider.name)
                 last_error = f"{provider.name} unavailable"
             except Exception as e:
-                provider.available = False
+                _failed_providers.append(provider.name)
                 last_error = str(e)
 
-        return {"available": False, "provider": "none", "error": last_error}
+        # v1.9.0: Reset all providers after check — don't leave them disabled
+        for p in self._providers:
+            p.reset()
+
+        return {"available": False, "provider": "none",
+                "error": f"All providers failed: {last_error}",
+                "tried": _failed_providers}
