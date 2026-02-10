@@ -53,8 +53,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.0.1.7"
-BUILD_ID = "20260210-v1017-fix-generate-nav-clean-ux"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.0.1.8"
+BUILD_ID = "20260210-v1018-btt-restored-ux-polish"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -119,7 +119,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.0.1.7"  # v1.0.1.7: Fix Generate tab bug, clean UX, remove nav clutter
+APP_VERSION = "1.0.1.8"  # v1.0.1.8: Restore Back to top, 2 iterations UX polish
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -5568,6 +5568,31 @@ section[data-testid="stSidebar"] .stCaption { line-height: 1.4; }
 .feedback-bar a { color: #6B7280; text-decoration: none; }
 .feedback-bar a:hover { color: #FF4B4B; }
 
+/* ─── "Back to top" HTML anchor link styled as button ─── */
+.btt-link {
+    display: block;
+    text-align: center;
+    padding: 8px 16px;
+    border: 1px solid #E5E7EB;
+    border-radius: 10px;
+    color: #6B7280 !important;
+    text-decoration: none !important;
+    font-size: 0.82rem;
+    font-weight: 500;
+    background: #FAFAFA;
+    cursor: pointer;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    width: 100%;
+    box-sizing: border-box;
+}
+.btt-link:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    border-color: #D1D5DB;
+    color: #374151 !important;
+    text-decoration: none !important;
+}
+
 /* ─── Wizard page nav buttons ─── */
 .stButton button[kind="secondary"] {
     border-radius: 10px !important;
@@ -5609,13 +5634,16 @@ section[data-testid="stSidebar"] .stCaption { line-height: 1.4; }
 def _render_flow_nav(active: int, done: List[bool]) -> None:
     """Render a clean segmented progress bar with step labels.
 
-    v1.0.1.7: Simplified — removed redundant step button row and "Step X of Y"
-    text. The progress bar + labels provide all the navigation context needed.
-    Forward navigation is handled by bottom Continue buttons on each page,
-    which fixes the timing bug where done[] was stale at render time.
+    v1.0.1.8: Clean progress bar + labels only. No redundant step buttons.
+    Forward navigation is handled by bottom Continue buttons on each page.
+    Includes #btt-anchor for "Back to top" links at the bottom of pages.
     """
     while len(done) < len(SECTION_META):
         done.append(False)
+
+    # Anchor target for "Back to top" HTML links at the bottom of pages.
+    # Pure client-side scrollIntoView() — no st.rerun() needed.
+    st.markdown('<div id="btt-anchor"></div>', unsafe_allow_html=True)
 
     # Build segmented progress bar + labels as a single HTML block
     segments_html = '<div class="seg-progress">'
@@ -6788,22 +6816,17 @@ if active_page == 1:
         st.session_state["condition_sources"] = condition_sources
 
         selected_conditions = st.session_state.get("selected_conditions") or []
-        st.markdown("#### QSF Analysis Results")
+        st.markdown("#### QSF Analysis")
         _n_questions = int(getattr(preview, "total_questions", 0) or 0)
         _n_scales = int(len(getattr(preview, "detected_scales", []) or []))
         _n_candidates = int(len(st.session_state.get("condition_candidates", []) or []))
         warnings = getattr(preview, "validation_warnings", []) or []
-        c1, c2, c3, c4, c5 = st.columns(5)
+        c1, c2, c3 = st.columns(3)
         c1.metric("Questions", _n_questions)
-        c2.metric("Scales detected", _n_scales)
-        c3.metric("Condition candidates", _n_candidates)
-        c4.metric("Conditions selected", int(len(selected_conditions)))
-        c5.metric("Warnings", int(len(warnings)))
+        c2.metric("Scales", _n_scales)
+        c3.metric("Conditions", _n_candidates)
         if _n_questions > 0 and not warnings:
-            st.success(
-                f"QSF parsed successfully: {_n_questions} questions, {_n_scales} scales, "
-                f"{_n_candidates} condition candidates. Proceed to the **Design** tab to configure."
-            )
+            st.caption(f"QSF parsed. Proceed to **Design** to configure.")
 
         errors = getattr(preview, "validation_errors", []) or []
 
@@ -6856,12 +6879,20 @@ if active_page == 1:
         if selected_conditions:
             st.success(f"✓ Conditions: {', '.join(selected_conditions)}")
 
-    # v1.0.1.7: Bottom nav — back + Continue (replaces "Back to top" pattern).
+    # v1.0.1.8: Bottom nav — Back | Back to top | Continue (3-column)
     st.markdown("---")
-    _nav_left1, _nav_right1 = st.columns([1, 1])
+    _nav_left1, _nav_mid1, _nav_right1 = st.columns([1, 1, 1])
     with _nav_left1:
         if st.button("\u2190 Setup", key="back_1", type="secondary"):
             _navigate_to(0)
+    with _nav_mid1:
+        st.markdown(
+            '<a href="#btt-anchor" '
+            'onclick="var el=document.getElementById(\'btt-anchor\');'
+            'if(el){el.scrollIntoView({behavior:\'smooth\',block:\'start\'});}return false;" '
+            'class="btt-link">\u2191 Back to top</a>',
+            unsafe_allow_html=True,
+        )
     with _nav_right1:
         if step2_done:
             if st.button("Continue to Design \u2192", key="bottom_continue_1", type="primary", use_container_width=True):
@@ -6968,7 +6999,7 @@ if active_page == 2:
             )
             st.session_state["selected_conditions"] = selected
         else:
-            st.info("No conditions auto-detected from the QSF file. Use the options below to add conditions.")
+            st.caption("No conditions auto-detected. Add conditions below.")
             selected = []
             st.session_state["selected_conditions"] = []
 
@@ -7048,13 +7079,11 @@ if active_page == 2:
         all_conditions = list(dict.fromkeys(selected + custom_conditions))
 
         # Show final conditions summary
-        st.markdown("")
         if all_conditions:
-            # Display cleaned condition names
             clean_names = [_clean_condition_name(c) for c in all_conditions]
-            st.success(f"**{len(all_conditions)} condition(s) configured:** {', '.join(clean_names)}")
+            st.caption(f"{len(all_conditions)} condition(s): {', '.join(clean_names)}")
         else:
-            st.error("No conditions defined. Please go back and select or add at least 2 conditions.")
+            st.error("No conditions defined. Select or add at least one condition above.")
             all_conditions = []
 
         # ── Design Structure ────────────────────────────────────────────
@@ -7479,14 +7508,8 @@ if active_page == 2:
 
         else:
             # Simple multi-arm design - each condition is independent
-            st.info("Each condition is treated as an independent level of a single factor.")
-            clean_conditions = [_clean_condition_name(c) for c in all_conditions]
+            st.caption("Each condition is an independent level of a single factor.")
             factors = [{"name": "Condition", "levels": all_conditions}]
-
-            # Display the conditions cleanly
-            st.markdown("**Conditions:**")
-            for i, (orig, clean) in enumerate(zip(all_conditions, clean_conditions)):
-                st.markdown(f"  {i+1}. {clean}")
 
         # Ensure we have at least one factor
         if not factors:
@@ -7532,49 +7555,16 @@ if active_page == 2:
         scales_to_remove = []
 
         if confirmed_scales:
-            # v1.9.1: Show count and type breakdown for detected scales
-            _type_counts: dict = {}
-            for _sc in confirmed_scales:
-                _sc_type = _sc.get("type", "likert")
-                _type_label = type_badges.get(_sc_type, "Scale").split(" ", 1)[-1] if _sc_type in type_badges else _sc_type.replace("_", " ").title()
-                _type_counts[_type_label] = _type_counts.get(_type_label, 0) + 1
-            _type_summary = ", ".join(f"{count} {name}" for name, count in sorted(_type_counts.items(), key=lambda x: -x[1]))
-            _qsf_detected_count = sum(1 for _sc in confirmed_scales if _sc.get("detected_from_qsf", True))
-            _manual_count = len(confirmed_scales) - _qsf_detected_count
+            st.markdown(f"**{len(confirmed_scales)} DV(s) detected.** Review and adjust as needed:")
 
-            st.markdown(f"**{len(confirmed_scales)} DV(s) detected** ({_type_summary}). Review and adjust as needed:")
-            if _qsf_detected_count > 0 and _manual_count > 0:
-                st.caption(f"{_qsf_detected_count} auto-detected from QSF, {_manual_count} manually added.")
-
-            # v1.2.0: Column headers for clarity with tooltips
+            # Column headers
             hdr1, hdr2, hdr3a, hdr3b, hdr4, hdr5 = st.columns([2.5, 0.8, 0.6, 0.6, 1.5, 0.4])
-            with hdr1:
-                st.markdown(
-                    '<span title="The variable name as it appears in your QSF file. You can edit this to match your analysis script.">**Variable Name**</span>',
-                    unsafe_allow_html=True
-                )
-            with hdr2:
-                st.markdown(
-                    '<span title="Number of items/questions in this scale. Multi-item scales (e.g., 5-item attitude measure) will generate averaged composite scores.">**Items**</span>',
-                    unsafe_allow_html=True
-                )
-            with hdr3a:
-                st.markdown(
-                    '<span title="Minimum value on the response scale (e.g., 1 for a 1-7 scale, 0 for a 0-100 slider).">**Min**</span>',
-                    unsafe_allow_html=True
-                )
-            with hdr3b:
-                st.markdown(
-                    '<span title="Maximum value on the response scale (e.g., 7 for a 1-7 Likert scale, 100 for a 0-100 slider).">**Max**</span>',
-                    unsafe_allow_html=True
-                )
-            with hdr4:
-                st.markdown(
-                    '<span title="Detection type: Matrix=multi-item battery, Slider=visual analog scale, Single Item=standalone question, Numeric=open-ended number input.">**Type**</span>',
-                    unsafe_allow_html=True
-                )
-            with hdr5:
-                st.caption("Del")
+            hdr1.markdown("**Name**")
+            hdr2.markdown("**Items**")
+            hdr3a.markdown("**Min**")
+            hdr3b.markdown("**Max**")
+            hdr4.markdown("**Type**")
+            hdr5.caption("")
 
             for i, scale in enumerate(confirmed_scales):
                 dv_type = scale.get("type", "likert")
@@ -7744,16 +7734,7 @@ if active_page == 2:
                         "scale_max": new_scale_max,
                     })
         else:
-            # v1.9.1: Enhanced no-detection warning with specific guidance
-            st.warning(
-                "**No dependent variables detected from your QSF file.** "
-                "This can happen when:\n"
-                "- Your survey uses unconventional question formats or naming\n"
-                "- Questions are stored in non-standard QSF elements\n"
-                "- The survey file is a template without finalized questions\n\n"
-                "Click **+ Add DV** below to manually define your dependent variables. "
-                "You will need at least one DV to generate simulated data."
-            )
+            st.warning("No DVs auto-detected. Click **+ Add DV** below to define them manually.")
 
         # Handle removals with visual feedback
         if scales_to_remove:
@@ -7808,15 +7789,8 @@ if active_page == 2:
         )
         st.session_state["scales_confirmed"] = scales_confirmed
 
-        if scales_confirmed and updated_scales:
-            st.markdown(
-                f'<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:6px;'
-                f'padding:8px 12px;margin-top:4px;font-size:0.85em;color:#166534;">'
-                f'{_n_updated} DV(s) confirmed and ready for simulation.</div>',
-                unsafe_allow_html=True,
-            )
-        elif not scales_confirmed and updated_scales:
-            st.caption("Please verify the DVs above match your survey, then check the confirmation box to proceed.")
+        if not scales_confirmed and updated_scales:
+            st.caption("Verify the DVs above match your survey, then check the box.")
 
         # ========================================
         # STEP 5: OPEN-ENDED QUESTIONS
@@ -8054,8 +8028,8 @@ if active_page == 2:
                 )
 
         # ── Design Summary ──────────────────────────────────────────────
-        st.markdown("---")
-
+        st.markdown("")
+        st.markdown("#### Summary")
         display_conditions = all_conditions
         if st.session_state.get("use_crossed_conditions") and st.session_state.get("factorial_crossed_conditions"):
             display_conditions = st.session_state["factorial_crossed_conditions"]
@@ -8245,7 +8219,7 @@ if active_page == 2:
             st.session_state["inferred_design"]["missing_data_rate"] = _missing_rate
             st.session_state["inferred_design"]["dropout_rate"] = _dropout_rate
 
-            st.success("✅ Design configuration complete. Proceed to the **Generate** step to run the simulation.")
+            st.caption("Design ready. Use **Continue to Generate** below.")
         else:
             missing_bits = []
             if not all_conditions:
@@ -8253,12 +8227,12 @@ if active_page == 2:
             if not scales:
                 missing_bits.append("scales")
             if not scales_confirmed:
-                missing_bits.append("scale confirmation (check the box above)")
+                missing_bits.append("scale confirmation")
             if not _alloc_ok:
-                missing_bits.append(f"condition allocation (sums to {_alloc_sum}, need {sample_size})")
+                missing_bits.append(f"allocation (sums to {_alloc_sum}, need {sample_size})")
             if not _oe_confirmed_ok:
-                missing_bits.append("open-ended question confirmation (check the box above)")
-            st.error("⚠️ Cannot proceed - missing: " + ", ".join(missing_bits))
+                missing_bits.append("OE confirmation")
+            st.caption(f"Still needed: {', '.join(missing_bits)}")
 
         # v1.7.0: Variable review — hidden behind Advanced toggle
         if st.session_state.get("advanced_mode", False):
@@ -8291,18 +8265,25 @@ if active_page == 2:
                     )
                     st.session_state["variable_review_rows"] = variable_df.to_dict(orient="records")
 
-    # v1.0.1.7: Bottom nav with direct Continue button (fixes Generate tab bug).
-    # Previous version required scrolling to top for forward nav — but the top
-    # "Continue" button computed done[] BEFORE the page rendered inferred_design,
-    # causing the button to never appear on the same rerun. Bottom button works
-    # because it renders AFTER inferred_design is set.
+    # v1.0.1.8: Bottom nav — Back | Back to top | Continue (3-column).
+    # The bottom Continue button is ESSENTIAL — it renders AFTER inferred_design
+    # is set during this page's render, fixing the timing bug where the top-of-page
+    # Continue (in _render_flow_nav) couldn't see inferred_design on the same rerun.
     _design_can_next = bool(st.session_state.get("inferred_design"))
 
     st.markdown("---")
-    _nav_left2, _nav_right2 = st.columns([1, 1])
+    _nav_left2, _nav_mid2, _nav_right2 = st.columns([1, 1, 1])
     with _nav_left2:
         if st.button("\u2190 Study Input", key="back_2", type="secondary"):
             _navigate_to(1)
+    with _nav_mid2:
+        st.markdown(
+            '<a href="#btt-anchor" '
+            'onclick="var el=document.getElementById(\'btt-anchor\');'
+            'if(el){el.scrollIntoView({behavior:\'smooth\',block:\'start\'});}return false;" '
+            'class="btt-link">\u2191 Back to top</a>',
+            unsafe_allow_html=True,
+        )
     with _nav_right2:
         if _design_can_next:
             if st.button("Continue to Generate \u2192", key="bottom_continue_2", type="primary", use_container_width=True):
@@ -8344,25 +8325,13 @@ if active_page == 3:
     )
 
     if not inferred:
-        _gen_input_mode = st.session_state.get("study_input_mode", "upload_qsf")
-        if _gen_input_mode == "describe_study":
-            st.warning(
-                "No experiment design configured yet. Please complete **Study Input** "
-                "to describe your conditions and scales, click **Build Study Specification**, "
-                "then review your design in **Design** before generating data."
-            )
-        else:
-            st.warning(
-                "No experiment design configured yet. Please complete **Study Input** "
-                "to upload a QSF file (or describe your study), then configure your "
-                "design in **Design** before generating data."
-            )
-        col_back1, col_back2 = st.columns([1, 1])
+        st.warning("No experiment design configured yet. Complete the earlier steps first.")
+        col_back1, col_back2, _ = st.columns([1, 1, 2])
         with col_back1:
-            if st.button("Go to Study Input", key="go_step2_from_generate", use_container_width=True):
+            if st.button("\u2190 Study Input", key="go_step2_from_generate"):
                 _navigate_to(1)
         with col_back2:
-            if st.button("Go to Design", key="go_step3_from_generate", use_container_width=True):
+            if st.button("\u2190 Design", key="go_step3_from_generate"):
                 _navigate_to(2)
         st.markdown('</div>', unsafe_allow_html=True)
         st.stop()
@@ -8400,20 +8369,17 @@ if active_page == 3:
     scale_names = [s.get('name', 'Unknown') for s in scales if s.get('name')]
     _sample_n = st.session_state.get('sample_size', 0)
 
-    # v1.0.1.6: Full-width study title (no truncation) + 4-column metrics
+    # v1.0.1.8: Compact study title + 3-column metrics
     _study_title_display = st.session_state.get('study_title', 'Untitled')
     st.markdown(
-        f'<div style="font-size:0.78rem;color:#6B7280;margin-bottom:2px;">Study</div>'
-        f'<div style="font-size:1.45rem;font-weight:600;color:#1F2937;margin-bottom:12px;">{_study_title_display}</div>',
+        f'<div style="font-size:1.1rem;font-weight:600;color:#1F2937;margin-bottom:8px;">{_study_title_display}</div>',
         unsafe_allow_html=True,
     )
-    _gc2, _gc3, _gc4, _gc5 = st.columns(4)
-    _gc2.metric("N", _sample_n)
-    _gc3.metric("Conditions", len(conditions))
-    _gc4.metric("Scales", len(scale_names))
-    # v1.8.9: Show per-cell N for quick power assessment
     _per_cell = _sample_n // max(len(conditions), 1) if _sample_n else 0
-    _gc5.metric("Per cell", _per_cell, help="Approximate participants per condition")
+    _gc1, _gc2, _gc3 = st.columns(3)
+    _gc1.metric("N", f"{_sample_n} ({_per_cell}/cell)")
+    _gc2.metric("Conditions", len(conditions))
+    _gc3.metric("DVs", len(scale_names))
 
     # ========================================
     # v1.0.0: DIFFICULTY LEVEL SELECTOR
