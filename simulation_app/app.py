@@ -53,8 +53,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.0.1.6"
-BUILD_ID = "20260210-v1016-nav-oe-confirm-title-warnings"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.0.1.7"
+BUILD_ID = "20260210-v1017-fix-generate-nav-clean-ux"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -119,7 +119,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.0.1.6"  # v1.0.1.6: Clickable nav, OE confirmation enforcement, title fix, warning filter
+APP_VERSION = "1.0.1.7"  # v1.0.1.7: Fix Generate tab bug, clean UX, remove nav clutter
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -3419,13 +3419,13 @@ def _get_qsf_preview_parser() -> QSFPreviewParser:
 # -----------------------------
 st.set_page_config(page_title=APP_TITLE, layout="wide")
 
-# ── Compact header (only on wizard pages, not landing page) ───────────
+# v1.0.1.7: Minimal header on wizard pages — title is secondary to progress bar
 _current_page = st.session_state.get("active_page", -1)
 if _current_page >= 0:
     st.markdown(
-        f'<div style="display:flex;align-items:baseline;gap:12px;margin-bottom:0;">'
-        f'<h2 style="margin:0;padding:0;font-size:1.35rem;">{APP_TITLE}</h2>'
-        f'<span style="font-size:0.75rem;color:#D1D5DB;">v{APP_VERSION}</span>'
+        f'<div style="display:flex;align-items:baseline;gap:10px;margin-bottom:-8px;">'
+        f'<span style="font-size:0.85rem;font-weight:600;color:#6B7280;">{APP_TITLE}</span>'
+        f'<span style="font-size:0.7rem;color:#D1D5DB;">v{APP_VERSION}</span>'
         f'</div>',
         unsafe_allow_html=True,
     )
@@ -4999,11 +4999,6 @@ def _navigate_to(page_index: int) -> None:
     st.rerun()
 
 
-    # v1.8.7.5: _scroll_then_navigate and _scroll_to_top_only removed
-    # (scroll-up-first caused widget re-initialization; replaced with
-    #  direct navigation + pure-JS "Back to top" button)
-
-
 # ── Section metadata for flow navigation ──────────────────────────────
 SECTION_META: List[Dict[str, str]] = [
     {"title": "Setup", "icon": "📋", "desc": "Study details & team"},
@@ -5446,27 +5441,20 @@ section[data-testid="stSidebar"] .stCaption { line-height: 1.4; }
 .seg-progress {
     display: flex;
     gap: 4px;
-    padding: 14px 0 0;
+    padding: 10px 0 0;
 }
 .seg-bar {
     flex: 1;
-    height: 4px;
+    height: 3px;
     border-radius: 2px;
     background: #E5E7EB;
-    cursor: pointer;
     transition: all 0.3s ease;
-    position: relative;
 }
 .seg-bar.active {
-    background: #FF4B4B;
-    box-shadow: 0 0 8px rgba(255,75,75,0.2);
+    background: #3B82F6;
 }
 .seg-bar.done {
     background: #22C55E;
-}
-.seg-bar:hover {
-    transform: scaleY(1.5);
-    opacity: 0.85;
 }
 /* v1.0.1.6: Clickable step labels under progress bar */
 .seg-labels {
@@ -5490,7 +5478,7 @@ section[data-testid="stSidebar"] .stCaption { line-height: 1.4; }
     color: #4B5563;
 }
 .seg-label-item.lbl-active {
-    color: #1F2937;
+    color: #3B82F6;
     font-weight: 600;
 }
 .seg-label-item.lbl-done {
@@ -5521,10 +5509,10 @@ section[data-testid="stSidebar"] .stCaption { line-height: 1.4; }
 .section-guide {
     font-size: 13px; color: #6B7280;
     margin: 0 0 16px 0;
-    padding: 10px 16px;
-    background: linear-gradient(135deg, #FAFBFF 0%, #F8FAFC 100%);
+    padding: 8px 14px;
+    background: #F9FAFB;
     border-radius: 8px;
-    border-left: 3px solid #FF4B4B;
+    border-left: 3px solid #D1D5DB;
 }
 
 /* Section complete banner */
@@ -5580,31 +5568,6 @@ section[data-testid="stSidebar"] .stCaption { line-height: 1.4; }
 .feedback-bar a { color: #6B7280; text-decoration: none; }
 .feedback-bar a:hover { color: #FF4B4B; }
 
-/* ─── "Back to top" HTML anchor link styled as button ─── */
-.btt-link {
-    display: block;
-    text-align: center;
-    padding: 8px 20px;
-    border: 1px solid #D1D5DB;
-    border-radius: 10px;
-    color: #374151 !important;
-    text-decoration: none !important;
-    font-size: 0.85rem;
-    font-weight: 500;
-    background: white;
-    cursor: pointer;
-    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-    width: 100%;
-    box-sizing: border-box;
-}
-.btt-link:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(0,0,0,0.08);
-    border-color: #9CA3AF;
-    color: #111827 !important;
-    text-decoration: none !important;
-}
-
 /* ─── Wizard page nav buttons ─── */
 .stButton button[kind="secondary"] {
     border-radius: 10px !important;
@@ -5639,40 +5602,22 @@ section[data-testid="stSidebar"] .stCaption { line-height: 1.4; }
     .research-section { padding: 20px 16px; }
 }
 
-/* v1.8.7.6: Top continue button — subtle glow pulse to draw attention */
-@keyframes gentle-pulse {
-    0%, 100% { box-shadow: 0 2px 8px rgba(255,75,75,0.15); }
-    50% { box-shadow: 0 4px 18px rgba(255,75,75,0.38); }
-}
-/* Pulse on all primary buttons — they're always the main forward CTA */
-.stButton button[kind="primary"] {
-    animation: gentle-pulse 2.5s ease-in-out infinite;
-}
-.stButton button[kind="primary"]:hover {
-    animation: none !important;
-    transform: translateY(-3px) !important;
-    box-shadow: 0 6px 24px rgba(255,75,75,0.4) !important;
-}
+/* v1.0.1.7: Removed pulsing animation — cleaner, more professional look */
 </style>"""
 
 
 def _render_flow_nav(active: int, done: List[bool]) -> None:
-    """Render segmented progress bar, step label, and top Continue button.
+    """Render a clean segmented progress bar with step labels.
 
-    v1.8.0: Thin segmented bar replaces dots+lines stepper.
-    v1.8.7.7: Top "Continue to [Next Step]" button restored for pages 1-2.
-    Users scroll to top via "Back to top" at the bottom, then proceed here.
-    Page 0 (Setup) uses a direct bottom button since it's short.
+    v1.0.1.7: Simplified — removed redundant step button row and "Step X of Y"
+    text. The progress bar + labels provide all the navigation context needed.
+    Forward navigation is handled by bottom Continue buttons on each page,
+    which fixes the timing bug where done[] was stale at render time.
     """
     while len(done) < len(SECTION_META):
         done.append(False)
 
-    # v1.8.7.7: Anchor target for "Back to top" HTML links at the bottom.
-    # Using an HTML anchor avoids st.rerun() and Streamlit scroll-restoration
-    # issues entirely — pure client-side scrollIntoView().
-    st.markdown('<div id="btt-anchor"></div>', unsafe_allow_html=True)
-
-    # Build segmented progress bar
+    # Build segmented progress bar + labels as a single HTML block
     segments_html = '<div class="seg-progress">'
     for i in range(len(SECTION_META)):
         if i < active and done[i]:
@@ -5683,61 +5628,12 @@ def _render_flow_nav(active: int, done: List[bool]) -> None:
             cls = ""
         segments_html += f'<div class="seg-bar {cls}" data-step="{i}"></div>'
     segments_html += '</div>'
-    # v1.0.1.6: Clickable step labels under progress bar segments
     labels_html = '<div class="seg-labels">'
     for i, sm in enumerate(SECTION_META):
         lbl_cls = "lbl-active" if i == active else ("lbl-done" if i < active and done[i] else "")
-        labels_html += f'<div class="seg-label-item {lbl_cls}" data-nav-step="{i}">{sm["title"]}</div>'
+        labels_html += f'<div class="seg-label-item {lbl_cls}">{sm["title"]}</div>'
     labels_html += '</div>'
     st.markdown(segments_html + labels_html, unsafe_allow_html=True)
-
-    # Step label with completion summary
-    meta = SECTION_META[active]
-    n_done = sum(1 for d in done if d)
-    completion_text = f" \u00b7 {n_done}/{len(SECTION_META)} complete" if n_done > 0 else ""
-    st.markdown(
-        f'<div class="step-label">Step {active + 1} of {len(SECTION_META)}'
-        f' \u2014 <strong>{meta["title"]}</strong>{completion_text}</div>',
-        unsafe_allow_html=True,
-    )
-
-    # v1.0.1.6: Clickable step navigation — hidden buttons triggered by label clicks
-    _nav_cols = st.columns(len(SECTION_META))
-    for _si, _sc in enumerate(_nav_cols):
-        with _sc:
-            # Allow clicking to any completed step or the current step
-            _can_nav = (_si < active) or (_si == active) or (_si <= active + 1 and done[active])
-            if _can_nav and _si != active:
-                if st.button(
-                    SECTION_META[_si]["title"],
-                    key=f"nav_step_{_si}",
-                    type="secondary",
-                    use_container_width=True,
-                ):
-                    _navigate_to(_si)
-            else:
-                # Current step or unreachable — show as disabled text
-                _clr = "#1F2937" if _si == active else "#D1D5DB"
-                _fw = "700" if _si == active else "400"
-                st.markdown(
-                    f'<div style="text-align:center;padding:6px 0;font-size:0.82rem;'
-                    f'color:{_clr};font-weight:{_fw};">{SECTION_META[_si]["title"]}</div>',
-                    unsafe_allow_html=True,
-                )
-
-    # v1.8.7.6: Top "Continue" button for pages 1-2 when step is complete.
-    # This is the ONLY forward-navigation button — bottom has only "Back to top".
-    if active in (1, 2) and done[active]:
-        _next_step_name = SECTION_META[active + 1]["title"]
-        _spacer, _btn_col = st.columns([3, 2])
-        with _btn_col:
-            if st.button(
-                f"Continue to {_next_step_name} \u2192",
-                key=f"top_continue_{active}",
-                type="primary",
-                use_container_width=True,
-            ):
-                _navigate_to(active + 1)
 
 
 _SCROLL_TO_TOP_JS = """<script>
@@ -6960,30 +6856,16 @@ if active_page == 1:
         if selected_conditions:
             st.success(f"✓ Conditions: {', '.join(selected_conditions)}")
 
-    # v1.8.7.6: Bottom nav — back button + "Back to top" only.
-    # Forward navigation is at the TOP via _render_flow_nav() so users
-    # must scroll up first to confirm their edits before proceeding.
-    if step2_done:
-        st.markdown(
-            '<div class="section-done-banner">\u2713 Study input complete \u2014 scroll up to continue</div>',
-            unsafe_allow_html=True,
-        )
-
+    # v1.0.1.7: Bottom nav — back + Continue (replaces "Back to top" pattern).
     st.markdown("---")
-    _nav_left1, _nav_btt1 = st.columns([1, 1])
+    _nav_left1, _nav_right1 = st.columns([1, 1])
     with _nav_left1:
         if st.button("\u2190 Setup", key="back_1", type="secondary"):
             _navigate_to(0)
-    with _nav_btt1:
-        # v1.8.7.7: Pure HTML anchor link — no st.rerun(), no scroll JS.
-        # Uses scrollIntoView() on the #btt-anchor div at the top of _render_flow_nav().
-        st.markdown(
-            '<a href="#btt-anchor" '
-            'onclick="var el=document.getElementById(\'btt-anchor\');'
-            'if(el){el.scrollIntoView({behavior:\'smooth\',block:\'start\'});}return false;" '
-            'class="btt-link">\u2191 Back to top</a>',
-            unsafe_allow_html=True,
-        )
+    with _nav_right1:
+        if step2_done:
+            if st.button("Continue to Design \u2192", key="bottom_continue_1", type="primary", use_container_width=True):
+                _navigate_to(2)
 
     st.markdown('</div>', unsafe_allow_html=True)
 
@@ -7998,27 +7880,7 @@ if active_page == 2:
                 _ctx_count = sum(1 for _oe in confirmed_open_ended if _oe.get("question_context", "").strip())
                 _missing_ctx = len(confirmed_open_ended) - _ctx_count
                 st.markdown(f"**{len(confirmed_open_ended)} open-ended question(s):**")
-                # v1.0.1.2: Enhanced context guidance — explain WHY context matters
-                st.caption(
-                    "For each question below, add **context** — a 1-2 sentence explanation of what the question "
-                    "is really asking. This tells the AI *who* is responding, *what* they experienced, and *how* "
-                    "they should frame their answer. Without context, the AI generates generic responses."
-                )
-                if _ctx_count > 0 and _missing_ctx > 0:
-                    st.info(
-                        f"{_ctx_count}/{len(confirmed_open_ended)} question(s) have context. "
-                        f"Adding context to the remaining {_missing_ctx} will significantly improve AI response quality."
-                    )
-                elif _ctx_count == 0:
-                    st.warning(
-                        "No questions have context yet. Adding context is **highly recommended** — "
-                        "it is the single most impactful thing you can do for AI response quality."
-                    )
-                elif _ctx_count == len(confirmed_open_ended):
-                    st.markdown(
-                        '<span style="color:#166534;font-size:0.85em;">All questions have context — AI responses will be well-tailored.</span>',
-                        unsafe_allow_html=True,
-                    )
+                st.caption("Add context (1-2 sentences) to each question to improve AI response quality.")
                 for i, oe in enumerate(confirmed_open_ended):
                     source_type = oe.get("source_type", "detected")
                     source_badge = source_badges.get(source_type, "📝 Text")
@@ -8065,18 +7927,9 @@ if active_page == 2:
                         ),
                         label_visibility="collapsed",
                     )
-                    # v1.0.1.2: Context enrichment feedback with guidance
-                    if _oe_ctx.strip():
-                        _ctx_words = len(_oe_ctx.strip().split())
-                        _ctx_chars = len(_oe_ctx.strip())
-                        if _ctx_words < 3:
-                            st.caption(f"{_ctx_chars} chars, {_ctx_words} words — consider adding more detail for better AI responses.")
-                        elif _ctx_words <= 30:
-                            st.caption(f"{_ctx_chars} chars, {_ctx_words} words")
-                        else:
-                            st.caption(f"{_ctx_chars} chars, {_ctx_words} words — concise is best; consider trimming to 1-2 sentences.")
-                    else:
-                        st.caption("No context yet — add 1-2 sentences to help the AI generate relevant responses.")
+                    # v1.0.1.7: Minimal context feedback
+                    if not _oe_ctx.strip():
+                        st.caption("No context yet")
 
                     if var_name.strip() and i not in oe_to_remove:
                         updated_open_ended.append({
@@ -8136,39 +7989,18 @@ if active_page == 2:
                 # User cleared all variable names — warn but don't silently delete
                 st.warning("All open-ended question names are empty. Fill in names or remove them explicitly.")
 
-        # ── v1.0.1.2: Context quality indicator + confirmation checkbox (OUTSIDE expander) ──
+        # v1.0.1.7: Compact context quality indicator + confirmation (OUTSIDE expander)
         _oe_final = st.session_state.get("confirmed_open_ended", [])
         _oe_version_outer = st.session_state.get("_oe_version", 0)
         if _oe_final:
             _ctx_filled = sum(1 for _oq in _oe_final if _oq.get("question_context", "").strip())
             _ctx_missing_final = len(_oe_final) - _ctx_filled
             if _ctx_filled == len(_oe_final):
-                st.markdown(
-                    '<div style="background:#F0FDF4;border:1px solid #BBF7D0;border-radius:8px;padding:10px 14px;margin:6px 0;">'
-                    '<span style="color:#166534;font-weight:600;">All open-ended questions have context</span>'
-                    ' &mdash; AI responses will be well-tailored to your study and personas.'
-                    '</div>',
-                    unsafe_allow_html=True,
-                )
+                st.caption("All open-ended questions have context.")
             elif _ctx_filled > 0:
-                st.markdown(
-                    f'<div style="background:#FFFBEB;border:1px solid #FDE68A;border-radius:8px;padding:10px 14px;margin:6px 0;">'
-                    f'<span style="color:#92400E;font-weight:600;">{_ctx_filled}/{len(_oe_final)} questions have context</span>'
-                    f' &mdash; expand the section above to add context to the remaining {_ctx_missing_final}. '
-                    f'Context dramatically improves how AI personas respond to your open-ended questions.'
-                    f'</div>',
-                    unsafe_allow_html=True,
-                )
+                st.caption(f"{_ctx_filled}/{len(_oe_final)} questions have context. Adding context to the rest improves AI response quality.")
             else:
-                st.markdown(
-                    f'<div style="background:#FEF2F2;border:1px solid #FECACA;border-radius:8px;padding:10px 14px;margin:6px 0;">'
-                    f'<span style="color:#991B1B;font-weight:600;">No questions have context yet</span>'
-                    f' &mdash; expand the section above and add 1-2 sentences per question explaining '
-                    f'what is being asked. This is <strong>highly recommended</strong> for meaningful '
-                    f'AI-generated responses that reflect different participant personas.'
-                    f'</div>',
-                    unsafe_allow_html=True,
-                )
+                st.caption("No questions have context yet. Expand above to add 1-2 sentences per question (recommended).")
         # v1.0.1.4: Only show OE confirmation checkbox when there are OE questions;
         # auto-confirm when list is empty (nothing to confirm)
         if _oe_final:
@@ -8459,30 +8291,22 @@ if active_page == 2:
                     )
                     st.session_state["variable_review_rows"] = variable_df.to_dict(orient="records")
 
-    # v1.8.7.6: Bottom nav — back button + "Back to top" only.
-    # Forward navigation is at the TOP via _render_flow_nav() so users
-    # must scroll up first to confirm their edits before proceeding.
+    # v1.0.1.7: Bottom nav with direct Continue button (fixes Generate tab bug).
+    # Previous version required scrolling to top for forward nav — but the top
+    # "Continue" button computed done[] BEFORE the page rendered inferred_design,
+    # causing the button to never appear on the same rerun. Bottom button works
+    # because it renders AFTER inferred_design is set.
     _design_can_next = bool(st.session_state.get("inferred_design"))
-    if _design_can_next:
-        st.markdown(
-            '<div class="section-done-banner">\u2713 Design configured \u2014 scroll to top to continue</div>',
-            unsafe_allow_html=True,
-        )
 
     st.markdown("---")
-    _nav_left2, _nav_btt2 = st.columns([1, 1])
+    _nav_left2, _nav_right2 = st.columns([1, 1])
     with _nav_left2:
         if st.button("\u2190 Study Input", key="back_2", type="secondary"):
             _navigate_to(1)
-    with _nav_btt2:
-        # v1.8.7.7: Pure HTML anchor link — no st.rerun(), no scroll JS.
-        st.markdown(
-            '<a href="#btt-anchor" '
-            'onclick="var el=document.getElementById(\'btt-anchor\');'
-            'if(el){el.scrollIntoView({behavior:\'smooth\',block:\'start\'});}return false;" '
-            'class="btt-link">\u2191 Back to top</a>',
-            unsafe_allow_html=True,
-        )
+    with _nav_right2:
+        if _design_can_next:
+            if st.button("Continue to Generate \u2192", key="bottom_continue_2", type="primary", use_container_width=True):
+                _navigate_to(3)
 
     st.markdown('</div>', unsafe_allow_html=True)
 

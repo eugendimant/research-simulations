@@ -33,7 +33,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 # Version identifier to help track deployed code
-__version__ = "1.0.1.6"  # v1.0.1.6: Clickable nav, OE confirmation enforcement, title fix
+__version__ = "1.0.1.7"  # v1.0.1.7: Fix Generate tab bug, clean UX
 
 
 # ============================================================================
