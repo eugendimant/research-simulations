@@ -33,7 +33,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 # Version identifier to help track deployed code
-__version__ = "1.0.1.0"  # v1.0.1.0: Google AI Studio (Gemini 2.5 Flash Lite + Gemma 3 27B)
+__version__ = "1.0.1.1"  # v1.0.1.1: UX cleanup, LLM tracking fix
 
 
 # ============================================================================
