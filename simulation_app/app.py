@@ -7734,11 +7734,27 @@ if active_page == 2:
             updated_open_ended = []
             oe_to_remove = []
 
+            # v1.9.1: Show removal notice from previous rerun
+            _oe_removal_notice = st.session_state.pop("_oe_removal_notice", None)
+            if _oe_removal_notice:
+                st.info(_oe_removal_notice)
+
             if confirmed_open_ended:
                 _ctx_count = sum(1 for _oe in confirmed_open_ended if _oe.get("question_context", "").strip())
+                _missing_ctx = len(confirmed_open_ended) - _ctx_count
                 st.markdown(f"**{len(confirmed_open_ended)} open-ended question(s):**")
-                if _ctx_count < len(confirmed_open_ended):
+                if _ctx_count > 0 and _missing_ctx > 0:
+                    st.caption(
+                        f"{_ctx_count}/{len(confirmed_open_ended)} question(s) have context. "
+                        f"Adding context to the remaining {_missing_ctx} will improve AI response quality."
+                    )
+                elif _ctx_count == 0:
                     st.caption("Add context to each question below so the AI understands what you're asking. This dramatically improves response quality.")
+                elif _ctx_count == len(confirmed_open_ended):
+                    st.markdown(
+                        '<span style="color:#166534;font-size:0.85em;">All questions have context -- AI responses will be well-tailored.</span>',
+                        unsafe_allow_html=True,
+                    )
                 for i, oe in enumerate(confirmed_open_ended):
                     source_type = oe.get("source_type", "detected")
                     source_badge = source_badges.get(source_type, "📝 Text")
@@ -7754,11 +7770,13 @@ if active_page == 2:
                         st.markdown(f"<small>{source_badge}</small>", unsafe_allow_html=True)
                     with col3:
                         if st.button("✕", key=f"rm_oe_v{oe_version}_{i}", help="Remove"):
+                            _removed_name = oe.get("variable_name", oe.get("name", f"OpenEnded_{i+1}"))
+                            st.session_state["_oe_removal_notice"] = f"Removed open-ended question: {_removed_name}"
                             oe_to_remove.append(i)
                     q_text = oe.get("question_text", "")
                     if q_text:
                         st.caption(f"*\"{q_text[:80]}{'...' if len(q_text) > 80 else ''}\"*")
-                    # v1.8.7.1: Context explainer for better response generation
+                    # v1.8.7.1 / v1.9.1: Context with character/word count feedback
                     _oe_ctx_existing = oe.get("question_context", "")
                     _oe_ctx = st.text_input(
                         f"Context for {var_name or f'Q{i+1}'}",
@@ -7768,6 +7786,17 @@ if active_page == 2:
                         help="1-2 sentences explaining what this question is really asking. Helps the AI generate more relevant responses.",
                         label_visibility="collapsed",
                     )
+                    # v1.9.1: Context enrichment feedback with word count hints
+                    if _oe_ctx.strip():
+                        _ctx_words = len(_oe_ctx.strip().split())
+                        _ctx_chars = len(_oe_ctx.strip())
+                        if _ctx_words < 3:
+                            st.caption(f"{_ctx_chars} chars, {_ctx_words} words -- consider adding more detail for better AI responses.")
+                        elif _ctx_words <= 30:
+                            st.caption(f"{_ctx_chars} chars, {_ctx_words} words")
+                        else:
+                            st.caption(f"{_ctx_chars} chars, {_ctx_words} words -- concise is best; consider trimming to 1-2 sentences.")
+
                     if var_name.strip() and i not in oe_to_remove:
                         updated_open_ended.append({
                             "variable_name": var_name.strip(),
