@@ -1,8 +1,8 @@
 # Technical Methods Documentation
 
-**Behavioral Experiment Simulation Tool v1.4.9**
+**Behavioral Experiment Simulation Tool v1.0.1.4**
 
-**Proprietary Software** | Dr. Eugen Dimant, University of Pennsylvania
+**Proprietary Software** | Dr. Eugen Dimant
 
 ---
 
@@ -207,13 +207,15 @@ Where `participants_per_bucket = sample_size / (n_conditions × 5 sentiments)`.
 
 ### 5.4 Multi-Provider Failover
 
-| Provider | Rate Limit (Free) | Model | Key Prefix |
-|----------|-------------------|-------|------------|
-| Groq | 14,400 req/day | Llama 3.3 70B | `gsk_` |
-| Cerebras | 1M tokens/day | Llama 3.1 8B | `csk-` |
-| OpenRouter | Free models | Llama 3.3 70B | `sk-or-` |
+| Priority | Provider | Model | Rate Limit (Free) |
+|----------|----------|-------|--------------------|
+| 1 | Google AI Studio | Gemini 2.5 Flash Lite | Built-in key |
+| 2 | Google AI Studio | Gemma 3 27B | Built-in key |
+| 3 | Groq | Llama 3.3 70B | 14,400 req/day |
+| 4 | Cerebras | Llama 3.1 8B | 1M tokens/day |
+| 5 | OpenRouter | Llama 3.3 70B | Free models |
 
-Providers are tried in order; if one fails or rate-limits, the next is attempted automatically.
+Providers are tried in priority order; if one fails or rate-limits, the next is attempted automatically. Users can optionally provide their own API keys for higher rate limits.
 
 ### 5.5 Response Characteristics by Persona
 

@@ -53,8 +53,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.0.1.3"
-BUILD_ID = "20260210-v1013-data-integrity-ui-polish"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.0.1.4"
+BUILD_ID = "20260210-v1014-oe-removal-fix-proceed-btn"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -119,7 +119,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.0.1.3"  # v1.0.1.3: Data integrity fixes, factorial interactions, professional UI polish
+APP_VERSION = "1.0.1.4"  # v1.0.1.4: OE removal fix, Remove All button, proceed button fix, UPenn removal
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -4670,7 +4670,22 @@ def _render_builder_design_review() -> None:
             inferred["open_ended_questions"] = open_ended
             st.session_state["inferred_design"] = inferred
             st.session_state["confirmed_open_ended"] = open_ended
-            _navigate_to(2)
+            # v1.0.1.4: Use st.rerun() to avoid expander collapse and scroll-to-top
+            st.rerun()
+
+        # v1.0.1.4: "Remove All" button for builder open-ended questions
+        if open_ended and len(open_ended) > 1:
+            if st.button(
+                f"Remove All Open-Ended Questions ({len(open_ended)})",
+                key="br_remove_all_oe",
+                help="Remove all open-ended questions at once",
+            ):
+                inferred["open_ended_questions"] = []
+                st.session_state["inferred_design"] = inferred
+                st.session_state["confirmed_open_ended"] = []
+                st.session_state["_builder_oe_context_complete"] = True
+                st.rerun()
+
         # Persist edits
         inferred["open_ended_questions"] = open_ended
         st.session_state["inferred_design"] = inferred
@@ -6312,7 +6327,6 @@ if active_page == -1:
     # Footer
     st.markdown(
         '<div class="landing-footer">'
-        '<div class="footer-institution">University of Pennsylvania</div>'
         f'<div class="footer-version">v{APP_VERSION}</div>'
         '</div>',
         unsafe_allow_html=True,
@@ -8007,20 +8021,37 @@ if active_page == 2:
             if oe_to_remove:
                 st.session_state["confirmed_open_ended"] = updated_open_ended
                 st.session_state["_oe_version"] = oe_version + 1
-                _navigate_to(2)
+                # v1.0.1.4: Use st.rerun() instead of _navigate_to(2) to avoid
+                # closing the expander and scrolling to top on removal
+                st.rerun()
 
-            if st.button("Add Open-Ended Question", key=f"add_oe_btn_v{oe_version}"):
-                new_oe = {
-                    "variable_name": f"OpenEnded_{len(confirmed_open_ended)+1}",
-                    "name": f"OpenEnded_{len(confirmed_open_ended)+1}",
-                    "question_text": "", "question_context": "",
-                    "source_type": "manual",
-                    "force_response": False, "context_type": "general",
-                }
-                confirmed_open_ended.append(new_oe)
-                st.session_state["confirmed_open_ended"] = confirmed_open_ended
-                st.session_state["_oe_version"] = oe_version + 1
-                _navigate_to(2)
+            # v1.0.1.4: Action buttons row — Add + Remove All
+            _oe_btn_col1, _oe_btn_col2, _oe_spacer = st.columns([1, 1, 2])
+            with _oe_btn_col1:
+                if st.button("Add Open-Ended Question", key=f"add_oe_btn_v{oe_version}"):
+                    new_oe = {
+                        "variable_name": f"OpenEnded_{len(confirmed_open_ended)+1}",
+                        "name": f"OpenEnded_{len(confirmed_open_ended)+1}",
+                        "question_text": "", "question_context": "",
+                        "source_type": "manual",
+                        "force_response": False, "context_type": "general",
+                    }
+                    confirmed_open_ended.append(new_oe)
+                    st.session_state["confirmed_open_ended"] = confirmed_open_ended
+                    st.session_state["_oe_version"] = oe_version + 1
+                    st.rerun()
+            with _oe_btn_col2:
+                if confirmed_open_ended and len(confirmed_open_ended) > 1:
+                    if st.button(
+                        f"Remove All ({len(confirmed_open_ended)})",
+                        key=f"rm_all_oe_v{oe_version}",
+                        help="Remove all open-ended questions at once",
+                    ):
+                        _n_removed = len(confirmed_open_ended)
+                        st.session_state["confirmed_open_ended"] = []
+                        st.session_state["_oe_version"] = oe_version + 1
+                        st.session_state["_oe_removal_notice"] = f"Removed all {_n_removed} open-ended questions."
+                        st.rerun()
 
             # Only update confirmed_open_ended if there were actual changes
             # This prevents silent data loss from rendering edge cases
@@ -8301,6 +8332,19 @@ if active_page == 2:
             st.session_state["inferred_design"]["dropout_rate"] = _dropout_rate
 
             st.success("✅ Design configuration complete. Proceed to the **Generate** step to run the simulation.")
+
+            # v1.0.1.4: Inline Continue button — ensures the user can always proceed
+            # even on the first render where inferred_design was just set (the top
+            # _render_flow_nav button depends on the PREVIOUS rerun's session state).
+            _inline_spacer, _inline_btn = st.columns([3, 2])
+            with _inline_btn:
+                if st.button(
+                    "Continue to Generate →",
+                    key="inline_continue_to_generate",
+                    type="primary",
+                    use_container_width=True,
+                ):
+                    _navigate_to(3)
         else:
             missing_bits = []
             if not all_conditions:
