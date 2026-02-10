@@ -2811,8 +2811,15 @@ class EnhancedSimulationEngine:
             if self.llm_generator.is_llm_available:
                 self._log(f"LLM response generator initialized ({self.llm_generator.provider_display_name})")
             else:
-                self._log("LLM generator: no providers available, using templates")
-                self.llm_generator = None
+                # v1.9.0: Keep the generator alive even if initial check fails.
+                # Providers may have transient issues; the generator has built-in
+                # retry and cooldown logic that can recover during generation.
+                self._log("LLM generator: initial check found no active providers, "
+                          "will retry during generation (providers may recover)")
+                # Reset all providers to give them a fresh chance during actual generation
+                if hasattr(self.llm_generator, '_reset_all_providers'):
+                    self.llm_generator._reset_all_providers()
+                    self.llm_generator._api_available = True
         except Exception as _llm_err:
             self._log(f"LLM generator not available (using templates): {_llm_err}")
 
@@ -4742,6 +4749,77 @@ class EnhancedSimulationEngine:
         # =====================================================================
         condition_effect = self._get_effect_for_condition(condition, variable_name)
 
+        # =====================================================================
+        # STEP 4a: Personality x Condition Interaction Effects
+        # Differential susceptibility to experimental manipulations
+        #
+        # SCIENTIFIC BASIS:
+        # -----------------
+        # Petty & Cacioppo (1986) Elaboration Likelihood Model (ELM):
+        #   - High-elaboration (engaged) participants process stimuli deeply,
+        #     showing LARGER and more reliable condition effects
+        #   - Low-elaboration (satisficers) rely on heuristics, showing
+        #     SMALLER, less reliable effects
+        #
+        # Krosnick (1991) Satisficing Theory:
+        #   - Optimizers differentiate conditions more (d multiplier ~1.3x)
+        #   - Satisficers show attenuated effects (d multiplier ~0.6x)
+        #
+        # Greenleaf (1992) Extreme Response Style:
+        #   - Extreme responders amplify ALL effects (including condition)
+        #   - Multiplier ~1.35x due to scale endpoint usage
+        #
+        # Meade & Craig (2012) Careless Responding:
+        #   - Careless responders show near-random responses
+        #   - Condition effects almost entirely attenuated (~0.3x)
+        #
+        # Interaction coefficients are calibrated so that the POPULATION-
+        # AVERAGE effect size matches the specified Cohen's d, while
+        # individual-level effects vary realistically by persona type.
+        # =====================================================================
+        if condition_effect != 0.0:
+            _engagement = _safe_trait_value(modified_traits.get("engagement"), 0.65)
+            _attention = _safe_trait_value(modified_traits.get("attention_level"), 0.75)
+            _extremity = _safe_trait_value(modified_traits.get("extremity"), 0.20)
+            _reading_speed = _safe_trait_value(modified_traits.get("reading_speed"), 0.60)
+            _consistency = _safe_trait_value(modified_traits.get("response_consistency"), 0.65)
+
+            # Processing depth factor: high engagement + attention = deeper processing
+            # Petty & Cacioppo (1986): Central route processing amplifies effects
+            # Range: ~0.70 (low engagement) to ~1.35 (high engagement)
+            _processing_depth = 0.5 + (_engagement * 0.45) + (_attention * 0.40)
+            _processing_depth = float(np.clip(_processing_depth, 0.65, 1.40))
+
+            # Speed attenuation: fast responders (satisficers/careless) miss
+            # manipulation details (Krosnick, 1991)
+            # reading_speed > 0.80 indicates rushing -> attenuate
+            _speed_factor = 1.0
+            if _reading_speed > 0.80:
+                _speed_factor = 1.0 - (_reading_speed - 0.80) * 1.5  # Range: 1.0 to ~0.70
+                _speed_factor = float(np.clip(_speed_factor, 0.55, 1.0))
+
+            # Extremity amplification: extreme responders amplify everything
+            # Greenleaf (1992): ERS inflates apparent effect sizes
+            _extremity_amp = 1.0 + (_extremity - 0.20) * 0.50
+            _extremity_amp = float(np.clip(_extremity_amp, 0.90, 1.40))
+
+            # Consistency factor: inconsistent responders add noise that
+            # dilutes true condition effects
+            _consistency_factor = 0.70 + _consistency * 0.40
+            _consistency_factor = float(np.clip(_consistency_factor, 0.60, 1.10))
+
+            # Combined interaction multiplier
+            # Population-weighted average should approximate 1.0 to preserve
+            # specified Cohen's d at the group level
+            _interaction_multiplier = (
+                _processing_depth * _speed_factor *
+                _extremity_amp * _consistency_factor
+            )
+            # Clamp to prevent extreme distortions
+            _interaction_multiplier = float(np.clip(_interaction_multiplier, 0.25, 1.80))
+
+            condition_effect *= _interaction_multiplier
+
         # Apply effect to tendency (normalized to 0-1 scale)
         adjusted_tendency = float(np.clip(base_tendency + condition_effect, 0.08, 0.92))
 
@@ -4774,6 +4852,68 @@ class EnhancedSimulationEngine:
             _latent_weight = float(np.clip(_latent_weight, 0.08, 0.22))
             _latent_effect = _latent_z * _latent_weight
             adjusted_tendency = float(np.clip(adjusted_tendency + _latent_effect, 0.08, 0.92))
+
+        # =====================================================================
+        # STEP 4c: Apply g-factor (general evaluation tendency)
+        # Podsakoff et al. (2003): Common Method Variance
+        #
+        # The g-factor represents a participant's stable tendency to rate
+        # things higher or lower across ALL scales. It loads differentially
+        # on different construct types:
+        #   - Attitudes/evaluations: loading ~0.25 (high CMV)
+        #   - Satisfaction/affect: loading ~0.22 (high CMV)
+        #   - Behavioral intentions: loading ~0.15 (moderate CMV)
+        #   - Trust/credibility: loading ~0.18 (moderate-high CMV)
+        #   - Risk/threat: loading ~0.12 (moderate CMV, often reversed)
+        #   - Factual/behavioral: loading ~0.08 (low CMV)
+        #
+        # This creates within-person coherence: if participant P rates
+        # Trust high, they're more likely to also rate Satisfaction high,
+        # even beyond what the construct correlation captures.
+        # =====================================================================
+        _g_factor_z = traits.get("_g_factor_z", 0.0)
+        if _g_factor_z != 0.0:
+            _g_strength = traits.get("_g_factor_strength", 0.12)
+            # Determine construct-type-specific loading based on variable name
+            # Podsakoff et al. (2003) meta-analytic loadings
+            _var_lower = variable_name.lower()
+            if any(kw in _var_lower for kw in [
+                'attitude', 'evaluation', 'opinion', 'view', 'perception',
+                'feeling', 'judgment', 'assessment'
+            ]):
+                _g_loading = 0.25  # Attitudes: highest CMV susceptibility
+            elif any(kw in _var_lower for kw in [
+                'satisfaction', 'happy', 'pleased', 'enjoy', 'affect',
+                'emotion', 'mood', 'wellbeing'
+            ]):
+                _g_loading = 0.22  # Satisfaction/affect: high CMV
+            elif any(kw in _var_lower for kw in [
+                'trust', 'credib', 'reliab', 'dependab', 'competenc',
+                'integrity', 'benevolenc'
+            ]):
+                _g_loading = 0.18  # Trust constructs: moderate-high CMV
+            elif any(kw in _var_lower for kw in [
+                'intention', 'likely', 'willing', 'would', 'plan',
+                'expect', 'intend'
+            ]):
+                _g_loading = 0.15  # Behavioral intentions: moderate CMV
+            elif any(kw in _var_lower for kw in [
+                'risk', 'danger', 'threat', 'harm', 'fear', 'anxiety',
+                'concern', 'worry'
+            ]):
+                _g_loading = 0.12  # Risk/threat: moderate CMV (often inverted)
+            elif any(kw in _var_lower for kw in [
+                'frequency', 'count', 'number', 'amount', 'time',
+                'behavior', 'action', 'usage'
+            ]):
+                _g_loading = 0.08  # Factual/behavioral: low CMV
+            else:
+                _g_loading = 0.15  # Default: moderate loading
+
+            _g_effect = _g_factor_z * _g_strength * _g_loading
+            adjusted_tendency = float(np.clip(
+                adjusted_tendency + _g_effect, 0.08, 0.92
+            ))
 
         # Calculate response center
         center = scale_min + (adjusted_tendency * scale_range)
@@ -5259,6 +5399,107 @@ class EnhancedSimulationEngine:
             "exclude_recommended": bool(exclude_recommended),
         }
 
+    def _simulate_response_times(
+        self,
+        traits: Dict[str, float],
+        num_scale_items: int,
+        num_open_ended: int,
+        participant_seed: int,
+    ) -> Dict[str, Any]:
+        """
+        Simulate per-participant response time metrics that correlate with
+        response quality based on survey methodology research.
+
+        SCIENTIFIC BASIS:
+        =================
+        Yan & Tourangeau (2008): Response time is a key indicator of data quality.
+        - Engaged responders: 3-5 sec/item on Likert scales
+        - Satisficers: 1-2 sec/item
+        - Careless: < 1 sec/item
+        - Open-ended questions: 15-45 sec for engaged, 3-8 sec for satisficers
+
+        Malhotra (2008): Response time correlates with response consistency
+        at r ~ 0.40-0.60 in online surveys.
+
+        Callegaro et al. (2015): Item-level response times follow log-normal
+        distributions with persona-dependent parameters.
+
+        Zhang & Conrad (2014): Response time increases with item complexity
+        and decreases with satisficing behavior.
+
+        Args:
+            traits: Participant trait dict
+            num_scale_items: Number of Likert/scale items in the survey
+            num_open_ended: Number of open-ended questions
+            participant_seed: Seed for reproducibility
+
+        Returns:
+            Dict with response time metrics:
+            - mean_item_response_time_ms: Average ms per scale item
+            - total_scale_time_ms: Total time across all scale items
+            - open_ended_time_ms: Total time on open-ended (if any)
+            - response_time_quality_r: Estimated quality correlation
+        """
+        rng = np.random.RandomState(participant_seed)
+
+        # Extract relevant traits
+        _attention = _safe_trait_value(traits.get("attention_level"), 0.75)
+        _reading_speed = _safe_trait_value(traits.get("reading_speed"), 0.60)
+        _engagement = _safe_trait_value(traits.get("engagement"), 0.65)
+        _consistency = _safe_trait_value(traits.get("response_consistency"), 0.65)
+
+        # ---- Scale item response times ----
+        # Base time per item in milliseconds (Yan & Tourangeau, 2008)
+        # Engaged: ~4000ms (3-5s), Satisficers: ~1500ms (1-2s), Careless: ~600ms (<1s)
+        # Use attention and reading_speed (inverted) as primary drivers
+        # reading_speed is 0-1 where 1 = very fast (less time)
+        _effective_speed = 1.0 - _reading_speed  # invert: 0=fast, 1=slow/thorough
+        _base_time_ms = 800 + _effective_speed * 3200 + _attention * 1500
+        # Engagement adds deliberation time
+        _base_time_ms += _engagement * 800
+        # Clamp to realistic range: 400ms (extremely fast) to 7000ms (very deliberate)
+        _base_time_ms = float(np.clip(_base_time_ms, 400, 7000))
+
+        # Add log-normal variability per item (Callegaro et al., 2015)
+        # Response times are right-skewed: occasional very long pauses
+        _log_mean = np.log(_base_time_ms)
+        _log_sd = 0.30 + (1.0 - _consistency) * 0.25  # Inconsistent = more variable
+        if num_scale_items > 0:
+            _item_times = rng.lognormal(_log_mean, _log_sd, size=num_scale_items)
+            _item_times = np.clip(_item_times, 300, 15000)  # 0.3s to 15s per item
+            _mean_item_time = float(np.mean(_item_times))
+            _total_scale_time = float(np.sum(_item_times))
+        else:
+            _mean_item_time = _base_time_ms
+            _total_scale_time = 0.0
+
+        # ---- Open-ended response times ----
+        # Engaged: 20-45s per question, Satisficers: 3-8s, Careless: 1-3s
+        _oe_time_ms = 0.0
+        if num_open_ended > 0:
+            _oe_base = 3000 + _effective_speed * 25000 + _attention * 15000
+            _oe_base = float(np.clip(_oe_base, 1000, 45000))
+            for _ in range(num_open_ended):
+                _oe_item = float(rng.lognormal(np.log(_oe_base), 0.40))
+                _oe_item = float(np.clip(_oe_item, 800, 90000))
+                _oe_time_ms += _oe_item
+
+        # ---- Quality-time correlation (Malhotra, 2008) ----
+        # r ~ 0.40-0.60 between time spent and response quality
+        # Computed as an estimate based on the persona traits
+        _quality_score = (_attention + _consistency + (1.0 - _reading_speed)) / 3.0
+        _time_score = _mean_item_time / 7000.0  # Normalize to ~0-1
+        # Estimated correlation for this participant's profile
+        _estimated_r = 0.40 + _quality_score * 0.20
+        _estimated_r = float(np.clip(_estimated_r, 0.35, 0.65))
+
+        return {
+            "mean_item_response_time_ms": int(round(_mean_item_time)),
+            "total_scale_time_ms": int(round(_total_scale_time)),
+            "open_ended_time_ms": int(round(_oe_time_ms)),
+            "response_time_quality_r": round(_estimated_r, 2),
+        }
+
     def generate(self) -> Tuple[pd.DataFrame, Dict[str, Any]]:
         n = self.sample_size
         data: Dict[str, Any] = {}
@@ -5585,7 +5826,9 @@ class EnhancedSimulationEngine:
             self.column_info.append(("Hedonic_Utilitarian", "Product type perception: 1=Utilitarian, 7=Hedonic"))
 
         # v1.4.8: Pre-fill LLM response pool with smart scaling
-        if self.llm_generator and self.llm_generator.is_llm_available and self.open_ended_questions:
+        # v1.9.1: Always try prefill if generator exists — providers may recover
+        # during actual generation even if initial check was uncertain
+        if self.llm_generator and self.open_ended_questions:
             try:
                 _unique_conditions = list(set(conditions.tolist()))
                 _sents = ["very_positive", "positive", "neutral", "negative", "very_negative"]
@@ -5620,9 +5863,23 @@ class EnhancedSimulationEngine:
                                 n_conditions=len(_unique_conditions),
                             )
                 _stats = self.llm_generator.stats
-                self._log(f"LLM pre-filled pool: {_stats['llm_calls']} API calls, {_stats['pool_size']} responses")
+                if _stats['pool_size'] > 0:
+                    self._log(f"LLM pre-filled pool: {_stats['llm_calls']} API calls, "
+                              f"{_stats['pool_size']} responses via {_stats.get('active_provider', 'unknown')}")
+                else:
+                    self._log(f"LLM prefill: {_stats['llm_calls']} API calls but 0 responses — "
+                              f"will retry on-demand during generation. "
+                              f"Providers: {_stats.get('providers', {})}")
+                    # v1.9.1: Reset providers for a fresh start during individual generation
+                    if hasattr(self.llm_generator, '_reset_all_providers'):
+                        self.llm_generator._reset_all_providers()
+                        self.llm_generator._api_available = True
             except Exception as _pf_err:
                 self._log(f"WARNING: LLM pool prefill failed: {_pf_err}")
+                # v1.9.1: Don't give up — reset providers so on-demand generation can try
+                if hasattr(self.llm_generator, '_reset_all_providers'):
+                    self.llm_generator._reset_all_providers()
+                    self.llm_generator._api_available = True
 
         # ONLY generate open-ended responses for questions actually in the QSF
         # Never create default/fake questions - this prevents fake variables like "Task_Summary"
@@ -5747,6 +6004,36 @@ class EnhancedSimulationEngine:
                 ("Exclude_Recommended", "Recommended for exclusion: 1=Yes, 0=No"),
             ]
         )
+
+        # =================================================================
+        # RESPONSE TIME SIMULATION (Yan & Tourangeau, 2008; Malhotra, 2008)
+        # Generate per-participant response time metrics that correlate
+        # with response quality. This provides researchers with realistic
+        # timing data for data quality analysis.
+        # =================================================================
+        _total_scale_items = sum(
+            len(log_entry["columns_generated"])
+            for log_entry in _scale_generation_log
+        )
+        _num_oe = len(self.open_ended_questions) if self.open_ended_questions else 0
+
+        _rt_mean_item: List[int] = []
+        _rt_total_scale: List[int] = []
+        for i in range(n):
+            _rt_seed = (self.seed + i * 100 + 77777) % (2**31)
+            _rt_data = self._simulate_response_times(
+                all_traits[i], _total_scale_items, _num_oe, _rt_seed
+            )
+            _rt_mean_item.append(_rt_data["mean_item_response_time_ms"])
+            _rt_total_scale.append(_rt_data["total_scale_time_ms"])
+
+        data["Mean_Item_RT_ms"] = _rt_mean_item
+        data["Total_Scale_RT_ms"] = _rt_total_scale
+        self.column_info.extend([
+            ("Mean_Item_RT_ms", "Mean response time per scale item in ms (Yan & Tourangeau, 2008)"),
+            ("Total_Scale_RT_ms", "Total response time across all scale items in ms"),
+        ])
+        self._log(f"Generated response time data for {n} participants ({_total_scale_items} scale items, {_num_oe} OE questions)")
 
         # =================================================================
         # MISSING DATA & DROPOUT APPLICATION

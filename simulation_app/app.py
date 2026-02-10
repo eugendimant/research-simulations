@@ -53,8 +53,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.8.9"
-BUILD_ID = "20260210-v189-analytics-power-validation"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.9.1"
+BUILD_ID = "20260210-v191-llm-pipeline-fix-response-realism"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -119,7 +119,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.8.9"  # v1.8.9: Analytics power analysis, sample adequacy, validation improvements, landing page updates
+APP_VERSION = "1.9.1"  # v1.9.1: Error handling, scale detection feedback, open-ended question improvements
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -5153,6 +5153,119 @@ section[data-testid="stSidebar"] .stCaption { line-height: 1.4; }
     color: #D1D5DB;
 }
 
+/* ─── Landing info tabs ─── */
+.landing-tabs-container {
+    max-width: 780px;
+    margin: 32px auto 0;
+    padding: 0 20px;
+}
+.landing-tab-content {
+    padding: 24px 0 16px;
+    font-size: 0.88rem;
+    color: #374151;
+    line-height: 1.65;
+}
+.landing-tab-content h4 {
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #9CA3AF;
+    margin: 0 0 16px;
+    font-weight: 600;
+}
+.use-case-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+    margin-top: 12px;
+}
+.use-case-card {
+    padding: 16px;
+    border: 1px solid #E5E7EB;
+    border-radius: 10px;
+    background: #FAFAFA;
+    transition: all 0.15s ease;
+}
+.use-case-card:hover {
+    border-color: #D1D5DB;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+}
+.use-case-card strong {
+    display: block;
+    font-size: 0.85rem;
+    color: #1F2937;
+    margin-bottom: 4px;
+}
+.use-case-card span {
+    font-size: 0.8rem;
+    color: #6B7280;
+    line-height: 1.5;
+}
+.capability-item {
+    display: flex;
+    gap: 14px;
+    padding: 16px 0;
+    border-bottom: 1px solid #F3F4F6;
+}
+.capability-item:last-child { border-bottom: none; }
+.cap-icon {
+    font-size: 1.5rem;
+    flex-shrink: 0;
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, #FEF2F2, #FFF1F2);
+    border-radius: 10px;
+}
+.cap-text strong {
+    display: block;
+    font-size: 0.88rem;
+    color: #1F2937;
+    margin-bottom: 3px;
+}
+.cap-text span {
+    font-size: 0.82rem;
+    color: #6B7280;
+    line-height: 1.55;
+}
+.step-detail-item {
+    display: flex;
+    gap: 14px;
+    padding: 14px 0;
+    border-bottom: 1px solid #F3F4F6;
+}
+.step-detail-item:last-child { border-bottom: none; }
+.step-num {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #FF4B4B, #FF6B6B);
+    color: white;
+    font-weight: 700;
+    font-size: 0.78rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    margin-top: 2px;
+}
+.step-detail-text strong {
+    display: block;
+    font-size: 0.85rem;
+    color: #1F2937;
+    margin-bottom: 2px;
+}
+.step-detail-text span {
+    font-size: 0.8rem;
+    color: #6B7280;
+    line-height: 1.55;
+}
+@media (max-width: 768px) {
+    .use-case-grid { grid-template-columns: 1fr; }
+}
+
 /* ─── Segmented progress bar ─── */
 .seg-progress {
     display: flex;
@@ -5879,72 +5992,130 @@ if active_page == -1:
         if st.button("Start Your Simulation  \u2192", type="primary", use_container_width=True, key="landing_cta"):
             _navigate_to(0)
 
-    # v1.8.9: Use-case signals for enterprise/institutional visitors
-    with st.expander("Who uses this tool?"):
-        st.markdown("""
-**Researchers & PIs** — Validate analysis pipelines before IRB data collection. Simulate expected
-effect sizes and power for grant proposals. Test factorial designs without waiting for participant recruitment.
+    # v1.9.0: Professional tabbed info sections (replacing generic expanders)
+    st.markdown('<div class="landing-tabs-container">', unsafe_allow_html=True)
 
-**University Instructors** — Assign realistic data analysis exercises where every student gets unique
-datasets. Instructor-only reports provide answer keys with effect sizes and statistical summaries.
+    _info_tab1, _info_tab2, _info_tab3, _info_tab4 = st.tabs([
+        "Who Uses This",
+        "Capabilities",
+        "Step-by-Step",
+        "Research & Citations",
+    ])
 
-**Market Research Teams** — Prototype survey instruments and verify that analysis code handles
-real-world response patterns (attention failures, straight-lining, dropout) before fielding.
-
-**UX Research Groups** — Generate pilot data to test analysis workflows for A/B tests, preference
-studies, and usability scales before committing to costly participant panels.
-
-**Government & Policy Labs** — Simulate citizen survey responses across demographic segments
-to validate measurement instruments and analysis plans before public deployment.
-""")
-
-    # ── Reference sections (expandable, at the bottom) ──
-    st.markdown('<div style="max-width:780px;margin:24px auto 0;padding:0 20px;"><hr style="border:none;border-top:1px solid #F3F4F6;margin:0;"></div>', unsafe_allow_html=True)
-
-    with st.expander("Learn more about each capability"):
-        st.markdown("""
-**Test Before You Collect**
-Generate a publication-ready CSV with realistic Likert-scale responses, attention check failures,
-individual differences, and demographic distributions. The data mirrors real Qualtrics output format
-so your analysis scripts work identically on both simulated and real data.
-
-**Realistic Open-Ended Responses**
-Uses a multi-provider LLM failover chain with 50+ behavioral personas
-to generate unique, context-aware free-text responses. Each response aligns with the participant's
-numeric ratings and assigned persona characteristics. Supports 225+ research domains and 40 question types.
-
-**Ready-to-Run Analysis Code**
-Automatically generates scripts in R, Python, Julia, SPSS, and Stata — tailored to your specific
-experimental design. Includes data loading, variable coding, condition comparisons, and appropriate
-statistical tests (t-tests, ANOVAs, regressions, mediation analyses).
-
-**Built for Research & Teaching**
-Instructor-only reports include detailed statistical analysis with effect sizes, power estimates,
-and visualization charts that students don't see. Group management tracks team usage.
-Pre-registration consistency checks compare your design against OSF, AEA, or AsPredicted specifications.
-""")
-
-    with st.expander("Step-by-step details"):
-        st.markdown("""
-**Step 1 — Name Your Study:** Enter your study title and a description of your experiment's
-purpose, manipulation, and main outcomes. This information is embedded in all generated outputs
-(data files, analysis scripts, reports). Optionally add team member names for group tracking.
-
-**Step 2 — Provide Your Design:** Upload a Qualtrics .qsf file for automatic detection of conditions,
-scales, randomizers, and embedded data. Or describe your study in plain text using the guided builder —
-it parses natural language descriptions of your experimental design.
-
-**Step 3 — Configure Experiment:** Review auto-detected conditions, add custom conditions, configure
-factorial designs (2x2, 2x3, etc.), set sample sizes with per-condition allocation, and verify
-dependent variables. The tool detects matrix scales, Likert items, sliders, and numeric inputs.
-
-**Step 4 — Generate & Download:** Choose a difficulty level (easy to expert) that controls noise,
-attention check failure rates, and response quality. Generate your complete data package and download
-a ZIP containing the CSV, codebook, analysis scripts in 5 languages, summary reports, and metadata.
-""")
-
-    with st.expander("Research foundations & citations"):
+    with _info_tab1:
         st.markdown(
+            '<div class="landing-tab-content">'
+            '<div class="use-case-grid">'
+
+            '<div class="use-case-card">'
+            '<strong>Researchers & PIs</strong>'
+            '<span>Validate analysis pipelines before IRB data collection. Simulate expected '
+            'effect sizes and power for grant proposals.</span></div>'
+
+            '<div class="use-case-card">'
+            '<strong>University Instructors</strong>'
+            '<span>Assign realistic data analysis exercises where every student gets unique '
+            'datasets. Instructor reports provide answer keys.</span></div>'
+
+            '<div class="use-case-card">'
+            '<strong>Market Research Teams</strong>'
+            '<span>Prototype survey instruments and verify analysis code handles real-world '
+            'response patterns before fielding.</span></div>'
+
+            '<div class="use-case-card">'
+            '<strong>UX Research Groups</strong>'
+            '<span>Generate pilot data for A/B tests, preference studies, and usability '
+            'scales before committing to participant panels.</span></div>'
+
+            '<div class="use-case-card">'
+            '<strong>Government & Policy Labs</strong>'
+            '<span>Simulate citizen survey responses across demographic segments to validate '
+            'measurement instruments and analysis plans.</span></div>'
+
+            '<div class="use-case-card">'
+            '<strong>Graduate Students</strong>'
+            '<span>Practice statistical analysis with realistic datasets before collecting '
+            'real data. Learn data cleaning and analysis pipelines.</span></div>'
+
+            '</div></div>',
+            unsafe_allow_html=True,
+        )
+
+    with _info_tab2:
+        st.markdown(
+            '<div class="landing-tab-content">'
+
+            '<div class="capability-item">'
+            '<div class="cap-icon">\U0001f9ea</div>'
+            '<div class="cap-text"><strong>Test Before You Collect</strong>'
+            '<span>Generate a publication-ready CSV with realistic Likert-scale responses, attention check '
+            'failures, individual differences, and demographic distributions. The data mirrors real Qualtrics '
+            'output format so your analysis scripts work identically on both simulated and real data.</span></div></div>'
+
+            '<div class="capability-item">'
+            '<div class="cap-icon">\U0001f4ac</div>'
+            '<div class="cap-text"><strong>Realistic Open-Ended Responses</strong>'
+            '<span>Uses a multi-provider LLM failover chain with 50+ behavioral personas to generate unique, '
+            'context-aware free-text responses. Each response aligns with the participant\'s numeric ratings '
+            'and assigned persona. Supports 225+ research domains and 40 question types.</span></div></div>'
+
+            '<div class="capability-item">'
+            '<div class="cap-icon">\U0001f4ca</div>'
+            '<div class="cap-text"><strong>Ready-to-Run Analysis Code</strong>'
+            '<span>Automatically generates scripts in R, Python, Julia, SPSS, and Stata \u2014 tailored to your '
+            'specific experimental design. Includes data loading, variable coding, condition comparisons, '
+            'and appropriate statistical tests.</span></div></div>'
+
+            '<div class="capability-item">'
+            '<div class="cap-icon">\U0001f393</div>'
+            '<div class="cap-text"><strong>Built for Research & Teaching</strong>'
+            '<span>Instructor-only reports include effect sizes, power estimates, and visualizations that '
+            'students don\'t see. Group management tracks team usage. Pre-registration consistency checks '
+            'compare your design against OSF, AEA, or AsPredicted specifications.</span></div></div>'
+
+            '</div>',
+            unsafe_allow_html=True,
+        )
+
+    with _info_tab3:
+        st.markdown(
+            '<div class="landing-tab-content">'
+
+            '<div class="step-detail-item">'
+            '<div class="step-num">1</div>'
+            '<div class="step-detail-text"><strong>Name Your Study</strong>'
+            '<span>Enter your study title and a description of your experiment\'s purpose, manipulation, '
+            'and main outcomes. This information is embedded in all generated outputs (data files, '
+            'analysis scripts, reports).</span></div></div>'
+
+            '<div class="step-detail-item">'
+            '<div class="step-num">2</div>'
+            '<div class="step-detail-text"><strong>Provide Your Design</strong>'
+            '<span>Upload a Qualtrics .qsf file for automatic detection of conditions, scales, randomizers, '
+            'and embedded data. Or describe your study in plain text using the guided builder \u2014 it parses '
+            'natural language descriptions of your experimental design.</span></div></div>'
+
+            '<div class="step-detail-item">'
+            '<div class="step-num">3</div>'
+            '<div class="step-detail-text"><strong>Configure Experiment</strong>'
+            '<span>Review auto-detected conditions, configure factorial designs (2\u00d72, 2\u00d73, etc.), set sample '
+            'sizes with per-condition allocation, and verify dependent variables. The tool detects matrix '
+            'scales, Likert items, sliders, and numeric inputs automatically.</span></div></div>'
+
+            '<div class="step-detail-item">'
+            '<div class="step-num">4</div>'
+            '<div class="step-detail-text"><strong>Generate & Download</strong>'
+            '<span>Choose a difficulty level (easy to expert) that controls noise, attention check failure rates, '
+            'and response quality. Generate your complete data package \u2014 CSV, codebook, analysis scripts in 5 '
+            'languages, summary reports, and metadata.</span></div></div>'
+
+            '</div>',
+            unsafe_allow_html=True,
+        )
+
+    with _info_tab4:
+        st.markdown(
+            '<div class="landing-tab-content">'
             '<div class="research-list">'
 
             '<a class="research-item" href="https://doi.org/10.1017/pan.2023.2" target="_blank">'
@@ -5982,9 +6153,11 @@ a ZIP containing the CSV, codebook, analysis scripts in 5 languages, summary rep
             '<span class="ri-venue">PNAS</span>'
             '<span class="ri-insight">Validating LLM-generated survey responses at scale</span></a>'
 
-            '</div>',
+            '</div></div>',
             unsafe_allow_html=True,
         )
+
+    st.markdown('</div>', unsafe_allow_html=True)
 
     # Footer
     st.markdown(
@@ -7232,7 +7405,19 @@ if active_page == 2:
         scales_to_remove = []
 
         if confirmed_scales:
-            st.markdown(f"**{len(confirmed_scales)} DV(s) detected from your QSF.** Review and adjust as needed:")
+            # v1.9.1: Show count and type breakdown for detected scales
+            _type_counts: dict = {}
+            for _sc in confirmed_scales:
+                _sc_type = _sc.get("type", "likert")
+                _type_label = type_badges.get(_sc_type, "Scale").split(" ", 1)[-1] if _sc_type in type_badges else _sc_type.replace("_", " ").title()
+                _type_counts[_type_label] = _type_counts.get(_type_label, 0) + 1
+            _type_summary = ", ".join(f"{count} {name}" for name, count in sorted(_type_counts.items(), key=lambda x: -x[1]))
+            _qsf_detected_count = sum(1 for _sc in confirmed_scales if _sc.get("detected_from_qsf", True))
+            _manual_count = len(confirmed_scales) - _qsf_detected_count
+
+            st.markdown(f"**{len(confirmed_scales)} DV(s) detected** ({_type_summary}). Review and adjust as needed:")
+            if _qsf_detected_count > 0 and _manual_count > 0:
+                st.caption(f"{_qsf_detected_count} auto-detected from QSF, {_manual_count} manually added.")
 
             # v1.2.0: Column headers for clarity with tooltips
             hdr1, hdr2, hdr3a, hdr3b, hdr4, hdr5 = st.columns([2.5, 0.8, 0.6, 0.6, 1.5, 0.4])
@@ -7432,16 +7617,29 @@ if active_page == 2:
                         "scale_max": new_scale_max,
                     })
         else:
-            st.info(
-                "**No DVs detected from QSF.** This can happen if your survey uses unconventional question formats. "
-                "Click **Add DV** below to manually define your dependent variables."
+            # v1.9.1: Enhanced no-detection warning with specific guidance
+            st.warning(
+                "**No dependent variables detected from your QSF file.** "
+                "This can happen when:\n"
+                "- Your survey uses unconventional question formats or naming\n"
+                "- Questions are stored in non-standard QSF elements\n"
+                "- The survey file is a template without finalized questions\n\n"
+                "Click **+ Add DV** below to manually define your dependent variables. "
+                "You will need at least one DV to generate simulated data."
             )
 
-        # Handle removals
+        # Handle removals with visual feedback
         if scales_to_remove:
+            _removed_names = [confirmed_scales[i].get("name", f"DV {i+1}") for i in scales_to_remove if i < len(confirmed_scales)]
             st.session_state["confirmed_scales"] = updated_scales
             st.session_state["_dv_version"] = dv_version + 1
+            st.session_state["_dv_removal_notice"] = f"Removed: {', '.join(_removed_names)}"
             _navigate_to(2)
+
+        # Show removal notice from previous rerun
+        _removal_notice = st.session_state.pop("_dv_removal_notice", None)
+        if _removal_notice:
+            st.info(_removal_notice)
 
         add_clicked = st.button("+ Add DV", key=f"add_dv_btn_v{dv_version}", help="Add a new dependent variable manually.")
 
@@ -7470,16 +7668,25 @@ if active_page == 2:
         st.session_state["confirmed_scales"] = updated_scales
         scales = updated_scales if updated_scales else scales
 
-        # Confirmation checkbox with better help
+        # v1.9.1: Confirmation with scale summary and clearer feedback
+        _n_updated = len(updated_scales)
+        _confirm_label = f"I confirm these {_n_updated} DV(s) match my survey" if _n_updated > 0 else "I confirm my DV configuration"
         scales_confirmed = st.checkbox(
-            "I confirm these DVs match my survey",
+            _confirm_label,
             value=st.session_state.get("scales_confirmed", False),
             key=f"dv_confirm_checkbox_v{dv_version}",
             help="Check this box once you have verified that the variable names, item counts, and scale ranges match your actual Qualtrics survey."
         )
         st.session_state["scales_confirmed"] = scales_confirmed
 
-        if not scales_confirmed and updated_scales:
+        if scales_confirmed and updated_scales:
+            st.markdown(
+                f'<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:6px;'
+                f'padding:8px 12px;margin-top:4px;font-size:0.85em;color:#166534;">'
+                f'{_n_updated} DV(s) confirmed and ready for simulation.</div>',
+                unsafe_allow_html=True,
+            )
+        elif not scales_confirmed and updated_scales:
             st.caption("Please verify the DVs above match your survey, then check the confirmation box to proceed.")
 
         # ========================================
@@ -7527,11 +7734,27 @@ if active_page == 2:
             updated_open_ended = []
             oe_to_remove = []
 
+            # v1.9.1: Show removal notice from previous rerun
+            _oe_removal_notice = st.session_state.pop("_oe_removal_notice", None)
+            if _oe_removal_notice:
+                st.info(_oe_removal_notice)
+
             if confirmed_open_ended:
                 _ctx_count = sum(1 for _oe in confirmed_open_ended if _oe.get("question_context", "").strip())
+                _missing_ctx = len(confirmed_open_ended) - _ctx_count
                 st.markdown(f"**{len(confirmed_open_ended)} open-ended question(s):**")
-                if _ctx_count < len(confirmed_open_ended):
+                if _ctx_count > 0 and _missing_ctx > 0:
+                    st.caption(
+                        f"{_ctx_count}/{len(confirmed_open_ended)} question(s) have context. "
+                        f"Adding context to the remaining {_missing_ctx} will improve AI response quality."
+                    )
+                elif _ctx_count == 0:
                     st.caption("Add context to each question below so the AI understands what you're asking. This dramatically improves response quality.")
+                elif _ctx_count == len(confirmed_open_ended):
+                    st.markdown(
+                        '<span style="color:#166534;font-size:0.85em;">All questions have context -- AI responses will be well-tailored.</span>',
+                        unsafe_allow_html=True,
+                    )
                 for i, oe in enumerate(confirmed_open_ended):
                     source_type = oe.get("source_type", "detected")
                     source_badge = source_badges.get(source_type, "📝 Text")
@@ -7547,11 +7770,13 @@ if active_page == 2:
                         st.markdown(f"<small>{source_badge}</small>", unsafe_allow_html=True)
                     with col3:
                         if st.button("✕", key=f"rm_oe_v{oe_version}_{i}", help="Remove"):
+                            _removed_name = oe.get("variable_name", oe.get("name", f"OpenEnded_{i+1}"))
+                            st.session_state["_oe_removal_notice"] = f"Removed open-ended question: {_removed_name}"
                             oe_to_remove.append(i)
                     q_text = oe.get("question_text", "")
                     if q_text:
                         st.caption(f"*\"{q_text[:80]}{'...' if len(q_text) > 80 else ''}\"*")
-                    # v1.8.7.1: Context explainer for better response generation
+                    # v1.8.7.1 / v1.9.1: Context with character/word count feedback
                     _oe_ctx_existing = oe.get("question_context", "")
                     _oe_ctx = st.text_input(
                         f"Context for {var_name or f'Q{i+1}'}",
@@ -7561,6 +7786,17 @@ if active_page == 2:
                         help="1-2 sentences explaining what this question is really asking. Helps the AI generate more relevant responses.",
                         label_visibility="collapsed",
                     )
+                    # v1.9.1: Context enrichment feedback with word count hints
+                    if _oe_ctx.strip():
+                        _ctx_words = len(_oe_ctx.strip().split())
+                        _ctx_chars = len(_oe_ctx.strip())
+                        if _ctx_words < 3:
+                            st.caption(f"{_ctx_chars} chars, {_ctx_words} words -- consider adding more detail for better AI responses.")
+                        elif _ctx_words <= 30:
+                            st.caption(f"{_ctx_chars} chars, {_ctx_words} words")
+                        else:
+                            st.caption(f"{_ctx_chars} chars, {_ctx_words} words -- concise is best; consider trimming to 1-2 sentences.")
+
                     if var_name.strip() and i not in oe_to_remove:
                         updated_open_ended.append({
                             "variable_name": var_name.strip(),
@@ -8490,13 +8726,16 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
 
         if _llm_status.get("available"):
             _prov_display = _llm_status.get("provider_display", "AI")
+            _model_display = _llm_status.get("model", "")
+            _provider_detail = f" via <strong>{_prov_display}</strong>" if _prov_display and _prov_display != "AI" else ""
+            _model_detail = f" ({_model_display})" if _model_display else ""
             st.markdown(
                 '<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;'
                 'padding:12px 16px;margin-bottom:16px;">'
                 '<span style="font-size:1.1em;font-weight:600;color:#166534;">'
-                'AI-Powered Open-Ended Responses: Active</span><br>'
+                f'AI-Powered Open-Ended Responses: Active{_provider_detail}</span><br>'
                 '<span style="color:#15803d;font-size:0.9em;">'
-                'Open-ended responses will be generated by an LLM tailored to your specific '
+                f'Open-ended responses will be generated by an LLM{_model_detail} tailored to your specific '
                 'survey questions and experimental conditions.</span></div>',
                 unsafe_allow_html=True,
             )
@@ -9271,26 +9510,59 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
             import traceback as _tb
             progress_bar.progress(100, text="Simulation failed.")
             status_placeholder.error("Simulation failed.")
-            # v1.2.3: Enhanced error message with traceback for debugging
+            # v1.2.3 / v1.9.1: Categorized error messages with actionable guidance
             error_tb = _tb.format_exc()
-            st.error(f"Simulation failed: {e}")
+            error_str = str(e).lower()
+
+            # Categorize the error for a more helpful user-facing message
+            if "api" in error_str or "auth" in error_str or "401" in error_str or "403" in error_str:
+                st.error(
+                    "**LLM API Error:** Could not connect to the AI provider. "
+                    "If you provided an API key, please verify it is correct and has not expired. "
+                    "The simulation will still work without an AI key using the built-in response engine."
+                )
+            elif "timeout" in error_str or "timed out" in error_str or "connection" in error_str:
+                st.error(
+                    "**Connection Timeout:** The AI provider did not respond in time. "
+                    "This is usually temporary. Please try again in a moment, or proceed without an API key."
+                )
+            elif "memory" in error_str or "overflow" in error_str:
+                st.error(
+                    f"**Resource Error:** The simulation ran out of resources (N={N}). "
+                    "Try reducing the sample size or the number of scales and retry."
+                )
+            elif "scale" in error_str or "column" in error_str:
+                st.error(
+                    f"**Data Configuration Error:** {e}. "
+                    "Please go back to the Design step and verify your DV names and scale settings match your QSF."
+                )
+            else:
+                st.error(f"**Simulation failed:** {e}")
+
             with st.expander("Error details (for debugging)", expanded=False):
                 st.code(error_tb, language="python")
                 # Show input summary for debugging
                 st.markdown("**Input Summary:**")
                 st.markdown(f"- Scales: {len(clean_scales)} configured")
-                st.markdown(f"- Conditions: {inferred.get('conditions', [])}")
+                _cond_list = inferred.get('conditions', [])
+                st.markdown(f"- Conditions: {len(_cond_list)} ({', '.join(str(c) for c in _cond_list[:5])}{'...' if len(_cond_list) > 5 else ''})")
                 st.markdown(f"- Sample size: {N}")
+                st.markdown(f"- Open-ended questions: {len(open_ended_questions_for_engine)}")
                 if clean_scales:
+                    st.markdown("**Scale details:**")
                     for i, s in enumerate(clean_scales[:5]):
                         st.markdown(f"  - Scale {i+1}: {s.get('name', '?')} (items={s.get('num_items', '?')}, pts={s.get('scale_points', '?')}, min={s.get('scale_min', '?')}, max={s.get('scale_max', '?')})")
+                    if len(clean_scales) > 5:
+                        st.markdown(f"  - ... and {len(clean_scales) - 5} more scale(s)")
+
+            st.info("You can click **Reset & Generate New** to try again with different settings.")
             st.session_state["is_generating"] = False
             st.session_state["generation_requested"] = False
             # Don't rerun on error - show error message to user
 
     zip_bytes = st.session_state.get("last_zip", None)
     df = st.session_state.get("last_df", None)
-    if zip_bytes and df is not None:
+    if zip_bytes and df is not None and len(df) > 0:
         st.markdown(
             '<div class="section-done-banner">✓ Simulation complete — download your dataset below</div>',
             unsafe_allow_html=True,
@@ -9298,14 +9570,22 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
         st.markdown('<div id="download"></div>', unsafe_allow_html=True)
         st.markdown("#### Download")
 
-        # v1.4.16: Quick data summary before download button
+        # v1.4.16 / v1.9.1: Quick data summary with defensive checks
         _dl_meta = st.session_state.get("last_metadata", {}) or {}
         _dl_cols = st.columns(4)
-        _dl_cols[0].metric("Rows", f"{len(df):,}")
-        _dl_cols[1].metric("Columns", f"{len(df.columns):,}")
-        _dl_n_conds = df["CONDITION"].nunique() if "CONDITION" in df.columns else 0
+        try:
+            _dl_cols[0].metric("Rows", f"{len(df):,}")
+            _dl_cols[1].metric("Columns", f"{len(df.columns):,}")
+        except Exception:
+            _dl_cols[0].metric("Rows", "N/A")
+            _dl_cols[1].metric("Columns", "N/A")
+        _dl_n_conds = 0
+        try:
+            _dl_n_conds = df["CONDITION"].nunique() if "CONDITION" in df.columns else 0
+        except Exception:
+            _dl_n_conds = 0
         _dl_cols[2].metric("Conditions", _dl_n_conds)
-        _dl_zip_kb = len(zip_bytes) / 1024
+        _dl_zip_kb = len(zip_bytes) / 1024 if zip_bytes else 0
         _dl_cols[3].metric("ZIP Size", f"{_dl_zip_kb:.0f} KB" if _dl_zip_kb < 1024 else f"{_dl_zip_kb/1024:.1f} MB")
 
         # Data realism badges (correlation + missing data)
@@ -9347,7 +9627,15 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
         )
 
         with st.expander("Preview (first 20 rows)"):
-            st.dataframe(df.head(20), use_container_width=True)
+            try:
+                _preview_df = df.head(20)
+                if _preview_df is not None and len(_preview_df) > 0:
+                    st.dataframe(_preview_df, use_container_width=True)
+                else:
+                    st.warning("No data rows available for preview.")
+            except Exception as _preview_err:
+                st.warning(f"Could not render data preview: {_preview_err}")
+                st.caption("The data was generated successfully. Download the ZIP to access it.")
 
         # v1.2.5: Data Quality Report expander
         quality_checks = st.session_state.get("_quality_checks", [])

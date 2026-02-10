@@ -63,7 +63,7 @@ association, impression, perception, feedback, comment, observation, general
 Version: 1.8.5 - Improved domain detection with weighted scoring and disambiguation
 """
 
-__version__ = "1.8.9"
+__version__ = "1.9.1"
 
 import random
 import re
@@ -3882,34 +3882,68 @@ DOMAIN_KEYWORDS: Dict[StudyDomain, List[str]] = {
     # ========== POLITICAL SCIENCE ==========
     StudyDomain.POLITICAL: [
         'politic', 'democrat', 'republican', 'liberal', 'conservative',
-        'government', 'policy', 'election', 'vote',
+        'government', 'policy', 'election', 'vote', 'congress',
+        'senate', 'parliament', 'legislature', 'political party',
+        'left-wing', 'right-wing', 'centrist', 'moderate', 'bipartisan',
+        'political science', 'poli sci', 'political behavior',
+        'political attitude', 'political opinion', 'campaign',
     ],
     StudyDomain.POLARIZATION: [
         'polariz', 'divided', 'partisan', 'other side', 'opposing view',
+        'affective polarization', 'ideological divide', 'partisan divide',
+        'culture war', 'political division', 'tribalism', 'polarized',
+        'increasingly divided', 'cross-partisan', 'depolarization',
     ],
     StudyDomain.PARTISANSHIP: [
         'partisan', 'party', 'democrat', 'republican', 'liberal', 'conservative',
+        'party identification', 'party loyalty', 'party affiliation',
+        'gop', 'dnc', 'rnc', 'red state', 'blue state', 'swing voter',
+        'independent voter', 'cross-party', 'party line',
     ],
     StudyDomain.VOTING: [
         'vote', 'election', 'ballot', 'candidate', 'electoral',
+        'voter', 'turnout', 'voter turnout', 'primary', 'caucus',
+        'poll', 'polling', 'exit poll', 'swing state', 'referendum',
+        'absentee', 'mail-in ballot', 'voter registration', 'suffrage',
     ],
     StudyDomain.MEDIA: [
         'media', 'news', 'journalism', 'coverage', 'report',
+        'newspaper', 'broadcast', 'cable news', 'press', 'journalist',
+        'media bias', 'news source', 'editorial', 'headline',
+        'breaking news', 'news consumption', 'media diet', 'newsroom',
     ],
     StudyDomain.POLICY_ATTITUDES: [
         'policy', 'legislation', 'law', 'regulation', 'government action',
+        'public policy', 'policy preference', 'policy support',
+        'policy opposition', 'welfare', 'immigration policy',
+        'gun control', 'healthcare policy', 'tax policy', 'reform',
+        'policy proposal', 'policy debate', 'regulatory',
     ],
     StudyDomain.CIVIC_ENGAGEMENT: [
         'civic', 'citizen', 'participat', 'community', 'volunteer',
+        'civic duty', 'civic participation', 'community involvement',
+        'town hall', 'public meeting', 'grassroots', 'activism',
+        'advocacy', 'petition', 'protest', 'civil society', 'civics',
     ],
     StudyDomain.POLITICAL_TRUST: [
         'trust government', 'trust politician', 'institutional trust',
+        'trust in government', 'political confidence', 'government trust',
+        'trust in congress', 'trust in parliament', 'democratic trust',
+        'trust in democracy', 'political legitimacy', 'government approval',
     ],
     StudyDomain.IDEOLOGY: [
         'ideolog', 'left', 'right', 'progressive', 'traditionalist',
+        'conservative ideology', 'liberal ideology', 'libertarian',
+        'socialism', 'capitalism', 'populism', 'populist',
+        'nationalist', 'globalist', 'neoconservative', 'neoliberal',
+        'political spectrum', 'authoritarian', 'egalitarian',
     ],
     StudyDomain.MISINFORMATION: [
         'misinformation', 'fake news', 'fact check', 'false claim', 'debunk',
+        'disinformation', 'conspiracy', 'conspiracy theory', 'hoax',
+        'misleading', 'propaganda', 'infodemic', 'deepfake',
+        'media manipulation', 'truth decay', 'post-truth', 'fact-check',
+        'prebunking', 'inoculation', 'credibility assessment',
     ],
 
     # ========== CONSUMER/MARKETING ==========
@@ -3979,30 +4013,61 @@ DOMAIN_KEYWORDS: Dict[StudyDomain, List[str]] = {
     # ========== ORGANIZATIONAL BEHAVIOR ==========
     StudyDomain.WORKPLACE: [
         'work', 'job', 'employee', 'organization', 'colleague', 'office',
+        'employer', 'staff', 'personnel', 'workforce', 'workplace',
+        'company', 'firm', 'corporation', 'hr', 'human resources',
+        'occupational', 'professional', 'coworker', 'co-worker',
     ],
     StudyDomain.LEADERSHIP: [
         'leader', 'manager', 'boss', 'supervisor', 'management',
+        'leadership style', 'transformational', 'transactional',
+        'servant leader', 'charismatic', 'visionary', 'directive',
+        'participative', 'executive', 'ceo', 'cfo', 'cto',
+        'leadership effectiveness', 'managerial', 'supervisory',
     ],
     StudyDomain.TEAMWORK: [
         'teamwork', 'team', 'group project', 'collaboration',
+        'team performance', 'team effectiveness', 'team building',
+        'group work', 'collaborative', 'team member', 'team composition',
+        'team diversity', 'cross-functional', 'agile team', 'scrum',
     ],
     StudyDomain.MOTIVATION: [
         'motivat', 'drive', 'engagement', 'interest', 'passion',
+        'intrinsic motivation', 'extrinsic motivation', 'incentive',
+        'reward', 'recognition', 'goal setting', 'self-determination',
+        'autonomy', 'competence', 'relatedness', 'amotivation',
+        'mastery', 'purpose', 'aspiration',
     ],
     StudyDomain.JOB_SATISFACTION: [
         'job satisf', 'happy at work', 'enjoy work', 'work satisf',
+        'job satisfaction', 'work satisfaction', 'satisfied with job',
+        'job contentment', 'work enjoyment', 'job happiness',
+        'job dissatisfaction', 'unhappy at work', 'job attitude',
     ],
     StudyDomain.ORGANIZATIONAL_COMMITMENT: [
         'commit', 'loyal', 'stay with', 'turnover', 'leave job',
+        'organizational commitment', 'affective commitment',
+        'normative commitment', 'continuance commitment', 'retention',
+        'attrition', 'quit', 'resignation', 'employee loyalty',
+        'employee retention', 'intent to leave', 'job hopping',
     ],
     StudyDomain.WORK_LIFE_BALANCE: [
         'work-life', 'work life balance', 'personal time', 'family time',
+        'work-life conflict', 'work-family conflict', 'boundary',
+        'flexible schedule', 'parental leave', 'childcare',
+        'overwork', 'workaholic', 'time off', 'vacation', 'pto',
+        'work-life integration', 'spillover',
     ],
     StudyDomain.EMPLOYEE_ENGAGEMENT: [
         'engag', 'involved', 'invested', 'enthusiasm', 'passionate',
+        'employee engagement', 'work engagement', 'vigor', 'dedication',
+        'absorption', 'disengaged', 'quiet quitting', 'engagement survey',
+        'gallup', 'employee voice', 'psychological contract',
     ],
     StudyDomain.ORGANIZATIONAL_CULTURE: [
         'culture', 'values', 'company culture', 'organizational culture',
+        'culture fit', 'cultural alignment', 'corporate culture',
+        'workplace culture', 'culture change', 'subculture',
+        'cultural values', 'mission', 'vision statement', 'core values',
     ],
 
     # ========== TECHNOLOGY/AI ==========
@@ -4132,185 +4197,386 @@ DOMAIN_KEYWORDS: Dict[StudyDomain, List[str]] = {
     # ========== EDUCATION ==========
     StudyDomain.EDUCATION: [
         'education', 'school', 'university', 'college', 'learning',
+        'classroom', 'student', 'teacher', 'curriculum', 'pedagogy',
+        'higher education', 'k-12', 'k12', 'elementary', 'secondary',
+        'undergraduate', 'graduate', 'academic', 'educational',
+        'instruction', 'semester', 'course', 'lecture', 'tutorial',
     ],
     StudyDomain.LEARNING: [
         'learn', 'education', 'study', 'knowledge', 'skill',
+        'learning outcome', 'mastery', 'comprehension', 'understanding',
+        'transfer', 'retention', 'scaffolding', 'zone of proximal',
+        'constructivism', 'metacognitive', 'deep learning',
+        'surface learning', 'active learning', 'collaborative learning',
     ],
     StudyDomain.ACADEMIC_MOTIVATION: [
         'study motivation', 'academic', 'grades', 'achievement', 'perform',
+        'academic motivation', 'academic performance', 'gpa',
+        'study habits', 'academic self-efficacy', 'test anxiety',
+        'achievement goal', 'mastery goal', 'performance goal',
+        'academic procrastination', 'academic engagement', 'homework',
     ],
     StudyDomain.TEACHING_EFFECTIVENESS: [
         'teach', 'instructor', 'professor', 'effective teaching',
+        'teaching quality', 'teaching method', 'pedagogy', 'didactic',
+        'teaching evaluation', 'course evaluation', 'teacher training',
+        'professional development', 'teaching practice', 'flipped classroom',
+        'lecture', 'tutoring', 'scaffolding', 'differentiated instruction',
     ],
     StudyDomain.ONLINE_LEARNING: [
-        'online', 'remote', 'virtual', 'distance', 'e-learning',
+        'online learning', 'remote learning', 'virtual learning',
+        'distance learning', 'e-learning', 'elearning', 'mooc',
+        'learning management system', 'lms', 'canvas', 'blackboard',
+        'moodle', 'zoom class', 'synchronous', 'asynchronous',
+        'blended learning', 'hybrid learning', 'coursera', 'edx',
     ],
     StudyDomain.EDUCATIONAL_TECHNOLOGY: [
         'edtech', 'educational technology', 'learning platform', 'digital learning',
+        'educational software', 'learning app', 'adaptive learning',
+        'intelligent tutoring', 'gamification', 'educational game',
+        'simulation', 'virtual lab', 'learning analytics', 'ai in education',
+        'educational ai', 'personalized learning', 'smart classroom',
     ],
     StudyDomain.STUDENT_ENGAGEMENT: [
-        'engag', 'particip', 'attentive', 'interest', 'involv',
+        'student engagement', 'class participation', 'attentive', 'involved',
+        'student involvement', 'attendance', 'active participation',
+        'classroom engagement', 'academic engagement', 'student voice',
+        'student agency', 'student interest', 'disengaged student',
     ],
     StudyDomain.ASSESSMENT_FEEDBACK: [
         'feedback', 'assessment', 'grade', 'evaluation', 'test',
+        'formative assessment', 'summative assessment', 'rubric',
+        'peer assessment', 'self-assessment', 'grading', 'exam',
+        'quiz', 'standardized test', 'portfolio', 'criterion-referenced',
+        'norm-referenced', 'diagnostic assessment', 'learning assessment',
     ],
 
     # ========== ETHICS/MORAL ==========
     StudyDomain.ETHICS: [
         'ethic', 'moral', 'right', 'wrong', 'principl',
+        'ethical reasoning', 'moral reasoning', 'moral philosophy',
+        'normative', 'virtue', 'duty', 'obligation', 'conscience',
+        'ethical behavior', 'moral behavior', 'ethical decision',
     ],
     StudyDomain.MORAL_JUDGMENT: [
         'moral', 'ethical', 'right', 'wrong', 'should', 'ought',
+        'moral judgment', 'moral evaluation', 'ethical judgment',
+        'moral foundation', 'moral intuition', 'moral cognition',
+        'prescriptive', 'proscriptive', 'permissible', 'impermissible',
     ],
     StudyDomain.MORAL_DILEMMA: [
         'dilemma', 'trolley', 'sacrifice', 'utilitarian', 'deontolog',
+        'trolley problem', 'footbridge', 'moral conflict', 'lesser evil',
+        'moral trade-off', 'ethical dilemma', 'thought experiment',
+        'lifeboat', 'consequential', 'kantian', 'virtue ethics',
     ],
     StudyDomain.ETHICAL_LEADERSHIP: [
         'ethical leader', 'integrity', 'honest leader', 'moral leader',
+        'ethical management', 'leader integrity', 'principled leadership',
+        'authentic leadership', 'ethical culture', 'ethical climate',
+        'leadership ethics', 'moral courage', 'ethical role model',
     ],
     StudyDomain.CORPORATE_ETHICS: [
         'corporate', 'business ethics', 'csr', 'corporate social',
+        'corporate responsibility', 'corporate governance', 'esg',
+        'stakeholder', 'shareholder', 'corporate sustainability',
+        'ethical business', 'corporate misconduct', 'whistleblower',
+        'compliance', 'corporate fraud', 'greenwashing',
     ],
     StudyDomain.RESEARCH_ETHICS: [
         'research ethics', 'informed consent', 'deception', 'irb',
+        'institutional review board', 'ethics committee', 'ethical approval',
+        'participant rights', 'debriefing', 'confidentiality',
+        'research misconduct', 'fabrication', 'falsification', 'plagiarism',
+        'responsible conduct', 'ethical guidelines', 'helsinki declaration',
     ],
     StudyDomain.MORAL_EMOTIONS: [
         'guilt', 'shame', 'pride', 'moral emotion', 'regret',
+        'moral outrage', 'indignation', 'contempt', 'disgust',
+        'righteous anger', 'moral elevation', 'moral awe',
+        'embarrassment', 'remorse', 'repentance', 'moral distress',
     ],
     StudyDomain.VALUES: [
         'values', 'priorities', 'what matters', 'important to me',
+        'personal values', 'core values', 'value system', 'belief system',
+        'schwartz values', 'moral values', 'cultural values',
+        'value orientation', 'value hierarchy', 'terminal values',
+        'instrumental values', 'value conflict', 'value alignment',
     ],
 
     # ========== ENVIRONMENTAL ==========
     StudyDomain.ENVIRONMENTAL: [
         'environment', 'climate', 'green', 'sustainab', 'eco', 'carbon',
+        'ecological', 'ecosystem', 'biodiversity', 'pollution',
+        'environmental concern', 'environmental awareness', 'planet',
+        'natural resources', 'deforestation', 'ocean', 'plastic',
+        'waste', 'environmental attitude', 'environmental psychology',
     ],
     StudyDomain.SUSTAINABILITY: [
         'sustainab', 'green', 'eco', 'renewable', 'recycle',
+        'sustainable development', 'circular economy', 'zero waste',
+        'upcycle', 'compost', 'reuse', 'reduce', 'carbon neutral',
+        'sustainable living', 'sustainable consumption', 'sdg',
+        'sustainable development goals', 'triple bottom line',
     ],
     StudyDomain.CLIMATE_ATTITUDES: [
         'climate', 'global warming', 'greenhouse', 'carbon',
+        'climate change', 'climate skeptic', 'climate denier',
+        'climate belief', 'climate concern', 'climate opinion',
+        'climate anxiety', 'eco-anxiety', 'solastalgia',
+        'climate science', 'ipcc', 'paris agreement', 'cop',
     ],
     StudyDomain.PRO_ENVIRONMENTAL: [
         'environmentally friendly', 'green behavior', 'eco-friendly',
+        'pro-environmental', 'pro environmental', 'green action',
+        'environmental behavior', 'ecological behavior',
+        'environmental activism', 'environmental volunteering',
+        'green living', 'carbon reduction', 'low carbon',
     ],
     StudyDomain.GREEN_CONSUMPTION: [
         'green product', 'eco product', 'sustainable product', 'ethical consumption',
+        'green purchasing', 'eco-label', 'organic', 'fair trade',
+        'ethically sourced', 'conscious consumer', 'sustainable fashion',
+        'green marketing', 'eco-packaging', 'local food', 'farm to table',
     ],
     StudyDomain.CONSERVATION: [
         'conserv', 'protect', 'preserve', 'wildlife', 'nature',
+        'conservation behavior', 'national park', 'endangered species',
+        'habitat', 'restoration', 'marine conservation', 'forest',
+        'rewilding', 'biodiversity loss', 'species protection',
     ],
     StudyDomain.ENERGY_BEHAVIOR: [
         'energy', 'electricity', 'power', 'solar', 'renewable',
+        'energy saving', 'energy conservation', 'energy efficiency',
+        'smart meter', 'thermostat', 'energy consumption', 'kilowatt',
+        'energy audit', 'insulation', 'green building', 'leed',
+        'carbon offset', 'energy transition',
     ],
     StudyDomain.ENVIRONMENTAL_JUSTICE: [
         'environmental justice', 'pollution', 'affected communities',
+        'environmental racism', 'toxic waste', 'environmental inequality',
+        'disproportionate exposure', 'environmental burden',
+        'frontline communities', 'nimby', 'environmental health',
+        'contamination', 'brownfield', 'superfund',
     ],
 
     # ========== COGNITIVE PSYCHOLOGY ==========
     StudyDomain.COGNITIVE: [
         'cognitive', 'thinking', 'mental process', 'mind',
+        'cognition', 'cognitive psychology', 'perception', 'judgment',
+        'cognitive science', 'mental representation', 'schema',
+        'information processing', 'dual process', 'system 1', 'system 2',
     ],
     StudyDomain.DECISION_MAKING: [
         'decision', 'choice', 'select', 'option', 'alternative',
+        'decision making', 'decide', 'choosing', 'preference',
+        'trade-off', 'tradeoff', 'dilemma', 'evaluation', 'judgment',
+        'optimal choice', 'rational choice', 'satisficing', 'maximizing',
     ],
     StudyDomain.MEMORY: [
         'remember', 'recall', 'forget', 'memory', 'recognition',
+        'working memory', 'short-term memory', 'long-term memory',
+        'episodic memory', 'semantic memory', 'procedural memory',
+        'encoding', 'retrieval', 'amnesia', 'nostalgia', 'flashbulb',
+        'false memory', 'memory distortion', 'recognition memory',
     ],
     StudyDomain.ATTENTION: [
         'attention', 'focus', 'concentrate', 'distract',
+        'selective attention', 'divided attention', 'sustained attention',
+        'attentional bias', 'inattentional blindness', 'change blindness',
+        'vigilance', 'alertness', 'mind wandering', 'daydream',
+        'attentional control', 'executive attention', 'adhd',
     ],
     StudyDomain.REASONING: [
         'reason', 'logic', 'infer', 'deduc', 'induc',
+        'logical reasoning', 'deductive reasoning', 'inductive reasoning',
+        'syllogism', 'analogy', 'causal reasoning', 'abductive',
+        'probabilistic reasoning', 'bayesian', 'critical thinking',
     ],
     StudyDomain.PROBLEM_SOLVING: [
         'problem', 'solve', 'solution', 'figure out',
+        'problem solving', 'insight', 'eureka', 'aha moment',
+        'trial and error', 'strategy', 'heuristic', 'algorithm',
+        'creative problem', 'complex problem', 'puzzle', 'riddle',
     ],
     StudyDomain.COGNITIVE_BIAS: [
         'bias', 'heuristic', 'shortcut', 'cognitive error',
+        'cognitive bias', 'availability heuristic', 'representativeness',
+        'anchoring bias', 'sunk cost fallacy', 'hindsight bias',
+        'dunning-kruger', 'overconfidence', 'optimism bias',
+        'negativity bias', 'status quo bias', 'endowment effect',
+        'framing effect', 'primacy effect', 'recency effect',
     ],
     StudyDomain.METACOGNITION: [
         'metacognit', 'thinking about thinking', 'self-aware', 'monitoring',
+        'metacognitive', 'metacognition', 'calibration', 'confidence',
+        'judgment of learning', 'feeling of knowing', 'tip of tongue',
+        'self-monitoring', 'self-regulation', 'cognitive monitoring',
+        'metamemory', 'metacomprehension',
     ],
 
     # ========== DEVELOPMENTAL ==========
     StudyDomain.DEVELOPMENTAL: [
         'develop', 'age', 'life stage', 'mature',
+        'developmental psychology', 'lifespan', 'life span',
+        'growth', 'developmental stage', 'milestone', 'maturation',
+        'ontogeny', 'developmental trajectory',
     ],
     StudyDomain.PARENTING: [
         'parent', 'child', 'mother', 'father', 'raising',
+        'parenting style', 'authoritative', 'authoritarian', 'permissive',
+        'helicopter parent', 'attachment parenting', 'co-parenting',
+        'discipline', 'child rearing', 'maternal', 'paternal',
+        'family', 'caregiver', 'childcare', 'parental involvement',
     ],
     StudyDomain.CHILDHOOD: [
         'child', 'kid', 'young', 'grow up', 'adolescent',
+        'childhood', 'infant', 'toddler', 'preschool', 'teenager',
+        'youth', 'adolescence', 'puberty', 'juvenile', 'minor',
+        'developmental stage', 'pediatric', 'early childhood',
     ],
     StudyDomain.AGING: [
         'aging', 'older', 'elderly', 'senior', 'retirement',
+        'gerontology', 'geriatric', 'old age', 'later life',
+        'age-related', 'cognitive decline', 'ageism', 'active aging',
+        'successful aging', 'longevity', 'centenarian', 'dementia',
+        'alzheimer', 'memory decline', 'elder care',
     ],
     StudyDomain.LIFE_TRANSITIONS: [
         'transition', 'change', 'new phase', 'moving on',
+        'life transition', 'major change', 'turning point',
+        'milestone', 'graduation', 'marriage', 'divorce', 'relocation',
+        'empty nest', 'career change', 'loss', 'bereavement', 'grief',
     ],
     StudyDomain.INTERGENERATIONAL: [
         'generation', 'millennial', 'boomer', 'gen z', 'gen x',
+        'generational', 'baby boomer', 'generation x', 'generation z',
+        'gen alpha', 'generation gap', 'intergenerational',
+        'generational difference', 'cohort', 'age group', 'age cohort',
     ],
 
     # ========== CLINICAL ==========
     StudyDomain.CLINICAL: [
         'clinical', 'disorder', 'symptom', 'diagnosis', 'treatment',
+        'clinical psychology', 'psychopathology', 'dsm', 'icd',
+        'psychiatric', 'mental illness', 'psychological disorder',
+        'clinical intervention', 'evidence-based treatment', 'cbt',
+        'cognitive behavioral', 'psychotherapy', 'clinical trial',
     ],
     StudyDomain.ANXIETY: [
         'anxiety', 'anxious', 'worry', 'nervous', 'panic',
+        'anxiety disorder', 'generalized anxiety', 'gad',
+        'social anxiety', 'phobia', 'agoraphobia', 'ocd',
+        'obsessive compulsive', 'fear', 'apprehension', 'dread',
+        'anxiety attack', 'hypervigilance', 'anxiousness',
     ],
     StudyDomain.DEPRESSION: [
         'depress', 'sad', 'hopeless', 'low mood', 'suicid',
+        'depression', 'depressive', 'major depressive', 'mdd',
+        'anhedonia', 'melancholy', 'dysthymia', 'persistent depressive',
+        'bipolar', 'mood disorder', 'antidepressant', 'ssri',
+        'hopelessness', 'helplessness', 'worthlessness',
     ],
     StudyDomain.COPING: [
         'cope', 'deal with', 'handle', 'manage', 'adapt',
+        'coping strategy', 'coping mechanism', 'coping style',
+        'problem-focused', 'emotion-focused', 'avoidant coping',
+        'active coping', 'adaptive coping', 'maladaptive coping',
+        'coping resource', 'resilience', 'stress management',
     ],
     StudyDomain.THERAPY_ATTITUDES: [
         'therapy', 'counseling', 'psychologist', 'mental health treatment',
+        'therapy seeking', 'help-seeking', 'treatment seeking',
+        'stigma', 'mental health stigma', 'therapy attitude',
+        'counselor', 'psychiatrist', 'treatment barrier',
+        'therapeutic alliance', 'therapy outcome', 'psychotherapy',
+        'mindfulness', 'mindfulness-based', 'mbsr', 'mbct',
     ],
     StudyDomain.STRESS: [
         'stress', 'pressure', 'overwhelm', 'burnout', 'strain',
+        'stressor', 'acute stress', 'chronic stress', 'daily hassle',
+        'life event', 'stress response', 'cortisol', 'fight or flight',
+        'perceived stress', 'pss', 'stress appraisal', 'taxing',
+        'demanding', 'overloaded', 'stress coping',
     ],
 
     # ========== COMMUNICATION ==========
     StudyDomain.COMMUNICATION: [
         'communicat', 'message', 'information', 'convey',
+        'communication', 'discourse', 'dialogue', 'rhetoric',
+        'speech', 'language', 'framing', 'audience', 'sender',
+        'receiver', 'channel', 'feedback', 'nonverbal', 'verbal',
     ],
     StudyDomain.PERSUASION: [
         'persuad', 'convinc', 'influence', 'argument', 'appeal',
+        'persuasion', 'persuasive', 'elaboration likelihood', 'elm',
+        'central route', 'peripheral route', 'attitude change',
+        'counter-argument', 'source credibility', 'message framing',
+        'inoculation', 'resistance to persuasion', 'reactance',
     ],
     StudyDomain.MEDIA_EFFECTS: [
         'media effect', 'media impact', 'influence of media',
+        'media exposure', 'cultivation theory', 'agenda setting',
+        'framing theory', 'priming', 'third-person effect',
+        'media violence', 'media representation', 'media influence',
+        'screen time', 'media literacy', 'media psychology',
     ],
     StudyDomain.INTERPERSONAL: [
         'interpersonal', 'relationship', 'interaction', 'social',
+        'interpersonal communication', 'face-to-face', 'conversation',
+        'self-disclosure', 'empathy', 'listening', 'rapport',
+        'interpersonal conflict', 'negotiation', 'compromise',
+        'social skills', 'emotional intelligence', 'eq',
     ],
     StudyDomain.PUBLIC_OPINION: [
         'public opinion', 'popular', 'majority think', 'general public',
+        'public sentiment', 'public attitudes', 'opinion poll',
+        'survey research', 'public perception', 'public view',
+        'societal attitudes', 'collective opinion', 'zeitgeist',
     ],
     StudyDomain.NARRATIVE: [
         'story', 'narrative', 'told', 'account', 'anecdote',
+        'storytelling', 'narrative persuasion', 'transportation',
+        'narrative engagement', 'story structure', 'narrative identity',
+        'personal narrative', 'counter-narrative', 'testimonial',
+        'lived experience', 'vignette', 'scenario',
     ],
 
     # ========== ECONOMICS ==========
     StudyDomain.ECONOMICS: [
         'economic', 'money', 'financial', 'market', 'trade',
+        'economy', 'gdp', 'inflation', 'recession', 'supply',
+        'demand', 'microeconomic', 'macroeconomic', 'fiscal',
+        'monetary', 'economics', 'economist', 'economic theory',
     ],
     StudyDomain.NEGOTIATION: [
         'negotiat', 'bargain', 'deal', 'agreement', 'compromise',
+        'negotiation', 'concession', 'mediation', 'arbitration',
+        'batna', 'best alternative', 'distributive', 'integrative',
+        'win-win', 'impasse', 'negotiation strategy', 'dealmaking',
     ],
     StudyDomain.BARGAINING: [
         'bargain', 'haggle', 'price negotiation', 'deal-making',
+        'bargaining power', 'counter-offer', 'offer', 'bid',
+        'take it or leave it', 'opening offer', 'final offer',
     ],
     StudyDomain.FINANCIAL_DECISION: [
         'financial decision', 'money decision', 'investment', 'spend',
+        'financial choice', 'spending decision', 'allocation',
+        'budget', 'expenditure', 'financial planning', 'portfolio',
+        'asset allocation', 'diversification', 'roi',
     ],
     StudyDomain.SAVING_BEHAVIOR: [
         'save', 'saving', 'retirement fund', 'emergency fund',
+        'savings', 'piggy bank', 'rainy day fund', 'nest egg',
+        'saving rate', 'saving habit', 'undersaving', 'oversaving',
+        'automatic saving', 'commitment device', 'mental accounting',
     ],
     StudyDomain.ECONOMIC_EXPECTATIONS: [
         'economic outlook', 'expect', 'forecast', 'prediction',
+        'economic expectation', 'consumer confidence', 'economic sentiment',
+        'economic optimism', 'economic pessimism', 'future economy',
+        'economic forecast', 'market expectation', 'inflation expectation',
     ],
 
     # ========== NEUROSCIENCE/NEUROECONOMICS ==========
@@ -4514,6 +4780,539 @@ DOMAIN_KEYWORDS: Dict[StudyDomain, List[str]] = {
         'scientific reasoning', 'evidence-based', 'research', 'scientific method',
         'empirical', 'data-driven', 'scientific thinking',
     ],
+
+    # ========== PARENT / BROAD DOMAINS (missing keywords) ==========
+
+    StudyDomain.BEHAVIORAL_ECONOMICS: [
+        'behavioral economics', 'behavioural economics', 'economic experiment',
+        'experimental economics', 'economic game', 'economic decision',
+        'economic behavior', 'bounded rationality', 'prospect theory',
+        'nudge', 'choice architecture', 'behavioral finance',
+    ],
+    StudyDomain.SOCIAL_PSYCHOLOGY: [
+        'social psychology', 'social behavior', 'social cognition',
+        'social perception', 'social judgment', 'interpersonal behavior',
+        'group behavior', 'group dynamics', 'social interaction',
+        'social processes', 'social phenomena', 'bystander', 'obedience',
+    ],
+    StudyDomain.ORGANIZATIONAL: [
+        'organizational', 'organisation', 'workplace behavior',
+        'organizational psychology', 'industrial organizational',
+        'i-o psychology', 'io psychology', 'work psychology',
+        'organizational development', 'org behavior', 'ob research',
+    ],
+    StudyDomain.TECHNOLOGY: [
+        'technology', 'tech', 'digital', 'software', 'hardware', 'app',
+        'application', 'device', 'gadget', 'computer', 'internet',
+        'web', 'platform', 'system', 'tool', 'innovation',
+    ],
+
+    # ========== FINANCIAL PSYCHOLOGY (6 domains) ==========
+
+    StudyDomain.FINANCIAL_PSYCHOLOGY: [
+        'financial psychology', 'money psychology', 'financial behavior',
+        'financial attitudes', 'money attitudes', 'financial wellbeing',
+        'economic psychology', 'financial decision making',
+    ],
+    StudyDomain.FINANCIAL_LITERACY: [
+        'financial literacy', 'financial knowledge', 'financial education',
+        'money management', 'financial skills', 'financial competence',
+        'economic literacy', 'numeracy', 'compound interest',
+    ],
+    StudyDomain.INVESTMENT_BEHAVIOR: [
+        'investment', 'investing', 'stock', 'portfolio', 'asset',
+        'stock market', 'trading', 'investor', 'returns', 'bonds',
+        'mutual fund', 'etf', 'cryptocurrency', 'crypto', 'bitcoin',
+        'market volatility', 'investment decision', 'risk tolerance',
+    ],
+    StudyDomain.DEBT_ATTITUDES: [
+        'debt', 'credit', 'loan', 'borrow', 'mortgage', 'credit card',
+        'credit score', 'indebtedness', 'debt management', 'debt stress',
+        'student loan', 'payday loan', 'debt aversion', 'debt attitudes',
+    ],
+    StudyDomain.RETIREMENT_PLANNING: [
+        'retirement', 'pension', '401k', '401(k)', 'ira', 'superannuation',
+        'retirement planning', 'retirement savings', 'retirement age',
+        'social security', 'retirement income', 'retire early',
+    ],
+    StudyDomain.FINANCIAL_STRESS: [
+        'financial stress', 'money worry', 'financial anxiety', 'money stress',
+        'financial strain', 'financial hardship', 'economic hardship',
+        'financial insecurity', 'financial distress', 'poverty',
+        'financial burden', 'money problems', 'can\'t afford',
+    ],
+
+    # ========== PERSONALITY PSYCHOLOGY (6 domains) ==========
+
+    StudyDomain.PERSONALITY: [
+        'personality', 'trait', 'temperament', 'disposition', 'character',
+        'individual differences', 'personality type', 'personality assessment',
+        'personality measure', 'personality scale', 'personality inventory',
+    ],
+    StudyDomain.BIG_FIVE: [
+        'big five', 'big 5', 'ocean', 'openness', 'conscientiousness',
+        'extraversion', 'agreeableness', 'neuroticism', 'extroversion',
+        'introversion', 'five factor', 'ffm', 'neo-pi', 'neo pi',
+        'personality traits', 'tipi', 'bfi',
+    ],
+    StudyDomain.NARCISSISM: [
+        'narcissism', 'narcissist', 'narcissistic', 'grandiosity',
+        'self-admiration', 'entitlement', 'superiority', 'vanity',
+        'npi', 'narcissistic personality', 'covert narcissism',
+    ],
+    StudyDomain.DARK_TRIAD: [
+        'dark triad', 'machiavellianism', 'psychopathy', 'dark tetrad',
+        'sadism', 'subclinical psychopathy', 'dark personality',
+        'malevolent personality', 'aversive personality',
+    ],
+    StudyDomain.TRAIT_ASSESSMENT: [
+        'trait assessment', 'trait measurement', 'personality test',
+        'trait evaluation', 'self-report measure', 'personality questionnaire',
+        'trait rating', 'character assessment', 'dispositional measure',
+    ],
+    StudyDomain.SELF_CONCEPT: [
+        'self-concept', 'self concept', 'self-identity', 'self-schema',
+        'self-knowledge', 'self-understanding', 'self-construal',
+        'self-perception', 'self-awareness', 'self-reflection',
+        'possible selves', 'ideal self', 'actual self',
+    ],
+
+    # ========== GAMING/ENTERTAINMENT (6 domains) ==========
+
+    StudyDomain.GAMING_PSYCHOLOGY: [
+        'gaming', 'video game', 'videogame', 'gamer', 'game play',
+        'gameplay', 'game design', 'game addiction', 'gaming disorder',
+        'gaming motivation', 'game engagement', 'game experience',
+        'console', 'pc gaming', 'mobile gaming', 'game behavior',
+    ],
+    StudyDomain.ESPORTS: [
+        'esports', 'e-sports', 'competitive gaming', 'professional gaming',
+        'esport', 'tournament', 'league of legends', 'valorant', 'csgo',
+        'dota', 'overwatch', 'pro gamer', 'esports team',
+    ],
+    StudyDomain.GAMBLING: [
+        'gambling', 'gamble', 'casino', 'betting', 'poker', 'slot',
+        'lottery', 'wager', 'sports betting', 'online gambling',
+        'problem gambling', 'gambling addiction', 'gambling behavior',
+        'gambling disorder', 'responsible gambling',
+    ],
+    StudyDomain.ENTERTAINMENT_MEDIA: [
+        'entertainment', 'movie', 'film', 'television', 'tv show',
+        'series', 'streaming', 'netflix', 'disney', 'music',
+        'podcast', 'media consumption', 'binge watching', 'cinema',
+        'media entertainment', 'leisure media',
+    ],
+    StudyDomain.STREAMING_BEHAVIOR: [
+        'streaming', 'stream', 'twitch', 'youtube live', 'live stream',
+        'content creator', 'streamer', 'subscriber', 'donation',
+        'streaming platform', 'streaming service', 'binge watch',
+        'on demand', 'cord cutting', 'cord cutter',
+    ],
+    StudyDomain.VIRTUAL_REALITY: [
+        'virtual reality', 'vr', 'augmented reality', 'ar', 'xr',
+        'mixed reality', 'metaverse', 'immersive', 'headset',
+        'oculus', 'quest', 'hololens', 'spatial computing',
+        'vr experience', 'virtual environment', '3d environment',
+    ],
+
+    # ========== SOCIAL MEDIA RESEARCH (6 domains) ==========
+
+    StudyDomain.SOCIAL_MEDIA_USE: [
+        'social media use', 'social media behavior', 'social media habits',
+        'social media consumption', 'social media engagement', 'posting',
+        'sharing online', 'social media effects', 'screen time social',
+        'social networking', 'sns', 'social media frequency',
+    ],
+    StudyDomain.ONLINE_IDENTITY: [
+        'online identity', 'digital identity', 'online persona',
+        'online self', 'online self-presentation', 'profile',
+        'avatar', 'username', 'online reputation', 'digital self',
+        'virtual identity', 'online impression management',
+    ],
+    StudyDomain.DIGITAL_COMMUNICATION: [
+        'digital communication', 'online communication', 'texting',
+        'messaging', 'email', 'chat', 'instant message', 'emoji',
+        'computer-mediated communication', 'cmc', 'video call',
+        'zoom', 'teams', 'slack', 'asynchronous communication',
+    ],
+    StudyDomain.INFLUENCER_MARKETING: [
+        'influencer', 'influencer marketing', 'sponsored content',
+        'brand ambassador', 'sponsored post', 'paid partnership',
+        'micro-influencer', 'macro-influencer', 'creator economy',
+        'social media marketing', 'influencer endorsement',
+    ],
+    StudyDomain.ONLINE_COMMUNITIES: [
+        'online community', 'online group', 'forum', 'subreddit',
+        'discord', 'community', 'member', 'moderator',
+        'virtual community', 'online forum', 'message board',
+        'community engagement', 'community building',
+    ],
+    StudyDomain.SOCIAL_COMPARISON: [
+        'social comparison', 'compare self', 'upward comparison',
+        'downward comparison', 'comparison', 'comparing myself',
+        'compare to others', 'keeping up', 'envy', 'jealousy',
+        'relative deprivation', 'better than', 'worse than',
+    ],
+
+    # ========== WORKPLACE BEHAVIOR (6 domains) ==========
+
+    StudyDomain.REMOTE_WORK: [
+        'remote work', 'work from home', 'wfh', 'telecommute',
+        'telecommuting', 'telework', 'hybrid work', 'remote employee',
+        'distributed team', 'virtual team', 'home office',
+        'flexible work', 'remote collaboration', 'work remotely',
+    ],
+    StudyDomain.WORKPLACE_DIVERSITY: [
+        'workplace diversity', 'diversity', 'inclusion', 'dei',
+        'diversity equity inclusion', 'representation', 'inclusive',
+        'minority', 'underrepresented', 'equal opportunity',
+        'affirmative action', 'workplace equity', 'belonging',
+    ],
+    StudyDomain.BURNOUT: [
+        'burnout', 'burn out', 'burned out', 'exhaustion',
+        'emotional exhaustion', 'depersonalization', 'cynicism',
+        'work fatigue', 'job burnout', 'occupational burnout',
+        'compassion fatigue', 'caregiver burnout', 'maslach',
+    ],
+    StudyDomain.CAREER_DEVELOPMENT: [
+        'career', 'career development', 'career growth', 'promotion',
+        'career path', 'professional development', 'career planning',
+        'career advancement', 'career change', 'career transition',
+        'mentoring', 'career satisfaction', 'career goal',
+    ],
+    StudyDomain.WORKPLACE_CONFLICT: [
+        'workplace conflict', 'conflict at work', 'office conflict',
+        'workplace dispute', 'coworker conflict', 'team conflict',
+        'interpersonal conflict', 'organizational conflict',
+        'work disagreement', 'workplace incivility', 'workplace bullying',
+    ],
+    StudyDomain.ORGANIZATIONAL_JUSTICE: [
+        'organizational justice', 'workplace fairness', 'fair treatment',
+        'distributive justice', 'interactional justice', 'voice',
+        'procedural justice at work', 'employee fairness', 'equity theory',
+        'unfair treatment', 'workplace justice', 'organizational fairness',
+    ],
+
+    # ========== DECISION SCIENCE (6 domains) ==========
+
+    StudyDomain.DECISION_SCIENCE: [
+        'decision science', 'decision theory', 'judgment and decision',
+        'jdm', 'decision analysis', 'decision research',
+        'behavioral decision', 'choice behavior', 'decision process',
+    ],
+    StudyDomain.CHOICE_ARCHITECTURE: [
+        'choice architecture', 'option presentation', 'choice design',
+        'decision environment', 'choice set', 'menu design',
+        'option framing', 'choice structure', 'decision structure',
+    ],
+    StudyDomain.NUDGE: [
+        'nudge', 'nudging', 'behavioral nudge', 'gentle push',
+        'default option', 'libertarian paternalism', 'behavioral intervention',
+        'choice default', 'opt-in', 'opt-out', 'soft paternalism',
+    ],
+    StudyDomain.DEFAULT_EFFECTS: [
+        'default effect', 'default option', 'status quo', 'opt-out',
+        'pre-selected', 'default choice', 'inertia', 'default bias',
+        'status quo bias', 'default setting', 'automatic enrollment',
+    ],
+    StudyDomain.INFORMATION_OVERLOAD: [
+        'information overload', 'choice overload', 'too many options',
+        'decision fatigue', 'cognitive overload', 'analysis paralysis',
+        'option overload', 'information saturation', 'overwhelmed by choices',
+        'paradox of choice', 'overchoice', 'decision difficulty',
+    ],
+    StudyDomain.REGRET: [
+        'regret', 'anticipated regret', 'counterfactual', 'what if',
+        'should have', 'would have', 'missed opportunity',
+        'regret aversion', 'decision regret', 'action regret',
+        'inaction regret', 'buyer remorse', 'post-decision regret',
+    ],
+
+    # ========== TRUST & CREDIBILITY (5 domains) ==========
+
+    StudyDomain.INSTITUTIONAL_TRUST: [
+        'institutional trust', 'trust in institutions', 'trust government',
+        'trust in government', 'public trust', 'trust in democracy',
+        'trust in parliament', 'trust in congress', 'trust in judiciary',
+        'systemic trust', 'confidence in institutions',
+    ],
+    StudyDomain.EXPERT_CREDIBILITY: [
+        'expert credibility', 'expert trust', 'expert authority',
+        'expert opinion', 'trust expert', 'scientific expert',
+        'expertise', 'qualified opinion', 'professional credibility',
+        'expert knowledge', 'trust in experts',
+    ],
+    StudyDomain.SOURCE_CREDIBILITY: [
+        'source credibility', 'credible source', 'information source',
+        'source trustworthiness', 'reliable source', 'source quality',
+        'source evaluation', 'news source', 'media credibility',
+    ],
+    StudyDomain.SCIENCE_TRUST: [
+        'science trust', 'trust in science', 'scientific trust',
+        'science credibility', 'trust scientists', 'science skepticism',
+        'science denial', 'scientific consensus', 'peer review',
+        'trust in research', 'science literacy',
+    ],
+    StudyDomain.MEDIA_TRUST: [
+        'media trust', 'trust in media', 'news trust', 'media credibility',
+        'journalism trust', 'press trust', 'mainstream media',
+        'alternative media', 'media skepticism', 'news credibility',
+        'media confidence', 'press credibility',
+    ],
+
+    # ========== INNOVATION & CREATIVITY (5 domains) ==========
+
+    StudyDomain.INNOVATION: [
+        'innovation', 'innovative', 'disruptive', 'breakthrough',
+        'novel', 'novelty', 'new product development', 'invention',
+        'innovative thinking', 'innovation adoption', 'innovation diffusion',
+    ],
+    StudyDomain.CREATIVITY: [
+        'creativity', 'creative', 'creative thinking', 'divergent thinking',
+        'brainstorm', 'ideation', 'imagination', 'creative problem solving',
+        'artistic', 'original', 'inventive', 'creative performance',
+    ],
+    StudyDomain.ENTREPRENEURSHIP: [
+        'entrepreneur', 'entrepreneurship', 'startup', 'start-up',
+        'venture', 'founder', 'business creation', 'new venture',
+        'entrepreneurial', 'small business', 'self-employed',
+        'business plan', 'pitch', 'seed funding', 'angel investor',
+    ],
+    StudyDomain.IDEA_GENERATION: [
+        'idea generation', 'ideation', 'brainstorming', 'concept development',
+        'creative ideation', 'idea evaluation', 'idea selection',
+        'problem finding', 'opportunity recognition',
+    ],
+    StudyDomain.CREATIVE_PROCESS: [
+        'creative process', 'incubation', 'illumination', 'elaboration',
+        'creative flow', 'flow state', 'inspiration', 'creative insight',
+        'creative block', 'writer block', 'design thinking',
+    ],
+
+    # ========== RISK & SAFETY (5 domains) ==========
+
+    StudyDomain.RISK_PERCEPTION: [
+        'risk perception', 'perceived risk', 'risk assessment',
+        'subjective risk', 'risk judgment', 'risk evaluation',
+        'hazard assessment', 'threat perception', 'danger perception',
+        'risk estimate', 'risk awareness',
+    ],
+    StudyDomain.SAFETY_ATTITUDES: [
+        'safety attitudes', 'safety culture', 'safety climate',
+        'safety behavior', 'safety compliance', 'safety motivation',
+        'safety performance', 'safety management', 'occupational safety',
+    ],
+    StudyDomain.HAZARD_PERCEPTION: [
+        'hazard perception', 'hazard awareness', 'hazard identification',
+        'threat detection', 'danger recognition', 'hazard recognition',
+        'driving hazard', 'workplace hazard', 'environmental hazard',
+    ],
+    StudyDomain.DISASTER_PREPAREDNESS: [
+        'disaster preparedness', 'emergency preparedness', 'disaster planning',
+        'evacuation', 'emergency response', 'natural disaster',
+        'earthquake', 'hurricane', 'flood', 'wildfire', 'tornado',
+        'crisis preparedness', 'disaster resilience', 'emergency kit',
+    ],
+    StudyDomain.RISK_COMMUNICATION: [
+        'risk communication', 'communicating risk', 'risk messaging',
+        'warning', 'risk information', 'risk disclosure', 'hazard warning',
+        'public warning', 'risk advisory', 'safety communication',
+    ],
+
+    # ========== AI ALIGNMENT & ETHICS (6 domains - v2.4.5) ==========
+
+    StudyDomain.AI_ALIGNMENT: [
+        'ai alignment', 'alignment', 'value alignment', 'aligned ai',
+        'ai values', 'ai goals', 'beneficial ai', 'ai purpose',
+        'superintelligence', 'existential risk', 'ai risk',
+    ],
+    StudyDomain.AI_ETHICS: [
+        'ai ethics', 'ethical ai', 'responsible ai', 'ai morality',
+        'ai fairness', 'ai accountability', 'ai responsibility',
+        'ai principles', 'ethical technology', 'tech ethics',
+    ],
+    StudyDomain.AI_SAFETY: [
+        'ai safety', 'safe ai', 'ai containment', 'ai control',
+        'ai reliability', 'ai robustness', 'ai failure',
+        'ai malfunction', 'ai accident', 'ai harm',
+    ],
+    StudyDomain.MACHINE_VALUES: [
+        'machine values', 'machine ethics', 'moral machine',
+        'robot ethics', 'machine morality', 'computational ethics',
+        'artificial morality', 'machine conscience',
+    ],
+    StudyDomain.AI_GOVERNANCE: [
+        'ai governance', 'ai regulation', 'ai policy', 'ai law',
+        'ai legislation', 'ai oversight', 'ai standards',
+        'ai regulatory', 'governing ai', 'ai framework',
+    ],
+    StudyDomain.AI_TRANSPARENCY: [
+        'ai transparency', 'explainable ai', 'xai', 'interpretable',
+        'ai explainability', 'black box', 'model transparency',
+        'algorithmic transparency', 'ai interpretability', 'glass box',
+    ],
+
+    # ========== CLIMATE SCIENCE & ACTION (6 domains - v2.4.5) ==========
+
+    StudyDomain.CLIMATE_ACTION: [
+        'climate action', 'climate activism', 'climate protest',
+        'climate movement', 'climate strike', 'climate advocacy',
+        'extinction rebellion', 'fridays for future', 'climate engagement',
+    ],
+    StudyDomain.CLIMATE_COMMUNICATION: [
+        'climate communication', 'climate messaging', 'climate narrative',
+        'climate framing', 'climate discourse', 'climate education',
+        'climate information', 'communicating climate',
+    ],
+    StudyDomain.CARBON_FOOTPRINT: [
+        'carbon footprint', 'carbon emission', 'carbon offset',
+        'carbon neutral', 'carbon reduction', 'carbon tax',
+        'carbon trading', 'co2', 'greenhouse gas', 'emission',
+        'net zero', 'carbon capture', 'carbon budget',
+    ],
+    StudyDomain.CLIMATE_ADAPTATION: [
+        'climate adaptation', 'climate resilience', 'adaptation strategy',
+        'climate vulnerability', 'climate impact', 'sea level rise',
+        'heat wave', 'drought', 'extreme weather', 'climate migration',
+    ],
+    StudyDomain.CLIMATE_JUSTICE: [
+        'climate justice', 'climate equity', 'environmental justice',
+        'climate inequality', 'disproportionate impact', 'just transition',
+        'climate refugees', 'climate vulnerable', 'developing nations',
+    ],
+    StudyDomain.RENEWABLE_ENERGY: [
+        'renewable energy', 'solar energy', 'wind energy', 'wind power',
+        'solar power', 'clean energy', 'green energy', 'renewable',
+        'photovoltaic', 'wind turbine', 'solar panel', 'geothermal',
+        'hydroelectric', 'biofuel', 'energy transition',
+    ],
+
+    # ========== HEALTH DISPARITIES (6 domains - v2.4.5) ==========
+
+    StudyDomain.HEALTH_DISPARITIES: [
+        'health disparities', 'health disparity', 'health inequality',
+        'health inequity', 'racial health gap', 'ethnic health gap',
+        'socioeconomic health', 'health gap', 'unequal health',
+    ],
+    StudyDomain.HEALTHCARE_ACCESS: [
+        'healthcare access', 'access to care', 'health insurance',
+        'uninsured', 'underinsured', 'healthcare barrier', 'medicaid',
+        'medicare', 'universal healthcare', 'affordable care',
+        'healthcare cost', 'medical debt', 'healthcare coverage',
+    ],
+    StudyDomain.HEALTH_EQUITY: [
+        'health equity', 'equitable health', 'fair health',
+        'health justice', 'equal health', 'health for all',
+        'universal health', 'equitable care', 'equitable access',
+    ],
+    StudyDomain.SOCIAL_DETERMINANTS: [
+        'social determinants', 'social determinants of health', 'sdoh',
+        'neighborhood', 'zip code', 'socioeconomic status', 'ses',
+        'income inequality', 'food desert', 'housing instability',
+        'education and health', 'poverty and health',
+    ],
+    StudyDomain.HEALTH_LITERACY: [
+        'health literacy', 'health information', 'health comprehension',
+        'medical literacy', 'patient education', 'health communication',
+        'informed patient', 'understanding diagnosis', 'reading labels',
+    ],
+    StudyDomain.MEDICAL_MISTRUST: [
+        'medical mistrust', 'healthcare mistrust', 'distrust doctors',
+        'distrust medicine', 'tuskegee', 'medical experimentation',
+        'vaccine hesitancy', 'medical skepticism', 'provider distrust',
+        'historical mistrust', 'health system distrust',
+    ],
+
+    # ========== GENOMICS & PERSONALIZED MEDICINE (5 domains - v2.4.5) ==========
+
+    StudyDomain.GENOMICS: [
+        'genomics', 'genome', 'dna', 'gene', 'genetic', 'genetics',
+        'chromosome', 'crispr', 'gene editing', 'sequencing',
+        'whole genome', 'genomic data', 'precision medicine',
+    ],
+    StudyDomain.GENETIC_TESTING: [
+        'genetic testing', 'genetic test', 'genetic screening',
+        'prenatal testing', 'carrier testing', 'pharmacogenomics',
+        '23andme', 'ancestry dna', 'direct-to-consumer genetic',
+        'dtc genetic', 'genetic risk', 'genetic counseling',
+    ],
+    StudyDomain.PERSONALIZED_MEDICINE: [
+        'personalized medicine', 'precision medicine', 'targeted therapy',
+        'individualized treatment', 'tailored treatment', 'biomarker',
+        'companion diagnostic', 'pharmacogenetics', 'personalized care',
+    ],
+    StudyDomain.GENE_THERAPY: [
+        'gene therapy', 'gene treatment', 'genetic therapy',
+        'gene editing therapy', 'crispr treatment', 'viral vector',
+        'gene replacement', 'somatic gene', 'germline',
+    ],
+    StudyDomain.BIOETHICS: [
+        'bioethics', 'medical ethics', 'clinical ethics', 'bioethical',
+        'genetic ethics', 'reproductive ethics', 'end of life',
+        'euthanasia', 'assisted suicide', 'organ donation', 'consent',
+        'human subjects', 'research participant', 'informed consent',
+    ],
+
+    # ========== DIGITAL SOCIETY (5 domains - v2.4.5) ==========
+
+    StudyDomain.DIGITAL_DIVIDE: [
+        'digital divide', 'digital gap', 'digital inequality',
+        'internet access', 'broadband', 'connectivity',
+        'digital exclusion', 'tech access', 'digital poverty',
+        'digital haves', 'digital have-nots',
+    ],
+    StudyDomain.ONLINE_POLARIZATION: [
+        'online polarization', 'echo chamber', 'filter bubble',
+        'political polarization online', 'polarized online', 'tribalism',
+        'online extremism', 'radicalization', 'online divide',
+    ],
+    StudyDomain.ALGORITHMIC_FAIRNESS: [
+        'algorithmic fairness', 'algorithmic bias', 'ai bias',
+        'machine bias', 'fairness in ml', 'fair algorithm',
+        'biased algorithm', 'discriminatory algorithm', 'ai discrimination',
+        'algorithmic discrimination', 'fair machine learning',
+    ],
+    StudyDomain.DATA_PRIVACY: [
+        'data privacy', 'data protection', 'personal data',
+        'privacy concern', 'privacy policy', 'gdpr', 'ccpa',
+        'data ownership', 'data rights', 'information privacy',
+        'privacy regulation', 'data consent', 'surveillance capitalism',
+    ],
+    StudyDomain.DIGITAL_LITERACY: [
+        'digital literacy', 'digital skills', 'digital competence',
+        'media literacy', 'information literacy', 'internet literacy',
+        'tech literacy', 'computational thinking', 'digital fluency',
+    ],
+
+    # ========== FUTURE OF WORK (5 domains - v2.4.5) ==========
+
+    StudyDomain.AUTOMATION_ANXIETY: [
+        'automation anxiety', 'job automation', 'robot replace',
+        'ai replace job', 'technological unemployment', 'job displacement',
+        'automation fear', 'automation threat', 'jobs at risk',
+        'automated away', 'machine replace', 'fear of automation',
+    ],
+    StudyDomain.GIG_ECONOMY: [
+        'gig economy', 'gig work', 'freelance', 'independent contractor',
+        'uber', 'lyft', 'doordash', 'fiverr', 'upwork', 'task rabbit',
+        'platform work', 'contingent work', 'gig worker', 'side hustle',
+    ],
+    StudyDomain.SKILLS_OBSOLESCENCE: [
+        'skills obsolescence', 'reskilling', 'upskilling', 'skill gap',
+        'skills mismatch', 'lifelong learning', 'continuous learning',
+        'skill development', 'workforce training', 'skill shortage',
+    ],
+    StudyDomain.UNIVERSAL_BASIC_INCOME: [
+        'universal basic income', 'ubi', 'basic income', 'guaranteed income',
+        'unconditional income', 'cash transfer', 'income guarantee',
+        'negative income tax', 'citizen dividend', 'basic income experiment',
+    ],
+    StudyDomain.HUMAN_MACHINE_COLLABORATION: [
+        'human-machine collaboration', 'human machine collaboration',
+        'human-ai collaboration', 'human ai teamwork', 'augmentation',
+        'collaborative intelligence', 'human-machine teaming',
+        'hybrid intelligence', 'centaur', 'cobots', 'cobot',
+    ],
 }
 
 
@@ -4659,6 +5458,137 @@ COMPOUND_DOMAIN_PHRASES: Dict[StudyDomain, List[str]] = {
         'climate change', 'global warming', 'climate attitudes', 'climate policy',
         'climate action', 'carbon footprint',
     ],
+
+    # Organizational Behavior
+    StudyDomain.WORKPLACE: [
+        'workplace behavior', 'workplace attitudes', 'workplace outcomes',
+        'workplace environment', 'organizational behavior', 'employee behavior',
+    ],
+    StudyDomain.LEADERSHIP: [
+        'leadership style', 'leadership effectiveness', 'transformational leadership',
+        'servant leadership', 'ethical leadership', 'leadership behavior',
+        'leadership development', 'leader-member exchange', 'lmx',
+    ],
+    StudyDomain.JOB_SATISFACTION: [
+        'job satisfaction', 'work satisfaction', 'employee satisfaction',
+        'job attitudes', 'workplace satisfaction',
+    ],
+    StudyDomain.BURNOUT: [
+        'job burnout', 'workplace burnout', 'emotional exhaustion',
+        'occupational burnout', 'burnout syndrome', 'burnout prevention',
+    ],
+    StudyDomain.REMOTE_WORK: [
+        'remote work', 'work from home', 'hybrid work', 'telecommuting',
+        'distributed team', 'virtual teamwork', 'remote collaboration',
+    ],
+
+    # Financial Psychology
+    StudyDomain.FINANCIAL_PSYCHOLOGY: [
+        'financial psychology', 'financial behavior', 'money psychology',
+        'financial decision making', 'financial attitudes',
+    ],
+    StudyDomain.INVESTMENT_BEHAVIOR: [
+        'investment behavior', 'investment decision', 'stock market behavior',
+        'investor psychology', 'portfolio management',
+    ],
+
+    # Personality Psychology
+    StudyDomain.PERSONALITY: [
+        'personality psychology', 'personality traits', 'individual differences',
+        'personality assessment', 'personality measurement',
+    ],
+    StudyDomain.BIG_FIVE: [
+        'big five personality', 'five factor model', 'ocean model',
+        'personality dimensions', 'neo personality',
+    ],
+    StudyDomain.DARK_TRIAD: [
+        'dark triad personality', 'dark personality traits',
+        'subclinical psychopathy', 'subclinical narcissism',
+    ],
+
+    # Decision Science
+    StudyDomain.DECISION_SCIENCE: [
+        'decision science', 'judgment and decision making',
+        'behavioral decision research', 'decision theory',
+    ],
+    StudyDomain.NUDGE: [
+        'behavioral nudge', 'nudge intervention', 'choice architecture',
+        'libertarian paternalism', 'default option',
+    ],
+
+    # Technology/AI - additional
+    StudyDomain.TECHNOLOGY_ADOPTION: [
+        'technology adoption', 'technology acceptance', 'tam model',
+        'technology acceptance model', 'unified theory of acceptance',
+        'utaut', 'technology readiness', 'tech adoption',
+    ],
+    StudyDomain.AUTOMATION: [
+        'automation attitudes', 'automated systems', 'automation trust',
+        'autonomous systems', 'self-driving car', 'autonomous vehicle',
+    ],
+    StudyDomain.ALGORITHM_AVERSION: [
+        'algorithm aversion', 'algorithmic decision', 'ai decision making',
+        'automated decision making', 'algorithmic judgment',
+    ],
+    StudyDomain.DIGITAL_WELLBEING: [
+        'digital wellbeing', 'digital well-being', 'screen time effects',
+        'smartphone addiction', 'internet addiction', 'tech addiction',
+    ],
+    StudyDomain.CYBERSECURITY: [
+        'cybersecurity behavior', 'online security', 'password behavior',
+        'phishing awareness', 'information security',
+    ],
+
+    # Health - additional
+    StudyDomain.VACCINATION: [
+        'vaccine hesitancy', 'vaccination intention', 'vaccine acceptance',
+        'vaccine attitudes', 'vaccine confidence', 'immunization behavior',
+    ],
+    StudyDomain.HEALTH_BEHAVIOR: [
+        'health behavior change', 'health behavior model', 'health belief model',
+        'theory of planned behavior', 'health promotion', 'preventive behavior',
+    ],
+
+    # Gaming/Entertainment
+    StudyDomain.GAMING_PSYCHOLOGY: [
+        'gaming psychology', 'video game effects', 'gaming behavior',
+        'gaming addiction', 'gaming disorder', 'game engagement',
+    ],
+    StudyDomain.GAMBLING: [
+        'gambling behavior', 'problem gambling', 'gambling addiction',
+        'gambling psychology', 'responsible gambling',
+    ],
+    StudyDomain.VIRTUAL_REALITY: [
+        'virtual reality experience', 'vr research', 'immersive technology',
+        'augmented reality experience', 'mixed reality',
+    ],
+
+    # AI Ethics & Governance
+    StudyDomain.AI_ETHICS: [
+        'ai ethics', 'ethical ai', 'responsible ai', 'ai fairness',
+        'ai accountability', 'trustworthy ai',
+    ],
+    StudyDomain.AI_GOVERNANCE: [
+        'ai governance', 'ai regulation', 'ai policy', 'governing artificial intelligence',
+    ],
+    StudyDomain.AI_TRANSPARENCY: [
+        'explainable ai', 'ai transparency', 'algorithmic transparency',
+        'interpretable machine learning', 'xai research',
+    ],
+
+    # Social Media Research
+    StudyDomain.SOCIAL_MEDIA_USE: [
+        'social media use', 'social media effects', 'social media behavior',
+        'social media consumption', 'social networking behavior',
+    ],
+    StudyDomain.INFLUENCER_MARKETING: [
+        'influencer marketing', 'social media influencer', 'influencer endorsement',
+        'sponsored content', 'influencer credibility',
+    ],
+    StudyDomain.SOCIAL_COMPARISON: [
+        'social comparison theory', 'upward social comparison',
+        'downward social comparison', 'social media comparison',
+    ],
 }
 
 
@@ -4693,23 +5623,85 @@ DOMAIN_NEGATIVE_KEYWORDS: Dict[StudyDomain, List[str]] = {
         'autonomous vehicle', 'self-driving', 'robot interaction',
         'chatbot', 'neural network', 'machine learning model',
         'deep learning', 'language model',
+        'product evaluation', 'brand loyalty', 'consumer behavior',
     ],
 
     # Social Psychology TRUST should not override political trust or consumer trust
     StudyDomain.TRUST: [
         'autonomous vehicle', 'self-driving', 'ai system',
+        'dictator game', 'ultimatum game', 'public goods game',
     ],
 
     # Consumer/Marketing should not match for political studies
     StudyDomain.CONSUMER: [
         'political polarization', 'partisan divide', 'voting behavior',
         'political ideology', 'election outcome',
+        'anxiety disorder', 'depression treatment', 'clinical trial',
     ],
 
     # Clinical should not match for general health behavior studies
     StudyDomain.CLINICAL: [
         'consumer behavior', 'product evaluation', 'brand loyalty',
         'purchase intent', 'advertising',
+        'political polarization', 'voting behavior', 'election',
+    ],
+
+    # Education should not match when context is clearly non-educational
+    StudyDomain.EDUCATION: [
+        'dictator game', 'ultimatum game', 'product evaluation',
+        'brand loyalty', 'consumer behavior', 'advertising',
+        'clinical trial', 'depression treatment', 'anxiety disorder',
+    ],
+
+    # Decision-making is very broad - prevent it from stealing from specific domains
+    StudyDomain.DECISION_MAKING: [
+        'political polarization', 'partisan', 'voting behavior',
+        'product evaluation', 'brand loyalty', 'consumer behavior',
+        'clinical trial', 'depression treatment', 'anxiety disorder',
+        'dictator game', 'ultimatum game', 'public goods game',
+    ],
+
+    # Motivation is extremely broad - prevent false matches
+    StudyDomain.MOTIVATION: [
+        'political polarization', 'partisan', 'voting behavior',
+        'product evaluation', 'brand loyalty', 'consumer behavior',
+        'clinical trial', 'anxiety disorder', 'depression treatment',
+        'dictator game', 'ultimatum game', 'public goods game',
+        'autonomous vehicle', 'self-driving', 'ai system',
+    ],
+
+    # Stress is broad - should not steal from clinical or workplace domains
+    StudyDomain.STRESS: [
+        'product evaluation', 'brand loyalty', 'consumer behavior',
+        'political polarization', 'voting behavior', 'election',
+        'dictator game', 'ultimatum game',
+    ],
+
+    # Interpersonal is very broad - prevent it from stealing from specific domains
+    StudyDomain.INTERPERSONAL: [
+        'political polarization', 'partisan', 'voting behavior',
+        'product evaluation', 'brand loyalty', 'consumer behavior',
+        'dictator game', 'ultimatum game', 'public goods game',
+        'autonomous vehicle', 'self-driving', 'ai system',
+    ],
+
+    # Coping is broad - prevent it from overriding more specific clinical domains
+    StudyDomain.COPING: [
+        'product evaluation', 'brand loyalty', 'consumer behavior',
+        'political polarization', 'voting behavior',
+        'dictator game', 'ultimatum game',
+    ],
+
+    # Gambling should not match lottery/gamble in behavioral economics contexts
+    StudyDomain.GAMBLING: [
+        'dictator game', 'ultimatum game', 'trust game',
+        'risk preference', 'time preference', 'loss aversion',
+    ],
+
+    # Identity is very broad
+    StudyDomain.IDENTITY: [
+        'brand identity', 'brand image', 'corporate identity',
+        'product evaluation', 'consumer behavior',
     ],
 }
 
@@ -4767,6 +5759,101 @@ DOMAIN_CATEGORIES: Dict[str, List[StudyDomain]] = {
         StudyDomain.VACCINATION, StudyDomain.PAIN_MANAGEMENT,
         StudyDomain.HEALTH_ANXIETY, StudyDomain.PATIENT_PROVIDER,
         StudyDomain.CHRONIC_ILLNESS,
+    ],
+    'education': [
+        StudyDomain.EDUCATION, StudyDomain.LEARNING,
+        StudyDomain.ACADEMIC_MOTIVATION, StudyDomain.TEACHING_EFFECTIVENESS,
+        StudyDomain.ONLINE_LEARNING, StudyDomain.EDUCATIONAL_TECHNOLOGY,
+        StudyDomain.STUDENT_ENGAGEMENT, StudyDomain.ASSESSMENT_FEEDBACK,
+    ],
+    'environmental': [
+        StudyDomain.ENVIRONMENTAL, StudyDomain.SUSTAINABILITY,
+        StudyDomain.CLIMATE_ATTITUDES, StudyDomain.PRO_ENVIRONMENTAL,
+        StudyDomain.GREEN_CONSUMPTION, StudyDomain.CONSERVATION,
+        StudyDomain.ENERGY_BEHAVIOR, StudyDomain.ENVIRONMENTAL_JUSTICE,
+        StudyDomain.CLIMATE_ACTION, StudyDomain.CLIMATE_COMMUNICATION,
+        StudyDomain.CARBON_FOOTPRINT, StudyDomain.CLIMATE_ADAPTATION,
+        StudyDomain.CLIMATE_JUSTICE, StudyDomain.RENEWABLE_ENERGY,
+    ],
+    'organizational_behavior': [
+        StudyDomain.ORGANIZATIONAL, StudyDomain.WORKPLACE,
+        StudyDomain.LEADERSHIP, StudyDomain.TEAMWORK,
+        StudyDomain.MOTIVATION, StudyDomain.JOB_SATISFACTION,
+        StudyDomain.ORGANIZATIONAL_COMMITMENT, StudyDomain.WORK_LIFE_BALANCE,
+        StudyDomain.EMPLOYEE_ENGAGEMENT, StudyDomain.ORGANIZATIONAL_CULTURE,
+        StudyDomain.REMOTE_WORK, StudyDomain.WORKPLACE_DIVERSITY,
+        StudyDomain.BURNOUT, StudyDomain.CAREER_DEVELOPMENT,
+        StudyDomain.WORKPLACE_CONFLICT, StudyDomain.ORGANIZATIONAL_JUSTICE,
+    ],
+    'financial_psychology': [
+        StudyDomain.FINANCIAL_PSYCHOLOGY, StudyDomain.FINANCIAL_LITERACY,
+        StudyDomain.INVESTMENT_BEHAVIOR, StudyDomain.DEBT_ATTITUDES,
+        StudyDomain.RETIREMENT_PLANNING, StudyDomain.FINANCIAL_STRESS,
+    ],
+    'personality_psychology': [
+        StudyDomain.PERSONALITY, StudyDomain.BIG_FIVE,
+        StudyDomain.NARCISSISM, StudyDomain.DARK_TRIAD,
+        StudyDomain.TRAIT_ASSESSMENT, StudyDomain.SELF_CONCEPT,
+    ],
+    'gaming_entertainment': [
+        StudyDomain.GAMING_PSYCHOLOGY, StudyDomain.ESPORTS,
+        StudyDomain.GAMBLING, StudyDomain.ENTERTAINMENT_MEDIA,
+        StudyDomain.STREAMING_BEHAVIOR, StudyDomain.VIRTUAL_REALITY,
+    ],
+    'social_media_research': [
+        StudyDomain.SOCIAL_MEDIA, StudyDomain.SOCIAL_MEDIA_USE,
+        StudyDomain.ONLINE_IDENTITY, StudyDomain.DIGITAL_COMMUNICATION,
+        StudyDomain.INFLUENCER_MARKETING, StudyDomain.ONLINE_COMMUNITIES,
+        StudyDomain.SOCIAL_COMPARISON,
+    ],
+    'decision_science': [
+        StudyDomain.DECISION_SCIENCE, StudyDomain.CHOICE_ARCHITECTURE,
+        StudyDomain.NUDGE, StudyDomain.DEFAULT_EFFECTS,
+        StudyDomain.INFORMATION_OVERLOAD, StudyDomain.REGRET,
+        StudyDomain.DECISION_MAKING, StudyDomain.COGNITIVE_BIAS,
+    ],
+    'ethics_moral': [
+        StudyDomain.ETHICS, StudyDomain.MORAL_JUDGMENT,
+        StudyDomain.MORAL_DILEMMA, StudyDomain.ETHICAL_LEADERSHIP,
+        StudyDomain.CORPORATE_ETHICS, StudyDomain.RESEARCH_ETHICS,
+        StudyDomain.MORAL_EMOTIONS, StudyDomain.VALUES,
+        StudyDomain.BIOETHICS,
+    ],
+    'ai_alignment_ethics': [
+        StudyDomain.AI_ALIGNMENT, StudyDomain.AI_ETHICS,
+        StudyDomain.AI_SAFETY, StudyDomain.MACHINE_VALUES,
+        StudyDomain.AI_GOVERNANCE, StudyDomain.AI_TRANSPARENCY,
+        StudyDomain.ALGORITHMIC_FAIRNESS,
+    ],
+    'trust_credibility': [
+        StudyDomain.INSTITUTIONAL_TRUST, StudyDomain.EXPERT_CREDIBILITY,
+        StudyDomain.SOURCE_CREDIBILITY, StudyDomain.SCIENCE_TRUST,
+        StudyDomain.MEDIA_TRUST,
+    ],
+    'health_disparities': [
+        StudyDomain.HEALTH_DISPARITIES, StudyDomain.HEALTHCARE_ACCESS,
+        StudyDomain.HEALTH_EQUITY, StudyDomain.SOCIAL_DETERMINANTS,
+        StudyDomain.HEALTH_LITERACY, StudyDomain.MEDICAL_MISTRUST,
+    ],
+    'innovation_creativity': [
+        StudyDomain.INNOVATION, StudyDomain.CREATIVITY,
+        StudyDomain.ENTREPRENEURSHIP, StudyDomain.IDEA_GENERATION,
+        StudyDomain.CREATIVE_PROCESS,
+    ],
+    'risk_safety': [
+        StudyDomain.RISK_PERCEPTION, StudyDomain.SAFETY_ATTITUDES,
+        StudyDomain.HAZARD_PERCEPTION, StudyDomain.DISASTER_PREPAREDNESS,
+        StudyDomain.RISK_COMMUNICATION,
+    ],
+    'future_of_work': [
+        StudyDomain.AUTOMATION_ANXIETY, StudyDomain.GIG_ECONOMY,
+        StudyDomain.SKILLS_OBSOLESCENCE, StudyDomain.UNIVERSAL_BASIC_INCOME,
+        StudyDomain.HUMAN_MACHINE_COLLABORATION,
+    ],
+    'digital_society': [
+        StudyDomain.DIGITAL_DIVIDE, StudyDomain.ONLINE_POLARIZATION,
+        StudyDomain.ALGORITHMIC_FAIRNESS, StudyDomain.DATA_PRIVACY,
+        StudyDomain.DIGITAL_LITERACY,
     ],
 }
 
@@ -4839,17 +5926,21 @@ def _score_text_for_domain(
 def detect_study_domain(study_context: Dict[str, Any], question_text: str) -> StudyDomain:
     """Detect the most appropriate domain for response generation.
 
-    Uses a 5-layer scoring system for accurate domain identification:
+    Uses a 7-layer scoring system for accurate domain identification:
 
     1. Title-weighted compound phrase matching (10 pts * 3x in title)
        - Multi-word phrases like 'political polarization' are the strongest signals
     2. Title-weighted keyword matching (1-7 pts * 3x in title)
        - Keywords found in the study title score 3x those in the description
-    3. Negative keyword penalties (-3 pts each)
+    3. Condition and DV name analysis (2x weight)
+       - Condition names and DV/scale names provide strong domain signals
+    4. Negative keyword penalties (-3 pts each)
        - Prevent misidentification when contextual clues exclude a domain
-    4. Category-level boosting
+    5. Category-level boosting
        - Multiple sibling domains scoring strengthens the category signal
-    5. Tie-breaking by domain specificity
+    6. Context-clue fallback for weak signals
+       - When top score is low, use broader context clues to make a best guess
+    7. Tie-breaking by domain specificity
        - Prefer more specific domains (e.g., POLARIZATION over POLITICAL)
 
     Short keywords (< 4 chars) use word-boundary matching to avoid false
@@ -4858,6 +5949,8 @@ def detect_study_domain(study_context: Dict[str, Any], question_text: str) -> St
     # --- Extract title and description separately for differential weighting ---
     title_text = ''
     description_parts: List[str] = []
+    condition_text = ''
+    dv_text = ''
 
     if study_context:
         # Survey name / study title gets 3x weight
@@ -4866,6 +5959,10 @@ def detect_study_domain(study_context: Dict[str, Any], question_text: str) -> St
         topics = study_context.get('topics', [])
         if topics:
             title_text += ' ' + ' '.join(str(t) for t in topics).lower()
+        # Study domain hint from user selection (if provided)
+        domain_hint = str(study_context.get('study_domain', '')).lower()
+        if domain_hint and domain_hint != 'general':
+            title_text += ' ' + domain_hint.replace('_', ' ')
         # Instructions and questions are description-level (1x weight)
         instructions = str(study_context.get('instructions_text', '')).lower()
         if instructions:
@@ -4873,13 +5970,24 @@ def detect_study_domain(study_context: Dict[str, Any], question_text: str) -> St
         main_questions = study_context.get('main_questions', [])
         if main_questions:
             description_parts.append(' '.join(str(q) for q in main_questions).lower())
+        # Extract condition names for analysis (2x weight)
+        conditions = study_context.get('conditions', [])
+        if conditions:
+            condition_text = ' '.join(str(c) for c in conditions).lower()
+        # Extract DV / scale names for analysis (2x weight)
+        dvs = study_context.get('dvs', study_context.get('scales', []))
+        if dvs:
+            if isinstance(dvs, list):
+                dv_text = ' '.join(str(d) if isinstance(d, str) else str(d.get('name', '')) for d in dvs).lower()
+            elif isinstance(dvs, dict):
+                dv_text = ' '.join(str(v) for v in dvs.values()).lower()
 
     question_lower = str(question_text).lower()
     description_parts.append(question_lower)
     description_text = ' '.join(description_parts)
 
     # Full combined text for compound phrase and negative keyword checks
-    combined = (title_text + ' ' + description_text).strip()
+    combined = (title_text + ' ' + description_text + ' ' + condition_text + ' ' + dv_text).strip()
 
     # --- Layer 1: Compound phrase matching (highest priority) ---
     # Compound phrases score 10 pts each, 3x if found in title
@@ -4900,10 +6008,26 @@ def detect_study_domain(study_context: Dict[str, Any], question_text: str) -> St
         if total > 0:
             domain_scores[domain] = domain_scores.get(domain, 0.0) + total
 
-    if not domain_scores:
-        return StudyDomain.GENERAL
+    # --- Layer 3: Condition and DV name analysis ---
+    # Condition names (e.g., "AI_recommendation", "high_trust") and DV names
+    # (e.g., "purchase_intent", "anxiety_scale") provide strong domain signals
+    if condition_text or dv_text:
+        context_extra = (condition_text + ' ' + dv_text).strip()
+        for domain, keywords in DOMAIN_KEYWORDS.items():
+            ctx_score = _score_text_for_domain(context_extra, domain, keywords, multiplier=2.0)
+            if ctx_score > 0:
+                domain_scores[domain] = domain_scores.get(domain, 0.0) + ctx_score
+        # Also check compound phrases in condition/DV text
+        for domain, phrases in COMPOUND_DOMAIN_PHRASES.items():
+            for phrase in phrases:
+                if phrase in context_extra:
+                    domain_scores[domain] = domain_scores.get(domain, 0.0) + 8.0
 
-    # --- Layer 3: Negative keyword penalties ---
+    if not domain_scores:
+        # --- Layer 6 (early): Context-clue fallback ---
+        return _fallback_domain_detection(combined)
+
+    # --- Layer 4: Negative keyword penalties ---
     # Each negative keyword match reduces domain score by 3 pts
     for domain, neg_keywords in DOMAIN_NEGATIVE_KEYWORDS.items():
         if domain in domain_scores:
@@ -4917,9 +6041,9 @@ def detect_study_domain(study_context: Dict[str, Any], question_text: str) -> St
                     del domain_scores[domain]
 
     if not domain_scores:
-        return StudyDomain.GENERAL
+        return _fallback_domain_detection(combined)
 
-    # --- Layer 4: Category-level boosting ---
+    # --- Layer 5: Category-level boosting ---
     # When 2+ domains in the same category score, boost all domains in that
     # category by 20% per additional scoring sibling. This helps political
     # studies where POLITICAL + POLARIZATION both score to outrank a single
@@ -4931,11 +6055,19 @@ def detect_study_domain(study_context: Dict[str, Any], question_text: str) -> St
             for d in scoring_siblings:
                 domain_scores[d] *= boost_factor
 
-    # --- Layer 5: Tie-breaking by domain specificity ---
+    # --- Layer 6: Context-clue fallback for weak signals ---
+    # When the top score is very low (< 3.0), the match is likely incidental.
+    # Use broader context clues to determine domain.
+    top_score = max(domain_scores.values())
+    if top_score < 3.0:
+        fallback = _fallback_domain_detection(combined)
+        if fallback != StudyDomain.GENERAL:
+            return fallback
+
+    # --- Layer 7: Tie-breaking by domain specificity ---
     # When scores are very close (within 5%), prefer the more specific domain.
     # Specific domains (sub-domains) are preferred over broad parent domains.
     # This prevents POLITICAL from beating POLARIZATION when both score similarly.
-    top_score = max(domain_scores.values())
     threshold = top_score * 0.95  # Within 5%
     top_candidates = {d: s for d, s in domain_scores.items() if s >= threshold}
 
@@ -4943,20 +6075,83 @@ def detect_study_domain(study_context: Dict[str, Any], question_text: str) -> St
         # Among near-tied candidates, prefer sub-domains (those with more
         # specific keywords). Use the compound phrase count as a proxy for
         # specificity -- domains with compound phrase matches are more specific.
-        def _specificity_key(item: Tuple[StudyDomain, float]) -> Tuple[float, int]:
+        # Also prefer domains with fewer total keywords in DOMAIN_KEYWORDS
+        # (fewer keywords = more specific domain).
+        def _specificity_key(item: Tuple[StudyDomain, float]) -> Tuple[float, int, int]:
             domain, score = item
             compound_count = 0
             if domain in COMPOUND_DOMAIN_PHRASES:
                 for phrase in COMPOUND_DOMAIN_PHRASES[domain]:
                     if phrase in combined:
                         compound_count += 1
-            # Sort by (score, compound_count) descending
-            return (score, compound_count)
+            # Specificity bonus: domains with fewer keywords are more specific
+            keyword_count = len(DOMAIN_KEYWORDS.get(domain, []))
+            specificity_bonus = max(0, 30 - keyword_count)  # Fewer keywords = higher bonus
+            # Sort by (score, compound_count, specificity_bonus) descending
+            return (score, compound_count, specificity_bonus)
 
         return max(top_candidates.items(), key=_specificity_key)[0]
 
     # Return domain with highest score
     return max(domain_scores.items(), key=lambda x: x[1])[0]
+
+
+# Context-clue fallback patterns for broad domain detection when keyword
+# matching fails. Maps regex patterns to domains. Patterns are checked in
+# order; the first match wins.
+_FALLBACK_CONTEXT_PATTERNS: List[Tuple[str, StudyDomain]] = [
+    # Marketing / consumer patterns
+    (r'\b(buy|bought|purchas|shop|brand|product|customer|retail|store)\b', StudyDomain.CONSUMER),
+    (r'\b(advertis|ad campaign|commerc|marketing|promo)\b', StudyDomain.ADVERTISING),
+    # Political patterns
+    (r'\b(politic|democrat|republican|liberal|conservative|election|vote|congress|senate)\b', StudyDomain.POLITICAL),
+    # Health patterns
+    (r'\b(health|medical|doctor|patient|hospital|clinic|disease|illness|symptom)\b', StudyDomain.HEALTH),
+    (r'\b(anxiety|anxious|depress|panic|phobia|trauma|ptsd)\b', StudyDomain.MENTAL_HEALTH),
+    (r'\b(vaccin|immuniz|booster|shot|jab)\b', StudyDomain.VACCINATION),
+    # Technology / AI patterns
+    (r'\b(ai|artificial intelligence|algorithm|machine learning|robot|chatbot|gpt|llm)\b', StudyDomain.AI_ATTITUDES),
+    (r'\b(social media|facebook|instagram|tiktok|twitter|youtube)\b', StudyDomain.SOCIAL_MEDIA),
+    # Education patterns
+    (r'\b(school|university|college|student|teacher|classroom|curriculum|learn)\b', StudyDomain.EDUCATION),
+    # Workplace patterns
+    (r'\b(employee|workplace|job|manager|boss|supervisor|office|company|firm)\b', StudyDomain.WORKPLACE),
+    (r'\b(leader|leadership|manager|ceo|executive)\b', StudyDomain.LEADERSHIP),
+    # Environmental patterns
+    (r'\b(environment|climate|sustainab|eco-|green|carbon|recycl|pollution)\b', StudyDomain.ENVIRONMENTAL),
+    # Behavioral economics patterns
+    (r'\b(dictator|allocat|split|endowment|recipien)\b', StudyDomain.DICTATOR_GAME),
+    (r'\b(risk|gamble|lottery|probability|certain)\b', StudyDomain.RISK_PREFERENCE),
+    # Ethics patterns
+    (r'\b(ethic|moral|right|wrong|dilemma|virtue|duty)\b', StudyDomain.ETHICS),
+    # Relationship patterns
+    (r'\b(relationship|partner|couple|romantic|dating|marriage|love)\b', StudyDomain.RELATIONSHIP),
+    # Food patterns
+    (r'\b(food|eating|diet|nutrition|meal|appetite|hunger)\b', StudyDomain.FOOD_PSYCHOLOGY),
+]
+
+
+def _fallback_domain_detection(text: str) -> StudyDomain:
+    """Fallback domain detection using broad context-clue regex patterns.
+
+    Called when primary keyword matching yields no results or very low scores.
+    Uses broader regex patterns to make a best guess at the domain from
+    general context clues in the study description.
+
+    Args:
+        text: The lowercased combined text to analyze.
+
+    Returns:
+        The best-guess domain, or GENERAL if no patterns match.
+    """
+    if not text or not text.strip():
+        return StudyDomain.GENERAL
+
+    for pattern, domain in _FALLBACK_CONTEXT_PATTERNS:
+        if re.search(pattern, text, re.IGNORECASE):
+            return domain
+
+    return StudyDomain.GENERAL
 
 
 # ============================================================================

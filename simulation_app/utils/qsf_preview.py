@@ -33,7 +33,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 # Version identifier to help track deployed code
-__version__ = "1.8.9"  # v1.8.9: Analytics power analysis, sample adequacy, validation improvements
+__version__ = "1.9.1"  # v1.9.1: Error handling, scale detection feedback, open-ended question improvements
 
 
 # ============================================================================
@@ -2577,7 +2577,7 @@ class QSFPreviewParser:
                             matched_condition = self._match_to_condition(block_name, conditions)
                             if matched_condition:
                                 condition_blocks[matched_condition].append(block_id)
-                            randomizer_block_ids.add(block_id)
+                                randomizer_block_ids.add(block_id)
 
             elif flow_type == 'Randomizer':
                 # Similar to BlockRandomizer
@@ -2591,7 +2591,7 @@ class QSFPreviewParser:
                             matched_condition = self._match_to_condition(block_name, conditions)
                             if matched_condition:
                                 condition_blocks[matched_condition].append(block_id)
-                            randomizer_block_ids.add(block_id)
+                                randomizer_block_ids.add(block_id)
                     elif sub_item.get('Type') == 'Group':
                         group_name = sub_item.get('Description', '')
                         matched_condition = self._match_to_condition(group_name, conditions)
