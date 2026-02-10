@@ -53,8 +53,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.8.9"
-BUILD_ID = "20260210-v189-analytics-power-validation"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.9.0"
+BUILD_ID = "20260210-v190-landing-page-tabs-redesign"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -119,7 +119,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.8.9"  # v1.8.9: Analytics power analysis, sample adequacy, validation improvements, landing page updates
+APP_VERSION = "1.9.0"  # v1.9.0: Landing page tabs redesign - replace expanders with polished tabbed sections
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -5153,6 +5153,119 @@ section[data-testid="stSidebar"] .stCaption { line-height: 1.4; }
     color: #D1D5DB;
 }
 
+/* ─── Landing info tabs ─── */
+.landing-tabs-container {
+    max-width: 780px;
+    margin: 32px auto 0;
+    padding: 0 20px;
+}
+.landing-tab-content {
+    padding: 24px 0 16px;
+    font-size: 0.88rem;
+    color: #374151;
+    line-height: 1.65;
+}
+.landing-tab-content h4 {
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #9CA3AF;
+    margin: 0 0 16px;
+    font-weight: 600;
+}
+.use-case-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+    margin-top: 12px;
+}
+.use-case-card {
+    padding: 16px;
+    border: 1px solid #E5E7EB;
+    border-radius: 10px;
+    background: #FAFAFA;
+    transition: all 0.15s ease;
+}
+.use-case-card:hover {
+    border-color: #D1D5DB;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+}
+.use-case-card strong {
+    display: block;
+    font-size: 0.85rem;
+    color: #1F2937;
+    margin-bottom: 4px;
+}
+.use-case-card span {
+    font-size: 0.8rem;
+    color: #6B7280;
+    line-height: 1.5;
+}
+.capability-item {
+    display: flex;
+    gap: 14px;
+    padding: 16px 0;
+    border-bottom: 1px solid #F3F4F6;
+}
+.capability-item:last-child { border-bottom: none; }
+.cap-icon {
+    font-size: 1.5rem;
+    flex-shrink: 0;
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, #FEF2F2, #FFF1F2);
+    border-radius: 10px;
+}
+.cap-text strong {
+    display: block;
+    font-size: 0.88rem;
+    color: #1F2937;
+    margin-bottom: 3px;
+}
+.cap-text span {
+    font-size: 0.82rem;
+    color: #6B7280;
+    line-height: 1.55;
+}
+.step-detail-item {
+    display: flex;
+    gap: 14px;
+    padding: 14px 0;
+    border-bottom: 1px solid #F3F4F6;
+}
+.step-detail-item:last-child { border-bottom: none; }
+.step-num {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #FF4B4B, #FF6B6B);
+    color: white;
+    font-weight: 700;
+    font-size: 0.78rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    margin-top: 2px;
+}
+.step-detail-text strong {
+    display: block;
+    font-size: 0.85rem;
+    color: #1F2937;
+    margin-bottom: 2px;
+}
+.step-detail-text span {
+    font-size: 0.8rem;
+    color: #6B7280;
+    line-height: 1.55;
+}
+@media (max-width: 768px) {
+    .use-case-grid { grid-template-columns: 1fr; }
+}
+
 /* ─── Segmented progress bar ─── */
 .seg-progress {
     display: flex;
@@ -5879,72 +5992,130 @@ if active_page == -1:
         if st.button("Start Your Simulation  \u2192", type="primary", use_container_width=True, key="landing_cta"):
             _navigate_to(0)
 
-    # v1.8.9: Use-case signals for enterprise/institutional visitors
-    with st.expander("Who uses this tool?"):
-        st.markdown("""
-**Researchers & PIs** — Validate analysis pipelines before IRB data collection. Simulate expected
-effect sizes and power for grant proposals. Test factorial designs without waiting for participant recruitment.
+    # v1.9.0: Professional tabbed info sections (replacing generic expanders)
+    st.markdown('<div class="landing-tabs-container">', unsafe_allow_html=True)
 
-**University Instructors** — Assign realistic data analysis exercises where every student gets unique
-datasets. Instructor-only reports provide answer keys with effect sizes and statistical summaries.
+    _info_tab1, _info_tab2, _info_tab3, _info_tab4 = st.tabs([
+        "Who Uses This",
+        "Capabilities",
+        "Step-by-Step",
+        "Research & Citations",
+    ])
 
-**Market Research Teams** — Prototype survey instruments and verify that analysis code handles
-real-world response patterns (attention failures, straight-lining, dropout) before fielding.
-
-**UX Research Groups** — Generate pilot data to test analysis workflows for A/B tests, preference
-studies, and usability scales before committing to costly participant panels.
-
-**Government & Policy Labs** — Simulate citizen survey responses across demographic segments
-to validate measurement instruments and analysis plans before public deployment.
-""")
-
-    # ── Reference sections (expandable, at the bottom) ──
-    st.markdown('<div style="max-width:780px;margin:24px auto 0;padding:0 20px;"><hr style="border:none;border-top:1px solid #F3F4F6;margin:0;"></div>', unsafe_allow_html=True)
-
-    with st.expander("Learn more about each capability"):
-        st.markdown("""
-**Test Before You Collect**
-Generate a publication-ready CSV with realistic Likert-scale responses, attention check failures,
-individual differences, and demographic distributions. The data mirrors real Qualtrics output format
-so your analysis scripts work identically on both simulated and real data.
-
-**Realistic Open-Ended Responses**
-Uses a multi-provider LLM failover chain with 50+ behavioral personas
-to generate unique, context-aware free-text responses. Each response aligns with the participant's
-numeric ratings and assigned persona characteristics. Supports 225+ research domains and 40 question types.
-
-**Ready-to-Run Analysis Code**
-Automatically generates scripts in R, Python, Julia, SPSS, and Stata — tailored to your specific
-experimental design. Includes data loading, variable coding, condition comparisons, and appropriate
-statistical tests (t-tests, ANOVAs, regressions, mediation analyses).
-
-**Built for Research & Teaching**
-Instructor-only reports include detailed statistical analysis with effect sizes, power estimates,
-and visualization charts that students don't see. Group management tracks team usage.
-Pre-registration consistency checks compare your design against OSF, AEA, or AsPredicted specifications.
-""")
-
-    with st.expander("Step-by-step details"):
-        st.markdown("""
-**Step 1 — Name Your Study:** Enter your study title and a description of your experiment's
-purpose, manipulation, and main outcomes. This information is embedded in all generated outputs
-(data files, analysis scripts, reports). Optionally add team member names for group tracking.
-
-**Step 2 — Provide Your Design:** Upload a Qualtrics .qsf file for automatic detection of conditions,
-scales, randomizers, and embedded data. Or describe your study in plain text using the guided builder —
-it parses natural language descriptions of your experimental design.
-
-**Step 3 — Configure Experiment:** Review auto-detected conditions, add custom conditions, configure
-factorial designs (2x2, 2x3, etc.), set sample sizes with per-condition allocation, and verify
-dependent variables. The tool detects matrix scales, Likert items, sliders, and numeric inputs.
-
-**Step 4 — Generate & Download:** Choose a difficulty level (easy to expert) that controls noise,
-attention check failure rates, and response quality. Generate your complete data package and download
-a ZIP containing the CSV, codebook, analysis scripts in 5 languages, summary reports, and metadata.
-""")
-
-    with st.expander("Research foundations & citations"):
+    with _info_tab1:
         st.markdown(
+            '<div class="landing-tab-content">'
+            '<div class="use-case-grid">'
+
+            '<div class="use-case-card">'
+            '<strong>Researchers & PIs</strong>'
+            '<span>Validate analysis pipelines before IRB data collection. Simulate expected '
+            'effect sizes and power for grant proposals.</span></div>'
+
+            '<div class="use-case-card">'
+            '<strong>University Instructors</strong>'
+            '<span>Assign realistic data analysis exercises where every student gets unique '
+            'datasets. Instructor reports provide answer keys.</span></div>'
+
+            '<div class="use-case-card">'
+            '<strong>Market Research Teams</strong>'
+            '<span>Prototype survey instruments and verify analysis code handles real-world '
+            'response patterns before fielding.</span></div>'
+
+            '<div class="use-case-card">'
+            '<strong>UX Research Groups</strong>'
+            '<span>Generate pilot data for A/B tests, preference studies, and usability '
+            'scales before committing to participant panels.</span></div>'
+
+            '<div class="use-case-card">'
+            '<strong>Government & Policy Labs</strong>'
+            '<span>Simulate citizen survey responses across demographic segments to validate '
+            'measurement instruments and analysis plans.</span></div>'
+
+            '<div class="use-case-card">'
+            '<strong>Graduate Students</strong>'
+            '<span>Practice statistical analysis with realistic datasets before collecting '
+            'real data. Learn data cleaning and analysis pipelines.</span></div>'
+
+            '</div></div>',
+            unsafe_allow_html=True,
+        )
+
+    with _info_tab2:
+        st.markdown(
+            '<div class="landing-tab-content">'
+
+            '<div class="capability-item">'
+            '<div class="cap-icon">\U0001f9ea</div>'
+            '<div class="cap-text"><strong>Test Before You Collect</strong>'
+            '<span>Generate a publication-ready CSV with realistic Likert-scale responses, attention check '
+            'failures, individual differences, and demographic distributions. The data mirrors real Qualtrics '
+            'output format so your analysis scripts work identically on both simulated and real data.</span></div></div>'
+
+            '<div class="capability-item">'
+            '<div class="cap-icon">\U0001f4ac</div>'
+            '<div class="cap-text"><strong>Realistic Open-Ended Responses</strong>'
+            '<span>Uses a multi-provider LLM failover chain with 50+ behavioral personas to generate unique, '
+            'context-aware free-text responses. Each response aligns with the participant\'s numeric ratings '
+            'and assigned persona. Supports 225+ research domains and 40 question types.</span></div></div>'
+
+            '<div class="capability-item">'
+            '<div class="cap-icon">\U0001f4ca</div>'
+            '<div class="cap-text"><strong>Ready-to-Run Analysis Code</strong>'
+            '<span>Automatically generates scripts in R, Python, Julia, SPSS, and Stata \u2014 tailored to your '
+            'specific experimental design. Includes data loading, variable coding, condition comparisons, '
+            'and appropriate statistical tests.</span></div></div>'
+
+            '<div class="capability-item">'
+            '<div class="cap-icon">\U0001f393</div>'
+            '<div class="cap-text"><strong>Built for Research & Teaching</strong>'
+            '<span>Instructor-only reports include effect sizes, power estimates, and visualizations that '
+            'students don\'t see. Group management tracks team usage. Pre-registration consistency checks '
+            'compare your design against OSF, AEA, or AsPredicted specifications.</span></div></div>'
+
+            '</div>',
+            unsafe_allow_html=True,
+        )
+
+    with _info_tab3:
+        st.markdown(
+            '<div class="landing-tab-content">'
+
+            '<div class="step-detail-item">'
+            '<div class="step-num">1</div>'
+            '<div class="step-detail-text"><strong>Name Your Study</strong>'
+            '<span>Enter your study title and a description of your experiment\'s purpose, manipulation, '
+            'and main outcomes. This information is embedded in all generated outputs (data files, '
+            'analysis scripts, reports).</span></div></div>'
+
+            '<div class="step-detail-item">'
+            '<div class="step-num">2</div>'
+            '<div class="step-detail-text"><strong>Provide Your Design</strong>'
+            '<span>Upload a Qualtrics .qsf file for automatic detection of conditions, scales, randomizers, '
+            'and embedded data. Or describe your study in plain text using the guided builder \u2014 it parses '
+            'natural language descriptions of your experimental design.</span></div></div>'
+
+            '<div class="step-detail-item">'
+            '<div class="step-num">3</div>'
+            '<div class="step-detail-text"><strong>Configure Experiment</strong>'
+            '<span>Review auto-detected conditions, configure factorial designs (2\u00d72, 2\u00d73, etc.), set sample '
+            'sizes with per-condition allocation, and verify dependent variables. The tool detects matrix '
+            'scales, Likert items, sliders, and numeric inputs automatically.</span></div></div>'
+
+            '<div class="step-detail-item">'
+            '<div class="step-num">4</div>'
+            '<div class="step-detail-text"><strong>Generate & Download</strong>'
+            '<span>Choose a difficulty level (easy to expert) that controls noise, attention check failure rates, '
+            'and response quality. Generate your complete data package \u2014 CSV, codebook, analysis scripts in 5 '
+            'languages, summary reports, and metadata.</span></div></div>'
+
+            '</div>',
+            unsafe_allow_html=True,
+        )
+
+    with _info_tab4:
+        st.markdown(
+            '<div class="landing-tab-content">'
             '<div class="research-list">'
 
             '<a class="research-item" href="https://doi.org/10.1017/pan.2023.2" target="_blank">'
@@ -5982,9 +6153,11 @@ a ZIP containing the CSV, codebook, analysis scripts in 5 languages, summary rep
             '<span class="ri-venue">PNAS</span>'
             '<span class="ri-insight">Validating LLM-generated survey responses at scale</span></a>'
 
-            '</div>',
+            '</div></div>',
             unsafe_allow_html=True,
         )
+
+    st.markdown('</div>', unsafe_allow_html=True)
 
     # Footer
     st.markdown(
