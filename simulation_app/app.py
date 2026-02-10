@@ -53,8 +53,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.0.3.0"
-BUILD_ID = "20260210-v1030-ux-cleanup-all-pages"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.0.3.1"
+BUILD_ID = "20260210-v1031-stepper-redesign-nav-fix"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -119,7 +119,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.0.3.0"  # v1.0.3.0: UX cleanup — remove redundant nav, simplify forms, clean warnings
+APP_VERSION = "1.0.3.1"  # v1.0.3.1: Stepper redesign, fix button visibility, stepper-only navigation
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -5042,6 +5042,21 @@ def _section_summary(idx: int) -> str:
 _FLOW_NAV_CSS = """<style>
 /* === v1.8.0: Premium landing page + segmented progress === */
 
+/* v1.0.3.1: Hide stepper jump buttons via CSS — prevents flash before JS runs */
+.stepper-jump-row,
+.stepper-jump-row * {
+    height: 0 !important;
+    overflow: hidden !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+    min-height: 0 !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+    position: absolute !important;
+    left: -9999px !important;
+}
+
 /* Base layout */
 section.main .block-container {
     max-width: 960px;
@@ -5050,8 +5065,20 @@ section.main .block-container {
 section.main h1 { font-size: 1.75rem; font-weight: 700; letter-spacing: -0.02em; color: #111827; }
 section.main h2 { font-size: 1.35rem; font-weight: 600; color: #1F2937; }
 section.main h3 { font-size: 1.1rem; font-weight: 600; color: #1F2937; }
-section.main h4 { font-size: 0.95rem; font-weight: 600; margin-bottom: 0.4rem; color: #374151; }
+section.main h4 {
+    font-size: 1rem; font-weight: 600; margin-bottom: 0.5rem; color: #1F2937;
+    padding-bottom: 6px; border-bottom: 1px solid #F3F4F6;
+}
 section[data-testid="stSidebar"] .stCaption { line-height: 1.4; }
+
+/* v1.0.3.1: Cleaner expander styling */
+details[data-testid="stExpander"] summary {
+    font-weight: 500 !important;
+}
+details[data-testid="stExpander"] {
+    border-radius: 8px !important;
+    border-color: #E5E7EB !important;
+}
 
 /* ─── Landing page hero ─── */
 .landing-hero {
@@ -5443,13 +5470,16 @@ section[data-testid="stSidebar"] .stCaption { line-height: 1.4; }
     .use-case-grid { grid-template-columns: 1fr; }
 }
 
-/* ─── Enhanced stepper progress bar (v1.0.2.0) ─── */
+/* ─── v1.0.3.1: Redesigned stepper — large, readable, primary navigation ─── */
 .stepper-nav {
     display: flex;
     align-items: flex-start;
     justify-content: center;
-    padding: 14px 0 6px;
+    padding: 20px 8px 12px;
     position: relative;
+    background: linear-gradient(180deg, #F8FAFC 0%, transparent 100%);
+    border-radius: 12px;
+    margin-bottom: 8px;
 }
 .stepper-step {
     display: flex;
@@ -5458,17 +5488,19 @@ section[data-testid="stSidebar"] .stCaption { line-height: 1.4; }
     flex: 1;
     position: relative;
     z-index: 1;
+    max-width: 200px;
 }
 /* Connecting line between steps */
 .stepper-step:not(:last-child)::after {
     content: '';
     position: absolute;
-    top: 17px;
-    left: calc(50% + 18px);
-    width: calc(100% - 36px);
-    height: 2px;
+    top: 23px;
+    left: calc(50% + 24px);
+    width: calc(100% - 48px);
+    height: 3px;
     background: #E5E7EB;
     z-index: 0;
+    border-radius: 2px;
     transition: background 0.3s ease;
 }
 .stepper-step.st-done:not(:last-child)::after {
@@ -5477,170 +5509,146 @@ section[data-testid="stSidebar"] .stCaption { line-height: 1.4; }
 .stepper-step.st-active:not(:last-child)::after {
     background: linear-gradient(90deg, #3B82F6 0%, #E5E7EB 100%);
 }
-/* v1.0.2.0: When active step is done, line between active and next-target is green→orange */
 .stepper-step.st-active.step-done:not(:last-child)::after {
-    background: linear-gradient(90deg, #3B82F6 0%, #F97316 100%);
+    background: linear-gradient(90deg, #22C55E 0%, #F97316 100%);
 }
-/* Circle indicator */
+/* Circle indicator — 46px for clear readability */
 .stepper-circle {
-    width: 34px;
-    height: 34px;
+    width: 46px;
+    height: 46px;
     border-radius: 50%;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 13px;
+    font-size: 16px;
     font-weight: 700;
-    margin-bottom: 6px;
+    margin-bottom: 8px;
     transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
     position: relative;
     z-index: 2;
     cursor: default;
-    border: 2px solid transparent;
+    border: 2.5px solid transparent;
 }
 /* Done state — green with checkmark */
 .stepper-step.st-done .stepper-circle {
     background: #22C55E;
     color: white;
     border-color: #22C55E;
-    box-shadow: 0 2px 8px rgba(34, 197, 94, 0.25);
+    box-shadow: 0 2px 10px rgba(34, 197, 94, 0.3);
 }
-/* v1.0.2.2: Stepper is visual-only — no click hover effects */
 /* Active state — blue with number */
 .stepper-step.st-active .stepper-circle {
-    background: #3B82F6;
+    background: #2563EB;
     color: white;
-    border-color: #3B82F6;
-    box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.15);
-    animation: stepPulse 2s ease-in-out infinite;
+    border-color: #2563EB;
+    box-shadow: 0 0 0 5px rgba(37, 99, 235, 0.15);
+    animation: stepPulse 2.5s ease-in-out infinite;
 }
 @keyframes stepPulse {
-    0%, 100% { box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.15); }
-    50% { box-shadow: 0 0 0 7px rgba(59, 130, 246, 0.08); }
+    0%, 100% { box-shadow: 0 0 0 5px rgba(37, 99, 235, 0.15); }
+    50% { box-shadow: 0 0 0 8px rgba(37, 99, 235, 0.08); }
 }
-/* v1.0.2.1: Active + done — green circle with checkmark style, signals "ready to move on" */
+/* Active + done — green circle with checkmark */
 .stepper-step.st-active.step-done .stepper-circle {
     background: linear-gradient(135deg, #22C55E 0%, #16A34A 100%);
     border-color: #22C55E;
-    box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.2);
-    animation: activeDonePulse 2s ease-in-out infinite;
+    box-shadow: 0 0 0 5px rgba(34, 197, 94, 0.2);
+    animation: activeDonePulse 2.5s ease-in-out infinite;
 }
-.stepper-step.st-active.step-done .stepper-title {
-    color: #16A34A;
-}
-.stepper-step.st-active.step-done .stepper-desc {
-    color: #4ADE80;
-}
+.stepper-step.st-active.step-done .stepper-title { color: #15803D; }
+.stepper-step.st-active.step-done .stepper-desc { color: #16A34A; }
 @keyframes activeDonePulse {
-    0%, 100% { box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.2); }
-    50% { box-shadow: 0 0 0 7px rgba(34, 197, 94, 0.1); }
+    0%, 100% { box-shadow: 0 0 0 5px rgba(34, 197, 94, 0.2); }
+    50% { box-shadow: 0 0 0 8px rgba(34, 197, 94, 0.1); }
 }
-/* Upcoming (reachable) — gray outline */
+/* Upcoming (reachable) — light gray */
 .stepper-step.st-upcoming .stepper-circle {
-    background: #F9FAFB;
-    color: #9CA3AF;
+    background: #F3F4F6;
+    color: #6B7280;
     border-color: #D1D5DB;
 }
-/* v1.0.2.2: upcoming hover removed (visual-only stepper) */
-/* v1.0.2.0: "Next step" indicator — pulsing border when step is the next target */
+/* Next step — orange pulsing */
 .stepper-step.st-next-target .stepper-circle {
     background: #FFF7ED;
     color: #EA580C;
     border-color: #F97316;
-    box-shadow: 0 0 0 3px rgba(249, 115, 22, 0.15);
+    box-shadow: 0 0 0 4px rgba(249, 115, 22, 0.15);
     animation: nextPulse 2s ease-in-out infinite;
 }
-.stepper-step.st-next-target .stepper-title {
-    color: #EA580C;
-    font-weight: 600;
-}
-.stepper-step.st-next-target .stepper-desc {
-    color: #FB923C;
-}
+.stepper-step.st-next-target .stepper-title { color: #C2410C; font-weight: 700; }
+.stepper-step.st-next-target .stepper-desc { color: #EA580C; }
 @keyframes nextPulse {
-    0%, 100% { box-shadow: 0 0 0 3px rgba(249, 115, 22, 0.15); }
-    50% { box-shadow: 0 0 0 6px rgba(249, 115, 22, 0.08); }
+    0%, 100% { box-shadow: 0 0 0 4px rgba(249, 115, 22, 0.15); }
+    50% { box-shadow: 0 0 0 7px rgba(249, 115, 22, 0.08); }
 }
-/* Locked — dimmed, not clickable, with tooltip */
-.stepper-step.st-locked {
-    position: relative;
-    cursor: default;
-}
+/* Locked — dimmed */
+.stepper-step.st-locked { cursor: default; }
 .stepper-step.st-locked .stepper-circle {
     background: #F9FAFB;
     color: #D1D5DB;
     border-color: #E5E7EB;
     cursor: default;
-    opacity: 0.6;
+    opacity: 0.5;
 }
-/* v1.0.3.0: Removed tooltip on locked steps — uses connecting line color to signal state */
-/* v1.0.2.5: Clickable stepper navigation — click any non-locked step to jump */
+/* Clickable stepper — click any non-locked step to jump */
 .stepper-step.clickable { cursor: pointer; }
 .stepper-step.clickable .stepper-circle { cursor: pointer; }
 .stepper-step.clickable .stepper-title { cursor: pointer; }
 .stepper-step.clickable:hover .stepper-circle {
-    transform: scale(1.15);
-    filter: brightness(1.08);
+    transform: scale(1.12);
+    filter: brightness(1.06);
 }
 .stepper-step.clickable.st-done:hover .stepper-circle {
-    box-shadow: 0 2px 12px rgba(34, 197, 94, 0.35);
+    box-shadow: 0 3px 14px rgba(34, 197, 94, 0.4);
 }
 .stepper-step.clickable.st-upcoming:hover .stepper-circle,
 .stepper-step.clickable.st-next-target:hover .stepper-circle {
-    box-shadow: 0 2px 12px rgba(59, 130, 246, 0.25);
+    box-shadow: 0 3px 14px rgba(37, 99, 235, 0.3);
 }
 .stepper-step.clickable:hover .stepper-title {
     text-decoration: underline;
     text-underline-offset: 3px;
 }
-/* Step title label */
+/* Step title — readable, prominent */
 .stepper-title {
-    font-size: 0.73rem;
-    font-weight: 500;
-    color: #9CA3AF;
+    font-size: 0.88rem;
+    font-weight: 600;
+    color: #6B7280;
     text-align: center;
     transition: color 0.2s ease;
     line-height: 1.3;
-    max-width: 90px;
+    max-width: 140px;
     cursor: default;
     user-select: none;
 }
-.stepper-step.st-done .stepper-title {
-    color: #16A34A;
-    font-weight: 600;
-}
-.stepper-step.st-active .stepper-title {
-    color: #2563EB;
-    font-weight: 600;
-}
-.stepper-step.st-locked .stepper-title {
-    color: #D1D5DB;
-    cursor: default;
-}
+.stepper-step.st-done .stepper-title { color: #15803D; font-weight: 700; }
+.stepper-step.st-active .stepper-title { color: #1D4ED8; font-weight: 700; }
+.stepper-step.st-locked .stepper-title { color: #D1D5DB; }
 /* Step description under title */
 .stepper-desc {
-    font-size: 0.65rem;
+    font-size: 0.75rem;
     color: #9CA3AF;
     text-align: center;
-    max-width: 100px;
+    max-width: 140px;
     line-height: 1.3;
-    margin-top: 1px;
+    margin-top: 2px;
 }
-.stepper-step.st-done .stepper-desc { color: #86EFAC; }
-.stepper-step.st-active .stepper-desc { color: #93C5FD; }
+.stepper-step.st-done .stepper-desc { color: #4ADE80; }
+.stepper-step.st-active .stepper-desc { color: #60A5FA; }
 .stepper-step.st-locked .stepper-desc { color: #E5E7EB; }
 
 /* Responsive stepper */
 @media (max-width: 600px) {
-    .stepper-circle { width: 28px; height: 28px; font-size: 11px; }
-    .stepper-title { font-size: 0.65rem; max-width: 70px; }
+    .stepper-circle { width: 36px; height: 36px; font-size: 14px; }
+    .stepper-title { font-size: 0.75rem; max-width: 80px; }
     .stepper-desc { display: none; }
-    .stepper-step:not(:last-child)::after { top: 14px; left: calc(50% + 15px); width: calc(100% - 30px); }
+    .stepper-step:not(:last-child)::after { top: 18px; left: calc(50% + 20px); width: calc(100% - 40px); }
+    .stepper-nav { padding: 14px 4px 8px; }
 }
 
-/* ─── Section wrapper ─── v1.0.3.0: Better spacing below stepper */
+/* ─── v1.0.3.1: Section wrapper — breathing room below stepper ─── */
 .flow-section {
-    padding-top: 8px;
+    padding-top: 4px;
     animation: sectionEnter 0.3s ease-out;
 }
 @keyframes sectionEnter {
@@ -5648,29 +5656,32 @@ section[data-testid="stSidebar"] .stCaption { line-height: 1.4; }
     to   { opacity: 1; transform: translateY(0); }
 }
 
-/* Section guidance tagline — v1.0.3.0: More compact, less visual weight */
+/* v1.0.3.1: Section guide — clear step header with better hierarchy */
 .section-guide {
-    font-size: 13px; color: #6B7280;
-    margin: 0 0 20px 0;
-    padding: 10px 16px;
-    background: linear-gradient(135deg, #F9FAFB 0%, #F3F4F6 100%);
-    border-radius: 8px;
-    border-left: 3px solid #3B82F6;
+    font-size: 0.9rem;
+    color: #4B5563;
+    margin: 0 0 24px 0;
+    padding: 14px 20px;
+    background: linear-gradient(135deg, #EFF6FF 0%, #F0F9FF 100%);
+    border-radius: 10px;
+    border-left: 4px solid #2563EB;
+    line-height: 1.5;
 }
 .section-guide strong {
     color: #1E40AF;
-    font-size: 13px;
+    font-size: 0.9rem;
 }
 
-/* Section complete banner — v1.0.3.0: tighter spacing */
+/* v1.0.3.1: Section complete banner — prominent success state */
 .section-done-banner {
-    display: flex; align-items: center; gap: 8px;
-    padding: 10px 16px;
+    display: flex; align-items: center; gap: 10px;
+    padding: 14px 20px;
     background: linear-gradient(135deg, #F0FDF4 0%, #ECFDF5 100%);
-    border: 1px solid #D1FAE5;
+    border: 1px solid #BBF7D0;
+    border-left: 4px solid #22C55E;
     border-radius: 10px;
-    margin: 8px 0 16px 0;
-    font-size: 13px; color: #166534; font-weight: 500;
+    margin: 8px 0 20px 0;
+    font-size: 0.9rem; color: #166534; font-weight: 500;
     animation: bannerSlideIn 0.35s ease-out;
 }
 @keyframes bannerSlideIn {
@@ -5722,29 +5733,29 @@ section[data-testid="stSidebar"] .stCaption { line-height: 1.4; }
 
 /* v1.0.3.0: Back-to-top links removed — stepper handles navigation */
 
-/* ─── Wizard page nav buttons ─── */
+/* ─── v1.0.3.1: Polished button styles ─── */
 .stButton button[kind="secondary"] {
-    border-radius: 10px !important;
+    border-radius: 8px !important;
     font-size: 0.85rem !important;
-    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+    transition: all 0.2s ease !important;
     padding: 8px 20px !important;
 }
 .stButton button[kind="secondary"]:hover {
-    transform: translateY(-2px) !important;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.08) !important;
+    transform: translateY(-1px) !important;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08) !important;
     border-color: #9CA3AF !important;
 }
 .stButton button[kind="primary"] {
-    border-radius: 10px !important;
-    font-size: 0.88rem !important;
+    border-radius: 8px !important;
+    font-size: 0.9rem !important;
     font-weight: 600 !important;
-    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
-    padding: 10px 24px !important;
+    transition: all 0.2s ease !important;
+    padding: 12px 28px !important;
     letter-spacing: 0.01em !important;
 }
 .stButton button[kind="primary"]:hover {
-    transform: translateY(-2px) !important;
-    box-shadow: 0 4px 16px rgba(255,75,75,0.3) !important;
+    transform: translateY(-1px) !important;
+    box-shadow: 0 4px 14px rgba(255,75,75,0.25) !important;
 }
 
 /* ─── Responsive ─── */
@@ -5810,20 +5821,20 @@ def _render_flow_nav(active: int, done: List[bool]) -> None:
             all_prior_done = all(done[j] for j in range(i))
             step_states.append("upcoming" if all_prior_done else "locked")
 
-    # SVG checkmark for completed steps
+    # v1.0.3.1: Larger SVGs to match 46px circles
     check_svg = (
-        '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" '
+        '<svg width="22" height="22" viewBox="0 0 22 22" fill="none" '
         'xmlns="http://www.w3.org/2000/svg">'
-        '<path d="M3.5 8.5L6.5 11.5L12.5 4.5" stroke="white" '
-        'stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>'
+        '<path d="M4.5 11.5L9 16L17.5 6" stroke="white" '
+        'stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>'
         '</svg>'
     )
-    # SVG lock for locked steps
+    # Lock icon for locked steps
     lock_svg = (
-        '<svg width="14" height="14" viewBox="0 0 14 14" fill="none" '
+        '<svg width="18" height="18" viewBox="0 0 18 18" fill="none" '
         'xmlns="http://www.w3.org/2000/svg">'
-        '<rect x="3" y="6" width="8" height="6" rx="1.5" stroke="#D1D5DB" stroke-width="1.5"/>'
-        '<path d="M5 6V4.5C5 3.12 6.12 2 7.5 2V2C8.88 2 10 3.12 10 4.5V6" '
+        '<rect x="4" y="8" width="10" height="7" rx="2" stroke="#D1D5DB" stroke-width="1.5"/>'
+        '<path d="M6.5 8V6C6.5 4.34 7.84 3 9.5 3V3C11.16 3 12.5 4.34 12.5 6V8" '
         'stroke="#D1D5DB" stroke-width="1.5" stroke-linecap="round"/>'
         '</svg>'
     )
@@ -5855,8 +5866,8 @@ def _render_flow_nav(active: int, done: List[bool]) -> None:
 
         # v1.0.2.0: Add step-done class to active step when it's complete
         _extra_cls = " step-done" if (i == active and _active_done) else ""
-        # v1.0.2.5: Clickable class for non-locked, non-active steps
-        _click_cls = " clickable" if (i != active and state != "locked") else ""
+        # v1.0.3.1: All non-locked steps are clickable (including active for reload)
+        _click_cls = " clickable" if state != "locked" else ""
         html += f'<div class="stepper-step {state_cls}{_extra_cls}{_click_cls}" data-step="{i}" data-state="{state}">'
         html += f'<div class="stepper-circle">{circle_content}</div>'
         html += f'<div class="stepper-title">{sm["title"]}</div>'
@@ -5866,29 +5877,44 @@ def _render_flow_nav(active: int, done: List[bool]) -> None:
 
     st.markdown(html, unsafe_allow_html=True)
 
-    # v1.0.2.5: Hidden stepper jump buttons — triggered by JS click handlers
+    # v1.0.3.1: Hidden stepper jump buttons — CSS-hidden container, no visual flash.
+    # We wrap in a container that is invisible from the start via inline style.
+    st.markdown(
+        '<div class="stepper-jump-row" style="height:0;overflow:hidden;margin:0;padding:0;'
+        'border:0;min-height:0;opacity:0;pointer-events:none;position:absolute;left:-9999px;">',
+        unsafe_allow_html=True,
+    )
     _jump_cols = st.columns(4)
     for _ji in range(4):
         with _jump_cols[_ji]:
             if st.button(f"__sj{_ji}__", key=f"stepper_jump_{_ji}"):
                 _navigate_to(_ji)
+    st.markdown('</div>', unsafe_allow_html=True)
 
-    # v1.0.2.5: JS to hide jump buttons + wire stepper step clicks
+    # v1.0.3.1: JS wires stepper clicks → hidden buttons. Also force-hides
+    # the button container in parent DOM (belt-and-suspenders).
     _stepper_click_js = """<script>
 (function() {
     var doc = window.parent.document;
     function setup() {
-        var found = 0;
+        // Force-hide any visible jump button rows (belt-and-suspenders)
         doc.querySelectorAll('button').forEach(function(btn) {
             var txt = (btn.textContent || '').trim();
             if (/^__sj[0-3]__$/.test(txt)) {
-                var row = btn.closest('[data-testid="stHorizontalBlock"]');
-                if (row) {
-                    row.style.cssText = 'height:0!important;overflow:hidden!important;margin:0!important;padding:0!important;border:0!important;min-height:0!important;opacity:0!important;pointer-events:none!important;';
-                    found++;
+                // Hide the button itself
+                btn.style.cssText = 'height:0!important;overflow:hidden!important;opacity:0!important;pointer-events:none!important;position:absolute!important;';
+                // Hide parent containers up to the horizontal block
+                var p = btn.parentElement;
+                for (var i = 0; i < 5 && p; i++) {
+                    if (p.getAttribute && (p.getAttribute('data-testid') === 'stHorizontalBlock' || p.classList.contains('stepper-jump-row'))) {
+                        p.style.cssText = 'height:0!important;overflow:hidden!important;margin:0!important;padding:0!important;border:0!important;min-height:0!important;opacity:0!important;pointer-events:none!important;position:absolute!important;left:-9999px!important;';
+                        break;
+                    }
+                    p = p.parentElement;
                 }
             }
         });
+        // Wire click handlers on stepper steps
         doc.querySelectorAll('.stepper-step.clickable').forEach(function(step) {
             if (step._clickWired) return;
             step._clickWired = true;
@@ -5902,15 +5928,13 @@ def _render_flow_nav(active: int, done: List[bool]) -> None:
                 });
             });
         });
-        return found >= 4;
     }
-    var delays = [0, 30, 80, 150, 300, 500, 800, 1200];
-    delays.forEach(function(d) { setTimeout(setup, d); });
+    // Run immediately and on multiple delays
+    setup();
+    [30, 80, 150, 300, 600, 1000].forEach(function(d) { setTimeout(setup, d); });
     try {
         var target = doc.querySelector('section.main') || doc.body;
-        var obs = new MutationObserver(function() {
-            if (setup()) obs.disconnect();
-        });
+        var obs = new MutationObserver(function() { setup(); });
         obs.observe(target, {childList: true, subtree: true});
         setTimeout(function() { obs.disconnect(); }, 5000);
     } catch(e) {}
@@ -6385,12 +6409,32 @@ if active_page == -1:
         unsafe_allow_html=True,
     )
 
-    # v1.0.3.0: Methods PDF moved to Research & Citations tab — CTA is now prominent
-    # Primary CTA — right after how-it-works
+    # v1.0.3.1: CTA + prominent Methods PDF download
     _cta_col1, _cta_col2, _cta_col3 = st.columns([1, 2, 1])
     with _cta_col2:
         if st.button("Start Your Simulation  \u2192", type="primary", use_container_width=True, key="landing_cta"):
             _navigate_to(0)
+
+    # v1.0.3.1: Prominent Methods PDF — styled download section
+    methods_pdf_path = Path(__file__).resolve().parent.parent / "docs" / "papers" / "methods_summary.pdf"
+    if methods_pdf_path.exists():
+        st.markdown(
+            '<div style="text-align:center;margin:16px 0 8px 0;">'
+            '<span style="font-size:0.88rem;color:#4B5563;">'
+            '\U0001F4C4 Read our methods paper for the full scientific approach'
+            '</span></div>',
+            unsafe_allow_html=True,
+        )
+        _pdf_dl1, _pdf_dl2, _pdf_dl3 = st.columns([1, 2, 1])
+        with _pdf_dl2:
+            st.download_button(
+                "\u2B07 Download Methods Paper (PDF)",
+                data=methods_pdf_path.read_bytes(),
+                file_name=methods_pdf_path.name,
+                mime="application/pdf",
+                use_container_width=True,
+                key="landing_methods_pdf",
+            )
 
     # v1.9.0: Professional tabbed info sections (replacing generic expanders)
     st.markdown('<div class="landing-tabs-container">', unsafe_allow_html=True)
@@ -6514,16 +6558,6 @@ if active_page == -1:
         )
 
     with _info_tab4:
-        # v1.0.3.0: Methods PDF in Research tab
-        methods_pdf_path = Path(__file__).resolve().parent.parent / "docs" / "papers" / "methods_summary.pdf"
-        if methods_pdf_path.exists():
-            st.download_button(
-                "Download Methods PDF",
-                data=methods_pdf_path.read_bytes(),
-                file_name=methods_pdf_path.name,
-                mime="application/pdf",
-                use_container_width=False,
-            )
         st.markdown(
             '<div class="landing-tab-content">'
             '<div class="research-list">'
@@ -6652,14 +6686,7 @@ if active_page == 0:
         _desc_ok = "\u2705" if completion["study_description"] else "\u2B1C"
         st.caption(f"{_title_ok} Study title &nbsp;&nbsp; {_desc_ok} Study description")
 
-    # v1.0.3.0: Streamlined bottom nav — stepper handles navigation; show contextual CTA only
-    if step1_done:
-        _nav_s0, _nav_cta0 = st.columns([3, 1])
-        with _nav_cta0:
-            if st.button("Study Input \u2192", key="auto_advance_0", type="primary", use_container_width=True):
-                _navigate_to(1)
-
-    # v1.8.0: Research citations moved to landing page
+    # v1.0.3.1: All navigation via stepper circles — no bottom buttons
 
     st.markdown('</div>', unsafe_allow_html=True)
 
