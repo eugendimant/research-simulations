@@ -53,8 +53,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.8.8.1"
-BUILD_ID = "20260210-v1881-correlation-missing-nan"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.8.8.2"
+BUILD_ID = "20260210-v1882-dashboard-normality-significance"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -119,7 +119,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.8.8.1"  # v1.8.8.1: Correlation validation, NaN-safe post-generation validation
+APP_VERSION = "1.8.8.2"  # v1.8.8.2: Dashboard normality, significance stars, target vs realized, condition demographics
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -9173,7 +9173,7 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
                 key="analytics_dashboard_pw",
                 help="Enter the access code to unlock the professional analytics dashboard.",
             )
-            _DASHBOARD_PW_HASH = "a0b6e0c8f5d3"  # Simple hash check
+            _DASHBOARD_PW_HASH = "f35234aa5d24"  # MD5[:12] of "Dimant_Simulation"
             _pw_valid = (
                 _dashboard_pw == "Dimant_Simulation"
                 or hashlib.md5(_dashboard_pw.encode()).hexdigest()[:12] == _DASHBOARD_PW_HASH

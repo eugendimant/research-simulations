@@ -6,7 +6,7 @@ published meta-analytic findings. Supports automatic construct detection
 from scale/DV names, empirical correlation lookup, and generation of
 multivariate correlated latent scores.
 
-Version: 1.8.8.1
+Version: 1.8.8.2
 
 Key capabilities:
     - Detect construct types from scale names and question text
@@ -34,7 +34,7 @@ Meta-analytic sources informing default correlations:
     - Morgan & Hunt (1994) - Commitment-trust theory
 """
 
-__version__ = "1.8.8.1"
+__version__ = "1.8.8.2"
 
 from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
