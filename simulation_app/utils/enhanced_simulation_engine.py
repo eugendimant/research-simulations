@@ -5063,9 +5063,10 @@ class EnhancedSimulationEngine:
         context_type = str(question_spec.get("context_type", "general"))
         question_context = str(question_spec.get("question_context", "")).strip()
 
-        # v1.8.7.1: Use user-provided question context to enrich the prompt.
+        # v1.0.1.2: Use user-provided question context to enrich the prompt.
         # This is critical for questions like "explain_feel_donald" where
         # the variable name alone doesn't convey what's really being asked.
+        # Enhanced: include condition and study topic for full context chain.
         if question_context:
             # User provided explicit context — use it directly
             import re as _re
@@ -5077,6 +5078,9 @@ class EnhancedSimulationEngine:
             )
             if _study_topic:
                 question_text += f"\nStudy topic: {_study_topic}"
+            # v1.0.1.2: Include condition in context for tighter prompt grounding
+            if condition:
+                question_text += f"\nCondition: {condition}"
         elif question_text and " " not in question_text.strip():
             # v1.4.11: If question_text looks like a variable name (no spaces),
             # build a richer question from study context so LLM/template can
@@ -5835,7 +5839,7 @@ class EnhancedSimulationEngine:
                 for oq in self.open_ended_questions:
                     _q_text = str(oq.get("question_text", oq.get("name", "")))
                     _q_ctx = str(oq.get("question_context", "")).strip()
-                    # v1.8.7.1: Enrich pool pre-fill with user-provided context
+                    # v1.0.1.2: Enrich pool pre-fill with user-provided context + condition
                     if _q_ctx:
                         import re as _re_pool
                         _humanized_pool = _re_pool.sub(r'[_\-]+', ' ', _q_text).strip() if _q_text and " " not in _q_text.strip() else _q_text

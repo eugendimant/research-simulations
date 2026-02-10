@@ -53,8 +53,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.0.1.1"
-BUILD_ID = "20260210-v1011-ux-cleanup-llm-tracking"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.0.1.2"
+BUILD_ID = "20260210-v1012-oe-context-enhancement"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -119,7 +119,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.0.1.1"  # v1.0.1.1: UX cleanup, LLM tracking fix, remove model names from UI
+APP_VERSION = "1.0.1.2"  # v1.0.1.2: Enhanced open-text context, checkbox outside expander, mandatory context for builder
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -4061,6 +4061,9 @@ def _render_builder_design_review() -> None:
         _design_issues.append("At least 2 conditions needed")
     if _n_scales < 1:
         _design_issues.append("At least 1 scale/DV needed")
+    # v1.0.1.2: Block progression if open-ended questions are missing context (mandatory for builder path)
+    if _n_oe > 0 and not st.session_state.get("_builder_oe_context_complete", False):
+        _design_issues.append("Open-ended questions need context (see below)")
     if _design_issues:
         st.warning("Design incomplete: " + "; ".join(_design_issues))
     else:
@@ -4537,9 +4540,22 @@ def _render_builder_design_review() -> None:
     if open_ended:
         st.markdown("---")
         st.markdown("#### Open-Ended Questions")
-        st.caption("For each question, add a short context explaining what it asks. "
-                    "This dramatically improves the quality of AI-generated responses.")
+        # v1.0.1.2: For word-based experiments, context is MANDATORY (not optional)
+        st.markdown(
+            '<div style="background:#EFF6FF;border:1px solid #BFDBFE;border-radius:8px;padding:10px 14px;margin:6px 0 12px 0;">'
+            '<span style="color:#1E40AF;font-weight:600;">Context is required for word-based experiments</span><br>'
+            '<span style="color:#1E40AF;font-size:0.9em;">'
+            'Since there is no QSF file, the AI relies entirely on your context descriptions to understand '
+            'what each question is asking. For each question, write 1-2 sentences explaining: '
+            '(1) what the participant just experienced, (2) what kind of response is expected, and '
+            '(3) how it relates to your experimental conditions. '
+            'This is the single most important factor for realistic AI-generated responses that '
+            'reflect different participant personas.</span>'
+            '</div>',
+            unsafe_allow_html=True,
+        )
         oe_to_remove = None
+        _br_oe_missing_ctx = []
         for i, oe in enumerate(open_ended):
             oe_col1, oe_col2 = st.columns([8, 1])
             with oe_col1:
@@ -4557,21 +4573,66 @@ def _render_builder_design_review() -> None:
                     _words = [w.lower() for w in re.findall(r'[a-zA-Z]+', new_text)
                               if len(w) > 2 and w.lower() not in _stop]
                     oe["variable_name"] = '_'.join(_words[:3])[:30] if _words else f"OE_{i+1}"
-                # v1.8.7.1: Context explainer for better LLM response generation
+                # v1.0.1.2: Context is mandatory for builder path — enhanced UI
                 _existing_ctx = oe.get("question_context", "")
+                _br_ctx_placeholder = "e.g., 'Participants explain their feelings toward Donald Trump after reading a polarizing article'"
+                _q_txt = oe.get("question_text", "").strip()
+                _study_d = (st.session_state.get("study_description") or "")[:80]
+                if _q_txt and len(_q_txt) > 10:
+                    _br_ctx_placeholder = f"e.g., 'Participants respond to: {_q_txt[:50]}'"
+                    if _study_d:
+                        _br_ctx_placeholder += f" (study about {_study_d[:30]}...)"
                 new_ctx = st.text_input(
-                    f"Context for Q{i+1}",
+                    f"Context for Q{i+1} (required)",
                     value=_existing_ctx,
                     key=f"br_oe_ctx_{i}",
-                    placeholder="e.g., 'Participants explain their feelings toward Donald Trump after reading a polarizing article'",
-                    help="1-2 sentences explaining what this question is really asking. This context helps the AI generate more relevant responses.",
+                    placeholder=_br_ctx_placeholder,
+                    help=(
+                        "REQUIRED: 1-2 sentences explaining what this question is really asking. "
+                        "Include: (1) what the participant experienced, (2) what kind of response "
+                        "is expected, (3) how it connects to conditions. This context shapes how "
+                        "each simulated persona (engaged, satisficer, etc.) responds."
+                    ),
                 )
                 if new_ctx != _existing_ctx:
                     oe["question_context"] = new_ctx
+                # v1.0.1.2: Visual feedback for missing context
+                if not new_ctx.strip():
+                    st.markdown(
+                        '<span style="color:#DC2626;font-size:0.85em;">Context is required for this question.</span>',
+                        unsafe_allow_html=True,
+                    )
+                    _br_oe_missing_ctx.append(i + 1)
+                else:
+                    _ctx_w = len(new_ctx.strip().split())
+                    if _ctx_w < 3:
+                        st.caption(f"{_ctx_w} words — consider adding more detail.")
+                    elif _ctx_w <= 30:
+                        st.caption(f"{_ctx_w} words")
+                    else:
+                        st.caption(f"{_ctx_w} words — concise is best; consider trimming to 1-2 sentences.")
             with oe_col2:
                 st.markdown("<br>", unsafe_allow_html=True)
                 if st.button("Remove", key=f"br_remove_oe_{i}", help=f"Remove question {i+1}"):
                     oe_to_remove = i
+        # v1.0.1.2: Summary of missing context with blocking warning
+        if _br_oe_missing_ctx:
+            _q_nums = ", ".join(f"Q{n}" for n in _br_oe_missing_ctx)
+            st.warning(
+                f"Missing context for: {_q_nums}. All open-ended questions require context "
+                f"when describing your study in words. Add context above to proceed."
+            )
+            st.session_state["_builder_oe_context_complete"] = False
+        else:
+            if open_ended:
+                st.markdown(
+                    '<div style="background:#F0FDF4;border:1px solid #BBF7D0;border-radius:8px;padding:8px 12px;margin:6px 0;">'
+                    '<span style="color:#166534;font-weight:600;">All open-ended questions have context</span>'
+                    ' &mdash; AI personas will generate well-tailored responses.'
+                    '</div>',
+                    unsafe_allow_html=True,
+                )
+            st.session_state["_builder_oe_context_complete"] = True
         if oe_to_remove is not None:
             open_ended.pop(oe_to_remove)
             inferred["open_ended_questions"] = open_ended
@@ -7694,11 +7755,24 @@ if active_page == 2:
         # ========================================
         st.markdown("")
         _oe_count_display = len(st.session_state.get("confirmed_open_ended", []))
-        _oe_label = f"#### Open-Ended Questions ({_oe_count_display})" if _oe_count_display > 0 else "#### Open-Ended Questions"
+        # v1.0.1.2: Pre-calculate context quality for header + expander label
+        _oe_pre_list = st.session_state.get("confirmed_open_ended", [])
+        _ctx_pre_count = sum(1 for _oq in _oe_pre_list if _oq.get("question_context", "").strip()) if _oe_pre_list else 0
+        _ctx_pre_missing = len(_oe_pre_list) - _ctx_pre_count
+
+        if _oe_count_display > 0:
+            if _ctx_pre_count == _oe_count_display:
+                _oe_label = f"#### Open-Ended Questions ({_oe_count_display})"
+            elif _ctx_pre_count > 0:
+                _oe_label = f"#### Open-Ended Questions ({_oe_count_display})"
+            else:
+                _oe_label = f"#### Open-Ended Questions ({_oe_count_display})"
+        else:
+            _oe_label = "#### Open-Ended Questions"
         st.markdown(_oe_label)
 
         with st.expander(
-            f"Review & edit open-ended questions ({_oe_count_display})"
+            f"Review & edit open-ended questions ({_oe_count_display}) — {_ctx_pre_count}/{_oe_count_display} have context"
             if _oe_count_display > 0
             else "Add open-ended questions (optional)",
             expanded=False,
@@ -7743,16 +7817,25 @@ if active_page == 2:
                 _ctx_count = sum(1 for _oe in confirmed_open_ended if _oe.get("question_context", "").strip())
                 _missing_ctx = len(confirmed_open_ended) - _ctx_count
                 st.markdown(f"**{len(confirmed_open_ended)} open-ended question(s):**")
+                # v1.0.1.2: Enhanced context guidance — explain WHY context matters
+                st.caption(
+                    "For each question below, add **context** — a 1-2 sentence explanation of what the question "
+                    "is really asking. This tells the AI *who* is responding, *what* they experienced, and *how* "
+                    "they should frame their answer. Without context, the AI generates generic responses."
+                )
                 if _ctx_count > 0 and _missing_ctx > 0:
-                    st.caption(
+                    st.info(
                         f"{_ctx_count}/{len(confirmed_open_ended)} question(s) have context. "
-                        f"Adding context to the remaining {_missing_ctx} will improve AI response quality."
+                        f"Adding context to the remaining {_missing_ctx} will significantly improve AI response quality."
                     )
                 elif _ctx_count == 0:
-                    st.caption("Add context to each question below so the AI understands what you're asking. This dramatically improves response quality.")
+                    st.warning(
+                        "No questions have context yet. Adding context is **highly recommended** — "
+                        "it is the single most impactful thing you can do for AI response quality."
+                    )
                 elif _ctx_count == len(confirmed_open_ended):
                     st.markdown(
-                        '<span style="color:#166534;font-size:0.85em;">All questions have context -- AI responses will be well-tailored.</span>',
+                        '<span style="color:#166534;font-size:0.85em;">All questions have context — AI responses will be well-tailored.</span>',
                         unsafe_allow_html=True,
                     )
                 for i, oe in enumerate(confirmed_open_ended):
@@ -7776,26 +7859,43 @@ if active_page == 2:
                     q_text = oe.get("question_text", "")
                     if q_text:
                         st.caption(f"*\"{q_text[:80]}{'...' if len(q_text) > 80 else ''}\"*")
-                    # v1.8.7.1 / v1.9.1: Context with character/word count feedback
+                    # v1.0.1.2: Enhanced context input with auto-suggest and rich guidance
                     _oe_ctx_existing = oe.get("question_context", "")
+                    # Auto-generate a suggested context from question text if user hasn't provided one
+                    _auto_placeholder = "e.g., 'Participants describe their emotional reaction to the news article about climate policy'"
+                    _q_text_raw = oe.get("question_text", "").strip()
+                    _study_desc_hint = (st.session_state.get("study_description") or st.session_state.get("_p_study_description", ""))[:80]
+                    if _q_text_raw and len(_q_text_raw) > 10:
+                        _auto_placeholder = f"e.g., 'Participants respond to: {_q_text_raw[:60]}'"
+                        if _study_desc_hint:
+                            _auto_placeholder += f" (in a study about {_study_desc_hint[:40]}...)"
+                    _ctx_label = f"Context for {var_name or f'Q{i+1}'}"
+                    if not _oe_ctx_existing:
+                        _ctx_label = f"Add context for {var_name or f'Q{i+1}'} (recommended)"
                     _oe_ctx = st.text_input(
-                        f"Context for {var_name or f'Q{i+1}'}",
+                        _ctx_label,
                         value=_oe_ctx_existing,
                         key=f"oe_ctx_v{oe_version}_{i}",
-                        placeholder="e.g., 'Participants describe their emotional reaction to the news article about climate policy'",
-                        help="1-2 sentences explaining what this question is really asking. Helps the AI generate more relevant responses.",
+                        placeholder=_auto_placeholder,
+                        help=(
+                            "1-2 sentences explaining what this question is really asking. "
+                            "Include: (1) who the participant is, (2) what they experienced/read, "
+                            "(3) what kind of answer is expected. This is the #1 factor in AI response quality."
+                        ),
                         label_visibility="collapsed",
                     )
-                    # v1.9.1: Context enrichment feedback with word count hints
+                    # v1.0.1.2: Context enrichment feedback with guidance
                     if _oe_ctx.strip():
                         _ctx_words = len(_oe_ctx.strip().split())
                         _ctx_chars = len(_oe_ctx.strip())
                         if _ctx_words < 3:
-                            st.caption(f"{_ctx_chars} chars, {_ctx_words} words -- consider adding more detail for better AI responses.")
+                            st.caption(f"{_ctx_chars} chars, {_ctx_words} words — consider adding more detail for better AI responses.")
                         elif _ctx_words <= 30:
                             st.caption(f"{_ctx_chars} chars, {_ctx_words} words")
                         else:
-                            st.caption(f"{_ctx_chars} chars, {_ctx_words} words -- concise is best; consider trimming to 1-2 sentences.")
+                            st.caption(f"{_ctx_chars} chars, {_ctx_words} words — concise is best; consider trimming to 1-2 sentences.")
+                    else:
+                        st.caption("No context yet — add 1-2 sentences to help the AI generate relevant responses.")
 
                     if var_name.strip() and i not in oe_to_remove:
                         updated_open_ended.append({
@@ -7838,12 +7938,45 @@ if active_page == 2:
                 # User cleared all variable names — warn but don't silently delete
                 st.warning("All open-ended question names are empty. Fill in names or remove them explicitly.")
 
-            open_ended_confirmed = st.checkbox(
-                "I confirm these open-ended questions match my survey",
-                value=st.session_state.get("open_ended_confirmed", False),
-                key=f"oe_confirm_checkbox_v{oe_version}",
-            )
-            st.session_state["open_ended_confirmed"] = open_ended_confirmed
+        # ── v1.0.1.2: Context quality indicator + confirmation checkbox (OUTSIDE expander) ──
+        _oe_final = st.session_state.get("confirmed_open_ended", [])
+        _oe_version_outer = st.session_state.get("_oe_version", 0)
+        if _oe_final:
+            _ctx_filled = sum(1 for _oq in _oe_final if _oq.get("question_context", "").strip())
+            _ctx_missing_final = len(_oe_final) - _ctx_filled
+            if _ctx_filled == len(_oe_final):
+                st.markdown(
+                    '<div style="background:#F0FDF4;border:1px solid #BBF7D0;border-radius:8px;padding:10px 14px;margin:6px 0;">'
+                    '<span style="color:#166534;font-weight:600;">All open-ended questions have context</span>'
+                    ' &mdash; AI responses will be well-tailored to your study and personas.'
+                    '</div>',
+                    unsafe_allow_html=True,
+                )
+            elif _ctx_filled > 0:
+                st.markdown(
+                    f'<div style="background:#FFFBEB;border:1px solid #FDE68A;border-radius:8px;padding:10px 14px;margin:6px 0;">'
+                    f'<span style="color:#92400E;font-weight:600;">{_ctx_filled}/{len(_oe_final)} questions have context</span>'
+                    f' &mdash; expand the section above to add context to the remaining {_ctx_missing_final}. '
+                    f'Context dramatically improves how AI personas respond to your open-ended questions.'
+                    f'</div>',
+                    unsafe_allow_html=True,
+                )
+            else:
+                st.markdown(
+                    f'<div style="background:#FEF2F2;border:1px solid #FECACA;border-radius:8px;padding:10px 14px;margin:6px 0;">'
+                    f'<span style="color:#991B1B;font-weight:600;">No questions have context yet</span>'
+                    f' &mdash; expand the section above and add 1-2 sentences per question explaining '
+                    f'what is being asked. This is <strong>highly recommended</strong> for meaningful '
+                    f'AI-generated responses that reflect different participant personas.'
+                    f'</div>',
+                    unsafe_allow_html=True,
+                )
+        open_ended_confirmed = st.checkbox(
+            "I confirm these open-ended questions match my survey",
+            value=st.session_state.get("open_ended_confirmed", False),
+            key=f"oe_confirm_checkbox_v{_oe_version_outer}",
+        )
+        st.session_state["open_ended_confirmed"] = open_ended_confirmed
 
         # ── Attention & Manipulation Checks (collapsed) ──────────────
         preview = st.session_state.get("qsf_preview")

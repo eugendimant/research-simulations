@@ -15,10 +15,10 @@ Architecture:
 - Graceful fallback: if all LLM providers fail, silently falls back to
   the existing template-based ComprehensiveResponseGenerator
 
-Version: 1.0.1.1
+Version: 1.0.1.2
 """
 
-__version__ = "1.0.1.1"
+__version__ = "1.0.1.2"
 
 import hashlib
 import json
@@ -567,8 +567,8 @@ def _build_batch_prompt(
     else:
         conditions_block = f"Experimental condition: {condition}\n"
 
-    # v1.8.7.1: Extract question context if embedded in the question text
-    # The engine may embed "Question: ...\nContext: ...\nStudy topic: ..." format
+    # v1.0.1.2: Extract question context if embedded in the question text
+    # The engine may embed "Question: ...\nContext: ...\nStudy topic: ...\nCondition: ..." format
     _question_context_block = ""
     _study_topic_line = ""
     if "\nContext: " in _q_display:
@@ -576,14 +576,26 @@ def _build_batch_prompt(
         _q_line = _parts[0].replace("Question: ", "").strip() if _parts else _q_display
         _ctx_lines = [p for p in _parts[1:] if p.startswith("Context: ")]
         _topic_lines = [p for p in _parts[1:] if p.startswith("Study topic: ")]
+        _cond_lines = [p for p in _parts[1:] if p.startswith("Condition: ")]
         _ctx_text = _ctx_lines[0].replace("Context: ", "").strip() if _ctx_lines else ""
         _topic_text = _topic_lines[0].replace("Study topic: ", "").strip() if _topic_lines else ""
+        _embedded_cond = _cond_lines[0].replace("Condition: ", "").strip() if _cond_lines else ""
         if _ctx_text:
+            # v1.0.1.2: Enhanced context block — include condition linkage for
+            # tighter persona-condition-question grounding
+            _cond_note = ""
+            if _embedded_cond:
+                _cond_note = (
+                    f"\nThis participant is in the '{_embedded_cond}' condition. "
+                    f"Their response to the above question should reflect their "
+                    f"specific experience in that condition.\n"
+                )
             _question_context_block = (
                 f"\n╔══════════════════════════════════════════════════════════╗\n"
                 f"║ *** QUESTION CONTEXT — THIS IS YOUR #1 PRIORITY ***     ║\n"
                 f"╚══════════════════════════════════════════════════════════╝\n"
-                f"The researcher says: \"{_ctx_text}\"\n\n"
+                f"The researcher says: \"{_ctx_text}\"\n"
+                f"{_cond_note}\n"
                 f"THIS CONTROLS WHAT EVERY RESPONSE IS ABOUT. Each response "
                 f"MUST directly and specifically address the above context. "
                 f"A response that ignores this context is WRONG, no matter "
@@ -705,6 +717,29 @@ def _build_batch_prompt(
     # v1.8.3: Build persona voice differentiation guidance
     _voice_guidance = _persona_voice_guidance(persona_specs)
 
+    # v1.0.1.2: Persona-condition interaction guidance — how personas react
+    # differently to the same condition based on their engagement/effort level
+    _persona_condition_guidance = ""
+    if _question_context_block:
+        # Only add this when we have rich context — it's most impactful then
+        _persona_condition_guidance = (
+            "\nPERSONA-CONDITION INTERACTION:\n"
+            "Different participant types react differently to the SAME condition:\n"
+            "- High-engagement participants: Give detailed, specific responses that clearly "
+            "reference what they experienced in this condition. They elaborate on HOW the "
+            "manipulation affected them and WHY they feel the way they do.\n"
+            "- Low-engagement/satisficers: Give brief responses that still reference the "
+            "condition topic but with minimal elaboration. They might mention the key stimulus "
+            "in passing ('yeah the article was alright') without deep reflection.\n"
+            "- Extreme responders: React strongly — their responses show clear emotional "
+            "valence (very positive or very negative) toward what they experienced.\n"
+            "- Neutral/moderate responders: Give balanced, hedged responses that acknowledge "
+            "what they experienced without strong opinions.\n"
+            "The QUESTION CONTEXT above tells you exactly what the participant is responding "
+            "about. Each persona type should address THAT specific topic through the lens of "
+            "their personality and engagement level.\n"
+        )
+
     prompt = (
         f'Study: "{study_title}"\n'
         f"Study description: {study_description[:800]}\n"
@@ -714,6 +749,7 @@ def _build_batch_prompt(
         f"{_question_context_block}\n"
         f"{_qtype_guidance}\n\n"
         f"{_voice_guidance}"
+        f"{_persona_condition_guidance}"
         f"Generate exactly {n} unique responses from {n} different survey "
         f"participants who just completed this experiment in the "
         f"'{_condition_display}' condition.\n"
@@ -802,7 +838,7 @@ def _call_llm_api(
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
-        "User-Agent": "BehavioralSimulationTool/1.0.1.1",
+        "User-Agent": "BehavioralSimulationTool/1.0.1.2",
     }
 
     # OpenRouter requires/recommends HTTP-Referer and X-Title
