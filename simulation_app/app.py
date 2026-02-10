@@ -53,8 +53,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.0.1.2"
-BUILD_ID = "20260210-v1012-oe-context-enhancement"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.0.1.3"
+BUILD_ID = "20260210-v1013-data-integrity-ui-polish"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -119,7 +119,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.0.1.2"  # v1.0.1.2: Enhanced open-text context, checkbox outside expander, mandatory context for builder
+APP_VERSION = "1.0.1.3"  # v1.0.1.3: Data integrity fixes, factorial interactions, professional UI polish
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -1128,18 +1128,50 @@ def _generate_preview_data(
         if items == 1:
             # Single item
             var_name = scale_name.replace(' ', '_')
-            preview_data[var_name] = [
-                np.random.randint(_s_min, _s_max + 1) for _ in range(n_rows)
-            ]
+            values = []
+            for row_idx in range(n_rows):
+                val = np.random.randint(_s_min, _s_max + 1)
+                # v1.0.1.3: Apply condition-aware shifts to preview data
+                # so researchers see realistic between-condition differences
+                if conditions:
+                    condition = conditions[row_idx % len(conditions)]
+                    cond_lower = condition.lower()
+                    # Determine directional shift based on condition semantics
+                    cond_shift = 0
+                    if any(w in cond_lower.split() for w in ['treatment', 'high', 'positive', 'gain', 'hedonic']):
+                        cond_shift = 1  # Shift up
+                    elif any(w in cond_lower.split() for w in ['negative', 'loss', 'low', 'bad']):
+                        cond_shift = -1  # Shift down
+                    # Apply shift (clamped to scale bounds)
+                    val = max(_s_min, min(_s_max, val + cond_shift))
+                values.append(val)
+            preview_data[var_name] = values
         else:
             # Multi-item scale - show first item and composite
             var_name = scale_name.replace(' ', '_')
-            preview_data[f"{var_name}_1"] = [
-                np.random.randint(_s_min, _s_max + 1) for _ in range(n_rows)
-            ]
-            preview_data[f"{var_name}_mean"] = [
-                round(np.random.uniform(_s_min, _s_max), 2) for _ in range(n_rows)
-            ]
+            item1_values = []
+            mean_values = []
+            for row_idx in range(n_rows):
+                val1 = np.random.randint(_s_min, _s_max + 1)
+                val_mean = np.random.uniform(_s_min, _s_max)
+                # v1.0.1.3: Apply condition-aware shifts to preview data
+                # so researchers see realistic between-condition differences
+                if conditions:
+                    condition = conditions[row_idx % len(conditions)]
+                    cond_lower = condition.lower()
+                    # Determine directional shift based on condition semantics
+                    cond_shift = 0
+                    if any(w in cond_lower.split() for w in ['treatment', 'high', 'positive', 'gain', 'hedonic']):
+                        cond_shift = 1  # Shift up
+                    elif any(w in cond_lower.split() for w in ['negative', 'loss', 'low', 'bad']):
+                        cond_shift = -1  # Shift down
+                    # Apply shift (clamped to scale bounds)
+                    val1 = max(_s_min, min(_s_max, val1 + cond_shift))
+                    val_mean = max(_s_min, min(_s_max, val_mean + cond_shift))
+                item1_values.append(val1)
+                mean_values.append(round(val_mean, 2))
+            preview_data[f"{var_name}_1"] = item1_values
+            preview_data[f"{var_name}_mean"] = mean_values
 
     # Add sample open-ended responses
     # v1.0.0 CRITICAL FIX: Pass question name to ensure UNIQUE responses per question
@@ -4996,7 +5028,7 @@ section[data-testid="stSidebar"] .stCaption { line-height: 1.4; }
 /* ─── Landing page hero ─── */
 .landing-hero {
     text-align: center;
-    padding: 56px 20px 36px;
+    padding: 64px 20px 40px;
     max-width: 720px;
     margin: 0 auto;
     animation: heroFadeIn 0.6s ease-out;
@@ -5010,9 +5042,9 @@ section[data-testid="stSidebar"] .stCaption { line-height: 1.4; }
     font-weight: 800;
     color: #111827;
     letter-spacing: -0.035em;
-    margin: 0 0 16px 0;
-    line-height: 1.1;
-    background: linear-gradient(135deg, #111827 0%, #374151 50%, #111827 100%);
+    margin: 0 0 18px 0;
+    line-height: 1.08;
+    background: linear-gradient(135deg, #0F172A 0%, #1E293B 40%, #334155 100%);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
@@ -5077,11 +5109,12 @@ section[data-testid="stSidebar"] .stCaption { line-height: 1.4; }
 }
 .feature-card:hover::before { opacity: 1; }
 .feature-card .fc-icon {
-    width: 40px; height: 40px;
+    width: 42px; height: 42px;
     display: flex; align-items: center; justify-content: center;
-    background: #F9FAFB;
+    background: linear-gradient(135deg, #F8FAFC, #F1F5F9);
+    border: 1px solid #E2E8F0;
     border-radius: 10px;
-    font-size: 1.3rem;
+    font-size: 1.25rem;
     margin-bottom: 12px;
 }
 .feature-card h4 {
@@ -5096,6 +5129,48 @@ section[data-testid="stSidebar"] .stCaption { line-height: 1.4; }
     color: #6B7280;
     margin: 0;
     line-height: 1.55;
+}
+
+/* ─── Trust signals strip ─── */
+.trust-strip {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 0;
+    max-width: 680px;
+    margin: 8px auto 0;
+    padding: 16px 24px;
+    background: linear-gradient(135deg, #F8FAFC, #F1F5F9);
+    border-radius: 12px;
+    border: 1px solid #E2E8F0;
+}
+.trust-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    flex: 1;
+    padding: 0 16px;
+}
+.trust-num {
+    font-size: 1.5rem;
+    font-weight: 800;
+    color: #0F172A;
+    letter-spacing: -0.02em;
+    line-height: 1.2;
+}
+.trust-label {
+    font-size: 0.7rem;
+    color: #64748B;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-top: 2px;
+}
+.trust-divider {
+    width: 1px;
+    height: 32px;
+    background: #CBD5E1;
+    flex-shrink: 0;
 }
 
 /* ─── How it works ─── */
@@ -5156,10 +5231,11 @@ section[data-testid="stSidebar"] .stCaption { line-height: 1.4; }
     line-height: 1.4;
 }
 .hiw-arrow {
-    color: #D1D5DB;
-    font-size: 16px;
+    color: #94A3B8;
+    font-size: 14px;
     margin-top: 10px;
     flex-shrink: 0;
+    font-weight: 300;
 }
 
 /* ─── Research list (inside expander) ─── */
@@ -5209,9 +5285,21 @@ section[data-testid="stSidebar"] .stCaption { line-height: 1.4; }
 /* ─── Landing footer ─── */
 .landing-footer {
     text-align: center;
-    padding: 24px 0 8px;
-    font-size: 0.75rem;
-    color: #D1D5DB;
+    padding: 32px 0 12px;
+    border-top: 1px solid #F1F5F9;
+    max-width: 400px;
+    margin: 24px auto 0;
+}
+.footer-institution {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: #94A3B8;
+    letter-spacing: 0.03em;
+    margin-bottom: 4px;
+}
+.footer-version {
+    font-size: 0.7rem;
+    color: #CBD5E1;
 }
 
 /* ─── Landing info tabs ─── */
@@ -5995,20 +6083,21 @@ if active_page == -1:
         unsafe_allow_html=True,
     )
 
-    # v1.8.9: Enterprise / institutional trust signals
+    # v1.0.1.3: Enhanced trust signals with bolder numbers
     st.markdown(
-        '<div style="max-width:780px;margin:16px auto 0;padding:8px 20px;">'
-        '<div style="display:flex;justify-content:center;gap:32px;flex-wrap:wrap;'
-        'color:#6b7280;font-size:0.78rem;text-align:center;">'
-        '<span>225+ research domains</span>'
-        '<span>40 question types</span>'
-        '<span>5 analysis languages</span>'
-        '<span>50+ behavioral personas</span>'
-        '</div></div>',
+        '<div class="trust-strip">'
+        '<div class="trust-item"><span class="trust-num">225+</span><span class="trust-label">Research Domains</span></div>'
+        '<div class="trust-divider"></div>'
+        '<div class="trust-item"><span class="trust-num">40</span><span class="trust-label">Question Types</span></div>'
+        '<div class="trust-divider"></div>'
+        '<div class="trust-item"><span class="trust-num">5</span><span class="trust-label">Analysis Languages</span></div>'
+        '<div class="trust-divider"></div>'
+        '<div class="trust-item"><span class="trust-num">50+</span><span class="trust-label">Behavioral Personas</span></div>'
+        '</div>',
         unsafe_allow_html=True,
     )
 
-    st.markdown('<div style="max-width:780px;margin:0 auto;padding:0 20px;"><hr style="border:none;border-top:1px solid #F3F4F6;margin:0;"></div>', unsafe_allow_html=True)
+    st.markdown('<div style="max-width:680px;margin:0 auto;height:24px;"></div>', unsafe_allow_html=True)
 
     # How it works
     st.markdown(
@@ -6222,7 +6311,10 @@ if active_page == -1:
 
     # Footer
     st.markdown(
-        f'<div class="landing-footer">v{APP_VERSION} &middot; February 2026</div>',
+        '<div class="landing-footer">'
+        '<div class="footer-institution">University of Pennsylvania</div>'
+        f'<div class="footer-version">v{APP_VERSION}</div>'
+        '</div>',
         unsafe_allow_html=True,
     )
 
@@ -6235,8 +6327,8 @@ if active_page == 0:
 
     # v1.8.0: Hero card removed — now on landing page
     st.markdown(
-        '<div class="section-guide">Let\'s set up your study. Enter a title and description — '
-        'these appear in your final report, data outputs, and analysis scripts.</div>',
+        '<div class="section-guide">Enter a title and brief description of your study. '
+        'These are embedded in all generated outputs.</div>',
         unsafe_allow_html=True,
     )
 
@@ -6317,8 +6409,8 @@ if active_page == 0:
 if active_page == 1:
     st.markdown('<div class="flow-section">', unsafe_allow_html=True)
     st.markdown(
-        '<div class="section-guide">Provide your experiment design — upload a Qualtrics '
-        '.qsf export for automatic detection, or describe your study in plain text.</div>',
+        '<div class="section-guide">Upload a Qualtrics .qsf file for automatic detection of conditions, '
+        'scales, and randomizers &mdash; or describe your design in plain text.</div>',
         unsafe_allow_html=True,
     )
     completion = _get_step_completion()

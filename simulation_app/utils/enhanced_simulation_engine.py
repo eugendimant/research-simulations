@@ -262,6 +262,32 @@ except ImportError:
         raise ImportError("correlation_matrix module not available")
 
 
+def _word_in(keyword: str, text: str) -> bool:
+    """Check if keyword appears in text as a whole word (word-boundary matching).
+
+    Prevents false positives like 'ai' matching 'wait', 'gain' matching 'bargain',
+    'own' matching 'brown', 'get' matching 'budget', etc.
+
+    v1.0.1.3: Added to fix substring false-positive keyword matching throughout
+    the semantic effect engine.
+    """
+    return bool(re.search(r'\b' + re.escape(keyword) + r'\b', text))
+
+
+def _stem_in(stem: str, text: str) -> bool:
+    """Check if stem appears at a word boundary start in text.
+
+    For intentional prefix matches like 'automat' -> 'automated'/'automation',
+    'reciproc' -> 'reciprocity'/'reciprocal', 'promot' -> 'promote'/'promotion'.
+    """
+    return bool(re.search(r'\b' + re.escape(stem), text))
+
+
+def _any_word_in(keywords: list, text: str) -> bool:
+    """Check if any keyword from the list appears as a whole word in text."""
+    return any(_word_in(kw, text) for kw in keywords)
+
+
 def _stable_int_hash(s: str) -> int:
     """Stable, cross-run integer hash for strings.
 
@@ -3404,8 +3430,10 @@ class EnhancedSimulationEngine:
                 level_low = str(effect.level_low).lower().strip()
                 direction = str(getattr(effect, 'direction', 'positive')).lower().strip()
 
-                is_high = bool(level_high and level_high in condition_lower)
-                is_low = bool(level_low and level_low in condition_lower)
+                # v1.0.1.3: Use word-boundary matching to prevent false positives
+                # (e.g., level "ai" matching condition "wait")
+                is_high = bool(level_high and _word_in(level_high, condition_lower))
+                is_low = bool(level_low and _word_in(level_low, condition_lower))
 
                 # Avoid double-matching (e.g., "no ai" matching both "ai" and "no ai")
                 # If both match, prefer the longer/more specific match
@@ -3563,19 +3591,19 @@ class EnhancedSimulationEngine:
             'medium', 'average', 'standard', 'normal', 'typical', 'placebo'
         ]
 
-        # Check for valence keywords
+        # Check for valence keywords (v1.0.1.3: word-boundary matching)
         for keyword in positive_keywords:
-            if keyword in condition_lower:
+            if _word_in(keyword, condition_lower):
                 semantic_effect += 0.35  # Moderate positive shift
                 break
 
         for keyword in negative_keywords:
-            if keyword in condition_lower:
+            if _word_in(keyword, condition_lower):
                 semantic_effect -= 0.35  # Moderate negative shift
                 break
 
         for keyword in neutral_keywords:
-            if keyword in condition_lower:
+            if _word_in(keyword, condition_lower):
                 semantic_effect *= 0.3  # Reduce effect toward neutral
                 break
 
@@ -3585,8 +3613,8 @@ class EnhancedSimulationEngine:
 
         # Algorithm Aversion (Dietvorst, Simmons & Massey, 2015, JEP:G)
         # People avoid algorithms after seeing them err. Effect: d ≈ -0.3 to -0.5
-        if 'ai' in condition_lower or 'algorithm' in condition_lower or 'robot' in condition_lower:
-            if any(neg in condition_lower for neg in ['no ai', 'no_ai', 'without ai', 'no algorithm', 'human only']):
+        if _word_in('ai', condition_lower) or _word_in('algorithm', condition_lower) or _word_in('robot', condition_lower):
+            if _any_word_in(['no ai', 'no_ai', 'without ai', 'no algorithm', 'human only'], condition_lower):
                 # No AI / Human condition - often preferred due to algorithm aversion
                 semantic_effect += 0.15  # Human preference effect
             else:
@@ -3594,30 +3622,30 @@ class EnhancedSimulationEngine:
                 semantic_effect -= 0.12
 
         # Machine vs Human judgment (Logg, Minson & Moore, 2019)
-        if 'machine' in condition_lower and 'human' not in condition_lower:
+        if _word_in('machine', condition_lower) and not _word_in('human', condition_lower):
             semantic_effect -= 0.10
-        elif 'human' in condition_lower and 'machine' not in condition_lower:
-            if 'superhuman' not in condition_lower:
+        elif _word_in('human', condition_lower) and not _word_in('machine', condition_lower):
+            if not _word_in('superhuman', condition_lower):
                 semantic_effect += 0.10
 
         # Anthropomorphism (Epley, Waytz & Cacioppo, 2007, Psychological Review)
         # Human-like features increase trust and liking. Effect: d ≈ +0.2 to +0.4
-        if 'anthropomorph' in condition_lower or 'human-like' in condition_lower or 'humanoid' in condition_lower:
+        if _stem_in('anthropomorph', condition_lower) or _word_in('human-like', condition_lower) or _word_in('humanoid', condition_lower):
             semantic_effect += 0.18
-        elif 'machine-like' in condition_lower or 'robotic' in condition_lower:
+        elif _word_in('machine-like', condition_lower) or _word_in('robotic', condition_lower):
             semantic_effect -= 0.08
 
         # Automation (Parasuraman & Riley, 1997; Lee & See, 2004)
-        if 'automat' in condition_lower:
-            if 'full' in condition_lower or 'complete' in condition_lower:
+        if _stem_in('automat', condition_lower):
+            if _word_in('full', condition_lower) or _word_in('complete', condition_lower):
                 semantic_effect -= 0.15  # Full automation trust concerns
-            elif 'partial' in condition_lower or 'assisted' in condition_lower:
+            elif _word_in('partial', condition_lower) or _word_in('assisted', condition_lower):
                 semantic_effect += 0.05  # Partial automation often preferred
 
         # Transparency/Explainability (Ribeiro et al., 2016)
-        if 'transparent' in condition_lower or 'explainable' in condition_lower or 'interpretable' in condition_lower:
+        if _word_in('transparent', condition_lower) or _word_in('explainable', condition_lower) or _word_in('interpretable', condition_lower):
             semantic_effect += 0.12
-        elif 'black box' in condition_lower or 'opaque' in condition_lower:
+        elif _word_in('black box', condition_lower) or _word_in('opaque', condition_lower):
             semantic_effect -= 0.10
 
         # =====================================================================
@@ -3626,42 +3654,42 @@ class EnhancedSimulationEngine:
 
         # Hedonic vs Utilitarian (Babin, Darden & Griffin, 1994, JCR)
         # Hedonic consumption generates more positive affect. Effect: d ≈ +0.25
-        if any(h in condition_lower for h in ['hedonic', 'experiential', 'fun', 'pleasure', 'enjoyment', 'indulgent']):
+        if _any_word_in(['hedonic', 'experiential', 'fun', 'pleasure', 'enjoyment', 'indulgent'], condition_lower):
             semantic_effect += 0.22
-        elif any(u in condition_lower for u in ['utilitarian', 'functional', 'practical', 'necessity', 'useful']):
+        elif _any_word_in(['utilitarian', 'functional', 'practical', 'necessity', 'useful'], condition_lower):
             semantic_effect -= 0.08
 
         # Scarcity Effect (Cialdini, 2001; Barton et al., 2022 meta-analysis)
         # Limited availability increases desirability. Mean effect r = 0.28, d ≈ +0.30
-        if any(s in condition_lower for s in ['scarce', 'limited', 'exclusive', 'rare', 'last chance', 'few left']):
+        if _any_word_in(['scarce', 'limited', 'exclusive', 'rare', 'last chance', 'few left'], condition_lower):
             semantic_effect += 0.25
-        elif any(a in condition_lower for a in ['abundant', 'unlimited', 'plentiful', 'common', 'widely available']):
+        elif _any_word_in(['abundant', 'unlimited', 'plentiful', 'common', 'widely available'], condition_lower):
             semantic_effect -= 0.08
 
         # Social Proof (Cialdini, 2001; Bond & Smith, 1996 meta-analysis)
         # Others' choices influence preferences. Conformity effect robust.
-        if any(sp in condition_lower for sp in ['popular', 'bestseller', 'most chosen', 'endorsed', 'recommended',
-                                                  'others chose', 'trending', 'viral', 'social proof']):
+        if _any_word_in(['popular', 'bestseller', 'most chosen', 'endorsed', 'recommended',
+                         'others chose', 'trending', 'viral', 'social proof'], condition_lower):
             semantic_effect += 0.20
-        elif any(np in condition_lower for np in ['unpopular', 'not recommended', 'unknown brand', 'no reviews']):
+        elif _any_word_in(['unpopular', 'not recommended', 'unknown brand', 'no reviews'], condition_lower):
             semantic_effect -= 0.15
 
         # Price-Quality Inference (Rao & Monroe, 1989, JMR)
-        if 'premium' in condition_lower or 'luxury' in condition_lower or 'expensive' in condition_lower:
+        if _word_in('premium', condition_lower) or _word_in('luxury', condition_lower) or _word_in('expensive', condition_lower):
             semantic_effect += 0.15
-        elif 'budget' in condition_lower or 'discount' in condition_lower or 'cheap' in condition_lower:
+        elif _word_in('budget', condition_lower) or _word_in('discount', condition_lower) or _word_in('cheap', condition_lower):
             semantic_effect -= 0.10
 
         # Brand Effects (Alba & Hutchinson, 1987, JCR)
-        if 'familiar' in condition_lower or 'known brand' in condition_lower or 'established' in condition_lower:
+        if _word_in('familiar', condition_lower) or _word_in('known brand', condition_lower) or _word_in('established', condition_lower):
             semantic_effect += 0.12
-        elif 'unfamiliar' in condition_lower or 'new brand' in condition_lower or 'unknown' in condition_lower:
+        elif _word_in('unfamiliar', condition_lower) or _word_in('new brand', condition_lower) or _word_in('unknown', condition_lower):
             semantic_effect -= 0.08
 
         # Advertising Appeals (MacInnis & Jaworski, 1989)
-        if 'emotional' in condition_lower and 'appeal' in condition_lower:
+        if _word_in('emotional', condition_lower) and _word_in('appeal', condition_lower):
             semantic_effect += 0.15
-        elif 'rational' in condition_lower and 'appeal' in condition_lower:
+        elif _word_in('rational', condition_lower) and _word_in('appeal', condition_lower):
             semantic_effect += 0.05
 
         # =====================================================================
@@ -3670,42 +3698,42 @@ class EnhancedSimulationEngine:
 
         # In-group/Out-group Bias (Tajfel, 1971; Balliet et al., 2014 meta)
         # Minimal group paradigm shows in-group favoritism. d ≈ 0.3-0.5
-        if any(ig in condition_lower for ig in ['ingroup', 'in-group', 'in group', 'us', 'our group', 'teammate']):
+        if _any_word_in(['ingroup', 'in-group', 'in group', 'us', 'our group', 'teammate'], condition_lower):
             semantic_effect += 0.28
-        elif any(og in condition_lower for og in ['outgroup', 'out-group', 'out group', 'them', 'other group', 'opponent']):
+        elif _any_word_in(['outgroup', 'out-group', 'out group', 'them', 'other group', 'opponent'], condition_lower):
             semantic_effect -= 0.25
 
         # Authority/Obedience (Milgram, 1963; Meta-Milgram, 2014)
         # Authority figures increase compliance. Uniform effect: +46pp compliance
-        if any(auth in condition_lower for auth in ['authority', 'expert', 'doctor', 'professor', 'scientist',
-                                                      'official', 'leader', 'manager', 'uniform']):
+        if _any_word_in(['authority', 'expert', 'doctor', 'professor', 'scientist',
+                         'official', 'leader', 'manager', 'uniform'], condition_lower):
             semantic_effect += 0.22
-        elif any(nauth in condition_lower for nauth in ['peer', 'layperson', 'non-expert', 'stranger', 'novice']):
+        elif _any_word_in(['peer', 'layperson', 'non-expert', 'stranger', 'novice'], condition_lower):
             semantic_effect -= 0.08
 
         # Reciprocity (Cialdini, 2001; Regan, 1971)
         # Favors increase compliance. Gift effect: +23% tips
-        if any(r in condition_lower for r in ['reciproc', 'gift', 'favor', 'gave first', 'free sample']):
+        if _stem_in('reciproc', condition_lower) or _any_word_in(['gift', 'favor', 'gave first', 'free sample'], condition_lower):
             semantic_effect += 0.20
-        elif 'no gift' in condition_lower or 'no favor' in condition_lower:
+        elif _word_in('no gift', condition_lower) or _word_in('no favor', condition_lower):
             semantic_effect -= 0.05
 
         # Social Presence (Short, Williams & Christie, 1976)
         # Co-presence increases prosocial behavior. d ≈ +0.15 to +0.30
-        if any(sp in condition_lower for sp in ['social presence', 'observed', 'watched', 'public',
-                                                  'with others', 'audience', 'witnessed']):
+        if _any_word_in(['social presence', 'observed', 'watched', 'public',
+                         'with others', 'audience', 'witnessed'], condition_lower):
             semantic_effect += 0.18
-        elif any(al in condition_lower for al in ['alone', 'private', 'anonymous', 'unobserved', 'no audience']):
+        elif _any_word_in(['alone', 'private', 'anonymous', 'unobserved', 'no audience'], condition_lower):
             semantic_effect -= 0.10
 
         # Commitment/Consistency (Cialdini, 2001; Freedman & Fraser, 1966)
-        if any(c in condition_lower for c in ['commitment', 'pledged', 'promised', 'foot in door', 'prior agreement']):
+        if _any_word_in(['commitment', 'pledged', 'promised', 'foot in door', 'prior agreement'], condition_lower):
             semantic_effect += 0.18
 
         # Liking/Similarity (Cialdini, 2001; Byrne, 1971)
-        if any(l in condition_lower for l in ['similar', 'likeable', 'attractive', 'compliment', 'same group']):
+        if _any_word_in(['similar', 'likeable', 'attractive', 'compliment', 'same group'], condition_lower):
             semantic_effect += 0.15
-        elif any(d in condition_lower for d in ['dissimilar', 'unlikeable', 'different', 'outgroup']):
+        elif _any_word_in(['dissimilar', 'unlikeable', 'different', 'outgroup'], condition_lower):
             semantic_effect -= 0.12
 
         # =====================================================================
@@ -3714,47 +3742,47 @@ class EnhancedSimulationEngine:
 
         # Loss Aversion/Framing (Tversky & Kahneman, 1981, Science)
         # Losses loom larger than gains. λ ≈ 2.0-2.5. Loss frame: 43% vs gain: 23% risk-seeking
-        if any(g in condition_lower for g in ['gain', 'save', 'earn', 'win', 'keep', 'gain frame']):
+        if _any_word_in(['gain', 'save', 'earn', 'win', 'keep', 'gain frame'], condition_lower):
             semantic_effect += 0.12
-        elif any(l in condition_lower for l in ['loss', 'lose', 'cost', 'pay', 'forfeit', 'loss frame']):
+        elif _any_word_in(['loss', 'lose', 'cost', 'pay', 'forfeit', 'loss frame'], condition_lower):
             semantic_effect -= 0.20  # Loss aversion amplifies negative effects
 
         # Anchoring (Tversky & Kahneman, 1974, Science)
         # First numbers anchor judgment. d ≈ 0.5-1.0
-        if 'high anchor' in condition_lower or 'large anchor' in condition_lower:
+        if _word_in('high anchor', condition_lower) or _word_in('large anchor', condition_lower):
             semantic_effect += 0.25
-        elif 'low anchor' in condition_lower or 'small anchor' in condition_lower:
+        elif _word_in('low anchor', condition_lower) or _word_in('small anchor', condition_lower):
             semantic_effect -= 0.20
 
         # Default Effect (Johnson & Goldstein, 2003, Science)
         # Opt-out > opt-in by 60-80 percentage points
-        if any(d in condition_lower for d in ['opt-out', 'opt out', 'default yes', 'presumed consent']):
+        if _any_word_in(['opt-out', 'opt out', 'default yes', 'presumed consent'], condition_lower):
             semantic_effect += 0.35
-        elif any(d in condition_lower for d in ['opt-in', 'opt in', 'default no', 'explicit consent', 'active choice']):
+        elif _any_word_in(['opt-in', 'opt in', 'default no', 'explicit consent', 'active choice'], condition_lower):
             semantic_effect -= 0.15
 
         # Endowment Effect (Kahneman, Knetsch & Thaler, 1990, JPE)
         # Ownership increases valuation. WTA/WTP ≈ 2:1
-        if any(e in condition_lower for e in ['own', 'possess', 'endow', 'yours', 'have']):
+        if _any_word_in(['own', 'possess', 'endow', 'yours', 'have'], condition_lower):
             semantic_effect += 0.20
-        elif any(e in condition_lower for e in ['buy', 'acquire', 'get', 'obtain']):
+        elif _any_word_in(['buy', 'acquire', 'get', 'obtain'], condition_lower):
             semantic_effect -= 0.10
 
         # Fairness/Ultimatum (Güth et al., 1982; Camerer, 2003)
         # Unfair offers rejected 40-60% of time
-        if any(f in condition_lower for f in ['fair', 'equal', 'equitable', '50-50', 'even split']):
+        if _any_word_in(['fair', 'equal', 'equitable', '50-50', 'even split'], condition_lower):
             semantic_effect += 0.25
-        elif any(uf in condition_lower for uf in ['unfair', 'unequal', 'inequitable', 'low offer', 'stingy']):
+        elif _any_word_in(['unfair', 'unequal', 'inequitable', 'low offer', 'stingy'], condition_lower):
             semantic_effect -= 0.30
 
         # Present Bias (O'Donoghue & Rabin, 1999)
-        if any(p in condition_lower for p in ['immediate', 'now', 'today', 'instant']):
+        if _any_word_in(['immediate', 'now', 'today', 'instant'], condition_lower):
             semantic_effect += 0.18
-        elif any(f in condition_lower for f in ['delayed', 'later', 'future', 'wait']):
+        elif _any_word_in(['delayed', 'later', 'future', 'wait'], condition_lower):
             semantic_effect -= 0.12
 
         # Mental Accounting (Thaler, 1985)
-        if 'windfall' in condition_lower or 'bonus' in condition_lower or 'unexpected' in condition_lower:
+        if _word_in('windfall', condition_lower) or _word_in('bonus', condition_lower) or _word_in('unexpected', condition_lower):
             semantic_effect += 0.15
 
         # =====================================================================
@@ -3763,36 +3791,36 @@ class EnhancedSimulationEngine:
 
         # Public Goods Game (Fehr & Gächter, 2000, AER)
         # With punishment: near 100% vs 40% without
-        if any(p in condition_lower for p in ['pgg', 'public good', 'contribute', 'common pool']):
+        if _any_word_in(['pgg', 'public good', 'contribute', 'common pool'], condition_lower):
             semantic_effect += 0.15
-            if 'punish' in condition_lower:
+            if _word_in('punish', condition_lower):
                 semantic_effect += 0.25  # Punishment dramatically increases cooperation
 
         # Dictator Game (Engel, 2011 meta-analysis)
         # Mean giving ≈ 28% of endowment
-        if 'dictator' in condition_lower:
+        if _word_in('dictator', condition_lower):
             semantic_effect -= 0.05  # More self-interested than other games
 
         # Trust Game (Berg et al., 1995; Johnson & Mislin, 2011 meta)
         # Mean sent ≈ 50%
-        if 'trust game' in condition_lower:
-            if 'trustor' in condition_lower or 'sender' in condition_lower:
+        if _word_in('trust game', condition_lower):
+            if _word_in('trustor', condition_lower) or _word_in('sender', condition_lower):
                 semantic_effect += 0.15
-            elif 'trustee' in condition_lower or 'receiver' in condition_lower:
+            elif _word_in('trustee', condition_lower) or _word_in('receiver', condition_lower):
                 semantic_effect += 0.10
 
         # Prisoner's Dilemma (Sally, 1995 meta-analysis)
         # Mean cooperation ≈ 47%
-        if "prisoner" in condition_lower or 'pd' in condition_lower:
-            if 'cooperat' in condition_lower:
+        if _word_in('prisoner', condition_lower) or _word_in('pd', condition_lower):
+            if _stem_in('cooperat', condition_lower):
                 semantic_effect += 0.20
-            elif 'defect' in condition_lower:
+            elif _word_in('defect', condition_lower):
                 semantic_effect -= 0.25
 
         # Repeated vs One-shot games (Axelrod, 1984)
-        if 'repeated' in condition_lower or 'iterated' in condition_lower or 'multiple rounds' in condition_lower:
+        if _word_in('repeated', condition_lower) or _word_in('iterated', condition_lower) or _word_in('multiple rounds', condition_lower):
             semantic_effect += 0.15  # Repeated games show more cooperation
-        elif 'one-shot' in condition_lower or 'single round' in condition_lower:
+        elif _word_in('one-shot', condition_lower) or _word_in('single round', condition_lower):
             semantic_effect -= 0.10
 
         # =====================================================================
@@ -3801,33 +3829,33 @@ class EnhancedSimulationEngine:
 
         # Self-Efficacy (Bandura, 1977; Meta-analyses)
         # Higher self-efficacy increases health behaviors
-        if any(se in condition_lower for se in ['high efficacy', 'self-efficacy', 'confident', 'capable', 'empowered']):
+        if _any_word_in(['high efficacy', 'self-efficacy', 'confident', 'capable', 'empowered'], condition_lower):
             semantic_effect += 0.22
-        elif any(le in condition_lower for le in ['low efficacy', 'doubtful', 'incapable', 'helpless']):
+        elif _any_word_in(['low efficacy', 'doubtful', 'incapable', 'helpless'], condition_lower):
             semantic_effect -= 0.20
 
         # Fear Appeals (Witte & Allen, 2000 meta-analysis)
         # Moderate fear most effective. High fear + high efficacy = change. d ≈ 0.3-0.5
-        if 'fear' in condition_lower or 'threat' in condition_lower or 'danger' in condition_lower:
-            if 'high' in condition_lower or 'strong' in condition_lower:
+        if _word_in('fear', condition_lower) or _word_in('threat', condition_lower) or _word_in('danger', condition_lower):
+            if _word_in('high', condition_lower) or _word_in('strong', condition_lower):
                 semantic_effect -= 0.15  # High fear can backfire without efficacy
-            elif 'moderate' in condition_lower or 'medium' in condition_lower:
+            elif _word_in('moderate', condition_lower) or _word_in('medium', condition_lower):
                 semantic_effect += 0.12  # Moderate fear often most effective
             else:
                 semantic_effect -= 0.10
 
         # Risk Perception (Slovic, 1987)
-        if any(r in condition_lower for r in ['risky', 'dangerous', 'hazardous', 'unsafe']):
+        if _any_word_in(['risky', 'dangerous', 'hazardous', 'unsafe'], condition_lower):
             semantic_effect -= 0.18
-        elif any(s in condition_lower for s in ['safe', 'secure', 'protected', 'low risk']):
+        elif _any_word_in(['safe', 'secure', 'protected', 'low risk'], condition_lower):
             semantic_effect += 0.15
 
         # Health Message Framing (Rothman & Salovey, 1997)
-        if 'prevention' in condition_lower or 'detect' in condition_lower:
-            if 'loss' in condition_lower:
+        if _word_in('prevention', condition_lower) or _word_in('detect', condition_lower):
+            if _word_in('loss', condition_lower):
                 semantic_effect += 0.12  # Loss frame better for detection
-        if 'promot' in condition_lower:
-            if 'gain' in condition_lower:
+        if _stem_in('promot', condition_lower):
+            if _word_in('gain', condition_lower):
                 semantic_effect += 0.12  # Gain frame better for prevention
 
         # =====================================================================
@@ -3836,39 +3864,39 @@ class EnhancedSimulationEngine:
 
         # Procedural Justice (Colquitt et al., 2001 meta-analysis, JAP)
         # Fair procedures increase trust and commitment. ρ ≈ .40-.50
-        if any(pj in condition_lower for pj in ['procedural justice', 'fair process', 'voice',
-                                                  'transparent process', 'fair procedure']):
+        if _any_word_in(['procedural justice', 'fair process', 'voice',
+                         'transparent process', 'fair procedure'], condition_lower):
             semantic_effect += 0.25
-        elif any(pi in condition_lower for pi in ['unfair process', 'no voice', 'arbitrary']):
+        elif _any_word_in(['unfair process', 'no voice', 'arbitrary'], condition_lower):
             semantic_effect -= 0.28
 
         # Distributive Justice (Colquitt et al., 2001)
-        if any(dj in condition_lower for dj in ['distributive justice', 'fair outcome', 'equitable pay',
-                                                  'fair reward', 'fair distribution']):
+        if _any_word_in(['distributive justice', 'fair outcome', 'equitable pay',
+                         'fair reward', 'fair distribution'], condition_lower):
             semantic_effect += 0.25
-        elif any(di in condition_lower for di in ['unfair outcome', 'inequitable', 'underpaid']):
+        elif _any_word_in(['unfair outcome', 'inequitable', 'underpaid'], condition_lower):
             semantic_effect -= 0.28
 
         # Transformational Leadership (Judge & Piccolo, 2004 meta-analysis, JAP)
         # ρ ≈ .44 with satisfaction
-        if any(tl in condition_lower for tl in ['transformational', 'inspirational', 'charismatic',
-                                                  'visionary', 'empowering leader']):
+        if _any_word_in(['transformational', 'inspirational', 'charismatic',
+                         'visionary', 'empowering leader'], condition_lower):
             semantic_effect += 0.22
-        elif any(tal in condition_lower for tal in ['transactional', 'directive', 'laissez-faire']):
+        elif _any_word_in(['transactional', 'directive', 'laissez-faire'], condition_lower):
             semantic_effect -= 0.05
 
         # Autonomy (Deci & Ryan, 2000, SDT)
         # Autonomy support increases motivation
-        if any(a in condition_lower for a in ['autonomy', 'choice', 'freedom', 'self-directed',
-                                                'empowerment', 'participative']):
+        if _any_word_in(['autonomy', 'choice', 'freedom', 'self-directed',
+                         'empowerment', 'participative'], condition_lower):
             semantic_effect += 0.20
-        elif any(c in condition_lower for c in ['controlled', 'no choice', 'mandated', 'forced', 'required']):
+        elif _any_word_in(['controlled', 'no choice', 'mandated', 'forced', 'required'], condition_lower):
             semantic_effect -= 0.15
 
         # Feedback (Kluger & DeNisi, 1996 meta-analysis)
-        if any(fb in condition_lower for fb in ['positive feedback', 'praise', 'recognition', 'appreciated']):
+        if _any_word_in(['positive feedback', 'praise', 'recognition', 'appreciated'], condition_lower):
             semantic_effect += 0.20
-        elif any(nfb in condition_lower for nfb in ['negative feedback', 'criticism', 'blame']):
+        elif _any_word_in(['negative feedback', 'criticism', 'blame'], condition_lower):
             semantic_effect -= 0.22
 
         # =====================================================================
@@ -3877,32 +3905,32 @@ class EnhancedSimulationEngine:
 
         # Moral Foundations (Graham, Haidt & Nosek, 2009, JPSP)
         # Liberals: care/fairness; Conservatives: all five foundations
-        if any(m in condition_lower for m in ['care', 'harm', 'compassion', 'suffering']):
+        if _any_word_in(['care', 'harm', 'compassion', 'suffering'], condition_lower):
             semantic_effect += 0.18
-        if any(m in condition_lower for m in ['fairness', 'justice', 'equality', 'rights']):
+        if _any_word_in(['fairness', 'justice', 'equality', 'rights'], condition_lower):
             semantic_effect += 0.18
-        if any(m in condition_lower for m in ['loyalty', 'patriot', 'traitor', 'betrayal']):
+        if _any_word_in(['loyalty', 'patriot', 'traitor', 'betrayal'], condition_lower):
             semantic_effect += 0.12
-        if any(m in condition_lower for m in ['authority', 'tradition', 'subversion', 'respect']):
+        if _any_word_in(['authority', 'tradition', 'subversion', 'respect'], condition_lower):
             semantic_effect += 0.10
-        if any(m in condition_lower for m in ['purity', 'sanctity', 'disgust', 'degradation']):
+        if _any_word_in(['purity', 'sanctity', 'disgust', 'degradation'], condition_lower):
             semantic_effect += 0.10
 
         # Political Polarization (Iyengar & Westwood, 2015, AJPS)
         # Partisan affect stronger than racial prejudice. d > 0.5
-        if any(p in condition_lower for p in ['same party', 'co-partisan', 'inparty']):
+        if _any_word_in(['same party', 'co-partisan', 'inparty'], condition_lower):
             semantic_effect += 0.30
-        elif any(o in condition_lower for o in ['other party', 'opposing party', 'outparty']):
+        elif _any_word_in(['other party', 'opposing party', 'outparty'], condition_lower):
             semantic_effect -= 0.30
 
         # Disgust (Inbar et al., 2009)
-        if 'disgust' in condition_lower:
+        if _word_in('disgust', condition_lower):
             semantic_effect -= 0.20
 
         # Moral vs Non-moral framing (Feinberg & Willer, 2015)
-        if 'moral' in condition_lower or 'ethical' in condition_lower:
+        if _word_in('moral', condition_lower) or _word_in('ethical', condition_lower):
             semantic_effect += 0.15
-        elif 'immoral' in condition_lower or 'unethical' in condition_lower:
+        elif _word_in('immoral', condition_lower) or _word_in('unethical', condition_lower):
             semantic_effect -= 0.22
 
         # =====================================================================
@@ -3910,15 +3938,15 @@ class EnhancedSimulationEngine:
         # =====================================================================
 
         # Treatment vs Control (general pattern)
-        if 'treatment' in condition_lower and 'control' not in condition_lower:
+        if _word_in('treatment', condition_lower) and not _word_in('control', condition_lower):
             semantic_effect += 0.20
-        elif 'control' in condition_lower and 'treatment' not in condition_lower:
+        elif _word_in('control', condition_lower) and not _word_in('treatment', condition_lower):
             semantic_effect -= 0.05
 
         # Intervention effects
-        if 'intervention' in condition_lower:
+        if _word_in('intervention', condition_lower):
             semantic_effect += 0.15
-        elif 'no intervention' in condition_lower or 'waitlist' in condition_lower:
+        elif _word_in('no intervention', condition_lower) or _word_in('waitlist', condition_lower):
             semantic_effect -= 0.05
 
         # =====================================================================
@@ -3928,93 +3956,93 @@ class EnhancedSimulationEngine:
         # Choice Overload (Iyengar & Lepper, 2000; Scheibehenne et al. 2010 meta)
         # Original jam study d = 0.77; meta-analysis shows mean effect near 0
         # Effect is moderated by complexity and expertise
-        if any(c in condition_lower for c in ['many options', 'large assortment', 'high choice', 'extensive']):
+        if _any_word_in(['many options', 'large assortment', 'high choice', 'extensive'], condition_lower):
             semantic_effect -= 0.12  # Choice overload reduces satisfaction
-        elif any(c in condition_lower for c in ['few options', 'small assortment', 'limited choice', 'simple']):
+        elif _any_word_in(['few options', 'small assortment', 'limited choice', 'simple'], condition_lower):
             semantic_effect += 0.08
 
         # Sunk Cost Fallacy (Staw, 1976; Sleesman et al. 2012 meta-analysis)
         # Personal responsibility increases escalation; d ≈ 0.37
-        if any(s in condition_lower for s in ['sunk cost', 'invested', 'escalation', 'committed']):
+        if _any_word_in(['sunk cost', 'invested', 'escalation', 'committed'], condition_lower):
             semantic_effect += 0.15  # Escalation tendency
-        elif 'no sunk cost' in condition_lower or 'fresh start' in condition_lower:
+        elif _word_in('no sunk cost', condition_lower) or _word_in('fresh start', condition_lower):
             semantic_effect -= 0.05
 
         # Construal Level Theory (Trope & Liberman, 2010; Soderberg et al. meta)
         # Psychological distance affects abstraction; robust effect
-        if any(d in condition_lower for d in ['distant', 'far future', 'abstract', 'why']):
+        if _any_word_in(['distant', 'far future', 'abstract', 'why'], condition_lower):
             semantic_effect += 0.12  # Abstract = more desirable
-        elif any(c in condition_lower for c in ['near', 'soon', 'concrete', 'how']):
+        elif _any_word_in(['near', 'soon', 'concrete', 'how'], condition_lower):
             semantic_effect -= 0.08  # Concrete = more feasibility concerns
 
         # Intrinsic Motivation Crowding Out (Deci, Koestner & Ryan, 1999 meta)
         # Tangible rewards undermine intrinsic motivation; d = -0.40
-        if any(e in condition_lower for e in ['extrinsic reward', 'payment', 'incentive', 'bonus for']):
+        if _any_word_in(['extrinsic reward', 'payment', 'incentive', 'bonus for'], condition_lower):
             semantic_effect -= 0.15  # Undermining effect
-        elif any(i in condition_lower for i in ['intrinsic', 'no reward', 'autonomous', 'self-determined']):
+        elif _any_word_in(['intrinsic', 'no reward', 'autonomous', 'self-determined'], condition_lower):
             semantic_effect += 0.12
 
         # Mere Exposure Effect (Zajonc, 1968; Bornstein, 1989 meta r = 0.26)
         # Repeated exposure increases liking
-        if any(e in condition_lower for e in ['familiar', 'repeated exposure', 'seen before', 'recognized']):
+        if _any_word_in(['familiar', 'repeated exposure', 'seen before', 'recognized'], condition_lower):
             semantic_effect += 0.15
-        elif any(n in condition_lower for n in ['novel', 'unfamiliar', 'first time', 'new']):
+        elif _any_word_in(['novel', 'unfamiliar', 'first time', 'new'], condition_lower):
             semantic_effect -= 0.05
 
         # Bystander Effect (Darley & Latané, 1968; Fischer et al. 2011 meta)
         # More bystanders = less helping; 85% alone vs 31% with 4 others
-        if any(b in condition_lower for b in ['alone', 'sole witness', 'only one']):
+        if _any_word_in(['alone', 'sole witness', 'only one'], condition_lower):
             semantic_effect += 0.25  # More likely to help
-        elif any(b in condition_lower for b in ['crowd', 'many bystanders', 'group present', 'others present']):
+        elif _any_word_in(['crowd', 'many bystanders', 'group present', 'others present'], condition_lower):
             semantic_effect -= 0.20  # Diffusion of responsibility
 
         # Stereotype Threat (Steele & Aronson, 1995; Nguyen & Ryan 2008 meta d = 0.26)
         # Threat of confirming negative stereotype impairs performance
-        if any(s in condition_lower for s in ['stereotype threat', 'diagnostic', 'ability test']):
+        if _any_word_in(['stereotype threat', 'diagnostic', 'ability test'], condition_lower):
             semantic_effect -= 0.15
-        elif any(n in condition_lower for n in ['no threat', 'non-diagnostic', 'practice']):
+        elif _any_word_in(['no threat', 'non-diagnostic', 'practice'], condition_lower):
             semantic_effect += 0.08
 
         # Reactance (Brehm, 1966; Rains 2013 meta; 2025 meta r = -0.23)
         # Freedom threat leads to boomerang effects
-        if any(r in condition_lower for r in ['must', 'required', 'mandatory', 'have to', 'forced']):
+        if _any_word_in(['must', 'required', 'mandatory', 'have to', 'forced'], condition_lower):
             semantic_effect -= 0.18  # Reactance reduces compliance
-        elif any(f in condition_lower for f in ['optional', 'choice', 'voluntary', 'may']):
+        elif _any_word_in(['optional', 'choice', 'voluntary', 'may'], condition_lower):
             semantic_effect += 0.10
 
         # Emotional Contagion (Hatfield et al., 1993; replicated in social networks)
         # Emotions transfer between individuals
-        if any(e in condition_lower for e in ['happy confederate', 'positive mood', 'smiling']):
+        if _any_word_in(['happy confederate', 'positive mood', 'smiling'], condition_lower):
             semantic_effect += 0.15
-        elif any(e in condition_lower for e in ['sad confederate', 'negative mood', 'frowning']):
+        elif _any_word_in(['sad confederate', 'negative mood', 'frowning'], condition_lower):
             semantic_effect -= 0.15
 
         # Negativity Bias (Rozin & Royzman, 2001; Baumeister et al. 2001)
         # Bad is stronger than good; negative information weighted more
-        if 'negative info' in condition_lower or 'criticism' in condition_lower:
+        if _word_in('negative info', condition_lower) or _word_in('criticism', condition_lower):
             semantic_effect -= 0.22  # Stronger negative effect
-        elif 'positive info' in condition_lower or 'praise' in condition_lower:
+        elif _word_in('positive info', condition_lower) or _word_in('praise', condition_lower):
             semantic_effect += 0.15  # Weaker positive effect
 
         # Identifiable Victim Effect (Small, Loewenstein & Slovic, 2007)
         # Meta-analysis r = 0.13; single identified victim > statistics
-        if any(i in condition_lower for i in ['identified victim', 'named', 'individual story', 'one person']):
+        if _any_word_in(['identified victim', 'named', 'individual story', 'one person'], condition_lower):
             semantic_effect += 0.12
-        elif any(s in condition_lower for s in ['statistics', 'many victims', 'aggregate', 'numbers']):
+        elif _any_word_in(['statistics', 'many victims', 'aggregate', 'numbers'], condition_lower):
             semantic_effect -= 0.05
 
         # Confirmation Bias (Nickerson, 1998; Hart et al. 2009 selective exposure meta)
         # People seek belief-consistent information
-        if 'confirming' in condition_lower or 'consistent' in condition_lower:
+        if _word_in('confirming', condition_lower) or _word_in('consistent', condition_lower):
             semantic_effect += 0.15
-        elif 'disconfirming' in condition_lower or 'inconsistent' in condition_lower:
+        elif _word_in('disconfirming', condition_lower) or _word_in('inconsistent', condition_lower):
             semantic_effect -= 0.12
 
         # Hyperbolic Discounting (Laibson, 1997; Amlung et al. meta)
         # Present bias; immediate rewards overweighted
-        if any(h in condition_lower for h in ['$10 now', 'today', 'immediate small']):
+        if _any_word_in(['$10 now', 'today', 'immediate small'], condition_lower):
             semantic_effect += 0.20
-        elif any(d in condition_lower for d in ['$15 later', 'delayed large', 'wait for more']):
+        elif _any_word_in(['$15 later', 'delayed large', 'wait for more'], condition_lower):
             semantic_effect -= 0.08
 
         # =====================================================================
@@ -4023,37 +4051,37 @@ class EnhancedSimulationEngine:
 
         # Source Credibility (Hovland & Weiss, 1951; Wilson & Sherrell, 1993 meta)
         # High credibility sources more persuasive
-        if any(c in condition_lower for c in ['credible source', 'expert source', 'trustworthy']):
+        if _any_word_in(['credible source', 'expert source', 'trustworthy'], condition_lower):
             semantic_effect += 0.20
-        elif any(l in condition_lower for l in ['low credibility', 'non-expert', 'untrustworthy']):
+        elif _any_word_in(['low credibility', 'non-expert', 'untrustworthy'], condition_lower):
             semantic_effect -= 0.18
 
         # Message Sidedness (Allen, 1991 meta-analysis)
         # Two-sided messages more effective for educated audiences
-        if 'two-sided' in condition_lower or 'both sides' in condition_lower:
+        if _word_in('two-sided', condition_lower) or _word_in('both sides', condition_lower):
             semantic_effect += 0.12
-        elif 'one-sided' in condition_lower:
+        elif _word_in('one-sided', condition_lower):
             semantic_effect -= 0.05
 
         # Narrative vs Statistical Evidence (Allen & Preiss, 1997 meta)
         # Narratives often more persuasive than statistics
-        if any(n in condition_lower for n in ['narrative', 'story', 'anecdote', 'testimonial']):
+        if _any_word_in(['narrative', 'story', 'anecdote', 'testimonial'], condition_lower):
             semantic_effect += 0.15
-        elif any(s in condition_lower for s in ['statistical', 'data', 'numbers', 'facts']):
+        elif _any_word_in(['statistical', 'data', 'numbers', 'facts'], condition_lower):
             semantic_effect += 0.08  # Both positive, narratives more so
 
         # Vividness Effect (Taylor & Thompson, 1982)
         # Vivid information more impactful
-        if any(v in condition_lower for v in ['vivid', 'graphic', 'detailed', 'concrete']):
+        if _any_word_in(['vivid', 'graphic', 'detailed', 'concrete'], condition_lower):
             semantic_effect += 0.12
-        elif any(a in condition_lower for a in ['pallid', 'abstract', 'summary']):
+        elif _any_word_in(['pallid', 'abstract', 'summary'], condition_lower):
             semantic_effect -= 0.05
 
         # Inoculation Theory (McGuire, 1961; Banas & Rains 2010 meta d = 0.29)
         # Pre-exposure to weakened arguments confers resistance
-        if 'inoculation' in condition_lower or 'prebunk' in condition_lower:
+        if _word_in('inoculation', condition_lower) or _word_in('prebunk', condition_lower):
             semantic_effect += 0.18  # Resistance to persuasion
-        elif 'no inoculation' in condition_lower:
+        elif _word_in('no inoculation', condition_lower):
             semantic_effect -= 0.05
 
         # =====================================================================
@@ -4062,30 +4090,30 @@ class EnhancedSimulationEngine:
 
         # Testing Effect (Roediger & Karpicke, 2006; Rowland 2014 meta d = 0.50)
         # Retrieval practice enhances long-term retention
-        if any(t in condition_lower for t in ['test', 'retrieval practice', 'quiz']):
+        if _any_word_in(['test', 'retrieval practice', 'quiz'], condition_lower):
             semantic_effect += 0.22
-        elif any(s in condition_lower for s in ['restudy', 'review', 'read again']):
+        elif _any_word_in(['restudy', 'review', 'read again'], condition_lower):
             semantic_effect -= 0.05
 
         # Spacing Effect (Cepeda et al. 2006 meta; robust effect)
         # Distributed practice superior to massed
-        if any(s in condition_lower for s in ['spaced', 'distributed', 'interleaved']):
+        if _any_word_in(['spaced', 'distributed', 'interleaved'], condition_lower):
             semantic_effect += 0.20
-        elif any(m in condition_lower for m in ['massed', 'blocked', 'crammed']):
+        elif _any_word_in(['massed', 'blocked', 'crammed'], condition_lower):
             semantic_effect -= 0.10
 
         # Generation Effect (Slamecka & Graf, 1978)
         # Self-generated information better remembered
-        if any(g in condition_lower for g in ['generate', 'produce', 'create', 'self-generated']):
+        if _any_word_in(['generate', 'produce', 'create', 'self-generated'], condition_lower):
             semantic_effect += 0.18
-        elif any(r in condition_lower for r in ['read', 'provided', 'given']):
+        elif _any_word_in(['read', 'provided', 'given'], condition_lower):
             semantic_effect -= 0.05
 
         # Desirable Difficulties (Bjork, 1994)
         # Challenges that slow learning can enhance retention
-        if 'difficult' in condition_lower or 'challenging' in condition_lower:
+        if _word_in('difficult', condition_lower) or _word_in('challenging', condition_lower):
             semantic_effect += 0.10  # Long-term benefit despite short-term cost
-        elif 'easy' in condition_lower or 'simple' in condition_lower:
+        elif _word_in('easy', condition_lower) or _word_in('simple', condition_lower):
             semantic_effect += 0.05
 
         # =====================================================================
@@ -4094,28 +4122,28 @@ class EnhancedSimulationEngine:
 
         # Common Identity (Gaertner et al., 1993)
         # Superordinate identity reduces intergroup bias
-        if any(c in condition_lower for c in ['common identity', 'superordinate', 'we', 'shared']):
+        if _any_word_in(['common identity', 'superordinate', 'we', 'shared'], condition_lower):
             semantic_effect += 0.22
-        elif any(d in condition_lower for d in ['dual identity', 'subgroup', 'they']):
+        elif _any_word_in(['dual identity', 'subgroup', 'they'], condition_lower):
             semantic_effect -= 0.10
 
         # Contact Hypothesis (Allport, 1954; Pettigrew & Tropp 2006 meta r = -0.21)
         # Intergroup contact reduces prejudice
-        if any(c in condition_lower for c in ['contact', 'interaction', 'exposure to outgroup']):
+        if _any_word_in(['contact', 'interaction', 'exposure to outgroup'], condition_lower):
             semantic_effect += 0.18
-        elif any(n in condition_lower for n in ['no contact', 'segregated', 'separate']):
+        elif _any_word_in(['no contact', 'segregated', 'separate'], condition_lower):
             semantic_effect -= 0.12
 
         # Minimal Group Paradigm (Tajfel, 1971; Balliet et al. 2014)
         # Even arbitrary categories produce in-group favoritism
-        if any(m in condition_lower for m in ['overestimator', 'klee group', 'blue team']):
+        if _any_word_in(['overestimator', 'klee group', 'blue team'], condition_lower):
             semantic_effect += 0.15  # In-group favoritism even in minimal groups
 
         # Social Identity Salience (Oakes, 1987)
         # Making identity salient activates associated attitudes
-        if any(s in condition_lower for s in ['identity salient', 'reminded of', 'primed with']):
+        if _any_word_in(['identity salient', 'reminded of', 'primed with'], condition_lower):
             semantic_effect += 0.15
-        elif 'identity not salient' in condition_lower:
+        elif _word_in('identity not salient', condition_lower):
             semantic_effect -= 0.05
 
         # =====================================================================
@@ -4124,37 +4152,37 @@ class EnhancedSimulationEngine:
 
         # Implementation Intentions (Gollwitzer, 1999; Gollwitzer & Sheeran 2006 meta d = 0.65)
         # If-then planning increases goal attainment
-        if any(i in condition_lower for i in ['implementation intention', 'if-then', 'when-then', 'planning']):
+        if _any_word_in(['implementation intention', 'if-then', 'when-then', 'planning'], condition_lower):
             semantic_effect += 0.28
-        elif 'goal intention' in condition_lower or 'motivation only' in condition_lower:
+        elif _word_in('goal intention', condition_lower) or _word_in('motivation only', condition_lower):
             semantic_effect -= 0.05
 
         # Growth vs Fixed Mindset (Dweck, 2006; Sisk et al. 2018 meta d = 0.10)
         # Malleable beliefs about ability; effect sizes smaller than originally claimed
-        if any(g in condition_lower for g in ['growth mindset', 'malleable', 'can improve']):
+        if _any_word_in(['growth mindset', 'malleable', 'can improve'], condition_lower):
             semantic_effect += 0.08
-        elif any(f in condition_lower for f in ['fixed mindset', 'innate', 'cannot change']):
+        elif _any_word_in(['fixed mindset', 'innate', 'cannot change'], condition_lower):
             semantic_effect -= 0.08
 
         # Regulatory Focus (Higgins, 1997)
         # Promotion vs prevention focus affects behavior
-        if any(p in condition_lower for p in ['promotion', 'eager', 'gains', 'aspirations']):
+        if _any_word_in(['promotion', 'eager', 'gains', 'aspirations'], condition_lower):
             semantic_effect += 0.15
-        elif any(p in condition_lower for p in ['prevention', 'vigilant', 'losses', 'obligations']):
+        elif _any_word_in(['prevention', 'vigilant', 'losses', 'obligations'], condition_lower):
             semantic_effect -= 0.10
 
         # Goal Gradient Effect (Hull, 1932; Kivetz et al. 2006)
         # Effort increases as goal approaches
-        if any(n in condition_lower for n in ['near goal', 'almost there', 'close to']):
+        if _any_word_in(['near goal', 'almost there', 'close to'], condition_lower):
             semantic_effect += 0.18
-        elif any(f in condition_lower for f in ['far from goal', 'just started', 'beginning']):
+        elif _any_word_in(['far from goal', 'just started', 'beginning'], condition_lower):
             semantic_effect -= 0.08
 
         # Licensing Effect (Merritt et al. 2010 meta)
         # Good deeds license subsequent bad behavior
-        if any(l in condition_lower for l in ['licensed', 'already helped', 'did good']):
+        if _any_word_in(['licensed', 'already helped', 'did good'], condition_lower):
             semantic_effect -= 0.12  # Reduced subsequent prosocial
-        elif 'no license' in condition_lower:
+        elif _word_in('no license', condition_lower):
             semantic_effect += 0.05
 
         # =====================================================================
@@ -4163,37 +4191,37 @@ class EnhancedSimulationEngine:
 
         # Temperature and Aggression (Anderson et al. 2000)
         # Heat increases aggressive cognition and behavior
-        if any(h in condition_lower for h in ['hot', 'warm room', 'heat']):
+        if _any_word_in(['hot', 'warm room', 'heat'], condition_lower):
             semantic_effect -= 0.12  # More negative affect
-        elif any(c in condition_lower for c in ['cool', 'cold room', 'comfortable temp']):
+        elif _any_word_in(['cool', 'cold room', 'comfortable temp'], condition_lower):
             semantic_effect += 0.05
 
         # Crowding (Baum & Paulus, 1987)
         # High density increases stress
-        if any(c in condition_lower for c in ['crowded', 'high density', 'cramped']):
+        if _any_word_in(['crowded', 'high density', 'cramped'], condition_lower):
             semantic_effect -= 0.15
-        elif any(s in condition_lower for s in ['spacious', 'low density', 'uncrowded']):
+        elif _any_word_in(['spacious', 'low density', 'uncrowded'], condition_lower):
             semantic_effect += 0.08
 
         # Cleanliness (Schnall et al., 2008; Lee & Schwarz 2010)
         # Clean environments reduce severity of moral judgments
-        if any(c in condition_lower for c in ['clean', 'tidy', 'pure', 'washed hands']):
+        if _any_word_in(['clean', 'tidy', 'pure', 'washed hands'], condition_lower):
             semantic_effect += 0.12
-        elif any(d in condition_lower for d in ['dirty', 'messy', 'contaminated']):
+        elif _any_word_in(['dirty', 'messy', 'contaminated'], condition_lower):
             semantic_effect -= 0.15
 
         # Nature Exposure (Berman et al., 2008; Bratman et al., 2012)
         # Nature reduces stress, improves mood
-        if any(n in condition_lower for n in ['nature', 'park', 'green space', 'outdoors']):
+        if _any_word_in(['nature', 'park', 'green space', 'outdoors'], condition_lower):
             semantic_effect += 0.15
-        elif any(u in condition_lower for u in ['urban', 'city', 'concrete', 'indoors']):
+        elif _any_word_in(['urban', 'city', 'concrete', 'indoors'], condition_lower):
             semantic_effect -= 0.05
 
         # Lighting (Baron et al., 1992)
         # Bright light improves mood and alertness
-        if any(b in condition_lower for b in ['bright light', 'well-lit', 'daylight']):
+        if _any_word_in(['bright light', 'well-lit', 'daylight'], condition_lower):
             semantic_effect += 0.08
-        elif any(d in condition_lower for d in ['dim light', 'dark', 'low light']):
+        elif _any_word_in(['dim light', 'dark', 'low light'], condition_lower):
             semantic_effect -= 0.05
 
         # =====================================================================
@@ -4203,23 +4231,23 @@ class EnhancedSimulationEngine:
         # Facial Feedback (Strack et al., 1988; Coles et al. 2019 many-labs r = 0.03)
         # Facial expressions may influence emotional experience
         # Effect small or null in replications
-        if any(f in condition_lower for f in ['smile', 'pen in teeth', 'happy expression']):
+        if _any_word_in(['smile', 'pen in teeth', 'happy expression'], condition_lower):
             semantic_effect += 0.05  # Small effect
-        elif any(f in condition_lower for f in ['frown', 'pen in lips', 'sad expression']):
+        elif _any_word_in(['frown', 'pen in lips', 'sad expression'], condition_lower):
             semantic_effect -= 0.05
 
         # Power Posing (Carney et al., 2010; Credé & Phillips 2017 critique)
         # Expansive poses may affect feelings; effects contested
-        if any(p in condition_lower for p in ['power pose', 'expansive', 'open posture']):
+        if _any_word_in(['power pose', 'expansive', 'open posture'], condition_lower):
             semantic_effect += 0.08  # Contested, smaller than original claims
-        elif any(c in condition_lower for c in ['contractive', 'closed posture', 'slumped']):
+        elif _any_word_in(['contractive', 'closed posture', 'slumped'], condition_lower):
             semantic_effect -= 0.05
 
         # Heaviness and Importance (Jostmann et al., 2009)
         # Heavier objects associated with importance
-        if any(h in condition_lower for h in ['heavy clipboard', 'weighty', 'substantial']):
+        if _any_word_in(['heavy clipboard', 'weighty', 'substantial'], condition_lower):
             semantic_effect += 0.10
-        elif any(l in condition_lower for l in ['light clipboard', 'lightweight', 'flimsy']):
+        elif _any_word_in(['light clipboard', 'lightweight', 'flimsy'], condition_lower):
             semantic_effect -= 0.05
 
         # =====================================================================
@@ -4228,23 +4256,23 @@ class EnhancedSimulationEngine:
 
         # Time Pressure (Dror et al., 1999)
         # Time constraints affect decision quality
-        if any(t in condition_lower for t in ['time pressure', 'deadline', 'hurry', 'limited time']):
+        if _any_word_in(['time pressure', 'deadline', 'hurry', 'limited time'], condition_lower):
             semantic_effect -= 0.15  # More errors, less satisfaction
-        elif any(n in condition_lower for n in ['no time pressure', 'unlimited time', 'take your time']):
+        elif _any_word_in(['no time pressure', 'unlimited time', 'take your time'], condition_lower):
             semantic_effect += 0.08
 
         # Morning vs Afternoon (Sievertsen et al., 2016)
         # Cognitive performance varies by time of day
-        if any(m in condition_lower for m in ['morning', 'early', 'am session']):
+        if _any_word_in(['morning', 'early', 'am session'], condition_lower):
             semantic_effect += 0.08
-        elif any(a in condition_lower for a in ['afternoon', 'late', 'pm session', 'evening']):
+        elif _any_word_in(['afternoon', 'late', 'pm session', 'evening'], condition_lower):
             semantic_effect -= 0.05
 
         # Waiting (Kumar et al., 2014)
         # Anticipation affects experience
-        if any(w in condition_lower for w in ['anticipation', 'waiting', 'expecting']):
+        if _any_word_in(['anticipation', 'waiting', 'expecting'], condition_lower):
             semantic_effect += 0.12
-        elif 'immediate' in condition_lower:
+        elif _word_in('immediate', condition_lower):
             semantic_effect += 0.05
 
         # =====================================================================
@@ -4271,43 +4299,75 @@ class EnhancedSimulationEngine:
 
                 # Check valence for this factor
                 for kw in positive_keywords:
-                    if kw in factor:
+                    if _word_in(kw, factor):
                         factor_effect += 0.18
                         break
                 for kw in negative_keywords:
-                    if kw in factor:
+                    if _word_in(kw, factor):
                         factor_effect -= 0.18
                         break
 
                 # Check key manipulation types for this factor
-                if 'ai' in factor and 'no' not in factor:
+                if _word_in('ai', factor) and not _word_in('no', factor):
                     factor_effect -= 0.08
-                elif 'no ai' in factor or 'no_ai' in factor or 'human' in factor:
+                elif _word_in('no ai', factor) or _word_in('no_ai', factor) or _word_in('human', factor):
                     factor_effect += 0.10
 
-                if 'hedonic' in factor or 'fun' in factor:
+                if _word_in('hedonic', factor) or _word_in('fun', factor):
                     factor_effect += 0.12
-                elif 'utilitarian' in factor or 'practical' in factor:
+                elif _word_in('utilitarian', factor) or _word_in('practical', factor):
                     factor_effect -= 0.05
 
-                if 'gain' in factor or 'save' in factor:
+                if _word_in('gain', factor) or _word_in('save', factor):
                     factor_effect += 0.08
-                elif 'loss' in factor or 'lose' in factor:
+                elif _word_in('loss', factor) or _word_in('lose', factor):
                     factor_effect -= 0.12
 
-                if 'fair' in factor:
+                if _word_in('fair', factor):
                     factor_effect += 0.12
-                elif 'unfair' in factor:
+                elif _word_in('unfair', factor):
                     factor_effect -= 0.15
 
                 factor_effects.append(factor_effect)
 
-            # Sum factor effects (main effects in factorial design)
-            # Scale down proportionally to number of factors to prevent extreme stacking
+            # Sum factor effects (main effects) + interaction effect for factorial designs
+            # v1.0.1.3: Added interaction effects for factorial designs
+            #
+            # SCIENTIFIC BASIS:
+            # In factorial designs, interaction effects occur when the effect of one
+            # factor depends on the level of another factor. This is modeled as the
+            # product of individual factor effects, scaled by an interaction coefficient.
+            #
+            # Examples:
+            # - AI × Hedonic: AI aversion may be STRONGER for hedonic products (synergy)
+            # - Loss frame × High anchor: Loss framing may amplify anchoring (reinforcing)
+            # - Control × Utilitarian: neutral × neutral → near-zero interaction
+            #
+            # The multiplicative interaction naturally produces:
+            # - Same-direction factors: positive interaction (reinforcing)
+            # - Opposite-direction factors: negative interaction (attenuating)
+            # - Near-zero factors: minimal interaction (appropriate)
             if factor_effects:
                 n_fac = max(len(factor_effects), 1)
                 scale_factor = 0.6 / max(1, n_fac - 1) if n_fac > 1 else 0.6
-                semantic_effect += sum(factor_effects) * scale_factor
+
+                # Main effects (additive)
+                main_effect = sum(factor_effects) * scale_factor
+
+                # Interaction effect (multiplicative)
+                # The product of factor effects captures cross-factor dependencies
+                # Coefficient of 0.4 prevents interactions from dominating main effects
+                # while still producing detectable interaction patterns in the data
+                interaction_effect = 0.0
+                if len(factor_effects) >= 2:
+                    interaction_product = 1.0
+                    for fe in factor_effects:
+                        interaction_product *= fe
+                    # Scale interaction: strong when factors reinforce, weak when orthogonal
+                    interaction_coeff = 0.4
+                    interaction_effect = interaction_product * interaction_coeff
+
+                semantic_effect += main_effect + interaction_effect
 
         # =====================================================================
         # STEP 3: Create additional variance using stable hash (NOT position)
@@ -6273,6 +6333,7 @@ class EnhancedSimulationEngine:
             scale_name = _clean_column_name(_var_name if _var_name else _raw_name)
             scale_points = _safe_numeric(scale.get("scale_points", 7), default=7, as_int=True)
             scale_points = max(2, min(1001, scale_points))
+            scale_min = _safe_numeric(scale.get("scale_min", 1), default=1, as_int=True)
             num_items = _safe_numeric(scale.get("num_items", 5), default=5, as_int=True)
 
             for item_num in range(1, num_items + 1):
@@ -6298,10 +6359,10 @@ class EnhancedSimulationEngine:
                 actual_max = int(col_valid.max())
 
                 # CHECK 1b: Bounds validation
-                if actual_min < 1 or actual_max > scale_points:
+                if actual_min < scale_min or actual_max > scale_points:
                     issues.append({
                         "column": col_name,
-                        "expected_min": 1,
+                        "expected_min": scale_min,
                         "expected_max": scale_points,
                         "actual_min": actual_min,
                         "actual_max": actual_max,
@@ -6405,6 +6466,7 @@ class EnhancedSimulationEngine:
             scale_name_clean = _clean_column_name(_var if _var else scale_name)
             spec_points = int(scale.get("scale_points", 7))
             spec_items = int(scale.get("num_items", 5))
+            spec_min = _safe_numeric(scale.get("scale_min", 1), default=1, as_int=True)
 
             scale_report: Dict[str, Any] = {
                 "name": scale_name,
@@ -6430,7 +6492,7 @@ class EnhancedSimulationEngine:
                     all_values.extend(col_values)
                     col_min = min(col_values)
                     col_max = max(col_values)
-                    if col_min < 1 or col_max > spec_points:
+                    if col_min < spec_min or col_max > spec_points:
                         scale_report["all_values_in_bounds"] = False
                         scale_report["status"] = "BOUNDS_VIOLATION"
                 else:
