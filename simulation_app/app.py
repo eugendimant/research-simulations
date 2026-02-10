@@ -4569,6 +4569,8 @@ def _render_builder_design_review() -> None:
         st.warning("No scales detected")
 
     # ── Open-Ended Questions ────────────────────────────────────────────
+    # v1.0.1.5: Version counter for builder OE widget keys to prevent stale values after removal
+    _br_oe_ver = st.session_state.get("_br_oe_version", 0)
     if open_ended:
         st.markdown("---")
         st.markdown("#### Open-Ended Questions")
@@ -4594,7 +4596,7 @@ def _render_builder_design_review() -> None:
                 new_text = st.text_input(
                     f"Question {i+1} (`{oe.get('variable_name', '')}`)",
                     value=oe.get("question_text", ""),
-                    key=f"br_oe_text_{i}",
+                    key=f"br_oe_text_v{_br_oe_ver}_{i}",
                 )
                 if new_text and new_text != oe.get("question_text", ""):
                     oe["question_text"] = new_text
@@ -4617,7 +4619,7 @@ def _render_builder_design_review() -> None:
                 new_ctx = st.text_input(
                     f"Context for Q{i+1} (required)",
                     value=_existing_ctx,
-                    key=f"br_oe_ctx_{i}",
+                    key=f"br_oe_ctx_v{_br_oe_ver}_{i}",
                     placeholder=_br_ctx_placeholder,
                     help=(
                         "REQUIRED: 1-2 sentences explaining what this question is really asking. "
@@ -4645,7 +4647,7 @@ def _render_builder_design_review() -> None:
                         st.caption(f"{_ctx_w} words — concise is best; consider trimming to 1-2 sentences.")
             with oe_col2:
                 st.markdown("<br>", unsafe_allow_html=True)
-                if st.button("Remove", key=f"br_remove_oe_{i}", help=f"Remove question {i+1}"):
+                if st.button("Remove", key=f"br_remove_oe_v{_br_oe_ver}_{i}", help=f"Remove question {i+1}"):
                     oe_to_remove = i
         # v1.0.1.2: Summary of missing context with blocking warning
         if _br_oe_missing_ctx:
@@ -4670,20 +4672,22 @@ def _render_builder_design_review() -> None:
             inferred["open_ended_questions"] = open_ended
             st.session_state["inferred_design"] = inferred
             st.session_state["confirmed_open_ended"] = open_ended
-            # v1.0.1.4: Use st.rerun() to avoid expander collapse and scroll-to-top
+            # v1.0.1.5: Increment version counter and rerun to refresh widget keys
+            st.session_state["_br_oe_version"] = _br_oe_ver + 1
             st.rerun()
 
         # v1.0.1.4: "Remove All" button for builder open-ended questions
         if open_ended and len(open_ended) > 1:
             if st.button(
                 f"Remove All Open-Ended Questions ({len(open_ended)})",
-                key="br_remove_all_oe",
+                key=f"br_remove_all_oe_v{_br_oe_ver}",
                 help="Remove all open-ended questions at once",
             ):
                 inferred["open_ended_questions"] = []
                 st.session_state["inferred_design"] = inferred
                 st.session_state["confirmed_open_ended"] = []
                 st.session_state["_builder_oe_context_complete"] = True
+                st.session_state["_br_oe_version"] = _br_oe_ver + 1
                 st.rerun()
 
         # Persist edits
@@ -7040,7 +7044,7 @@ if active_page == 2:
                         if clean_id and clean_id not in custom_conditions:
                             custom_conditions.append(clean_id)
                             st.session_state["custom_conditions"] = custom_conditions
-                            _navigate_to(2)
+                            st.rerun()
 
             st.markdown("**Type manually**")
 
@@ -7061,7 +7065,7 @@ if active_page == 2:
                     if _nc and _nc.lower() not in _all_existing:
                         custom_conditions.append(_nc)
                         st.session_state["custom_conditions"] = custom_conditions
-                        _navigate_to(2)
+                        st.rerun()
                     elif _nc and _nc.lower() in _all_existing:
                         st.warning(f"Condition '{_nc}' already exists (case-insensitive match).")
 
@@ -7081,7 +7085,7 @@ if active_page == 2:
                             if cc in custom_conditions:
                                 custom_conditions.remove(cc)
                                 st.session_state["custom_conditions"] = custom_conditions
-                            _navigate_to(2)
+                            st.rerun()
 
         # Combine selected and custom conditions
         custom_conditions = st.session_state.get("custom_conditions", [])
@@ -7271,7 +7275,7 @@ if active_page == 2:
                     st.session_state["condition_allocation_n"] = normalized
                     # Increment version to force widget refresh
                     st.session_state["_alloc_version"] = alloc_version + 1
-                    _navigate_to(2)
+                    st.rerun()
             else:
                 st.success(f"✓ Allocations sum to {sample_size}")
                 st.session_state["condition_allocation_n"] = new_allocation_n
@@ -7801,7 +7805,8 @@ if active_page == 2:
             st.session_state["confirmed_scales"] = updated_scales
             st.session_state["_dv_version"] = dv_version + 1
             st.session_state["_dv_removal_notice"] = f"Removed: {', '.join(_removed_names)}"
-            _navigate_to(2)
+            # v1.0.1.5: Use st.rerun() to avoid scroll-to-top on DV removal
+            st.rerun()
 
         # Show removal notice from previous rerun
         _removal_notice = st.session_state.pop("_dv_removal_notice", None)
@@ -7829,7 +7834,8 @@ if active_page == 2:
             confirmed_scales.append(new_dv)
             st.session_state["confirmed_scales"] = confirmed_scales
             st.session_state["_dv_version"] = dv_version + 1
-            _navigate_to(2)
+            # v1.0.1.5: Use st.rerun() to avoid scroll-to-top on DV add
+            st.rerun()
 
         # Update session state with edited DVs
         st.session_state["confirmed_scales"] = updated_scales
@@ -7867,15 +7873,15 @@ if active_page == 2:
         _ctx_pre_missing = len(_oe_pre_list) - _ctx_pre_count
 
         if _oe_count_display > 0:
-            if _ctx_pre_count == _oe_count_display:
-                _oe_label = f"#### Open-Ended Questions ({_oe_count_display})"
-            elif _ctx_pre_count > 0:
-                _oe_label = f"#### Open-Ended Questions ({_oe_count_display})"
-            else:
-                _oe_label = f"#### Open-Ended Questions ({_oe_count_display})"
+            _oe_label = f"#### Open-Ended Questions ({_oe_count_display})"
         else:
             _oe_label = "#### Open-Ended Questions"
         st.markdown(_oe_label)
+
+        # v1.0.1.5: Show removal notice OUTSIDE expander so it's visible even when collapsed
+        _oe_removal_notice = st.session_state.pop("_oe_removal_notice", None)
+        if _oe_removal_notice:
+            st.info(_oe_removal_notice)
 
         with st.expander(
             f"Review & edit open-ended questions ({_oe_count_display}) — {_ctx_pre_count}/{_oe_count_display} have context"
@@ -7913,11 +7919,6 @@ if active_page == 2:
 
             updated_open_ended = []
             oe_to_remove = []
-
-            # v1.9.1: Show removal notice from previous rerun
-            _oe_removal_notice = st.session_state.pop("_oe_removal_notice", None)
-            if _oe_removal_notice:
-                st.info(_oe_removal_notice)
 
             if confirmed_open_ended:
                 _ctx_count = sum(1 for _oe in confirmed_open_ended if _oe.get("question_context", "").strip())
@@ -8094,12 +8095,17 @@ if active_page == 2:
                     f'</div>',
                     unsafe_allow_html=True,
                 )
-        open_ended_confirmed = st.checkbox(
-            "I confirm these open-ended questions match my survey",
-            value=st.session_state.get("open_ended_confirmed", False),
-            key=f"oe_confirm_checkbox_v{_oe_version_outer}",
-        )
-        st.session_state["open_ended_confirmed"] = open_ended_confirmed
+        # v1.0.1.5: Only show OE confirmation checkbox when there are OE questions;
+        # auto-confirm when list is empty (nothing to confirm)
+        if _oe_final:
+            open_ended_confirmed = st.checkbox(
+                "I confirm these open-ended questions match my survey",
+                value=st.session_state.get("open_ended_confirmed", False),
+                key=f"oe_confirm_checkbox_v{_oe_version_outer}",
+            )
+            st.session_state["open_ended_confirmed"] = open_ended_confirmed
+        else:
+            st.session_state["open_ended_confirmed"] = True  # Nothing to confirm
 
         # ── Attention & Manipulation Checks (collapsed) ──────────────
         preview = st.session_state.get("qsf_preview")
@@ -8394,7 +8400,7 @@ if active_page == 2:
     _design_can_next = bool(st.session_state.get("inferred_design"))
     if _design_can_next:
         st.markdown(
-            '<div class="section-done-banner">\u2713 Design configured \u2014 scroll up to continue</div>',
+            '<div class="section-done-banner">\u2713 Design configured \u2014 use the Continue button above to proceed</div>',
             unsafe_allow_html=True,
         )
 
