@@ -53,8 +53,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.0.1.4"
-BUILD_ID = "20260210-v1014-oe-removal-fix-proceed-btn"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.0.1.5"
+BUILD_ID = "20260210-v1015-builder-stale-keys-qsf-reset"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -119,7 +119,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.0.1.4"  # v1.0.1.4: OE removal fix, Remove All button, proceed button fix, UPenn removal
+APP_VERSION = "1.0.1.5"  # v1.0.1.5: Builder widget key versioning, QSF upload state reset, persist fallbacks
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -4347,7 +4347,8 @@ def _render_builder_design_review() -> None:
                 c: _per + (1 if i < _rem else 0) for i, c in enumerate(conditions)
             }
             st.session_state["condition_allocation"] = {c: round(100.0 / _n, 1) for c in conditions}
-            _navigate_to(2)
+            # v1.0.1.5: Use st.rerun() to avoid scroll-to-top on builder condition removal
+            st.rerun()
     else:
         st.warning("No conditions found. Please go back and describe your conditions.")
 
@@ -4398,7 +4399,8 @@ def _render_builder_design_review() -> None:
                 c: _per + (1 if i < _rem else 0) for i, c in enumerate(conditions)
             }
             st.session_state["condition_allocation"] = {c: round(100.0 / _n, 1) for c in conditions}
-            _navigate_to(2)
+            # v1.0.1.5: Use st.rerun() to avoid scroll-to-top on builder condition addition
+            st.rerun()
 
     # ── Factorial Structure ─────────────────────────────────────────────
     if factors:
@@ -4455,13 +4457,15 @@ def _render_builder_design_review() -> None:
     # ── Scales / DVs ────────────────────────────────────────────────────
     st.markdown("---")
     st.markdown("#### Dependent Variables / Scales")
+    # v1.0.1.5: Version counter for builder scale widget keys to prevent stale values after removal
+    _br_scale_ver = st.session_state.get("_br_scale_version", 0)
     if scales:
         scale_to_remove = None
         for i, scale in enumerate(scales):
             col1, col2, col3, col4, col5 = st.columns([3, 1, 1, 1, 0.5])
             with col1:
                 new_name = st.text_input(
-                    "Name", value=scale.get("name", ""), key=f"br_scale_name_{i}"
+                    "Name", value=scale.get("name", ""), key=f"br_scale_name_v{_br_scale_ver}_{i}"
                 )
                 if new_name.strip():
                     scale["name"] = new_name.strip()
@@ -4477,7 +4481,7 @@ def _render_builder_design_review() -> None:
             with col2:
                 new_items = st.number_input(
                     "Items", value=scale.get("num_items", 1),
-                    min_value=1, max_value=50, key=f"br_scale_items_{i}"
+                    min_value=1, max_value=50, key=f"br_scale_items_v{_br_scale_ver}_{i}"
                 )
                 scale["num_items"] = new_items
                 scale["items"] = [
@@ -4486,7 +4490,7 @@ def _render_builder_design_review() -> None:
             with col3:
                 new_min = st.number_input(
                     "Min", value=scale.get("scale_min", 1),
-                    min_value=0, max_value=100, key=f"br_scale_min_{i}"
+                    min_value=0, max_value=100, key=f"br_scale_min_v{_br_scale_ver}_{i}"
                 )
                 scale["scale_min"] = new_min
             with col4:
@@ -4496,7 +4500,7 @@ def _render_builder_design_review() -> None:
                 _safe_max = max(_cur_max, _min_for_max)
                 new_max = st.number_input(
                     "Max", value=_safe_max,
-                    min_value=_min_for_max, max_value=1000, key=f"br_scale_max_{i}"
+                    min_value=_min_for_max, max_value=1000, key=f"br_scale_max_v{_br_scale_ver}_{i}"
                 )
                 scale["scale_max"] = new_max
                 # scale_points: discrete count for likert/binary, raw max for numeric/slider
@@ -4507,7 +4511,7 @@ def _render_builder_design_review() -> None:
                     scale["scale_points"] = new_max - new_min + 1
             with col5:
                 st.markdown("<br>", unsafe_allow_html=True)
-                if st.button("Remove", key=f"br_remove_scale_{i}", help=f"Remove '{scale.get('name', 'scale')}'"):
+                if st.button("Remove", key=f"br_remove_scale_v{_br_scale_ver}_{i}", help=f"Remove '{scale.get('name', 'scale')}'"):
                     scale_to_remove = i
 
         if scale_to_remove is not None:
@@ -4515,7 +4519,9 @@ def _render_builder_design_review() -> None:
             inferred["scales"] = scales
             st.session_state["inferred_design"] = inferred
             st.session_state["confirmed_scales"] = scales
-            _navigate_to(2)
+            # v1.0.1.5: Increment version + rerun to avoid scroll-to-top and stale widget keys
+            st.session_state["_br_scale_version"] = st.session_state.get("_br_scale_version", 0) + 1
+            st.rerun()
 
         inferred["scales"] = scales
         st.session_state["inferred_design"] = inferred
@@ -4564,12 +4570,14 @@ def _render_builder_design_review() -> None:
                                 inferred["scales"] = scales
                                 st.session_state["inferred_design"] = inferred
                                 st.session_state["confirmed_scales"] = scales
-                                _navigate_to(2)
+                                # v1.0.1.5: Increment version + rerun to avoid scroll-to-top
+                                st.session_state["_br_scale_version"] = st.session_state.get("_br_scale_version", 0) + 1
+                                st.rerun()
     else:
         st.warning("No scales detected")
 
     # ── Open-Ended Questions ────────────────────────────────────────────
-    # v1.0.1.5: Version counter for builder OE widget keys to prevent stale values after removal
+    # v1.0.1.4: Version counter for builder OE widget keys to prevent stale values after removal
     _br_oe_ver = st.session_state.get("_br_oe_version", 0)
     if open_ended:
         st.markdown("---")
@@ -4672,7 +4680,7 @@ def _render_builder_design_review() -> None:
             inferred["open_ended_questions"] = open_ended
             st.session_state["inferred_design"] = inferred
             st.session_state["confirmed_open_ended"] = open_ended
-            # v1.0.1.5: Increment version counter and rerun to refresh widget keys
+            # v1.0.1.4: Increment version counter and rerun to refresh widget keys
             st.session_state["_br_oe_version"] = _br_oe_ver + 1
             st.rerun()
 
@@ -6521,6 +6529,14 @@ if active_page == 1:
                 st.session_state.pop("condition_candidates", None)
                 st.session_state.pop("selected_conditions", None)
                 st.session_state.pop("custom_conditions", None)
+                # v1.0.1.5: Clear stale design state from previous QSF or builder path
+                st.session_state.pop("scales_confirmed", None)
+                st.session_state.pop("confirmed_scales", None)
+                st.session_state.pop("confirmed_open_ended", None)
+                st.session_state.pop("inferred_design", None)
+                st.session_state.pop("open_ended_confirmed", None)
+                st.session_state.pop("_oe_version", None)
+                st.session_state.pop("_dv_version", None)
 
                 if preview.success:
                     # Naming: YYYY_MM_DD_OriginalFilename.qsf
@@ -7805,7 +7821,7 @@ if active_page == 2:
             st.session_state["confirmed_scales"] = updated_scales
             st.session_state["_dv_version"] = dv_version + 1
             st.session_state["_dv_removal_notice"] = f"Removed: {', '.join(_removed_names)}"
-            # v1.0.1.5: Use st.rerun() to avoid scroll-to-top on DV removal
+            # v1.0.1.4: Use st.rerun() to avoid scroll-to-top on DV removal
             st.rerun()
 
         # Show removal notice from previous rerun
@@ -7834,7 +7850,7 @@ if active_page == 2:
             confirmed_scales.append(new_dv)
             st.session_state["confirmed_scales"] = confirmed_scales
             st.session_state["_dv_version"] = dv_version + 1
-            # v1.0.1.5: Use st.rerun() to avoid scroll-to-top on DV add
+            # v1.0.1.4: Use st.rerun() to avoid scroll-to-top on DV add
             st.rerun()
 
         # Update session state with edited DVs
@@ -7878,7 +7894,7 @@ if active_page == 2:
             _oe_label = "#### Open-Ended Questions"
         st.markdown(_oe_label)
 
-        # v1.0.1.5: Show removal notice OUTSIDE expander so it's visible even when collapsed
+        # v1.0.1.4: Show removal notice OUTSIDE expander so it's visible even when collapsed
         _oe_removal_notice = st.session_state.pop("_oe_removal_notice", None)
         if _oe_removal_notice:
             st.info(_oe_removal_notice)
@@ -8095,7 +8111,7 @@ if active_page == 2:
                     f'</div>',
                     unsafe_allow_html=True,
                 )
-        # v1.0.1.5: Only show OE confirmation checkbox when there are OE questions;
+        # v1.0.1.4: Only show OE confirmation checkbox when there are OE questions;
         # auto-confirm when list is empty (nothing to confirm)
         if _oe_final:
             open_ended_confirmed = st.checkbox(
@@ -8482,9 +8498,12 @@ if active_page == 3:
     _gen_mode = st.session_state.get("study_input_mode", "upload_qsf")
     _input_label = "Study described" if _gen_mode == "describe_study" else "QSF uploaded"
     _has_dvs = bool(st.session_state.get("confirmed_scales")) or bool(inferred.get("scales"))
+    # v1.0.1.5: Use _p_ persist fallback — widget keys may not survive cross-page navigation
+    _gen_title = (st.session_state.get("study_title") or st.session_state.get("_p_study_title", "")).strip()
+    _gen_desc = (st.session_state.get("study_description") or st.session_state.get("_p_study_description", "")).strip()
     required_fields = {
-        "Study title": bool(st.session_state.get("study_title", "").strip()),
-        "Study description": bool(st.session_state.get("study_description", "").strip()),
+        "Study title": bool(_gen_title),
+        "Study description": bool(_gen_desc),
         "Sample size (\u226510)": int(st.session_state.get("sample_size", 0)) >= 10,
         _input_label: bool(preview and preview.success) or bool(st.session_state.get("conversational_builder_complete")),
         "Design configured": bool(inferred),
@@ -8979,7 +8998,8 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
     st.markdown("")
 
     # v1.4.9: LLM status indicator with multi-provider support and single key input
-    _has_open_ended = bool(st.session_state.get("inferred_design", {}).get("open_ended", []))
+    # v1.0.1.5: Fixed key — inferred_design uses "open_ended_questions", not "open_ended"
+    _has_open_ended = bool(st.session_state.get("inferred_design", {}).get("open_ended_questions", []))
     if not _has_open_ended:
         _has_open_ended = bool(st.session_state.get("confirmed_open_ended", []))
 
@@ -9049,7 +9069,8 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
                         del os.environ["LLM_API_KEY"]
                     # Clear cached status so it re-checks with the new key
                     st.session_state["_llm_connectivity_status"] = None
-                    _navigate_to(3)
+                    # v1.0.1.5: Use st.rerun() to avoid scroll-to-top and expander collapse
+                    st.rerun()
                 st.markdown(
                     '<span style="color:#6b7280;font-size:0.8em;">'
                     'Your key is used only for this session, kept in memory only, '
@@ -9197,8 +9218,9 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
         st.session_state["_generation_phase"] = 2  # Move to generation phase
         progress_bar = progress_placeholder.progress(5, text="Preparing simulation inputs...")
         status_placeholder.info("🔄 Preparing simulation inputs...")
-        title = st.session_state.get("study_title", "") or "Untitled Study"
-        desc = st.session_state.get("study_description", "") or ""
+        # v1.0.1.5: Use _p_ persist fallback — widget keys may not survive cross-page navigation
+        title = (st.session_state.get("study_title") or st.session_state.get("_p_study_title", "")) or "Untitled Study"
+        desc = (st.session_state.get("study_description") or st.session_state.get("_p_study_description", "")) or ""
         requested_n = int(st.session_state.get("sample_size", 200))
         if requested_n > MAX_SIMULATED_N:
             st.info(
