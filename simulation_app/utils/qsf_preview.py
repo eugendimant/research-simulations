@@ -33,7 +33,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 # Version identifier to help track deployed code
-__version__ = "1.9.1"  # v1.9.1: Error handling, scale detection feedback, open-ended question improvements
+__version__ = "1.9.2"  # v1.9.2: Replace Together.ai with Google AI Studio (Gemini)
 
 
 # ============================================================================
