@@ -7405,7 +7405,19 @@ if active_page == 2:
         scales_to_remove = []
 
         if confirmed_scales:
-            st.markdown(f"**{len(confirmed_scales)} DV(s) detected from your QSF.** Review and adjust as needed:")
+            # v1.9.1: Show count and type breakdown for detected scales
+            _type_counts: dict = {}
+            for _sc in confirmed_scales:
+                _sc_type = _sc.get("type", "likert")
+                _type_label = type_badges.get(_sc_type, "Scale").split(" ", 1)[-1] if _sc_type in type_badges else _sc_type.replace("_", " ").title()
+                _type_counts[_type_label] = _type_counts.get(_type_label, 0) + 1
+            _type_summary = ", ".join(f"{count} {name}" for name, count in sorted(_type_counts.items(), key=lambda x: -x[1]))
+            _qsf_detected_count = sum(1 for _sc in confirmed_scales if _sc.get("detected_from_qsf", True))
+            _manual_count = len(confirmed_scales) - _qsf_detected_count
+
+            st.markdown(f"**{len(confirmed_scales)} DV(s) detected** ({_type_summary}). Review and adjust as needed:")
+            if _qsf_detected_count > 0 and _manual_count > 0:
+                st.caption(f"{_qsf_detected_count} auto-detected from QSF, {_manual_count} manually added.")
 
             # v1.2.0: Column headers for clarity with tooltips
             hdr1, hdr2, hdr3a, hdr3b, hdr4, hdr5 = st.columns([2.5, 0.8, 0.6, 0.6, 1.5, 0.4])
@@ -7605,16 +7617,29 @@ if active_page == 2:
                         "scale_max": new_scale_max,
                     })
         else:
-            st.info(
-                "**No DVs detected from QSF.** This can happen if your survey uses unconventional question formats. "
-                "Click **Add DV** below to manually define your dependent variables."
+            # v1.9.1: Enhanced no-detection warning with specific guidance
+            st.warning(
+                "**No dependent variables detected from your QSF file.** "
+                "This can happen when:\n"
+                "- Your survey uses unconventional question formats or naming\n"
+                "- Questions are stored in non-standard QSF elements\n"
+                "- The survey file is a template without finalized questions\n\n"
+                "Click **+ Add DV** below to manually define your dependent variables. "
+                "You will need at least one DV to generate simulated data."
             )
 
-        # Handle removals
+        # Handle removals with visual feedback
         if scales_to_remove:
+            _removed_names = [confirmed_scales[i].get("name", f"DV {i+1}") for i in scales_to_remove if i < len(confirmed_scales)]
             st.session_state["confirmed_scales"] = updated_scales
             st.session_state["_dv_version"] = dv_version + 1
+            st.session_state["_dv_removal_notice"] = f"Removed: {', '.join(_removed_names)}"
             _navigate_to(2)
+
+        # Show removal notice from previous rerun
+        _removal_notice = st.session_state.pop("_dv_removal_notice", None)
+        if _removal_notice:
+            st.info(_removal_notice)
 
         add_clicked = st.button("+ Add DV", key=f"add_dv_btn_v{dv_version}", help="Add a new dependent variable manually.")
 
@@ -7643,16 +7668,25 @@ if active_page == 2:
         st.session_state["confirmed_scales"] = updated_scales
         scales = updated_scales if updated_scales else scales
 
-        # Confirmation checkbox with better help
+        # v1.9.1: Confirmation with scale summary and clearer feedback
+        _n_updated = len(updated_scales)
+        _confirm_label = f"I confirm these {_n_updated} DV(s) match my survey" if _n_updated > 0 else "I confirm my DV configuration"
         scales_confirmed = st.checkbox(
-            "I confirm these DVs match my survey",
+            _confirm_label,
             value=st.session_state.get("scales_confirmed", False),
             key=f"dv_confirm_checkbox_v{dv_version}",
             help="Check this box once you have verified that the variable names, item counts, and scale ranges match your actual Qualtrics survey."
         )
         st.session_state["scales_confirmed"] = scales_confirmed
 
-        if not scales_confirmed and updated_scales:
+        if scales_confirmed and updated_scales:
+            st.markdown(
+                f'<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:6px;'
+                f'padding:8px 12px;margin-top:4px;font-size:0.85em;color:#166534;">'
+                f'{_n_updated} DV(s) confirmed and ready for simulation.</div>',
+                unsafe_allow_html=True,
+            )
+        elif not scales_confirmed and updated_scales:
             st.caption("Please verify the DVs above match your survey, then check the confirmation box to proceed.")
 
         # ========================================
@@ -9564,7 +9598,15 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
         )
 
         with st.expander("Preview (first 20 rows)"):
-            st.dataframe(df.head(20), use_container_width=True)
+            try:
+                _preview_df = df.head(20)
+                if _preview_df is not None and len(_preview_df) > 0:
+                    st.dataframe(_preview_df, use_container_width=True)
+                else:
+                    st.warning("No data rows available for preview.")
+            except Exception as _preview_err:
+                st.warning(f"Could not render data preview: {_preview_err}")
+                st.caption("The data was generated successfully. Download the ZIP to access it.")
 
         # v1.2.5: Data Quality Report expander
         quality_checks = st.session_state.get("_quality_checks", [])
