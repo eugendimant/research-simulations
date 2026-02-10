@@ -53,8 +53,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.0.2.1"
-BUILD_ID = "20260210-v1021-fix-nav-btns-ux-polish"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.0.2.2"
+BUILD_ID = "20260210-v1022-visual-stepper-bottom-nav"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -119,7 +119,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.0.2.1"  # v1.0.2.1: Fix nav buttons, consistent bottom nav, stepper UX polish
+APP_VERSION = "1.0.2.2"  # v1.0.2.2: Visual-only stepper, bottom nav primary, UX polish
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -5488,7 +5488,7 @@ section[data-testid="stSidebar"] .stCaption { line-height: 1.4; }
     transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
     position: relative;
     z-index: 2;
-    cursor: pointer;
+    cursor: default;
     border: 2px solid transparent;
 }
 /* Done state — green with checkmark */
@@ -5498,10 +5498,7 @@ section[data-testid="stSidebar"] .stCaption { line-height: 1.4; }
     border-color: #22C55E;
     box-shadow: 0 2px 8px rgba(34, 197, 94, 0.25);
 }
-.stepper-step.st-done .stepper-circle:hover {
-    transform: scale(1.1);
-    box-shadow: 0 3px 12px rgba(34, 197, 94, 0.35);
-}
+/* v1.0.2.2: Stepper is visual-only — no click hover effects */
 /* Active state — blue with number */
 .stepper-step.st-active .stepper-circle {
     background: #3B82F6;
@@ -5537,11 +5534,7 @@ section[data-testid="stSidebar"] .stCaption { line-height: 1.4; }
     color: #9CA3AF;
     border-color: #D1D5DB;
 }
-.stepper-step.st-upcoming .stepper-circle:hover {
-    border-color: #9CA3AF;
-    color: #6B7280;
-    background: #F3F4F6;
-}
+/* v1.0.2.2: upcoming hover removed (visual-only stepper) */
 /* v1.0.2.0: "Next step" indicator — pulsing border when step is the next target */
 .stepper-step.st-next-target .stepper-circle {
     background: #FFF7ED;
@@ -5602,7 +5595,7 @@ section[data-testid="stSidebar"] .stCaption { line-height: 1.4; }
     transition: color 0.2s ease;
     line-height: 1.3;
     max-width: 90px;
-    cursor: pointer;
+    cursor: default;
     user-select: none;
 }
 .stepper-step.st-done .stepper-title {
@@ -5652,10 +5645,14 @@ section[data-testid="stSidebar"] .stCaption { line-height: 1.4; }
 .section-guide {
     font-size: 13px; color: #6B7280;
     margin: 0 0 16px 0;
-    padding: 8px 14px;
-    background: #F9FAFB;
+    padding: 10px 16px;
+    background: linear-gradient(135deg, #F9FAFB 0%, #F3F4F6 100%);
     border-radius: 8px;
-    border-left: 3px solid #D1D5DB;
+    border-left: 3px solid #3B82F6;
+}
+.section-guide strong {
+    color: #1E40AF;
+    font-size: 13px;
 }
 
 /* Section complete banner */
@@ -5755,10 +5752,11 @@ section[data-testid="stSidebar"] .stCaption { line-height: 1.4; }
 }
 .stButton button[kind="primary"] {
     border-radius: 10px !important;
-    font-size: 0.85rem !important;
+    font-size: 0.88rem !important;
     font-weight: 600 !important;
     transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
-    padding: 8px 20px !important;
+    padding: 10px 24px !important;
+    letter-spacing: 0.01em !important;
 }
 .stButton button[kind="primary"]:hover {
     transform: translateY(-2px) !important;
@@ -5812,48 +5810,20 @@ section[data-testid="stSidebar"] .stCaption { line-height: 1.4; }
 .confirm-checkpoint.confirmed .confirm-checkpoint-label {
     color: #166534;
 }
-</style>
-<script>
-/* v1.0.2.1: MutationObserver — hide stepper nav buttons the instant they appear.
-   Injected early (before _render_flow_nav) so buttons never flash on screen.
-   Buttons remain in DOM for programmatic .click() from stepper wiring JS. */
-(function() {
-    var doc = window.parent.document;
-    if (doc._navBtnObs) { try { doc._navBtnObs.disconnect(); } catch(e) {} }
-    var RE = /^nav_\d$/;
-    function hide() {
-        doc.querySelectorAll('button').forEach(function(btn) {
-            if (RE.test((btn.textContent || '').trim())) {
-                var block = btn.closest('[data-testid="stHorizontalBlock"]');
-                if (block && !block.getAttribute('data-nav-hidden')) {
-                    block.setAttribute('data-nav-hidden', '1');
-                    block.style.cssText = 'position:absolute!important;left:-9999px!important;height:0!important;overflow:hidden!important;pointer-events:none!important;opacity:0!important;';
-                }
-            }
-        });
-    }
-    hide();
-    try {
-        var t = doc.querySelector('[data-testid="stAppViewContainer"]') || doc.body;
-        var obs = new MutationObserver(hide);
-        obs.observe(t, {childList:true, subtree:true});
-        doc._navBtnObs = obs;
-        setTimeout(function() { obs.disconnect(); doc._navBtnObs = null; }, 15000);
-    } catch(e) {}
-})();
-</script>"""
+</style>"""
 
 
 def _render_flow_nav(active: int, done: List[bool]) -> None:
-    """Render enhanced stepper progress bar with visual states and click navigation.
+    """Render visual stepper progress bar showing wizard state.
 
-    v1.0.2.0: Clickable stepper replaces bottom Continue buttons.
-    - Completed steps: green circle + checkmark, clickable to revisit
+    v1.0.2.2: Pure visual stepper — no hidden buttons or JavaScript.
+    Navigation is handled by the bottom nav buttons on each page.
+    - Completed steps: green circle + checkmark
     - Active step: blue circle + number with subtle pulse
+    - Active+done: green circle + checkmark (signals ready to move on)
     - Next-target step: orange pulsing circle when current step is complete
-    - Upcoming steps: gray outline, clickable if previous step done
-    - Locked steps: dimmed, not clickable
-    Hidden Streamlit buttons + JavaScript wire stepper clicks to navigation.
+    - Upcoming steps: gray outline
+    - Locked steps: dimmed with tooltip
     Includes #btt-anchor for "Back to top" links at the bottom of pages.
     """
     while len(done) < len(SECTION_META):
@@ -5908,12 +5878,6 @@ def _render_flow_nav(active: int, done: List[bool]) -> None:
         '</svg>'
     )
 
-    # v1.0.2.0: Build clickable states list for JS
-    clickable_steps = [
-        (state in ("done", "upcoming", "next-target")) and i != active
-        for i, state in enumerate(step_states)
-    ]
-
     html = '<div class="stepper-nav">'
     for i, sm in enumerate(SECTION_META):
         state = step_states[i]
@@ -5935,7 +5899,7 @@ def _render_flow_nav(active: int, done: List[bool]) -> None:
         elif i == active and _active_done:
             summary = _section_summary(i) or "Complete"  # v1.0.2.1: Show summary on active-done
         elif state == "next-target":
-            summary = "Click to continue"
+            summary = "Up next"
         else:
             summary = sm["desc"]
 
@@ -5949,68 +5913,7 @@ def _render_flow_nav(active: int, done: List[bool]) -> None:
     html += '</div>'
 
     st.markdown(html, unsafe_allow_html=True)
-
-    # v1.0.2.0: Hidden navigation buttons triggered by stepper clicks
-    # Each button is rendered in a hidden container; JavaScript finds and clicks them.
-    _stepper_cols = st.columns(len(SECTION_META))
-    for i in range(len(SECTION_META)):
-        with _stepper_cols[i]:
-            if clickable_steps[i]:
-                if st.button(
-                    f"nav_{i}",
-                    key=f"_stepper_nav_{i}",
-                    type="secondary",
-                    use_container_width=True,
-                ):
-                    _navigate_to(i)
-
-    # v1.0.2.1: Wire stepper clicks → hidden nav buttons via MutationObserver.
-    # Button hiding is handled by the early-loaded MutationObserver in _FLOW_NAV_CSS.
-    _clickable_json = str(clickable_steps).lower()
-    st.markdown(f'''<script>
-(function() {{
-    var clickable = {_clickable_json};
-    var doc = window.parent.document;
-    /* Clear stale wiring from previous Streamlit reruns */
-    if (doc._stepperWireObs) {{ try {{ doc._stepperWireObs.disconnect(); }} catch(e) {{}} }}
-    doc.querySelectorAll('.stepper-step[data-wired]').forEach(function(el) {{
-        el.removeAttribute('data-wired');
-    }});
-    function wireSteps() {{
-        var steps = doc.querySelectorAll('.stepper-step');
-        var wired = 0;
-        steps.forEach(function(stepEl) {{
-            var idx = parseInt(stepEl.getAttribute('data-step'));
-            if (isNaN(idx) || !clickable[idx]) return;
-            if (stepEl.getAttribute('data-wired')) {{ wired++; return; }}
-            stepEl.setAttribute('data-wired', '1');
-            stepEl.style.cursor = 'pointer';
-            wired++;
-            stepEl.addEventListener('click', function() {{
-                var btns = doc.querySelectorAll('button');
-                for (var b = 0; b < btns.length; b++) {{
-                    if ((btns[b].textContent || '').trim() === 'nav_' + idx) {{
-                        btns[b].click();
-                        return;
-                    }}
-                }}
-            }});
-        }});
-        return wired;
-    }}
-    wireSteps();
-    try {{
-        var expected = clickable.filter(Boolean).length;
-        var t = doc.querySelector('[data-testid="stAppViewContainer"]') || doc.body;
-        var obs = new MutationObserver(function() {{
-            if (wireSteps() >= expected) obs.disconnect();
-        }});
-        obs.observe(t, {{childList:true, subtree:true}});
-        doc._stepperWireObs = obs;
-        setTimeout(function() {{ obs.disconnect(); }}, 10000);
-    }} catch(e) {{}}
-}})();
-</script>''', unsafe_allow_html=True)
+    # v1.0.2.2: Stepper is visual-only. Navigation via bottom page buttons.
 
 
 _SCROLL_TO_TOP_JS = """<script>
@@ -6684,7 +6587,9 @@ if active_page == 0:
 
     # v1.8.0: Hero card removed — now on landing page
     st.markdown(
-        '<div class="section-guide">Enter a title and brief description of your study. '
+        '<div class="section-guide">'
+        '<strong>Step 1 &middot; Setup</strong> &mdash; '
+        'Enter a title and brief description of your study. '
         'These are embedded in all generated outputs.</div>',
         unsafe_allow_html=True,
     )
@@ -6778,13 +6683,24 @@ if active_page == 0:
 if active_page == 1:
     st.markdown('<div class="flow-section">', unsafe_allow_html=True)
     st.markdown(
-        '<div class="section-guide">Upload a Qualtrics .qsf file for automatic detection of conditions, '
+        '<div class="section-guide">'
+        '<strong>Step 2 &middot; Study Input</strong> &mdash; '
+        'Upload a Qualtrics .qsf file for automatic detection of conditions, '
         'scales, and randomizers &mdash; or describe your design in plain text.</div>',
         unsafe_allow_html=True,
     )
     completion = _get_step_completion()
     step1_done = completion["study_title"] and completion["study_description"]
     step2_done = completion["qsf_uploaded"]
+
+    # v1.0.2.2: Section-done banner when step is complete
+    if step2_done:
+        st.markdown(
+            '<div class="section-done-banner">'
+            '\u2705 Study input complete \u2014 continue to Design'
+            '</div>',
+            unsafe_allow_html=True,
+        )
 
     if not step1_done:
         st.warning("Complete **Setup** first — enter your study title and description, then return here.")
@@ -7258,6 +7174,8 @@ if active_page == 1:
         if _step_done[1]:
             if st.button("Continue to Design \u2192", key="auto_advance_1", type="primary", use_container_width=True):
                 _navigate_to(2)
+        else:
+            st.caption("Upload QSF or describe study to continue")
 
     st.markdown('</div>', unsafe_allow_html=True)
 
@@ -7271,10 +7189,20 @@ if active_page == 2:
         _inject_scroll_to_top_js()
     st.markdown('<div class="flow-section">', unsafe_allow_html=True)
     st.markdown(
-        '<div class="section-guide">Review and configure your experimental conditions, '
+        '<div class="section-guide">'
+        '<strong>Step 3 &middot; Design</strong> &mdash; '
+        'Review and configure your experimental conditions, '
         'dependent variables, and sample allocation.</div>',
         unsafe_allow_html=True,
     )
+    # v1.0.2.2: Section-done banner when step is complete
+    if _step_done[2]:
+        st.markdown(
+            '<div class="section-done-banner">'
+            '\u2705 Design complete \u2014 continue to Generate'
+            '</div>',
+            unsafe_allow_html=True,
+        )
     preview: Optional[QSFPreviewResult] = st.session_state.get("qsf_preview", None)
     enhanced_analysis: Optional[DesignAnalysisResult] = st.session_state.get("enhanced_analysis", None)
 
@@ -8670,6 +8598,8 @@ if active_page == 2:
         if _step_done[2]:
             if st.button("Continue to Generate \u2192", key="auto_advance_2", type="primary", use_container_width=True):
                 _navigate_to(3)
+        else:
+            st.caption("Configure conditions & DVs to continue")
 
     st.markdown('</div>', unsafe_allow_html=True)
 
@@ -8680,7 +8610,9 @@ if active_page == 2:
 if active_page == 3:
     st.markdown('<div class="flow-section">', unsafe_allow_html=True)
     st.markdown(
-        '<div class="section-guide">Choose your difficulty level, review the design summary, '
+        '<div class="section-guide">'
+        '<strong>Step 4 &middot; Generate</strong> &mdash; '
+        'Choose your difficulty level, review the design summary, '
         'and generate your simulated dataset.</div>',
         unsafe_allow_html=True,
     )
