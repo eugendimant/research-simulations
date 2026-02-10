@@ -53,8 +53,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.8.8.2"
-BUILD_ID = "20260210-v1882-dashboard-normality-significance"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.8.9"
+BUILD_ID = "20260210-v189-analytics-power-validation"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -119,7 +119,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.8.8.2"  # v1.8.8.2: Dashboard normality, significance stars, target vs realized, condition demographics
+APP_VERSION = "1.8.9"  # v1.8.9: Analytics power analysis, sample adequacy, validation improvements, landing page updates
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -1789,6 +1789,24 @@ def _render_analytics_dashboard(
     conditions = sorted(df["CONDITION"].unique()) if "CONDITION" in df.columns else []
     n_conditions = len(conditions)
 
+    # ──────────────────────────────────────────────────────────────
+    # v1.8.9: SAMPLE ADEQUACY SUMMARY (quick at-a-glance metrics)
+    # ──────────────────────────────────────────────────────────────
+    _adeq_cols = st.columns(4)
+    _total_n = len(df)
+    _per_cell_n = _total_n // max(n_conditions, 1) if n_conditions > 0 else _total_n
+    _adequacy_label = "Excellent" if _per_cell_n >= 50 else "Good" if _per_cell_n >= 30 else "Adequate" if _per_cell_n >= 20 else "Low"
+    _adequacy_color = "#22c55e" if _per_cell_n >= 30 else "#f59e0b" if _per_cell_n >= 20 else "#ef4444"
+    _adeq_cols[0].metric("Total N", _total_n)
+    _adeq_cols[1].metric("Conditions", n_conditions)
+    _adeq_cols[2].metric("Per Cell", _per_cell_n)
+    _adeq_cols[3].markdown(
+        f'<div style="text-align:center;padding-top:8px;">'
+        f'<span style="font-size:0.78rem;color:#6b7280;">Sample Adequacy</span><br>'
+        f'<span style="font-size:1.3rem;font-weight:700;color:{_adequacy_color};">{_adequacy_label}</span></div>',
+        unsafe_allow_html=True,
+    )
+
     # Identify composite columns (scale means)
     _composite_cols = [c for c in df.columns if c.endswith("_mean") and df[c].dtype in ("float64", "float32", "int64")]
     if not _composite_cols:
@@ -1814,15 +1832,23 @@ def _render_analytics_dashboard(
                 for cond in conditions:
                     _subset = df.loc[df["CONDITION"] == cond, col].dropna()
                     if len(_subset) > 0:
+                        _mean = float(_subset.mean())
+                        _sd = float(_subset.std())
+                        _n = len(_subset)
+                        # v1.8.9: Add 95% CI for means
+                        _se = _sd / np.sqrt(_n) if _n > 1 else 0
+                        _ci_lo = round(_mean - 1.96 * _se, 3)
+                        _ci_hi = round(_mean + 1.96 * _se, 3)
                         _desc_rows.append({
                             "Scale": _clean,
                             "Condition": cond,
-                            "N": len(_subset),
-                            "Mean": round(float(_subset.mean()), 3),
-                            "SD": round(float(_subset.std()), 3),
+                            "N": _n,
+                            "Mean": round(_mean, 3),
+                            "SD": round(_sd, 3),
+                            "95% CI": f"[{_ci_lo}, {_ci_hi}]",
                             "Min": round(float(_subset.min()), 2),
                             "Max": round(float(_subset.max()), 2),
-                            "Skewness": round(float(_subset.skew()), 3) if len(_subset) > 2 else 0,
+                            "Skewness": round(float(_subset.skew()), 3) if _n > 2 else 0,
                         })
             if _desc_rows:
                 _desc_df = pd.DataFrame(_desc_rows)
@@ -2072,6 +2098,52 @@ def _render_analytics_dashboard(
                 )
 
     # ──────────────────────────────────────────────────────────────
+    # v1.8.9: SECTION 4b: Post-Hoc Power Analysis Summary
+    # ──────────────────────────────────────────────────────────────
+    if _composite_cols and n_conditions >= 2 and _es_rows:
+        with st.expander("Post-Hoc Power Estimates", expanded=False):
+            st.caption(
+                "Approximate power for detecting the observed effect sizes at α = .05 (two-tailed). "
+                "These are post-hoc estimates — interpret with caution."
+            )
+            _power_rows = []
+            for row in _es_rows:
+                _d_obs = abs(row["Cohen's d"])
+                _n_per_group = _per_cell_n
+                # Approximate power using normal approximation for two-sample t-test
+                # noncentrality parameter: δ = d * sqrt(n/2)
+                _ncp = _d_obs * np.sqrt(_n_per_group / 2) if _n_per_group > 0 else 0
+                # Power ≈ Φ(δ - z_α/2) for large samples
+                from scipy import stats as _sp_pwr
+                _z_crit = 1.96
+                _power = float(_sp_pwr.norm.cdf(_ncp - _z_crit))
+                _power_label = "High" if _power >= 0.80 else "Moderate" if _power >= 0.50 else "Low"
+                _power_rows.append({
+                    "Comparison": row["Scale"],
+                    "|d|": round(_d_obs, 3),
+                    "n/group": _n_per_group,
+                    "Est. Power": f"{_power:.0%}",
+                    "Adequacy": _power_label,
+                })
+            if _power_rows:
+                _pwr_df = pd.DataFrame(_power_rows)
+                st.dataframe(
+                    _pwr_df.style.map(
+                        lambda v: "background-color: #dcfce7" if v == "High"
+                        else "background-color: #fef9c3" if v == "Moderate"
+                        else "background-color: #fee2e2" if v in ("Low",) else "",
+                        subset=["Adequacy"],
+                    ),
+                    use_container_width=True,
+                )
+                _underpowered = sum(1 for r in _power_rows if r["Adequacy"] == "Low")
+                if _underpowered > 0:
+                    st.info(
+                        f"{_underpowered} comparison(s) appear underpowered (< 50%). "
+                        "Consider increasing sample size or targeting larger effects."
+                    )
+
+    # ──────────────────────────────────────────────────────────────
     # SECTION 5: Normality Assessment
     # ──────────────────────────────────────────────────────────────
     if _composite_cols and conditions:
@@ -2181,6 +2253,31 @@ def _render_analytics_dashboard(
             _cond_counts = df["CONDITION"].value_counts()
             _balance = 1 - (_cond_counts.max() - _cond_counts.min()) / max(1, len(df))
             _q_cols[3].metric("Balance Score", f"{_balance:.2f}")
+
+        # v1.8.9: Data completeness per scale
+        if _composite_cols:
+            st.markdown("**Scale Completeness**")
+            _comp_rows = []
+            for col in _composite_cols:
+                _n_valid = int(df[col].notna().sum())
+                _n_total = len(df)
+                _pct = (_n_valid / _n_total * 100) if _n_total > 0 else 0
+                _comp_rows.append({
+                    "Scale": col.replace("_mean", "").replace("_", " "),
+                    "Valid": _n_valid,
+                    "Missing": _n_total - _n_valid,
+                    "Complete %": round(_pct, 1),
+                })
+            if _comp_rows:
+                st.dataframe(
+                    pd.DataFrame(_comp_rows).style.map(
+                        lambda v: "background-color: #dcfce7" if isinstance(v, float) and v >= 95
+                        else "background-color: #fef9c3" if isinstance(v, float) and v >= 80
+                        else "background-color: #fee2e2" if isinstance(v, (int, float)) else "",
+                        subset=["Complete %"],
+                    ),
+                    use_container_width=True,
+                )
 
         # Missing data detail
         _md_meta = metadata.get("missing_data", {})
@@ -4624,7 +4721,10 @@ def _render_builder_design_review() -> None:
 
 
 def _get_step_completion() -> Dict[str, bool]:
-    """Get completion status for each step."""
+    """Get completion status for each step.
+
+    v1.8.9: Accounts for both QSF-upload and conversational-builder paths.
+    """
     preview = st.session_state.get("qsf_preview", None)
 
     # Check variable roles for primary outcome and independent variable
@@ -4632,15 +4732,37 @@ def _get_step_completion() -> Dict[str, bool]:
     has_primary_outcome = any(r.get("Role") == "Primary outcome" for r in variable_rows)
     has_independent_var = any(r.get("Role") == "Condition" for r in variable_rows)
 
+    # v1.8.9: Builder path may not have variable_review_rows — check confirmed_scales instead
+    is_builder = bool(st.session_state.get("conversational_builder_complete"))
+    confirmed_scales = st.session_state.get("confirmed_scales", [])
+    if is_builder and not has_primary_outcome and confirmed_scales:
+        has_primary_outcome = True  # Builder always creates scales as primary outcomes
+    if is_builder and not has_independent_var:
+        inferred = st.session_state.get("inferred_design", {})
+        has_independent_var = bool(inferred.get("conditions"))
+
+    # v1.8.9: Also consider conditions from inferred_design (covers builder path)
+    _conditions_set = bool(
+        st.session_state.get("selected_conditions")
+        or st.session_state.get("custom_conditions")
+        or (is_builder and st.session_state.get("inferred_design", {}).get("conditions"))
+    )
+
+    # v1.8.9: Check DVs are configured (confirmed_scales present)
+    _dvs_configured = bool(confirmed_scales) or bool(
+        st.session_state.get("inferred_design", {}).get("scales")
+    )
+
     return {
         "study_title": bool((st.session_state.get("study_title") or st.session_state.get("_p_study_title", "")).strip()),
         "study_description": bool((st.session_state.get("study_description") or st.session_state.get("_p_study_description", "")).strip()),
         "sample_size": int(st.session_state.get("sample_size", 0)) >= 10,
-        "qsf_uploaded": bool(preview and preview.success) or bool(st.session_state.get("conversational_builder_complete")),
-        "conditions_set": bool(st.session_state.get("selected_conditions") or st.session_state.get("custom_conditions")),
+        "qsf_uploaded": bool(preview and preview.success) or is_builder,
+        "conditions_set": _conditions_set,
         "primary_outcome": has_primary_outcome,
         "independent_var": has_independent_var,
         "design_ready": bool(st.session_state.get("inferred_design")),
+        "dvs_configured": _dvs_configured,
     }
 
 
@@ -4686,6 +4808,22 @@ def _preflight_validation() -> List[str]:
                 f"Condition allocation sums to {total} but sample size is {n}. "
                 "Go to Design and click 'Auto-balance'."
             )
+        # v1.8.9: Warn about dangerously small cell sizes
+        min_cell = min(alloc_n.values()) if alloc_n else 0
+        if min_cell < 5 and n >= 10:
+            errors.append(
+                f"Smallest condition has only {min_cell} participants. "
+                "Minimum recommended is 5 per cell for basic analyses."
+            )
+
+    # v1.8.9: Check for confirmed scales consistency
+    confirmed = st.session_state.get("confirmed_scales", [])
+    for s in confirmed:
+        s_min = s.get("scale_min", 1)
+        s_max = s.get("scale_max", 7)
+        if isinstance(s_min, (int, float)) and isinstance(s_max, (int, float)):
+            if s_min >= s_max:
+                errors.append(f"Scale '{s.get('name', '?')}' has min ({s_min}) >= max ({s_max}). Fix in Design.")
 
     return errors
 
@@ -5456,7 +5594,7 @@ _step_completion = _get_step_completion()
 _step_done = [
     _step_completion["study_title"] and _step_completion["study_description"],
     _step_completion["qsf_uploaded"],
-    _step_completion["conditions_set"] and _step_completion["design_ready"],
+    _step_completion["conditions_set"] and _step_completion["design_ready"] and _step_completion.get("dvs_configured", True),
     bool(st.session_state.get("has_generated")),
 ]
 
@@ -5683,6 +5821,19 @@ if active_page == -1:
         unsafe_allow_html=True,
     )
 
+    # v1.8.9: Enterprise / institutional trust signals
+    st.markdown(
+        '<div style="max-width:780px;margin:16px auto 0;padding:8px 20px;">'
+        '<div style="display:flex;justify-content:center;gap:32px;flex-wrap:wrap;'
+        'color:#6b7280;font-size:0.78rem;text-align:center;">'
+        '<span>225+ research domains</span>'
+        '<span>40 question types</span>'
+        '<span>5 analysis languages</span>'
+        '<span>50+ behavioral personas</span>'
+        '</div></div>',
+        unsafe_allow_html=True,
+    )
+
     st.markdown('<div style="max-width:780px;margin:0 auto;padding:0 20px;"><hr style="border:none;border-top:1px solid #F3F4F6;margin:0;"></div>', unsafe_allow_html=True)
 
     # How it works
@@ -5727,6 +5878,25 @@ if active_page == -1:
     with _cta_col2:
         if st.button("Start Your Simulation  \u2192", type="primary", use_container_width=True, key="landing_cta"):
             _navigate_to(0)
+
+    # v1.8.9: Use-case signals for enterprise/institutional visitors
+    with st.expander("Who uses this tool?"):
+        st.markdown("""
+**Researchers & PIs** — Validate analysis pipelines before IRB data collection. Simulate expected
+effect sizes and power for grant proposals. Test factorial designs without waiting for participant recruitment.
+
+**University Instructors** — Assign realistic data analysis exercises where every student gets unique
+datasets. Instructor-only reports provide answer keys with effect sizes and statistical summaries.
+
+**Market Research Teams** — Prototype survey instruments and verify that analysis code handles
+real-world response patterns (attention failures, straight-lining, dropout) before fielding.
+
+**UX Research Groups** — Generate pilot data to test analysis workflows for A/B tests, preference
+studies, and usability scales before committing to costly participant panels.
+
+**Government & Policy Labs** — Simulate citizen survey responses across demographic segments
+to validate measurement instruments and analysis plans before public deployment.
+""")
 
     # ── Reference sections (expandable, at the bottom) ──
     st.markdown('<div style="max-width:780px;margin:24px auto 0;padding:0 20px;"><hr style="border:none;border-top:1px solid #F3F4F6;margin:0;"></div>', unsafe_allow_html=True)
@@ -5859,11 +6029,9 @@ if active_page == 0:
         key="study_description",
     )
 
-    # v1.7.0: Persist widget values immediately after rendering
-    if study_title:
-        st.session_state["_p_study_title"] = study_title
-    if study_description:
-        st.session_state["_p_study_description"] = study_description
+    # v1.8.9: Always persist widget values (including empty) so clearing a field sticks
+    st.session_state["_p_study_title"] = study_title or ""
+    st.session_state["_p_study_description"] = study_description or ""
 
     with st.expander("Team information (optional)"):
         _t1, _t2 = st.columns(2)
@@ -5881,6 +6049,9 @@ if active_page == 0:
                 placeholder="John Doe\nJane Smith",
                 key="team_members_raw",
             )
+        # v1.8.9: Persist team fields too (was missing _p_ pattern)
+        st.session_state["_p_team_name"] = team_name or ""
+        st.session_state["_p_team_members_raw"] = members or ""
 
     # Navigation (v1.8.7.4: minimal — just back + continue, no scroll-up-first)
     if not step1_done:
@@ -6002,6 +6173,10 @@ if active_page == 1:
                 st.session_state["qsf_preview"] = preview
                 st.session_state["qsf_raw_content"] = payload
                 st.session_state["qsf_file_name"] = qsf_file.name
+                # v1.8.9: Clear cached condition candidates on new upload
+                st.session_state.pop("condition_candidates", None)
+                st.session_state.pop("selected_conditions", None)
+                st.session_state.pop("custom_conditions", None)
 
                 if preview.success:
                     # Naming: YYYY_MM_DD_OriginalFilename.qsf
@@ -6540,10 +6715,15 @@ if active_page == 2:
             with col_add2:
                 st.write("")  # Spacer
                 if st.button("Add →", key="add_condition_btn", disabled=not new_condition.strip()):
-                    if new_condition.strip() and new_condition.strip() not in custom_conditions:
-                        custom_conditions.append(new_condition.strip())
+                    _nc = new_condition.strip()
+                    # v1.8.9: Case-insensitive duplicate check across all sources
+                    _all_existing = [c.lower() for c in custom_conditions + selected]
+                    if _nc and _nc.lower() not in _all_existing:
+                        custom_conditions.append(_nc)
                         st.session_state["custom_conditions"] = custom_conditions
                         _navigate_to(2)
+                    elif _nc and _nc.lower() in _all_existing:
+                        st.warning(f"Condition '{_nc}' already exists (case-insensitive match).")
 
             # Show custom conditions with remove buttons
             if custom_conditions:
@@ -6673,7 +6853,7 @@ if active_page == 2:
                 # Proportionally adjust existing allocations to match new total
                 old_alloc = st.session_state.get("condition_allocation_n", {})
                 old_total = sum(old_alloc.values())
-                if old_total > 0:
+                if old_total > 0 and sample_size > 0:
                     scale = sample_size / old_total
                     new_alloc = {}
                     running_total = 0
@@ -6755,6 +6935,10 @@ if active_page == 2:
             else:
                 st.success(f"✓ Allocations sum to {sample_size}")
                 st.session_state["condition_allocation_n"] = new_allocation_n
+                # v1.8.9: Per-cell-N power warning
+                _min_cell_n = min(new_allocation_n.values()) if new_allocation_n else 0
+                if _min_cell_n < 20:
+                    st.caption(f"⚠️ Smallest cell has {_min_cell_n} participants. Consider at least 20 per cell for adequate statistical power.")
 
             # Convert to percentage-based allocation for the simulation engine
             st.session_state["condition_allocation"] = {
@@ -7176,6 +7360,11 @@ if active_page == 2:
                                 key=f"dv_max_v{dv_version}_{i}",
                                 help="Maximum scale value (e.g., 5, 7, 10, 100)"
                             )
+
+                    # v1.8.9: Validate min < max and warn user
+                    if new_scale_max <= new_scale_min:
+                        st.warning(f"⚠️ Max ({new_scale_max}) must be greater than Min ({new_scale_min}). Adjusting Max to {new_scale_min + 1}.")
+                        new_scale_max = new_scale_min + 1
 
                     # Calculate scale_points from min/max for compatibility
                     scale_points = new_scale_max  # Used for data generation
@@ -7778,15 +7967,17 @@ if active_page == 3:
         st.markdown('</div>', unsafe_allow_html=True)
         st.stop()
 
-    # v1.6.0: Readiness checklist — compact inline
+    # v1.8.9: Readiness checklist — compact inline, includes DVs
     _gen_mode = st.session_state.get("study_input_mode", "upload_qsf")
     _input_label = "Study described" if _gen_mode == "describe_study" else "QSF uploaded"
+    _has_dvs = bool(st.session_state.get("confirmed_scales")) or bool(inferred.get("scales"))
     required_fields = {
         "Study title": bool(st.session_state.get("study_title", "").strip()),
         "Study description": bool(st.session_state.get("study_description", "").strip()),
         "Sample size (\u226510)": int(st.session_state.get("sample_size", 0)) >= 10,
         _input_label: bool(preview and preview.success) or bool(st.session_state.get("conversational_builder_complete")),
         "Design configured": bool(inferred),
+        "DVs defined": _has_dvs,
     }
 
     missing_fields = [label for label, ok in required_fields.items() if not ok]
@@ -7806,12 +7997,15 @@ if active_page == 3:
     scale_names = [s.get('name', 'Unknown') for s in scales if s.get('name')]
     _sample_n = st.session_state.get('sample_size', 0)
 
-    _gc1, _gc2, _gc3, _gc4 = st.columns(4)
+    _gc1, _gc2, _gc3, _gc4, _gc5 = st.columns(5)
     _study_title_display = st.session_state.get('study_title', 'Untitled')
-    _gc1.metric("Study", _study_title_display[:40] + ('...' if len(_study_title_display) > 40 else ''))
+    _gc1.metric("Study", _study_title_display[:30] + ('...' if len(_study_title_display) > 30 else ''))
     _gc2.metric("N", _sample_n)
     _gc3.metric("Conditions", len(conditions))
     _gc4.metric("Scales", len(scale_names))
+    # v1.8.9: Show per-cell N for quick power assessment
+    _per_cell = _sample_n // max(len(conditions), 1) if _sample_n else 0
+    _gc5.metric("Per cell", _per_cell, help="Approximate participants per condition")
 
     # ========================================
     # v1.0.0: DIFFICULTY LEVEL SELECTOR
