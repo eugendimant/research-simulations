@@ -53,8 +53,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.0.2.3"
-BUILD_ID = "20260210-v1023-top-nav-no-bottom-continue"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.0.2.4"
+BUILD_ID = "20260210-v1024-compact-nav-placeholder-fix"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -119,7 +119,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.0.2.3"  # v1.0.2.3: Top nav buttons, no bottom Continue, checkbox fix, consistent metrics
+APP_VERSION = "1.0.2.4"  # v1.0.2.4: Compact nav, placeholder fwd button, page 3 nav fix
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -5027,7 +5027,10 @@ def _section_summary(idx: int) -> str:
     elif idx == 2:
         conds = st.session_state.get("selected_conditions", [])
         n = len(conds)
-        if n:
+        _n_scales = len(st.session_state.get("confirmed_scales", []))
+        if n and _n_scales:
+            return f"Conditions, factors & outcomes"
+        elif n:
             return f"{n} condition{'s' if n != 1 else ''}"
         return ""
     elif idx == 3:
@@ -5920,7 +5923,7 @@ def _render_flow_nav(active: int, done: List[bool]) -> None:
     html += '</div>'
 
     st.markdown(html, unsafe_allow_html=True)
-    # v1.0.2.2: Stepper is visual-only. Navigation via bottom page buttons.
+    # v1.0.2.4: Stepper is visual-only. Navigation via top buttons below stepper.
 
 
 _SCROLL_TO_TOP_JS = """<script>
@@ -6132,23 +6135,21 @@ _step_done = [
 if active_page >= 0:
     _render_flow_nav(active_page, _step_done)
 
-    # v1.0.2.3: Top navigation buttons below stepper for pages 2-4.
+    # v1.0.2.4: Top navigation buttons below stepper for pages 2-4.
     # Page 1 (Setup) is short — uses bottom nav instead.
     # Pages 2-4: ALL navigation (Back + Continue) lives here at the top.
+    # Forward button uses st.empty() placeholder — filled at end of each page
+    # to avoid one-rerun-lag (page content sets completion state AFTER this runs).
+    _top_fwd_ph = None  # Placeholder for forward nav (filled per-page)
     if active_page >= 1:
         _prev_labels = {1: "\u2190 Setup", 2: "\u2190 Study Input", 3: "\u2190 Design"}
-        _next_labels = {1: "Design \u2192", 2: "Generate \u2192"}
-        _tnl, _tnr = st.columns([1, 1])
+        _tnl, _tnspc, _tnr = st.columns([1, 2, 1])
         with _tnl:
             if st.button(_prev_labels.get(active_page, "\u2190 Back"), key=f"top_back_{active_page}", type="secondary"):
                 _navigate_to(active_page - 1)
-        with _tnr:
-            if active_page < 3 and _step_done[active_page]:
-                if st.button(_next_labels.get(active_page, "Next \u2192"), key=f"top_fwd_{active_page}", type="primary", use_container_width=True):
-                    _navigate_to(active_page + 1)
-            elif active_page < 3:
-                _step_hints = {1: "Complete this step to unlock Design", 2: "Complete this step to unlock Generate"}
-                st.caption(_step_hints.get(active_page, "Complete this step to continue"))
+        if active_page < 3:
+            with _tnr:
+                _top_fwd_ph = st.empty()
 
 
 def _get_condition_candidates(
@@ -6694,7 +6695,7 @@ if active_page == 0:
         )
     with _nav_r0:
         if step1_done:
-            if st.button("Continue to Study Input \u2192", key="auto_advance_0", type="primary", use_container_width=True):
+            if st.button("Study Input \u2192", key="auto_advance_0", type="secondary", use_container_width=True):
                 _navigate_to(1)
 
     # v1.8.0: Research citations moved to landing page
@@ -7186,6 +7187,17 @@ if active_page == 1:
         if selected_conditions:
             st.success(f"✓ Conditions: {', '.join(selected_conditions)}")
 
+    # v1.0.2.4: Fill top nav forward placeholder — fresh state check
+    if _top_fwd_ph is not None:
+        _p2_preview = st.session_state.get("qsf_preview")
+        _p2_ready = bool((_p2_preview and _p2_preview.success) or st.session_state.get("conversational_builder_complete"))
+        if _p2_ready:
+            with _top_fwd_ph:
+                if st.button("Design \u2192", key="top_fwd_1", type="secondary"):
+                    _navigate_to(2)
+        else:
+            _top_fwd_ph.caption("Upload a QSF or describe your study")
+
     # v1.0.2.3: Bottom nav — ONLY "Back to top" (navigation is at the top)
     st.markdown("---")
     _nav_m1_col, = st.columns([1])
@@ -7216,8 +7228,15 @@ if active_page == 2:
         'dependent variables, and sample allocation.</div>',
         unsafe_allow_html=True,
     )
-    # v1.0.2.2: Section-done banner when step is complete
-    if _step_done[2]:
+    # v1.0.2.4: Section-done banner — check session state directly (avoids stale _step_done)
+    _p3_banner_ready = bool(
+        st.session_state.get("inferred_design")
+        and st.session_state.get("scales_confirmed", False)
+        and st.session_state.get("open_ended_confirmed", True)
+        and (st.session_state.get("selected_conditions") or st.session_state.get("custom_conditions")
+             or st.session_state.get("conversational_builder_complete"))
+    )
+    if _p3_banner_ready:
         st.markdown(
             '<div class="section-done-banner">'
             '\u2705 Design complete \u2014 use the buttons above to proceed'
@@ -8608,6 +8627,24 @@ if active_page == 2:
                         height=300,
                     )
                     st.session_state["variable_review_rows"] = variable_df.to_dict(orient="records")
+
+    # v1.0.2.4: Fill top nav forward placeholder — computed AFTER page content renders
+    # so it reflects the CURRENT state (not stale _step_done from script top).
+    if _top_fwd_ph is not None:
+        _p3_has_conds = bool(st.session_state.get("selected_conditions") or st.session_state.get("custom_conditions")
+                             or (st.session_state.get("conversational_builder_complete") and st.session_state.get("inferred_design", {}).get("conditions")))
+        _p3_ready = bool(
+            st.session_state.get("inferred_design")
+            and st.session_state.get("scales_confirmed", False)
+            and st.session_state.get("open_ended_confirmed", True)
+            and _p3_has_conds
+        )
+        if _p3_ready:
+            with _top_fwd_ph:
+                if st.button("Generate \u2192", key="top_fwd_2", type="secondary"):
+                    _navigate_to(3)
+        else:
+            _top_fwd_ph.caption("Confirm conditions & DVs to proceed")
 
     # v1.0.2.3: Bottom nav — ONLY "Back to top" (navigation is at the top)
     st.markdown("---")
