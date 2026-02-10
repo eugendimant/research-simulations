@@ -63,7 +63,7 @@ association, impression, perception, feedback, comment, observation, general
 Version: 1.8.5 - Improved domain detection with weighted scoring and disambiguation
 """
 
-__version__ = "1.9.0"
+__version__ = "1.9.1"
 
 import random
 import re
