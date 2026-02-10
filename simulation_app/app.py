@@ -53,8 +53,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.9.2"
-BUILD_ID = "20260210-v192-replace-together-with-google-ai"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.0.1.0"
+BUILD_ID = "20260210-v1010-google-ai-gemini25-flash-lite"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -119,7 +119,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.9.2"  # v1.9.2: Replace Together.ai with Google AI Studio (Gemini) — truly free, no credit card
+APP_VERSION = "1.0.1.0"  # v1.0.1.0: Google AI Studio (Gemini 2.5 Flash Lite + Gemma 3 27B) with per-provider rate limiting
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")

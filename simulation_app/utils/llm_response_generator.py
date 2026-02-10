@@ -5,8 +5,9 @@ Uses free LLM APIs (multi-provider with automatic failover) to generate
 realistic, question-specific, persona-aligned open-ended survey responses.
 
 Architecture:
-- Multi-provider: Groq (built-in), Cerebras, Google AI Studio (Gemini), OpenRouter
-  with automatic key detection and failover
+- Multi-provider: Google AI Studio (Gemini 2.5 Flash Lite + Gemma 3 27B),
+  Groq, Cerebras, OpenRouter — with automatic key detection, per-provider
+  rate limiting, and intelligent failover
 - Large batch sizes: 20 responses per API call (within 32K context)
 - Smart pool scaling: calculates exact pool size needed from sample_size
 - Draw-with-replacement + deep variation: a pool of 50 base responses
@@ -14,10 +15,10 @@ Architecture:
 - Graceful fallback: if all LLM providers fail, silently falls back to
   the existing template-based ComprehensiveResponseGenerator
 
-Version: 1.9.2
+Version: 1.0.1.0
 """
 
-__version__ = "1.9.2"
+__version__ = "1.0.1.0"
 
 import hashlib
 import json
@@ -37,8 +38,11 @@ GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
 GROQ_MODEL = "llama-3.3-70b-versatile"
 
 # Additional free-tier providers for failover
+# Google AI Studio — Gemini 2.5 Flash Lite is optimal: 10 RPM, 250K TPM, 20 RPD
+# Gemma 3 27B is the high-volume fallback: 30 RPM, 15K TPM, 14,400 RPD
 GOOGLE_AI_API_URL = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
-GOOGLE_AI_MODEL = "gemini-2.0-flash"
+GOOGLE_AI_MODEL = "gemini-2.5-flash-lite"          # 10 RPM, 250K TPM, 20 RPD
+GOOGLE_AI_MODEL_HIGHVOL = "gemma-3-27b-it"          # 30 RPM, 15K TPM, 14,400 RPD
 
 CEREBRAS_API_URL = "https://api.cerebras.ai/v1/chat/completions"
 CEREBRAS_MODEL = "llama-3.3-70b"
@@ -69,6 +73,14 @@ _EB_CEREBRAS = [57, 41, 49, 119, 111, 63, 98, 104, 50, 49, 104, 50, 52, 46, 45, 
                 98, 52, 108, 104, 48, 62, 42, 108, 62, 42, 108, 50, 42, 34, 104, 35,
                 45, 40, 105, 46]
 _DEFAULT_CEREBRAS_KEY = bytes(b ^ _XK for b in _EB_CEREBRAS).decode()
+
+# Google AI Studio — truly free, no credit card
+# Gemini 2.5 Flash Lite: 10 RPM, 250K TPM, 20 RPD (quality)
+# Gemma 3 27B: 30 RPM, 15K TPM, 14,400 RPD (volume)
+_EB_GOOGLE_AI = [27, 19, 32, 59, 9, 35, 25, 20, 35, 17, 42, 107, 109, 106, 47, 61,
+                 13, 57, 43, 12, 57, 34, 47, 18, 44, 11, 110, 119, 61, 16, 60, 59,
+                 41, 111, 98, 15, 11, 51, 15]
+_DEFAULT_GOOGLE_AI_KEY = bytes(b ^ _XK for b in _EB_GOOGLE_AI).decode()
 
 # OpenRouter — free models (Mistral Small 3.1 24B — more generous rate limits than Llama free)
 _EB_OPENROUTER = [41, 49, 119, 53, 40, 119, 44, 107, 119, 63, 111, 62, 104, 63, 59,
@@ -780,10 +792,17 @@ def _call_llm_api(
 
     temperature = max(0.0, min(2.0, temperature))
 
+    # Google AI Studio supports key-as-query-param in addition to Bearer token.
+    # Append ?key=<key> for googleapis.com endpoints for maximum compatibility.
+    _effective_url = api_url
+    if "googleapis.com" in api_url:
+        _sep = "&" if "?" in api_url else "?"
+        _effective_url = f"{api_url}{_sep}key={api_key}"
+
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
-        "User-Agent": "BehavioralSimulationTool/1.9.2",
+        "User-Agent": "BehavioralSimulationTool/1.0.1.0",
     }
 
     # OpenRouter requires/recommends HTTP-Referer and X-Title
@@ -805,7 +824,7 @@ def _call_llm_api(
     try:
         import requests as _requests
         resp = _requests.post(
-            api_url,
+            _effective_url,
             headers=headers,
             json=payload,
             timeout=timeout,
@@ -856,7 +875,7 @@ def _call_llm_api(
 
         data = json.dumps(payload).encode("utf-8")
         req = urllib.request.Request(
-            api_url, data=data, headers=headers, method="POST",
+            _effective_url, data=data, headers=headers, method="POST",
         )
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             body = json.loads(resp.read().decode("utf-8"))
@@ -1046,8 +1065,8 @@ def get_supported_providers() -> List[Dict[str, str]]:
             "name": "Google AI Studio (Gemini)",
             "prefix": "AIza...",
             "url": "https://aistudio.google.com",
-            "free_tier": "1,500 req/day, 1M tokens/min (Gemini 2.0 Flash)",
-            "recommended": False,
+            "free_tier": "Gemini 2.5 Flash Lite (10 RPM, 20 RPD) + Gemma 3 27B (30 RPM, 14.4K RPD)",
+            "recommended": True,
         },
         {
             "name": "SambaNova",
@@ -1069,24 +1088,33 @@ class _LLMProvider:
     and soft-disable that allows periodic re-attempts.
     """
 
-    def __init__(self, name: str, api_url: str, model: str, api_key: str) -> None:
+    def __init__(self, name: str, api_url: str, model: str, api_key: str,
+                 max_rpm: int = 28, max_rpd: int = 0,
+                 max_batch_size: int = 20) -> None:
         self.name = name
         self.api_url = api_url
         self.model = model
         self.api_key = api_key
+        self.max_rpm = max_rpm
+        self.max_rpd = max_rpd        # 0 = unlimited
+        self.max_batch_size = max_batch_size
         self.available = True
         self.call_count = 0
+        self._daily_call_count = 0
+        self._daily_reset_time = time.time()
         self._consecutive_failures = 0
-        self._max_failures = 6  # v1.9.0: More tolerant (was 3)
+        self._max_failures = 6
         self._total_failures = 0
         self._last_failure_time = 0.0
-        self._cooldown_seconds = 30.0  # Re-try after 30s cooldown
+        self._cooldown_seconds = 30.0
+        self._rate_limiter = _RateLimiter(max_rpm=max_rpm)
 
     def call(self, system_prompt: str, user_prompt: str,
              temperature: float = 0.7, max_tokens: int = 4000) -> Optional[str]:
         if not self.api_key:
             return None
-        # v1.9.0: Auto-recover after cooldown period
+
+        # Auto-recover after cooldown period
         if not self.available:
             elapsed = time.time() - self._last_failure_time
             if elapsed >= self._cooldown_seconds:
@@ -1097,7 +1125,20 @@ class _LLMProvider:
             else:
                 return None
 
-        # v1.9.0: Retry with backoff (up to 2 retries per call)
+        # Check daily request limit (reset after 24h)
+        if self.max_rpd > 0:
+            if time.time() - self._daily_reset_time >= 86400:
+                self._daily_call_count = 0
+                self._daily_reset_time = time.time()
+            if self._daily_call_count >= self.max_rpd:
+                logger.info("Provider '%s' daily limit exhausted (%d/%d RPD)",
+                            self.name, self._daily_call_count, self.max_rpd)
+                return None
+
+        # Per-provider rate limiting
+        self._rate_limiter.wait_if_needed()
+
+        # Retry with backoff (up to 2 retries per call)
         result = None
         for attempt in range(3):
             result = _call_llm_api(
@@ -1107,25 +1148,25 @@ class _LLMProvider:
             if result is not None:
                 break
             if attempt < 2:
-                _backoff = 1.5 * (attempt + 1)  # 1.5s, 3.0s
+                _backoff = 1.5 * (attempt + 1)
                 logger.debug("Provider '%s' attempt %d failed, retrying in %.1fs...",
                              self.name, attempt + 1, _backoff)
                 time.sleep(_backoff)
 
         self.call_count += 1
+        self._daily_call_count += 1
         if result is None:
             self._consecutive_failures += 1
             self._total_failures += 1
             self._last_failure_time = time.time()
             if self._consecutive_failures >= self._max_failures:
                 self.available = False
-                # v1.9.0: Increase cooldown exponentially
                 self._cooldown_seconds = min(300.0, self._cooldown_seconds * 2)
                 logger.info("Provider '%s' disabled after %d consecutive failures "
                             "(cooldown: %.0fs)",
                             self.name, self._consecutive_failures, self._cooldown_seconds)
         else:
-            self._consecutive_failures = 0  # Reset on success
+            self._consecutive_failures = 0
         return result
 
     def reset(self) -> None:
@@ -1188,40 +1229,53 @@ class LLMResponseGenerator:
         self._fallback = fallback_generator
         self._batch_size = max(4, min(batch_size, 25))
         self._pool = _ResponsePool()
-        self._rate_limiter = _RateLimiter(max_rpm=28)
         self._fallback_count = 0
         self._batch_failure_count = 0
 
-        # Build provider chain — built-in keys first, then env-var providers,
-        # then user key last. Priority: Groq -> Cerebras -> Google AI -> OpenRouter -> user
+        # Build provider chain with per-provider rate limits.
+        # Priority: Google AI (quality) → Google AI (volume) → Groq → Cerebras → OpenRouter
         self._providers: List[_LLMProvider] = []
         user_key = api_key or os.environ.get("LLM_API_KEY", "") or os.environ.get("GROQ_API_KEY", "")
-        _all_builtin_keys = {_DEFAULT_GROQ_KEY, _DEFAULT_CEREBRAS_KEY, _DEFAULT_OPENROUTER_KEY}
+        _all_builtin_keys = {_DEFAULT_GROQ_KEY, _DEFAULT_CEREBRAS_KEY,
+                             _DEFAULT_GOOGLE_AI_KEY, _DEFAULT_OPENROUTER_KEY}
 
-        # Built-in providers (in priority order)
-        for name, url, model, key in [
-            ("groq_builtin", GROQ_API_URL, GROQ_MODEL, _DEFAULT_GROQ_KEY),
-            ("cerebras_builtin", CEREBRAS_API_URL, CEREBRAS_MODEL, _DEFAULT_CEREBRAS_KEY),
-            ("openrouter_builtin", OPENROUTER_API_URL, OPENROUTER_MODEL, _DEFAULT_OPENROUTER_KEY),
-        ]:
+        # Built-in providers (in priority order) with rate limits from provider dashboards:
+        # 1. Google AI Gemini 2.5 Flash Lite: 10 RPM, 250K TPM, 20 RPD (quality)
+        # 2. Google AI Gemma 3 27B:           30 RPM, 15K TPM, 14,400 RPD (volume)
+        # 3. Groq Llama 3.3 70B:              ~30 RPM, 14,400 RPD
+        # 4. Cerebras Llama 3.3 70B:          ~30 RPM, 1M tokens/day
+        # 5. OpenRouter Mistral Small 3.1:    varies by model
+        _builtin_providers = [
+            ("google_ai_builtin", GOOGLE_AI_API_URL, GOOGLE_AI_MODEL,
+             _DEFAULT_GOOGLE_AI_KEY, 8, 20, 20),
+            ("google_ai_gemma", GOOGLE_AI_API_URL, GOOGLE_AI_MODEL_HIGHVOL,
+             _DEFAULT_GOOGLE_AI_KEY, 25, 14400, 10),
+            ("groq_builtin", GROQ_API_URL, GROQ_MODEL,
+             _DEFAULT_GROQ_KEY, 28, 0, 20),
+            ("cerebras_builtin", CEREBRAS_API_URL, CEREBRAS_MODEL,
+             _DEFAULT_CEREBRAS_KEY, 28, 0, 20),
+            ("openrouter_builtin", OPENROUTER_API_URL, OPENROUTER_MODEL,
+             _DEFAULT_OPENROUTER_KEY, 20, 0, 20),
+        ]
+        for name, url, model, key, rpm, rpd, max_bs in _builtin_providers:
             if key:
                 self._providers.append(_LLMProvider(
                     name=name, api_url=url, model=model, api_key=key,
+                    max_rpm=rpm, max_rpd=rpd, max_batch_size=max_bs,
                 ))
 
-        # v1.9.2: Env-var providers inserted BEFORE OpenRouter for better failover
-        # Google AI Studio (Gemini 2.0 Flash) — truly free, no credit card, 1500 req/day
+        # Env-var Google AI key (user's own key — may have different limits)
         _google_ai_key = os.environ.get("GOOGLE_API_KEY", "") or os.environ.get("GEMINI_API_KEY", "")
-        if _google_ai_key and not any(p.api_key == _google_ai_key for p in self._providers):
-            # Insert before OpenRouter (position -1 if openrouter exists)
+        if _google_ai_key and _google_ai_key != _DEFAULT_GOOGLE_AI_KEY:
             _or_idx = next((i for i, p in enumerate(self._providers)
-                           if p.name == "openrouter_builtin"), len(self._providers))
+                           if p.name == "groq_builtin"), len(self._providers))
             self._providers.insert(_or_idx, _LLMProvider(
-                name="google_ai", api_url=GOOGLE_AI_API_URL,
+                name="google_ai_user", api_url=GOOGLE_AI_API_URL,
                 model=GOOGLE_AI_MODEL, api_key=_google_ai_key,
+                max_rpm=8, max_rpd=20,
             ))
 
-        # SambaNova Cloud (free Llama 3.1 70B) — generous free tier
+        # SambaNova Cloud (free Llama 3.1 70B)
         _sambanova_key = os.environ.get("SAMBANOVA_API_KEY", "")
         if _sambanova_key:
             _or_idx = next((i for i, p in enumerate(self._providers)
@@ -1315,6 +1369,8 @@ class LLMResponseGenerator:
     def provider_display_name(self) -> str:
         """Human-readable name of the active provider for UI display."""
         names = {
+            "google_ai_builtin": "Google AI Studio (Gemini 2.5 Flash Lite)",
+            "google_ai_gemma": "Google AI Studio (Gemma 3 27B)",
             "groq_builtin": "Groq (built-in)",
             "cerebras_builtin": "Cerebras (built-in)",
             "openrouter_builtin": "OpenRouter (built-in)",
@@ -1322,7 +1378,6 @@ class LLMResponseGenerator:
             "cerebras_user": "Cerebras (your key)",
             "openrouter_user": "OpenRouter (your key)",
             "google_ai_user": "Google AI Studio (your key)",
-            "google_ai": "Google AI Studio (Gemini 2.0 Flash)",
             "sambanova": "SambaNova Cloud (free Llama 3.1 70B)",
             "cerebras_env": "Cerebras",
             "openrouter_env": "OpenRouter",
@@ -1390,7 +1445,10 @@ class LLMResponseGenerator:
             retries = 0
             while needed > 0 and retries < max_retries_per_bucket:
                 retries += 1
-                batch_n = min(needed, self._batch_size)
+                # Adaptive batch size: use active provider's max_batch_size if available
+                _active = self._get_active_provider()
+                _provider_max = _active.max_batch_size if _active else self._batch_size
+                batch_n = min(needed, self._batch_size, _provider_max)
                 specs = []
                 for _ in range(batch_n):
                     specs.append({
@@ -1444,8 +1502,11 @@ class LLMResponseGenerator:
                 break  # All providers exhausted
             tried.add(provider.name)
 
-            self._rate_limiter.wait_if_needed()
-            raw = provider.call(SYSTEM_PROMPT, prompt, max_tokens=4000)
+            # Adaptive max_tokens: reduce for TPM-constrained providers (e.g. Gemma 3 27B: 15K TPM)
+            _max_tokens = 4000
+            if "gemma" in provider.model.lower():
+                _max_tokens = 2500  # ~3K prompt + 2.5K response ≈ 5.5K < 15K TPM
+            raw = provider.call(SYSTEM_PROMPT, prompt, max_tokens=_max_tokens)
 
             if raw is not None:
                 responses = _parse_json_responses(raw, len(persona_specs))

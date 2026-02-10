@@ -2,7 +2,7 @@
 """
 Utility modules for the Behavioral Experiment Simulation Tool.
 
-Version: 1.9.2 - Replace Together.ai with Google AI Studio (Gemini)
+Version: 1.0.1.0 - Google AI Studio (Gemini 2.5 Flash Lite + Gemma 3 27B) with per-provider rate limiting
 
 Changes (v1.0.0 - 20 Iterations of Comprehensive Improvements):
     === ENHANCED SCALE/MATRIX DETECTION ===
@@ -65,7 +65,7 @@ Modules:
 """
 
 # Package version - should match all module versions
-__version__ = "1.9.2"
+__version__ = "1.0.1.0"
 
 from .qsf_parser import parse_qsf_file, extract_survey_structure, generate_qsf_summary
 from .simulation_engine import SimulationEngine
