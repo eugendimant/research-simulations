@@ -53,8 +53,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.0.2.4"
-BUILD_ID = "20260210-v1024-compact-nav-placeholder-fix"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.0.2.5"
+BUILD_ID = "20260210-v1025-clickable-stepper-nav"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -119,7 +119,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.0.2.4"  # v1.0.2.4: Compact nav, placeholder fwd button, page 3 nav fix
+APP_VERSION = "1.0.2.5"  # v1.0.2.5: Clickable stepper nav, remove back buttons
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -5593,6 +5593,25 @@ section[data-testid="stSidebar"] .stCaption { line-height: 1.4; }
 .stepper-step.st-locked:hover::after {
     opacity: 1;
 }
+/* v1.0.2.5: Clickable stepper navigation — click any non-locked step to jump */
+.stepper-step.clickable { cursor: pointer; }
+.stepper-step.clickable .stepper-circle { cursor: pointer; }
+.stepper-step.clickable .stepper-title { cursor: pointer; }
+.stepper-step.clickable:hover .stepper-circle {
+    transform: scale(1.15);
+    filter: brightness(1.08);
+}
+.stepper-step.clickable.st-done:hover .stepper-circle {
+    box-shadow: 0 2px 12px rgba(34, 197, 94, 0.35);
+}
+.stepper-step.clickable.st-upcoming:hover .stepper-circle,
+.stepper-step.clickable.st-next-target:hover .stepper-circle {
+    box-shadow: 0 2px 12px rgba(59, 130, 246, 0.25);
+}
+.stepper-step.clickable:hover .stepper-title {
+    text-decoration: underline;
+    text-underline-offset: 3px;
+}
 /* Step title label */
 .stepper-title {
     font-size: 0.73rem;
@@ -5824,16 +5843,16 @@ section[data-testid="stSidebar"] .stCaption { line-height: 1.4; }
 
 
 def _render_flow_nav(active: int, done: List[bool]) -> None:
-    """Render visual stepper progress bar showing wizard state.
+    """Render clickable stepper progress bar for direct step navigation.
 
-    v1.0.2.2: Pure visual stepper — no hidden buttons or JavaScript.
-    Navigation is handled by the bottom nav buttons on each page.
-    - Completed steps: green circle + checkmark
-    - Active step: blue circle + number with subtle pulse
-    - Active+done: green circle + checkmark (signals ready to move on)
-    - Next-target step: orange pulsing circle when current step is complete
-    - Upcoming steps: gray outline
-    - Locked steps: dimmed with tooltip
+    v1.0.2.5: Clickable stepper — click any completed/accessible step to jump.
+    Hidden Streamlit buttons + JS wiring via _st_components.html().
+    - Completed steps: green circle + checkmark (CLICKABLE)
+    - Active step: blue circle + number with subtle pulse (current page)
+    - Active+done: green circle + checkmark (current page, done)
+    - Next-target step: orange pulsing circle (CLICKABLE)
+    - Upcoming steps: gray outline (CLICKABLE if accessible)
+    - Locked steps: dimmed with tooltip (not clickable)
     Includes #btt-anchor for "Back to top" links at the bottom of pages.
     """
     while len(done) < len(SECTION_META):
@@ -5915,7 +5934,9 @@ def _render_flow_nav(active: int, done: List[bool]) -> None:
 
         # v1.0.2.0: Add step-done class to active step when it's complete
         _extra_cls = " step-done" if (i == active and _active_done) else ""
-        html += f'<div class="stepper-step {state_cls}{_extra_cls}" data-step="{i}">'
+        # v1.0.2.5: Clickable class for non-locked, non-active steps
+        _click_cls = " clickable" if (i != active and state != "locked") else ""
+        html += f'<div class="stepper-step {state_cls}{_extra_cls}{_click_cls}" data-step="{i}" data-state="{state}">'
         html += f'<div class="stepper-circle">{circle_content}</div>'
         html += f'<div class="stepper-title">{sm["title"]}</div>'
         html += f'<div class="stepper-desc">{summary}</div>'
@@ -5923,7 +5944,58 @@ def _render_flow_nav(active: int, done: List[bool]) -> None:
     html += '</div>'
 
     st.markdown(html, unsafe_allow_html=True)
-    # v1.0.2.4: Stepper is visual-only. Navigation via top buttons below stepper.
+
+    # v1.0.2.5: Hidden stepper jump buttons — triggered by JS click handlers
+    _jump_cols = st.columns(4)
+    for _ji in range(4):
+        with _jump_cols[_ji]:
+            if st.button(f"__sj{_ji}__", key=f"stepper_jump_{_ji}"):
+                _navigate_to(_ji)
+
+    # v1.0.2.5: JS to hide jump buttons + wire stepper step clicks
+    _stepper_click_js = """<script>
+(function() {
+    var doc = window.parent.document;
+    function setup() {
+        var found = 0;
+        doc.querySelectorAll('button').forEach(function(btn) {
+            var txt = (btn.textContent || '').trim();
+            if (/^__sj[0-3]__$/.test(txt)) {
+                var row = btn.closest('[data-testid="stHorizontalBlock"]');
+                if (row) {
+                    row.style.cssText = 'height:0!important;overflow:hidden!important;margin:0!important;padding:0!important;border:0!important;min-height:0!important;opacity:0!important;pointer-events:none!important;';
+                    found++;
+                }
+            }
+        });
+        doc.querySelectorAll('.stepper-step.clickable').forEach(function(step) {
+            if (step._clickWired) return;
+            step._clickWired = true;
+            var idx = step.getAttribute('data-step');
+            step.addEventListener('click', function(e) {
+                e.preventDefault();
+                doc.querySelectorAll('button').forEach(function(btn) {
+                    if ((btn.textContent || '').trim() === '__sj' + idx + '__') {
+                        btn.click();
+                    }
+                });
+            });
+        });
+        return found >= 4;
+    }
+    var delays = [0, 30, 80, 150, 300, 500, 800, 1200];
+    delays.forEach(function(d) { setTimeout(setup, d); });
+    try {
+        var target = doc.querySelector('section.main') || doc.body;
+        var obs = new MutationObserver(function() {
+            if (setup()) obs.disconnect();
+        });
+        obs.observe(target, {childList: true, subtree: true});
+        setTimeout(function() { obs.disconnect(); }, 5000);
+    } catch(e) {}
+})();
+</script>"""
+    _st_components.html(_stepper_click_js, height=0)
 
 
 _SCROLL_TO_TOP_JS = """<script>
@@ -6135,21 +6207,13 @@ _step_done = [
 if active_page >= 0:
     _render_flow_nav(active_page, _step_done)
 
-    # v1.0.2.4: Top navigation buttons below stepper for pages 2-4.
-    # Page 1 (Setup) is short — uses bottom nav instead.
-    # Pages 2-4: ALL navigation (Back + Continue) lives here at the top.
-    # Forward button uses st.empty() placeholder — filled at end of each page
-    # to avoid one-rerun-lag (page content sets completion state AFTER this runs).
-    _top_fwd_ph = None  # Placeholder for forward nav (filled per-page)
-    if active_page >= 1:
-        _prev_labels = {1: "\u2190 Setup", 2: "\u2190 Study Input", 3: "\u2190 Design"}
-        _tnl, _tnspc, _tnr = st.columns([1, 2, 1])
-        with _tnl:
-            if st.button(_prev_labels.get(active_page, "\u2190 Back"), key=f"top_back_{active_page}", type="secondary"):
-                _navigate_to(active_page - 1)
-        if active_page < 3:
-            with _tnr:
-                _top_fwd_ph = st.empty()
+    # v1.0.2.5: Back buttons removed — stepper is now clickable for navigation.
+    # Forward placeholder kept as contextual CTA for natural progression.
+    _top_fwd_ph = None
+    if active_page >= 1 and active_page < 3:
+        _tn_spc, _tn_fwd = st.columns([4, 1])
+        with _tn_fwd:
+            _top_fwd_ph = st.empty()
 
 
 def _get_condition_candidates(
