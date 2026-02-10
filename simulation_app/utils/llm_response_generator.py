@@ -18,7 +18,7 @@ Architecture:
 Version: 1.0.1.4
 """
 
-__version__ = "1.0.2.5"
+__version__ = "1.0.3.0"
 
 import hashlib
 import json

@@ -53,8 +53,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.0.2.5"
-BUILD_ID = "20260210-v1025-clickable-stepper-nav"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.0.3.0"
+BUILD_ID = "20260210-v1030-ux-cleanup-all-pages"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -119,7 +119,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.0.2.5"  # v1.0.2.5: Clickable stepper nav, remove back buttons
+APP_VERSION = "1.0.3.0"  # v1.0.3.0: UX cleanup — remove redundant nav, simplify forms, clean warnings
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -5573,26 +5573,7 @@ section[data-testid="stSidebar"] .stCaption { line-height: 1.4; }
     cursor: default;
     opacity: 0.6;
 }
-.stepper-step.st-locked::after {
-    content: 'Complete previous steps first';
-    position: absolute;
-    bottom: -22px;
-    left: 50%;
-    transform: translateX(-50%);
-    background: #1F2937;
-    color: white;
-    font-size: 0.6rem;
-    padding: 3px 8px;
-    border-radius: 4px;
-    white-space: nowrap;
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity 0.15s ease;
-    z-index: 10;
-}
-.stepper-step.st-locked:hover::after {
-    opacity: 1;
-}
+/* v1.0.3.0: Removed tooltip on locked steps — uses connecting line color to signal state */
 /* v1.0.2.5: Clickable stepper navigation — click any non-locked step to jump */
 .stepper-step.clickable { cursor: pointer; }
 .stepper-step.clickable .stepper-circle { cursor: pointer; }
@@ -5657,9 +5638,9 @@ section[data-testid="stSidebar"] .stCaption { line-height: 1.4; }
     .stepper-step:not(:last-child)::after { top: 14px; left: calc(50% + 15px); width: calc(100% - 30px); }
 }
 
-/* ─── Section wrapper ─── */
+/* ─── Section wrapper ─── v1.0.3.0: Better spacing below stepper */
 .flow-section {
-    padding-top: 4px;
+    padding-top: 8px;
     animation: sectionEnter 0.3s ease-out;
 }
 @keyframes sectionEnter {
@@ -5667,10 +5648,10 @@ section[data-testid="stSidebar"] .stCaption { line-height: 1.4; }
     to   { opacity: 1; transform: translateY(0); }
 }
 
-/* Section guidance tagline */
+/* Section guidance tagline — v1.0.3.0: More compact, less visual weight */
 .section-guide {
     font-size: 13px; color: #6B7280;
-    margin: 0 0 16px 0;
+    margin: 0 0 20px 0;
     padding: 10px 16px;
     background: linear-gradient(135deg, #F9FAFB 0%, #F3F4F6 100%);
     border-radius: 8px;
@@ -5681,14 +5662,14 @@ section[data-testid="stSidebar"] .stCaption { line-height: 1.4; }
     font-size: 13px;
 }
 
-/* Section complete banner */
+/* Section complete banner — v1.0.3.0: tighter spacing */
 .section-done-banner {
     display: flex; align-items: center; gap: 8px;
     padding: 10px 16px;
     background: linear-gradient(135deg, #F0FDF4 0%, #ECFDF5 100%);
     border: 1px solid #D1FAE5;
     border-radius: 10px;
-    margin: 14px 0 6px 0;
+    margin: 8px 0 16px 0;
     font-size: 13px; color: #166534; font-weight: 500;
     animation: bannerSlideIn 0.35s ease-out;
 }
@@ -5739,33 +5720,7 @@ section[data-testid="stSidebar"] .stCaption { line-height: 1.4; }
 .feedback-bar a { color: #6B7280; text-decoration: none; }
 .feedback-bar a:hover { color: #FF4B4B; }
 
-/* ─── "Back to top" HTML anchor link styled as button ─── */
-/* v1.0.2.3: Sole bottom nav element on pages 2-4 — centered, prominent */
-.btt-link {
-    display: block;
-    text-align: center;
-    padding: 10px 24px;
-    border: 1px solid #D1D5DB;
-    border-radius: 10px;
-    color: #6B7280 !important;
-    text-decoration: none !important;
-    font-size: 0.85rem;
-    font-weight: 500;
-    background: linear-gradient(135deg, #FAFAFA 0%, #F5F5F5 100%);
-    cursor: pointer;
-    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-    max-width: 320px;
-    margin: 0 auto;
-    box-sizing: border-box;
-}
-.btt-link:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 3px 12px rgba(0,0,0,0.08);
-    border-color: #9CA3AF;
-    color: #374151 !important;
-    text-decoration: none !important;
-    background: linear-gradient(135deg, #FFFFFF 0%, #FAFAFA 100%);
-}
+/* v1.0.3.0: Back-to-top links removed — stepper handles navigation */
 
 /* ─── Wizard page nav buttons ─── */
 .stButton button[kind="secondary"] {
@@ -5804,41 +5759,7 @@ section[data-testid="stSidebar"] .stCaption { line-height: 1.4; }
 
 /* v1.0.1.7: Removed pulsing animation — cleaner, more professional look */
 
-/* ─── v1.0.2.0: Mandatory confirmation checkboxes — prominent styling ─── */
-.confirm-checkpoint {
-    background: linear-gradient(135deg, #FFF7ED 0%, #FFFBEB 100%);
-    border: 2px solid #F59E0B;
-    border-radius: 10px;
-    padding: 12px 16px;
-    margin: 12px 0;
-    position: relative;
-}
-.confirm-checkpoint::before {
-    content: '';
-    position: absolute;
-    left: 0; top: 0; bottom: 0;
-    width: 4px;
-    background: #F59E0B;
-    border-radius: 10px 0 0 10px;
-}
-.confirm-checkpoint-label {
-    font-size: 0.8rem;
-    font-weight: 600;
-    color: #92400E;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    margin-bottom: 4px;
-}
-.confirm-checkpoint.confirmed {
-    background: linear-gradient(135deg, #F0FDF4 0%, #ECFDF5 100%);
-    border-color: #22C55E;
-}
-.confirm-checkpoint.confirmed::before {
-    background: #22C55E;
-}
-.confirm-checkpoint.confirmed .confirm-checkpoint-label {
-    color: #166534;
-}
+/* v1.0.3.0: Confirmation checkpoint CSS removed — using simple checkboxes now */
 </style>"""
 
 
@@ -6079,11 +6000,6 @@ with st.sidebar:
 
     advanced_mode = st.toggle("Advanced mode", value=st.session_state.get("advanced_mode", False))
     st.session_state["advanced_mode"] = advanced_mode
-    st.caption(
-        "Full control over demographics, exclusions, and effect sizes."
-        if advanced_mode else
-        "Unlocks demographics, exclusions, and effect size controls."
-    )
 
     st.divider()
 
@@ -6207,13 +6123,8 @@ _step_done = [
 if active_page >= 0:
     _render_flow_nav(active_page, _step_done)
 
-    # v1.0.2.5: Back buttons removed — stepper is now clickable for navigation.
-    # Forward placeholder kept as contextual CTA for natural progression.
+    # v1.0.3.0: All navigation via clickable stepper. No redundant forward buttons.
     _top_fwd_ph = None
-    if active_page >= 1 and active_page < 3:
-        _tn_spc, _tn_fwd = st.columns([4, 1])
-        with _tn_fwd:
-            _top_fwd_ph = st.empty()
 
 
 def _get_condition_candidates(
@@ -6474,20 +6385,8 @@ if active_page == -1:
         unsafe_allow_html=True,
     )
 
-    # Methods PDF download — right after how-it-works
-    methods_pdf_path = Path(__file__).resolve().parent.parent / "docs" / "papers" / "methods_summary.pdf"
-    if methods_pdf_path.exists():
-        _pdf_col1, _pdf_col2, _pdf_col3 = st.columns([1, 2, 1])
-        with _pdf_col2:
-            st.download_button(
-                "Download Methods PDF",
-                data=methods_pdf_path.read_bytes(),
-                file_name=methods_pdf_path.name,
-                mime="application/pdf",
-                use_container_width=True,
-            )
-
-    # Primary CTA — right after how-it-works + PDF
+    # v1.0.3.0: Methods PDF moved to Research & Citations tab — CTA is now prominent
+    # Primary CTA — right after how-it-works
     _cta_col1, _cta_col2, _cta_col3 = st.columns([1, 2, 1])
     with _cta_col2:
         if st.button("Start Your Simulation  \u2192", type="primary", use_container_width=True, key="landing_cta"):
@@ -6615,6 +6514,16 @@ if active_page == -1:
         )
 
     with _info_tab4:
+        # v1.0.3.0: Methods PDF in Research tab
+        methods_pdf_path = Path(__file__).resolve().parent.parent / "docs" / "papers" / "methods_summary.pdf"
+        if methods_pdf_path.exists():
+            st.download_button(
+                "Download Methods PDF",
+                data=methods_pdf_path.read_bytes(),
+                file_name=methods_pdf_path.name,
+                mime="application/pdf",
+                use_container_width=False,
+            )
         st.markdown(
             '<div class="landing-tab-content">'
             '<div class="research-list">'
@@ -6679,8 +6588,7 @@ if active_page == 0:
     st.markdown(
         '<div class="section-guide">'
         '<strong>Step 1 &middot; Setup</strong> &mdash; '
-        'Enter a title and brief description of your study. '
-        'These are embedded in all generated outputs.</div>',
+        'Name your study and describe its purpose.</div>',
         unsafe_allow_html=True,
     )
 
@@ -6735,7 +6643,7 @@ if active_page == 0:
     if step1_done:
         st.markdown(
             '<div class="section-done-banner">'
-            '\u2705 Setup complete \u2014 continue to Study Input'
+            '\u2705 Setup complete \u2014 click <strong>Study Input</strong> in the progress bar to continue'
             '</div>',
             unsafe_allow_html=True,
         )
@@ -6744,22 +6652,11 @@ if active_page == 0:
         _desc_ok = "\u2705" if completion["study_description"] else "\u2B1C"
         st.caption(f"{_title_ok} Study title &nbsp;&nbsp; {_desc_ok} Study description")
 
-    # v1.0.2.1: Consistent 3-column bottom nav: Back | Back to top | Continue
-    _nav_l0, _nav_m0, _nav_r0 = st.columns([1, 1, 1])
-    with _nav_l0:
-        if st.button("\u2190 Home", key="back_0", type="secondary"):
-            _navigate_to(-1)
-    with _nav_m0:
-        st.markdown(
-            '<a href="#btt-anchor" '
-            'onclick="var el=document.getElementById(\'btt-anchor\');'
-            'if(el){el.scrollIntoView({behavior:\'smooth\',block:\'start\'});}return false;" '
-            'class="btt-link">\u2191 Back to top</a>',
-            unsafe_allow_html=True,
-        )
-    with _nav_r0:
-        if step1_done:
-            if st.button("Study Input \u2192", key="auto_advance_0", type="secondary", use_container_width=True):
+    # v1.0.3.0: Streamlined bottom nav — stepper handles navigation; show contextual CTA only
+    if step1_done:
+        _nav_s0, _nav_cta0 = st.columns([3, 1])
+        with _nav_cta0:
+            if st.button("Study Input \u2192", key="auto_advance_0", type="primary", use_container_width=True):
                 _navigate_to(1)
 
     # v1.8.0: Research citations moved to landing page
@@ -6775,25 +6672,24 @@ if active_page == 1:
     st.markdown(
         '<div class="section-guide">'
         '<strong>Step 2 &middot; Study Input</strong> &mdash; '
-        'Upload a Qualtrics .qsf file for automatic detection of conditions, '
-        'scales, and randomizers &mdash; or describe your design in plain text.</div>',
+        'Upload a Qualtrics QSF file or describe your study design.</div>',
         unsafe_allow_html=True,
     )
     completion = _get_step_completion()
     step1_done = completion["study_title"] and completion["study_description"]
     step2_done = completion["qsf_uploaded"]
 
-    # v1.0.2.2: Section-done banner when step is complete
+    # v1.0.3.0: Section-done banner when step is complete
     if step2_done:
         st.markdown(
             '<div class="section-done-banner">'
-            '\u2705 Study input complete \u2014 use the buttons above to proceed'
+            '\u2705 Study input complete \u2014 click <strong>Design</strong> in the progress bar to continue'
             '</div>',
             unsafe_allow_html=True,
         )
 
     if not step1_done:
-        st.warning("Complete **Setup** first — enter your study title and description, then return here.")
+        st.warning("Complete **Setup** first \u2014 click **Setup** in the progress bar above.")
 
     # v1.6.0: Cleaner mode selector with descriptive labels
     _mode_options = {
@@ -6801,13 +6697,13 @@ if active_page == 1:
         "describe_study": "Describe in words",
     }
     input_mode = st.radio(
-        "How would you like to provide your study design?",
+        "Input method",
         options=list(_mode_options.keys()),
         format_func=lambda x: _mode_options[x],
         index=0 if st.session_state.get("study_input_mode", "upload_qsf") == "upload_qsf" else 1,
         key="study_input_mode_radio",
         horizontal=True,
-        help="No QSF? Choose 'Describe in words' to set up your experiment through a guided form.",
+        help="No QSF file? Choose 'Describe in words' for a guided form.",
     )
     st.session_state["study_input_mode"] = input_mode
 
@@ -6818,17 +6714,15 @@ if active_page == 1:
     # PATH B: QSF FILE UPLOAD
     _show_qsf_upload = (input_mode == "upload_qsf")
 
-    if _show_qsf_upload:
-        st.markdown("#### Upload Qualtrics Survey File")
+    # v1.0.3.0: Removed redundant sub-header — radio label is sufficient
 
     # QSF file upload section (only shown in upload_qsf mode)
     if _show_qsf_upload:
         existing_qsf_name = st.session_state.get("qsf_file_name")
         existing_qsf_content = st.session_state.get("qsf_raw_content")
 
-        col_qsf, col_help = st.columns([2, 1])
-
-        with col_qsf:
+        # v1.0.3.0: Full-width QSF upload — help instructions in expander below
+        with st.container():
             if existing_qsf_name and existing_qsf_content:
                 st.success(f"**{existing_qsf_name}** uploaded ({len(existing_qsf_content):,} bytes)")
                 change_qsf = st.checkbox("Upload a different QSF file", value=False, key="change_qsf")
@@ -6846,16 +6740,6 @@ if active_page == 1:
                 )
             else:
                 qsf_file = None
-
-        with col_help:
-            with st.expander("How to export from Qualtrics", expanded=False):
-                st.markdown("""
-1. Open your survey in Qualtrics
-2. Click **Tools** → **Import/Export**
-3. Select **Export Survey**
-4. Download the .qsf file
-5. Upload it here
-""")
 
         parser = _get_qsf_preview_parser()
         preview: Optional[QSFPreviewResult] = st.session_state.get("qsf_preview", None)
@@ -6919,24 +6803,14 @@ if active_page == 1:
     # ========================================
     # OPTIONAL: Survey PDF Export
     # ========================================
-    st.markdown("---")
-    st.markdown("### 2. Survey Materials (Optional)")
-    st.caption("Upload PDF exports, screenshots, or photos of your survey for better question identification and simulation output quality.")
+    st.markdown("")
+    st.markdown("#### Survey Materials *(optional)*")
+    st.caption("Upload PDF exports or screenshots for better question identification.")
 
-    with st.expander("How to create a Survey PDF export from Qualtrics", expanded=False):
+    with st.expander("How to export from Qualtrics", expanded=False):
         st.markdown("""
-**Steps to export your survey as PDF:**
-
-1. Open your survey in Qualtrics
-2. Click **Tools** in the top menu
-3. Select **Import/Export** → **Print Survey**
-4. In the print preview, click **Save as PDF** (or use your browser's print-to-PDF feature)
-5. Upload the saved PDF file here
-
-**Why this helps:**
-- Provides exact question wording for better simulation accuracy
-- Helps identify response scale labels and anchors
-- Improves the quality of simulated open-ended responses
+1. Open survey in Qualtrics → **Tools** → **Import/Export** → **Print Survey**
+2. Save as PDF and upload here
 """)
 
     # Check for existing Survey PDF
@@ -7039,9 +6913,9 @@ if active_page == 1:
     # ========================================
     # OPTIONAL: Preregistration / AsPredicted
     # ========================================
-    st.markdown("---")
-    st.markdown("### 3. Preregistration Details (Optional)")
-    st.caption("Upload your AsPredicted or preregistration PDF(s) to improve simulation quality. The tool uses this to better understand your hypotheses and variables.")
+    st.markdown("")
+    st.markdown("#### Preregistration *(optional)*")
+    st.caption("Upload AsPredicted or preregistration PDFs to improve simulation accuracy.")
 
     with st.expander("Add preregistration for better simulations", expanded=False):
         col_prereg1, col_prereg2 = st.columns(2)
@@ -7198,7 +7072,7 @@ if active_page == 1:
             unsafe_allow_html=True,
         )
         if _n_questions > 0 and not warnings:
-            st.caption(f"QSF parsed. Use the buttons at the top to proceed to **Design**.")
+            st.caption(f"QSF parsed successfully. Click **Design** in the progress bar to continue.")
 
         errors = getattr(preview, "validation_errors", []) or []
 
@@ -7251,28 +7125,7 @@ if active_page == 1:
         if selected_conditions:
             st.success(f"✓ Conditions: {', '.join(selected_conditions)}")
 
-    # v1.0.2.4: Fill top nav forward placeholder — fresh state check
-    if _top_fwd_ph is not None:
-        _p2_preview = st.session_state.get("qsf_preview")
-        _p2_ready = bool((_p2_preview and _p2_preview.success) or st.session_state.get("conversational_builder_complete"))
-        if _p2_ready:
-            with _top_fwd_ph:
-                if st.button("Design \u2192", key="top_fwd_1", type="secondary"):
-                    _navigate_to(2)
-        else:
-            _top_fwd_ph.caption("Upload a QSF or describe your study")
-
-    # v1.0.2.3: Bottom nav — ONLY "Back to top" (navigation is at the top)
-    st.markdown("---")
-    _nav_m1_col, = st.columns([1])
-    with _nav_m1_col:
-        st.markdown(
-            '<a href="#btt-anchor" '
-            'onclick="var el=document.getElementById(\'btt-anchor\');'
-            'if(el){el.scrollIntoView({behavior:\'smooth\',block:\'start\'});}return false;" '
-            'class="btt-link">\u2191 Back to top</a>',
-            unsafe_allow_html=True,
-        )
+    # v1.0.3.0: Forward navigation handled by clickable stepper
 
     st.markdown('</div>', unsafe_allow_html=True)
 
@@ -7288,8 +7141,7 @@ if active_page == 2:
     st.markdown(
         '<div class="section-guide">'
         '<strong>Step 3 &middot; Design</strong> &mdash; '
-        'Review and configure your experimental conditions, '
-        'dependent variables, and sample allocation.</div>',
+        'Configure conditions, DVs, and sample size.</div>',
         unsafe_allow_html=True,
     )
     # v1.0.2.4: Section-done banner — check session state directly (avoids stale _step_done)
@@ -7303,7 +7155,7 @@ if active_page == 2:
     if _p3_banner_ready:
         st.markdown(
             '<div class="section-done-banner">'
-            '\u2705 Design complete \u2014 use the buttons above to proceed'
+            '\u2705 Design complete \u2014 click <strong>Generate</strong> in the progress bar to continue'
             '</div>',
             unsafe_allow_html=True,
         )
@@ -7320,15 +7172,9 @@ if active_page == 2:
         # Tailor the message to the user's chosen input method
         _user_input_mode = st.session_state.get("study_input_mode", "upload_qsf")
         if _user_input_mode == "describe_study":
-            st.warning(
-                "Complete the **Study Input** step first — describe your conditions and scales, "
-                "then click **Build Study Specification** to proceed."
-            )
+            st.warning("Complete **Study Input** first \u2014 describe your study, then click **Build Study Specification**.")
         else:
-            st.warning(
-                "Complete the **Study Input** step first — upload a QSF file or describe your study "
-                "using the builder."
-            )
+            st.warning("Complete **Study Input** first \u2014 click **Study Input** in the progress bar above.")
         _skip_qsf_design = True
     elif _builder_complete and not preview:
         # Conversational builder path — show review mode, skip QSF config
@@ -7345,21 +7191,9 @@ if active_page == 2:
         _design_n = st.session_state.get("sample_size", 0)
         _design_ready = bool(_design_conds) and len(_design_conds) >= 1 and bool(_design_scales) and st.session_state.get("scales_confirmed", False)
 
-        if not _design_ready:
-            _missing = []
-            if not _design_conds:
-                _missing.append("Select conditions below")
-            if not _design_scales:
-                _missing.append("Configure DVs/scales below")
-            if not st.session_state.get("scales_confirmed", False) and _design_scales:
-                _missing.append("Confirm your DVs (checkbox below)")
-            if _missing:
-                _chk_html = '<div style="background:#FFF7ED;border:1px solid #FDE68A;border-radius:8px;padding:10px 14px;margin:4px 0 12px 0;">'
-                _chk_html += '<div style="font-weight:600;font-size:0.82rem;color:#92400E;margin-bottom:4px;">To complete this step:</div>'
-                for _m in _missing:
-                    _chk_html += f'<div style="font-size:0.8rem;color:#78350F;padding:2px 0;">&#9744; {_m}</div>'
-                _chk_html += '</div>'
-                st.markdown(_chk_html, unsafe_allow_html=True)
+        # v1.0.3.0: Simplified progress — only show if truly missing major items
+        if not _design_ready and not _design_conds and not _design_scales:
+            st.info("Select conditions and configure DVs below to complete this step.")
 
         # ── Conditions ─────────────────────────────────────────────────
         st.markdown("#### Experimental Conditions")
@@ -7417,7 +7251,6 @@ if active_page == 2:
                         help="Select an identifier from your QSF to add as a condition.",
                     )
                 with col_id2:
-                    st.write("")  # Spacer
                     if st.button("Add →", key="add_identifier_btn", disabled=not id_to_add):
                         # Clean up the identifier (remove [Block] or [Randomizer] prefix if present)
                         clean_id = id_to_add
@@ -7442,7 +7275,6 @@ if active_page == 2:
                     help="Type any condition name you want to add.",
                 )
             with col_add2:
-                st.write("")  # Spacer
                 if st.button("Add →", key="add_condition_btn", disabled=not new_condition.strip()):
                     _nc = new_condition.strip()
                     # v1.8.9: Case-insensitive duplicate check across all sources
@@ -7923,7 +7755,6 @@ if active_page == 2:
 
         # ── Dependent Variables ──────────────────────────────────────────
         st.markdown("#### Dependent Variables")
-        st.caption("Verify each DV matches your QSF survey. Adjust names, scale ranges, or remove incorrect detections.")
 
         # Initialize DV state - use a version counter to handle deletions
         dv_version = st.session_state.get("_dv_version", 0)
@@ -8176,28 +8007,17 @@ if active_page == 2:
         st.session_state["confirmed_scales"] = updated_scales
         scales = updated_scales if updated_scales else scales
 
-        # v1.0.2.3: Confirmation with visual checkpoint — uses placeholder to avoid one-rerun-lag bug
+        # v1.0.3.0: Streamlined DV confirmation — simple checkbox, no banner
         _n_updated = len(updated_scales)
-        _confirm_label = f"I confirm these {_n_updated} DV(s) match my survey" if _n_updated > 0 else "I confirm my DV configuration"
+        _confirm_label = f"DVs verified ({_n_updated})" if _n_updated > 0 else "DVs verified"
         _dv_confirmed_val = st.session_state.get("scales_confirmed", False)
-        _dv_banner_ph = st.empty()  # Placeholder — filled AFTER checkbox returns current value
         scales_confirmed = st.checkbox(
             _confirm_label,
             value=_dv_confirmed_val,
             key=f"dv_confirm_checkbox_v{dv_version}",
-            help="Check this box once you have verified that the variable names, item counts, and scale ranges match your actual Qualtrics survey."
+            help="Check once you've verified variable names, items, and scale ranges."
         )
         st.session_state["scales_confirmed"] = scales_confirmed
-        _dv_chk_cls = "confirmed" if scales_confirmed else ""
-        _dv_banner_ph.markdown(
-            f'<div class="confirm-checkpoint {_dv_chk_cls}">'
-            f'<div class="confirm-checkpoint-label">{"Confirmed" if scales_confirmed else "Required Confirmation"}</div>'
-            '</div>',
-            unsafe_allow_html=True,
-        )
-
-        if not scales_confirmed and updated_scales:
-            st.caption("Verify the DVs above match your survey, then check the box.")
 
         # ========================================
         # STEP 5: OPEN-ENDED QUESTIONS
@@ -8370,35 +8190,22 @@ if active_page == 2:
                 # User cleared all variable names — warn but don't silently delete
                 st.warning("All open-ended question names are empty. Fill in names or remove them explicitly.")
 
-        # v1.0.1.7: Compact context quality indicator + confirmation (OUTSIDE expander)
+        # v1.0.3.0: Compact context quality indicator (OUTSIDE expander)
         _oe_final = st.session_state.get("confirmed_open_ended", [])
         _oe_version_outer = st.session_state.get("_oe_version", 0)
         if _oe_final:
             _ctx_filled = sum(1 for _oq in _oe_final if _oq.get("question_context", "").strip())
-            _ctx_missing_final = len(_oe_final) - _ctx_filled
-            if _ctx_filled == len(_oe_final):
-                st.caption("All open-ended questions have context.")
-            elif _ctx_filled > 0:
-                st.caption(f"{_ctx_filled}/{len(_oe_final)} questions have context. Adding context to the rest improves AI response quality.")
-            else:
-                st.caption("No questions have context yet. Expand above to add 1-2 sentences per question (recommended).")
-        # v1.0.2.3: OE confirmation — uses placeholder to avoid one-rerun-lag bug
+            if _ctx_filled < len(_oe_final):
+                st.caption(f"{_ctx_filled}/{len(_oe_final)} have context \u2014 adding context improves AI responses")
+        # v1.0.3.0: Streamlined OE confirmation — simple checkbox, no banner
         if _oe_final:
             _oe_confirmed_val = st.session_state.get("open_ended_confirmed", False)
-            _oe_banner_ph = st.empty()  # Placeholder — filled AFTER checkbox returns current value
             open_ended_confirmed = st.checkbox(
-                "I confirm these open-ended questions match my survey",
+                f"Open-ended questions verified ({len(_oe_final)})",
                 value=_oe_confirmed_val,
                 key=f"oe_confirm_checkbox_v{_oe_version_outer}",
             )
             st.session_state["open_ended_confirmed"] = open_ended_confirmed
-            _oe_chk_cls = "confirmed" if open_ended_confirmed else ""
-            _oe_banner_ph.markdown(
-                f'<div class="confirm-checkpoint {_oe_chk_cls}">'
-                f'<div class="confirm-checkpoint-label">{"Confirmed" if open_ended_confirmed else "Required Confirmation"}</div>'
-                '</div>',
-                unsafe_allow_html=True,
-            )
         else:
             st.session_state["open_ended_confirmed"] = True  # Nothing to confirm
 
@@ -8640,26 +8447,22 @@ if active_page == 2:
             st.session_state["inferred_design"]["missing_data_rate"] = _missing_rate
             st.session_state["inferred_design"]["dropout_rate"] = _dropout_rate
 
-            st.caption("Design ready. Use the buttons at the top to proceed to **Generate**.")
+            st.caption("Design ready. Click **Generate** in the progress bar to continue.")
         else:
-            # v1.0.2.0: Clearer progress checklist for remaining items
+            # v1.0.3.0: Concise missing-item notice
             missing_bits = []
             if not all_conditions:
-                missing_bits.append("Select at least one condition")
+                missing_bits.append("conditions")
             if not scales:
-                missing_bits.append("Configure at least one DV/scale")
+                missing_bits.append("DVs")
             if not scales_confirmed:
-                missing_bits.append("Confirm your DVs (checkbox above)")
+                missing_bits.append("DV confirmation")
             if not _alloc_ok:
-                missing_bits.append(f"Fix allocation (currently {_alloc_sum}, need {sample_size})")
+                missing_bits.append("sample allocation")
             if not _oe_confirmed_ok:
-                missing_bits.append("Confirm open-ended questions (checkbox above)")
-            _checklist_html = '<div style="background:#FFF7ED;border:1px solid #FDE68A;border-radius:8px;padding:10px 14px;margin:8px 0;">'
-            _checklist_html += '<div style="font-weight:600;font-size:0.82rem;color:#92400E;margin-bottom:6px;">Before you can proceed:</div>'
-            for _mb in missing_bits:
-                _checklist_html += f'<div style="font-size:0.8rem;color:#78350F;padding:2px 0;">&#9744; {_mb}</div>'
-            _checklist_html += '</div>'
-            st.markdown(_checklist_html, unsafe_allow_html=True)
+                missing_bits.append("open-ended confirmation")
+            if missing_bits:
+                st.warning(f"Still needed: {', '.join(missing_bits)}")
 
         # v1.7.0: Variable review — hidden behind Advanced toggle
         if st.session_state.get("advanced_mode", False):
@@ -8692,35 +8495,7 @@ if active_page == 2:
                     )
                     st.session_state["variable_review_rows"] = variable_df.to_dict(orient="records")
 
-    # v1.0.2.4: Fill top nav forward placeholder — computed AFTER page content renders
-    # so it reflects the CURRENT state (not stale _step_done from script top).
-    if _top_fwd_ph is not None:
-        _p3_has_conds = bool(st.session_state.get("selected_conditions") or st.session_state.get("custom_conditions")
-                             or (st.session_state.get("conversational_builder_complete") and st.session_state.get("inferred_design", {}).get("conditions")))
-        _p3_ready = bool(
-            st.session_state.get("inferred_design")
-            and st.session_state.get("scales_confirmed", False)
-            and st.session_state.get("open_ended_confirmed", True)
-            and _p3_has_conds
-        )
-        if _p3_ready:
-            with _top_fwd_ph:
-                if st.button("Generate \u2192", key="top_fwd_2", type="secondary"):
-                    _navigate_to(3)
-        else:
-            _top_fwd_ph.caption("Confirm conditions & DVs to proceed")
-
-    # v1.0.2.3: Bottom nav — ONLY "Back to top" (navigation is at the top)
-    st.markdown("---")
-    _nav_m2_col, = st.columns([1])
-    with _nav_m2_col:
-        st.markdown(
-            '<a href="#btt-anchor" '
-            'onclick="var el=document.getElementById(\'btt-anchor\');'
-            'if(el){el.scrollIntoView({behavior:\'smooth\',block:\'start\'});}return false;" '
-            'class="btt-link">\u2191 Back to top</a>',
-            unsafe_allow_html=True,
-        )
+    # v1.0.3.0: Forward navigation handled by clickable stepper
 
     st.markdown('</div>', unsafe_allow_html=True)
 
@@ -8733,8 +8508,7 @@ if active_page == 3:
     st.markdown(
         '<div class="section-guide">'
         '<strong>Step 4 &middot; Generate</strong> &mdash; '
-        'Choose your difficulty level, review the design summary, '
-        'and generate your simulated dataset.</div>',
+        'Set difficulty, preview data, and generate your dataset.</div>',
         unsafe_allow_html=True,
     )
     inferred = st.session_state.get("inferred_design", None)
@@ -8760,14 +8534,7 @@ if active_page == 3:
     )
 
     if not inferred:
-        st.warning("No experiment design configured yet. Complete the earlier steps first.")
-        col_back1, col_back2, _ = st.columns([1, 1, 2])
-        with col_back1:
-            if st.button("\u2190 Study Input", key="go_step2_from_generate"):
-                _navigate_to(1)
-        with col_back2:
-            if st.button("\u2190 Design", key="go_step3_from_generate"):
-                _navigate_to(2)
+        st.warning("No experiment design configured. Complete **Study Input** and **Design** using the progress bar above.")
         st.markdown('</div>', unsafe_allow_html=True)
         st.stop()
 
@@ -8789,13 +8556,7 @@ if active_page == 3:
 
     missing_fields = [label for label, ok in required_fields.items() if not ok]
     if missing_fields:
-        st.warning(f"Missing: {', '.join(missing_fields)}")
-        _fix_cols = st.columns(len(missing_fields), gap="small")
-        for _fi, _field in enumerate(missing_fields):
-            with _fix_cols[_fi]:
-                _target = 0 if _field in ("Study title", "Study description") else (1 if _field == _input_label else 2)
-                if st.button(f"\u2190 Fix: {_field}", key=f"fix_{_fi}_from_gen", use_container_width=True):
-                    _navigate_to(_target)
+        st.warning(f"Missing: {', '.join(missing_fields)}. Complete earlier steps using the progress bar.")
 
     # Quick summary — metrics row
     conditions = inferred.get('conditions', [])
@@ -8936,9 +8697,7 @@ if active_page == 3:
     if 'preview_df' in st.session_state and st.session_state['preview_df'] is not None:
         st.dataframe(st.session_state['preview_df'], use_container_width=True, height=200)
         _diff_info = DIFFICULTY_LEVELS.get(difficulty_level, DIFFICULTY_LEVELS.get("medium", {}))
-        st.caption(f"Preview generated at difficulty level: **{_diff_info.get('name', difficulty_level)}**")
-
-    st.markdown("")
+        st.caption(f"Preview at difficulty: **{_diff_info.get('name', difficulty_level)}**")
 
     if not st.session_state.get("advanced_mode", False):
         # v1.0.0: Use difficulty level settings
@@ -8990,11 +8749,7 @@ if active_page == 3:
         # Store difficulty settings in session state for engine
         st.session_state['difficulty_settings'] = diff_settings
 
-        with st.expander("View settings (based on difficulty level)"):
-            st.markdown("""
-These settings are locked to ensure all simulations are comparable across teams.
-To customize these parameters, enable **Advanced mode** in the sidebar.
-""")
+        with st.expander("View settings", expanded=False):
             col_std1, col_std2 = st.columns(2)
             with col_std1:
                 st.markdown("**Demographics**")
@@ -9190,12 +8945,9 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
     # v1.4.5: Hidden during generation to show progress immediately
     # ========================================
 
-    # v1.4.14: Hide design summary during generation AND after generation is complete.
-    # After generation, the download section is the primary focus.
+    # v1.0.3.0: Collapsed design summary — only shown in expander to reduce noise
     if not _is_generating and not _has_generated:
-        st.markdown("")
-        st.markdown("#### Final Design Summary")
-        st.caption("Review your experimental design before generating data.")
+        pass  # Summary moved to expander below
 
     # Get all relevant design info (needed for both display and generation)
     display_conditions = conditions
@@ -9205,72 +8957,29 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
     confirmed_oe = st.session_state.get("confirmed_open_ended", [])
     oe_count = len(confirmed_oe)
 
-    # v1.0.2.3: Consistent inline metrics (no st.metric — avoids large font inconsistency)
+    # v1.0.3.0: Collapsed design review — keeps page focused on generation
     if not _is_generating and not _has_generated:
-        n_conds = len(display_conditions)
-        if n_conds == 1:
-            design_type_str = "Single group"
-        elif n_conds == 2:
-            design_type_str = "2-group"
-        elif n_conds == 4:
-            design_type_str = "2\u00d72 factorial"
-        elif n_conds == 6:
-            design_type_str = "2\u00d73 factorial"
-        elif n_conds == 9:
-            design_type_str = "3\u00d73 factorial"
-        else:
-            design_type_str = f"{n_conds}-cell"
-        st.markdown(
-            f'<div style="display:flex;flex-wrap:wrap;gap:20px;font-size:0.85rem;color:#6B7280;margin-bottom:8px;">'
-            f'<span><strong style="color:#374151;">{len(display_conditions)}</strong> conditions</span>'
-            f'<span><strong style="color:#374151;">{len(factors)}</strong> factors</span>'
-            f'<span><strong style="color:#374151;">{len(scales)}</strong> DVs</span>'
-            f'<span><strong style="color:#374151;">{oe_count}</strong> open-ended</span>'
-            f'<span><strong style="color:#374151;">{design_type_str}</strong> design</span>'
-            f'</div>',
-            unsafe_allow_html=True,
-        )
-
-        # Detailed breakdown
-        detail_col1, detail_col2 = st.columns(2)
-
-        with detail_col1:
+        with st.expander("Review full design", expanded=False):
+            n_conds = len(display_conditions)
             clean_cond_names = [_clean_condition_name(c) for c in display_conditions]
-            if st.session_state.get("use_crossed_conditions"):
-                st.markdown(f"**Factorial Conditions:** {', '.join(clean_cond_names[:6])}")
-                if len(clean_cond_names) > 6:
-                    st.markdown(f"  _{len(clean_cond_names) - 6} more..._")
-            else:
-                st.markdown(f"**Conditions:** {', '.join(clean_cond_names[:6])}")
-                if len(clean_cond_names) > 6:
-                    st.markdown(f"  _{len(clean_cond_names) - 6} more..._")
-
-            # DVs
             dv_names = [s.get('name', 'Unknown') for s in scales if s.get('name')]
-            st.markdown(f"**DVs:** {', '.join(dv_names[:5]) if dv_names else 'Main_DV (default)'}")
-            if len(dv_names) > 5:
-                st.markdown(f"  _{len(dv_names) - 5} more..._")
-
-        with detail_col2:
-            # Open-ended questions
-            if oe_count > 0:
-                oe_names = [oe.get('variable_name', oe.get('name', '')) for oe in confirmed_oe[:5]]
-                oe_display = ', '.join(oe_names)
-                st.markdown(f"**Open-Ended:** {oe_display}")
-                if oe_count > 5:
-                    st.markdown(f"  _{oe_count - 5} more..._")
-            else:
-                st.markdown("**Open-Ended:** None configured")
-
-            # Sample info
             N = st.session_state.get("sample_size", 200)
             n_per_cell = N // max(1, len(display_conditions))
-            st.markdown(f"**Sample:** {N} total (~{n_per_cell} per condition)")
 
-            # Effect size only if user specified
-            if st.session_state.get("add_effect_checkbox", False):
-                effect_d = st.session_state.get("effect_cohens_d", 0.5)
-                st.markdown(f"**Effect Size:** d = {effect_d:.2f}")
+            detail_col1, detail_col2 = st.columns(2)
+            with detail_col1:
+                st.markdown(f"**Conditions ({n_conds}):** {', '.join(clean_cond_names[:6])}")
+                if len(clean_cond_names) > 6:
+                    st.caption(f"+{len(clean_cond_names) - 6} more")
+                st.markdown(f"**DVs ({len(dv_names)}):** {', '.join(dv_names[:5]) if dv_names else 'Main_DV'}")
+            with detail_col2:
+                if oe_count > 0:
+                    oe_names = [oe.get('variable_name', oe.get('name', '')) for oe in confirmed_oe[:5]]
+                    st.markdown(f"**Open-Ended ({oe_count}):** {', '.join(oe_names)}")
+                st.markdown(f"**Sample:** {N} total (~{n_per_cell}/cell)")
+                if st.session_state.get("add_effect_checkbox", False):
+                    effect_d = st.session_state.get("effect_cohens_d", 0.5)
+                    st.markdown(f"**Effect Size:** d = {effect_d:.2f}")
 
     # ========================================
     # GENERATE BUTTON - with proper state management
