@@ -53,8 +53,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.0.1.9"
-BUILD_ID = "20260210-v1019-enhanced-stepper-nav"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.0.2.0"
+BUILD_ID = "20260210-v1020-stepper-nav-clickable"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -119,7 +119,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.0.1.9"  # v1.0.1.9: Enhanced stepper progress bar navigation
+APP_VERSION = "1.0.2.0"  # v1.0.2.0: Clickable stepper nav, remove bottom Continue buttons
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -4099,9 +4099,8 @@ def _render_builder_design_review() -> None:
     if _design_issues:
         st.warning("Design incomplete: " + "; ".join(_design_issues))
     else:
-        # v1.6.0: CTA at top when design is ready — most important action first
-        if st.button("Continue to Generate \u2192", key="review_to_generate", type="primary"):
-            _navigate_to(3)
+        # v1.0.2.0: Design ready — stepper at top handles navigation
+        st.success("Design complete! Use the stepper at the top to proceed to **Generate**.")
 
     # Show design improvement suggestions if available
     _builder_feedback = st.session_state.get("_builder_feedback", [])
@@ -5437,7 +5436,7 @@ section[data-testid="stSidebar"] .stCaption { line-height: 1.4; }
     .use-case-grid { grid-template-columns: 1fr; }
 }
 
-/* ─── Enhanced stepper progress bar (v1.0.1.9) ─── */
+/* ─── Enhanced stepper progress bar (v1.0.2.0) ─── */
 .stepper-nav {
     display: flex;
     align-items: flex-start;
@@ -5470,6 +5469,10 @@ section[data-testid="stSidebar"] .stCaption { line-height: 1.4; }
 }
 .stepper-step.st-active:not(:last-child)::after {
     background: linear-gradient(90deg, #3B82F6 0%, #E5E7EB 100%);
+}
+/* v1.0.2.0: When active step is done, line between active and next-target is green→orange */
+.stepper-step.st-active.step-done:not(:last-child)::after {
+    background: linear-gradient(90deg, #3B82F6 0%, #F97316 100%);
 }
 /* Circle indicator */
 .stepper-circle {
@@ -5521,6 +5524,25 @@ section[data-testid="stSidebar"] .stCaption { line-height: 1.4; }
     border-color: #9CA3AF;
     color: #6B7280;
     background: #F3F4F6;
+}
+/* v1.0.2.0: "Next step" indicator — pulsing border when step is the next target */
+.stepper-step.st-next-target .stepper-circle {
+    background: #FFF7ED;
+    color: #EA580C;
+    border-color: #F97316;
+    box-shadow: 0 0 0 3px rgba(249, 115, 22, 0.15);
+    animation: nextPulse 2s ease-in-out infinite;
+}
+.stepper-step.st-next-target .stepper-title {
+    color: #EA580C;
+    font-weight: 600;
+}
+.stepper-step.st-next-target .stepper-desc {
+    color: #FB923C;
+}
+@keyframes nextPulse {
+    0%, 100% { box-shadow: 0 0 0 3px rgba(249, 115, 22, 0.15); }
+    50% { box-shadow: 0 0 0 6px rgba(249, 115, 22, 0.08); }
 }
 /* Locked — dimmed, not clickable */
 .stepper-step.st-locked .stepper-circle {
@@ -5708,18 +5730,55 @@ section[data-testid="stSidebar"] .stCaption { line-height: 1.4; }
 }
 
 /* v1.0.1.7: Removed pulsing animation — cleaner, more professional look */
+
+/* ─── v1.0.2.0: Mandatory confirmation checkboxes — prominent styling ─── */
+.confirm-checkpoint {
+    background: linear-gradient(135deg, #FFF7ED 0%, #FFFBEB 100%);
+    border: 2px solid #F59E0B;
+    border-radius: 10px;
+    padding: 12px 16px;
+    margin: 12px 0;
+    position: relative;
+}
+.confirm-checkpoint::before {
+    content: '';
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    width: 4px;
+    background: #F59E0B;
+    border-radius: 10px 0 0 10px;
+}
+.confirm-checkpoint-label {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: #92400E;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 4px;
+}
+.confirm-checkpoint.confirmed {
+    background: linear-gradient(135deg, #F0FDF4 0%, #ECFDF5 100%);
+    border-color: #22C55E;
+}
+.confirm-checkpoint.confirmed::before {
+    background: #22C55E;
+}
+.confirm-checkpoint.confirmed .confirm-checkpoint-label {
+    color: #166534;
+}
 </style>"""
 
 
 def _render_flow_nav(active: int, done: List[bool]) -> None:
-    """Render enhanced stepper progress bar with visual states.
+    """Render enhanced stepper progress bar with visual states and click navigation.
 
-    v1.0.1.9: Enhanced stepper with completed/active/upcoming/locked states.
+    v1.0.2.0: Clickable stepper replaces bottom Continue buttons.
     - Completed steps: green circle + checkmark, clickable to revisit
     - Active step: blue circle + number with subtle pulse
+    - Next-target step: orange pulsing circle when current step is complete
     - Upcoming steps: gray outline, clickable if previous step done
     - Locked steps: dimmed, not clickable
-    Forward navigation is handled by bottom Continue buttons on each page.
+    Hidden Streamlit buttons + JavaScript wire stepper clicks to navigation.
     Includes #btt-anchor for "Back to top" links at the bottom of pages.
     """
     while len(done) < len(SECTION_META):
@@ -5732,8 +5791,10 @@ def _render_flow_nav(active: int, done: List[bool]) -> None:
     # Determine state for each step:
     # - done: completed (i < active and done[i], OR done[i] is True for any visited step)
     # - active: currently viewing
+    # - next-target: the immediate next step when current step is done (pulsing CTA)
     # - upcoming: reachable (all prior steps done, or step is active+1)
     # - locked: not yet reachable
+    _active_done = done[active] if 0 <= active < len(done) else False
     step_states: List[str] = []
     for i in range(len(SECTION_META)):
         if done[i] and i != active:
@@ -5743,8 +5804,11 @@ def _render_flow_nav(active: int, done: List[bool]) -> None:
         elif i <= active:
             # Past step that isn't done — treat as upcoming (revisitable)
             step_states.append("upcoming")
+        elif i == active + 1 and _active_done:
+            # v1.0.2.0: Next step is the target — show pulsing CTA
+            step_states.append("next-target")
         elif i == active + 1:
-            # Next step is always reachable (upcoming)
+            # Next step is reachable but current not done yet
             step_states.append("upcoming")
         else:
             # Check if all prior steps are done
@@ -5769,6 +5833,12 @@ def _render_flow_nav(active: int, done: List[bool]) -> None:
         '</svg>'
     )
 
+    # v1.0.2.0: Build clickable states list for JS
+    clickable_steps = [
+        (state in ("done", "upcoming", "next-target")) and i != active
+        for i, state in enumerate(step_states)
+    ]
+
     html = '<div class="stepper-nav">'
     for i, sm in enumerate(SECTION_META):
         state = step_states[i]
@@ -5782,10 +5852,17 @@ def _render_flow_nav(active: int, done: List[bool]) -> None:
         else:
             circle_content = str(i + 1)
 
-        # Summary text for done steps
-        summary = _section_summary(i) if state == "done" else sm["desc"]
+        # Summary text: done steps show summary, next-target shows CTA
+        if state == "done":
+            summary = _section_summary(i)
+        elif state == "next-target":
+            summary = "Click to continue"
+        else:
+            summary = sm["desc"]
 
-        html += f'<div class="stepper-step {state_cls}" data-step="{i}">'
+        # v1.0.2.0: Add step-done class to active step when it's complete
+        _extra_cls = " step-done" if (i == active and _active_done) else ""
+        html += f'<div class="stepper-step {state_cls}{_extra_cls}" data-step="{i}">'
         html += f'<div class="stepper-circle">{circle_content}</div>'
         html += f'<div class="stepper-title">{sm["title"]}</div>'
         html += f'<div class="stepper-desc">{summary}</div>'
@@ -5793,6 +5870,71 @@ def _render_flow_nav(active: int, done: List[bool]) -> None:
     html += '</div>'
 
     st.markdown(html, unsafe_allow_html=True)
+
+    # v1.0.2.0: Hidden navigation buttons triggered by stepper clicks
+    # Each button is rendered in a hidden container; JavaScript finds and clicks them.
+    _stepper_cols = st.columns(len(SECTION_META))
+    for i in range(len(SECTION_META)):
+        with _stepper_cols[i]:
+            if clickable_steps[i]:
+                if st.button(
+                    f"nav_{i}",
+                    key=f"_stepper_nav_{i}",
+                    type="secondary",
+                    use_container_width=True,
+                ):
+                    _navigate_to(i)
+
+    # Inject CSS to hide the stepper nav buttons + JS to wire clicks
+    _clickable_json = str(clickable_steps).lower()
+    st.markdown(f'''<style>
+/* Hide the stepper nav button row — buttons are click-targets for JS only */
+div[data-testid="stHorizontalBlock"]:has(button[key^="_stepper_nav_"]),
+div[data-testid="stHorizontalBlock"]:has(button:is([kind="secondary"])) + div.stepper-btn-hide {{
+    display: none;
+}}
+/* Target the specific row by key pattern — fallback: use last horizontal block before content */
+</style>
+<script>
+(function() {{
+    var clickable = {_clickable_json};
+    var doc = window.parent.document;
+    function wire() {{
+        // Find all stepper step divs
+        var steps = doc.querySelectorAll('.stepper-step');
+        steps.forEach(function(stepEl) {{
+            var idx = parseInt(stepEl.getAttribute('data-step'));
+            if (isNaN(idx) || !clickable[idx]) return;
+            // Already wired?
+            if (stepEl.getAttribute('data-wired')) return;
+            stepEl.setAttribute('data-wired', '1');
+            stepEl.style.cursor = 'pointer';
+            stepEl.addEventListener('click', function() {{
+                // Find the hidden button for this step
+                var btns = doc.querySelectorAll('button');
+                for (var b = 0; b < btns.length; b++) {{
+                    var txt = btns[b].textContent.trim();
+                    if (txt === 'nav_' + idx) {{
+                        btns[b].click();
+                        return;
+                    }}
+                }}
+            }});
+        }});
+        // Hide the button row containing nav_ buttons
+        var allBtns = doc.querySelectorAll('button');
+        allBtns.forEach(function(btn) {{
+            if (/^nav_\\d$/.test(btn.textContent.trim())) {{
+                // Walk up to the stHorizontalBlock container and hide it
+                var parent = btn.closest('[data-testid="stHorizontalBlock"]');
+                if (parent) parent.style.display = 'none';
+            }}
+        }});
+    }}
+    // Run with delays to catch async rendering
+    [0, 100, 300, 600, 1200, 2000].forEach(function(d) {{ setTimeout(wire, d); }});
+}})();
+</script>''', unsafe_allow_html=True)
 
 
 _SCROLL_TO_TOP_JS = """<script>
@@ -7010,9 +7152,9 @@ if active_page == 1:
         if selected_conditions:
             st.success(f"✓ Conditions: {', '.join(selected_conditions)}")
 
-    # v1.0.1.8: Bottom nav — Back | Back to top | Continue (3-column)
+    # v1.0.2.0: Bottom nav — Back | Back to top (no Continue — top stepper only)
     st.markdown("---")
-    _nav_left1, _nav_mid1, _nav_right1 = st.columns([1, 1, 1])
+    _nav_left1, _nav_mid1 = st.columns([1, 2])
     with _nav_left1:
         if st.button("\u2190 Setup", key="back_1", type="secondary"):
             _navigate_to(0)
@@ -7024,10 +7166,6 @@ if active_page == 1:
             'class="btt-link">\u2191 Back to top</a>',
             unsafe_allow_html=True,
         )
-    with _nav_right1:
-        if step2_done:
-            if st.button("Continue to Design \u2192", key="bottom_continue_1", type="primary", use_container_width=True):
-                _navigate_to(2)
 
     st.markdown('</div>', unsafe_allow_html=True)
 
@@ -7086,13 +7224,18 @@ if active_page == 2:
         if not _design_ready:
             _missing = []
             if not _design_conds:
-                _missing.append("conditions")
+                _missing.append("Select conditions below")
             if not _design_scales:
-                _missing.append("DVs/scales")
+                _missing.append("Configure DVs/scales below")
             if not st.session_state.get("scales_confirmed", False) and _design_scales:
-                _missing.append("scale confirmation")
+                _missing.append("Confirm your DVs (checkbox below)")
             if _missing:
-                st.caption(f"Still needed: {', '.join(_missing)}")
+                _chk_html = '<div style="background:#FFF7ED;border:1px solid #FDE68A;border-radius:8px;padding:10px 14px;margin:4px 0 12px 0;">'
+                _chk_html += '<div style="font-weight:600;font-size:0.82rem;color:#92400E;margin-bottom:4px;">To complete this step:</div>'
+                for _m in _missing:
+                    _chk_html += f'<div style="font-size:0.8rem;color:#78350F;padding:2px 0;">&#9744; {_m}</div>'
+                _chk_html += '</div>'
+                st.markdown(_chk_html, unsafe_allow_html=True)
 
         # ── Conditions ─────────────────────────────────────────────────
         st.markdown("#### Experimental Conditions")
@@ -7909,12 +8052,20 @@ if active_page == 2:
         st.session_state["confirmed_scales"] = updated_scales
         scales = updated_scales if updated_scales else scales
 
-        # v1.9.1: Confirmation with scale summary and clearer feedback
+        # v1.0.2.0: Confirmation with visual checkpoint styling
         _n_updated = len(updated_scales)
         _confirm_label = f"I confirm these {_n_updated} DV(s) match my survey" if _n_updated > 0 else "I confirm my DV configuration"
+        _dv_confirmed_val = st.session_state.get("scales_confirmed", False)
+        _dv_chk_cls = "confirmed" if _dv_confirmed_val else ""
+        st.markdown(
+            f'<div class="confirm-checkpoint {_dv_chk_cls}">'
+            f'<div class="confirm-checkpoint-label">{"Confirmed" if _dv_confirmed_val else "Required Confirmation"}</div>'
+            '</div>',
+            unsafe_allow_html=True,
+        )
         scales_confirmed = st.checkbox(
             _confirm_label,
-            value=st.session_state.get("scales_confirmed", False),
+            value=_dv_confirmed_val,
             key=f"dv_confirm_checkbox_v{dv_version}",
             help="Check this box once you have verified that the variable names, item counts, and scale ranges match your actual Qualtrics survey."
         )
@@ -8106,12 +8257,19 @@ if active_page == 2:
                 st.caption(f"{_ctx_filled}/{len(_oe_final)} questions have context. Adding context to the rest improves AI response quality.")
             else:
                 st.caption("No questions have context yet. Expand above to add 1-2 sentences per question (recommended).")
-        # v1.0.1.4: Only show OE confirmation checkbox when there are OE questions;
-        # auto-confirm when list is empty (nothing to confirm)
+        # v1.0.2.0: OE confirmation with visual checkpoint styling
         if _oe_final:
+            _oe_confirmed_val = st.session_state.get("open_ended_confirmed", False)
+            _oe_chk_cls = "confirmed" if _oe_confirmed_val else ""
+            st.markdown(
+                f'<div class="confirm-checkpoint {_oe_chk_cls}">'
+                f'<div class="confirm-checkpoint-label">{"Confirmed" if _oe_confirmed_val else "Required Confirmation"}</div>'
+                '</div>',
+                unsafe_allow_html=True,
+            )
             open_ended_confirmed = st.checkbox(
                 "I confirm these open-ended questions match my survey",
-                value=st.session_state.get("open_ended_confirmed", False),
+                value=_oe_confirmed_val,
                 key=f"oe_confirm_checkbox_v{_oe_version_outer}",
             )
             st.session_state["open_ended_confirmed"] = open_ended_confirmed
@@ -8350,20 +8508,26 @@ if active_page == 2:
             st.session_state["inferred_design"]["missing_data_rate"] = _missing_rate
             st.session_state["inferred_design"]["dropout_rate"] = _dropout_rate
 
-            st.caption("Design ready. Use **Continue to Generate** below.")
+            st.caption("Design ready. Use the stepper at the top to proceed to **Generate**.")
         else:
+            # v1.0.2.0: Clearer progress checklist for remaining items
             missing_bits = []
             if not all_conditions:
-                missing_bits.append("conditions")
+                missing_bits.append("Select at least one condition")
             if not scales:
-                missing_bits.append("scales")
+                missing_bits.append("Configure at least one DV/scale")
             if not scales_confirmed:
-                missing_bits.append("scale confirmation")
+                missing_bits.append("Confirm your DVs (checkbox above)")
             if not _alloc_ok:
-                missing_bits.append(f"allocation (sums to {_alloc_sum}, need {sample_size})")
+                missing_bits.append(f"Fix allocation (currently {_alloc_sum}, need {sample_size})")
             if not _oe_confirmed_ok:
-                missing_bits.append("OE confirmation")
-            st.caption(f"Still needed: {', '.join(missing_bits)}")
+                missing_bits.append("Confirm open-ended questions (checkbox above)")
+            _checklist_html = '<div style="background:#FFF7ED;border:1px solid #FDE68A;border-radius:8px;padding:10px 14px;margin:8px 0;">'
+            _checklist_html += '<div style="font-weight:600;font-size:0.82rem;color:#92400E;margin-bottom:6px;">Before you can proceed:</div>'
+            for _mb in missing_bits:
+                _checklist_html += f'<div style="font-size:0.8rem;color:#78350F;padding:2px 0;">&#9744; {_mb}</div>'
+            _checklist_html += '</div>'
+            st.markdown(_checklist_html, unsafe_allow_html=True)
 
         # v1.7.0: Variable review — hidden behind Advanced toggle
         if st.session_state.get("advanced_mode", False):
@@ -8396,14 +8560,9 @@ if active_page == 2:
                     )
                     st.session_state["variable_review_rows"] = variable_df.to_dict(orient="records")
 
-    # v1.0.1.8: Bottom nav — Back | Back to top | Continue (3-column).
-    # The bottom Continue button is ESSENTIAL — it renders AFTER inferred_design
-    # is set during this page's render, fixing the timing bug where the top-of-page
-    # Continue (in _render_flow_nav) couldn't see inferred_design on the same rerun.
-    _design_can_next = bool(st.session_state.get("inferred_design"))
-
+    # v1.0.2.0: Bottom nav — Back | Back to top (no Continue — top stepper only)
     st.markdown("---")
-    _nav_left2, _nav_mid2, _nav_right2 = st.columns([1, 1, 1])
+    _nav_left2, _nav_mid2 = st.columns([1, 2])
     with _nav_left2:
         if st.button("\u2190 Study Input", key="back_2", type="secondary"):
             _navigate_to(1)
@@ -8415,10 +8574,6 @@ if active_page == 2:
             'class="btt-link">\u2191 Back to top</a>',
             unsafe_allow_html=True,
         )
-    with _nav_right2:
-        if _design_can_next:
-            if st.button("Continue to Generate \u2192", key="bottom_continue_2", type="primary", use_container_width=True):
-                _navigate_to(3)
 
     st.markdown('</div>', unsafe_allow_html=True)
 
