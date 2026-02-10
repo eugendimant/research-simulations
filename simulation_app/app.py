@@ -53,8 +53,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.0.1.8"
-BUILD_ID = "20260210-v1018-btt-restored-ux-polish"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.0.1.9"
+BUILD_ID = "20260210-v1019-enhanced-stepper-nav"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -119,7 +119,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.0.1.8"  # v1.0.1.8: Restore Back to top, 2 iterations UX polish
+APP_VERSION = "1.0.1.9"  # v1.0.1.9: Enhanced stepper progress bar navigation
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -5437,62 +5437,142 @@ section[data-testid="stSidebar"] .stCaption { line-height: 1.4; }
     .use-case-grid { grid-template-columns: 1fr; }
 }
 
-/* ─── Segmented progress bar ─── */
-.seg-progress {
+/* ─── Enhanced stepper progress bar (v1.0.1.9) ─── */
+.stepper-nav {
     display: flex;
-    gap: 4px;
-    padding: 10px 0 0;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 14px 0 6px;
+    position: relative;
 }
-.seg-bar {
+.stepper-step {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
     flex: 1;
-    height: 3px;
-    border-radius: 2px;
+    position: relative;
+    z-index: 1;
+}
+/* Connecting line between steps */
+.stepper-step:not(:last-child)::after {
+    content: '';
+    position: absolute;
+    top: 17px;
+    left: calc(50% + 18px);
+    width: calc(100% - 36px);
+    height: 2px;
     background: #E5E7EB;
-    transition: all 0.3s ease;
+    z-index: 0;
+    transition: background 0.3s ease;
 }
-.seg-bar.active {
-    background: #3B82F6;
-}
-.seg-bar.done {
+.stepper-step.st-done:not(:last-child)::after {
     background: #22C55E;
 }
-/* v1.0.1.6: Clickable step labels under progress bar */
-.seg-labels {
-    display: flex;
-    gap: 4px;
-    padding: 4px 0 2px;
+.stepper-step.st-active:not(:last-child)::after {
+    background: linear-gradient(90deg, #3B82F6 0%, #E5E7EB 100%);
 }
-.seg-label-item {
-    flex: 1;
-    text-align: center;
-    font-size: 0.72rem;
-    color: #9CA3AF;
-    padding: 2px 0;
+/* Circle indicator */
+.stepper-circle {
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    font-weight: 700;
+    margin-bottom: 6px;
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+    z-index: 2;
     cursor: pointer;
-    border-radius: 4px;
-    transition: all 0.15s ease;
+    border: 2px solid transparent;
+}
+/* Done state — green with checkmark */
+.stepper-step.st-done .stepper-circle {
+    background: #22C55E;
+    color: white;
+    border-color: #22C55E;
+    box-shadow: 0 2px 8px rgba(34, 197, 94, 0.25);
+}
+.stepper-step.st-done .stepper-circle:hover {
+    transform: scale(1.1);
+    box-shadow: 0 3px 12px rgba(34, 197, 94, 0.35);
+}
+/* Active state — blue with number */
+.stepper-step.st-active .stepper-circle {
+    background: #3B82F6;
+    color: white;
+    border-color: #3B82F6;
+    box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.15);
+    animation: stepPulse 2s ease-in-out infinite;
+}
+@keyframes stepPulse {
+    0%, 100% { box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.15); }
+    50% { box-shadow: 0 0 0 7px rgba(59, 130, 246, 0.08); }
+}
+/* Upcoming (reachable) — gray outline */
+.stepper-step.st-upcoming .stepper-circle {
+    background: #F9FAFB;
+    color: #9CA3AF;
+    border-color: #D1D5DB;
+}
+.stepper-step.st-upcoming .stepper-circle:hover {
+    border-color: #9CA3AF;
+    color: #6B7280;
+    background: #F3F4F6;
+}
+/* Locked — dimmed, not clickable */
+.stepper-step.st-locked .stepper-circle {
+    background: #F9FAFB;
+    color: #D1D5DB;
+    border-color: #E5E7EB;
+    cursor: default;
+    opacity: 0.6;
+}
+/* Step title label */
+.stepper-title {
+    font-size: 0.73rem;
+    font-weight: 500;
+    color: #9CA3AF;
+    text-align: center;
+    transition: color 0.2s ease;
+    line-height: 1.3;
+    max-width: 90px;
+    cursor: pointer;
     user-select: none;
 }
-.seg-label-item:hover {
-    background: #F3F4F6;
-    color: #4B5563;
-}
-.seg-label-item.lbl-active {
-    color: #3B82F6;
+.stepper-step.st-done .stepper-title {
+    color: #16A34A;
     font-weight: 600;
 }
-.seg-label-item.lbl-done {
-    color: #16A34A;
+.stepper-step.st-active .stepper-title {
+    color: #2563EB;
+    font-weight: 600;
 }
-.step-label {
+.stepper-step.st-locked .stepper-title {
+    color: #D1D5DB;
+    cursor: default;
+}
+/* Step description under title */
+.stepper-desc {
+    font-size: 0.65rem;
+    color: #9CA3AF;
     text-align: center;
-    font-size: 0.82rem;
-    color: #6B7280;
-    padding: 6px 0 10px;
-    font-weight: 500;
+    max-width: 100px;
+    line-height: 1.3;
+    margin-top: 1px;
 }
-.step-label strong {
-    color: #1F2937;
+.stepper-step.st-done .stepper-desc { color: #86EFAC; }
+.stepper-step.st-active .stepper-desc { color: #93C5FD; }
+.stepper-step.st-locked .stepper-desc { color: #E5E7EB; }
+
+/* Responsive stepper */
+@media (max-width: 600px) {
+    .stepper-circle { width: 28px; height: 28px; font-size: 11px; }
+    .stepper-title { font-size: 0.65rem; max-width: 70px; }
+    .stepper-desc { display: none; }
+    .stepper-step:not(:last-child)::after { top: 14px; left: calc(50% + 15px); width: calc(100% - 30px); }
 }
 
 /* ─── Section wrapper ─── */
@@ -5632,9 +5712,13 @@ section[data-testid="stSidebar"] .stCaption { line-height: 1.4; }
 
 
 def _render_flow_nav(active: int, done: List[bool]) -> None:
-    """Render a clean segmented progress bar with step labels.
+    """Render enhanced stepper progress bar with visual states.
 
-    v1.0.1.8: Clean progress bar + labels only. No redundant step buttons.
+    v1.0.1.9: Enhanced stepper with completed/active/upcoming/locked states.
+    - Completed steps: green circle + checkmark, clickable to revisit
+    - Active step: blue circle + number with subtle pulse
+    - Upcoming steps: gray outline, clickable if previous step done
+    - Locked steps: dimmed, not clickable
     Forward navigation is handled by bottom Continue buttons on each page.
     Includes #btt-anchor for "Back to top" links at the bottom of pages.
     """
@@ -5645,23 +5729,70 @@ def _render_flow_nav(active: int, done: List[bool]) -> None:
     # Pure client-side scrollIntoView() — no st.rerun() needed.
     st.markdown('<div id="btt-anchor"></div>', unsafe_allow_html=True)
 
-    # Build segmented progress bar + labels as a single HTML block
-    segments_html = '<div class="seg-progress">'
+    # Determine state for each step:
+    # - done: completed (i < active and done[i], OR done[i] is True for any visited step)
+    # - active: currently viewing
+    # - upcoming: reachable (all prior steps done, or step is active+1)
+    # - locked: not yet reachable
+    step_states: List[str] = []
     for i in range(len(SECTION_META)):
-        if i < active and done[i]:
-            cls = "done"
+        if done[i] and i != active:
+            step_states.append("done")
         elif i == active:
-            cls = "active"
+            step_states.append("active")
+        elif i <= active:
+            # Past step that isn't done — treat as upcoming (revisitable)
+            step_states.append("upcoming")
+        elif i == active + 1:
+            # Next step is always reachable (upcoming)
+            step_states.append("upcoming")
         else:
-            cls = ""
-        segments_html += f'<div class="seg-bar {cls}" data-step="{i}"></div>'
-    segments_html += '</div>'
-    labels_html = '<div class="seg-labels">'
+            # Check if all prior steps are done
+            all_prior_done = all(done[j] for j in range(i))
+            step_states.append("upcoming" if all_prior_done else "locked")
+
+    # SVG checkmark for completed steps
+    check_svg = (
+        '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" '
+        'xmlns="http://www.w3.org/2000/svg">'
+        '<path d="M3.5 8.5L6.5 11.5L12.5 4.5" stroke="white" '
+        'stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>'
+        '</svg>'
+    )
+    # SVG lock for locked steps
+    lock_svg = (
+        '<svg width="14" height="14" viewBox="0 0 14 14" fill="none" '
+        'xmlns="http://www.w3.org/2000/svg">'
+        '<rect x="3" y="6" width="8" height="6" rx="1.5" stroke="#D1D5DB" stroke-width="1.5"/>'
+        '<path d="M5 6V4.5C5 3.12 6.12 2 7.5 2V2C8.88 2 10 3.12 10 4.5V6" '
+        'stroke="#D1D5DB" stroke-width="1.5" stroke-linecap="round"/>'
+        '</svg>'
+    )
+
+    html = '<div class="stepper-nav">'
     for i, sm in enumerate(SECTION_META):
-        lbl_cls = "lbl-active" if i == active else ("lbl-done" if i < active and done[i] else "")
-        labels_html += f'<div class="seg-label-item {lbl_cls}">{sm["title"]}</div>'
-    labels_html += '</div>'
-    st.markdown(segments_html + labels_html, unsafe_allow_html=True)
+        state = step_states[i]
+        state_cls = f"st-{state}"
+
+        # Circle content: checkmark for done, number for active/upcoming, lock for locked
+        if state == "done":
+            circle_content = check_svg
+        elif state == "locked":
+            circle_content = lock_svg
+        else:
+            circle_content = str(i + 1)
+
+        # Summary text for done steps
+        summary = _section_summary(i) if state == "done" else sm["desc"]
+
+        html += f'<div class="stepper-step {state_cls}" data-step="{i}">'
+        html += f'<div class="stepper-circle">{circle_content}</div>'
+        html += f'<div class="stepper-title">{sm["title"]}</div>'
+        html += f'<div class="stepper-desc">{summary}</div>'
+        html += '</div>'
+    html += '</div>'
+
+    st.markdown(html, unsafe_allow_html=True)
 
 
 _SCROLL_TO_TOP_JS = """<script>

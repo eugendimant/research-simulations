@@ -18,7 +18,7 @@ Architecture:
 Version: 1.0.1.4
 """
 
-__version__ = "1.0.1.8"
+__version__ = "1.0.1.9"
 
 import hashlib
 import json
@@ -838,7 +838,7 @@ def _call_llm_api(
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
-        "User-Agent": "BehavioralSimulationTool/1.0.1.8",
+        "User-Agent": "BehavioralSimulationTool/1.0.1.9",
     }
 
     # OpenRouter requires/recommends HTTP-Referer and X-Title
