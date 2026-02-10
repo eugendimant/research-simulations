@@ -6,7 +6,7 @@ published meta-analytic findings. Supports automatic construct detection
 from scale/DV names, empirical correlation lookup, and generation of
 multivariate correlated latent scores.
 
-Version: 1.8.8.0
+Version: 1.8.8.1
 
 Key capabilities:
     - Detect construct types from scale names and question text
@@ -34,7 +34,7 @@ Meta-analytic sources informing default correlations:
     - Morgan & Hunt (1994) - Commitment-trust theory
 """
 
-__version__ = "1.8.8.0"
+__version__ = "1.8.8.1"
 
 from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
@@ -969,6 +969,19 @@ def nearest_positive_definite(A: np.ndarray) -> np.ndarray:
     if n == 0:
         return A.copy()
 
+    # Edge case: 1x1 matrix -> always [[1.0]] for correlation
+    if n == 1:
+        return np.array([[1.0]])
+
+    # Edge case: if already identity, return immediately
+    if np.allclose(A, np.eye(n)):
+        return np.eye(n)
+
+    # Edge case: all-zero off-diagonal with zero diagonal -> return identity
+    # (a correlation matrix must have 1s on diagonal)
+    if np.allclose(A, 0.0):
+        return np.eye(n)
+
     # Symmetrise
     B = (A + A.T) / 2.0
 
@@ -1255,3 +1268,81 @@ def get_correlation_summary(
     lines.append("=" * 70)
 
     return "\n".join(lines)
+
+
+def validate_correlation_matrix(matrix: np.ndarray) -> Tuple[bool, List[str]]:
+    """Validate whether a matrix is a valid correlation matrix.
+
+    A valid correlation matrix must be:
+        1. Square and 2-dimensional
+        2. Symmetric (A[i,j] == A[j,i])
+        3. Diagonal values equal to 1.0
+        4. All values in the range [-1, 1]
+        5. Positive semi-definite (all eigenvalues >= 0)
+
+    Args:
+        matrix: The matrix to validate.
+
+    Returns:
+        A tuple of ``(is_valid, issues)`` where *is_valid* is ``True`` if
+        the matrix passes all checks, and *issues* is a list of human-readable
+        strings describing any problems found.
+    """
+    issues: List[str] = []
+
+    # Check: not empty
+    if matrix.size == 0:
+        issues.append("Matrix is empty (0x0).")
+        return False, issues
+
+    # Check: 2-dimensional
+    if matrix.ndim != 2:
+        issues.append(f"Matrix must be 2-dimensional, got {matrix.ndim}D.")
+        return False, issues
+
+    # Check: square
+    if matrix.shape[0] != matrix.shape[1]:
+        issues.append(
+            f"Matrix must be square, got shape {matrix.shape}."
+        )
+        return False, issues
+
+    n = matrix.shape[0]
+
+    # Check: symmetric
+    if not np.allclose(matrix, matrix.T, atol=1e-8):
+        max_asym = float(np.max(np.abs(matrix - matrix.T)))
+        issues.append(
+            f"Matrix is not symmetric (max asymmetry: {max_asym:.2e})."
+        )
+
+    # Check: diagonal == 1
+    diag = np.diag(matrix)
+    if not np.allclose(diag, 1.0, atol=1e-8):
+        bad_diag = [(i, float(diag[i])) for i in range(n) if abs(diag[i] - 1.0) > 1e-8]
+        issues.append(
+            f"Diagonal values must be 1.0; found deviations at indices: "
+            f"{bad_diag[:5]}{'...' if len(bad_diag) > 5 else ''}."
+        )
+
+    # Check: values in [-1, 1]
+    if np.any(matrix < -1.0 - 1e-8) or np.any(matrix > 1.0 + 1e-8):
+        out_of_range = float(np.max(np.abs(matrix)))
+        issues.append(
+            f"Values must be in [-1, 1]; max absolute value is {out_of_range:.4f}."
+        )
+
+    # Check: positive semi-definite (eigenvalues >= 0)
+    try:
+        eigenvalues = np.linalg.eigvalsh(matrix)
+        min_eig = float(np.min(eigenvalues))
+        if min_eig < -1e-8:
+            issues.append(
+                f"Matrix is not positive semi-definite "
+                f"(minimum eigenvalue: {min_eig:.6f})."
+            )
+    except np.linalg.LinAlgError:
+        issues.append("Failed to compute eigenvalues.")
+
+    is_valid = len(issues) == 0
+    return is_valid, issues

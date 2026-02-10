@@ -29,6 +29,7 @@ Gmail Setup:
 
 from __future__ import annotations
 
+import hashlib
 import io
 import json
 import os
@@ -52,8 +53,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.8.7.7"
-BUILD_ID = "20260209-v1877-anchor-nav-domain-llm"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.8.8.1"
+BUILD_ID = "20260210-v1881-correlation-missing-nan"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -79,6 +80,17 @@ from utils.condition_identifier import (
     analyze_qsf_design,
 )
 import utils
+
+# v1.8.8.0: Correlation matrix for cross-DV correlations
+try:
+    from utils.correlation_matrix import (
+        infer_correlation_matrix,
+        detect_construct_types,
+        get_correlation_summary,
+    )
+    _HAS_CORRELATION_MODULE = True
+except ImportError:
+    _HAS_CORRELATION_MODULE = False
 
 # Verify correct version loaded — if stale, force a targeted reload
 if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION:
@@ -107,7 +119,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.8.7.7"  # v1.8.7.7: HTML anchor back-to-top, domain detection, LLM improvements
+APP_VERSION = "1.8.8.1"  # v1.8.8.1: Correlation validation, NaN-safe post-generation validation
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -1729,6 +1741,522 @@ def _design_analysis_to_inferred(
 # ========================================
 
 FEEDBACK_EMAIL = "edimant@sas.upenn.edu"
+
+def _render_analytics_dashboard(
+    df: pd.DataFrame,
+    metadata: Dict[str, Any],
+    scales: List[Dict[str, Any]],
+) -> None:
+    """Render the professional analytics dashboard.
+
+    v1.8.8.0: Password-protected, advanced-mode only.
+    Uses Plotly for publication-quality interactive visualizations.
+    Sections: Descriptive stats, condition comparisons, correlations,
+    effect sizes, distributions, data quality.
+    """
+    try:
+        import plotly.graph_objects as go
+        import plotly.express as px
+        from plotly.subplots import make_subplots
+        _has_plotly = True
+    except ImportError:
+        _has_plotly = False
+
+    st.markdown(
+        '<div style="background:linear-gradient(135deg,#1a1a2e 0%,#16213e 50%,#0f3460 100%);'
+        'padding:20px 24px;border-radius:12px;margin:16px 0 20px 0;">'
+        '<h3 style="color:#e8e8e8;margin:0 0 4px 0;font-weight:700;letter-spacing:0.02em;">'
+        'Analytics Dashboard</h3>'
+        '<p style="color:#8896ab;margin:0;font-size:0.82rem;">'
+        'Professional statistical analysis of your simulated dataset</p></div>',
+        unsafe_allow_html=True,
+    )
+
+    if not _has_plotly:
+        st.warning("Plotly is required for the analytics dashboard. Install with: `pip install plotly`")
+        return
+
+    # ── Theme configuration ──
+    _THEME = dict(
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(248,249,250,1)",
+        font=dict(family="Inter, -apple-system, sans-serif", size=12, color="#374151"),
+        margin=dict(l=50, r=30, t=45, b=40),
+        colorway=["#3b82f6", "#ef4444", "#10b981", "#f59e0b", "#8b5cf6",
+                   "#ec4899", "#06b6d4", "#84cc16", "#f97316", "#6366f1"],
+    )
+
+    conditions = sorted(df["CONDITION"].unique()) if "CONDITION" in df.columns else []
+    n_conditions = len(conditions)
+
+    # Identify composite columns (scale means)
+    _composite_cols = [c for c in df.columns if c.endswith("_mean") and df[c].dtype in ("float64", "float32", "int64")]
+    if not _composite_cols:
+        # Fallback: look for item columns and compute means
+        for s in scales:
+            sname = str(s.get("variable_name", s.get("name", ""))).strip().replace(" ", "_")
+            n_items = int(s.get("num_items", 1))
+            _item_cols = [f"{sname}_{i}" for i in range(1, n_items + 1) if f"{sname}_{i}" in df.columns]
+            if _item_cols:
+                _mean_col = f"{sname}_mean"
+                if _mean_col not in df.columns:
+                    df[_mean_col] = df[_item_cols].mean(axis=1)
+                _composite_cols.append(_mean_col)
+
+    # ──────────────────────────────────────────────────────────────
+    # SECTION 1: Descriptive Statistics
+    # ──────────────────────────────────────────────────────────────
+    with st.expander("Descriptive Statistics", expanded=True):
+        if _composite_cols and conditions:
+            _desc_rows = []
+            for col in _composite_cols:
+                _clean = col.replace("_mean", "").replace("_", " ")
+                for cond in conditions:
+                    _subset = df.loc[df["CONDITION"] == cond, col].dropna()
+                    if len(_subset) > 0:
+                        _desc_rows.append({
+                            "Scale": _clean,
+                            "Condition": cond,
+                            "N": len(_subset),
+                            "Mean": round(float(_subset.mean()), 3),
+                            "SD": round(float(_subset.std()), 3),
+                            "Min": round(float(_subset.min()), 2),
+                            "Max": round(float(_subset.max()), 2),
+                            "Skewness": round(float(_subset.skew()), 3) if len(_subset) > 2 else 0,
+                        })
+            if _desc_rows:
+                _desc_df = pd.DataFrame(_desc_rows)
+                st.dataframe(
+                    _desc_df.style.format({"Mean": "{:.3f}", "SD": "{:.3f}", "Skewness": "{:.3f}"}),
+                    use_container_width=True,
+                    height=min(400, 40 + len(_desc_rows) * 35),
+                )
+        else:
+            st.info("No composite scale columns found for descriptive statistics.")
+
+    # ──────────────────────────────────────────────────────────────
+    # SECTION 2: Condition Comparisons (Violin + Box)
+    # ──────────────────────────────────────────────────────────────
+    if _composite_cols and n_conditions >= 2:
+        with st.expander("Condition Comparisons", expanded=True):
+            _sel_dv = st.selectbox(
+                "Select DV", _composite_cols,
+                format_func=lambda x: x.replace("_mean", "").replace("_", " "),
+                key="dashboard_dv_select",
+            )
+            if _sel_dv:
+                fig = go.Figure()
+                for i, cond in enumerate(conditions):
+                    _vals = df.loc[df["CONDITION"] == cond, _sel_dv].dropna()
+                    fig.add_trace(go.Violin(
+                        y=_vals,
+                        name=cond,
+                        box_visible=True,
+                        meanline_visible=True,
+                        points="outliers",
+                        marker_color=_THEME["colorway"][i % len(_THEME["colorway"])],
+                        opacity=0.85,
+                    ))
+                fig.update_layout(
+                    **_THEME,
+                    title=dict(text=f"Distribution of {_sel_dv.replace('_mean','').replace('_',' ')} by Condition",
+                               font=dict(size=15, color="#1f2937")),
+                    yaxis_title="Score",
+                    xaxis_title="Condition",
+                    showlegend=False,
+                    height=420,
+                )
+                st.plotly_chart(fig, use_container_width=True)
+
+                # Quick statistical test
+                if n_conditions == 2:
+                    from scipy import stats as _sp_stats
+                    _g1 = df.loc[df["CONDITION"] == conditions[0], _sel_dv].dropna()
+                    _g2 = df.loc[df["CONDITION"] == conditions[1], _sel_dv].dropna()
+                    if len(_g1) > 1 and len(_g2) > 1:
+                        _t, _p = _sp_stats.ttest_ind(_g1, _g2, equal_var=False)
+                        _d = (float(_g1.mean()) - float(_g2.mean())) / np.sqrt(
+                            (float(_g1.std())**2 + float(_g2.std())**2) / 2
+                        )
+                        _sig = "***" if _p < 0.001 else "**" if _p < 0.01 else "*" if _p < 0.05 else "ns"
+                        st.markdown(
+                            f"**Welch's t-test:** t({len(_g1)+len(_g2)-2}) = {_t:.3f}, "
+                            f"p = {_p:.4f} {_sig} | **Cohen's d** = {_d:.3f}"
+                        )
+                elif n_conditions > 2:
+                    from scipy import stats as _sp_stats
+                    _groups = [df.loc[df["CONDITION"] == c, _sel_dv].dropna().values for c in conditions]
+                    _groups = [g for g in _groups if len(g) > 1]
+                    if len(_groups) >= 2:
+                        _f, _p = _sp_stats.f_oneway(*_groups)
+                        _grand_mean = df[_sel_dv].dropna().mean()
+                        _ss_b = sum(len(g) * (g.mean() - _grand_mean)**2 for g in _groups)
+                        _ss_t = sum((df[_sel_dv].dropna() - _grand_mean)**2)
+                        _eta2 = float(_ss_b / _ss_t) if _ss_t > 0 else 0
+                        _sig = "***" if _p < 0.001 else "**" if _p < 0.01 else "*" if _p < 0.05 else "ns"
+                        st.markdown(
+                            f"**One-way ANOVA:** F({len(_groups)-1}, {sum(len(g) for g in _groups)-len(_groups)}) "
+                            f"= {_f:.3f}, p = {_p:.4f} {_sig} | **η²** = {_eta2:.3f}"
+                        )
+
+    # ──────────────────────────────────────────────────────────────
+    # SECTION 3: Correlation Heatmap (with significance annotations)
+    # ──────────────────────────────────────────────────────────────
+    if len(_composite_cols) >= 2:
+        with st.expander("Correlation Matrix", expanded=True):
+            from scipy import stats as _sp_stats_corr
+            _corr_data = df[_composite_cols].corr()
+            _labels = [c.replace("_mean", "").replace("_", " ") for c in _composite_cols]
+            _z = _corr_data.values
+            _n_obs = len(df)
+
+            # Compute p-values for each correlation
+            _p_matrix = np.ones_like(_z)
+            _text_annot = np.empty_like(_z, dtype=object)
+            for _ri in range(len(_composite_cols)):
+                for _ci in range(len(_composite_cols)):
+                    if _ri == _ci:
+                        _text_annot[_ri][_ci] = "1.00"
+                        continue
+                    _pair_data = df[[_composite_cols[_ri], _composite_cols[_ci]]].dropna()
+                    if len(_pair_data) > 2:
+                        _r_val, _p_val = _sp_stats_corr.pearsonr(
+                            _pair_data.iloc[:, 0], _pair_data.iloc[:, 1]
+                        )
+                        _p_matrix[_ri, _ci] = _p_val
+                        _sig_star = "***" if _p_val < 0.001 else "**" if _p_val < 0.01 else "*" if _p_val < 0.05 else ""
+                        _text_annot[_ri][_ci] = f"{_z[_ri, _ci]:.2f}{_sig_star}"
+                    else:
+                        _text_annot[_ri][_ci] = f"{_z[_ri, _ci]:.2f}"
+
+            # Mask upper triangle for cleaner display
+            _mask = np.triu(np.ones_like(_z, dtype=bool), k=1)
+            _z_masked = np.where(_mask, np.nan, _z)
+            _text_masked = np.where(_mask, "", _text_annot)
+
+            fig = go.Figure(data=go.Heatmap(
+                z=_z_masked,
+                x=_labels,
+                y=_labels,
+                colorscale="RdBu_r",
+                zmid=0,
+                zmin=-1,
+                zmax=1,
+                text=_text_masked,
+                texttemplate="%{text}",
+                textfont=dict(size=11, color="#1f2937"),
+                hovertemplate="<b>%{x}</b> × <b>%{y}</b><br>r = %{z:.3f}<extra></extra>",
+                colorbar=dict(title="r", thickness=15, len=0.8),
+            ))
+            fig.update_layout(
+                **_THEME,
+                title=dict(text="Inter-Scale Correlation Matrix (with significance)",
+                           font=dict(size=15, color="#1f2937")),
+                height=max(350, 100 + len(_composite_cols) * 40),
+                xaxis=dict(side="bottom"),
+                yaxis=dict(autorange="reversed"),
+            )
+            st.plotly_chart(fig, use_container_width=True)
+            st.caption("\\* p < .05, \\*\\* p < .01, \\*\\*\\* p < .001")
+
+            # Target vs Realized correlation comparison
+            _target_corr = metadata.get("cross_dv_correlation", {}).get("correlation_matrix")
+            if _target_corr is not None:
+                _target_names = metadata.get("cross_dv_correlation", {}).get("scale_names", [])
+                if len(_target_names) == len(_composite_cols):
+                    st.markdown("**Target vs. Realized Correlations**")
+                    _target_arr = np.array(_target_corr)
+                    _comp_rows = []
+                    for _ri in range(len(_composite_cols)):
+                        for _ci in range(_ri + 1, len(_composite_cols)):
+                            _comp_rows.append({
+                                "Scale Pair": f"{_labels[_ri]} ↔ {_labels[_ci]}",
+                                "Target r": round(float(_target_arr[_ri, _ci]), 3),
+                                "Realized r": round(float(_z[_ri, _ci]), 3),
+                                "Δ": round(float(_z[_ri, _ci] - _target_arr[_ri, _ci]), 3),
+                            })
+                    if _comp_rows:
+                        st.dataframe(
+                            pd.DataFrame(_comp_rows).style.format(
+                                {"Target r": "{:+.3f}", "Realized r": "{:+.3f}", "Δ": "{:+.3f}"}
+                            ),
+                            use_container_width=True,
+                            height=min(300, 40 + len(_comp_rows) * 35),
+                        )
+
+    # ──────────────────────────────────────────────────────────────
+    # SECTION 4: Effect Size Forest Plot (with specified vs observed)
+    # ──────────────────────────────────────────────────────────────
+    if _composite_cols and n_conditions >= 2:
+        with st.expander("Effect Size Analysis", expanded=True):
+            _es_rows = []
+            _specified_effects = metadata.get("effect_sizes_configured", metadata.get("effect_sizes", {}))
+            for col in _composite_cols:
+                _clean = col.replace("_mean", "").replace("_", " ")
+                if n_conditions == 2:
+                    _g1 = df.loc[df["CONDITION"] == conditions[0], col].dropna()
+                    _g2 = df.loc[df["CONDITION"] == conditions[1], col].dropna()
+                    if len(_g1) > 1 and len(_g2) > 1:
+                        _pooled_sd = np.sqrt((float(_g1.std())**2 + float(_g2.std())**2) / 2)
+                        _d = (float(_g1.mean()) - float(_g2.mean())) / _pooled_sd if _pooled_sd > 0 else 0
+                        _se = np.sqrt((len(_g1) + len(_g2)) / (len(_g1) * len(_g2)) + _d**2 / (2 * (len(_g1) + len(_g2))))
+                        _es_rows.append({
+                            "Scale": _clean,
+                            "Cohen's d": round(_d, 3),
+                            "SE": round(_se, 3),
+                            "CI_lo": round(_d - 1.96 * _se, 3),
+                            "CI_hi": round(_d + 1.96 * _se, 3),
+                        })
+                else:
+                    # For multi-condition: compare each pair vs. first condition
+                    _g_ref = df.loc[df["CONDITION"] == conditions[0], col].dropna()
+                    for cond in conditions[1:]:
+                        _g_cmp = df.loc[df["CONDITION"] == cond, col].dropna()
+                        if len(_g_ref) > 1 and len(_g_cmp) > 1:
+                            _pooled_sd = np.sqrt((float(_g_ref.std())**2 + float(_g_cmp.std())**2) / 2)
+                            _d = (float(_g_cmp.mean()) - float(_g_ref.mean())) / _pooled_sd if _pooled_sd > 0 else 0
+                            _se = np.sqrt((len(_g_ref) + len(_g_cmp)) / (len(_g_ref) * len(_g_cmp)) + _d**2 / (2 * (len(_g_ref) + len(_g_cmp))))
+                            _es_rows.append({
+                                "Scale": f"{_clean} ({cond} vs {conditions[0]})",
+                                "Cohen's d": round(_d, 3),
+                                "SE": round(_se, 3),
+                                "CI_lo": round(_d - 1.96 * _se, 3),
+                                "CI_hi": round(_d + 1.96 * _se, 3),
+                            })
+
+            if _es_rows:
+                fig = go.Figure()
+                _names = [r["Scale"] for r in _es_rows]
+                _ds = [r["Cohen's d"] for r in _es_rows]
+                _ci_lo = [r["CI_lo"] for r in _es_rows]
+                _ci_hi = [r["CI_hi"] for r in _es_rows]
+
+                fig.add_trace(go.Scatter(
+                    x=_ds, y=_names,
+                    mode="markers",
+                    marker=dict(size=10, color="#3b82f6", line=dict(width=1.5, color="#1e40af")),
+                    error_x=dict(
+                        type="data",
+                        symmetric=False,
+                        array=[h - d for d, h in zip(_ds, _ci_hi)],
+                        arrayminus=[d - lo for d, lo in zip(_ds, _ci_lo)],
+                        color="#93c5fd",
+                        thickness=2,
+                        width=6,
+                    ),
+                    hovertemplate="<b>%{y}</b><br>d = %{x:.3f}<br>95% CI: [%{customdata[0]:.3f}, %{customdata[1]:.3f}]<extra></extra>",
+                    customdata=list(zip(_ci_lo, _ci_hi)),
+                ))
+                # Zero reference line
+                fig.add_vline(x=0, line_dash="dash", line_color="#9ca3af", line_width=1)
+                # Cohen's d benchmarks
+                for _bench, _label in [(0.2, "small"), (0.5, "medium"), (0.8, "large")]:
+                    fig.add_vline(x=_bench, line_dash="dot", line_color="#d1d5db", line_width=0.8,
+                                  annotation_text=_label, annotation_position="top",
+                                  annotation_font_size=9, annotation_font_color="#9ca3af")
+
+                fig.update_layout(
+                    **_THEME,
+                    title=dict(text="Effect Size Forest Plot (Cohen's d with 95% CI)",
+                               font=dict(size=15, color="#1f2937")),
+                    xaxis_title="Cohen's d",
+                    height=max(300, 80 + len(_es_rows) * 40),
+                    showlegend=False,
+                )
+                st.plotly_chart(fig, use_container_width=True)
+
+                # Summary table
+                st.dataframe(
+                    pd.DataFrame(_es_rows).style.format({"Cohen's d": "{:.3f}", "SE": "{:.3f}", "CI_lo": "{:.3f}", "CI_hi": "{:.3f}"}),
+                    use_container_width=True,
+                )
+
+    # ──────────────────────────────────────────────────────────────
+    # SECTION 5: Normality Assessment
+    # ──────────────────────────────────────────────────────────────
+    if _composite_cols and conditions:
+        with st.expander("Normality Assessment", expanded=False):
+            from scipy import stats as _sp_stats_norm
+            _norm_rows = []
+            for col in _composite_cols:
+                _clean = col.replace("_mean", "").replace("_", " ")
+                _vals = df[col].dropna()
+                if len(_vals) >= 8:
+                    _skew = float(_vals.skew())
+                    _kurt = float(_vals.kurtosis())
+                    # Shapiro-Wilk (up to 5000 samples)
+                    _test_vals = _vals.values[:5000] if len(_vals) > 5000 else _vals.values
+                    _w, _p_sw = _sp_stats_norm.shapiro(_test_vals)
+                    _verdict = "Normal" if _p_sw >= 0.05 else "Non-normal"
+                    _norm_rows.append({
+                        "Scale": _clean,
+                        "N": len(_vals),
+                        "Skewness": round(_skew, 3),
+                        "Kurtosis": round(_kurt, 3),
+                        "Shapiro-Wilk W": round(float(_w), 4),
+                        "p-value": round(float(_p_sw), 4),
+                        "Verdict": _verdict,
+                    })
+            if _norm_rows:
+                _norm_df = pd.DataFrame(_norm_rows)
+                st.dataframe(
+                    _norm_df.style.map(
+                        lambda v: "background-color: #dcfce7" if v == "Normal"
+                        else "background-color: #fee2e2" if v == "Non-normal" else "",
+                        subset=["Verdict"],
+                    ).format({"Skewness": "{:.3f}", "Kurtosis": "{:.3f}",
+                              "Shapiro-Wilk W": "{:.4f}", "p-value": "{:.4f}"}),
+                    use_container_width=True,
+                )
+                st.caption(
+                    "Shapiro-Wilk test: p ≥ .05 → Normal. "
+                    "Skewness within ±1 and kurtosis within ±2 are generally acceptable."
+                )
+
+    # ──────────────────────────────────────────────────────────────
+    # SECTION 6: Distribution Plots
+    # ──────────────────────────────────────────────────────────────
+    if _composite_cols and conditions:
+        with st.expander("Distribution Analysis", expanded=False):
+            _sel_dist_dv = st.selectbox(
+                "Select scale for distribution analysis",
+                _composite_cols,
+                format_func=lambda x: x.replace("_mean", "").replace("_", " "),
+                key="dashboard_dist_select",
+            )
+            if _sel_dist_dv:
+                fig = make_subplots(
+                    rows=1, cols=n_conditions,
+                    subplot_titles=[c for c in conditions],
+                    shared_yaxes=True,
+                )
+                for i, cond in enumerate(conditions):
+                    _vals = df.loc[df["CONDITION"] == cond, _sel_dist_dv].dropna()
+                    fig.add_trace(
+                        go.Histogram(
+                            x=_vals, nbinsx=20,
+                            marker_color=_THEME["colorway"][i % len(_THEME["colorway"])],
+                            opacity=0.8,
+                            name=cond,
+                        ),
+                        row=1, col=i + 1,
+                    )
+                fig.update_layout(
+                    **_THEME,
+                    title=dict(text=f"Response Distributions: {_sel_dist_dv.replace('_mean','').replace('_',' ')}",
+                               font=dict(size=15, color="#1f2937")),
+                    height=350,
+                    showlegend=False,
+                )
+                st.plotly_chart(fig, use_container_width=True)
+
+    # ──────────────────────────────────────────────────────────────
+    # SECTION 7: Data Quality Metrics
+    # ──────────────────────────────────────────────────────────────
+    with st.expander("Data Quality Metrics", expanded=False):
+        _q_cols = st.columns(4)
+
+        # Missing data rate
+        _total_cells = df.shape[0] * df.shape[1]
+        _missing_cells = int(df.isna().sum().sum())
+        _missing_pct = (_missing_cells / _total_cells * 100) if _total_cells > 0 else 0
+        _q_cols[0].metric("Missing Data", f"{_missing_pct:.1f}%", help="Percentage of cells with missing values")
+
+        # Attention check pass rate
+        if "Attention_Pass_Rate" in df.columns:
+            _att_mean = float(df["Attention_Pass_Rate"].mean())
+            _q_cols[1].metric("Attention Pass", f"{_att_mean:.0%}")
+        else:
+            _q_cols[1].metric("Attention Pass", "N/A")
+
+        # Exclusion rate
+        if "Exclude_Recommended" in df.columns:
+            _excl_rate = float(df["Exclude_Recommended"].mean())
+            _q_cols[2].metric("Exclusion Rate", f"{_excl_rate:.1%}")
+        else:
+            _q_cols[2].metric("Exclusion Rate", "N/A")
+
+        # Condition balance
+        if "CONDITION" in df.columns:
+            _cond_counts = df["CONDITION"].value_counts()
+            _balance = 1 - (_cond_counts.max() - _cond_counts.min()) / max(1, len(df))
+            _q_cols[3].metric("Balance Score", f"{_balance:.2f}")
+
+        # Missing data detail
+        _md_meta = metadata.get("missing_data", {})
+        if _md_meta.get("total_missing_rate", 0) > 0 or _md_meta.get("dropout_count", 0) > 0:
+            st.markdown("**Missing Data Details**")
+            _md_cols = st.columns(3)
+            _md_cols[0].metric(
+                "Item-level Missing",
+                f"{_md_meta.get('missing_data_rate', 0) * 100:.1f}% (configured)",
+                delta=f"{_md_meta.get('total_missing_rate', 0) * 100:.1f}% realized",
+                delta_color="off",
+            )
+            _md_cols[1].metric(
+                "Survey Dropouts",
+                f"{_md_meta.get('dropout_count', 0)} participants",
+                delta=f"{_md_meta.get('dropout_rate', 0) * 100:.0f}% configured",
+                delta_color="off",
+            )
+            _md_cols[2].metric(
+                "Mechanism",
+                _md_meta.get("mechanism", "realistic").capitalize(),
+            )
+
+        # Condition demographics breakdown
+        if "CONDITION" in df.columns and "Gender" in df.columns and conditions:
+            st.markdown("**Condition Demographics**")
+            _demo_rows = []
+            for cond in conditions:
+                _cond_df = df[df["CONDITION"] == cond]
+                _n_cond = len(_cond_df)
+                _age_mean = float(_cond_df["Age"].mean()) if "Age" in df.columns and _n_cond > 0 else 0
+                _age_sd = float(_cond_df["Age"].std()) if "Age" in df.columns and _n_cond > 1 else 0
+                _gender_counts = _cond_df["Gender"].value_counts()
+                _pct_female = float(_gender_counts.get("Female", 0) / max(_n_cond, 1) * 100)
+                _pct_male = float(_gender_counts.get("Male", 0) / max(_n_cond, 1) * 100)
+                _demo_rows.append({
+                    "Condition": cond,
+                    "N": _n_cond,
+                    "Age M (SD)": f"{_age_mean:.1f} ({_age_sd:.1f})",
+                    "% Female": round(_pct_female, 1),
+                    "% Male": round(_pct_male, 1),
+                })
+            if _demo_rows:
+                st.dataframe(pd.DataFrame(_demo_rows), use_container_width=True)
+
+        # Reliability estimates (Cronbach's alpha)
+        _alpha_rows = []
+        for s in scales:
+            sname = str(s.get("variable_name", s.get("name", ""))).strip().replace(" ", "_")
+            n_items = int(s.get("num_items", 1))
+            if n_items < 2:
+                continue
+            _item_cols = [f"{sname}_{i}" for i in range(1, n_items + 1) if f"{sname}_{i}" in df.columns]
+            if len(_item_cols) >= 2:
+                _item_data = df[_item_cols].dropna()
+                if len(_item_data) > 10:
+                    _k = len(_item_cols)
+                    _item_vars = _item_data.var(axis=0, ddof=1)
+                    _total_var = _item_data.sum(axis=1).var(ddof=1)
+                    if _total_var > 0:
+                        _alpha = (_k / (_k - 1)) * (1 - _item_vars.sum() / _total_var)
+                        _alpha_rows.append({"Scale": sname.replace("_", " "), "Items": _k, "Cronbach's α": round(float(_alpha), 3)})
+
+        if _alpha_rows:
+            st.markdown("**Scale Reliability (Cronbach's α)**")
+            _alpha_df = pd.DataFrame(_alpha_rows)
+            st.dataframe(
+                _alpha_df.style.map(
+                    lambda v: "background-color: #dcfce7" if isinstance(v, float) and v >= 0.7
+                    else "background-color: #fef9c3" if isinstance(v, float) and v >= 0.6
+                    else "background-color: #fee2e2" if isinstance(v, float) else "",
+                    subset=["Cronbach's α"],
+                ),
+                use_container_width=True,
+            )
+
 
 def _render_feedback_button() -> None:
     """
@@ -7006,6 +7534,122 @@ if active_page == 2:
                     st.session_state["inferred_design"], prereg_outcomes, prereg_iv, enhanced_analysis
                 )
 
+            # ── v1.8.8.0: Auto-infer cross-DV correlation matrix ──────────
+            if _HAS_CORRELATION_MODULE and len(final_scales) > 1:
+                try:
+                    _construct_types = detect_construct_types(final_scales)
+                    _corr_matrix, _corr_names = infer_correlation_matrix(
+                        final_scales, _construct_types
+                    )
+                    st.session_state["_auto_corr_matrix"] = _corr_matrix
+                    st.session_state["_auto_corr_names"] = _corr_names
+                    st.session_state["_auto_construct_types"] = _construct_types
+
+                    # Store in inferred_design for engine use
+                    st.session_state["inferred_design"]["correlation_matrix"] = _corr_matrix.tolist()
+                    st.session_state["inferred_design"]["construct_types"] = _construct_types
+
+                    # Default mode: small info badge
+                    if not st.session_state.get("advanced_mode", False):
+                        _n_pairs = len(final_scales) * (len(final_scales) - 1) // 2
+                        _n_typed = sum(1 for v in _construct_types.values() if v != "general")
+                        st.caption(
+                            f"Inter-scale correlations: auto-inferred from {_n_typed}/{len(final_scales)} "
+                            f"recognized construct types ({_n_pairs} pairs)"
+                        )
+
+                    # Advanced mode: show editable correlation matrix
+                    if st.session_state.get("advanced_mode", False):
+                        with st.expander("Inter-scale correlation matrix (advanced)", expanded=False):
+                            st.caption(
+                                "Auto-inferred from empirical meta-analytic data. "
+                                "Edit values to customize (matrix will be automatically validated)."
+                            )
+                            # Show construct type badges inline
+                            _badge_parts = []
+                            for _sn, _ct in _construct_types.items():
+                                if _ct != "general":
+                                    _badge_parts.append(
+                                        f"<span style='background:#E8F4FD;padding:2px 8px;border-radius:4px;"
+                                        f"font-size:0.78rem;margin-right:4px;display:inline-block;"
+                                        f"margin-bottom:4px;'>"
+                                        f"<b>{_sn}</b> → {_ct.replace('_', ' ')}</span>"
+                                    )
+                            if _badge_parts:
+                                st.markdown(
+                                    "<div style='line-height:1.8;margin-bottom:8px;'>"
+                                    + " ".join(_badge_parts) + "</div>",
+                                    unsafe_allow_html=True,
+                                )
+
+                            # Editable correlation matrix
+                            _corr_df = pd.DataFrame(
+                                _corr_matrix,
+                                index=_corr_names,
+                                columns=_corr_names,
+                            )
+                            _edited_corr = st.data_editor(
+                                _corr_df,
+                                use_container_width=True,
+                                key="corr_matrix_editor",
+                                height=min(400, 50 + len(_corr_names) * 35),
+                            )
+                            # Save user edits
+                            _user_corr = _edited_corr.values
+                            # Symmetrize (take lower triangle)
+                            _user_corr = np.tril(_user_corr) + np.tril(_user_corr, -1).T
+                            np.fill_diagonal(_user_corr, 1.0)
+
+                            # Validate and auto-fix if needed
+                            _needs_fix = False
+                            try:
+                                np.linalg.cholesky(_user_corr)
+                            except np.linalg.LinAlgError:
+                                _needs_fix = True
+                            if np.any(np.abs(_user_corr) > 1.0 + 1e-8):
+                                _needs_fix = True
+
+                            if _needs_fix:
+                                from utils.correlation_matrix import nearest_positive_definite
+                                _user_corr = nearest_positive_definite(_user_corr)
+                                st.info(
+                                    "Matrix was adjusted to ensure positive-definiteness "
+                                    "(required for valid simulation). Extreme values were moderated."
+                                )
+
+                            st.session_state["inferred_design"]["correlation_matrix"] = _user_corr.tolist()
+                except Exception as _corr_err:
+                    _log(f"Correlation matrix inference failed: {_corr_err}", level="warning")
+
+            # ── v1.8.8.0: Missing data settings ──────────────────────────
+            # Default: automatic realistic missingness (no UI controls)
+            # Advanced: configurable sliders
+            _missing_rate = 0.03  # Default: 3% item-level missingness
+            _dropout_rate = 0.05  # Default: 5% survey dropout
+            if st.session_state.get("advanced_mode", False):
+                with st.expander("Data realism settings (advanced)", expanded=False):
+                    st.caption(
+                        "Simulate realistic missing data patterns found in online surveys "
+                        "(MTurk, Prolific). Persona-driven: careless responders skip more items."
+                    )
+                    _c_miss1, _c_miss2 = st.columns(2)
+                    with _c_miss1:
+                        _missing_rate = st.slider(
+                            "Item-level missingness",
+                            min_value=0.0, max_value=0.15, value=0.03, step=0.01,
+                            key="missing_data_rate",
+                            help="Probability that any individual item is missing (3% typical for online surveys)",
+                        )
+                    with _c_miss2:
+                        _dropout_rate = st.slider(
+                            "Survey dropout rate",
+                            min_value=0.0, max_value=0.20, value=0.05, step=0.01,
+                            key="dropout_rate",
+                            help="Proportion of participants who abandon the survey mid-way (5-7% typical)",
+                        )
+            st.session_state["inferred_design"]["missing_data_rate"] = _missing_rate
+            st.session_state["inferred_design"]["dropout_rate"] = _dropout_rate
+
             st.success("✅ Design configuration complete. Proceed to the **Generate** step to run the simulation.")
         else:
             missing_bits = []
@@ -8051,6 +8695,17 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
         if _user_llm_key:
             os.environ["LLM_API_KEY"] = _user_llm_key
 
+        # v1.8.8.0: Retrieve correlation matrix and missing data settings
+        _engine_corr_matrix = None
+        _raw_corr = inferred.get("correlation_matrix")
+        if _raw_corr is not None:
+            try:
+                _engine_corr_matrix = np.array(_raw_corr, dtype=float)
+            except Exception:
+                _engine_corr_matrix = None
+        _engine_missing_rate = float(inferred.get("missing_data_rate", 0.03))
+        _engine_dropout_rate = float(inferred.get("dropout_rate", 0.05))
+
         engine = EnhancedSimulationEngine(
             study_title=title,
             study_description=desc,
@@ -8072,6 +8727,10 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
             mode="pilot" if not st.session_state.get("advanced_mode", False) else "final",
             # v1.0.0: Pass pre-computed visibility map for accurate survey flow simulation
             precomputed_visibility=inferred.get("condition_visibility_map", {}),
+            # v1.8.8.0: Cross-DV correlations and missing data
+            correlation_matrix=_engine_corr_matrix,
+            missing_data_rate=_engine_missing_rate,
+            dropout_rate=_engine_dropout_rate,
         )
 
         # v1.2.4: Show detected research domains
@@ -8478,6 +9137,27 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
             with st.expander("📊 Data Quality Report", expanded=False):
                 for check in quality_checks:
                     st.markdown(check)
+
+        # ══════════════════════════════════════════════════════════════
+        # v1.8.8.0: ANALYTICS DASHBOARD (Advanced mode + password)
+        # ══════════════════════════════════════════════════════════════
+        if st.session_state.get("advanced_mode", False):
+            st.markdown("---")
+            _dashboard_pw = st.text_input(
+                "Analytics Dashboard (enter access code)",
+                type="password",
+                key="analytics_dashboard_pw",
+                help="Enter the access code to unlock the professional analytics dashboard.",
+            )
+            _DASHBOARD_PW_HASH = "a0b6e0c8f5d3"  # Simple hash check
+            _pw_valid = (
+                _dashboard_pw == "Dimant_Simulation"
+                or hashlib.md5(_dashboard_pw.encode()).hexdigest()[:12] == _DASHBOARD_PW_HASH
+            )
+            if _dashboard_pw and not _pw_valid:
+                st.warning("Incorrect access code.")
+            elif _pw_valid:
+                _render_analytics_dashboard(df, metadata, clean_scales)
 
         st.markdown("")
         st.markdown("#### Email *(optional)*")

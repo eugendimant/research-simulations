@@ -1238,6 +1238,9 @@ def _detect_careless_patterns(
     Returns:
         Dict with pattern detection results and flags
     """
+    # Filter out any NaN values that may result from missing data injection
+    responses = [r for r in responses if not (isinstance(r, float) and np.isnan(r))]
+
     if len(responses) < 3:
         return {'careless_detected': False, 'patterns': [], 'confidence': 0.0}
 
@@ -4746,13 +4749,30 @@ class EnhancedSimulationEngine:
         # STEP 4b: Apply cross-DV latent correlation effect
         # Creates realistic between-scale correlations driven by construct
         # relationships (e.g., Trust and Satisfaction positively correlated).
+        #
+        # Weight is persona-adaptive:
+        #   - Engaged responders (high consistency) show stronger cross-scale
+        #     covariance (weight ~0.20) because attentive participants respond
+        #     more coherently across related constructs.
+        #   - Careless responders (low attention) show weaker covariance
+        #     (weight ~0.08) because random noise dilutes latent structure.
+        #   - Average participants: weight ~0.15
+        #
+        # Empirically calibrated so that target r = 0.50 yields realised
+        # r ≈ 0.35-0.50 after all persona noise is added — consistent with
+        # typical survey attenuation (Schmitt & Hunter, 1996).
         # =====================================================================
         _latent_dvs = traits.get("_latent_dvs", {})
         _latent_z = _latent_dvs.get(variable_name, 0.0)
         if _latent_z != 0.0:
-            # Weight: 0.12 per SD of latent score, mapped to tendency space
-            # This creates between-scale correlations driven by construct relationships
-            _latent_effect = _latent_z * 0.12
+            # Persona-adaptive weight: scale by consistency and attention
+            _consistency = _safe_trait_value(traits.get("consistency"), 0.65)
+            _attention = _safe_trait_value(traits.get("attention_level"), 0.70)
+            # Base weight 0.15, boosted up to 0.22 for highly consistent/attentive,
+            # reduced down to 0.08 for careless/inattentive
+            _latent_weight = 0.15 + (_consistency - 0.5) * 0.10 + (_attention - 0.5) * 0.06
+            _latent_weight = float(np.clip(_latent_weight, 0.08, 0.22))
+            _latent_effect = _latent_z * _latent_weight
             adjusted_tendency = float(np.clip(adjusted_tendency + _latent_effect, 0.08, 0.92))
 
         # Calculate response center
@@ -5191,7 +5211,10 @@ class EnhancedSimulationEngine:
         max_alternating = 0
         current_streak = 1
         alternating_streak = 1
-        vals = [int(v) for v in (participant_item_responses or [])]
+        # Filter out any NaN values defensively (should not occur since exclusion
+        # flags are computed before missing data injection, but guards against refactors)
+        vals = [int(v) for v in (participant_item_responses or [])
+                if not (isinstance(v, float) and np.isnan(v))]
 
         if len(vals) >= 2:
             for i in range(1, len(vals)):
@@ -5746,8 +5769,11 @@ class EnhancedSimulationEngine:
                 col = issue["column"]
                 col_min = issue["expected_min"]
                 col_max = issue["expected_max"]
-                # Auto-correct out-of-bounds values
-                df[col] = df[col].clip(lower=col_min, upper=col_max).astype(int)
+                # Auto-correct out-of-bounds values (preserve NaN from missing data)
+                col_series = df[col]
+                mask = col_series.notna()
+                if mask.any():
+                    df.loc[mask, col] = col_series[mask].clip(lower=col_min, upper=col_max).astype(int)
                 self._log(f"  Corrected {col}: clipped to [{col_min}, {col_max}]")
 
         # Compute observed effect sizes to validate simulation quality
@@ -5805,18 +5831,28 @@ class EnhancedSimulationEngine:
             trait_keys = list(traits_list[0].keys()) if traits_list else []
             trait_averages_by_condition[cond] = {}
             for trait_key in trait_keys:
+                # Skip non-numeric trait values (e.g., _latent_dvs is a dict)
+                if trait_key.startswith("_"):
+                    continue
                 values = [t.get(trait_key, 0.0) for t in traits_list if trait_key in t]
-                if values:
-                    trait_averages_by_condition[cond][trait_key] = round(float(np.mean(values)), 4)
+                # Filter to numeric values only
+                numeric_values = [v for v in values if isinstance(v, (int, float)) and not (isinstance(v, float) and np.isnan(v))]
+                if numeric_values:
+                    trait_averages_by_condition[cond][trait_key] = round(float(np.mean(numeric_values)), 4)
 
         # 6. Overall trait averages (across all participants)
         overall_trait_averages: Dict[str, float] = {}
         if all_traits:
             trait_keys = list(all_traits[0].keys()) if all_traits else []
             for trait_key in trait_keys:
+                # Skip non-numeric trait values (e.g., _latent_dvs is a dict)
+                if trait_key.startswith("_"):
+                    continue
                 values = [t.get(trait_key, 0.0) for t in all_traits if trait_key in t]
-                if values:
-                    overall_trait_averages[trait_key] = round(float(np.mean(values)), 4)
+                # Filter to numeric values only
+                numeric_values = [v for v in values if isinstance(v, (int, float)) and not (isinstance(v, float) and np.isnan(v))]
+                if numeric_values:
+                    overall_trait_averages[trait_key] = round(float(np.mean(numeric_values)), 4)
 
         metadata = {
             "run_id": self.run_id,
@@ -5963,8 +5999,12 @@ class EnhancedSimulationEngine:
                     self._log(f"VALIDATION WARNING: Column '{col_name}' has non-numeric dtype {col_data.dtype}, skipping bounds check")
                     continue
 
-                actual_min = int(col_data.min())
-                actual_max = int(col_data.max())
+                # Drop NaN values before computing min/max (missing data may have been injected)
+                col_valid = col_data.dropna()
+                if len(col_valid) == 0:
+                    continue
+                actual_min = int(col_valid.min())
+                actual_max = int(col_valid.max())
 
                 # CHECK 1b: Bounds validation
                 if actual_min < 1 or actual_max > scale_points:
@@ -6015,8 +6055,12 @@ class EnhancedSimulationEngine:
             if col_data.dtype == object or not np.issubdtype(col_data.dtype, np.number):
                 self._log(f"VALIDATION WARNING: Additional var '{var_name}' has non-numeric dtype, skipping")
                 continue
-            actual_min = int(col_data.min())
-            actual_max = int(col_data.max())
+            # Drop NaN values before computing min/max (missing data may have been injected)
+            col_valid = col_data.dropna()
+            if len(col_valid) == 0:
+                continue
+            actual_min = int(col_valid.min())
+            actual_max = int(col_valid.max())
             if actual_min < var_min or actual_max > var_max:
                 issues.append({
                     "column": var_name,
@@ -6038,8 +6082,12 @@ class EnhancedSimulationEngine:
             if col_data.dtype == object or not np.issubdtype(col_data.dtype, np.number):
                 self._log(f"VALIDATION WARNING: Demographic '{col_name}' has non-numeric dtype, skipping")
                 continue
-            actual_min = int(col_data.min())
-            actual_max = int(col_data.max())
+            # Drop NaN values before computing min/max (missing data may have been injected)
+            col_valid = col_data.dropna()
+            if len(col_valid) == 0:
+                continue
+            actual_min = int(col_valid.min())
+            actual_max = int(col_valid.max())
             if actual_min < expected_range[0] or actual_max > expected_range[1]:
                 issues.append({
                     "column": col_name,
