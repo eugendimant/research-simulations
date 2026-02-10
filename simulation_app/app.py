@@ -53,8 +53,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.0.2.0"
-BUILD_ID = "20260210-v1020-stepper-nav-clickable"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.0.2.1"
+BUILD_ID = "20260210-v1021-fix-nav-btns-ux-polish"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -119,7 +119,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.0.2.0"  # v1.0.2.0: Clickable stepper nav, remove bottom Continue buttons
+APP_VERSION = "1.0.2.1"  # v1.0.2.1: Fix nav buttons, consistent bottom nav, stepper UX polish
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -5514,6 +5514,23 @@ section[data-testid="stSidebar"] .stCaption { line-height: 1.4; }
     0%, 100% { box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.15); }
     50% { box-shadow: 0 0 0 7px rgba(59, 130, 246, 0.08); }
 }
+/* v1.0.2.1: Active + done — green circle with checkmark style, signals "ready to move on" */
+.stepper-step.st-active.step-done .stepper-circle {
+    background: linear-gradient(135deg, #22C55E 0%, #16A34A 100%);
+    border-color: #22C55E;
+    box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.2);
+    animation: activeDonePulse 2s ease-in-out infinite;
+}
+.stepper-step.st-active.step-done .stepper-title {
+    color: #16A34A;
+}
+.stepper-step.st-active.step-done .stepper-desc {
+    color: #4ADE80;
+}
+@keyframes activeDonePulse {
+    0%, 100% { box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.2); }
+    50% { box-shadow: 0 0 0 7px rgba(34, 197, 94, 0.1); }
+}
 /* Upcoming (reachable) — gray outline */
 .stepper-step.st-upcoming .stepper-circle {
     background: #F9FAFB;
@@ -5544,13 +5561,37 @@ section[data-testid="stSidebar"] .stCaption { line-height: 1.4; }
     0%, 100% { box-shadow: 0 0 0 3px rgba(249, 115, 22, 0.15); }
     50% { box-shadow: 0 0 0 6px rgba(249, 115, 22, 0.08); }
 }
-/* Locked — dimmed, not clickable */
+/* Locked — dimmed, not clickable, with tooltip */
+.stepper-step.st-locked {
+    position: relative;
+    cursor: default;
+}
 .stepper-step.st-locked .stepper-circle {
     background: #F9FAFB;
     color: #D1D5DB;
     border-color: #E5E7EB;
     cursor: default;
     opacity: 0.6;
+}
+.stepper-step.st-locked::after {
+    content: 'Complete previous steps first';
+    position: absolute;
+    bottom: -22px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #1F2937;
+    color: white;
+    font-size: 0.6rem;
+    padding: 3px 8px;
+    border-radius: 4px;
+    white-space: nowrap;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.15s ease;
+    z-index: 10;
+}
+.stepper-step.st-locked:hover::after {
+    opacity: 1;
 }
 /* Step title label */
 .stepper-title {
@@ -5626,6 +5667,11 @@ section[data-testid="stSidebar"] .stCaption { line-height: 1.4; }
     border-radius: 10px;
     margin: 14px 0 6px 0;
     font-size: 13px; color: #166534; font-weight: 500;
+    animation: bannerSlideIn 0.35s ease-out;
+}
+@keyframes bannerSlideIn {
+    from { opacity: 0; transform: translateY(-4px); }
+    to   { opacity: 1; transform: translateY(0); }
 }
 
 /* Design page cards */
@@ -5766,7 +5812,36 @@ section[data-testid="stSidebar"] .stCaption { line-height: 1.4; }
 .confirm-checkpoint.confirmed .confirm-checkpoint-label {
     color: #166534;
 }
-</style>"""
+</style>
+<script>
+/* v1.0.2.1: MutationObserver — hide stepper nav buttons the instant they appear.
+   Injected early (before _render_flow_nav) so buttons never flash on screen.
+   Buttons remain in DOM for programmatic .click() from stepper wiring JS. */
+(function() {
+    var doc = window.parent.document;
+    if (doc._navBtnObs) { try { doc._navBtnObs.disconnect(); } catch(e) {} }
+    var RE = /^nav_\d$/;
+    function hide() {
+        doc.querySelectorAll('button').forEach(function(btn) {
+            if (RE.test((btn.textContent || '').trim())) {
+                var block = btn.closest('[data-testid="stHorizontalBlock"]');
+                if (block && !block.getAttribute('data-nav-hidden')) {
+                    block.setAttribute('data-nav-hidden', '1');
+                    block.style.cssText = 'position:absolute!important;left:-9999px!important;height:0!important;overflow:hidden!important;pointer-events:none!important;opacity:0!important;';
+                }
+            }
+        });
+    }
+    hide();
+    try {
+        var t = doc.querySelector('[data-testid="stAppViewContainer"]') || doc.body;
+        var obs = new MutationObserver(hide);
+        obs.observe(t, {childList:true, subtree:true});
+        doc._navBtnObs = obs;
+        setTimeout(function() { obs.disconnect(); doc._navBtnObs = null; }, 15000);
+    } catch(e) {}
+})();
+</script>"""
 
 
 def _render_flow_nav(active: int, done: List[bool]) -> None:
@@ -5844,9 +5919,11 @@ def _render_flow_nav(active: int, done: List[bool]) -> None:
         state = step_states[i]
         state_cls = f"st-{state}"
 
-        # Circle content: checkmark for done, number for active/upcoming, lock for locked
+        # Circle content: checkmark for done/active-done, number for active/upcoming, lock for locked
         if state == "done":
             circle_content = check_svg
+        elif i == active and _active_done:
+            circle_content = check_svg  # v1.0.2.1: Show checkmark on active step when complete
         elif state == "locked":
             circle_content = lock_svg
         else:
@@ -5855,6 +5932,8 @@ def _render_flow_nav(active: int, done: List[bool]) -> None:
         # Summary text: done steps show summary, next-target shows CTA
         if state == "done":
             summary = _section_summary(i)
+        elif i == active and _active_done:
+            summary = _section_summary(i) or "Complete"  # v1.0.2.1: Show summary on active-done
         elif state == "next-target":
             summary = "Click to continue"
         else:
@@ -5885,54 +5964,51 @@ def _render_flow_nav(active: int, done: List[bool]) -> None:
                 ):
                     _navigate_to(i)
 
-    # Inject CSS to hide the stepper nav buttons + JS to wire clicks
+    # v1.0.2.1: Wire stepper clicks → hidden nav buttons via MutationObserver.
+    # Button hiding is handled by the early-loaded MutationObserver in _FLOW_NAV_CSS.
     _clickable_json = str(clickable_steps).lower()
-    st.markdown(f'''<style>
-/* Hide the stepper nav button row — buttons are click-targets for JS only */
-div[data-testid="stHorizontalBlock"]:has(button[key^="_stepper_nav_"]),
-div[data-testid="stHorizontalBlock"]:has(button:is([kind="secondary"])) + div.stepper-btn-hide {{
-    display: none;
-}}
-/* Target the specific row by key pattern — fallback: use last horizontal block before content */
-</style>
-<script>
+    st.markdown(f'''<script>
 (function() {{
     var clickable = {_clickable_json};
     var doc = window.parent.document;
-    function wire() {{
-        // Find all stepper step divs
+    /* Clear stale wiring from previous Streamlit reruns */
+    if (doc._stepperWireObs) {{ try {{ doc._stepperWireObs.disconnect(); }} catch(e) {{}} }}
+    doc.querySelectorAll('.stepper-step[data-wired]').forEach(function(el) {{
+        el.removeAttribute('data-wired');
+    }});
+    function wireSteps() {{
         var steps = doc.querySelectorAll('.stepper-step');
+        var wired = 0;
         steps.forEach(function(stepEl) {{
             var idx = parseInt(stepEl.getAttribute('data-step'));
             if (isNaN(idx) || !clickable[idx]) return;
-            // Already wired?
-            if (stepEl.getAttribute('data-wired')) return;
+            if (stepEl.getAttribute('data-wired')) {{ wired++; return; }}
             stepEl.setAttribute('data-wired', '1');
             stepEl.style.cursor = 'pointer';
+            wired++;
             stepEl.addEventListener('click', function() {{
-                // Find the hidden button for this step
                 var btns = doc.querySelectorAll('button');
                 for (var b = 0; b < btns.length; b++) {{
-                    var txt = btns[b].textContent.trim();
-                    if (txt === 'nav_' + idx) {{
+                    if ((btns[b].textContent || '').trim() === 'nav_' + idx) {{
                         btns[b].click();
                         return;
                     }}
                 }}
             }});
         }});
-        // Hide the button row containing nav_ buttons
-        var allBtns = doc.querySelectorAll('button');
-        allBtns.forEach(function(btn) {{
-            if (/^nav_\\d$/.test(btn.textContent.trim())) {{
-                // Walk up to the stHorizontalBlock container and hide it
-                var parent = btn.closest('[data-testid="stHorizontalBlock"]');
-                if (parent) parent.style.display = 'none';
-            }}
-        }});
+        return wired;
     }}
-    // Run with delays to catch async rendering
-    [0, 100, 300, 600, 1200, 2000].forEach(function(d) {{ setTimeout(wire, d); }});
+    wireSteps();
+    try {{
+        var expected = clickable.filter(Boolean).length;
+        var t = doc.querySelector('[data-testid="stAppViewContainer"]') || doc.body;
+        var obs = new MutationObserver(function() {{
+            if (wireSteps() >= expected) obs.disconnect();
+        }});
+        obs.observe(t, {{childList:true, subtree:true}});
+        doc._stepperWireObs = obs;
+        setTimeout(function() {{ obs.disconnect(); }}, 10000);
+    }} catch(e) {{}}
 }})();
 </script>''', unsafe_allow_html=True)
 
@@ -6660,21 +6736,33 @@ if active_page == 0:
         st.session_state["_p_team_name"] = team_name or ""
         st.session_state["_p_team_members_raw"] = members or ""
 
-    # Navigation (v1.8.7.4: minimal — just back + continue, no scroll-up-first)
-    if not step1_done:
-        _missing = []
-        if not completion["study_title"]:
-            _missing.append("study title")
-        if not completion["study_description"]:
-            _missing.append("study description")
-        if _missing:
-            st.caption(f"Fill in {' and '.join(_missing)} to continue.")
+    # v1.0.2.1: Structured completion indicator with checklist
+    if step1_done:
+        st.markdown(
+            '<div class="section-done-banner">'
+            '\u2705 Setup complete \u2014 continue to Study Input'
+            '</div>',
+            unsafe_allow_html=True,
+        )
+    else:
+        _title_ok = "\u2705" if completion["study_title"] else "\u2B1C"
+        _desc_ok = "\u2705" if completion["study_description"] else "\u2B1C"
+        st.caption(f"{_title_ok} Study title &nbsp;&nbsp; {_desc_ok} Study description")
 
-    _nav_left, _nav_right = st.columns([1, 1])
-    with _nav_left:
+    # v1.0.2.1: Consistent 3-column bottom nav: Back | Back to top | Continue
+    _nav_l0, _nav_m0, _nav_r0 = st.columns([1, 1, 1])
+    with _nav_l0:
         if st.button("\u2190 Home", key="back_0", type="secondary"):
             _navigate_to(-1)
-    with _nav_right:
+    with _nav_m0:
+        st.markdown(
+            '<a href="#btt-anchor" '
+            'onclick="var el=document.getElementById(\'btt-anchor\');'
+            'if(el){el.scrollIntoView({behavior:\'smooth\',block:\'start\'});}return false;" '
+            'class="btt-link">\u2191 Back to top</a>',
+            unsafe_allow_html=True,
+        )
+    with _nav_r0:
         if step1_done:
             if st.button("Continue to Study Input \u2192", key="auto_advance_0", type="primary", use_container_width=True):
                 _navigate_to(1)
@@ -7152,13 +7240,13 @@ if active_page == 1:
         if selected_conditions:
             st.success(f"✓ Conditions: {', '.join(selected_conditions)}")
 
-    # v1.0.2.0: Bottom nav — Back | Back to top (no Continue — top stepper only)
+    # v1.0.2.1: Consistent 3-column bottom nav: Back | Back to top | Continue
     st.markdown("---")
-    _nav_left1, _nav_mid1 = st.columns([1, 2])
-    with _nav_left1:
+    _nav_l1, _nav_m1, _nav_r1 = st.columns([1, 1, 1])
+    with _nav_l1:
         if st.button("\u2190 Setup", key="back_1", type="secondary"):
             _navigate_to(0)
-    with _nav_mid1:
+    with _nav_m1:
         st.markdown(
             '<a href="#btt-anchor" '
             'onclick="var el=document.getElementById(\'btt-anchor\');'
@@ -7166,6 +7254,10 @@ if active_page == 1:
             'class="btt-link">\u2191 Back to top</a>',
             unsafe_allow_html=True,
         )
+    with _nav_r1:
+        if _step_done[1]:
+            if st.button("Continue to Design \u2192", key="auto_advance_1", type="primary", use_container_width=True):
+                _navigate_to(2)
 
     st.markdown('</div>', unsafe_allow_html=True)
 
@@ -8560,13 +8652,13 @@ if active_page == 2:
                     )
                     st.session_state["variable_review_rows"] = variable_df.to_dict(orient="records")
 
-    # v1.0.2.0: Bottom nav — Back | Back to top (no Continue — top stepper only)
+    # v1.0.2.1: Consistent 3-column bottom nav: Back | Back to top | Continue
     st.markdown("---")
-    _nav_left2, _nav_mid2 = st.columns([1, 2])
-    with _nav_left2:
+    _nav_l2, _nav_m2, _nav_r2 = st.columns([1, 1, 1])
+    with _nav_l2:
         if st.button("\u2190 Study Input", key="back_2", type="secondary"):
             _navigate_to(1)
-    with _nav_mid2:
+    with _nav_m2:
         st.markdown(
             '<a href="#btt-anchor" '
             'onclick="var el=document.getElementById(\'btt-anchor\');'
@@ -8574,6 +8666,10 @@ if active_page == 2:
             'class="btt-link">\u2191 Back to top</a>',
             unsafe_allow_html=True,
         )
+    with _nav_r2:
+        if _step_done[2]:
+            if st.button("Continue to Generate \u2192", key="auto_advance_2", type="primary", use_container_width=True):
+                _navigate_to(3)
 
     st.markdown('</div>', unsafe_allow_html=True)
 
@@ -10133,7 +10229,20 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
             else:
                 st.caption("Instructor email not configured in secrets (INSTRUCTOR_NOTIFICATION_EMAIL).")
 
-    # v1.4.5: Removed "Done — scroll back to top" button (was unreliable, not needed on last tab)
+    # v1.0.2.1: Consistent bottom nav on Generate page: Back | Back to top
+    st.markdown("---")
+    _nav_l3, _nav_m3, _nav_r3 = st.columns([1, 1, 1])
+    with _nav_l3:
+        if st.button("\u2190 Design", key="back_3", type="secondary"):
+            _navigate_to(2)
+    with _nav_m3:
+        st.markdown(
+            '<a href="#btt-anchor" '
+            'onclick="var el=document.getElementById(\'btt-anchor\');'
+            'if(el){el.scrollIntoView({behavior:\'smooth\',block:\'start\'});}return false;" '
+            'class="btt-link">\u2191 Back to top</a>',
+            unsafe_allow_html=True,
+        )
     st.markdown('</div>', unsafe_allow_html=True)
 
 # ========================================
