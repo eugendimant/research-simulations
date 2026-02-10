@@ -9114,6 +9114,30 @@ To customize these parameters, enable **Advanced mode** in the sidebar.
         _dl_zip_kb = len(zip_bytes) / 1024
         _dl_cols[3].metric("ZIP Size", f"{_dl_zip_kb:.0f} KB" if _dl_zip_kb < 1024 else f"{_dl_zip_kb/1024:.1f} MB")
 
+        # Data realism badges (correlation + missing data)
+        _gen_meta = st.session_state.get("last_metadata", {}) or {}
+        _gen_badges = []
+        _corr_info = _gen_meta.get("cross_dv_correlation", {})
+        if _corr_info.get("enabled"):
+            _gen_badges.append(
+                f"<span style='background:#E8F4FD;padding:3px 10px;border-radius:6px;"
+                f"font-size:0.78rem;margin-right:6px;'>Cross-DV correlations: "
+                f"{_corr_info.get('num_scales', 0)} scales</span>"
+            )
+        _miss_info = _gen_meta.get("missing_data", {})
+        if _miss_info.get("total_missing_rate", 0) > 0:
+            _gen_badges.append(
+                f"<span style='background:#FEF3C7;padding:3px 10px;border-radius:6px;"
+                f"font-size:0.78rem;margin-right:6px;'>Missing data: "
+                f"{_miss_info.get('total_missing_rate', 0) * 100:.1f}% "
+                f"({_miss_info.get('dropout_count', 0)} dropouts)</span>"
+            )
+        if _gen_badges:
+            st.markdown(
+                "<div style='margin:4px 0 8px 0;'>" + " ".join(_gen_badges) + "</div>",
+                unsafe_allow_html=True,
+            )
+
         st.download_button(
             "Download ZIP (CSV + metadata + analysis scripts)",
             data=zip_bytes,
