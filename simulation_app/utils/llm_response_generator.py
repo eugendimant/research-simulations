@@ -5,7 +5,7 @@ Uses free LLM APIs (multi-provider with automatic failover) to generate
 realistic, question-specific, persona-aligned open-ended survey responses.
 
 Architecture:
-- Multi-provider: Groq (built-in), Cerebras, Together AI, OpenRouter
+- Multi-provider: Groq (built-in), Cerebras, Google AI Studio (Gemini), OpenRouter
   with automatic key detection and failover
 - Large batch sizes: 20 responses per API call (within 32K context)
 - Smart pool scaling: calculates exact pool size needed from sample_size
@@ -14,10 +14,10 @@ Architecture:
 - Graceful fallback: if all LLM providers fail, silently falls back to
   the existing template-based ComprehensiveResponseGenerator
 
-Version: 1.9.1
+Version: 1.9.2
 """
 
-__version__ = "1.9.1"
+__version__ = "1.9.2"
 
 import hashlib
 import json
@@ -37,8 +37,8 @@ GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
 GROQ_MODEL = "llama-3.3-70b-versatile"
 
 # Additional free-tier providers for failover
-TOGETHER_API_URL = "https://api.together.xyz/v1/chat/completions"
-TOGETHER_MODEL = "meta-llama/Llama-3.3-70B-Instruct-Turbo-Free"
+GOOGLE_AI_API_URL = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
+GOOGLE_AI_MODEL = "gemini-2.0-flash"
 
 CEREBRAS_API_URL = "https://api.cerebras.ai/v1/chat/completions"
 CEREBRAS_MODEL = "llama-3.3-70b"
@@ -783,7 +783,7 @@ def _call_llm_api(
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
-        "User-Agent": "BehavioralSimulationTool/1.9.1",
+        "User-Agent": "BehavioralSimulationTool/1.9.2",
     }
 
     # OpenRouter requires/recommends HTTP-Referer and X-Title
@@ -1008,8 +1008,8 @@ def detect_provider_from_key(api_key: str) -> Optional[Dict[str, str]]:
         return {"name": "cerebras", "api_url": CEREBRAS_API_URL, "model": CEREBRAS_MODEL}
     elif key.startswith("sk-or-"):
         return {"name": "openrouter", "api_url": OPENROUTER_API_URL, "model": OPENROUTER_MODEL}
-    elif key.startswith("tgai-") or key.startswith("tog-"):
-        return {"name": "together", "api_url": TOGETHER_API_URL, "model": TOGETHER_MODEL}
+    elif key.startswith("AIza"):
+        return {"name": "google_ai", "api_url": GOOGLE_AI_API_URL, "model": GOOGLE_AI_MODEL}
     elif key.startswith("snova-") or key.startswith("sambanova-"):
         return {"name": "sambanova", "api_url": SAMBANOVA_API_URL, "model": SAMBANOVA_MODEL}
     elif len(key) > 30:
@@ -1043,10 +1043,10 @@ def get_supported_providers() -> List[Dict[str, str]]:
             "recommended": False,
         },
         {
-            "name": "Together AI",
-            "prefix": "tgai-...",
-            "url": "https://api.together.xyz",
-            "free_tier": "Free Llama 3.3 70B model",
+            "name": "Google AI Studio (Gemini)",
+            "prefix": "AIza...",
+            "url": "https://aistudio.google.com",
+            "free_tier": "1,500 req/day, 1M tokens/min (Gemini 2.0 Flash)",
             "recommended": False,
         },
         {
@@ -1143,8 +1143,8 @@ class LLMResponseGenerator:
 
     Multi-provider architecture with automatic failover:
     1. Built-in default Groq key (seamless for all users)
-    2. User-provided key (auto-detected: Groq, Cerebras, OpenRouter)
-    3. Environment variable providers (Together AI, Cerebras, OpenRouter)
+    2. User-provided key (auto-detected: Groq, Cerebras, Google AI Studio, OpenRouter)
+    3. Environment variable providers (Google AI Studio, Cerebras, OpenRouter)
     4. Template fallback (always works)
 
     Draw-with-replacement + deep variation means a pool of ~50 base
@@ -1193,7 +1193,7 @@ class LLMResponseGenerator:
         self._batch_failure_count = 0
 
         # Build provider chain — built-in keys first, then env-var providers,
-        # then user key last. Priority: Groq -> Cerebras -> Together -> OpenRouter -> user
+        # then user key last. Priority: Groq -> Cerebras -> Google AI -> OpenRouter -> user
         self._providers: List[_LLMProvider] = []
         user_key = api_key or os.environ.get("LLM_API_KEY", "") or os.environ.get("GROQ_API_KEY", "")
         _all_builtin_keys = {_DEFAULT_GROQ_KEY, _DEFAULT_CEREBRAS_KEY, _DEFAULT_OPENROUTER_KEY}
@@ -1209,16 +1209,16 @@ class LLMResponseGenerator:
                     name=name, api_url=url, model=model, api_key=key,
                 ))
 
-        # v1.9.1: Env-var providers inserted BEFORE OpenRouter for better failover
-        # Together AI (free Llama 3.3 70B) — excellent free tier
-        _together_key = os.environ.get("TOGETHER_API_KEY", "")
-        if _together_key and not any(p.api_key == _together_key for p in self._providers):
+        # v1.9.2: Env-var providers inserted BEFORE OpenRouter for better failover
+        # Google AI Studio (Gemini 2.0 Flash) — truly free, no credit card, 1500 req/day
+        _google_ai_key = os.environ.get("GOOGLE_API_KEY", "") or os.environ.get("GEMINI_API_KEY", "")
+        if _google_ai_key and not any(p.api_key == _google_ai_key for p in self._providers):
             # Insert before OpenRouter (position -1 if openrouter exists)
             _or_idx = next((i for i, p in enumerate(self._providers)
                            if p.name == "openrouter_builtin"), len(self._providers))
             self._providers.insert(_or_idx, _LLMProvider(
-                name="together", api_url=TOGETHER_API_URL,
-                model=TOGETHER_MODEL, api_key=_together_key,
+                name="google_ai", api_url=GOOGLE_AI_API_URL,
+                model=GOOGLE_AI_MODEL, api_key=_google_ai_key,
             ))
 
         # SambaNova Cloud (free Llama 3.1 70B) — generous free tier
@@ -1321,7 +1321,8 @@ class LLMResponseGenerator:
             "groq_user": "Groq (your key)",
             "cerebras_user": "Cerebras (your key)",
             "openrouter_user": "OpenRouter (your key)",
-            "together": "Together AI (free Llama 3.3 70B)",
+            "google_ai_user": "Google AI Studio (your key)",
+            "google_ai": "Google AI Studio (Gemini 2.0 Flash)",
             "sambanova": "SambaNova Cloud (free Llama 3.1 70B)",
             "cerebras_env": "Cerebras",
             "openrouter_env": "OpenRouter",
