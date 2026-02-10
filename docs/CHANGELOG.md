@@ -1,5 +1,20 @@
 # Agent Change Log
 
+## 2026-02-10 — v1.0.1.4
+### Bug Fixes
+- Fixed open-ended question removal bug: removing a question no longer closes the expander or scrolls to top (replaced `_navigate_to(2)` with `st.rerun()`)
+- Fixed "Continue to Generate" button not appearing on Design page: added inline Continue button within design validation so users can proceed immediately without needing another interaction
+- Builder path OE removal also fixed to avoid expander collapse
+
+### New Features
+- **Remove All** button for open-ended questions (both QSF-detected and survey builder paths) — removes all OE questions at once when dealing with large numbers
+- Inline "Continue to Generate" button appears right after design validation passes, eliminating the timing issue where the top nav button wasn't visible
+
+### Documentation & Branding
+- Removed "University of Pennsylvania" references from footer, README, and technical methods
+- Updated technical methods document to reflect current LLM provider chain (Google AI Studio → Groq → Cerebras → OpenRouter)
+- Regenerated methods_summary.pdf with updated content and version
+
 ## 2026-02-10 — v1.9.1
 ### Bug Fixes
 - Fixed analytics dashboard NameError on `clean_scales` — recovered from session state

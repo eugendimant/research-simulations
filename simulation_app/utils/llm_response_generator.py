@@ -15,10 +15,10 @@ Architecture:
 - Graceful fallback: if all LLM providers fail, silently falls back to
   the existing template-based ComprehensiveResponseGenerator
 
-Version: 1.0.1.3
+Version: 1.0.1.4
 """
 
-__version__ = "1.0.1.3"
+__version__ = "1.0.1.4"
 
 import hashlib
 import json
@@ -838,7 +838,7 @@ def _call_llm_api(
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
-        "User-Agent": "BehavioralSimulationTool/1.0.1.3",
+        "User-Agent": "BehavioralSimulationTool/1.0.1.4",
     }
 
     # OpenRouter requires/recommends HTTP-Referer and X-Title
