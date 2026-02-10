@@ -2586,11 +2586,119 @@ class PersonaLibrary:
         rng = np.random.RandomState(unique_seed)
 
         traits = {}
+
+        # ================================================================
+        # CORRELATED RESPONSE STYLE TRAITS
+        # Acquiescence, Extremity, and Social Desirability Covariance
+        # ================================================================
+        # In real data, these three response biases are NOT independent.
+        # They co-vary in systematic ways documented in the literature:
+        #
+        # Baumgartner & Steenkamp (2001, Marketing Research):
+        #   - Acquiescence correlates with Extremity at r ~ 0.15
+        #   - Both are "content-free" response tendencies
+        #
+        # Paulhus (2002, Psychological Assessment):
+        #   - Social Desirability correlates with Acquiescence at r ~ 0.25
+        #   - Both involve agreeable/positive responding
+        #
+        # Greenleaf (1992); Baumgartner & Steenkamp (2001):
+        #   - Extremity negatively correlates with Social Desirability at r ~ -0.10
+        #   - SD respondents moderate their responses to seem "normal"
+        #
+        # Implementation: Generate z-scores from a multivariate normal with
+        # the empirical correlation structure, then transform to each trait's
+        # persona-specific mean and SD using the Cholesky decomposition.
+        # ================================================================
+        _correlated_traits = ['acquiescence', 'extremity', 'social_desirability']
+        _corr_means = []
+        _corr_sds = []
+        _corr_trait_objects = []
+        _has_all_corr_traits = True
+
+        for _ct in _correlated_traits:
+            if _ct in persona.traits:
+                _corr_trait_objects.append(persona.traits[_ct])
+                _corr_means.append(persona.traits[_ct].base_mean)
+                _corr_sds.append(persona.traits[_ct].base_sd)
+            else:
+                _has_all_corr_traits = False
+                break
+
+        if _has_all_corr_traits and len(_corr_trait_objects) == 3:
+            # Empirical correlation matrix from published research:
+            # [acquiescence, extremity, social_desirability]
+            _R = np.array([
+                [1.00, 0.15, 0.25],   # Acquiescence
+                [0.15, 1.00, -0.10],   # Extremity
+                [0.25, -0.10, 1.00],   # Social Desirability
+            ])
+
+            # Cholesky decomposition for correlated sampling
+            try:
+                _L = np.linalg.cholesky(_R)
+                # Generate independent z-scores
+                _z = rng.normal(0.0, 1.0, size=3)
+                # Transform to correlated z-scores
+                _corr_z = _L @ _z
+
+                # Convert correlated z-scores to trait values using each
+                # trait's persona-specific mean and SD
+                for idx, _ct in enumerate(_correlated_traits):
+                    _value = _corr_means[idx] + _corr_z[idx] * _corr_sds[idx]
+                    traits[_ct] = float(np.clip(_value, 0.01, 0.99))
+            except np.linalg.LinAlgError:
+                # Fallback to independent sampling if Cholesky fails
+                # (should not happen with valid correlation matrix)
+                for _ct in _correlated_traits:
+                    _trait = persona.traits[_ct]
+                    _value = rng.normal(_trait.base_mean, _trait.base_sd)
+                    traits[_ct] = float(np.clip(_value, 0.01, 0.99))
+        # else: traits will be generated independently below
+
+        # Generate remaining traits independently
         for trait_name, trait in persona.traits.items():
+            if trait_name in traits:
+                # Already generated as part of correlated set
+                continue
             # Generate value from normal distribution centered on persona mean
             value = rng.normal(trait.base_mean, trait.base_sd)
             # Clip to valid range
             traits[trait_name] = float(np.clip(value, 0.01, 0.99))
+
+        # ================================================================
+        # G-FACTOR: General Evaluation Tendency (Podsakoff et al., 2003)
+        # ================================================================
+        # Each participant has a stable general evaluation tendency (g-factor)
+        # that represents their overall positivity/negativity in ratings.
+        # Some people rate everything slightly higher, others slightly lower.
+        #
+        # This is grounded in Common Method Variance (CMV) research:
+        #   - Podsakoff et al. (2003): Method factors account for ~25% of
+        #     variance in self-report measures on average
+        #   - The g-factor loads differentially on different construct types:
+        #     * Attitudes/evaluations: loading ~0.25 (high CMV susceptibility)
+        #     * Behavioral intentions: loading ~0.15 (moderate CMV)
+        #     * Factual/behavioral reports: loading ~0.08 (low CMV)
+        #     * Risk/threat perceptions: loading ~0.12 (moderate CMV)
+        #
+        # The g-factor is drawn from N(0, 1) and stored as a latent score.
+        # It produces within-person coherence across scales beyond what
+        # the existing latent DV correlation system provides.
+        #
+        # Reference: Podsakoff, P. M., MacKenzie, S. B., Lee, J.-Y., &
+        #   Podsakoff, N. P. (2003). "Common method biases in behavioral
+        #   research." Journal of Applied Psychology, 88(5), 879-903.
+        # ================================================================
+        g_factor_z = float(rng.normal(0.0, 1.0))
+        # Engaged/consistent personas have stronger g-factor expression
+        # (they respond more coherently), while careless respondents have
+        # weaker expression (noise dilutes the latent factor)
+        consistency = traits.get('response_consistency', 0.65)
+        g_factor_strength = 0.12 + (consistency - 0.5) * 0.16
+        g_factor_strength = float(np.clip(g_factor_strength, 0.04, 0.22))
+        traits['_g_factor_z'] = g_factor_z
+        traits['_g_factor_strength'] = g_factor_strength
 
         return traits
 
