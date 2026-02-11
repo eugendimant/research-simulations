@@ -53,8 +53,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.0.4.5"
-BUILD_ID = "20260211-v10450-bugfix-domain-expansion-personas"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.0.4.6"
+BUILD_ID = "20260211-v10460-pipeline-quality-domain-routing"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -119,7 +119,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.0.4.5"  # v1.0.4.5: Bugfix, domain expansion, 6 new personas, SD improvements
+APP_VERSION = "1.0.4.6"  # v1.0.4.6: Pipeline quality overhaul — domain-aware routing, persona expansion, cross-DV coherence
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")

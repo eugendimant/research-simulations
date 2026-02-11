@@ -159,7 +159,7 @@ Based on recent LLM simulation research:
 """
 
 # Version identifier to help track deployed code
-__version__ = "1.0.4.5"  # v1.0.4.5: 6 new domain personas (clinical, legal, sports, attachment, loss-averse, persuasion-resistant)
+__version__ = "1.0.4.6"  # v1.0.4.6: 8 new personas (political, economic game, intergroup), expanded domain mappings
 
 import hashlib
 import random
@@ -822,7 +822,8 @@ class PersonaLibrary:
                 'coherence': 'high',
                 'sentiment_alignment': 'protective'
             },
-            applicable_domains=['technology', 'privacy', 'data', 'personalization', 'surveillance']
+            applicable_domains=['technology', 'privacy', 'data', 'personalization', 'surveillance',
+                                'consumer_behavior', 'health_psychology', 'political_psychology']
         )
 
         # ================================================================
@@ -857,7 +858,8 @@ class PersonaLibrary:
                 'coherence': 'high',
                 'sentiment_alignment': 'cautious'
             },
-            applicable_domains=['behavioral_economics', 'decision_making', 'risk', 'finance']
+            applicable_domains=['behavioral_economics', 'decision_making', 'risk', 'finance',
+                                'health_psychology', 'consumer_behavior', 'insurance']
         )
 
         personas['present_biased'] = Persona(
@@ -911,7 +913,9 @@ class PersonaLibrary:
                 'coherence': 'very_high',
                 'sentiment_alignment': 'reasoned'
             },
-            applicable_domains=['behavioral_economics', 'decision_making', 'judgment']
+            applicable_domains=['behavioral_economics', 'decision_making', 'judgment',
+                                'consumer_behavior', 'ai', 'political_psychology', 'legal',
+                                'communication']
         )
 
         personas['social_comparer'] = Persona(
@@ -938,7 +942,9 @@ class PersonaLibrary:
                 'coherence': 'high',
                 'sentiment_alignment': 'relative'
             },
-            applicable_domains=['behavioral_economics', 'social_comparison', 'inequality', 'fairness']
+            applicable_domains=['behavioral_economics', 'social_comparison', 'inequality', 'fairness',
+                                'consumer_behavior', 'marketing', 'political_psychology', 'intergroup_relations',
+                                'economic_games']
         )
 
         # ================================================================
@@ -1062,7 +1068,8 @@ class PersonaLibrary:
                 'coherence': 'high',
                 'sentiment_alignment': 'caring'
             },
-            applicable_domains=['social_psychology', 'prosocial_behavior', 'cooperation', 'altruism']
+            applicable_domains=['social_psychology', 'prosocial_behavior', 'cooperation', 'altruism',
+                                'behavioral_economics', 'economic_games', 'trust', 'intergroup_relations']
         )
 
         personas['individualist'] = Persona(
@@ -1089,7 +1096,9 @@ class PersonaLibrary:
                 'coherence': 'high',
                 'sentiment_alignment': 'achievement_oriented'
             },
-            applicable_domains=['social_psychology', 'cooperation', 'competition', 'social_dilemmas']
+            applicable_domains=['social_psychology', 'cooperation', 'competition', 'social_dilemmas',
+                                'behavioral_economics', 'economic_games', 'consumer_behavior',
+                                'organizational_behavior', 'political_psychology']
         )
 
         personas['conformist'] = Persona(
@@ -1116,7 +1125,215 @@ class PersonaLibrary:
                 'coherence': 'high',
                 'sentiment_alignment': 'agreeable'
             },
-            applicable_domains=['social_psychology', 'conformity', 'social_influence', 'norms']
+            applicable_domains=['social_psychology', 'conformity', 'social_influence', 'norms',
+                                'political_psychology', 'organizational_behavior', 'consumer_behavior']
+        )
+
+        # ================================================================
+        # POLITICAL / PARTISAN PERSONAS (v1.0.4.6)
+        # Scientific basis: Iyengar & Westwood (2015), Druckman & Levendusky (2019)
+        # Political identity is a primary predictor of behavior in political studies
+        # ================================================================
+
+        personas['partisan_ideologue'] = Persona(
+            name="Partisan Ideologue",
+            category="political",
+            description="Strongly identified partisan with ideological consistency. High affective "
+                       "polarization, strong ingroup loyalty. "
+                       "Iyengar & Westwood (2015): Affective polarization d ≈ 0.8-1.0.",
+            weight=0.14,
+            traits={
+                'political_engagement': PersonaTrait('political_engagement', 0.88, 0.06, 'Very high'),
+                'ideological_consistency': PersonaTrait('ideological_consistency', 0.85, 0.08, 'High'),
+                'affective_polarization': PersonaTrait('affective_polarization', 0.82, 0.08, 'Strong'),
+                'ingroup_loyalty': PersonaTrait('ingroup_loyalty', 0.85, 0.08, 'Very strong'),
+                'outgroup_hostility': PersonaTrait('outgroup_hostility', 0.72, 0.10, 'High'),
+                'moral_conviction': PersonaTrait('moral_conviction', 0.78, 0.10, 'Strong'),
+                'response_tendency': PersonaTrait('response_tendency', 0.55, 0.15, 'Condition-dependent extreme'),
+                'extremity': PersonaTrait('extremity', 0.72, 0.10, 'High - strong partisan reactions'),
+            },
+            text_style={
+                'verbosity': 'passionate',
+                'detail_level': 'ideology_driven',
+                'coherence': 'high',
+                'sentiment_alignment': 'partisan'
+            },
+            applicable_domains=['political_psychology', 'political_science', 'intergroup_relations',
+                                'moral_psychology', 'social_psychology', 'economic_games']
+        )
+
+        personas['pragmatic_moderate'] = Persona(
+            name="Pragmatic Moderate",
+            category="political",
+            description="Centrist/moderate with low partisanship, open to both sides. "
+                       "Values compromise and evidence over ideology. "
+                       "Fiorina et al. (2005): ~40% of Americans are genuine moderates.",
+            weight=0.12,
+            traits={
+                'political_engagement': PersonaTrait('political_engagement', 0.55, 0.12, 'Moderate'),
+                'ideological_consistency': PersonaTrait('ideological_consistency', 0.35, 0.12, 'Low'),
+                'affective_polarization': PersonaTrait('affective_polarization', 0.30, 0.12, 'Low'),
+                'openness_to_other_side': PersonaTrait('openness_to_other_side', 0.75, 0.10, 'High'),
+                'compromise_seeking': PersonaTrait('compromise_seeking', 0.78, 0.10, 'Strong'),
+                'evidence_orientation': PersonaTrait('evidence_orientation', 0.72, 0.10, 'High'),
+                'response_tendency': PersonaTrait('response_tendency', 0.50, 0.08, 'Centrist/balanced'),
+                'extremity': PersonaTrait('extremity', 0.18, 0.08, 'Low - measured responses'),
+            },
+            text_style={
+                'verbosity': 'measured',
+                'detail_level': 'balanced',
+                'coherence': 'high',
+                'sentiment_alignment': 'nuanced'
+            },
+            applicable_domains=['political_psychology', 'political_science', 'intergroup_relations',
+                                'moral_psychology', 'social_psychology']
+        )
+
+        # ================================================================
+        # ECONOMIC GAME PERSONAS (v1.0.4.6)
+        # Scientific basis: Fehr & Schmidt (1999), Fischbacher et al. (2001)
+        # Economic game behavior clusters into distinct types
+        # ================================================================
+
+        personas['reciprocal_cooperator'] = Persona(
+            name="Reciprocal Cooperator",
+            category="behavioral_economics",
+            description="Conditional cooperator who matches others' contributions. "
+                       "Cooperates when others cooperate, retaliates against free-riders. "
+                       "Fischbacher et al. (2001): ~50% of participants are conditional cooperators.",
+            weight=0.15,
+            traits={
+                'reciprocity': PersonaTrait('reciprocity', 0.85, 0.08, 'Very high'),
+                'fairness_concern': PersonaTrait('fairness_concern', 0.78, 0.10, 'High'),
+                'cooperation_tendency': PersonaTrait('cooperation_tendency', 0.70, 0.10, 'Conditionally high'),
+                'punishment_willingness': PersonaTrait('punishment_willingness', 0.65, 0.12, 'Moderate-high'),
+                'trust_propensity': PersonaTrait('trust_propensity', 0.62, 0.12, 'Moderate'),
+                'strategic_thinking': PersonaTrait('strategic_thinking', 0.68, 0.10, 'Moderate-high'),
+                'response_tendency': PersonaTrait('response_tendency', 0.55, 0.12, 'Context-dependent'),
+                'extremity': PersonaTrait('extremity', 0.30, 0.10, 'Moderate - depends on partner'),
+            },
+            text_style={
+                'verbosity': 'moderate',
+                'detail_level': 'strategic',
+                'coherence': 'high',
+                'sentiment_alignment': 'conditional'
+            },
+            applicable_domains=['behavioral_economics', 'economic_games', 'cooperation',
+                                'social_psychology', 'trust', 'intergroup_relations']
+        )
+
+        personas['free_rider'] = Persona(
+            name="Free Rider",
+            category="behavioral_economics",
+            description="Selfish maximizer who contributes minimally in collective action problems. "
+                       "Exploits others' cooperation while minimizing own costs. "
+                       "Fischbacher et al. (2001): ~30% are free-riders in public goods games.",
+            weight=0.10,
+            traits={
+                'self_interest': PersonaTrait('self_interest', 0.85, 0.08, 'Very high'),
+                'cooperation_tendency': PersonaTrait('cooperation_tendency', 0.20, 0.10, 'Very low'),
+                'strategic_thinking': PersonaTrait('strategic_thinking', 0.75, 0.10, 'High - strategic exploitation'),
+                'fairness_concern': PersonaTrait('fairness_concern', 0.30, 0.12, 'Low'),
+                'guilt_proneness': PersonaTrait('guilt_proneness', 0.28, 0.12, 'Low'),
+                'trust_propensity': PersonaTrait('trust_propensity', 0.40, 0.12, 'Low-moderate'),
+                'response_tendency': PersonaTrait('response_tendency', 0.30, 0.12, 'Favors low contributions'),
+                'extremity': PersonaTrait('extremity', 0.42, 0.10, 'Moderate-high - consistent selfishness'),
+            },
+            text_style={
+                'verbosity': 'terse',
+                'detail_level': 'self_focused',
+                'coherence': 'moderate',
+                'sentiment_alignment': 'self_interested'
+            },
+            applicable_domains=['behavioral_economics', 'economic_games', 'cooperation',
+                                'social_dilemmas', 'social_psychology']
+        )
+
+        personas['fairness_enforcer'] = Persona(
+            name="Fairness Enforcer",
+            category="behavioral_economics",
+            description="Strong fairness norms, willing to punish norm violators even at personal cost. "
+                       "Altruistic punishment and third-party enforcement. "
+                       "Fehr & Gächter (2002): ~60% engage in costly punishment of free-riders.",
+            weight=0.12,
+            traits={
+                'fairness_concern': PersonaTrait('fairness_concern', 0.88, 0.06, 'Very high'),
+                'punishment_willingness': PersonaTrait('punishment_willingness', 0.82, 0.08, 'Very high'),
+                'moral_conviction': PersonaTrait('moral_conviction', 0.80, 0.08, 'Strong'),
+                'inequality_aversion': PersonaTrait('inequality_aversion', 0.82, 0.08, 'Strong'),
+                'cooperation_tendency': PersonaTrait('cooperation_tendency', 0.72, 0.10, 'High'),
+                'anger_at_injustice': PersonaTrait('anger_at_injustice', 0.78, 0.10, 'High'),
+                'response_tendency': PersonaTrait('response_tendency', 0.60, 0.12, 'Fair-share promoting'),
+                'extremity': PersonaTrait('extremity', 0.45, 0.10, 'Moderate-high on fairness issues'),
+            },
+            text_style={
+                'verbosity': 'principled',
+                'detail_level': 'norm_focused',
+                'coherence': 'high',
+                'sentiment_alignment': 'justice_oriented'
+            },
+            applicable_domains=['behavioral_economics', 'economic_games', 'punishment',
+                                'moral_psychology', 'fairness', 'social_psychology', 'legal']
+        )
+
+        # ================================================================
+        # INTERGROUP PERSONAS (v1.0.4.6)
+        # Scientific basis: Tajfel & Turner (1979), Allport (1954)
+        # Intergroup attitudes vary from strong ingroup bias to egalitarian
+        # ================================================================
+
+        personas['ingroup_favorer'] = Persona(
+            name="Ingroup Favorer",
+            category="intergroup",
+            description="Strong ingroup identification and favoritism. Minimal Group Paradigm shows "
+                       "even arbitrary groups elicit discrimination. "
+                       "Balliet et al. (2014): d = 0.32 for ingroup favoritism in cooperation.",
+            weight=0.14,
+            traits={
+                'ingroup_identification': PersonaTrait('ingroup_identification', 0.85, 0.08, 'Very strong'),
+                'outgroup_derogation': PersonaTrait('outgroup_derogation', 0.62, 0.12, 'Moderate-high'),
+                'social_identity_salience': PersonaTrait('social_identity_salience', 0.80, 0.08, 'High'),
+                'ethnocentrism': PersonaTrait('ethnocentrism', 0.68, 0.12, 'Moderate-high'),
+                'cooperation_tendency': PersonaTrait('cooperation_tendency', 0.75, 0.12, 'High ingroup, low outgroup'),
+                'trust_propensity': PersonaTrait('trust_propensity', 0.65, 0.15, 'High ingroup, low outgroup'),
+                'response_tendency': PersonaTrait('response_tendency', 0.60, 0.15, 'Ingroup-biased'),
+                'extremity': PersonaTrait('extremity', 0.42, 0.10, 'Moderate-high on group issues'),
+            },
+            text_style={
+                'verbosity': 'group_focused',
+                'detail_level': 'identity_aware',
+                'coherence': 'high',
+                'sentiment_alignment': 'ingroup_positive'
+            },
+            applicable_domains=['intergroup_relations', 'social_psychology', 'political_psychology',
+                                'economic_games', 'prejudice', 'social_identity', 'trust']
+        )
+
+        personas['egalitarian'] = Persona(
+            name="Egalitarian",
+            category="intergroup",
+            description="Committed to fairness across groups. Low prejudice, high need for "
+                       "equality. Values diversity and cross-group contact. "
+                       "Pratto et al. (1994): Low SDO predicts egalitarian attitudes.",
+            weight=0.12,
+            traits={
+                'egalitarianism': PersonaTrait('egalitarianism', 0.85, 0.08, 'Very high'),
+                'social_dominance_orientation': PersonaTrait('social_dominance_orientation', 0.18, 0.08, 'Very low'),
+                'outgroup_empathy': PersonaTrait('outgroup_empathy', 0.78, 0.10, 'High'),
+                'contact_seeking': PersonaTrait('contact_seeking', 0.72, 0.10, 'High'),
+                'fairness_concern': PersonaTrait('fairness_concern', 0.80, 0.08, 'Strong'),
+                'cooperation_tendency': PersonaTrait('cooperation_tendency', 0.75, 0.10, 'High across groups'),
+                'response_tendency': PersonaTrait('response_tendency', 0.55, 0.10, 'Equal across groups'),
+                'extremity': PersonaTrait('extremity', 0.32, 0.10, 'Moderate on equality issues'),
+            },
+            text_style={
+                'verbosity': 'thoughtful',
+                'detail_level': 'fairness_focused',
+                'coherence': 'high',
+                'sentiment_alignment': 'equality_oriented'
+            },
+            applicable_domains=['intergroup_relations', 'social_psychology', 'political_psychology',
+                                'prejudice', 'social_identity', 'moral_psychology', 'economic_games']
         )
 
         # ================================================================
@@ -1150,7 +1367,8 @@ class PersonaLibrary:
                 'coherence': 'high',
                 'sentiment_alignment': 'attached'
             },
-            applicable_domains=['psychological_ownership', 'consumer_behavior', 'branding']
+            applicable_domains=['psychological_ownership', 'consumer_behavior', 'branding',
+                                'political_psychology', 'sports', 'intergroup_relations', 'social_psychology']
         )
 
         personas['low_ownership'] = Persona(
@@ -1593,7 +1811,8 @@ class PersonaLibrary:
                 'coherence': 'high',
                 'sentiment_alignment': 'competitive'
             },
-            applicable_domains=['sports', 'competition', 'achievement', 'performance', 'gaming']
+            applicable_domains=['sports', 'competition', 'achievement', 'performance', 'gaming',
+                                'motivation', 'exercise', 'organizational_behavior']
         )
 
         # ================================================================
@@ -1715,7 +1934,8 @@ class PersonaLibrary:
                 'coherence': 'very_high',
                 'sentiment_alignment': 'evidence_based'
             },
-            applicable_domains=['communication', 'media', 'persuasion', 'misinformation', 'advertising']
+            applicable_domains=['communication', 'media', 'persuasion', 'misinformation', 'advertising',
+                                'health_psychology', 'political_psychology', 'consumer_behavior']
         )
 
         # ================================================================
@@ -1790,31 +2010,7 @@ class PersonaLibrary:
         # Scientific basis: Vealey (1986) sport confidence,
         # Deci & Ryan (2000) intrinsic motivation in competition.
         # ================================================================
-        personas['competitive_achiever'] = Persona(
-            name="Competitive Achiever",
-            category="sports",
-            description="Person with high achievement motivation and competitive drive. "
-                       "Risk-taking in performance contexts, high confidence. "
-                       "Vealey (1986): Sport confidence moderates competitive behavior.",
-            weight=0.06,
-            traits={
-                'achievement_motivation': PersonaTrait('achievement_motivation', 0.85, 0.08, 'High drive'),
-                'risk_tolerance': PersonaTrait('risk_tolerance', 0.72, 0.10, 'Competitive risk-taking'),
-                'cooperation_tendency': PersonaTrait('cooperation_tendency', 0.40, 0.12, 'Lower — competitive'),
-                'engagement': PersonaTrait('engagement', 0.85, 0.08, 'Very high engagement'),
-                'attention_level': PersonaTrait('attention_level', 0.78, 0.10, 'Focused'),
-                'response_tendency': PersonaTrait('response_tendency', 0.65, 0.10, 'Confident-positive'),
-                'extremity': PersonaTrait('extremity', 0.40, 0.10, 'Higher — strong convictions'),
-                'response_consistency': PersonaTrait('response_consistency', 0.75, 0.08, 'Goal-consistent'),
-            },
-            text_style={
-                'verbosity': 'direct',
-                'detail_level': 'performance_focused',
-                'coherence': 'high',
-                'sentiment_alignment': 'achievement_oriented'
-            },
-            applicable_domains=['sports', 'competition', 'achievement', 'performance', 'motivation', 'exercise']
-        )
+        # (competitive_achiever consolidated with earlier definition — v1.0.4.6)
 
         # ================================================================
         # RELATIONSHIPS/ATTACHMENT PERSONA — Secure Attachment
