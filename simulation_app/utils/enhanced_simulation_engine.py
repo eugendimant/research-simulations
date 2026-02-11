@@ -45,7 +45,7 @@ This module is designed to run inside a `utils/` package (i.e., imported as
 """
 
 # Version identifier to help track deployed code
-__version__ = "1.0.4.5"  # v1.0.4.5: Bugfix condition_lower, domain expansion, persona interactions, SD improvements
+__version__ = "1.0.4.6"  # v1.0.4.6: Pipeline quality overhaul — domain-aware routing, effect stacking guard, persona expansion, cross-DV coherence
 
 # =============================================================================
 # SCIENTIFIC FOUNDATIONS FOR SIMULATION
@@ -2779,6 +2779,41 @@ class EnhancedSimulationEngine:
             self.detected_domains
         )
 
+        # v1.0.4.6 Step 9: Persona pool validation
+        # Ensure we have enough domain-specific personas (≥3 non-response-style)
+        # If too few, broaden to adjacent domains
+        _domain_specific = {n: p for n, p in self.available_personas.items()
+                           if p.category != 'response_style'}
+        _MIN_DOMAIN_PERSONAS = 3
+        if len(_domain_specific) < _MIN_DOMAIN_PERSONAS and self.detected_domains:
+            _ADJACENT_DOMAINS = {
+                'political_psychology': ['social_psychology', 'intergroup_relations', 'moral_psychology'],
+                'economic_games': ['behavioral_economics', 'social_psychology', 'cooperation'],
+                'intergroup_relations': ['political_psychology', 'social_psychology', 'prejudice'],
+                'consumer_behavior': ['behavioral_economics', 'marketing', 'social_psychology'],
+                'health_psychology': ['clinical', 'behavioral_economics', 'social_psychology'],
+                'organizational_behavior': ['social_psychology', 'leadership', 'management'],
+                'clinical': ['health_psychology', 'social_psychology', 'stress'],
+                'ai': ['technology', 'consumer_behavior', 'behavioral_economics'],
+                'environmental': ['social_psychology', 'consumer_behavior', 'moral_psychology'],
+                'moral_psychology': ['social_psychology', 'political_psychology', 'fairness'],
+                'social_psychology': ['behavioral_economics', 'political_psychology', 'intergroup_relations'],
+                'behavioral_economics': ['economic_games', 'consumer_behavior', 'social_psychology'],
+                'communication': ['social_psychology', 'consumer_behavior', 'political_psychology'],
+            }
+            _expanded_domains = list(self.detected_domains)
+            for d in self.detected_domains:
+                _expanded_domains.extend(_ADJACENT_DOMAINS.get(d, []))
+            _expanded_domains = list(set(_expanded_domains))
+            _expanded_personas = self.persona_library.get_personas_for_domains(_expanded_domains)
+            if len({n: p for n, p in _expanded_personas.items()
+                    if p.category != 'response_style'}) > len(_domain_specific):
+                self.available_personas = _expanded_personas
+                self._log(f"Persona pool expanded via adjacent domains: "
+                         f"{len(_domain_specific)} → "
+                         f"{len({n: p for n, p in _expanded_personas.items() if p.category != 'response_style'})} "
+                         f"domain-specific personas")
+
         # Adjust persona weights based on study characteristics
         self._adjust_persona_weights_for_study()
 
@@ -3182,6 +3217,10 @@ class EnhancedSimulationEngine:
         """
         Adjust persona weights based on detected study domain and conditions.
 
+        v1.0.4.6: Now uses self.detected_domains directly instead of
+        re-keyword-matching study text. The 5-phase domain detection already
+        ran on study title, description, and conditions — we use that result.
+
         SCIENTIFIC BASIS:
         =================
         Different study types attract different participant populations.
@@ -3192,57 +3231,131 @@ class EnhancedSimulationEngine:
         - Buhrmester et al. (2011): MTurk sample characteristics
         - Peer et al. (2017): Online panel composition
         """
-        study_text = f"{self.study_description} {self.study_title}".lower()
-        condition_text = " ".join(str(c) for c in self.conditions).lower()
-        all_text = f"{study_text} {condition_text}"
+        _detected = set(getattr(self, 'detected_domains', []) or [])
 
         # =====================================================================
-        # Domain-based persona weight adjustments
+        # v1.0.4.6: Domain-aware persona weight adjustments
+        # Uses detected_domains → category mapping for precise boosting
         # =====================================================================
+        _DOMAIN_TO_CATEGORY_BOOST = {
+            'ai': ('technology', 1.3),
+            'technology': ('technology', 1.2),
+            'consumer_behavior': ('consumer', 1.3),
+            'marketing': ('consumer', 1.2),
+            'organizational_behavior': ('organizational', 1.4),
+            'social_psychology': ('social', 1.3),
+            'health_psychology': ('health', 1.4),
+            'environmental': ('environmental', 1.4),
+            'political_psychology': ('social', 1.2),  # Political boosts social personas
+            'behavioral_economics': ('behavioral_economics', 1.3),
+            'economic_games': ('behavioral_economics', 1.3),
+            'clinical': ('clinical', 1.4),
+            'media_communication': ('communication', 1.3),
+            'accuracy_misinformation': ('communication', 1.2),
+        }
 
-        # AI/Technology studies - increase tech-related personas
-        if any(kw in all_text for kw in ['ai', 'algorithm', 'robot', 'automation', 'technology']):
+        for domain in _detected:
+            if domain in _DOMAIN_TO_CATEGORY_BOOST:
+                target_category, boost = _DOMAIN_TO_CATEGORY_BOOST[domain]
+                for name, persona in self.available_personas.items():
+                    if persona.category == target_category:
+                        persona.weight *= boost
+
+        # Additional name-based boosts for specific domain-persona affinities
+        if _detected & {'political_psychology'}:
             for name, persona in self.available_personas.items():
-                if 'tech' in name.lower() or 'ai' in name.lower():
-                    persona.weight *= 1.3  # Boost tech personas
-                if persona.category == 'technology':
+                if any(kw in name for kw in ['prosocial', 'individualist', 'partisan',
+                                              'moderate', 'ingroup', 'egalitarian']):
                     persona.weight *= 1.2
 
-        # Consumer/Marketing studies - increase consumer personas
-        if any(kw in all_text for kw in ['consumer', 'brand', 'purchase', 'product', 'marketing']):
+        if _detected & {'economic_games', 'behavioral_economics'}:
             for name, persona in self.available_personas.items():
-                if persona.category == 'consumer':
+                if any(kw in name for kw in ['loss_averse', 'overconfident', 'reciprocal',
+                                              'free_rider', 'fairness', 'social_comparer']):
                     persona.weight *= 1.3
-                if 'consumer' in name.lower() or 'brand' in name.lower():
+
+        if _detected & {'ai', 'technology'}:
+            for name, persona in self.available_personas.items():
+                if 'tech' in name or 'ai' in name or 'privacy' in name:
                     persona.weight *= 1.2
 
-        # Organizational studies - increase org behavior personas
-        if any(kw in all_text for kw in ['employee', 'workplace', 'job', 'organization', 'leadership']):
+        if _detected & {'intergroup_relations', 'prejudice', 'social_identity'}:
             for name, persona in self.available_personas.items():
-                if persona.category == 'organizational':
-                    persona.weight *= 1.4
-                if 'employee' in name.lower() or 'leader' in name.lower():
-                    persona.weight *= 1.2
-
-        # Social psychology studies - increase social personas
-        if any(kw in all_text for kw in ['cooperation', 'prosocial', 'trust', 'fairness', 'social dilemma']):
-            for name, persona in self.available_personas.items():
-                if persona.category == 'social':
+                if any(kw in name for kw in ['ingroup', 'egalitarian', 'partisan',
+                                              'conformist', 'prosocial']):
                     persona.weight *= 1.3
-                if 'prosocial' in name.lower() or 'individualist' in name.lower():
+
+        if _detected & {'moral_psychology', 'fairness'}:
+            for name, persona in self.available_personas.items():
+                if any(kw in name for kw in ['fairness', 'justice', 'prosocial',
+                                              'partisan', 'egalitarian']):
                     persona.weight *= 1.2
 
-        # Health studies - increase health personas
-        if any(kw in all_text for kw in ['health', 'wellness', 'exercise', 'diet', 'medical']):
-            for name, persona in self.available_personas.items():
-                if persona.category == 'health':
-                    persona.weight *= 1.4
+        # =====================================================================
+        # v1.0.4.6 Step 7: Study-context-enriched persona selection
+        # Use study title, description, AND condition text for fine-grained
+        # persona weight adjustments beyond domain detection
+        # =====================================================================
+        _study_ctx = f"{self.study_title or ''} {self.study_description or ''}".lower()
+        _cond_ctx = " ".join(str(c) for c in self.conditions).lower()
+        _full_ctx = _study_ctx + " " + _cond_ctx
 
-        # Environmental studies - increase environmental personas
-        if any(kw in all_text for kw in ['environment', 'sustainability', 'climate', 'green', 'eco']):
+        # Condition-text analysis: boost personas whose traits match condition semantics
+        _CONDITION_PERSONA_AFFINITIES = {
+            # Trust/cooperation conditions → prosocial + reciprocal personas
+            ('trust', 'cooperation', 'prosocial', 'altruism'): [
+                'prosocial', 'reciprocal', 'egalitarian', 'secure'],
+            # Competition/conflict conditions → individualist + competitive personas
+            ('competition', 'conflict', 'rivalry', 'threat'): [
+                'individualist', 'competitive', 'free_rider'],
+            # Fairness/justice conditions → fairness + justice personas
+            ('fair', 'justice', 'equality', 'inequal'): [
+                'fairness', 'justice', 'egalitarian', 'social_comparer'],
+            # Identity/group conditions → intergroup + identity personas
+            ('ingroup', 'outgroup', 'identity', 'partisan', 'party'): [
+                'ingroup', 'partisan', 'egalitarian', 'conformist'],
+            # Loss/risk conditions → loss averse + cautious personas
+            ('loss', 'risk', 'gamble', 'uncertain'): [
+                'loss_averse', 'rational', 'present_biased'],
+            # Anxiety/stress conditions → clinical + anxious personas
+            ('anxiety', 'stress', 'threat', 'fear'): [
+                'anxious', 'clinical', 'health_fatalist'],
+            # Authority/leadership conditions → authority + conformist personas
+            ('authority', 'leader', 'manager', 'boss'): [
+                'authority_sensitive', 'conformist', 'transformational',
+                'high_performer', 'disengaged'],
+        }
+
+        for keywords, persona_fragments in _CONDITION_PERSONA_AFFINITIES.items():
+            if any(kw in _full_ctx for kw in keywords):
+                for name, persona in self.available_personas.items():
+                    if any(frag in name for frag in persona_fragments):
+                        persona.weight *= 1.15  # Modest boost — don't overwhelm domain boosting
+
+        # Study title/description specific boosting for paradigm recognition
+        if any(kw in _study_ctx for kw in ['dictator game', 'trust game', 'ultimatum',
+                                             'public goods', 'prisoner']):
+            # Economic game paradigm detected from study context
             for name, persona in self.available_personas.items():
-                if persona.category == 'environmental':
-                    persona.weight *= 1.4
+                if any(frag in name for frag in ['reciprocal', 'free_rider', 'fairness_enforcer',
+                                                   'prosocial', 'individualist', 'social_comparer']):
+                    persona.weight *= 1.25
+
+        if any(kw in _study_ctx for kw in ['polariz', 'partisan', 'democrat', 'republican',
+                                             'trump', 'biden', 'political']):
+            # Political study detected from context
+            for name, persona in self.available_personas.items():
+                if any(frag in name for frag in ['partisan', 'moderate', 'ingroup',
+                                                   'egalitarian', 'conformist']):
+                    persona.weight *= 1.25
+
+        # Fallback: if no domains detected, use keyword matching
+        if not _detected:
+            _all_text = _full_ctx
+            if any(kw in _all_text for kw in ['consumer', 'brand', 'purchase']):
+                for name, persona in self.available_personas.items():
+                    if persona.category == 'consumer':
+                        persona.weight *= 1.3
 
         # Normalize weights
         total_weight = sum(p.weight for p in self.available_personas.values()) or 1.0
@@ -3771,6 +3884,52 @@ class EnhancedSimulationEngine:
                 if _word_in(keyword, condition_lower):
                     semantic_effect *= 0.3  # Reduce effect toward neutral
                     break
+
+        # =====================================================================
+        # v1.0.4.6: DOMAIN-AWARE ROUTING + EFFECT STACKING GUARD
+        #
+        # self.detected_domains (computed at init from 5-phase detection) tells
+        # us which research domains this study belongs to. We use this to:
+        #   1. Track cumulative effect contributions per domain
+        #   2. Attenuate effects from NON-detected domains by 0.5×
+        #      (they may still be relevant, but less likely)
+        #   3. Cap total STEP 2 effect to ±0.45 to prevent runaway stacking
+        #
+        # This prevents a consumer study's "premium brand" condition from
+        # also triggering social psychology (+authority), behavioral economics
+        # (+anchoring), and organizational (+transformational) keywords, which
+        # would stack to an unrealistically large total effect.
+        # =====================================================================
+        _detected = set(getattr(self, 'detected_domains', []) or [])
+        _effect_before_step2 = semantic_effect  # Track pre-STEP-2 baseline
+
+        # Domain-relevance mapping: each STEP 2 domain → persona library domains
+        _DOMAIN_RELEVANCE = {
+            1: {'ai', 'technology'},
+            2: {'consumer_behavior', 'marketing', 'hedonic_consumption', 'utilitarian_consumption'},
+            3: {'social_psychology', 'norm_elicitation'},
+            4: {'behavioral_economics', 'economic_games', 'decision_making'},
+            5: {'economic_games', 'behavioral_economics'},
+            6: {'health_psychology'},
+            7: {'organizational_behavior'},
+            8: {'political_psychology', 'deontology_utilitarianism'},
+            9: {'behavioral_economics', 'decision_making', 'cognitive_psychology'},
+            10: {'media_communication', 'accuracy_misinformation'},
+            11: {'educational_psychology', 'cognitive_psychology'},
+            12: {'social_psychology', 'political_psychology'},
+            13: {'social_psychology', 'organizational_behavior'},
+            14: {'environmental'},
+            15: {'social_psychology'},
+            16: {'behavioral_economics', 'social_psychology'},
+            17: {'behavioral_economics', 'dishonesty'},
+            18: {'power_status', 'organizational_behavior'},
+        }
+
+        def _domain_is_relevant(domain_num: int) -> bool:
+            """Check if a STEP 2 domain is relevant to the detected study domains."""
+            if not _detected:
+                return True  # No detection → all domains equally relevant
+            return bool(_detected & _DOMAIN_RELEVANCE.get(domain_num, set()))
 
         # =====================================================================
         # DOMAIN 1: AI/TECHNOLOGY MANIPULATIONS
@@ -4767,6 +4926,32 @@ class EnhancedSimulationEngine:
             semantic_effect += 0.08
 
         # =====================================================================
+        # v1.0.4.6: DOMAIN-AWARE EFFECT STACKING GUARD
+        #
+        # After all STEP 2 domains have been checked, apply two safeguards:
+        # 1. If total STEP 2 contribution is large AND came from domains not
+        #    in self.detected_domains, attenuate by 0.5× (less likely relevant)
+        # 2. Cap total STEP 2 semantic_effect to ±0.45 to prevent runaway stacking
+        # =====================================================================
+        _step2_contribution = semantic_effect - _effect_before_step2
+        if abs(_step2_contribution) > 0.30 and _detected:
+            # Large effect from STEP 2 — check if it came from relevant domains
+            # If detected_domains is set but the condition keywords mostly
+            # matched NON-relevant domains, attenuate the excess
+            _any_relevant = False
+            for _dn, _dr in _DOMAIN_RELEVANCE.items():
+                if _detected & _dr:
+                    _any_relevant = True
+                    break
+            if not _any_relevant:
+                # No detected domain matched any STEP 2 domain — attenuate
+                _step2_contribution *= 0.5
+                semantic_effect = _effect_before_step2 + _step2_contribution
+
+        # Cap total semantic_effect to prevent extreme stacking
+        semantic_effect = max(-0.50, min(0.50, semantic_effect))
+
+        # =====================================================================
         # FACTORIAL DESIGN PARSING
         # For conditions like "No AI × Utilitarian" or "AI x Hedonic"
         # Parse each factor and sum main effects
@@ -4914,127 +5099,170 @@ class EnhancedSimulationEngine:
         # Implementation intentions: 1.3× → d ≈ 0.65 (Gollwitzer meta: d = 0.65)
         _domain_d_multiplier = 1.0
 
-        # Build a comprehensive domain context string for detection
+        # v1.0.4.6: Use self.detected_domains as PRIMARY routing for scaling
+        # Falls back to keyword matching for patterns not caught by detection
         _domain_ctx = condition_lower + " " + variable_lower + " " + _study_text
+        _det = set(getattr(self, 'detected_domains', []) or [])
+        _used_detected_scaling = False
 
-        if _is_political_study and _is_economic_game_dv:
-            # Political identity + economic game: effects are large
-            # Dimant (2024): d ≈ 0.6-0.9 for political discrimination in games
-            _domain_d_multiplier = 1.6
-        elif _is_political_study:
-            # Political studies generally show large effects for partisan bias
-            _domain_d_multiplier = 1.3
-        elif _is_economic_game_dv:
-            # Economic games with identity info show moderate-large effects
-            _domain_d_multiplier = 1.2
+        if _det:
+            # Domain-aware routing: check detected domains FIRST
+            if _det & {'political_psychology'} and _is_economic_game_dv:
+                _domain_d_multiplier = 1.6  # Political + econ game (Dimant 2024)
+                _used_detected_scaling = True
+            elif _det & {'political_psychology'}:
+                _domain_d_multiplier = 1.3
+                _used_detected_scaling = True
+            elif _is_economic_game_dv:
+                _domain_d_multiplier = 1.2
+                _used_detected_scaling = True
+            elif _det & {'health_psychology'}:
+                _domain_d_multiplier = 1.25
+                _used_detected_scaling = True
+            elif _det & {'organizational_behavior'}:
+                _domain_d_multiplier = 1.3
+                _used_detected_scaling = True
+            elif _det & {'deontology_utilitarianism', 'fairness'}:
+                _domain_d_multiplier = 1.2
+                _used_detected_scaling = True
+            elif _det & {'educational_psychology', 'cognitive_psychology'}:
+                _domain_d_multiplier = 1.15
+                _used_detected_scaling = True
+            elif _det & {'clinical'}:
+                _domain_d_multiplier = 1.25
+                _used_detected_scaling = True
+            elif _det & {'ai', 'technology'}:
+                _domain_d_multiplier = 1.1
+                _used_detected_scaling = True
+            elif _det & {'environmental'}:
+                _domain_d_multiplier = 1.1
+                _used_detected_scaling = True
+            elif _det & {'accuracy_misinformation', 'media_communication'}:
+                _domain_d_multiplier = 1.2
+                _used_detected_scaling = True
+            elif _det & {'dishonesty'}:
+                _domain_d_multiplier = 1.15
+                _used_detected_scaling = True
+            elif _det & {'punishment'}:
+                _domain_d_multiplier = 1.25
+                _used_detected_scaling = True
 
-        # --- Health/Fear Appeal domain ---
-        # Witte & Allen (2000 meta): Fear appeals d = 0.3-0.8 depending on efficacy
-        # Health interventions often produce large effects when well-targeted
-        elif any(kw in _domain_ctx for kw in ['fear appeal', 'health intervention',
-                 'self-efficacy', 'health message', 'vaccination', 'patient',
-                 'medical decision', 'health risk', 'health behavior']):
-            _domain_d_multiplier = 1.25
+        # Fallback: keyword matching if detected domains didn't match scaling
+        if not _used_detected_scaling:
+            if _is_political_study and _is_economic_game_dv:
+                _domain_d_multiplier = 1.6
+            elif _is_political_study:
+                _domain_d_multiplier = 1.3
+            elif _is_economic_game_dv:
+                _domain_d_multiplier = 1.2
 
-        # --- Organizational Justice domain ---
-        # Colquitt et al. (2001 meta): ρ = .40-.50 for justice-outcome relationships
-        # Leadership effects: Judge & Piccolo (2004): ρ = .44
-        elif any(kw in _domain_ctx for kw in ['procedural justice', 'distributive justice',
-                 'organizational justice', 'transformational leader', 'leadership style',
-                 'employee engagement', 'job satisfaction', 'workplace fairness']):
-            _domain_d_multiplier = 1.3
+            # --- Health/Fear Appeal domain ---
+            # Witte & Allen (2000 meta): Fear appeals d = 0.3-0.8 depending on efficacy
+            # Health interventions often produce large effects when well-targeted
+            elif any(kw in _domain_ctx for kw in ['fear appeal', 'health intervention',
+                     'self-efficacy', 'health message', 'vaccination', 'patient',
+                     'medical decision', 'health risk', 'health behavior']):
+                _domain_d_multiplier = 1.25
 
-        # --- Default/Nudge effects ---
-        # Johnson & Goldstein (2003): Opt-out vs opt-in → 60-80pp difference
-        # Gollwitzer & Sheeran (2006): Implementation intentions d = 0.65
-        elif any(kw in _domain_ctx for kw in ['default option', 'opt-out', 'opt-in',
-                 'nudge', 'implementation intention', 'if-then plan',
-                 'choice architecture']):
-            _domain_d_multiplier = 1.4
+            # --- Organizational Justice domain ---
+            # Colquitt et al. (2001 meta): ρ = .40-.50 for justice-outcome relationships
+            # Leadership effects: Judge & Piccolo (2004): ρ = .44
+            elif any(kw in _domain_ctx for kw in ['procedural justice', 'distributive justice',
+                     'organizational justice', 'transformational leader', 'leadership style',
+                     'employee engagement', 'job satisfaction', 'workplace fairness']):
+                _domain_d_multiplier = 1.3
 
-        # --- Moral/Ethics domain ---
-        # Haidt (2001): Moral judgments produce strong intuitive reactions
-        # Moral foundations: Graham et al. (2009): clear liberal/conservative splits
-        elif any(kw in _domain_ctx for kw in ['moral judgment', 'ethical dilemma',
-                 'trolley problem', 'moral foundation', 'deontolog', 'utilitari',
-                 'moral', 'ethical', 'disgust', 'purity']):
-            _domain_d_multiplier = 1.2
+            # --- Default/Nudge effects ---
+            # Johnson & Goldstein (2003): Opt-out vs opt-in → 60-80pp difference
+            # Gollwitzer & Sheeran (2006): Implementation intentions d = 0.65
+            elif any(kw in _domain_ctx for kw in ['default option', 'opt-out', 'opt-in',
+                     'nudge', 'implementation intention', 'if-then plan',
+                     'choice architecture']):
+                _domain_d_multiplier = 1.4
 
-        # --- Education/Learning domain ---
-        # Rowland (2014): Testing effect d = 0.50
-        # Cepeda et al. (2006): Spacing effect robust and moderate-to-large
-        elif any(kw in _domain_ctx for kw in ['testing effect', 'retrieval practice',
-                 'spacing effect', 'learning', 'education', 'classroom',
-                 'student performance', 'teaching method']):
-            _domain_d_multiplier = 1.15
+            # --- Moral/Ethics domain ---
+            # Haidt (2001): Moral judgments produce strong intuitive reactions
+            # Moral foundations: Graham et al. (2009): clear liberal/conservative splits
+            elif any(kw in _domain_ctx for kw in ['moral judgment', 'ethical dilemma',
+                     'trolley problem', 'moral foundation', 'deontolog', 'utilitari',
+                     'moral', 'ethical', 'disgust', 'purity']):
+                _domain_d_multiplier = 1.2
 
-        # --- Clinical/Anxiety domain ---
-        # Therapy effect sizes are typically large (d = 0.5-1.0)
-        # Cuijpers et al. (2019): Psychotherapy for depression d = 0.72
-        elif any(kw in _domain_ctx for kw in ['anxiety', 'depression', 'therapy',
-                 'clinical', 'mental health', 'wellbeing', 'intervention',
-                 'coping', 'stress', 'burnout', 'ptsd']):
-            _domain_d_multiplier = 1.25
+            # --- Education/Learning domain ---
+            # Rowland (2014): Testing effect d = 0.50
+            # Cepeda et al. (2006): Spacing effect robust and moderate-to-large
+            elif any(kw in _domain_ctx for kw in ['testing effect', 'retrieval practice',
+                     'spacing effect', 'learning', 'education', 'classroom',
+                     'student performance', 'teaching method']):
+                _domain_d_multiplier = 1.15
 
-        # --- AI/Technology domain ---
-        # Dietvorst et al. (2015): Algorithm aversion d = 0.3-0.5
-        # Longoni et al. (2019): AI resistance moderate effects
-        elif any(kw in _domain_ctx for kw in ['ai', 'algorithm', 'robot', 'automat',
-                 'technology adoption', 'chatbot', 'artificial intelligence',
-                 'machine learning', 'human-ai']):
-            _domain_d_multiplier = 1.1
+            # --- Clinical/Anxiety domain ---
+            # Therapy effect sizes are typically large (d = 0.5-1.0)
+            # Cuijpers et al. (2019): Psychotherapy for depression d = 0.72
+            elif any(kw in _domain_ctx for kw in ['anxiety', 'depression', 'therapy',
+                     'clinical', 'mental health', 'wellbeing', 'intervention',
+                     'coping', 'stress', 'burnout', 'ptsd']):
+                _domain_d_multiplier = 1.25
 
-        # --- Environmental/Climate domain ---
-        # Polarized topic with moderate effects but high variance
-        # Campbell & Kay (2014): Ideological filtering of climate info
-        elif any(kw in _domain_ctx for kw in ['environment', 'climate', 'sustainab',
-                 'green', 'carbon', 'renewable', 'pollution', 'conservation']):
-            _domain_d_multiplier = 1.1
+            # --- AI/Technology domain ---
+            # Dietvorst et al. (2015): Algorithm aversion d = 0.3-0.5
+            # Longoni et al. (2019): AI resistance moderate effects
+            elif any(kw in _domain_ctx for kw in ['ai', 'algorithm', 'robot', 'automat',
+                     'technology adoption', 'chatbot', 'artificial intelligence',
+                     'machine learning', 'human-ai']):
+                _domain_d_multiplier = 1.1
 
-        # --- Gender/Power domain ---
-        # Stereotype effects moderate but reliable
-        # Nguyen & Ryan (2008): Stereotype threat d = 0.26 (small-to-moderate)
-        elif any(kw in _domain_ctx for kw in ['gender', 'stereotype', 'power',
-                 'status', 'dominance', 'sexism', 'masculin', 'feminin']):
-            _domain_d_multiplier = 1.15
+            # --- Environmental/Climate domain ---
+            # Polarized topic with moderate effects but high variance
+            # Campbell & Kay (2014): Ideological filtering of climate info
+            elif any(kw in _domain_ctx for kw in ['environment', 'climate', 'sustainab',
+                     'green', 'carbon', 'renewable', 'pollution', 'conservation']):
+                _domain_d_multiplier = 1.1
 
-        # --- Misinformation/Inoculation domain ---
-        # Banas & Rains (2010): Inoculation d = 0.29
-        # Roozenbeek et al. (2022): Prebunking d = 0.3-0.5
-        elif any(kw in _domain_ctx for kw in ['misinformation', 'fake news',
-                 'inoculation', 'prebunk', 'conspiracy', 'fact check',
-                 'truth discernment', 'media literacy']):
-            _domain_d_multiplier = 1.2
+            # --- Gender/Power domain ---
+            # Stereotype effects moderate but reliable
+            # Nguyen & Ryan (2008): Stereotype threat d = 0.26 (small-to-moderate)
+            elif any(kw in _domain_ctx for kw in ['gender', 'stereotype', 'power',
+                     'status', 'dominance', 'sexism', 'masculin', 'feminin']):
+                _domain_d_multiplier = 1.15
 
-        # --- Prosocial/Charitable domain ---
-        # Small et al. (2007): Identifiable victim r = 0.13
-        # Charitable giving: moderate effects, boosted by narratives
-        elif any(kw in _domain_ctx for kw in ['charit', 'donat', 'prosocial',
-                 'altruism', 'volunteer', 'helping', 'philanthrop',
-                 'identifiable victim', 'warm glow']):
-            _domain_d_multiplier = 1.1
+            # --- Misinformation/Inoculation domain ---
+            # Banas & Rains (2010): Inoculation d = 0.29
+            # Roozenbeek et al. (2022): Prebunking d = 0.3-0.5
+            elif any(kw in _domain_ctx for kw in ['misinformation', 'fake news',
+                     'inoculation', 'prebunk', 'conspiracy', 'fact check',
+                     'truth discernment', 'media literacy']):
+                _domain_d_multiplier = 1.2
 
-        # --- Embodied cognition domain ---
-        # Many Labs replications: Small or null effects
-        # Coles et al. (2019): Facial feedback r = 0.03
-        elif any(kw in _domain_ctx for kw in ['embodi', 'power pose', 'facial feedback',
-                 'pen in teeth', 'heavy clipboard', 'warm cup',
-                 'clean hands', 'physical posture']):
-            _domain_d_multiplier = 0.6
+            # --- Prosocial/Charitable domain ---
+            # Small et al. (2007): Identifiable victim r = 0.13
+            # Charitable giving: moderate effects, boosted by narratives
+            elif any(kw in _domain_ctx for kw in ['charit', 'donat', 'prosocial',
+                     'altruism', 'volunteer', 'helping', 'philanthrop',
+                     'identifiable victim', 'warm glow']):
+                _domain_d_multiplier = 1.1
 
-        # --- Dishonesty/Cheating domain ---
-        # Gino et al. (2009): Moral licensing moderate effects
-        # Die-rolling paradigms: reliable but moderate detection
-        elif any(kw in _domain_ctx for kw in ['dishonest', 'cheat', 'lying',
-                 'overclaim', 'die roll', 'moral licens', 'honesty']):
-            _domain_d_multiplier = 1.15
+            # --- Embodied cognition domain ---
+            # Many Labs replications: Small or null effects
+            # Coles et al. (2019): Facial feedback r = 0.03
+            elif any(kw in _domain_ctx for kw in ['embodi', 'power pose', 'facial feedback',
+                     'pen in teeth', 'heavy clipboard', 'warm cup',
+                     'clean hands', 'physical posture']):
+                _domain_d_multiplier = 0.6
 
-        # --- Punishment/Norm Enforcement domain ---
-        # Fehr & Gächter (2000): Punishment effects are large in PGG
-        # Third-party punishment: robust effects
-        elif any(kw in _domain_ctx for kw in ['punish', 'sanction', 'norm enforcement',
-                 'retribution', 'deterrence']):
-            _domain_d_multiplier = 1.25
+            # --- Dishonesty/Cheating domain ---
+            # Gino et al. (2009): Moral licensing moderate effects
+            # Die-rolling paradigms: reliable but moderate detection
+            elif any(kw in _domain_ctx for kw in ['dishonest', 'cheat', 'lying',
+                     'overclaim', 'die roll', 'moral licens', 'honesty']):
+                _domain_d_multiplier = 1.15
+
+            # --- Punishment/Norm Enforcement domain ---
+            # Fehr & Gächter (2000): Punishment effects are large in PGG
+            # Third-party punishment: robust effects
+            elif any(kw in _domain_ctx for kw in ['punish', 'sanction', 'norm enforcement',
+                     'retribution', 'deterrence']):
+                _domain_d_multiplier = 1.25
 
         # Apply Cohen's d scaling with domain-aware multiplier
         return semantic_effect * default_d * COHENS_D_TO_NORMALIZED * _domain_d_multiplier
@@ -5056,57 +5284,78 @@ class EnhancedSimulationEngine:
         condition_lower = str(condition).lower()
 
         # ================================================================
-        # v1.0.4.4: Study-level domain priming effects
-        # The study topic itself primes domain-relevant traits for ALL conditions.
-        # A "political identity" study primes political extremity even in control.
-        # An "economic game" study primes strategic thinking even in baseline.
-        # These are SMALLER than condition-specific effects but create realistic
-        # domain-appropriate response patterns.
+        # v1.0.4.6: Domain-aware study-level trait priming
+        #
+        # Now uses self.detected_domains directly instead of re-keyword-matching
+        # study text. This is more precise and eliminates redundant computation.
+        # The domain detection already ran a 5-phase scoring algorithm on study
+        # title, description, and conditions — we leverage that result.
         #
         # Scientific basis:
         # - Bargh et al. (1996): Category priming affects behavior automatically
         # - Higgins et al. (1977): Accessibility of constructs influences judgment
         # - Schwarz (2007): Context effects in self-reports are pervasive
         # ================================================================
-        _study_ctx = (
-            (getattr(self, 'study_title', '') or '') + " " +
-            (getattr(self, 'study_description', '') or '')
-        ).lower()
+        _detected = set(getattr(self, 'detected_domains', []) or [])
 
         # Political study context primes identity salience for ALL conditions
-        if any(kw in _study_ctx for kw in ['political', 'partisan', 'polariz',
-               'democrat', 'republican', 'liberal', 'conservative']):
+        if _detected & {'political_psychology'}:
             modifiers['extremity'] = modifiers.get('extremity', 0) + 0.06
             modifiers['response_consistency'] = modifiers.get('response_consistency', 0) + 0.04
 
         # Economic game context primes strategic thinking
-        if any(kw in _study_ctx for kw in ['dictator game', 'trust game', 'ultimatum',
-               'public goods', 'prisoner', 'economic game']):
+        if _detected & {'economic_games'}:
             modifiers['engagement'] = modifiers.get('engagement', 0) + 0.04
             modifiers['response_consistency'] = modifiers.get('response_consistency', 0) + 0.03
 
         # Health study context primes risk awareness
-        if any(kw in _study_ctx for kw in ['health', 'medical', 'disease', 'wellness',
-               'vaccination', 'patient', 'clinical']):
+        if _detected & {'health_psychology'}:
             modifiers['attention_level'] = modifiers.get('attention_level', 0) + 0.03
             modifiers['social_desirability'] = modifiers.get('social_desirability', 0) + 0.04
 
         # Moral/ethical study context primes evaluative extremity
-        if any(kw in _study_ctx for kw in ['moral', 'ethical', 'dilemma', 'justice',
-               'fairness', 'right and wrong']):
+        if _detected & {'deontology_utilitarianism', 'fairness'}:
             modifiers['extremity'] = modifiers.get('extremity', 0) + 0.05
             modifiers['engagement'] = modifiers.get('engagement', 0) + 0.03
 
         # Environmental/sustainability context primes polarization
-        if any(kw in _study_ctx for kw in ['environment', 'climate', 'sustainab',
-               'green', 'carbon']):
+        if _detected & {'environmental'}:
             modifiers['extremity'] = modifiers.get('extremity', 0) + 0.04
 
         # AI/technology study context primes tech-related traits
-        if any(kw in _study_ctx for kw in ['artificial intelligence', 'ai ', 'algorithm',
-               'robot', 'technology', 'automation']):
+        if _detected & {'ai', 'technology'}:
             modifiers['attention_level'] = modifiers.get('attention_level', 0) + 0.02
             modifiers['engagement'] = modifiers.get('engagement', 0) + 0.02
+
+        # v1.0.4.6: Additional domain-aware priming from detected domains
+        # Clinical/anxiety studies prime hypervigilance
+        if _detected & {'clinical', 'anxiety'}:
+            modifiers['attention_level'] = modifiers.get('attention_level', 0) + 0.04
+            modifiers['social_desirability'] = modifiers.get('social_desirability', 0) + 0.05
+
+        # Organizational studies prime conscientiousness
+        if _detected & {'organizational_behavior'}:
+            modifiers['engagement'] = modifiers.get('engagement', 0) + 0.03
+            modifiers['response_consistency'] = modifiers.get('response_consistency', 0) + 0.03
+
+        # Consumer studies prime evaluation mode
+        if _detected & {'consumer_behavior', 'marketing'}:
+            modifiers['engagement'] = modifiers.get('engagement', 0) + 0.02
+
+        # Communication/media studies prime source evaluation
+        if _detected & {'media_communication', 'accuracy_misinformation'}:
+            modifiers['attention_level'] = modifiers.get('attention_level', 0) + 0.03
+
+        # Fallback: if no domains detected, use keyword matching on study text
+        if not _detected:
+            _study_ctx = (
+                (getattr(self, 'study_title', '') or '') + " " +
+                (getattr(self, 'study_description', '') or '')
+            ).lower()
+            if any(kw in _study_ctx for kw in ['political', 'partisan', 'polariz']):
+                modifiers['extremity'] = modifiers.get('extremity', 0) + 0.06
+            if any(kw in _study_ctx for kw in ['dictator game', 'trust game', 'economic game']):
+                modifiers['engagement'] = modifiers.get('engagement', 0) + 0.04
 
         # AI-related conditions affect engagement and trust
         if 'ai' in condition_lower and 'no ai' not in condition_lower:
@@ -5413,6 +5662,44 @@ class EnhancedSimulationEngine:
 
         var_lower = variable_name.lower()
         condition_lower = str(condition).lower()
+
+        # v1.0.4.6: Use detected_domains to apply domain-level calibration priors
+        # These complement (don't replace) the variable-specific calibrations below
+        _det = set(getattr(self, 'detected_domains', []) or [])
+        if _det:
+            # Domain-level baseline adjustments from detected study domain
+            # These are additive priors that capture study-level context
+            if _det & {'clinical_psychology'}:
+                # Clinical studies: participants report more distress on avg
+                calibration['variance_adjustment'] += 0.04
+            if _det & {'political_psychology'}:
+                # Political studies: high polarization = high variance
+                calibration['variance_adjustment'] += 0.06
+            if _det & {'economic_games'}:
+                # Economic games: variance higher due to strategic behavior
+                calibration['variance_adjustment'] += 0.03
+            if _det & {'consumer_behavior', 'marketing', 'hedonic_consumption'}:
+                # Consumer/marketing: positivity bias in product evaluations
+                calibration['positivity_bias'] += 0.03
+            if _det & {'health_psychology'}:
+                # Health: self-efficacy bias inflates health intentions
+                calibration['positivity_bias'] += 0.02
+            if _det & {'organizational_behavior'}:
+                # Organizational: SD inflates satisfaction & commitment reports
+                calibration['positivity_bias'] += 0.03
+            if _det & {'moral_psychology', 'fairness'}:
+                # Moral/fairness: extreme judgments, low positivity bias
+                calibration['variance_adjustment'] += 0.05
+            if _det & {'intergroup_relations', 'prejudice'}:
+                # Intergroup: high variance due to ingroup/outgroup polarization
+                calibration['variance_adjustment'] += 0.05
+                calibration['positivity_bias'] -= 0.02  # SD suppresses prejudice reports
+            if _det & {'educational_psychology'}:
+                # Educational: positive skew in student self-assessments
+                calibration['positivity_bias'] += 0.02
+            if _det & {'environmental_psychology'}:
+                # Environmental: polarized topic, moderate variance
+                calibration['variance_adjustment'] += 0.04
 
         # ===== ECONOMIC GAME / ALLOCATION MEASURES (v1.0.4.2) =====
         # Engel (2011 meta-analysis): Dictator game mean giving ≈ 28% of endowment
@@ -6264,6 +6551,28 @@ class EnhancedSimulationEngine:
                 adjusted_tendency + _g_effect, 0.08, 0.92
             ))
 
+        # =====================================================================
+        # v1.0.4.6 STEP 4d: Cross-DV coherence from response history
+        # Pulls adjusted_tendency slightly toward participant's running average
+        # across prior DVs. Creates realistic within-person consistency beyond
+        # what the g-factor and latent scores provide.
+        # Weight is small (0.05-0.10) to avoid overwhelming condition effects.
+        # Only activates after participant has responded to ≥2 prior items.
+        # =====================================================================
+        _resp_hist = getattr(self, '_participant_response_history', None)
+        if _resp_hist is not None:
+            # Find this participant's history — use traits as proxy for participant index
+            _p_idx = traits.get('_participant_idx', -1)
+            if isinstance(_p_idx, (int, float)) and 0 <= int(_p_idx) < len(_resp_hist):
+                _hist = _resp_hist[int(_p_idx)]
+                if _hist['running_count'] >= 2:
+                    _consistency = _safe_trait_value(traits.get("response_consistency"), 0.60)
+                    # Weight increases with consistency: careless participants are less coherent
+                    _coherence_weight = 0.05 + (_consistency - 0.5) * 0.06
+                    _coherence_weight = float(np.clip(_coherence_weight, 0.02, 0.10))
+                    _pull = (_hist['running_mean'] - adjusted_tendency) * _coherence_weight
+                    adjusted_tendency = float(np.clip(adjusted_tendency + _pull, 0.08, 0.92))
+
         # Calculate response center
         center = scale_min + (adjusted_tendency * scale_range)
 
@@ -7053,6 +7362,8 @@ class EnhancedSimulationEngine:
         for i in range(n):
             persona_name, persona = self._assign_persona(i)
             traits = self._generate_participant_traits(i, persona)
+            # v1.0.4.6: Store participant index for cross-DV coherence (Step 10)
+            traits['_participant_idx'] = i
             assigned_personas.append(persona_name)
             all_traits.append(traits)
 
@@ -7089,6 +7400,18 @@ class EnhancedSimulationEngine:
             self._log("Cross-DV correlation: skipped (single scale or no correlation matrix)")
 
         participant_item_responses: List[List[int]] = [[] for _ in range(n)]
+
+        # v1.0.4.6 Step 10: Cross-DV coherence — per-participant response history
+        # Tracks running mean of normalized responses across scales for each participant.
+        # Used to create within-participant consistency (halo / CMV effect) that
+        # makes responses across conceptually related DVs more coherent.
+        # Podsakoff et al. (2003): CMV accounts for r ≈ 0.10-0.20 shared variance.
+        _participant_response_history: List[Dict[str, float]] = [
+            {'running_sum': 0.0, 'running_count': 0, 'running_mean': 0.5}
+            for _ in range(n)
+        ]
+        # Store reference on self so _generate_scale_response can access it
+        self._participant_response_history = _participant_response_history
 
         attention_results: List[List[bool]] = []
         attention_check_values: List[int] = []
@@ -7232,6 +7555,14 @@ class EnhancedSimulationEngine:
                     val = max(scale_min, min(scale_max, int(val)))
                     item_values.append(val)
                     participant_item_responses[i].append(val)
+
+                    # v1.0.4.6 Step 10: Update per-participant response history
+                    _hist = _participant_response_history[i]
+                    _scale_range = max(1, scale_max - scale_min)
+                    _normalized_val = (val - scale_min) / _scale_range
+                    _hist['running_sum'] += _normalized_val
+                    _hist['running_count'] += 1
+                    _hist['running_mean'] = _hist['running_sum'] / _hist['running_count']
 
                 data[col_name] = item_values
                 _scale_generation_log[-1]["columns_generated"].append(col_name)

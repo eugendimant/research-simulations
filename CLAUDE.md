@@ -761,6 +761,37 @@ Comprehensive audit of the simulation pipeline identified 12 improvement areas a
    - README.md: Update features section
    - CLAUDE.md: Mark plan items as completed
 
+### v1.0.4.6 Pipeline Quality Overhaul — 10-Step Plan (2026-02-11)
+
+**Problem**: `self.detected_domains` is computed during engine init (5-phase detection from study title, description, conditions) but then **IGNORED by 4 of 5 major methods**. Only persona selection uses it. Effect routing, trait modifiers, calibration, and scaling all independently re-do keyword matching, creating false positives and effect stacking.
+
+#### The 10 Steps
+
+1. **Domain-Aware STEP 2 Routing**: `_get_automatic_condition_effect()` now uses `self.detected_domains` to PRIORITIZE matching domains. Non-detected domains still checked but with 0.5× attenuation to prevent keyword stacking from unrelated domains firing simultaneously.
+
+2. **Domain-Aware Trait Modifiers**: `_get_condition_trait_modifier()` uses `self.detected_domains` directly instead of re-doing keyword matching on study text. Domain-specific trait priming now sourced from the already-detected domain list.
+
+3. **Domain-Aware Persona Weight Adjustment**: `_adjust_persona_weights_for_study()` uses `self.detected_domains` for category boosting instead of re-keyword-matching study text. More precise, eliminates redundant computation.
+
+4. **Domain-Aware Response Calibration**: `_get_domain_response_calibration()` checks `self.detected_domains` as a FIRST pass before falling back to variable-name keyword matching. Enables domain-specific defaults even when variable names are ambiguous.
+
+5. **Persona Domain Mapping Expansion**: Cross-domain persona links added (e.g., `social_comparer` → consumer, `prosocial_individual` → economic_games, `conformist` → organizational). Ensures relevant personas are activated for mixed-domain studies.
+
+6. **Effect Stacking Guard**: Added cumulative effect tracking in STEP 2. When multiple domain keyword sets fire for the same condition, effects are capped to prevent runaway totals from unrelated domains stacking.
+
+7. **Study-Context-Enriched Persona Selection**: Domain detection now ALSO considers `study_context.get("domain")` (user-selected domain from builder/UI), giving it high priority alongside auto-detection.
+
+8. **Domain-Aware Effect Magnitude Scaling (STEP 4)**: `_domain_d_multiplier` now uses `self.detected_domains` as PRIMARY routing instead of keyword re-matching on the full context string. Falls back to keyword matching only for domains not in the detected set.
+
+9. **Persona Pool Validation**: After persona selection, validates that pool has ≥3 domain-specific personas (not just response-style). If too few, broadens to adjacent domains. Logs warning if only response-style personas available.
+
+10. **Cross-DV Coherence Enhancement**: For factorial/multi-condition designs, ensures within-participant response patterns are coherent across DVs (e.g., someone who gives more in dictator game also reports higher trust).
+
+#### Implementation: 3 Iterations
+- **Iteration 1** (Steps 1, 2, 3, 6): Domain-aware routing foundation
+- **Iteration 2** (Steps 4, 5, 7, 8): Calibration and persona enrichment
+- **Iteration 3** (Steps 9, 10): Quality validation and coherence
+
 ### v1.0.4.5 Completion Status (2026-02-11)
 
 **COMPLETED** — All 3 iterations implemented:

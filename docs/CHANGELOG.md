@@ -1,5 +1,38 @@
 # Agent Change Log
 
+## 2026-02-11 — v1.0.4.6
+### Pipeline Quality Overhaul: Domain-Aware Routing, Persona Expansion, Cross-DV Coherence (3 Iterations)
+
+**Core Architecture Change**: `self.detected_domains` (computed via 5-phase domain detection at init) is now the PRIMARY routing signal for all major pipeline methods. Previously, 4 of 5 methods ignored detection results and re-did keyword matching independently.
+
+#### Iteration 1: Domain-Aware Routing Foundation (Steps 1, 2, 3, 6)
+- **Step 1 — Domain-aware STEP 2 routing**: Added `_DOMAIN_RELEVANCE` mapping (18 domains → persona domain strings) and `_domain_is_relevant()` gate. Each STEP 2 domain block now checks if the study's detected domains overlap before applying effects. Prevents cross-domain keyword stacking (e.g., health keywords firing in a political study).
+- **Step 6 — Effect stacking guard**: After STEP 2, if cumulative effect exceeds ±0.30 and no detected domains match, attenuates by 0.5× and caps to ±0.50. Prevents runaway effects from unrelated domains firing simultaneously.
+- **Step 2 — Domain-aware trait modifiers**: Rewrote `_get_condition_trait_modifier()` study-level priming to use `self.detected_domains` directly. 10+ domain-specific priming blocks (political, economic, clinical, organizational, consumer, media). Fallback to keyword matching only when no domains detected.
+- **Step 3 — Domain-aware persona weight adjustment**: Rewrote `_adjust_persona_weights_for_study()` to use `_DOMAIN_TO_CATEGORY_BOOST` mapping from detected domains. 14 domain→category mappings with 1.2-1.4× boost multipliers.
+
+#### Iteration 2: Calibration, Persona Expansion, Context-Enriched Selection (Steps 4, 5, 7, 8)
+- **Step 8 — Domain-aware STEP 4 scaling (CRITICAL BUG FIX)**: The `_domain_d_multiplier` keyword fallback chain had a bug where `elif` blocks (Health through Punishment, ~13 domains) were siblings of the `if not _used_detected_scaling:` guard instead of nested inside it. When detected-domain routing set the flag, the keyword blocks could OVERWRITE the detected multiplier. Fixed by nesting all keyword blocks inside the guard.
+- **Step 4 — Domain-aware response calibration**: Added detected-domain priors at top of `_get_domain_response_calibration()`. Additive baseline adjustments (variance, positivity bias) based on study domain. These complement (don't replace) variable-specific calibrations.
+- **Step 5 — Persona domain mapping expansion**: Expanded `applicable_domains` for 10+ existing personas (social_comparer → +consumer/political/economic, prosocial_individual → +economic_games/trust, individualist → +behavioral_economics/consumer/political, loss_averse → +health/consumer, etc.). Fixed duplicate `competitive_achiever` definition. Added 8 new personas:
+  - `partisan_ideologue`: Strong partisan with ideological consistency (Iyengar & Westwood 2015)
+  - `pragmatic_moderate`: Centrist with low partisanship (Fiorina et al. 2005)
+  - `reciprocal_cooperator`: Conditional cooperator matching others' behavior (Fischbacher et al. 2001)
+  - `free_rider`: Selfish maximizer in collective action problems (Fischbacher et al. 2001)
+  - `fairness_enforcer`: Altruistic punisher of norm violators (Fehr & Gächter 2002)
+  - `ingroup_favorer`: Strong ingroup identification and favoritism (Balliet et al. 2014)
+  - `egalitarian`: Low SDO, committed to cross-group fairness (Pratto et al. 1994)
+- **Step 7 — Study-context-enriched persona selection**: Added condition-text analysis with `_CONDITION_PERSONA_AFFINITIES` mapping (7 keyword groups → persona fragment matches). Study title/description paradigm recognition (dictator game, trust game, political polarization) triggers 1.25× persona boosting.
+
+#### Iteration 3: Validation and Cross-DV Coherence (Steps 9, 10)
+- **Step 9 — Persona pool validation**: After initial domain filtering, validates that ≥3 non-response-style personas are available. If pool is too small, expands to `_ADJACENT_DOMAINS` mapping (13 domain → 3 adjacent domain lists). Logs when expansion occurs.
+- **Step 10 — Cross-DV coherence**: Per-participant response history tracking (running mean of normalized responses). `_generate_scale_response()` pulls adjusted_tendency toward participant's running average with weight proportional to response consistency (0.02-0.10). Creates realistic within-person coherence beyond g-factor and latent scores. Scientific basis: Podsakoff et al. (2003) CMV accounts for r ≈ 0.10-0.20 shared variance.
+
+#### Version Updates
+- All files synchronized to v1.0.4.6: app.py, __init__.py, enhanced_simulation_engine.py, qsf_preview.py, response_library.py, persona_library.py, README.md
+
+---
+
 ## 2026-02-11 — v1.0.4.5
 ### Bug Fixes + Simulation Realism Improvements (3 Iterations)
 
