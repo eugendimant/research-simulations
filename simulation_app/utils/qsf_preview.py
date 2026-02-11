@@ -33,7 +33,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 # Version identifier to help track deployed code
-__version__ = "1.0.3.5"  # v1.0.3.5: Visible Next buttons at top
+__version__ = "1.0.3.6"  # v1.0.3.6: Restore scroll buttons, design checklist
 
 
 # ============================================================================

@@ -1,14 +1,22 @@
 # Claude Code Development Guidelines
 
-## ABSOLUTE RULE: NO "Next" Buttons at the Bottom of Pages
+## ABSOLUTE RULE: Page Layout — Next at Top, Scroll at Bottom
 
-**THIS RULE CANNOT BE OVERRIDDEN UNDER ANY CIRCUMSTANCES.**
+**THESE RULES CANNOT BE OVERRIDDEN UNDER ANY CIRCUMSTANCES.**
 
+### "Back to top" scroll link — EVERY page, ALWAYS at the bottom
+- **NEVER EVER delete the "Back to top" scroll link from the bottom of ANY page.**
+- Every single wizard page (0, 1, 2, 3) MUST have `↑ Back to top` at the very bottom.
+- This is the ONLY element allowed at the bottom. Nothing else.
+- If you are editing a page and you see the scroll link, DO NOT TOUCH IT.
+- If you are removing other elements, LEAVE THE SCROLL LINK IN PLACE.
+
+### "Continue to..." button — TOP of page only
 - NEVER place "Next", "Continue", or any forward-navigation button at the bottom of a page.
-- The bottom of each page ONLY contains a "Back to top" scroll link. Nothing else.
 - All forward-navigation buttons go at the TOP of the page, right underneath the stepper (1-2-3-4 progress bar).
 - Navigation buttons appear only when all required fields on the current step are complete.
-- The stepper bar is visual-only (not clickable). Navigation happens via the visible "Continue to..." button at the top.
+- On the Design page, show a visual checklist of what's still needed before the button appears.
+- The stepper bar (1-2-3-4) is visual-only (not clickable). Navigation happens via the visible "Continue to..." button at the top.
 
 ---
 
