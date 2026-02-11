@@ -45,7 +45,7 @@ This module is designed to run inside a `utils/` package (i.e., imported as
 """
 
 # Version identifier to help track deployed code
-__version__ = "1.7.1"  # v1.7.1: Domain-aware scaling, persona sensitivity, expanded calibrations
+__version__ = "1.7.2"  # v1.7.2: Reverse-item modeling, 8 new personas, domain-sensitive SD, study context priming
 
 # =============================================================================
 # SCIENTIFIC FOUNDATIONS FOR SIMULATION
@@ -4439,6 +4439,35 @@ class EnhancedSimulationEngine:
         elif _any_word_in(['light clipboard', 'lightweight', 'flimsy'], condition_lower):
             semantic_effect -= 0.05
 
+        # v1.0.4.4: Warmth/Coldness priming (Williams & Bargh, 2008)
+        # Holding warm beverage → warmer interpersonal judgments; d ≈ 0.15-0.25
+        # Replication mixed but effect appears in some contexts
+        if _any_word_in(['warm cup', 'warm drink', 'heated pad', 'warm hands'], condition_lower):
+            semantic_effect += 0.08
+        elif _any_word_in(['cold cup', 'cold drink', 'ice pack', 'cold hands'], condition_lower):
+            semantic_effect -= 0.08
+
+        # v1.0.4.4: Physical Movement (Casasanto & Dijkstra, 2010)
+        # Arm flexion → approach motivation; arm extension → avoidance
+        if _any_word_in(['arm flexion', 'pull toward', 'approach motion'], condition_lower):
+            semantic_effect += 0.10
+        elif _any_word_in(['arm extension', 'push away', 'avoidance motion'], condition_lower):
+            semantic_effect -= 0.10
+
+        # v1.0.4.4: Physical Touch (Crusco & Wetzel, 1984; Guéguen, 2002)
+        # Brief touch increases compliance and positive evaluation; d ≈ 0.20
+        if _any_word_in(['touch', 'physical contact', 'pat on shoulder', 'handshake'], condition_lower):
+            semantic_effect += 0.12
+        elif _any_word_in(['no touch', 'no contact', 'distanced'], condition_lower):
+            semantic_effect -= 0.02
+
+        # v1.0.4.4: Head Movement (Wells & Petty, 1980)
+        # Nodding → agreement; head shaking → disagreement
+        if _any_word_in(['nodding', 'head nod', 'vertical head'], condition_lower):
+            semantic_effect += 0.10
+        elif _any_word_in(['head shake', 'horizontal head', 'shaking head'], condition_lower):
+            semantic_effect -= 0.10
+
         # =====================================================================
         # DOMAIN 16: TIME & TEMPORAL MANIPULATIONS
         # =====================================================================
@@ -4463,6 +4492,88 @@ class EnhancedSimulationEngine:
             semantic_effect += 0.12
         elif _word_in('immediate', condition_lower):
             semantic_effect += 0.05
+
+        # v1.0.4.4: Future Time Perspective (Zimbardo & Boyd, 1999)
+        # Future-oriented people show more self-regulation and delayed gratification
+        if _any_word_in(['future oriented', 'long-term', 'future self', 'years from now'], condition_lower):
+            semantic_effect += 0.15
+        elif _any_word_in(['present oriented', 'short-term', 'live for today', 'right now'], condition_lower):
+            semantic_effect -= 0.08
+
+        # v1.0.4.4: Temporal Landmarks (Dai et al., 2014; "fresh start effect")
+        # New beginnings (Monday, New Year, birthday) increase motivation
+        if _any_word_in(['fresh start', 'new year', 'new beginning', 'monday', 'new semester'], condition_lower):
+            semantic_effect += 0.12
+        elif _any_word_in(['ordinary day', 'mid-week', 'continuation'], condition_lower):
+            semantic_effect -= 0.02
+
+        # v1.0.4.4: Nostalgia induction (Wildschut et al., 2006)
+        # Nostalgia increases social connectedness, positive affect, meaning
+        if _any_word_in(['nostalg', 'remember when', 'childhood memory', 'good old days'], condition_lower):
+            semantic_effect += 0.18
+        elif _any_word_in(['ordinary event', 'routine', 'typical day'], condition_lower):
+            semantic_effect -= 0.02
+
+        # =====================================================================
+        # DOMAIN 17: DECEPTION & DISHONESTY MANIPULATIONS (v1.0.4.4)
+        # Scientific basis: Mazar et al. (2008), Gino et al. (2009),
+        # Shalvi et al. (2011), Fischbacher & Föllmi-Heusi (2013)
+        # =====================================================================
+
+        # Honor Code / Moral Reminder (Mazar et al., 2008)
+        # Reminders of morality reduce dishonesty; d ≈ 0.30
+        if _any_word_in(['honor code', 'moral reminder', 'ten commandments', 'honesty pledge'], condition_lower):
+            semantic_effect += 0.18  # More honest behavior
+        elif _any_word_in(['no reminder', 'baseline dishonesty', 'no pledge'], condition_lower):
+            semantic_effect -= 0.08
+
+        # Monitoring / Observability (Bateson et al., 2006; "watching eyes")
+        # Being observed or reminded of observation increases honesty
+        if _any_word_in(['monitored', 'observed', 'camera', 'watching eyes', 'transparent'], condition_lower):
+            semantic_effect += 0.15
+        elif _any_word_in(['unmonitored', 'unobserved', 'anonymous', 'private'], condition_lower):
+            semantic_effect -= 0.12
+
+        # Moral Licensing (Merritt et al., 2010 meta)
+        # Prior moral behavior licenses subsequent transgression
+        if _any_word_in(['moral license', 'already donated', 'virtuous act'], condition_lower):
+            semantic_effect -= 0.10
+        elif _any_word_in(['no license', 'neutral prime', 'control prime'], condition_lower):
+            semantic_effect += 0.03
+
+        # Self-Serving Justification (Shalvi et al., 2011)
+        # Ambiguity enables self-serving dishonesty
+        if _any_word_in(['ambiguous', 'plausible deniability', 'uncertain outcome'], condition_lower):
+            semantic_effect -= 0.08  # More dishonesty
+        elif _any_word_in(['unambiguous', 'clear outcome', 'verifiable'], condition_lower):
+            semantic_effect += 0.10
+
+        # =====================================================================
+        # DOMAIN 18: POWER & STATUS MANIPULATIONS (v1.0.4.4)
+        # Scientific basis: Keltner et al. (2003), Galinsky et al. (2003),
+        # Anderson & Berdahl (2002)
+        # =====================================================================
+
+        # Power Priming (Galinsky et al., 2003)
+        # High power → approach-oriented, risk-taking, less perspective-taking
+        if _any_word_in(['high power', 'power prime', 'boss', 'leader role', 'in charge'], condition_lower):
+            semantic_effect += 0.18
+        elif _any_word_in(['low power', 'subordinate', 'employee role', 'follower'], condition_lower):
+            semantic_effect -= 0.15
+
+        # Social Status (Kraus et al., 2012)
+        # Higher subjective status → more positive self-evaluation, confidence
+        if _any_word_in(['high status', 'wealthy', 'upper class', 'privileged'], condition_lower):
+            semantic_effect += 0.15
+        elif _any_word_in(['low status', 'poor', 'lower class', 'disadvantaged'], condition_lower):
+            semantic_effect -= 0.18
+
+        # Accountability (Lerner & Tetlock, 1999)
+        # Being accountable increases accuracy motivation, reduces biases
+        if _any_word_in(['accountable', 'justify', 'explain to others', 'audience aware'], condition_lower):
+            semantic_effect += 0.10
+        elif _any_word_in(['not accountable', 'anonymous decision', 'private choice'], condition_lower):
+            semantic_effect -= 0.05
 
         # =====================================================================
         # FACTORIAL DESIGN PARSING
@@ -4744,10 +4855,67 @@ class EnhancedSimulationEngine:
         Different experimental conditions should influence not just means but also
         response patterns. This creates more realistic between-condition differences.
 
+        v1.0.4.4: Now also reads study_title and study_description for domain-level
+        trait priming. Even control groups in domain-specific studies show priming
+        effects (Bargh et al., 1996: domain context primes related constructs).
+
         Returns a dict of trait name -> modifier value to add/subtract from base traits.
         """
         modifiers = {}
         condition_lower = str(condition).lower()
+
+        # ================================================================
+        # v1.0.4.4: Study-level domain priming effects
+        # The study topic itself primes domain-relevant traits for ALL conditions.
+        # A "political identity" study primes political extremity even in control.
+        # An "economic game" study primes strategic thinking even in baseline.
+        # These are SMALLER than condition-specific effects but create realistic
+        # domain-appropriate response patterns.
+        #
+        # Scientific basis:
+        # - Bargh et al. (1996): Category priming affects behavior automatically
+        # - Higgins et al. (1977): Accessibility of constructs influences judgment
+        # - Schwarz (2007): Context effects in self-reports are pervasive
+        # ================================================================
+        _study_ctx = (
+            (getattr(self, 'study_title', '') or '') + " " +
+            (getattr(self, 'study_description', '') or '')
+        ).lower()
+
+        # Political study context primes identity salience for ALL conditions
+        if any(kw in _study_ctx for kw in ['political', 'partisan', 'polariz',
+               'democrat', 'republican', 'liberal', 'conservative']):
+            modifiers['extremity'] = modifiers.get('extremity', 0) + 0.06
+            modifiers['response_consistency'] = modifiers.get('response_consistency', 0) + 0.04
+
+        # Economic game context primes strategic thinking
+        if any(kw in _study_ctx for kw in ['dictator game', 'trust game', 'ultimatum',
+               'public goods', 'prisoner', 'economic game']):
+            modifiers['engagement'] = modifiers.get('engagement', 0) + 0.04
+            modifiers['response_consistency'] = modifiers.get('response_consistency', 0) + 0.03
+
+        # Health study context primes risk awareness
+        if any(kw in _study_ctx for kw in ['health', 'medical', 'disease', 'wellness',
+               'vaccination', 'patient', 'clinical']):
+            modifiers['attention_level'] = modifiers.get('attention_level', 0) + 0.03
+            modifiers['social_desirability'] = modifiers.get('social_desirability', 0) + 0.04
+
+        # Moral/ethical study context primes evaluative extremity
+        if any(kw in _study_ctx for kw in ['moral', 'ethical', 'dilemma', 'justice',
+               'fairness', 'right and wrong']):
+            modifiers['extremity'] = modifiers.get('extremity', 0) + 0.05
+            modifiers['engagement'] = modifiers.get('engagement', 0) + 0.03
+
+        # Environmental/sustainability context primes polarization
+        if any(kw in _study_ctx for kw in ['environment', 'climate', 'sustainab',
+               'green', 'carbon']):
+            modifiers['extremity'] = modifiers.get('extremity', 0) + 0.04
+
+        # AI/technology study context primes tech-related traits
+        if any(kw in _study_ctx for kw in ['artificial intelligence', 'ai ', 'algorithm',
+               'robot', 'technology', 'automation']):
+            modifiers['attention_level'] = modifiers.get('attention_level', 0) + 0.02
+            modifiers['engagement'] = modifiers.get('engagement', 0) + 0.02
 
         # AI-related conditions affect engagement and trust
         if 'ai' in condition_lower and 'no ai' not in condition_lower:
@@ -4957,6 +5125,72 @@ class EnhancedSimulationEngine:
                'past experience', 'memory']):
             modifiers['acquiescence'] = modifiers.get('acquiescence', 0) + 0.06
             modifiers['extremity'] = modifiers.get('extremity', 0) + 0.05
+
+        # ================================================================
+        # v1.0.4.4: Additional domain-condition interaction patterns
+        # ================================================================
+
+        # --- Power/Hierarchy conditions ---
+        # Keltner et al. (2003): Power increases approach, reduces inhibition
+        # Galinsky et al. (2003): Power priming increases risk-taking
+        if any(kw in condition_lower for kw in ['high power', 'power prime', 'boss',
+               'leader role', 'in charge', 'manager']):
+            modifiers['extremity'] = modifiers.get('extremity', 0) + 0.10
+            modifiers['social_desirability'] = modifiers.get('social_desirability', 0) - 0.06
+            modifiers['acquiescence'] = modifiers.get('acquiescence', 0) - 0.05
+        elif any(kw in condition_lower for kw in ['low power', 'subordinate',
+                 'employee role', 'follower', 'powerless']):
+            modifiers['extremity'] = modifiers.get('extremity', 0) - 0.08
+            modifiers['social_desirability'] = modifiers.get('social_desirability', 0) + 0.06
+            modifiers['acquiescence'] = modifiers.get('acquiescence', 0) + 0.08
+
+        # --- Competition conditions ---
+        # Deutsch (1949): Competition decreases cooperation, increases defensiveness
+        if any(kw in condition_lower for kw in ['competi', 'rival', 'contest',
+               'tournament', 'winner', 'ranking']):
+            modifiers['extremity'] = modifiers.get('extremity', 0) + 0.08
+            modifiers['engagement'] = modifiers.get('engagement', 0) + 0.06
+
+        # --- Mindfulness/Reflection conditions ---
+        # Brown & Ryan (2003): Mindfulness reduces reactivity, increases presence
+        if any(kw in condition_lower for kw in ['mindful', 'meditation', 'reflective',
+               'contemplat', 'breathing exercise']):
+            modifiers['attention_level'] = modifiers.get('attention_level', 0) + 0.08
+            modifiers['extremity'] = modifiers.get('extremity', 0) - 0.08
+            modifiers['response_consistency'] = modifiers.get('response_consistency', 0) + 0.05
+
+        # --- Accountability conditions ---
+        # Lerner & Tetlock (1999): Accountability increases accuracy motivation
+        if any(kw in condition_lower for kw in ['accountable', 'justify decision',
+               'explain to', 'audience', 'evaluated by']):
+            modifiers['attention_level'] = modifiers.get('attention_level', 0) + 0.06
+            modifiers['social_desirability'] = modifiers.get('social_desirability', 0) + 0.05
+            modifiers['extremity'] = modifiers.get('extremity', 0) - 0.06
+
+        # --- Goal-setting conditions ---
+        # Locke & Latham (2002): Specific difficult goals increase effort
+        if any(kw in condition_lower for kw in ['specific goal', 'challenging goal',
+               'performance target', 'achievement goal']):
+            modifiers['engagement'] = modifiers.get('engagement', 0) + 0.08
+            modifiers['response_consistency'] = modifiers.get('response_consistency', 0) + 0.05
+
+        # --- Depletion/Fatigue conditions ---
+        # Baumeister et al. (1998): Ego depletion reduces self-regulation
+        # (Though replication debates exist, fatigue effects are robust)
+        if any(kw in condition_lower for kw in ['depleted', 'fatigued', 'exhausted',
+               'ego depletion', 'self-control depletion']):
+            modifiers['attention_level'] = modifiers.get('attention_level', 0) - 0.10
+            modifiers['response_consistency'] = modifiers.get('response_consistency', 0) - 0.06
+            modifiers['extremity'] = modifiers.get('extremity', 0) + 0.05
+
+        # --- Mortality salience conditions ---
+        # Greenberg et al. (1990): Terror Management Theory
+        # Mortality reminders increase worldview defense, self-esteem striving
+        if any(kw in condition_lower for kw in ['mortality salien', 'death remind',
+               'think about death', 'mortality', 'funeral']):
+            modifiers['extremity'] = modifiers.get('extremity', 0) + 0.12
+            modifiers['engagement'] = modifiers.get('engagement', 0) + 0.06
+            modifiers['social_desirability'] = modifiers.get('social_desirability', 0) + 0.05
 
         return modifiers
 
@@ -5799,15 +6033,52 @@ class EnhancedSimulationEngine:
 
         # =====================================================================
         # STEP 5: Handle reverse-coded items
-        # Billiet & McClendon (2000): Acquiescers show inconsistency here
+        # v1.0.4.4: Enhanced with engagement-dependent reversal accuracy
+        #
+        # SCIENTIFIC BASIS:
+        # -----------------
+        # Woods (2006): 10-15% of respondents ignore item directionality entirely
+        # Weijters et al. (2010): Acquiescence inflates reverse-coded item
+        #   error by ~0.5 points on 7-point scales
+        # Meade & Craig (2012): Careless respondents fail reverse items at
+        #   rates up to 40-50%, creating inconsistency
+        # Krosnick (1991): Satisficers don't cognitively reverse the item —
+        #   they respond to face value, producing acquiescence artifacts
+        #
+        # Implementation:
+        # 1. Engaged respondents: Correctly reverse and respond accurately
+        # 2. Satisficers: Partially fail to reverse (probability based on attention)
+        # 3. Careless respondents: Often ignore reversal entirely
+        # 4. Acquiescent respondents: Additional positive-direction pull even
+        #    after reversal (inflating scores on reverse items)
         # =====================================================================
         if is_reverse:
-            center = scale_max - (center - scale_min)
-            # Add extra noise for acquiescent responders on reverse items
+            _attention = _safe_trait_value(modified_traits.get("attention_level"), 0.75)
+            _engagement = _safe_trait_value(modified_traits.get("engagement"), 0.65)
             acquiescence = _safe_trait_value(modified_traits.get("acquiescence"), 0.5)
-            if acquiescence > 0.65:
-                # Acquiescers have trouble with reverse-coded items
-                center += (acquiescence - 0.5) * scale_range * 0.25
+
+            # Probability of correctly reversing the item
+            # High attention + engagement → near-certain reversal
+            # Low attention → substantial probability of ignoring reversal
+            # Woods (2006): ~10-15% fail at baseline; up to 40% for careless
+            _reversal_probability = 0.50 + (_attention * 0.35) + (_engagement * 0.15)
+            _reversal_probability = float(np.clip(_reversal_probability, 0.30, 0.98))
+
+            if rng.random() < _reversal_probability:
+                # Correctly reverses the item
+                center = scale_max - (center - scale_min)
+            else:
+                # Fails to reverse — responds as if positively worded
+                # This creates the acquiescence-driven inconsistency pattern
+                # that reliability analysts see in real data
+                pass  # center stays at its unreversed value
+
+            # Acquiescence pull on reverse items (Weijters et al., 2010)
+            # Even respondents who DO reverse still show partial acquiescence
+            # Effect: ~0.5 point inflation for strong acquiescers
+            if acquiescence > 0.55:
+                _acq_reverse_pull = (acquiescence - 0.5) * scale_range * 0.20
+                center += _acq_reverse_pull
 
         # =====================================================================
         # STEP 6: Calculate within-person variance
@@ -5858,12 +6129,69 @@ class EnhancedSimulationEngine:
 
         # =====================================================================
         # STEP 9: Apply social desirability bias (Paulhus, 1991)
-        # High IM: +0.5-1.0 point inflation on socially desirable items
+        # v1.0.4.4: Domain-sensitive social desirability
+        #
+        # SCIENTIFIC BASIS:
+        # -----------------
+        # Social desirability bias varies dramatically by construct sensitivity:
+        # - Nederhof (1985 meta): SD bias d = 0.25-0.75 for sensitive topics
+        # - Paulhus (2002): Impression Management (deliberate faking) differs
+        #   from Self-Deceptive Enhancement (unconscious positivity)
+        # - Tourangeau & Yan (2007): Sensitivity depends on: social norms,
+        #   intrusiveness, and threat of disclosure
+        #
+        # Construct sensitivity categories:
+        # HIGH (1.5× multiplier): Prejudice, aggression, substance use,
+        #   dishonesty, sexual behavior — strong social norms against admission
+        # MODERATE (1.0×): Prosocial behavior, compliance, health behaviors,
+        #   self-esteem — mild inflation toward desirable direction
+        # LOW (0.5×): Factual/behavioral frequency, risk perception,
+        #   cognitive ability — less norm-linked, harder to fake
+        # INVERTED (-0.5×): Self-deprecating topics (anxiety, vulnerability,
+        #   loneliness) — SD bias suppresses honest negative reports
         # =====================================================================
         social_des = _safe_trait_value(modified_traits.get("social_desirability"), 0.50)
-        if social_des > 0.60 and scale_range > 0:
-            # Paulhus (1991): ~0.8-1.2 point inflation for high IM
-            sd_effect = (social_des - 0.5) * scale_range * 0.12
+        if social_des > 0.55 and scale_range > 0:
+            # Determine construct sensitivity multiplier
+            _var_lower = variable_name.lower()
+            _sd_sensitivity = 1.0  # Default: moderate sensitivity
+
+            # HIGH sensitivity: topics with strong social norms
+            if any(kw in _var_lower for kw in ['prejudic', 'discrimin', 'racism', 'sexism',
+                   'aggress', 'hostil', 'violent', 'dishonest', 'cheat', 'lie',
+                   'alcohol', 'drug', 'substance', 'steal', 'bully']):
+                _sd_sensitivity = 1.5
+
+            # MODERATE-HIGH: Prosocial self-reports (inflation)
+            elif any(kw in _var_lower for kw in ['prosocial', 'help', 'donat', 'volunteer',
+                     'charit', 'altruism', 'moral', 'ethical', 'compliance']):
+                _sd_sensitivity = 1.2
+
+            # MODERATE: Standard self-evaluations
+            elif any(kw in _var_lower for kw in ['satisf', 'attitude', 'opinion', 'health',
+                     'exercise', 'self_esteem', 'competenc']):
+                _sd_sensitivity = 1.0
+
+            # LOW: Factual/behavioral reports
+            elif any(kw in _var_lower for kw in ['frequency', 'count', 'number', 'time',
+                     'amount', 'usage', 'behavior', 'action']):
+                _sd_sensitivity = 0.5
+
+            # INVERTED: Vulnerability topics — SD suppresses honest negatives
+            elif any(kw in _var_lower for kw in ['anxiety', 'depress', 'lonely', 'loneliness',
+                     'vulnerable', 'weakness', 'failure', 'shame', 'guilt',
+                     'insecur', 'fear', 'worry', 'burnout']):
+                _sd_sensitivity = -0.5  # Negative = suppresses admission of negatives
+
+            # Also check condition context for sensitivity
+            _cond_lower = condition.lower() if condition else ""
+            if any(kw in _cond_lower for kw in ['dishonest', 'cheat', 'prejudic',
+                   'discriminat', 'immoral']):
+                _sd_sensitivity = max(_sd_sensitivity, 1.3)
+
+            # Apply domain-sensitive SD effect
+            # Paulhus (1991): ~0.8-1.2 point inflation for high IM on sensitive topics
+            sd_effect = (social_des - 0.5) * scale_range * 0.12 * _sd_sensitivity
             response += sd_effect
 
         # Bound and round to valid scale value

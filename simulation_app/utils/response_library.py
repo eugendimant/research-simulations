@@ -63,7 +63,7 @@ association, impression, perception, feedback, comment, observation, general
 Version: 1.8.5 - Improved domain detection with weighted scoring and disambiguation
 """
 
-__version__ = "1.0.4.3"
+__version__ = "1.0.4.4"
 
 import random
 import re
@@ -7070,8 +7070,39 @@ class ComprehensiveResponseGenerator:
             'artificial intelligence', ' ai ', 'algorithm', 'machine learning',
             'chatbot', 'automated', 'robot',
         ))
+        # v1.0.4.4: Expanded domain detection for condition-specific personalization
+        _is_political_domain = any(w in question_lower for w in (
+            'political', 'partisan', 'democrat', 'republican', 'liberal',
+            'conservative', 'voter', 'election', 'policy',
+        ))
+        _is_health_domain = any(w in question_lower for w in (
+            'health', 'medical', 'wellness', 'disease', 'patient',
+            'treatment', 'vaccination', 'exercise', 'diet',
+        ))
+        _is_moral_domain = any(w in question_lower for w in (
+            'moral', 'ethical', 'right', 'wrong', 'justice', 'fair',
+            'dilemma', 'trolley',
+        ))
+        _is_intergroup_domain = any(w in question_lower for w in (
+            'group', 'ingroup', 'outgroup', 'team', 'partner', 'opponent',
+            'other group', 'different group',
+        ))
+        _is_financial_domain = any(w in question_lower for w in (
+            'invest', 'financial', 'money', 'saving', 'risk',
+            'portfolio', 'market', 'stock',
+        ))
+        _is_environment_domain = any(w in question_lower for w in (
+            'environment', 'climate', 'sustainab', 'green', 'carbon',
+            'pollution', 'renewable',
+        ))
+        _is_education_domain = any(w in question_lower for w in (
+            'learn', 'teach', 'student', 'classroom', 'education',
+            'study', 'exam', 'course',
+        ))
+
         condition_lower = condition.lower() if condition else ""
         if condition_lower:
+            # AI conditions — only in AI/consumer/tech contexts
             if 'ai' in condition_lower and 'no ai' not in condition_lower:
                 if (_is_consumer_domain or _is_ai_domain) and rng.random() < 0.3:
                     ai_phrases = [
@@ -7085,6 +7116,67 @@ class ComprehensiveResponseGenerator:
             elif 'utilitarian' in condition_lower:
                 if _is_consumer_domain and rng.random() < 0.3:
                     response += " The practical aspects mattered."
+
+            # v1.0.4.4: Political condition modifiers
+            if _is_political_domain and rng.random() < 0.3:
+                if any(kw in condition_lower for kw in ['liberal', 'democrat', 'progressive', 'left']):
+                    response += rng.choice([
+                        " As someone who leans progressive, this matters to me.",
+                        " From my perspective on the left, I feel strongly about this.",
+                    ])
+                elif any(kw in condition_lower for kw in ['conservative', 'republican', 'right']):
+                    response += rng.choice([
+                        " As someone who leans conservative, this matters to me.",
+                        " From my perspective on the right, I feel strongly about this.",
+                    ])
+
+            # v1.0.4.4: Health condition modifiers
+            if _is_health_domain and rng.random() < 0.3:
+                if any(kw in condition_lower for kw in ['high risk', 'severe', 'threat', 'disease']):
+                    response += rng.choice([
+                        " Health risks like this really concern me.",
+                        " Given the health implications, I take this seriously.",
+                    ])
+                elif any(kw in condition_lower for kw in ['prevention', 'wellness', 'healthy']):
+                    response += rng.choice([
+                        " Preventive approaches make sense to me.",
+                        " Staying healthy is important to me.",
+                    ])
+
+            # v1.0.4.4: Moral/ethical condition modifiers
+            if _is_moral_domain and rng.random() < 0.3:
+                if any(kw in condition_lower for kw in ['moral', 'ethical', 'right']):
+                    response += rng.choice([
+                        " From an ethical standpoint, I had clear thoughts.",
+                        " My moral intuitions were strong here.",
+                    ])
+
+            # v1.0.4.4: Intergroup condition modifiers
+            if _is_intergroup_domain and rng.random() < 0.3:
+                if any(kw in condition_lower for kw in ['ingroup', 'same', 'team', 'partner']):
+                    response += rng.choice([
+                        " Being with someone from my own group felt natural.",
+                        " Shared identity made this easier.",
+                    ])
+                elif any(kw in condition_lower for kw in ['outgroup', 'different', 'opposing']):
+                    response += rng.choice([
+                        " Interacting with someone from a different group was challenging.",
+                        " Group differences definitely played a role here.",
+                    ])
+
+            # v1.0.4.4: Financial condition modifiers
+            if _is_financial_domain and rng.random() < 0.3:
+                if any(kw in condition_lower for kw in ['gain', 'profit', 'earn', 'high return']):
+                    response += " The potential financial upside influenced my thinking."
+                elif any(kw in condition_lower for kw in ['loss', 'risk', 'lose', 'penalty']):
+                    response += " The financial risk weighed heavily on my mind."
+
+            # v1.0.4.4: Environmental condition modifiers
+            if _is_environment_domain and rng.random() < 0.3:
+                if any(kw in condition_lower for kw in ['sustainable', 'green', 'eco']):
+                    response += " Sustainability matters to me in these decisions."
+                elif any(kw in condition_lower for kw in ['pollut', 'unsustainable', 'harm']):
+                    response += " The environmental impact bothers me."
 
         return response
 
