@@ -951,7 +951,12 @@ class OpenEndedTextGenerator:
             if match:
                 return match.group(1)
 
-        return "it"
+        # v1.0.3.10: Fallback to topic extraction instead of generic "it"
+        _words = re.findall(r'\b[a-zA-Z]{4,}\b', study_context.lower())
+        _stop = {'this', 'that', 'about', 'what', 'your', 'study', 'please',
+                 'describe', 'question', 'context', 'topic', 'survey'}
+        _topic = [w for w in _words if w not in _stop][:2]
+        return ' '.join(_topic) if _topic else "this"
 
     def _extract_product_type(self, study_context: str) -> str:
         """Extract product type from context."""
@@ -960,13 +965,14 @@ class OpenEndedTextGenerator:
             if word in study_context.lower():
                 return word
 
-        return "product"
+        # v1.0.3.10: Domain-neutral fallback
+        return "option"
 
     def _random_feature(self, study_context: str) -> str:
         """Generate a random feature mention."""
         features = [
-            "design", "quality", "usability", "value", "functionality",
-            "appearance", "performance", "features", "experience", "overall feel"
+            "design", "quality", "approach", "value", "presentation",
+            "content", "structure", "details", "framing", "overall feel"
         ]
         return random.choice(features)
 
@@ -982,7 +988,8 @@ class OpenEndedTextGenerator:
             if match:
                 return match.group(1)
 
-        return "purchase"
+        # v1.0.3.10: Domain-neutral fallback
+        return "engage"
 
     def _generate_extension(self, domain: str, sentiment: ResponseSentiment) -> str:
         """Generate additional content for elaborate responses."""
@@ -1009,9 +1016,9 @@ class OpenEndedTextGenerator:
             extension = extension or random.choice(negative_additions)
         else:
             neutral_additions = [
-                "Nothing remarkable to add.",
-                "It was okay.",
-                "Average experience overall.",
+                "I don't feel too strongly either way.",
+                "Not much more to say about it honestly.",
+                "Pretty middle of the road for me.",
             ]
             extension = extension or random.choice(neutral_additions)
 

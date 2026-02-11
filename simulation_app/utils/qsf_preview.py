@@ -33,7 +33,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 # Version identifier to help track deployed code
-__version__ = "1.0.3.9"  # v1.0.3.9: Eliminate generic responses from all pipeline layers
+__version__ = "1.0.3.10"  # v1.0.3.10: Zero generic responses — all fallbacks hardened
 
 
 # ============================================================================

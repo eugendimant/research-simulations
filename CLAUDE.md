@@ -412,6 +412,12 @@ Example iteration sequence that worked well:
 15. **Using generic/hardcoded response banks for open-text preview**: ALWAYS use question_text, question_context, condition, and study_title to generate topical preview responses. Generic meta-commentary ("the study was interesting") is NEVER acceptable.
 16. **Generating off-topic careless responses**: Even careless/low-effort participants write about the TOPIC. "trump is ok i guess" NOT "fine". Extract topic words and build short topic-relevant careless versions.
 17. **Defaulting to consumer/product language in templates**: Don't use "item", "product", "aspect" as fallback context values. Extract meaningful topics from question text. Condition modifiers like "AI-recommended" only apply to consumer/AI domains.
+18. **Using bare pronouns ('it', 'this') as topic fallbacks**: NEVER use `'it'` or `'this'` when topic extraction fails. Always have a multi-level fallback chain: question_context → question_text → question_name → study_domain → "the questions asked". A response like "it is ok i guess" is a bug.
+19. **Suppressing exceptions silently (`except Exception: pass`)**: Always log the error at minimum (`logger.debug`). Silent suppression makes debugging impossible when the cascade falls through to a worse generator.
+20. **Writing survey/study meta-commentary in templates**: Templates should be about the TOPIC, not about the survey experience. "The survey was well-designed" is meta-commentary. "I feel strongly about [topic]" is topical. Real participants don't comment on survey design in their open-text responses.
+21. **Using {stimulus} placeholder in templates**: `{stimulus}` is legacy consumer language. Use `{topic}` universally. The context dict should map `{topic}` to actual content words extracted from the question text.
+22. **Domain-blind extensions and personalizations**: `_extend()`, `_personalize_for_question()`, and condition modifiers MUST be domain-aware. Political studies don't get "About the product" intros. Health studies don't get "AI-recommended" prefixes. Check domain before applying specialization.
+23. **Only auditing primary code paths for generic responses**: Generic responses hide in FALLBACK paths. Audit every `else` branch, every `or "default"`, every `if not X:` handler. The primary path may work perfectly while edge cases produce garbage.
 
 #### Open-Text Response Generation (CRITICAL — v1.0.3.8 Overhaul)
 
@@ -439,6 +445,25 @@ Example iteration sequence that worked well:
 - **Condition modifiers**: Only applied for relevant domains (consumer, AI, advertising) — not for political, health, etc.
 - **Empty fallbacks**: All fallback responses now include topic words instead of generic meta-commentary
 
+**Further hardening (v1.0.3.9):**
+- **`_personalize_for_question()` in response_library.py**: Removed consumer-specific topic intros ("About the product", "For this purchase") that were injected into ALL domains. Replaced with domain-neutral intros ("When making this decision,", "I believe that"). Condition extensions (AI, hedonic, utilitarian) now gated by domain detection — only applied to consumer/AI/advertising domains.
+- **`_extend()` in response_library.py**: Expanded domain-specific extensions from 5 domains to 11 (added POLITICAL, POLARIZATION, INTERGROUP, IDENTITY, NORMS, TRUST). General fallback extensions rewritten to be substantive and domain-neutral.
+- **`_apply_deep_variation()` in llm_response_generator.py**: Replaced generic high-verbosity elaborations ("I really feel strongly about this") with neutral continuations ("I could go on about this honestly.", "There's definitely more to say about it.").
+- **persona_library.py template overhaul**: ALL `{stimulus}` references replaced with `{topic}` across task_summary templates (engaged, default, satisficer, extreme). Careless templates now topic-aware (`"{topic} idk"` not `"idk"`). Product evaluation and follow-up thought templates made domain-neutral.
+
+**Final hardening (v1.0.3.10):**
+- **`_get_template_response()` last-resort fallback**: Changed from `"No specific comment."` to topic-extracting fallback that pulls words from question_text/context. If no topic words found, returns `"I answered based on my honest feelings about this."` instead of generic meta-commentary.
+- **`_make_careless()` signature expanded**: Now accepts `question_text` parameter. When topic extraction from the response fails, tries extracting from the original question text before falling back. Ultimate fallback changed from `'it'` to `'the question'` — eliminates `"it is ok i guess"` entirely.
+- **Preview very_low templates**: All entries now reference `subject_phrase` (`"trump idk"` not `"idk"`). The `_short_subj` truncated subject is prepended/appended to every very_low template.
+- **Preview subject_phrase fallback chain**: `topic_words from question_text` → `topic_words from question_name` → `"the questions asked"` (never `"this topic"`).
+- **Empty-response fallback in `generate()`**: Changed `'this'` fallback to extract from question_text directly, ultimate fallback `"what was asked"` instead of bare `"this"`.
+- **Silent exception suppression fixed**: `except Exception: pass` in enhanced_simulation_engine.py comprehensive_generator call now logs the error with `logger.debug()` for debugging.
+- **`survey_feedback` domain templates**: Completely rewritten from survey meta-commentary ("The survey was well-designed") to sentiment-aligned topic responses ("I shared my honest views and I feel pretty good about the topic overall.").
+- **persona_library.py task_summary templates**: Removed all "study", "survey", "questions about" meta-commentary from engaged, satisficer, and default templates. Now first-person topic-focused ("I thought about {topic} carefully" not "The study asked about {topic}").
+- **persona_library.py general_feedback templates**: Rewritten from survey feedback ("Good survey overall") to genuine opinion sharing ("I shared my genuine opinions based on my actual experiences").
+- **text_generator.py defaults**: `_extract_product()` fallback changed from `"it"` to topic-extraction from context; `_extract_product_type()` from `"product"` to `"option"`; `_extract_action()` from `"purchase"` to `"engage"`; `_random_feature()` replaced consumer terms with neutral ones ("approach", "content", "structure").
+- **Markov chain extension fallback**: Neutral additions changed from consumer language ("It was okay.", "Average experience overall.") to neutral first-person ("I don't feel too strongly either way.").
+
 **Key principle: NO response should EVER be off-topic.**
 - High quality: Detailed, specific, directly addresses the question topic
 - Medium quality: Brief but still about the topic
@@ -446,12 +471,33 @@ Example iteration sequence that worked well:
 - Very low quality: May be gibberish but topic words when possible
 - Careless: Short and lazy, but STILL about the actual topic
 
+**Comprehensive fallback chain (every level must extract topic):**
+1. **First choice**: Extract topic from `question_context` (user-provided context on Design page)
+2. **Second choice**: Extract topic words from `question_text` (the actual question asked)
+3. **Third choice**: Extract from `question_name` / variable name (e.g., "trump_feelings" → "trump feelings")
+4. **Fourth choice**: Use `study_domain` (e.g., "political psychology" → "political psychology")
+5. **Last resort**: Use `"the questions asked"` or `"what was asked"` — NEVER `"this topic"`, `"it"`, `"this"`, or bare pronouns
+
+**Topic extraction stop-word pattern (used consistently across all files):**
+```python
+_stop = {'this', 'that', 'about', 'what', 'your', 'please', 'describe',
+         'explain', 'question', 'context', 'study', 'topic', 'condition',
+         'think', 'feel', 'have', 'some', 'with', 'from', 'very', 'really'}
+```
+Always filter stop words from extracted topic, take first 2-4 content words, join into phrase.
+
 **Context flow through the pipeline:**
 1. User provides `question_context` via OE context input on Design page
 2. Engine embeds context into `question_text`: `"Question: ...\nContext: ...\nStudy topic: ...\nCondition: ..."`
 3. LLM generator: Extracts context block, builds prominent `╔══ QUESTION CONTEXT ══╗` section in prompt
 4. ComprehensiveResponseGenerator: Extracts embedded context, calls `_generate_context_grounded_response()`
-5. Basic text generator: Uses question text to extract topic words for template placeholders
+5. Basic text generator (persona_library.py): Uses context dict with topic-enriched `{topic}`, `{product}`, `{feature}` placeholders
+
+**Iterative improvement methodology (v1.0.3.8 → v1.0.3.9 → v1.0.3.10):**
+- v1.0.3.8: Fixed the architecture (preview rewrite, context grounding, careless on-topic, condition gating)
+- v1.0.3.9: Fixed the content layer (domain-specific extensions, template language, consumer bias removal)
+- v1.0.3.10: Fixed the edge cases (every fallback path, silent exceptions, meta-commentary templates, pronoun fallbacks)
+- **Lesson**: Generic responses hide in fallback paths, not in primary code. The primary path may be perfect while 10+ fallback paths produce "it is ok i guess" or "No specific comment." Always audit EVERY fallback, EVERY default value, EVERY empty-string handler.
 
 **Provider chain (Gemini already #1):**
 - Google AI Studio Gemini 2.5 Flash Lite (10 RPM, 250K TPM, 20 RPD)

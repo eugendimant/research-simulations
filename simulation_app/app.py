@@ -53,8 +53,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.0.3.9"
-BUILD_ID = "20260211-v1039-eliminate-generic-responses-from-all-layers"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.0.3.10"
+BUILD_ID = "20260211-v10310-zero-generic-responses-all-fallbacks-hardened"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -119,7 +119,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.0.3.9"  # v1.0.3.9: Eliminate generic responses from all pipeline layers
+APP_VERSION = "1.0.3.10"  # v1.0.3.10: Zero generic responses — all fallbacks hardened
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -1311,8 +1311,16 @@ def _get_sample_text_response(
         if not topic_words:
             topic_words = _title_topics[:4]
 
-    # Build a compact subject phrase for template insertion
-    subject_phrase = ' '.join(topic_words[:4]) if topic_words else 'this topic'
+    # v1.0.3.10: Build a compact subject phrase for template insertion.
+    # NEVER fall back to generic "this topic" — try extracting from
+    # question_name (variable name) as last resort.
+    if not topic_words and question_name:
+        # question_name may be "var_name_question_text[:50]" — extract words
+        _name_clean = _re.sub(r'[_\-]+', ' ', question_name).strip()
+        _name_words = _re.findall(r'\b[a-zA-Z]{3,}\b', _name_clean.lower())
+        _name_stop = {'open', 'ended', 'text', 'question', 'response', 'answer'}
+        topic_words = [w for w in _name_words if w not in _name_stop][:4]
+    subject_phrase = ' '.join(topic_words[:4]) if topic_words else 'the questions asked'
     # Capitalize proper nouns we can detect
     _proper_nouns = {'trump', 'biden', 'obama', 'clinton', 'harris', 'congress',
                      'republican', 'democrat', 'america', 'american', 'covid',
@@ -1333,14 +1341,18 @@ def _get_sample_text_response(
     if quality in ('low', 'very_low'):
         # Low quality: short but STILL about the topic (never generic)
         if quality == 'very_low':
+            # v1.0.3.10: ALL very_low responses MUST reference the topic.
+            # Even the most careless participant writes SOMETHING about the
+            # actual question — "trump idk" NOT just "idk".
+            _short_subj = subject_phrase[:15].strip()
             low_templates = [
-                f"{subject_phrase[:20]}",
-                "idk",
-                f"{topic_words[0] if topic_words else 'ok'}",
-                "...",
-                f"{'yes' if local_rng.random() > 0.5 else 'no'}",
-                "n/a",
-                f"{topic_words[0] if topic_words else 'fine'} i guess",
+                f"{_short_subj}",
+                f"{_short_subj} idk",
+                f"{_short_subj} ok",
+                f"idk {_short_subj}",
+                f"{_short_subj} i guess",
+                f"{_short_subj} whatever",
+                f"meh {_short_subj}",
             ]
             return local_rng.choice(low_templates)
         else:
