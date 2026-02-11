@@ -63,7 +63,7 @@ association, impression, perception, feedback, comment, observation, general
 Version: 1.8.5 - Improved domain detection with weighted scoring and disambiguation
 """
 
-__version__ = "1.0.3.8"
+__version__ = "1.0.3.9"
 
 import random
 import re
@@ -6875,13 +6875,13 @@ class ComprehensiveResponseGenerator:
             'preference': ['based on my preferences', 'given what I prefer', 'considering my personal preferences'],
 
             # Evaluation keywords
-            'product': ['about this product', 'for this item', 'regarding what was shown', 'evaluating this product', 'concerning this offering'],
+            'product': ['about this', 'regarding what was presented', 'evaluating this', 'concerning this'],
             'service': ['about the service', 'regarding the service quality', 'in terms of service', 'evaluating the service provided'],
-            'brand': ['about the brand', 'regarding this brand', 'in terms of brand perception', 'considering brand attributes'],
+            'brand': ['about the brand', 'regarding this brand', 'in terms of perception', 'considering the attributes'],
             'quality': ['in terms of quality', 'regarding quality aspects', 'considering the quality', 'evaluating quality'],
-            'value': ['in terms of value', 'considering the value proposition', 'regarding perceived value'],
-            'price': ['considering the price', 'given the cost', 'in terms of pricing', 'regarding the price point'],
-            'purchase': ['regarding this purchase', 'in terms of buying', 'considering a purchase', 'when thinking about buying'],
+            'value': ['in terms of value', 'considering what matters', 'regarding perceived value'],
+            'price': ['considering the cost', 'given the cost', 'in terms of pricing', 'regarding the price point'],
+            'purchase': ['regarding this choice', 'in terms of choosing', 'considering this', 'when thinking about this'],
 
             # Experience keywords
             'experience': ['from my experience', 'based on my experience', 'drawing on my experience', 'reflecting on past experiences'],
@@ -7019,30 +7019,30 @@ class ComprehensiveResponseGenerator:
     ) -> str:
         """Personalize the response based on question content and condition.
 
-        v1.0.0: Uses local RNG for deterministic, question-specific personalization.
+        v1.0.3.9: Fixed to avoid injecting consumer/product language into
+        non-consumer studies. Topic intros are now domain-neutral. Condition
+        extensions only apply to relevant domains.
         """
         rng = local_rng or random.Random()
 
         if not keywords and not condition:
             return response
 
-        # Build context-specific phrases based on question keywords
         question_lower = question_text.lower() if question_text else ""
 
-        # Add topic-specific introductions based on keywords
+        # v1.0.3.9: Domain-neutral topic introductions
+        # These intros are safe for ALL study types — no consumer-specific language
         topic_intros = {
             'decision': ['When making this decision, ', 'Regarding my decision, '],
-            'product': ['About the product, ', 'For this product, '],
             'experience': ['Based on my experience, ', 'From what I experienced, '],
             'feeling': ['I felt that ', 'My feeling was that '],
             'opinion': ['In my opinion, ', 'I think that '],
-            'task': ['For this task, ', 'While doing this task, '],
             'choice': ['With my choice, ', 'Regarding my choice, '],
-            'recommend': ['I would recommend ', 'My recommendation is '],
-            'improve': ['To improve, ', 'For improvement, '],
             'scenario': ['In this scenario, ', 'Given the scenario, '],
-            'purchase': ['For this purchase, ', 'Regarding buying, '],
-            'service': ['About the service, ', 'For the service, '],
+            'believe': ['I believe that ', 'What I believe is '],
+            'concern': ['My concern is that ', 'I\'m concerned that '],
+            'policy': ['Regarding this policy, ', 'On this policy issue, '],
+            'impact': ['In terms of impact, ', 'The impact was that '],
         }
 
         for keyword, intros in topic_intros.items():
@@ -7052,22 +7052,31 @@ class ComprehensiveResponseGenerator:
                     response = intro + response[0].lower() + response[1:]
                 break
 
-        # Add condition-specific context
+        # v1.0.3.9: Condition-specific context — ONLY for relevant domains
+        # Detect study domain from question text to avoid cross-domain pollution
+        _is_consumer_domain = any(w in question_lower for w in (
+            'product', 'purchase', 'buy', 'brand', 'shopping', 'consumer',
+            'advertis', 'marketing', 'recommend',
+        ))
+        _is_ai_domain = any(w in question_lower for w in (
+            'artificial intelligence', ' ai ', 'algorithm', 'machine learning',
+            'chatbot', 'automated', 'robot',
+        ))
         condition_lower = condition.lower() if condition else ""
-        if 'ai' in condition_lower and 'no ai' not in condition_lower:
-            ai_phrases = [
-                " The AI aspect was interesting.",
-                " Considering the AI involvement.",
-                "",  # Sometimes no addition
-            ]
-            if rng.random() < 0.3:
-                response += rng.choice(ai_phrases)
-        elif 'hedonic' in condition_lower:
-            if rng.random() < 0.3:
-                response += " The enjoyment factor was notable."
-        elif 'utilitarian' in condition_lower:
-            if rng.random() < 0.3:
-                response += " The practical aspects mattered."
+        if condition_lower:
+            if 'ai' in condition_lower and 'no ai' not in condition_lower:
+                if (_is_consumer_domain or _is_ai_domain) and rng.random() < 0.3:
+                    ai_phrases = [
+                        " The AI aspect was interesting.",
+                        " Considering the AI involvement.",
+                    ]
+                    response += rng.choice(ai_phrases)
+            elif 'hedonic' in condition_lower:
+                if _is_consumer_domain and rng.random() < 0.3:
+                    response += " The enjoyment factor was notable."
+            elif 'utilitarian' in condition_lower:
+                if _is_consumer_domain and rng.random() < 0.3:
+                    response += " The practical aspects mattered."
 
         return response
 
@@ -7277,15 +7286,16 @@ class ComprehensiveResponseGenerator:
     def _extend(self, response: str, domain: StudyDomain, sentiment: str, local_rng: random.Random = None) -> str:
         """Extend a response for high-verbosity personas with domain awareness.
 
-        v1.0.0: Uses local RNG for deterministic, question-specific extensions.
+        v1.0.3.9: Expanded domain-specific extensions to cover 20+ domains.
+        General extensions are now more substantive and less generic.
         """
         rng = local_rng or random.Random()
 
-        # Domain-specific extensions
+        # v1.0.3.9: Expanded domain-specific extensions
         domain_extensions = {
             StudyDomain.DICTATOR_GAME: {
-                "positive": [" Fairness is important to me.", " I tried to be reasonable."],
-                "negative": [" The situation felt unfair.", " I wasn't sure what was right."],
+                "positive": [" Fairness is important to me.", " I tried to be reasonable about sharing."],
+                "negative": [" The situation felt unfair.", " I wasn't sure what the right split was."],
             },
             StudyDomain.RISK_PREFERENCE: {
                 "positive": [" I'm comfortable with some uncertainty.", " Risk doesn't bother me much."],
@@ -7296,46 +7306,65 @@ class ComprehensiveResponseGenerator:
                 "negative": [" Trust has to be earned.", " I'm cautious about trusting others."],
             },
             StudyDomain.CONSUMER: {
-                "positive": [" I enjoy shopping for things like this.", " Quality matters to me."],
-                "negative": [" I'm picky about what I buy.", " Value for money is important."],
+                "positive": [" Quality matters to me when choosing.", " I'm drawn to well-made things."],
+                "negative": [" I'm particular about what I choose.", " Value matters a lot to me."],
             },
             StudyDomain.AI_ATTITUDES: {
-                "positive": [" Technology can be really helpful.", " I'm open to new approaches."],
-                "negative": [" I prefer human judgment.", " AI isn't always the answer."],
+                "positive": [" Technology can be really helpful when used well.", " I'm open to new approaches."],
+                "negative": [" I prefer human judgment in most cases.", " Automation isn't always the answer."],
+            },
+            StudyDomain.POLITICAL: {
+                "positive": [" These are issues I care about deeply.", " My political views guide my thinking here."],
+                "negative": [" The political situation frustrates me.", " I think our politics are broken."],
+            },
+            StudyDomain.POLARIZATION: {
+                "positive": [" I try to see things from multiple angles.", " Common ground is possible."],
+                "negative": [" The divide keeps getting worse.", " People don't listen to each other."],
+            },
+            StudyDomain.INTERGROUP: {
+                "positive": [" People are individuals first.", " Group labels don't define everyone."],
+                "negative": [" Group differences are real and sometimes hard to navigate."],
+            },
+            StudyDomain.IDENTITY: {
+                "positive": [" My identity shapes how I see things.", " Being true to who I am matters."],
+                "negative": [" Identity shouldn't define everything.", " Labels can be limiting."],
+            },
+            StudyDomain.NORMS: {
+                "positive": [" Social expectations can guide good behavior.", " Norms exist for a reason."],
+                "negative": [" Not all social norms make sense.", " Conformity isn't always right."],
+            },
+            StudyDomain.TRUST: {
+                "positive": [" I believe most people try to do the right thing."],
+                "negative": [" It's hard to know who to trust these days."],
             },
         }
 
-        # General extensions
+        # v1.0.3.9: More substantive general extensions that avoid generic meta-commentary
         general_extensions = {
             "very_positive": [
-                " I feel good about this overall.",
-                " This was a positive experience.",
-                " I'm glad to share my perspective.",
-                " This resonated with me.",
+                " I feel strongly about this and wanted to be clear.",
+                " This really matters to me personally.",
+                " I've thought about this a lot.",
             ],
             "positive": [
-                " That's my take on it.",
-                " I think that covers the main points.",
-                " Hopefully that makes sense.",
-                " That's how I see it anyway.",
+                " That's where I stand on this.",
+                " Those are my honest thoughts.",
+                " I tried to be clear about my views.",
             ],
             "neutral": [
-                " I could go either way on this.",
-                " It's hard to say for certain.",
-                " I see both sides.",
-                " There are trade-offs.",
+                " I could see arguments either way.",
+                " It's more nuanced than a simple answer.",
+                " I don't have a strong lean here.",
             ],
             "negative": [
-                " There's room for improvement.",
-                " I expected better.",
-                " This could be handled differently.",
-                " Something needs to change.",
+                " I think things need to change.",
+                " I wish the situation were different.",
+                " There are real problems here.",
             ],
             "very_negative": [
-                " This really bothered me.",
-                " I have serious concerns.",
-                " This was frustrating.",
-                " I'm disappointed.",
+                " This is genuinely concerning to me.",
+                " I feel strongly that something is wrong.",
+                " I couldn't hold back my frustration.",
             ],
         }
 

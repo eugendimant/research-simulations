@@ -18,7 +18,7 @@ Architecture:
 Version: 1.0.1.4
 """
 
-__version__ = "1.0.3.8"
+__version__ = "1.0.3.9"
 
 import hashlib
 import json
@@ -1740,14 +1740,15 @@ class LLMResponseGenerator:
         elif verbosity < 0.5:
             sentences = sentences[:max(2, len(sentences) // 2)]
         elif verbosity > 0.7 and rng.random() < 0.45:
-            # Higher verbosity: sometimes add elaboration
+            # v1.0.3.9: Elaborations that extend the thought without
+            # adding off-topic meta-commentary. These are deliberately
+            # neutral continuations that work with ANY topic.
             elaborations = [
-                "I really feel strongly about this.",
-                "This is something I think about quite a bit.",
-                "It's hard to put into words exactly.",
-                "There's a lot to consider here.",
-                "I've been thinking about this for a while.",
-                "It just makes sense to me.",
+                "I could go on about this honestly.",
+                "There's definitely more to say about it.",
+                "But that's where I land for now.",
+                "I've given this a lot of thought.",
+                "I could probably write more but that covers the main points.",
             ]
             sentences.append(rng.choice(elaborations))
 
