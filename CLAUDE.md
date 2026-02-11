@@ -339,3 +339,94 @@ Example iteration sequence that worked well:
 - **Changelog is essential**: Track what changed and why
 - **Version in multiple places**: README, docstrings, __version__ variables
 - **Include session links**: Traceability helps debug later issues
+
+---
+
+## Business Brainstorm
+
+### 5 Enterprise/Business Improvement Ideas
+
+#### 1. User Accounts + Persistent Project Workspaces (PREREQUISITE FOR ALL OTHERS)
+- **Problem:** Everything is anonymous and session-only. Close browser = lose work. No login, no history, no saved designs.
+- **Solution:** Auth (email/password + Google/Microsoft OAuth + SAML for enterprise) + persistent workspace (save, load, duplicate, organize simulation projects).
+- **Why it matters:** Foundation for billing, analytics, collaboration. Solves #1 UX pain point (losing work on refresh). Required by institutional procurement. Enables usage tracking and tiered access.
+- **Key components:**
+  - Auth layer (Streamlit emerging auth patterns, or wrap with FastAPI)
+  - Project save/load (serialize session state → database)
+  - Project browser (list, search, clone, delete)
+  - Role-based access (Student, Instructor, Admin)
+
+#### 2. Tiered Pricing with Stripe Integration
+- **Problem:** App is 100% free with no limits. LLM API calls cost money but generate zero revenue.
+- **Tiers:**
+  - **Free:** 5 sims/mo, max N=200, basic output, no API
+  - **Academic ($29/mo):** Unlimited sims, max N=5,000, full output, email support
+  - **Professional ($99/mo):** Max N=10,000, full + white-label output, API (100 calls/day), priority support
+  - **Enterprise (custom):** Unlimited everything, SSO/SAML, dedicated support
+- **Why it matters:** Sustainable revenue, LLM costs are real and growing, academic pricing familiar to universities, enterprise tier opens institutional deals ($10k-$50k/year).
+
+#### 3. LMS Integration (Canvas, Moodle, Blackboard)
+- **Problem:** Instructors are core audience (app has instructor reports, group management, difficulty levels) but must manually coordinate outside their LMS.
+- **Solution:** LTI (Learning Tools Interoperability) plugin — tool embeds inside Canvas/Moodle/Blackboard. Instructors create "simulation assignments," students complete in-LMS, results flow to gradebook.
+- **Why it matters:** Massive distribution channel (every university uses LMS), removes adoption friction, high switching costs, enables auto student tracking. Existing group management + instructor report infrastructure is a head start.
+- **Key components:**
+  - LTI 1.3 provider implementation
+  - Assignment template system (instructor pre-configures, students generate)
+  - Grade passback (simulation quality score → LMS gradebook)
+  - Roster sync (auto-create student accounts from LMS)
+
+#### 4. REST API + SDK for Programmatic Access
+- **Problem:** Power users (computational researchers, method developers, CI/CD pipelines) can't automate simulations — everything requires clicking through Streamlit UI.
+- **Solution:** REST API (FastAPI wrapper around existing simulation engine) + Python SDK (`pip install simtool`) + R package.
+- **Example:**
+  ```python
+  from simtool import SimulationClient
+  client = SimulationClient(api_key="sk-...")
+  result = client.simulate(
+      qsf_file="study.qsf",
+      conditions=["Control", "Treatment"],
+      n_per_condition=500,
+      difficulty="hard"
+  )
+  result.to_csv("simulated_data.csv")
+  ```
+- **Why it matters:** New customer segment (technical users), enables parameter sweeps/Monte Carlo/power simulations, Jupyter/RMarkdown/CI integration, justifies Pro/Enterprise pricing, creates developer ecosystem.
+- **Key components:** API key management, rate limiting per tier, batch endpoint, webhook notifications for long jobs.
+
+#### 5. Study Template Marketplace
+- **Problem:** Every user starts from scratch. Common paradigms (trust game, ultimatum game, Stroop, IAT, conjoint) get rebuilt repeatedly.
+- **Solution:** Curated + community-contributed marketplace of ready-to-use study templates. Browse by domain, click "Use this template," customize, generate.
+- **Why it matters:** Dramatically reduces time-to-first-value, content flywheel (contributions attract users), new revenue stream (premium/verified templates), showcases tool range, builds community.
+- **Key components:**
+  - Template schema (QSF + metadata + recommended settings)
+  - Browse/search by domain, paradigm, citation count
+  - "Use this template" → pre-fills wizard
+  - Community submissions with review workflow
+  - Verified badges, citation tracking
+
+### Implementation Roadmap
+
+**Phase 1 — Foundation (Months 1-2):**
+- Weeks 1-2: Auth system (email/password + Google OAuth)
+- Weeks 3-4: Project persistence (save/load/list designs)
+- Weeks 5-6: Billing infrastructure (Stripe, tier enforcement)
+- Weeks 7-8: Usage tracking (per-user metrics, admin dashboard)
+
+**Phase 2 — Revenue (Months 3-4):**
+- Weeks 9-10: Launch paid tiers (Free/Academic/Professional)
+- Weeks 11-12: API v1 (core simulation endpoints + Python SDK)
+- Weeks 13-14: Template marketplace v1 (20 curated templates)
+- Weeks 15-16: Team workspaces (shared projects, basic collaboration)
+
+**Phase 3 — Scale (Months 5-6):**
+- Weeks 17-18: LMS integration (Canvas LTI plugin beta)
+- Weeks 19-20: Enterprise features (SAML SSO, admin dashboard, white-label)
+- Weeks 21-22: R SDK + API v2 (batch endpoints, webhooks)
+- Weeks 23-24: Community templates (submission workflow, verification)
+
+### Revenue Projection
+- **Year 1:** ~$90K (100 Academic + 20 Professional + 3 Enterprise)
+- **Year 2:** ~$440K (with LMS channel driving adoption)
+
+### Strategic Priority
+**Start with Idea #1 (User Accounts + Workspaces)** — it's the prerequisite for everything else. Without it, you can't bill, can't track, can't collaborate, can't do enterprise sales. It's the keystone.
