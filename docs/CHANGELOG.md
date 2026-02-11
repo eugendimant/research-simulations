@@ -1,5 +1,58 @@
 # Agent Change Log
 
+## 2026-02-11 — v1.0.4.9
+### 5 Deep Improvement Iterations: New Paradigms, Personas, SD Refinement, Validation, Documentation
+
+#### Iteration 1: Simulation Engine — 5 New Research Paradigm Domains (STEP 2)
+- **Domain 19 — Narrative Transportation**: Green & Brock (2000), van Laer et al. (2014 meta r=0.35), Appel & Richter (2007). Keywords: narrative, story, transported, immersed, absorbed, expository, first-person/third-person perspective. Also detects fictional vs real narratives, narrative perspective type.
+- **Domain 20 — Social Comparison**: Festinger (1954), Gerber et al. (2018 meta d=0.20-0.50), Wheeler & Miyake (1992), Wills (1981). Keywords: upward/downward comparison, social media feed, instagram, assimilation/contrast, curated profile. Also detects social media comparison (Vogel et al. 2014).
+- **Domain 21 — Gratitude & Positive Interventions**: Emmons & McCullough (2003), Davis et al. (2016 meta d=0.31), Sin & Lyubomirsky (2009 meta d=0.29), Seligman et al. (2005). Keywords: gratitude, thankful, count blessings, acts of kindness, savoring, best possible self.
+- **Domain 22 — Moral Cleansing & Compensation**: Zhong & Liljenquist (2006), Sachdeva et al. (2009), Jordan et al. (2011), Tetlock et al. (2000). Keywords: moral threat, transgression, sacred value, taboo tradeoff, moral identity, commodify.
+- **Domain 23 — Attention Economy & Digital Distraction**: Ward et al. (2017 JACR), Stothart et al. (2015), Ophir et al. (2009), Uncapher & Wagner (2018). Keywords: phone present, notification, multitask, digital detox, screen break.
+- Updated `_DOMAIN_RELEVANCE` mapping for all 5 new domains
+- New domain-aware STEP 4 scaling: positive_psychology (1.0×), narrative_persuasion (1.15×), digital_wellbeing (1.1×), moral_psychology (1.2×)
+
+#### Iteration 2: Response Library — 5 New Domain Template Sets
+- **narrative_transportation**: explanation + evaluation question types, positive/neutral/negative/very_positive/very_negative sentiments
+- **social_comparison**: explanation + evaluation question types across all sentiment levels
+- **gratitude_intervention**: explanation + evaluation question types with positive psychology language
+- **moral_cleansing**: explanation + evaluation question types for moral self-regulation topics
+- **digital_wellbeing**: explanation + evaluation question types for attention economy research
+
+#### Iteration 3: Persona Library — 6 New Domain-Specific Personas (58+ total)
+- **Narrative Thinker**: High engagement (0.85), elaboration (0.80), attention (0.88). Green & Brock (2000) Need for Narrative scale. Weight: 0.08.
+- **Social Comparer**: High SD (0.72), moderate-high extremity (0.45), lower consistency (0.55). Gibbons & Buunk (1999). Weight: 0.10.
+- **Grateful Optimist**: High response tendency (0.72), acquiescence (0.62), moderate extremity (0.28). McCullough et al. (2002). Weight: 0.08.
+- **Moral Absolutist**: Very high extremity (0.78), engagement (0.85), consistency (0.80). Tetlock et al. (2000), Haidt (2001). Weight: 0.07.
+- **Digital Native**: High reading speed (0.85), moderate attention (0.72), lower consistency (0.58). Prensky (2001), Ophir et al. (2009). Weight: 0.10.
+- **Financial Deliberator**: High attention (0.88), consistency (0.78), low SD (0.38). Kahneman & Tversky (1979), Barber & Odean (2001). Weight: 0.08.
+
+#### Iteration 4: Social Desirability Refinement + Reverse-Item Tracking + Validation
+- **5 new SD construct sensitivity categories** in STEP 9:
+  - Moral/sacred value self-reports: 1.4× multiplier (Tetlock 2000)
+  - Gratitude/positive psychology: 1.2× (McCullough 2002)
+  - Social comparison admission: 1.1× (mildly undesirable)
+  - Digital habits: 1.15× (Andrews et al. 2015 — underreported screen time)
+  - (Plus existing 5 categories: HIGH=1.5×, MODERATE-HIGH=1.2×, MODERATE=1.0×, LOW=0.5×, INVERTED=-0.5×)
+- **Cross-item reverse-failure tracking**: Per-participant `_participant_reverse_tracking` dict. After ≥2 reverse items, failure rate history influences subsequent reversal probability (0.3 weight blend). Scientific basis: Woods (2006) — trait-like within session.
+- **Response pattern validation**: New `_validate_participant_responses()` method with 3 checks:
+  - Longstring detection (consecutive identical > 80% of items)
+  - IRV (Intra-individual Response Variability) vs engagement mismatch
+  - Endpoint utilization vs extremity trait mismatch
+- **New condition trait modifiers** for 5 paradigms: narrative transportation, social comparison, gratitude, moral threat, digital distraction
+- **4 new domain calibration entries**: narrative engagement, social comparison, digital wellbeing, moral self
+
+#### Iteration 5: Documentation Overhaul
+- **Front-facing methods document** (methods_summary.md): Added 3 new domain categories (Narrative & Communication, Digital & Technology, Positive Psychology), behavioral coherence pipeline section, reverse-coded item modeling section, response validation layer section, 10 new scientific references
+- **CHANGELOG**: Full entry for v1.0.4.9 with all 5 iterations
+- **README**: Updated version and features section
+- **All files version-synced to 1.0.4.9**
+
+#### Version Updates
+- All files synchronized to v1.0.4.9: app.py, __init__.py, enhanced_simulation_engine.py, qsf_preview.py, response_library.py, persona_library.py, README.md
+
+---
+
 ## 2026-02-11 — v1.0.4.6
 ### Pipeline Quality Overhaul: Domain-Aware Routing, Persona Expansion, Cross-DV Coherence (3 Iterations)
 

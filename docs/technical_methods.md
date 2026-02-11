@@ -1,6 +1,6 @@
 # Technical Methods Documentation
 
-**Behavioral Experiment Simulation Tool v1.0.1.5**
+**Behavioral Experiment Simulation Tool v1.0.4.9**
 
 **Proprietary Software** | Dr. Eugen Dimant
 

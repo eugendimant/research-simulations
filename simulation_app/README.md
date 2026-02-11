@@ -120,6 +120,24 @@ Response styles based on survey methodology literature:
 - Satisficing and extreme responding patterns
 - Individual trait-based variation
 - Open-ended responses matching numeric sentiment
+- **NEW v1.0.4.9**: Rating–text behavioral coherence — numeric patterns drive text generation tone
+- **NEW v1.0.4.9**: Cross-item reverse-failure tracking (Woods 2006)
+- **NEW v1.0.4.9**: Domain-sensitive social desirability (10 construct categories)
+- **NEW v1.0.4.9**: Response validation layer (longstring, IRV, endpoint utilization checks)
+
+### 23 Research Paradigm Domains (v1.0.4.9)
+The simulation engine includes dedicated effect models for 23 well-established research paradigms:
+- **Behavioral Economics**: Framing, anchoring, endowment, loss aversion, sunk cost, choice overload, hyperbolic discounting
+- **Social**: Bystander effect, stereotype threat, reactance, social comparison, contact hypothesis, minimal group
+- **Persuasion**: Source credibility, narrative transportation, inoculation, elaboration likelihood
+- **Motivation**: Implementation intentions, growth mindset, regulatory focus, goal gradient, moral licensing
+- **New in v1.0.4.9**: Gratitude interventions, moral cleansing/sacred values, digital attention economy
+- Each with published effect sizes and meta-analytic references
+
+### 58+ Behavioral Personas (v1.0.4.9)
+- 7 universal response style personas (Krosnick, Greenleaf, Paulhus)
+- 51+ domain-specific personas across 17 research domains
+- **6 new in v1.0.4.9**: Narrative Thinker, Social Comparer, Grateful Optimist, Moral Absolutist, Digital Native, Financial Deliberator
 
 ### Complete Output Package
 | File | Description |
@@ -200,18 +218,21 @@ For experiments with multiple factors (e.g., 2×3 design):
 
 The PDF improves domain detection and persona selection by providing question wording context.
 
-## Research Domains (175+)
+## Research Domains (225+)
 
-The tool supports 175+ research domains across 24 categories:
+The tool supports 225+ research domains across 27 categories:
 
-- **Behavioral Economics**: Dictator game, ultimatum, trust, public goods, risk, time preferences
-- **Social Psychology**: Intergroup relations, identity, norms, conformity, prosocial behavior
-- **Political Science**: Polarization, partisanship, voting, media effects, policy attitudes
-- **Consumer/Marketing**: Brand attitudes, advertising, pricing, purchase decisions
-- **Organizational Behavior**: Leadership, teamwork, motivation, job satisfaction
-- **Technology/AI**: AI attitudes, automation, human-robot interaction, privacy
-- **Health Psychology**: Risk perception, health behaviors, medical decisions
-- **Education**: Learning, motivation, feedback, assessment
+- **Behavioral Economics**: Dictator game, ultimatum, trust, public goods, risk, time preferences, sunk cost, anchoring
+- **Social Psychology**: Intergroup relations, identity, norms, conformity, prosocial behavior, social comparison
+- **Political Science**: Polarization, partisanship, voting, media effects, policy attitudes, sacred values
+- **Consumer/Marketing**: Brand attitudes, advertising, pricing, purchase decisions, choice architecture
+- **Organizational Behavior**: Leadership, teamwork, motivation, job satisfaction, power dynamics
+- **Technology/AI**: AI attitudes, automation, human-robot interaction, privacy, digital wellbeing
+- **Health Psychology**: Risk perception, health behaviors, medical decisions, gratitude interventions
+- **Education**: Learning, motivation, feedback, assessment, testing effect, spacing
+- **Narrative & Communication**: Narrative transportation, inoculation, elaboration likelihood, source credibility
+- **Moral Psychology**: Moral judgment, sacred values, moral cleansing, moral licensing, ethical identity
+- **Positive Psychology**: Gratitude, savoring, acts of kindness, best possible self, flourishing
 - And many more...
 
 ## Research Foundations
