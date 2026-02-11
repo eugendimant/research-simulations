@@ -53,8 +53,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.0.3.6"
-BUILD_ID = "20260211-v1036-restore-scroll-buttons-design-checklist"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.0.3.7"
+BUILD_ID = "20260211-v1037-fix-checklist-logic-confirm-banners"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -119,7 +119,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.0.3.6"  # v1.0.3.6: Restore scroll buttons, design checklist, stepper visual-only
+APP_VERSION = "1.0.3.7"  # v1.0.3.7: Fix checklist logic, confirmation banners, back buttons
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -5010,27 +5010,23 @@ SECTION_META: List[Dict[str, str]] = [
 def _section_summary(idx: int) -> str:
     """One-line summary for a completed section."""
     if idx == 0:
-        title = st.session_state.get("study_title") or st.session_state.get("_p_study_title", "")
-        if title:
-            return f'"{title[:28]}…"' if len(title) > 28 else f'"{title}"'
-        return ""
+        return "Complete" if (st.session_state.get("study_title") or st.session_state.get("_p_study_title")) else ""
     elif idx == 1:
         if st.session_state.get("conversational_builder_complete"):
-            return "Builder complete"
+            return "Complete"
         if st.session_state.get("qsf_preview"):
-            return "QSF uploaded"
+            return "Complete"
         return ""
     elif idx == 2:
         conds = st.session_state.get("selected_conditions", [])
-        n = len(conds)
         _n_scales = len(st.session_state.get("confirmed_scales", []))
-        if n and _n_scales:
-            return f"Conditions, factors & outcomes"
-        elif n:
-            return f"{n} condition{'s' if n != 1 else ''}"
+        if conds and _n_scales:
+            return "Complete"
+        elif conds:
+            return f"{len(conds)} conditions"
         return ""
     elif idx == 3:
-        return "Data ready" if st.session_state.get("has_generated") else ""
+        return "Complete" if st.session_state.get("has_generated") else ""
     return ""
 
 
@@ -5641,34 +5637,52 @@ details[data-testid="stExpander"][open] {
     font-weight: 700;
 }
 
-/* v1.0.3.6: Design readiness checklist — shows what's needed before proceeding */
+/* v1.0.3.7: Design readiness checklist — prominent, visual progress */
 .design-checklist {
-    padding: 16px 22px;
-    background: #FFFBEB;
-    border: 1px solid #FDE68A;
-    border-left: 4px solid #F59E0B;
-    border-radius: 12px;
-    margin: 4px 0 16px 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 8px 0 16px 0;
     animation: bannerSlideIn 0.3s ease-out;
 }
-.design-checklist-title {
-    font-size: 0.85rem;
-    font-weight: 700;
-    color: #92400E;
-    margin-bottom: 8px;
-    letter-spacing: 0.01em;
-}
 .design-checklist-item {
-    font-size: 0.88rem;
-    padding: 3px 0;
-    color: #78350F;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 16px;
+    border-radius: 20px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    transition: all 0.2s ease;
 }
 .design-checklist-item.done {
+    background: #F0FDF4;
+    border: 1.5px solid #BBF7D0;
     color: #166534;
 }
 .design-checklist-item.pending {
-    color: #92400E;
+    background: #FFF7ED;
+    border: 1.5px solid #FED7AA;
+    color: #9A3412;
+}
+
+/* v1.0.3.7: Confirmation action banners for DV/OE checkboxes */
+.confirm-banner {
+    padding: 10px 16px;
+    border-radius: 8px;
+    font-size: 0.85rem;
     font-weight: 600;
+    margin: 12px 0 4px 0;
+}
+.confirm-banner.pending {
+    background: #FFFBEB;
+    border-left: 4px solid #F59E0B;
+    color: #92400E;
+}
+.confirm-banner.done {
+    background: #F0FDF4;
+    border-left: 4px solid #22C55E;
+    color: #166534;
 }
 
 /* v1.0.3.6: Back to top link styling */
@@ -6612,9 +6626,9 @@ if active_page == 0:
     completion = _get_step_completion()
     step1_done = completion["study_title"] and completion["study_description"]
 
-    # v1.0.3.5: Next button at top, right under stepper (only when step is complete)
+    # v1.0.3.7: Navigation row — Continue at top when step is complete
     if step1_done:
-        if st.button("Continue to Study Input \u2192", key="nav_next_0", type="primary", use_container_width=True):
+        if st.button("Continue to Study Input \u2192", key="nav_next_0", type="primary"):
             _navigate_to(1)
 
     # v1.7.0: Clean form — study details first, team optional below
@@ -6667,15 +6681,7 @@ if active_page == 0:
         _desc_ok = "\u2705" if completion["study_description"] else "\u2B1C"
         st.caption(f"{_title_ok} Study title &nbsp;&nbsp; {_desc_ok} Study description")
 
-    # v1.0.3.6: Back to top — ALWAYS present at bottom of every page
-    st.markdown("---")
-    st.markdown(
-        '<a href="#btt-anchor" '
-        'onclick="var el=document.getElementById(\'btt-anchor\');'
-        'if(el){el.scrollIntoView({behavior:\'smooth\',block:\'start\'});}return false;" '
-        'class="btt-link">\u2191 Back to top</a>',
-        unsafe_allow_html=True,
-    )
+    # v1.0.3.7: Setup page is short — no scroll button needed
 
 
 # =====================================================================
@@ -6692,10 +6698,15 @@ if active_page == 1:
     step1_done = completion["study_title"] and completion["study_description"]
     step2_done = completion["qsf_uploaded"]
 
-    # v1.0.3.5: Next button at top, right under stepper
-    if step2_done:
-        if st.button("Continue to Design \u2192", key="nav_next_1", type="primary", use_container_width=True):
-            _navigate_to(2)
+    # v1.0.3.7: Navigation row — Back + Continue at top
+    _nav1_left, _nav1_right = st.columns([1, 1])
+    with _nav1_left:
+        if st.button("\u2190 Back to Setup", key="nav_back_1"):
+            _navigate_to(0)
+    with _nav1_right:
+        if step2_done:
+            if st.button("Continue to Design \u2192", key="nav_next_1", type="primary"):
+                _navigate_to(2)
 
     if not step1_done:
         st.warning("Complete **Setup** first \u2014 fill in the study title and description on the Setup page.")
@@ -7158,37 +7169,12 @@ if active_page == 2:
         'Configure conditions, DVs, and sample size.</div>',
         unsafe_allow_html=True,
     )
-    # v1.0.3.6: Visual readiness checklist + Next button at top
-    _chk_has_conditions = bool(
-        st.session_state.get("selected_conditions")
-        or st.session_state.get("custom_conditions")
-        or st.session_state.get("conversational_builder_complete")
-    )
-    _chk_design_inferred = bool(st.session_state.get("inferred_design"))
-    _chk_scales_confirmed = bool(st.session_state.get("scales_confirmed", False))
-    _chk_open_ended_ok = bool(st.session_state.get("open_ended_confirmed", True))
-    _p3_all_ready = _chk_has_conditions and _chk_design_inferred and _chk_scales_confirmed and _chk_open_ended_ok
-
-    # Build visual checklist items
-    _chk_items = []
-    _chk_items.append(("\u2705" if _chk_has_conditions else "\u2B1C", "Conditions defined"))
-    _chk_items.append(("\u2705" if _chk_design_inferred else "\u2B1C", "Design configured"))
-    _chk_items.append(("\u2705" if _chk_scales_confirmed else "\u2B1C", "DVs / scales confirmed"))
-    if not st.session_state.get("open_ended_confirmed", True):
-        _chk_items.append(("\u2B1C", "Open-ended questions confirmed"))
-
-    if _p3_all_ready:
-        if st.button("Continue to Generate \u2192", key="nav_next_2", type="primary", use_container_width=True):
-            _navigate_to(3)
-    else:
-        # Show what still needs to be done — styled HTML checklist
-        _checklist_html = '<div class="design-checklist">'
-        _checklist_html += '<div class="design-checklist-title">Complete these to proceed:</div>'
-        for _icon, _label in _chk_items:
-            _done_cls = "done" if _icon == "\u2705" else "pending"
-            _checklist_html += f'<div class="design-checklist-item {_done_cls}">{_icon} {_label}</div>'
-        _checklist_html += '</div>'
-        st.markdown(_checklist_html, unsafe_allow_html=True)
+    # v1.0.3.7: Nav + checklist use st.container() placeholders at top,
+    # filled at bottom of page with CURRENT session_state values.
+    # Fixes stale-data bug: checkboxes below set values AFTER the top renders,
+    # so reading session_state at the top showed PREVIOUS rerun's values.
+    _nav_placeholder = st.container()
+    _checklist_placeholder = st.container()
 
     preview: Optional[QSFPreviewResult] = st.session_state.get("qsf_preview", None)
     enhanced_analysis: Optional[DesignAnalysisResult] = st.session_state.get("enhanced_analysis", None)
@@ -8038,16 +8024,32 @@ if active_page == 2:
         st.session_state["confirmed_scales"] = updated_scales
         scales = updated_scales if updated_scales else scales
 
-        # v1.0.3.0: Streamlined DV confirmation — simple checkbox, no banner
+        # v1.0.3.7: Prominent DV confirmation — styled banner + checkbox
         _n_updated = len(updated_scales)
         _confirm_label = f"DVs verified ({_n_updated})" if _n_updated > 0 else "DVs verified"
-        _dv_confirmed_val = st.session_state.get("scales_confirmed", False)
+        # Read widget key for CURRENT value (avoids stale session_state)
+        _dv_live = bool(st.session_state.get(
+            f"dv_confirm_checkbox_v{dv_version}",
+            st.session_state.get("scales_confirmed", False),
+        ))
+        if not _dv_live:
+            st.markdown(
+                '<div class="confirm-banner pending">'
+                '\u2611\uFE0F Please confirm your DVs / scales to proceed</div>',
+                unsafe_allow_html=True,
+            )
         scales_confirmed = st.checkbox(
             _confirm_label,
-            value=_dv_confirmed_val,
+            value=_dv_live,
             key=f"dv_confirm_checkbox_v{dv_version}",
-            help="Check once you've verified variable names, items, and scale ranges."
+            help="Check once you've verified variable names, items, and scale ranges.",
         )
+        if scales_confirmed:
+            st.markdown(
+                '<div class="confirm-banner done">'
+                '\u2705 DVs / scales confirmed</div>',
+                unsafe_allow_html=True,
+            )
         st.session_state["scales_confirmed"] = scales_confirmed
 
         # ========================================
@@ -8228,14 +8230,29 @@ if active_page == 2:
             _ctx_filled = sum(1 for _oq in _oe_final if _oq.get("question_context", "").strip())
             if _ctx_filled < len(_oe_final):
                 st.caption(f"{_ctx_filled}/{len(_oe_final)} have context \u2014 adding context improves AI responses")
-        # v1.0.3.0: Streamlined OE confirmation — simple checkbox, no banner
+        # v1.0.3.7: Prominent OE confirmation — styled banner + checkbox
         if _oe_final:
-            _oe_confirmed_val = st.session_state.get("open_ended_confirmed", False)
+            _oe_live = bool(st.session_state.get(
+                f"oe_confirm_checkbox_v{_oe_version_outer}",
+                st.session_state.get("open_ended_confirmed", False),
+            ))
+            if not _oe_live:
+                st.markdown(
+                    '<div class="confirm-banner pending">'
+                    '\u2611\uFE0F Please confirm your open-ended questions</div>',
+                    unsafe_allow_html=True,
+                )
             open_ended_confirmed = st.checkbox(
                 f"Open-ended questions verified ({len(_oe_final)})",
-                value=_oe_confirmed_val,
+                value=_oe_live,
                 key=f"oe_confirm_checkbox_v{_oe_version_outer}",
             )
+            if open_ended_confirmed:
+                st.markdown(
+                    '<div class="confirm-banner done">'
+                    '\u2705 Open-ended questions confirmed</div>',
+                    unsafe_allow_html=True,
+                )
             st.session_state["open_ended_confirmed"] = open_ended_confirmed
         else:
             st.session_state["open_ended_confirmed"] = True  # Nothing to confirm
@@ -8526,6 +8543,60 @@ if active_page == 2:
                     )
                     st.session_state["variable_review_rows"] = variable_df.to_dict(orient="records")
 
+    # v1.0.3.7: Fill nav + checklist placeholders with CURRENT values
+    # (all widgets above have now executed and set their session_state values)
+    _builder_active = (
+        st.session_state.get("conversational_builder_complete", False)
+        and not st.session_state.get("qsf_preview")
+    )
+    if _builder_active:
+        # Builder path: readiness based on inferred_design content
+        _b_design = st.session_state.get("inferred_design", {})
+        _b_conds = _b_design.get("conditions", []) if isinstance(_b_design, dict) else []
+        _b_scales = _b_design.get("scales", []) if isinstance(_b_design, dict) else []
+        _p3_ready = len(_b_conds) >= 2 and len(_b_scales) >= 1
+        _chk_items_final: list = [
+            (len(_b_conds) >= 2, f"Conditions ({len(_b_conds)})"),
+            (len(_b_scales) >= 1, f"DVs / scales ({len(_b_scales)})"),
+        ]
+    else:
+        # QSF path: readiness based on checkboxes and design state
+        _chk_has_conds = bool(
+            st.session_state.get("selected_conditions")
+            or st.session_state.get("custom_conditions")
+        )
+        _chk_design_ok = bool(st.session_state.get("inferred_design"))
+        _chk_dvs_ok = bool(st.session_state.get("scales_confirmed", False))
+        _chk_oe_ok = bool(st.session_state.get("open_ended_confirmed", True))
+        _p3_ready = _chk_has_conds and _chk_design_ok and _chk_dvs_ok and _chk_oe_ok
+        _chk_items_final = [
+            (_chk_has_conds, "Conditions defined"),
+            (_chk_design_ok, "Design configured"),
+            (_chk_dvs_ok, "DVs / scales confirmed"),
+        ]
+        if not _chk_oe_ok:
+            _chk_items_final.append((False, "Open-ended confirmed"))
+
+    with _nav_placeholder:
+        _nav2_left, _nav2_right = st.columns([1, 1])
+        with _nav2_left:
+            if st.button("\u2190 Back to Study Input", key="nav_back_2"):
+                _navigate_to(1)
+        with _nav2_right:
+            if _p3_ready:
+                if st.button("Continue to Generate \u2192", key="nav_next_2", type="primary"):
+                    _navigate_to(3)
+
+    with _checklist_placeholder:
+        _cl_html = '<div class="design-checklist">'
+        for _d, _l in _chk_items_final:
+            if _d:
+                _cl_html += f'<div class="design-checklist-item done">\u2705 {_l}</div>'
+            else:
+                _cl_html += f'<div class="design-checklist-item pending">\u26A0\uFE0F {_l}</div>'
+        _cl_html += '</div>'
+        st.markdown(_cl_html, unsafe_allow_html=True)
+
     # v1.0.3.6: Back to top — ALWAYS present at bottom of every page
     st.markdown("---")
     st.markdown(
@@ -8547,6 +8618,9 @@ if active_page == 3:
         'Set difficulty, preview data, and generate your dataset.</div>',
         unsafe_allow_html=True,
     )
+    # v1.0.3.7: Back button at top (no Continue — this is the last step)
+    if st.button("\u2190 Back to Design", key="nav_back_3"):
+        _navigate_to(2)
     inferred = st.session_state.get("inferred_design", None)
     preview: Optional[QSFPreviewResult] = st.session_state.get("qsf_preview", None)
 
