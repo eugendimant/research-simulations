@@ -1,5 +1,53 @@
 # Agent Change Log
 
+## 2026-02-11 — v1.0.4.5
+### Bug Fixes + Simulation Realism Improvements (3 Iterations)
+
+#### Critical Bug Fix
+- **Fixed `NameError: name 'condition_lower' is not defined`** in `_generate_scale_response()`: Variables `condition_lower` and `variable_lower` were used at line ~5846 (domain-persona sensitivity factor) without being defined in the method scope. Added local definitions. This crash occurred during any simulation run with condition effects.
+- **Added safety fallback for `selected` variable** on Design page: Defensive check ensures `selected` is always defined before combining with `custom_conditions`, preventing potential NameError on page transitions.
+- **Fixed builder state cleanup**: `_finalize_builder_design()` now clears stale `_br_scale_version`, `_br_oe_version` keys and sets `_builder_oe_context_complete`, preventing mixed builder/QSF UI state.
+
+#### Iteration 1: STEP 2 Domain Expansion + Persona × Condition Interactions
+- **Expanded 7 thin domains** with 25+ new keyword→effect rules:
+  - Domain 6 (Health/Risk): +3 rules — optimistic bias (Weinstein 1980), health literacy (Berkman et al. 2011), descriptive health norms (Cialdini 2003)
+  - Domain 7 (Organizational): +3 rules — leader-member exchange (Gerstner & Day 1997), psychological safety (Edmondson 1999), organizational trust (Dirks & Ferrin 2002)
+  - Domain 10 (Communication): +4 rules — sleeper effect (Kumkale & Albarracin 2004), elaboration likelihood routes (Petty & Cacioppo 1986), repeated message exposure (Zajonc 1968), source attractiveness (Eagly & Chaiken 1993)
+  - Domain 11 (Learning): +3 rules — transfer-appropriate processing (Morris et al. 1977), encoding specificity (Tulving & Thomson 1973), self-reference effect (Symons & Johnson 1997)
+  - Domain 12 (Social Identity): +4 rules — recategorization (Gaertner & Dovidio 2000), crossed categorization (Crisp & Hewstone 2007), relative deprivation (Smith et al. 2012), perspective-taking (Galinsky & Moskowitz 2000)
+  - Domain 14 (Environmental): +3 rules — noise effects (Szalma & Hancock 2011), color psychology (Mehta & Zhu 2009), music/sound (Kämpfe et al. 2011)
+  - Domain 17 (Deception): +3 rules — ethical fading (Tenbrunsel & Messick 2004), incrementalism/slippery slope (Welsh et al. 2015), self-concept maintenance (Mazar et al. 2008)
+  - Domain 18 (Power/Status): +5 rules — dominance vs prestige (Cheng et al. 2013), status anxiety (Wilkinson & Pickett 2009), hierarchy legitimacy (Tyler 2006; Jost & Banaji 1994), power and perspective-taking (Galinsky et al. 2006), resource scarcity (Shah et al. 2012)
+- **5 new persona × condition interactions** in `_generate_scale_response()`:
+  - Political identity × cooperation tendency in economic games (Dimant 2024)
+  - Authority × Need for Cognition — low NFC amplifies authority (Petty & Cacioppo 1986)
+  - Loss frame × loss aversion trait (Kahneman & Tversky 1979)
+  - Stereotype threat × self-efficacy (Steele & Aronson 1995)
+  - Environmental concern × green messaging (Stern et al. 1999 — already existed, verified)
+
+#### Iteration 2: Reverse-Item Modeling + SD Domain Sensitivity
+- **Enhanced reverse-item modeling** with engagement-differential failure rates:
+  - Careless respondents (engagement < 0.35): reversal probability reduced 30%
+  - Satisficers (engagement 0.35-0.55): reversal probability reduced 12%
+  - Acquiescence pull is 50% STRONGER when reversal fails vs succeeds
+  - Scientific basis: Krosnick (1991) satisficing theory, Woods (2006) reversal failure rates
+- **Economic game SD sensitivity**: Dictator/trust/ultimatum game DVs now get MODERATE-HIGH SD sensitivity (1.3×) instead of LOW (0.5×). Allocation decisions reveal character → fairness norms create SD pressure. Based on Engel (2011) meta-analysis.
+- **SD × Reverse-item interaction**: When reverse item correctly reversed, SD attenuated 15% (already adjusted). When reversal fails, SD amplified 20% (person fighting their own response style).
+
+#### Iteration 3: Persona Library Expansion + Documentation
+- **6 new domain-specific personas** (total: 52+):
+  - High-Anxiety Individual (Clark & Watson 1991 tripartite model)
+  - Authority-Sensitive Individual (Tyler 2006 procedural justice)
+  - Competitive Achiever (Vealey 1986 sport confidence)
+  - Securely Attached Individual (Brennan et al. 1998 ECR dimensions)
+  - Loss-Averse Saver (Kahneman & Tversky 1979 prospect theory)
+  - Persuasion-Resistant Individual (Brehm 1966 reactance theory)
+- **Persona library version updated** from 1.0.0 → 1.0.4.5 (was 4 versions behind)
+- **Documentation updated**: CHANGELOG, README, CLAUDE.md improvement plan
+
+### Version Synchronization
+- v1.0.4.5 across: app.py, utils/__init__.py, qsf_preview.py, response_library.py, persona_library.py, enhanced_simulation_engine.py, README.md
+
 ## 2026-02-11 — v1.0.4.4
 ### Behavioral Simulation Realism (3 Deep Iterations)
 

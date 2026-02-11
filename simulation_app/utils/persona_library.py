@@ -159,7 +159,7 @@ Based on recent LLM simulation research:
 """
 
 # Version identifier to help track deployed code
-__version__ = "1.0.0"  # OFFICIAL: Enhanced with cultural response styles and domain-specific personas
+__version__ = "1.0.4.5"  # v1.0.4.5: 6 new domain personas (clinical, legal, sports, attachment, loss-averse, persuasion-resistant)
 
 import hashlib
 import random
@@ -1716,6 +1716,197 @@ class PersonaLibrary:
                 'sentiment_alignment': 'evidence_based'
             },
             applicable_domains=['communication', 'media', 'persuasion', 'misinformation', 'advertising']
+        )
+
+        # ================================================================
+        # v1.0.4.5: NEW DOMAIN-SPECIFIC PERSONAS
+        # 6 additional personas for underserved research domains
+        # ================================================================
+
+        # ================================================================
+        # CLINICAL/ANXIETY PERSONA
+        # Scientific basis: Clark & Watson (1991) Tripartite Model,
+        # Barlow (2002) anxiety as hypervigilance + avoidance.
+        # ================================================================
+        personas['clinical_anxious'] = Persona(
+            name="High-Anxiety Individual",
+            category="clinical",
+            description="Person with elevated trait anxiety. Hypervigilant to threats, "
+                       "avoidant of uncertainty, low confidence in decisions. "
+                       "Clark & Watson (1991): Negative affect + physiological hyperarousal.",
+            weight=0.07,
+            traits={
+                'anxiety_level': PersonaTrait('anxiety_level', 0.82, 0.08, 'High trait anxiety'),
+                'risk_tolerance': PersonaTrait('risk_tolerance', 0.22, 0.10, 'Very risk-averse'),
+                'certainty_seeking': PersonaTrait('certainty_seeking', 0.85, 0.08, 'High need for certainty'),
+                'social_desirability': PersonaTrait('social_desirability', 0.60, 0.12, 'Moderate — may underreport'),
+                'attention_level': PersonaTrait('attention_level', 0.72, 0.10, 'Hypervigilant'),
+                'response_tendency': PersonaTrait('response_tendency', 0.38, 0.12, 'Negative-leaning'),
+                'extremity': PersonaTrait('extremity', 0.35, 0.10, 'Moderate — strong on threat items'),
+                'engagement': PersonaTrait('engagement', 0.65, 0.10, 'Moderate — anxious engagement'),
+            },
+            text_style={
+                'verbosity': 'moderate',
+                'detail_level': 'cautious',
+                'coherence': 'moderate',
+                'sentiment_alignment': 'negative_leaning'
+            },
+            applicable_domains=['clinical', 'anxiety', 'health', 'mental_health', 'stress', 'coping']
+        )
+
+        # ================================================================
+        # LEGAL/FORENSIC PERSONA
+        # Scientific basis: Tyler (2006) procedural justice theory,
+        # Lind & Tyler (1988) authority legitimacy.
+        # ================================================================
+        personas['legal_authority_sensitive'] = Persona(
+            name="Authority-Sensitive Individual",
+            category="legal",
+            description="Person highly responsive to authority and procedure. "
+                       "Justice-focused, literal interpreter, rule-following. "
+                       "Tyler (2006): Procedural fairness drives legitimacy perceptions.",
+            weight=0.07,
+            traits={
+                'authority_sensitivity': PersonaTrait('authority_sensitivity', 0.82, 0.08, 'High deference'),
+                'conformity': PersonaTrait('conformity', 0.72, 0.10, 'Rule-following'),
+                'need_for_cognition': PersonaTrait('need_for_cognition', 0.55, 0.12, 'Moderate — follows rules'),
+                'response_consistency': PersonaTrait('response_consistency', 0.80, 0.08, 'Very consistent'),
+                'social_desirability': PersonaTrait('social_desirability', 0.58, 0.10, 'Moderate'),
+                'response_tendency': PersonaTrait('response_tendency', 0.52, 0.10, 'Neutral — by the book'),
+                'extremity': PersonaTrait('extremity', 0.18, 0.08, 'Low — measured responses'),
+                'engagement': PersonaTrait('engagement', 0.70, 0.10, 'Attentive — takes seriously'),
+            },
+            text_style={
+                'verbosity': 'precise',
+                'detail_level': 'literal',
+                'coherence': 'very_high',
+                'sentiment_alignment': 'procedural'
+            },
+            applicable_domains=['legal', 'forensic', 'justice', 'authority', 'compliance', 'procedural']
+        )
+
+        # ================================================================
+        # SPORTS/COMPETITION PERSONA
+        # Scientific basis: Vealey (1986) sport confidence,
+        # Deci & Ryan (2000) intrinsic motivation in competition.
+        # ================================================================
+        personas['competitive_achiever'] = Persona(
+            name="Competitive Achiever",
+            category="sports",
+            description="Person with high achievement motivation and competitive drive. "
+                       "Risk-taking in performance contexts, high confidence. "
+                       "Vealey (1986): Sport confidence moderates competitive behavior.",
+            weight=0.06,
+            traits={
+                'achievement_motivation': PersonaTrait('achievement_motivation', 0.85, 0.08, 'High drive'),
+                'risk_tolerance': PersonaTrait('risk_tolerance', 0.72, 0.10, 'Competitive risk-taking'),
+                'cooperation_tendency': PersonaTrait('cooperation_tendency', 0.40, 0.12, 'Lower — competitive'),
+                'engagement': PersonaTrait('engagement', 0.85, 0.08, 'Very high engagement'),
+                'attention_level': PersonaTrait('attention_level', 0.78, 0.10, 'Focused'),
+                'response_tendency': PersonaTrait('response_tendency', 0.65, 0.10, 'Confident-positive'),
+                'extremity': PersonaTrait('extremity', 0.40, 0.10, 'Higher — strong convictions'),
+                'response_consistency': PersonaTrait('response_consistency', 0.75, 0.08, 'Goal-consistent'),
+            },
+            text_style={
+                'verbosity': 'direct',
+                'detail_level': 'performance_focused',
+                'coherence': 'high',
+                'sentiment_alignment': 'achievement_oriented'
+            },
+            applicable_domains=['sports', 'competition', 'achievement', 'performance', 'motivation', 'exercise']
+        )
+
+        # ================================================================
+        # RELATIONSHIPS/ATTACHMENT PERSONA — Secure Attachment
+        # Scientific basis: Brennan et al. (1998) ECR dimensions,
+        # Mikulincer & Shaver (2007) attachment in adulthood.
+        # ================================================================
+        personas['secure_attached'] = Persona(
+            name="Securely Attached Individual",
+            category="relationships",
+            description="Person with secure attachment style. Comfortable with intimacy "
+                       "and autonomy, trusting of others, effective emotion regulation. "
+                       "Brennan et al. (1998): Low anxiety, low avoidance on ECR.",
+            weight=0.08,
+            traits={
+                'attachment_anxiety': PersonaTrait('attachment_anxiety', 0.22, 0.10, 'Low'),
+                'attachment_avoidance': PersonaTrait('attachment_avoidance', 0.20, 0.10, 'Low'),
+                'trust_tendency': PersonaTrait('trust_tendency', 0.75, 0.10, 'High — trusting'),
+                'cooperation_tendency': PersonaTrait('cooperation_tendency', 0.72, 0.10, 'Cooperative'),
+                'empathy': PersonaTrait('empathy', 0.70, 0.10, 'High empathy'),
+                'response_tendency': PersonaTrait('response_tendency', 0.62, 0.10, 'Positive-leaning'),
+                'extremity': PersonaTrait('extremity', 0.20, 0.08, 'Low — balanced'),
+                'social_desirability': PersonaTrait('social_desirability', 0.50, 0.10, 'Moderate — honest'),
+            },
+            text_style={
+                'verbosity': 'moderate',
+                'detail_level': 'reflective',
+                'coherence': 'high',
+                'sentiment_alignment': 'positive_balanced'
+            },
+            applicable_domains=['relationships', 'attachment', 'intimacy', 'trust', 'social', 'interpersonal']
+        )
+
+        # ================================================================
+        # FINANCIAL DECISION PERSONA — Loss-Averse Saver
+        # Scientific basis: Kahneman & Tversky (1979) Prospect Theory,
+        # Thaler (1999) mental accounting.
+        # ================================================================
+        personas['loss_averse_saver'] = Persona(
+            name="Loss-Averse Saver",
+            category="financial",
+            description="Person with strong loss aversion and status quo bias. "
+                       "Prefers safe options, avoids risk, values certainty. "
+                       "Kahneman & Tversky (1979): Losses loom ~2.25× larger than gains.",
+            weight=0.07,
+            traits={
+                'risk_tolerance': PersonaTrait('risk_tolerance', 0.18, 0.10, 'Very risk-averse'),
+                'loss_aversion': PersonaTrait('loss_aversion', 0.85, 0.08, 'Strong loss aversion'),
+                'certainty_seeking': PersonaTrait('certainty_seeking', 0.82, 0.08, 'High'),
+                'status_quo_bias': PersonaTrait('status_quo_bias', 0.78, 0.10, 'Strong status quo preference'),
+                'information_seeking': PersonaTrait('information_seeking', 0.65, 0.10, 'Moderate — careful research'),
+                'response_tendency': PersonaTrait('response_tendency', 0.45, 0.10, 'Conservative-cautious'),
+                'extremity': PersonaTrait('extremity', 0.15, 0.08, 'Low — cautious responses'),
+                'engagement': PersonaTrait('engagement', 0.70, 0.10, 'Moderate — careful decisions'),
+            },
+            text_style={
+                'verbosity': 'cautious',
+                'detail_level': 'risk_aware',
+                'coherence': 'high',
+                'sentiment_alignment': 'conservative'
+            },
+            applicable_domains=['financial', 'investment', 'risk', 'behavioral_economics', 'insurance', 'saving']
+        )
+
+        # ================================================================
+        # COMMUNICATION/MEDIA PERSONA — Persuasion-Resistant
+        # Scientific basis: Sagarin et al. (2002) resistance to persuasion,
+        # Brehm (1966) psychological reactance theory.
+        # ================================================================
+        personas['persuasion_resistant'] = Persona(
+            name="Persuasion-Resistant Individual",
+            category="communication",
+            description="Person highly resistant to persuasion attempts. "
+                       "Strong reactance to pressure, counterargues automatically, "
+                       "maintains initial positions. Brehm (1966): Reactance theory.",
+            weight=0.06,
+            traits={
+                'reactance': PersonaTrait('reactance', 0.82, 0.08, 'High reactance'),
+                'persuasion_knowledge': PersonaTrait('persuasion_knowledge', 0.78, 0.10, 'High'),
+                'need_for_cognition': PersonaTrait('need_for_cognition', 0.70, 0.10, 'Moderate-high'),
+                'conformity': PersonaTrait('conformity', 0.25, 0.10, 'Low — independent'),
+                'source_skepticism': PersonaTrait('source_skepticism', 0.80, 0.08, 'Very skeptical'),
+                'response_tendency': PersonaTrait('response_tendency', 0.45, 0.10, 'Resistant-negative'),
+                'extremity': PersonaTrait('extremity', 0.35, 0.10, 'Moderate — firm positions'),
+                'response_consistency': PersonaTrait('response_consistency', 0.82, 0.08, 'Very consistent'),
+            },
+            text_style={
+                'verbosity': 'assertive',
+                'detail_level': 'counterarguing',
+                'coherence': 'high',
+                'sentiment_alignment': 'resistant'
+            },
+            applicable_domains=['communication', 'persuasion', 'advertising', 'propaganda', 'misinformation', 'media']
         )
 
         return personas

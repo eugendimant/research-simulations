@@ -53,8 +53,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.0.4.4"
-BUILD_ID = "20260211-v10440-reverse-items-personas-sd-sensitivity"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.0.4.5"
+BUILD_ID = "20260211-v10450-bugfix-domain-expansion-personas"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -119,7 +119,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.0.4.4"  # v1.0.4.4: Reverse-item modeling, 8 new personas, domain-sensitive SD
+APP_VERSION = "1.0.4.5"  # v1.0.4.5: Bugfix, domain expansion, 6 new personas, SD improvements
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -3650,6 +3650,11 @@ def _finalize_builder_design(
     st.session_state["scales_confirmed"] = True
     st.session_state["confirmed_open_ended"] = inferred.get("open_ended_questions", [])
     st.session_state["open_ended_confirmed"] = True
+
+    # v1.0.4.5: Clean up stale QSF design page state to prevent mixed UI
+    st.session_state["_builder_oe_context_complete"] = True
+    st.session_state.pop("_br_scale_version", None)
+    st.session_state.pop("_br_oe_version", None)
 
     # Allocation
     st.session_state["condition_allocation"] = inferred.get("condition_allocation", {})
@@ -7567,6 +7572,9 @@ if active_page == 2:
                             st.rerun()
 
         # Combine selected and custom conditions
+        # Safety: ensure `selected` is always defined even if neither branch above ran
+        if 'selected' not in dir():
+            selected = st.session_state.get("selected_conditions", [])
         custom_conditions = st.session_state.get("custom_conditions", [])
         all_conditions = list(dict.fromkeys(selected + custom_conditions))
 
