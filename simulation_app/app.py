@@ -53,8 +53,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.0.4.6"
-BUILD_ID = "20260211-v10460-pipeline-quality-domain-routing"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.0.4.7"
+BUILD_ID = "20260211-v10470-topic-extract-cond-parse-admin"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -119,7 +119,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.0.4.6"  # v1.0.4.6: Pipeline quality overhaul — domain-aware routing, persona expansion, cross-DV coherence
+APP_VERSION = "1.0.4.7"  # v1.0.4.7: Topic extraction fix, condition parsing, edit state, admin dashboard
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -1273,20 +1273,58 @@ def _get_sample_text_response(
     subject = ""
     topic_words: List[str] = []
 
+    # v1.0.4.7: Unified stop word list — includes researcher-instruction vocabulary
+    # to prevent "primed thinking Trump telling" instead of just "Trump".
+    _stop = {
+        # Articles & determiners
+        'the', 'a', 'an', 'this', 'that', 'these', 'those', 'its', 'it',
+        # Pronouns
+        'they', 'them', 'their', 'we', 'our', 'you', 'your', 'he', 'she', 'his', 'her',
+        # Prepositions
+        'to', 'of', 'in', 'for', 'on', 'with', 'at', 'by', 'from', 'up', 'into', 'about',
+        # Conjunctions
+        'and', 'or', 'but', 'not', 'no', 'so', 'nor',
+        # Auxiliary/modal verbs
+        'is', 'are', 'was', 'were', 'be', 'been', 'being',
+        'have', 'has', 'had', 'do', 'does', 'did',
+        'will', 'would', 'could', 'should', 'may', 'might', 'must', 'shall', 'can', 'need',
+        # Question words
+        'how', 'what', 'who', 'why', 'when', 'where', 'which',
+        # Common non-topical verbs
+        'want', 'wants', 'understand', 'think', 'feel', 'tell', 'share', 'describe',
+        'explain', 'ask', 'asked', 'give', 'gave', 'get', 'gets', 'make', 'makes',
+        'say', 'said', 'know', 'knew', 'see', 'saw', 'come', 'came', 'take', 'took',
+        # ── Researcher instruction vocabulary (v1.0.4.7) ──
+        'participants', 'respondents', 'subjects', 'people', 'person', 'individuals',
+        'primed', 'priming', 'prime', 'exposed', 'exposure', 'exposing',
+        'presented', 'presenting', 'presentation', 'shown', 'showing', 'show',
+        'told', 'telling', 'instructed', 'instructions', 'instruction',
+        'assigned', 'randomly', 'random', 'randomized', 'allocation',
+        'thinking', 'reading', 'viewing', 'watching', 'completing', 'answering',
+        'reporting', 'sharing', 'responding',
+        'before', 'after', 'during', 'following', 'prior',
+        'then', 'next', 'first', 'second', 'third',
+        'stories', 'story', 'experience', 'experiences', 'experienced',
+        'believe', 'beliefs', 'believed', 'favorite', 'favourite',
+        'whether', 'toward', 'towards', 'regarding', 'concerning',
+        # Survey/study metadata
+        'question', 'questions', 'context', 'study', 'survey', 'experiment',
+        'condition', 'conditions', 'topic', 'measure', 'measured', 'measuring',
+        'response', 'responses', 'answer', 'answers', 'item', 'items',
+        'scale', 'rating', 'rate', 'rated', 'open', 'ended', 'text', 'variable',
+        # Common adjectives/adverbs (non-topical)
+        'much', 'more', 'most', 'very', 'really', 'just', 'also', 'please',
+        'better', 'deeply', 'held', 'quite', 'thoughts', 'feelings',
+    }
+
     # Priority 1: Use question_context (researcher-provided, most specific)
     if question_context and question_context.strip():
         subject = question_context.strip()
-        # Extract key noun phrases / topic words
-        _stop = {'the', 'a', 'an', 'is', 'are', 'was', 'were', 'be', 'been', 'being',
-                 'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could',
-                 'should', 'may', 'might', 'must', 'shall', 'can', 'need', 'this',
-                 'that', 'these', 'those', 'it', 'its', 'they', 'them', 'their',
-                 'we', 'our', 'you', 'your', 'to', 'of', 'in', 'for', 'on', 'with',
-                 'at', 'by', 'from', 'up', 'about', 'into', 'how', 'much', 'wants',
-                 'want', 'understand', 'better', 'question', 'participants', 'and',
-                 'or', 'but', 'not', 'no', 'so', 'what', 'who', 'why', 'when', 'where',
-                 'deeply', 'held', 'more', 'also', 'very', 'just', 'really'}
-        _words = _re.findall(r'\b[a-zA-Z]{3,}\b', question_context.lower())
+        # Strip researcher framing before extracting topic words
+        _ctx_clean = _re.sub(
+            r'^(?:participants?\s+(?:are|were|will\s+be)\s+)',
+            '', subject, flags=_re.IGNORECASE).strip()
+        _words = _re.findall(r'\b[a-zA-Z]{3,}\b', _ctx_clean.lower())
         topic_words = [w for w in _words if w not in _stop][:8]
 
     # Priority 2: Use question_text if context is missing
@@ -1297,9 +1335,6 @@ def _get_sample_text_response(
             subject = _re.sub(r'[_\-]+', ' ', _qt).strip()
         else:
             subject = _qt
-        _stop = {'the', 'a', 'an', 'is', 'are', 'was', 'were', 'please', 'describe',
-                 'explain', 'tell', 'share', 'your', 'you', 'how', 'what', 'why',
-                 'about', 'thoughts', 'feelings', 'think', 'feel', 'this', 'that'}
         _words = _re.findall(r'\b[a-zA-Z]{3,}\b', subject.lower())
         topic_words = [w for w in _words if w not in _stop][:6]
 
@@ -3644,6 +3679,14 @@ def _finalize_builder_design(
     st.session_state["builder_parsed_design"] = parsed_design
     st.session_state["conversational_builder_complete"] = True
 
+    # v1.0.4.7: Save builder text to shadow keys for edit-state persistence.
+    # Streamlit removes widget keys when their widgets aren't rendered,
+    # so by the time the user clicks "Edit" on the Design page, the widget
+    # keys may have been cleaned up. Shadow keys survive across pages.
+    st.session_state["_saved_conditions_text"] = st.session_state.get("builder_conditions_text", "")
+    st.session_state["_saved_scales_text"] = st.session_state.get("builder_scales_text", "")
+    st.session_state["_saved_oe_text"] = st.session_state.get("builder_oe_text", "")
+
     # Condition/scale/OE state for Design & Generate tabs
     st.session_state["selected_conditions"] = [c.name for c in parsed_conditions]
     st.session_state["confirmed_scales"] = inferred.get("scales", [])
@@ -3755,6 +3798,14 @@ def _render_conversational_builder() -> None:
     _pending_scales = st.session_state.pop("_pending_autofill_scales", None)
     if _pending_scales:
         st.session_state["builder_scales_text"] = _pending_scales
+
+    # v1.0.4.7: Restore builder text from shadow keys if widget keys were
+    # cleaned up by Streamlit (happens when navigating away from this page).
+    for _wk, _sk in [("builder_conditions_text", "_saved_conditions_text"),
+                      ("builder_scales_text", "_saved_scales_text"),
+                      ("builder_oe_text", "_saved_oe_text")]:
+        if _wk not in st.session_state and _sk in st.session_state:
+            st.session_state[_wk] = st.session_state[_sk]
 
     # Check if builder is already complete
     if st.session_state.get("conversational_builder_complete"):
@@ -6086,6 +6137,226 @@ div[data-testid="stAlert"] {
 </style>"""
 
 
+# =====================================================================
+# v1.0.4.7: ADMIN DASHBOARD — Hidden, password-protected diagnostics
+# Access: Add ?admin=1 to the URL. Password required.
+# Shows: LLM stats, simulation history, system diagnostics, session state.
+# =====================================================================
+_ADMIN_PASSWORD_HASH = "5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8"  # SHA-256 of "password"
+
+
+def _render_admin_dashboard() -> None:
+    """Render the hidden admin dashboard with full diagnostic info."""
+    import hashlib
+    from datetime import datetime
+
+    st.markdown(
+        '<h1 style="text-align:center;">Admin Dashboard</h1>'
+        '<p style="text-align:center;color:#6B7280;font-size:0.9rem;">'
+        'Behavioral Data Simulation Tool — Internal Diagnostics</p>',
+        unsafe_allow_html=True,
+    )
+
+    # ── Password Gate ─────────────────────────────────────────────────
+    if not st.session_state.get("_admin_authenticated"):
+        st.markdown("---")
+        _pw_col1, _pw_col2, _pw_col3 = st.columns([1, 2, 1])
+        with _pw_col2:
+            st.markdown("### Authentication Required")
+            _pw = st.text_input("Admin Password", type="password", key="_admin_pw_input")
+            if st.button("Authenticate", type="primary", use_container_width=True, key="_admin_auth_btn"):
+                _hash = hashlib.sha256(_pw.encode()).hexdigest()
+                if _hash == _ADMIN_PASSWORD_HASH:
+                    st.session_state["_admin_authenticated"] = True
+                    st.rerun()
+                else:
+                    st.error("Invalid password.")
+        return
+
+    # ── Top metrics bar ───────────────────────────────────────────────
+    st.markdown("---")
+    _m1, _m2, _m3, _m4 = st.columns(4)
+    _sim_history = st.session_state.get("_admin_sim_history", [])
+    _current_llm_stats = st.session_state.get("_last_llm_stats", {})
+    _pool = _current_llm_stats.get("pool_size", 0)
+    _calls = _current_llm_stats.get("llm_calls", 0)
+    _fallbacks = _current_llm_stats.get("fallback_uses", 0)
+    _provider = _current_llm_stats.get("active_provider", "none")
+
+    with _m1:
+        st.metric("Total Simulations", len(_sim_history))
+    with _m2:
+        st.metric("LLM API Calls", _calls)
+    with _m3:
+        st.metric("LLM Pool Size", _pool)
+    with _m4:
+        _fb_pct = f"{(_fallbacks / max(1, _pool + _fallbacks)) * 100:.0f}%" if (_pool + _fallbacks) > 0 else "N/A"
+        st.metric("Template Fallback", _fb_pct)
+
+    # ── Tabs ──────────────────────────────────────────────────────────
+    _tab_llm, _tab_history, _tab_session, _tab_system = st.tabs([
+        "LLM Pipeline", "Simulation History", "Session State", "System Info"
+    ])
+
+    # ── TAB 1: LLM Pipeline ──────────────────────────────────────────
+    with _tab_llm:
+        st.markdown("### LLM Provider Chain")
+        if _current_llm_stats:
+            st.markdown(f"**Active Provider:** `{_provider}`")
+            st.markdown(f"**Total API Calls:** {_calls}")
+            st.markdown(f"**Response Pool Size:** {_pool}")
+            st.markdown(f"**Template Fallbacks:** {_fallbacks}")
+
+            # Provider breakdown
+            _providers = _current_llm_stats.get("providers", {})
+            if _providers:
+                st.markdown("#### Provider Breakdown")
+                _prov_data = []
+                for _pname, _pinfo in _providers.items():
+                    _prov_data.append({
+                        "Provider": _pname,
+                        "Calls": _pinfo.get("calls", 0),
+                        "Available": "Yes" if _pinfo.get("available", False) else "No",
+                    })
+                if _prov_data:
+                    st.dataframe(_prov_data, use_container_width=True, hide_index=True)
+
+            # LLM generation quality
+            if _pool > 0:
+                _total_gen = _pool + _fallbacks
+                _llm_pct = (_pool / _total_gen) * 100
+                st.markdown("#### Generation Quality")
+                st.progress(_llm_pct / 100)
+                st.caption(f"{_llm_pct:.1f}% AI-generated, {100 - _llm_pct:.1f}% template fallback")
+        else:
+            st.info("No LLM statistics available yet. Run a simulation first.")
+
+        # Engine initialization log
+        st.markdown("#### Engine Log")
+        _engine_log = st.session_state.get("_admin_engine_log", [])
+        if _engine_log:
+            for _entry in _engine_log[-20:]:
+                st.text(_entry)
+        else:
+            st.caption("No engine log entries. Run a simulation to populate.")
+
+    # ── TAB 2: Simulation History ─────────────────────────────────────
+    with _tab_history:
+        st.markdown("### Simulation Run History")
+        if _sim_history:
+            for _idx, _run in enumerate(reversed(_sim_history), 1):
+                with st.expander(
+                    f"Run #{len(_sim_history) - _idx + 1} — "
+                    f"{_run.get('title', 'Untitled')} "
+                    f"({_run.get('timestamp', 'unknown')})",
+                    expanded=(_idx == 1),
+                ):
+                    _rc1, _rc2, _rc3 = st.columns(3)
+                    with _rc1:
+                        st.metric("Sample Size", _run.get("sample_size", "?"))
+                    with _rc2:
+                        st.metric("Conditions", _run.get("n_conditions", "?"))
+                    with _rc3:
+                        st.metric("Scales", _run.get("n_scales", "?"))
+
+                    _run_llm = _run.get("llm_stats", {})
+                    if _run_llm:
+                        st.markdown("**LLM Stats:**")
+                        st.json(_run_llm)
+
+                    _run_conds = _run.get("conditions", [])
+                    if _run_conds:
+                        st.markdown(f"**Conditions:** {', '.join(_run_conds)}")
+
+                    _run_domain = _run.get("detected_domains", [])
+                    if _run_domain:
+                        st.markdown(f"**Detected Domains:** {', '.join(_run_domain)}")
+
+                    _run_personas = _run.get("personas_used", [])
+                    if _run_personas:
+                        st.markdown(f"**Personas Used:** {', '.join(_run_personas[:10])}")
+                        if len(_run_personas) > 10:
+                            st.caption(f"... and {len(_run_personas) - 10} more")
+        else:
+            st.info("No simulations have been run in this session yet.")
+            st.caption("Simulation history is tracked per browser session. Run a simulation to see entries here.")
+
+    # ── TAB 3: Session State Explorer ─────────────────────────────────
+    with _tab_session:
+        st.markdown("### Session State Explorer")
+        _filter = st.text_input("Filter keys (contains):", key="_admin_state_filter")
+        _all_keys = sorted(st.session_state.keys())
+        if _filter:
+            _all_keys = [k for k in _all_keys if _filter.lower() in k.lower()]
+
+        st.caption(f"Showing {len(_all_keys)} keys")
+        _state_data = []
+        for _k in _all_keys:
+            _v = st.session_state.get(_k)
+            _type = type(_v).__name__
+            _val_str = str(_v)
+            if len(_val_str) > 200:
+                _val_str = _val_str[:200] + "..."
+            _state_data.append({"Key": _k, "Type": _type, "Value": _val_str})
+        if _state_data:
+            st.dataframe(_state_data, use_container_width=True, hide_index=True, height=400)
+
+    # ── TAB 4: System Info ────────────────────────────────────────────
+    with _tab_system:
+        st.markdown("### System Information")
+        _sys_col1, _sys_col2 = st.columns(2)
+        with _sys_col1:
+            st.markdown(f"**App Version:** `{APP_VERSION}`")
+            st.markdown(f"**Required Utils Version:** `{REQUIRED_UTILS_VERSION}`")
+            st.markdown(f"**Build ID:** `{BUILD_ID}`")
+            try:
+                _actual_utils_ver = utils.__version__ if hasattr(utils, '__version__') else "unknown"
+                st.markdown(f"**Actual Utils Version:** `{_actual_utils_ver}`")
+                _match = _actual_utils_ver == REQUIRED_UTILS_VERSION
+                if _match:
+                    st.success("Utils version matches")
+                else:
+                    st.warning(f"Utils version MISMATCH: expected {REQUIRED_UTILS_VERSION}")
+            except Exception:
+                st.markdown("**Actual Utils Version:** `unknown`")
+        with _sys_col2:
+            import platform
+            st.markdown(f"**Python:** `{platform.python_version()}`")
+            st.markdown(f"**Platform:** `{platform.platform()}`")
+            try:
+                import streamlit as _st_ver
+                st.markdown(f"**Streamlit:** `{_st_ver.__version__}`")
+            except Exception:
+                pass
+            st.markdown(f"**Timestamp:** `{datetime.now().isoformat()}`")
+
+        # LLM provider chain info
+        st.markdown("### LLM Provider Chain Configuration")
+        try:
+            from simulation_app.utils.llm_response_generator import LLMResponseGenerator
+            _temp_gen = LLMResponseGenerator(seed=42)
+            _prov_info = []
+            for _p in _temp_gen._providers:
+                _prov_info.append({
+                    "Provider": _p.name,
+                    "Model": _p.model,
+                    "Available": "Yes" if _p.available else "No",
+                    "Calls": _p.call_count,
+                })
+            if _prov_info:
+                st.dataframe(_prov_info, use_container_width=True, hide_index=True)
+            else:
+                st.caption("No providers configured")
+        except Exception as _pe:
+            st.caption(f"Could not load provider info: {_pe}")
+
+    # ── Logout ────────────────────────────────────────────────────────
+    st.markdown("---")
+    if st.button("Logout", key="_admin_logout_btn"):
+        st.session_state["_admin_authenticated"] = False
+        st.rerun()
+
+
 def _render_flow_nav(active: int, done: List[bool]) -> None:
     """Render clickable stepper progress bar for direct step navigation.
 
@@ -6370,6 +6641,19 @@ if _pending_nav is not None:
 
 if "active_page" not in st.session_state:
     st.session_state["active_page"] = -1  # Landing page
+
+# ── v1.0.4.7: Admin dashboard — hidden page via ?admin=1 query param ──
+_admin_mode = False
+try:
+    _qp = st.query_params
+    _admin_mode = _qp.get("admin", "") == "1"
+except Exception:
+    pass
+
+if _admin_mode:
+    _render_admin_dashboard()
+    st.stop()
+
 # Guard: clamp active_page to valid range (-1 = landing, 0-3 = wizard)
 active_page = max(-1, min(int(st.session_state.get("active_page", -1)), 3))
 st.session_state["active_page"] = active_page
@@ -9838,6 +10122,26 @@ if active_page == 3:
             # v1.4.9: Inject LLM stats into metadata for the instructor report
             if hasattr(engine, 'llm_generator') and engine.llm_generator is not None:
                 metadata['llm_stats'] = engine.llm_generator.stats
+
+            # v1.0.4.7: Track simulation run for admin dashboard
+            _llm_run_stats = metadata.get('llm_stats', metadata.get('llm_response_stats', {}))
+            st.session_state["_last_llm_stats"] = _llm_run_stats
+            _admin_history = st.session_state.get("_admin_sim_history", [])
+            _admin_history.append({
+                "title": st.session_state.get("study_title", "Untitled"),
+                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "sample_size": metadata.get("n_participants", 0),
+                "n_conditions": len(metadata.get("conditions_used", [])),
+                "n_scales": len(metadata.get("scales_used", metadata.get("confirmed_scales", []))),
+                "conditions": metadata.get("conditions_used", []),
+                "detected_domains": list(metadata.get("detected_domains", [])),
+                "personas_used": metadata.get("personas_used", []),
+                "llm_stats": _llm_run_stats,
+            })
+            st.session_state["_admin_sim_history"] = _admin_history
+            # Store engine validation log for admin
+            if hasattr(engine, 'validation_log'):
+                st.session_state["_admin_engine_log"] = engine.validation_log[-50:]
 
             # v1.2.4: Run simulation quality validation
             validation_results = _validate_simulation_output(df, metadata, clean_scales)

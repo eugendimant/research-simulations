@@ -507,8 +507,51 @@ class SurveyDescriptionParser:
                 ))
             return conditions, warnings
 
+        # Pattern 4.5: "N control/treatment" descriptor format
+        # Handles:
+        #   "Conditions:\n Control: no visible identity\n 2 treatments: rep visible, dem visible"
+        #   "1 control (no identity) + 2 treatments (Rep visible, Dem visible)"
+        _ctl_treat_text = text_clean.replace(' + ', '\n').replace(' +\n', '\n')
+        _ct_lines = [l.strip() for l in _ctl_treat_text.split('\n') if l.strip()]
+        # Filter bare header lines ("Conditions:", "Groups:", "Experimental conditions:")
+        _ct_lines = [l for l in _ct_lines if not re.match(
+            r'^(?:conditions?|groups?|experimental\s+(?:conditions?|design|groups?))\s*:?\s*$',
+            l, re.IGNORECASE)]
+        _ct_conditions: List[ParsedCondition] = []
+        _ct_pattern = re.compile(
+            r'^(?:(\d+)\s+)?'          # Optional count
+            r'(control|treatment|condition)s?\s*'  # Type label
+            r'(?::\s*|\(\s*)'          # Separator (: or open paren)
+            r'(.+?)[\)]*$',            # Description (strip trailing paren)
+            re.IGNORECASE)
+        for _ct_line in _ct_lines:
+            _ct_m = _ct_pattern.match(_ct_line)
+            if _ct_m:
+                _ct_count = int(_ct_m.group(1)) if _ct_m.group(1) else 1
+                _ct_type = _ct_m.group(2).lower()
+                _ct_desc = _ct_m.group(3).strip().rstrip(')')
+                if _ct_count > 1 and ',' in _ct_desc:
+                    # Multiple conditions: split by comma
+                    _ct_items = [s.strip() for s in _ct_desc.split(',') if s.strip()]
+                    for item in _ct_items:
+                        _ct_conditions.append(ParsedCondition(
+                            name=item,
+                            is_control=self._is_control_condition(item),
+                        ))
+                else:
+                    _ct_conditions.append(ParsedCondition(
+                        name=_ct_desc,
+                        is_control=(_ct_type == 'control') or self._is_control_condition(_ct_desc),
+                    ))
+        if len(_ct_conditions) >= 2:
+            return _ct_conditions, warnings
+
         # Pattern 5: Line-by-line conditions
         lines = [l.strip() for l in text_clean.split('\n') if l.strip()]
+        # v1.0.4.7: Filter bare header lines that aren't real conditions
+        lines = [l for l in lines if not re.match(
+            r'^(?:conditions?|groups?|experimental\s+(?:conditions?|design|groups?))\s*:?\s*$',
+            l, re.IGNORECASE)]
         if len(lines) >= 2:
             for line in lines:
                 # Remove numbering like "1.", "1)", "- "

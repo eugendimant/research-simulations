@@ -63,7 +63,7 @@ association, impression, perception, feedback, comment, observation, general
 Version: 1.8.5 - Improved domain detection with weighted scoring and disambiguation
 """
 
-__version__ = "1.0.4.6"
+__version__ = "1.0.4.7"
 
 import random
 import re
@@ -6824,9 +6824,21 @@ class ComprehensiveResponseGenerator:
             if not _fallback_topic:
                 # Try extracting from question_text directly
                 _fb_words = re.findall(r'\b[a-zA-Z]{4,}\b', (question_text or "").lower())
-                _fb_stop = {'this', 'that', 'about', 'what', 'your', 'please',
-                            'describe', 'explain', 'question', 'context', 'study',
-                            'topic', 'condition', 'think', 'feel'}
+                # v1.0.4.7: Unified stop words with researcher-instruction vocabulary
+                _fb_stop = {
+                    'this', 'that', 'about', 'what', 'your', 'please',
+                    'describe', 'explain', 'question', 'context', 'study',
+                    'topic', 'condition', 'think', 'feel', 'participants',
+                    'respondents', 'primed', 'priming', 'exposed', 'exposure',
+                    'presented', 'shown', 'told', 'telling', 'instructed',
+                    'assigned', 'randomly', 'thinking', 'reading', 'viewing',
+                    'watching', 'completing', 'answering', 'reporting',
+                    'before', 'after', 'during', 'following', 'stories',
+                    'experience', 'experiences', 'believe', 'beliefs',
+                    'favorite', 'favourite', 'whether', 'toward', 'towards',
+                    'survey', 'experiment', 'measure', 'measured', 'response',
+                    'responses', 'answer', 'answers', 'open', 'ended', 'text',
+                }
                 _fb_topic_words = [w for w in _fb_words if w not in _fb_stop][:2]
                 _fallback_topic = ' '.join(_fb_topic_words) if _fb_topic_words else 'what was asked'
             fallback_responses = [
@@ -7281,14 +7293,36 @@ class ComprehensiveResponseGenerator:
         The response structure varies by sentiment, question type, and a
         randomized template selection for natural diversity.
         """
-        # Extract key topic words from subject for natural insertion
-        _stop = {'the', 'a', 'an', 'is', 'are', 'was', 'were', 'be', 'been',
-                 'this', 'that', 'these', 'those', 'it', 'its', 'they', 'we',
-                 'to', 'of', 'in', 'for', 'on', 'with', 'at', 'by', 'from',
-                 'and', 'or', 'but', 'not', 'no', 'how', 'much', 'wants', 'want',
-                 'understand', 'better', 'question', 'participants', 'about',
-                 'deeply', 'held', 'more', 'also', 'very', 'just', 'really',
-                 'what', 'who', 'why', 'when', 'where', 'which'}
+        # v1.0.4.7: Unified stop word list — includes researcher-instruction vocabulary
+        _stop = {
+            'the', 'a', 'an', 'this', 'that', 'these', 'those', 'its', 'it',
+            'they', 'them', 'their', 'we', 'our', 'you', 'your', 'he', 'she',
+            'to', 'of', 'in', 'for', 'on', 'with', 'at', 'by', 'from', 'up', 'about',
+            'and', 'or', 'but', 'not', 'no', 'so', 'nor',
+            'is', 'are', 'was', 'were', 'be', 'been', 'being',
+            'have', 'has', 'had', 'do', 'does', 'did',
+            'will', 'would', 'could', 'should', 'may', 'might', 'must', 'can', 'need',
+            'how', 'what', 'who', 'why', 'when', 'where', 'which',
+            'want', 'wants', 'understand', 'think', 'feel', 'tell', 'share', 'describe',
+            'explain', 'ask', 'asked', 'give', 'get', 'make', 'say', 'know', 'see',
+            'participants', 'respondents', 'subjects', 'people', 'person',
+            'primed', 'priming', 'prime', 'exposed', 'exposure', 'exposing',
+            'presented', 'presenting', 'shown', 'showing', 'show',
+            'told', 'telling', 'instructed', 'instructions',
+            'assigned', 'randomly', 'random', 'randomized',
+            'thinking', 'reading', 'viewing', 'watching', 'completing', 'answering',
+            'reporting', 'sharing', 'responding',
+            'before', 'after', 'during', 'following', 'prior',
+            'then', 'next', 'first', 'second', 'third',
+            'stories', 'story', 'experience', 'experiences',
+            'believe', 'beliefs', 'favorite', 'favourite',
+            'whether', 'toward', 'towards', 'regarding',
+            'question', 'questions', 'context', 'study', 'survey', 'experiment',
+            'condition', 'conditions', 'topic', 'measure', 'measured',
+            'response', 'responses', 'answer', 'answers', 'item', 'items',
+            'much', 'more', 'most', 'very', 'really', 'just', 'also', 'please',
+            'better', 'deeply', 'held', 'quite',
+        }
         _words = re.findall(r'\b[a-zA-Z]{3,}\b', subject.lower())
         _topic_words = [w for w in _words if w not in _stop][:6]
         # Build a short topic phrase
@@ -7360,23 +7394,38 @@ class ComprehensiveResponseGenerator:
         if engagement < 0.2:
             # Extract a topic word from the response to stay on-topic
             _words = re.findall(r'\b[a-zA-Z]{4,}\b', response.lower())
-            _stop = {'this', 'that', 'about', 'think', 'feel', 'have', 'some',
-                     'with', 'from', 'very', 'really', 'quite', 'when', 'what',
-                     'their', 'honestly', 'strong', 'pretty', 'based', 'things',
-                     'going', 'important', 'something', 'direction', 'personal',
-                     'feelings', 'topic', 'comes', 'tried', 'answer', 'genuine',
-                     'views', 'experiences', 'shaped', 'resonates', 'mixed',
-                     'good', 'positive', 'negative', 'frustrated', 'pleased',
-                     'mostly', 'strongly', 'heading', 'right', 'honestly'}
+            # v1.0.4.7: Unified stop word list — includes researcher-instruction vocabulary
+            _stop = {
+                'this', 'that', 'about', 'think', 'feel', 'have', 'some',
+                'with', 'from', 'very', 'really', 'quite', 'when', 'what',
+                'their', 'honestly', 'strong', 'pretty', 'based', 'things',
+                'going', 'important', 'something', 'direction', 'personal',
+                'feelings', 'topic', 'comes', 'tried', 'answer', 'genuine',
+                'views', 'experiences', 'shaped', 'resonates', 'mixed',
+                'good', 'positive', 'negative', 'frustrated', 'pleased',
+                'mostly', 'strongly', 'heading', 'right',
+                # Researcher instruction vocabulary (v1.0.4.7)
+                'participants', 'respondents', 'subjects', 'people',
+                'primed', 'priming', 'exposed', 'exposure',
+                'presented', 'presenting', 'shown', 'showing',
+                'told', 'telling', 'instructed', 'instructions',
+                'assigned', 'randomly', 'random', 'randomized',
+                'thinking', 'reading', 'viewing', 'watching', 'completing',
+                'answering', 'reporting', 'sharing', 'responding',
+                'before', 'after', 'during', 'following', 'prior',
+                'stories', 'story', 'experience', 'believe', 'beliefs',
+                'favorite', 'favourite', 'whether', 'toward', 'towards',
+                'question', 'questions', 'context', 'study', 'survey',
+                'condition', 'conditions', 'measure', 'measured',
+                'response', 'responses', 'describe', 'explain', 'please',
+                'open', 'ended', 'text', 'variable',
+            }
             _topic_words = [w for w in _words if w not in _stop][:3]
 
             # v1.0.3.10: If response didn't yield topic words, try question_text
             if not _topic_words and question_text:
                 _qt_words = re.findall(r'\b[a-zA-Z]{4,}\b', question_text.lower())
-                _qt_stop = _stop | {'question', 'context', 'study', 'describe',
-                                    'explain', 'please', 'response', 'participants',
-                                    'condition', 'open', 'ended', 'text'}
-                _topic_words = [w for w in _qt_words if w not in _qt_stop][:3]
+                _topic_words = [w for w in _qt_words if w not in _stop][:3]
 
             _topic = ' '.join(_topic_words[:2]) if _topic_words else 'the question'
 

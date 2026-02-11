@@ -45,7 +45,7 @@ This module is designed to run inside a `utils/` package (i.e., imported as
 """
 
 # Version identifier to help track deployed code
-__version__ = "1.0.4.6"  # v1.0.4.6: Pipeline quality overhaul — domain-aware routing, effect stacking guard, persona expansion, cross-DV coherence
+__version__ = "1.0.4.7"  # v1.0.4.7: Topic extraction fix (researcher vocab stop words), context separation
 
 # =============================================================================
 # SCIENTIFIC FOUNDATIONS FOR SIMULATION
@@ -6851,6 +6851,7 @@ class EnhancedSimulationEngine:
         """
         response_type = str(question_spec.get("type", "general"))
         question_text = str(question_spec.get("question_text", ""))
+        _original_question_text = question_text  # v1.0.4.7: Preserve before context embedding
         context_type = str(question_spec.get("context_type", "general"))
         question_context = str(question_spec.get("question_context", "")).strip()
 
@@ -6988,15 +6989,46 @@ class EnhancedSimulationEngine:
 
         # Extract topic words from question context or text
         import re as _ctx_re
-        _ctx_stop = {'the', 'a', 'an', 'is', 'are', 'was', 'were', 'be', 'been',
-                     'this', 'that', 'these', 'those', 'it', 'its', 'they', 'we',
-                     'to', 'of', 'in', 'for', 'on', 'with', 'at', 'by', 'from',
-                     'and', 'or', 'but', 'not', 'no', 'how', 'much', 'wants', 'want',
-                     'understand', 'better', 'question', 'participants', 'about',
-                     'deeply', 'held', 'more', 'also', 'very', 'just', 'really',
-                     'what', 'who', 'why', 'when', 'where', 'which', 'please',
-                     'describe', 'explain', 'tell', 'share', 'your', 'you'}
-        _qt_for_topic = question_text or ""
+        # v1.0.4.7: Unified stop word list — includes researcher-instruction vocabulary
+        _ctx_stop = {
+            'the', 'a', 'an', 'this', 'that', 'these', 'those', 'its', 'it',
+            'they', 'them', 'their', 'we', 'our', 'you', 'your', 'he', 'she',
+            'to', 'of', 'in', 'for', 'on', 'with', 'at', 'by', 'from', 'up', 'about',
+            'and', 'or', 'but', 'not', 'no', 'so', 'nor',
+            'is', 'are', 'was', 'were', 'be', 'been', 'being',
+            'have', 'has', 'had', 'do', 'does', 'did',
+            'will', 'would', 'could', 'should', 'may', 'might', 'must', 'can', 'need',
+            'how', 'what', 'who', 'why', 'when', 'where', 'which',
+            'want', 'wants', 'understand', 'think', 'feel', 'tell', 'share', 'describe',
+            'explain', 'ask', 'asked', 'give', 'get', 'make', 'say', 'know', 'see',
+            # Researcher instruction vocabulary (v1.0.4.7)
+            'participants', 'respondents', 'subjects', 'people', 'person',
+            'primed', 'priming', 'prime', 'exposed', 'exposure', 'exposing',
+            'presented', 'presenting', 'shown', 'showing', 'show',
+            'told', 'telling', 'instructed', 'instructions',
+            'assigned', 'randomly', 'random', 'randomized',
+            'thinking', 'reading', 'viewing', 'watching', 'completing', 'answering',
+            'reporting', 'sharing', 'responding',
+            'before', 'after', 'during', 'following', 'prior',
+            'then', 'next', 'first', 'second', 'third',
+            'stories', 'story', 'experience', 'experiences',
+            'believe', 'beliefs', 'favorite', 'favourite',
+            'whether', 'toward', 'towards', 'regarding',
+            'question', 'questions', 'context', 'study', 'survey', 'experiment',
+            'condition', 'conditions', 'topic', 'measure', 'measured',
+            'response', 'responses', 'answer', 'answers', 'item', 'items',
+            'scale', 'rating', 'open', 'ended', 'text', 'variable',
+            'much', 'more', 'most', 'very', 'really', 'just', 'also', 'please',
+            'better', 'deeply', 'held', 'quite',
+        }
+        # v1.0.4.7: Extract topic from ORIGINAL question context/text, not the
+        # combined embedded string (which contains researcher instructions).
+        # Priority: question_context > original question_text > combined string
+        _qt_for_topic = question_context or _original_question_text or question_text or ""
+        # Strip common researcher framing prefixes
+        _qt_for_topic = _ctx_re.sub(
+            r'^(?:participants?\s+(?:are|were|will\s+be)\s+)',
+            '', _qt_for_topic, flags=_ctx_re.IGNORECASE).strip()
         _qt_words = _ctx_re.findall(r'\b[a-zA-Z]{3,}\b', _qt_for_topic.lower())
         _topic_words = [w for w in _qt_words if w not in _ctx_stop][:6]
 
