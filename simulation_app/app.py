@@ -53,8 +53,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.0.3.3"
-BUILD_ID = "20260211-v1033-remove-sj-buttons-query-param-nav"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.0.3.4"
+BUILD_ID = "20260211-v1034-hidden-buttons-mutation-observer-nav"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -119,7 +119,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.0.3.3"  # v1.0.3.3: Remove hidden buttons, query-param stepper navigation
+APP_VERSION = "1.0.3.4"  # v1.0.3.4: Hidden buttons in container + MutationObserver nav, remove flow-section
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -5042,7 +5042,20 @@ def _section_summary(idx: int) -> str:
 _FLOW_NAV_CSS = """<style>
 /* === v1.8.0: Premium landing page + segmented progress === */
 
-/* v1.0.3.3: No hidden buttons — stepper uses query-param navigation */
+/* v1.0.3.4: Hide stepper jump button container (clipped st.container) */
+/* CSS targets the inline max-height style set by st.container(height=1) */
+div[data-testid="stVerticalBlockBorderWrapper"][style*="max-height: 1px"] {
+    position: absolute !important;
+    width: 1px !important;
+    height: 1px !important;
+    overflow: hidden !important;
+    clip: rect(0, 0, 0, 0) !important;
+    clip-path: inset(50%) !important;
+    opacity: 0 !important;
+    margin: -1px !important;
+    padding: 0 !important;
+    border: 0 !important;
+}
 
 /* Base layout */
 section.main .block-container {
@@ -5642,20 +5655,8 @@ details[data-testid="stExpander"][open] {
     .stepper-nav { padding: 14px 6px 10px; }
 }
 
-/* ─── v1.0.3.2: Section wrapper — card container for subpages ─── */
-.flow-section {
-    background: white;
-    border-radius: 14px;
-    border: 1px solid #F3F4F6;
-    padding: 20px 24px 28px;
-    margin-bottom: 8px;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.02);
-    animation: sectionEnter 0.3s ease-out;
-}
-@keyframes sectionEnter {
-    from { opacity: 0; transform: translateY(6px); }
-    to   { opacity: 1; transform: translateY(0); }
-}
+/* v1.0.3.4: flow-section wrapper removed (empty div didn't wrap content).
+   Card styling now applied to section-guide + Streamlit content container. */
 
 /* v1.0.3.2: Section guide — clean step header with subtle left accent */
 .section-guide {
@@ -5915,31 +5916,87 @@ def _render_flow_nav(active: int, done: List[bool]) -> None:
 
     st.markdown(html, unsafe_allow_html=True)
 
-    # ── v1.0.3.3: STEPPER NAVIGATION VIA QUERY PARAMS ──────────────────
-    # No hidden buttons. Stepper circle clicks set a URL query param
-    # (?_nav_to=<index>), triggering a page reload. Python reads the
-    # param at startup and calls _navigate_to().
+    # ── v1.0.3.4: Hidden stepper jump buttons ──────────────────────────
+    # Native st.button() inside a 1px-tall container (invisible via CSS).
+    # MutationObserver in iframe JS wires stepper circle clicks to these
+    # hidden buttons. The observer persists across Streamlit reruns
+    # because the iframe is cached (same HTML string).
+    try:
+        _sj_ctr = st.container(height=1)
+    except TypeError:
+        _sj_ctr = st.container()
+    with _sj_ctr:
+        _sj_cols = st.columns(len(SECTION_META))
+        for _sj_i in range(len(SECTION_META)):
+            with _sj_cols[_sj_i]:
+                if st.button(f"__sj{_sj_i}__", key=f"__sj{_sj_i}__"):
+                    _navigate_to(_sj_i)
+
+    # JS: Hide buttons (backup) + wire stepper circle clicks → hidden buttons
     _wire_js = """<script>
 (function() {
     var doc = window.parent.document;
+
+    /* Layer 1: Hide any button with __sj\\d__ text (backup for CSS) */
+    function hideSJ() {
+        doc.querySelectorAll('button').forEach(function(btn) {
+            var t = (btn.textContent || '').trim();
+            if (/^__sj\\d__$/.test(t)) {
+                var wrap = btn.closest('[data-testid="stButton"]');
+                if (wrap && !wrap._sjHidden) {
+                    wrap._sjHidden = true;
+                    wrap.style.position = 'absolute';
+                    wrap.style.width = '1px';
+                    wrap.style.height = '1px';
+                    wrap.style.overflow = 'hidden';
+                    wrap.style.opacity = '0';
+                    wrap.style.clipPath = 'inset(50%)';
+                }
+            }
+        });
+    }
+
+    /* Layer 2: Wire stepper circle clicks to hidden button clicks */
     function wireClicks() {
+        hideSJ();
         doc.querySelectorAll('.stepper-step.clickable').forEach(function(step) {
-            if (step._cw) return;
-            step._cw = true;
+            if (step._sjWired) return;
+            step._sjWired = true;
+            step.style.cursor = 'pointer';
             var idx = step.getAttribute('data-step');
             step.addEventListener('click', function(e) {
                 e.preventDefault();
-                var url = new URL(window.parent.location);
-                url.searchParams.set('_nav_to', idx);
-                window.parent.location.href = url.toString();
+                e.stopPropagation();
+                /* Find the hidden button matching this step index */
+                var found = false;
+                doc.querySelectorAll('button').forEach(function(btn) {
+                    if (found) return;
+                    var t = (btn.textContent || '').trim();
+                    if (t === '__sj' + idx + '__') {
+                        found = true;
+                        btn.click();
+                    }
+                });
             });
         });
     }
+
+    /* Initial wiring + retries at increasing delays */
     wireClicks();
-    // Retry wiring in case stepper DOM isn't ready yet
-    [50, 200, 600, 1500].forEach(function(d) {
+    [50, 150, 400, 800, 1500, 3000].forEach(function(d) {
         setTimeout(wireClicks, d);
     });
+
+    /* Layer 3: MutationObserver — re-wire after Streamlit DOM changes */
+    try {
+        var target = doc.querySelector('section.main') || doc.body;
+        var debounce = null;
+        var obs = new MutationObserver(function() {
+            clearTimeout(debounce);
+            debounce = setTimeout(wireClicks, 30);
+        });
+        obs.observe(target, { childList: true, subtree: true });
+    } catch(e) {}
 })();
 </script>"""
     _st_components.html(_wire_js, height=0)
@@ -6116,18 +6173,9 @@ if st.session_state.pop("_pending_reset", False):
 st.session_state.pop("_scroll_then_nav_target", None)
 st.session_state.pop("_review_at_top", None)
 
-# ── v1.0.3.3: Handle stepper navigation via query params ─────────────
-# Stepper circle clicks set ?_nav_to=<index> in the URL. Read it here,
-# clear the param, and route through the standard _navigate_to() flow.
-_qp_nav = st.query_params.get("_nav_to")
-if _qp_nav is not None:
-    try:
-        _qp_target = int(_qp_nav)
-        # Clear the query param so it doesn't loop
-        del st.query_params["_nav_to"]
-        _navigate_to(_qp_target)  # sets _pending_nav + st.rerun()
-    except (ValueError, TypeError):
-        del st.query_params["_nav_to"]
+# ── v1.0.3.4: Navigation via hidden buttons (query-param approach removed) ──
+# Hidden st.button() calls inside _render_flow_nav() handle navigation.
+# MutationObserver JS wires stepper circle clicks to those buttons.
 
 # ── Apply pending navigation (from auto-advance or _navigate_to) ─────
 _pending_nav = st.session_state.pop("_pending_nav", None)
@@ -6631,8 +6679,6 @@ if active_page == -1:
 # PAGE 1: STUDY SETUP
 # =====================================================================
 if active_page == 0:
-    st.markdown('<div class="flow-section">', unsafe_allow_html=True)
-
     # v1.8.0: Hero card removed — now on landing page
     st.markdown(
         '<div class="section-guide">'
@@ -6703,14 +6749,11 @@ if active_page == 0:
 
     # v1.0.3.1: All navigation via stepper circles — no bottom buttons
 
-    st.markdown('</div>', unsafe_allow_html=True)
-
 
 # =====================================================================
 # PAGE 2: FILE UPLOAD / STUDY BUILDER
 # =====================================================================
 if active_page == 1:
-    st.markdown('<div class="flow-section">', unsafe_allow_html=True)
     st.markdown(
         '<div class="section-guide">'
         '<strong>Step 2 &middot; Study Input</strong> &mdash; '
@@ -7169,8 +7212,6 @@ if active_page == 1:
 
     # v1.0.3.0: Forward navigation handled by clickable stepper
 
-    st.markdown('</div>', unsafe_allow_html=True)
-
 
 # =====================================================================
 # PAGE 3: DESIGN CONFIGURATION
@@ -7179,7 +7220,6 @@ if active_page == 2:
     # v1.8.4: Extra scroll-to-top for the heavy Design page (widgets render async)
     if st.session_state.pop("_page_just_changed_design", None):
         _inject_scroll_to_top_js()
-    st.markdown('<div class="flow-section">', unsafe_allow_html=True)
     st.markdown(
         '<div class="section-guide">'
         '<strong>Step 3 &middot; Design</strong> &mdash; '
@@ -8539,14 +8579,11 @@ if active_page == 2:
 
     # v1.0.3.0: Forward navigation handled by clickable stepper
 
-    st.markdown('</div>', unsafe_allow_html=True)
-
 
 # =====================================================================
 # PAGE 4: GENERATE SIMULATION
 # =====================================================================
 if active_page == 3:
-    st.markdown('<div class="flow-section">', unsafe_allow_html=True)
     st.markdown(
         '<div class="section-guide">'
         '<strong>Step 4 &middot; Generate</strong> &mdash; '
@@ -8577,7 +8614,6 @@ if active_page == 3:
 
     if not inferred:
         st.warning("No experiment design configured. Complete **Study Input** and **Design** using the progress bar above.")
-        st.markdown('</div>', unsafe_allow_html=True)
         st.stop()
 
     # v1.8.9: Readiness checklist — compact inline, includes DVs
@@ -10053,7 +10089,6 @@ if active_page == 3:
             'class="btt-link">\u2191 Back to top</a>',
             unsafe_allow_html=True,
         )
-    st.markdown('</div>', unsafe_allow_html=True)
 
 # ========================================
 # FEEDBACK (Shown on wizard pages only)
