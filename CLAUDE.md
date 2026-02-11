@@ -1,5 +1,15 @@
 # Claude Code Development Guidelines
 
+## Key Terminology
+
+### Persona Pipeline
+The full system for generating realistic participant behavior: domain detection → persona filtering → weight adjustment → assignment → trait generation → response generation. Refers to the complete chain from `detected_domains` through persona selection (`_CONDITION_PERSONA_AFFINITIES`, `_ADJACENT_DOMAINS`) to the 10-step simulation pipeline in `enhanced_simulation_engine.py`. Use this term to reference the end-to-end behavioral simulation architecture.
+
+### Admin Dashboard
+Hidden password-protected diagnostics page at `?admin=1`. Shows LLM provider stats, simulation history, session state explorer, system info. Password: "password" (SHA-256 hashed). Only accessible to program administrators.
+
+---
+
 ## ABSOLUTE RULE: Page Layout — Next at Top, Scroll at Bottom
 
 **THESE RULES CANNOT BE OVERRIDDEN UNDER ANY CIRCUMSTANCES.**
