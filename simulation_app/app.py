@@ -53,8 +53,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.0.3.5"
-BUILD_ID = "20260211-v1035-visible-next-buttons-top-only"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.0.3.6"
+BUILD_ID = "20260211-v1036-restore-scroll-buttons-design-checklist"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -119,7 +119,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.0.3.5"  # v1.0.3.5: Visible Next buttons at top of each page, stepper visual-only
+APP_VERSION = "1.0.3.6"  # v1.0.3.6: Restore scroll buttons, design checklist, stepper visual-only
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -5641,6 +5641,49 @@ details[data-testid="stExpander"][open] {
     font-weight: 700;
 }
 
+/* v1.0.3.6: Design readiness checklist — shows what's needed before proceeding */
+.design-checklist {
+    padding: 16px 22px;
+    background: #FFFBEB;
+    border: 1px solid #FDE68A;
+    border-left: 4px solid #F59E0B;
+    border-radius: 12px;
+    margin: 4px 0 16px 0;
+    animation: bannerSlideIn 0.3s ease-out;
+}
+.design-checklist-title {
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: #92400E;
+    margin-bottom: 8px;
+    letter-spacing: 0.01em;
+}
+.design-checklist-item {
+    font-size: 0.88rem;
+    padding: 3px 0;
+    color: #78350F;
+}
+.design-checklist-item.done {
+    color: #166534;
+}
+.design-checklist-item.pending {
+    color: #92400E;
+    font-weight: 600;
+}
+
+/* v1.0.3.6: Back to top link styling */
+.btt-link {
+    font-size: 0.85rem;
+    color: #6B7280;
+    text-decoration: none;
+    font-weight: 500;
+    transition: color 0.15s ease;
+}
+.btt-link:hover {
+    color: #374151;
+    text-decoration: underline;
+}
+
 /* v1.0.3.2: Section complete banner — clean success state */
 .section-done-banner {
     display: flex; align-items: center; gap: 10px;
@@ -6624,6 +6667,16 @@ if active_page == 0:
         _desc_ok = "\u2705" if completion["study_description"] else "\u2B1C"
         st.caption(f"{_title_ok} Study title &nbsp;&nbsp; {_desc_ok} Study description")
 
+    # v1.0.3.6: Back to top — ALWAYS present at bottom of every page
+    st.markdown("---")
+    st.markdown(
+        '<a href="#btt-anchor" '
+        'onclick="var el=document.getElementById(\'btt-anchor\');'
+        'if(el){el.scrollIntoView({behavior:\'smooth\',block:\'start\'});}return false;" '
+        'class="btt-link">\u2191 Back to top</a>',
+        unsafe_allow_html=True,
+    )
+
 
 # =====================================================================
 # PAGE 2: FILE UPLOAD / STUDY BUILDER
@@ -7081,6 +7134,15 @@ if active_page == 1:
         if selected_conditions:
             st.success(f"✓ Conditions: {', '.join(selected_conditions)}")
 
+    # v1.0.3.6: Back to top — ALWAYS present at bottom of every page
+    st.markdown("---")
+    st.markdown(
+        '<a href="#btt-anchor" '
+        'onclick="var el=document.getElementById(\'btt-anchor\');'
+        'if(el){el.scrollIntoView({behavior:\'smooth\',block:\'start\'});}return false;" '
+        'class="btt-link">\u2191 Back to top</a>',
+        unsafe_allow_html=True,
+    )
 
 
 # =====================================================================
@@ -7096,17 +7158,38 @@ if active_page == 2:
         'Configure conditions, DVs, and sample size.</div>',
         unsafe_allow_html=True,
     )
-    # v1.0.3.5: Next button at top, right under stepper
-    _p3_banner_ready = bool(
-        st.session_state.get("inferred_design")
-        and st.session_state.get("scales_confirmed", False)
-        and st.session_state.get("open_ended_confirmed", True)
-        and (st.session_state.get("selected_conditions") or st.session_state.get("custom_conditions")
-             or st.session_state.get("conversational_builder_complete"))
+    # v1.0.3.6: Visual readiness checklist + Next button at top
+    _chk_has_conditions = bool(
+        st.session_state.get("selected_conditions")
+        or st.session_state.get("custom_conditions")
+        or st.session_state.get("conversational_builder_complete")
     )
-    if _p3_banner_ready:
+    _chk_design_inferred = bool(st.session_state.get("inferred_design"))
+    _chk_scales_confirmed = bool(st.session_state.get("scales_confirmed", False))
+    _chk_open_ended_ok = bool(st.session_state.get("open_ended_confirmed", True))
+    _p3_all_ready = _chk_has_conditions and _chk_design_inferred and _chk_scales_confirmed and _chk_open_ended_ok
+
+    # Build visual checklist items
+    _chk_items = []
+    _chk_items.append(("\u2705" if _chk_has_conditions else "\u2B1C", "Conditions defined"))
+    _chk_items.append(("\u2705" if _chk_design_inferred else "\u2B1C", "Design configured"))
+    _chk_items.append(("\u2705" if _chk_scales_confirmed else "\u2B1C", "DVs / scales confirmed"))
+    if not st.session_state.get("open_ended_confirmed", True):
+        _chk_items.append(("\u2B1C", "Open-ended questions confirmed"))
+
+    if _p3_all_ready:
         if st.button("Continue to Generate \u2192", key="nav_next_2", type="primary", use_container_width=True):
             _navigate_to(3)
+    else:
+        # Show what still needs to be done — styled HTML checklist
+        _checklist_html = '<div class="design-checklist">'
+        _checklist_html += '<div class="design-checklist-title">Complete these to proceed:</div>'
+        for _icon, _label in _chk_items:
+            _done_cls = "done" if _icon == "\u2705" else "pending"
+            _checklist_html += f'<div class="design-checklist-item {_done_cls}">{_icon} {_label}</div>'
+        _checklist_html += '</div>'
+        st.markdown(_checklist_html, unsafe_allow_html=True)
+
     preview: Optional[QSFPreviewResult] = st.session_state.get("qsf_preview", None)
     enhanced_analysis: Optional[DesignAnalysisResult] = st.session_state.get("enhanced_analysis", None)
 
@@ -8443,6 +8526,15 @@ if active_page == 2:
                     )
                     st.session_state["variable_review_rows"] = variable_df.to_dict(orient="records")
 
+    # v1.0.3.6: Back to top — ALWAYS present at bottom of every page
+    st.markdown("---")
+    st.markdown(
+        '<a href="#btt-anchor" '
+        'onclick="var el=document.getElementById(\'btt-anchor\');'
+        'if(el){el.scrollIntoView({behavior:\'smooth\',block:\'start\'});}return false;" '
+        'class="btt-link">\u2191 Back to top</a>',
+        unsafe_allow_html=True,
+    )
 
 
 # =====================================================================
