@@ -63,7 +63,7 @@ association, impression, perception, feedback, comment, observation, general
 Version: 1.8.5 - Improved domain detection with weighted scoring and disambiguation
 """
 
-__version__ = "1.0.3.9"
+__version__ = "1.0.3.10"
 
 import random
 import re
@@ -1367,39 +1367,39 @@ DOMAIN_TEMPLATES: Dict[str, Dict[str, Dict[str, List[str]]]] = {
     "survey_feedback": {
         "explanation": {
             "very_positive": [
-                "The survey was well-designed and interesting.",
-                "I found the questions clear and engaging.",
-                "No problems at all - easy to complete.",
-                "The instructions were very clear.",
-                "Good survey - I enjoyed participating.",
+                "I shared my honest views and I feel pretty good about the topic overall.",
+                "I've thought about this a lot and I'm optimistic about where things are heading.",
+                "This is something I care about and my perspective is generally positive.",
+                "I gave thoughtful answers based on my genuine beliefs. I feel strongly about this.",
+                "I reflected carefully and shared my actual opinions. I have positive feelings here.",
             ],
             "positive": [
-                "The survey was fine overall.",
-                "No major issues with the questions.",
-                "Pretty straightforward to complete.",
-                "Most questions made sense.",
-                "A reasonable survey experience.",
+                "I gave my honest thoughts. Generally feel pretty good about this.",
+                "My responses reflect how I actually feel. Mostly positive overall.",
+                "I answered based on my real opinions and experiences.",
+                "Shared my genuine perspective on this. It's something I've considered before.",
+                "I reflected on my views and answered honestly.",
             ],
             "neutral": [
-                "Standard survey, nothing special.",
-                "It was okay.",
-                "Finished without problems.",
-                "No strong feelings about the survey.",
-                "Average experience.",
+                "I shared my honest thoughts. I don't feel too strongly one way or another.",
+                "Gave my genuine reactions. Pretty middle of the road for me.",
+                "My answers reflect my actual views. Not strongly positive or negative.",
+                "I answered honestly. This isn't something I have extreme opinions about.",
+                "Shared my perspective. I can see both sides of this.",
             ],
             "negative": [
-                "Some questions were confusing.",
-                "The survey was a bit long.",
-                "Instructions could be clearer.",
-                "A few questions didn't make sense.",
-                "There were some issues.",
+                "I shared my honest concerns. There are real issues here in my opinion.",
+                "My perspective on this is fairly critical. I answered honestly about that.",
+                "I have some real reservations and tried to express them accurately.",
+                "Honestly I'm not very positive about this and my answers reflect that.",
+                "I expressed my genuine frustrations. This is something that concerns me.",
             ],
             "very_negative": [
-                "The survey was confusing and poorly designed.",
-                "Many questions didn't make sense.",
-                "Too long and repetitive.",
-                "Hard to understand what was being asked.",
-                "I struggled to complete this.",
+                "I feel strongly negative about this and my answers reflect that honestly.",
+                "I have serious concerns and I didn't hold back in expressing them.",
+                "This is something I feel frustrated about and I answered accordingly.",
+                "My perspective is very critical. I think there are major problems here.",
+                "I expressed genuine dissatisfaction. There's a lot that needs to change.",
             ],
         },
     },
@@ -6804,7 +6804,7 @@ class ComprehensiveResponseGenerator:
 
         # Handle disengaged/careless personas
         if persona_engagement < 0.3:
-            response = self._make_careless(response, persona_engagement, local_rng)
+            response = self._make_careless(response, persona_engagement, local_rng, question_text=question_text)
 
         # Add variation (using local RNG)
         response = add_variation(response, persona_verbosity, persona_formality, local_rng)
@@ -6818,9 +6818,17 @@ class ComprehensiveResponseGenerator:
         # v1.1.0: Add topic-specific context to keep response on-topic
         response = self._add_topic_context(response, question_text, question_keywords, domain, local_rng)
 
-        # v1.0.3.8: Ensure we never return an empty response — use topic words
+        # v1.0.3.10: Ensure we never return an empty response — use topic words
         if not response or not response.strip():
-            _fallback_topic = ' '.join(question_keywords[:2]) if question_keywords else 'this'
+            _fallback_topic = ' '.join(question_keywords[:2]) if question_keywords else ''
+            if not _fallback_topic:
+                # Try extracting from question_text directly
+                _fb_words = re.findall(r'\b[a-zA-Z]{4,}\b', (question_text or "").lower())
+                _fb_stop = {'this', 'that', 'about', 'what', 'your', 'please',
+                            'describe', 'explain', 'question', 'context', 'study',
+                            'topic', 'condition', 'think', 'feel'}
+                _fb_topic_words = [w for w in _fb_words if w not in _fb_stop][:2]
+                _fallback_topic = ' '.join(_fb_topic_words) if _fb_topic_words else 'what was asked'
             fallback_responses = [
                 f"I thought about {_fallback_topic} and gave my honest answer.",
                 f"{_fallback_topic} is something I have views on.",
@@ -7123,7 +7131,18 @@ class ComprehensiveResponseGenerator:
             if sentiment_templates:
                 return rng.choice(sentiment_templates)
 
-        return "No specific comment."
+        # v1.0.3.10: Last-resort fallback — NEVER return generic meta-commentary.
+        # Extract whatever topic words we can from question_text to stay on-topic.
+        _qt = question_text or question_context or ""
+        _fallback_words = re.findall(r'\b[a-zA-Z]{4,}\b', _qt.lower())
+        _fallback_stop = {'this', 'that', 'about', 'what', 'your', 'please',
+                          'describe', 'explain', 'question', 'context', 'study',
+                          'topic', 'condition'}
+        _fallback_topic = [w for w in _fallback_words if w not in _fallback_stop][:3]
+        _fb_phrase = ' '.join(_fallback_topic) if _fallback_topic else ""
+        if _fb_phrase:
+            return f"I have thoughts about {_fb_phrase} but it's hard to put into words."
+        return "I answered based on my honest feelings about this."
 
     def _extract_response_subject(self, question_text: str, question_context: str) -> str:
         """Extract the core subject/topic from question text and context.
@@ -7231,13 +7250,18 @@ class ComprehensiveResponseGenerator:
 
         return rng.choice(templates)
 
-    def _make_careless(self, response: str, engagement: float, local_rng: random.Random = None) -> str:
+    def _make_careless(self, response: str, engagement: float, local_rng: random.Random = None, question_text: str = "") -> str:
         """Transform response to reflect careless/disengaged responding.
 
         v1.0.3.8: Careless responses are now STILL ON-TOPIC. A careless
         participant in a Trump study writes 'trump is ok i guess' not
         'the study was fine'. We extract topic words from the response
         and build a short topic-relevant careless response.
+
+        v1.0.3.10: Added question_text parameter as fallback source for
+        topic extraction. If topic words can't be extracted from the
+        response itself, we extract from the original question text.
+        This eliminates the 'it' pronoun fallback entirely.
         """
         rng = local_rng or random.Random()
 
@@ -7249,9 +7273,20 @@ class ComprehensiveResponseGenerator:
                      'their', 'honestly', 'strong', 'pretty', 'based', 'things',
                      'going', 'important', 'something', 'direction', 'personal',
                      'feelings', 'topic', 'comes', 'tried', 'answer', 'genuine',
-                     'views', 'experiences', 'shaped', 'resonates'}
+                     'views', 'experiences', 'shaped', 'resonates', 'mixed',
+                     'good', 'positive', 'negative', 'frustrated', 'pleased',
+                     'mostly', 'strongly', 'heading', 'right', 'honestly'}
             _topic_words = [w for w in _words if w not in _stop][:3]
-            _topic = ' '.join(_topic_words[:2]) if _topic_words else 'it'
+
+            # v1.0.3.10: If response didn't yield topic words, try question_text
+            if not _topic_words and question_text:
+                _qt_words = re.findall(r'\b[a-zA-Z]{4,}\b', question_text.lower())
+                _qt_stop = _stop | {'question', 'context', 'study', 'describe',
+                                    'explain', 'please', 'response', 'participants',
+                                    'condition', 'open', 'ended', 'text'}
+                _topic_words = [w for w in _qt_words if w not in _qt_stop][:3]
+
+            _topic = ' '.join(_topic_words[:2]) if _topic_words else 'the question'
 
             careless_templates = [
                 f"{_topic} is ok i guess",

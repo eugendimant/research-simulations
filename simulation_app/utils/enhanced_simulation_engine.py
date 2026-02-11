@@ -5226,8 +5226,9 @@ class EnhancedSimulationEngine:
                     question_name=unique_question_id,
                     participant_seed=participant_seed,
                 )
-            except Exception:
-                pass
+            except Exception as _comp_gen_err:
+                logger.debug("ComprehensiveResponseGenerator error for '%s': %s",
+                             question_text[:80] if question_text else "unknown", _comp_gen_err)
 
         # Fallback to basic text generator
         if attention_level < 0.5:
