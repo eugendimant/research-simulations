@@ -336,6 +336,10 @@ Example iteration sequence that worked well:
 - **Type badges for DVs**: "Matrix", "Slider", etc. help users understand what was detected
 - **Easy remove buttons**: One-click removal of incorrect detections
 - **Progressive disclosure**: Show advanced options only when needed
+- **Confirmation banners for checkboxes**: Plain checkboxes are too subtle — add amber `.confirm-banner.pending` before unchecked items and green `.confirm-banner.done` after checked items. This makes action items visually prominent.
+- **Back buttons on every page (except first)**: Users need to go back to fix things. Place Back button in left column, Continue in right column, at the top under the stepper.
+- **No scroll button on Setup page**: Setup is too short to need a scroll button. Only pages with substantial content need "Back to top".
+- **Stepper subtitles should say "Complete" not truncated titles**: Truncated study titles look unprofessional. Use simple "Complete" status text instead.
 
 #### Condition Detection
 - **Comprehensive filtering is essential**: Apply all exclusion patterns before presenting candidates
@@ -371,6 +375,18 @@ Example iteration sequence that worked well:
 - Button calls `_navigate_to(next_page_index)` which sets `_pending_nav` + `st.rerun()`.
 - This is the simplest, most reliable approach. No JS, no iframes, no hidden buttons.
 
+**Streamlit execution order: widgets below set state AFTER code above reads it (CRITICAL).**
+- When a checklist/nav at the TOP of a page reads `st.session_state["some_key"]`, it gets the PREVIOUS rerun's value if the widget that sets `"some_key"` is rendered BELOW.
+- On the rerun triggered by a checkbox change, the checklist was already rendered with old values.
+- **FIX: Use `st.container()` as a deferred-render placeholder.** Create the container at the top of the page (so it appears visually at the top), but populate it with `with container:` at the BOTTOM of the page after all widgets have set their values. Content appears at the container's visual position but uses CURRENT values.
+- **Alternative FIX: Read widget keys directly.** Widget keys (e.g., `dv_confirm_checkbox_v{N}`) are updated by Streamlit BEFORE the script runs. So `st.session_state.get(widget_key)` at the top gives the CURRENT value, unlike shadow keys set by explicit code (e.g., `scales_confirmed`) which are updated later.
+
+**Builder vs QSF path divergence on Design page.**
+- The Design page has two paths: builder (conversational) and QSF (file upload).
+- The builder path sets `_skip_qsf_design = True` and skips all QSF widgets (including DV/OE confirmation checkboxes).
+- Readiness criteria MUST differ per path. Builder readiness = `inferred_design` has ≥2 conditions and ≥1 scale. QSF readiness = conditions + design inferred + scales_confirmed + open_ended_confirmed.
+- **NEVER assume both paths use the same session_state keys.** Always check which path is active.
+
 **FAILED approaches (DO NOT retry):**
 1. **Hidden buttons + MutationObserver (v1.0.3.4):** Buttons inside `st.container(height=1)` with iframe JS wiring stepper clicks. Failed: container still showed as gray bar, buttons leaked into UI.
 2. **Query-param navigation (v1.0.3.3):** `window.parent.location.href = url` causes full page reload → new WebSocket → session state lost.
@@ -390,6 +406,9 @@ Example iteration sequence that worked well:
 9. **Using `window.parent.location.href` in iframe JS**: Destroys session state
 10. **Hidden buttons with JS wiring**: Too complex, unreliable — use visible `st.button()` instead
 11. **Putting "Next" buttons at the bottom of pages**: NEVER. Only at the top, right under the stepper. Bottom only has "Back to top" scroll link.
+12. **Reading session_state at page top for values set by widgets below**: Use `st.container()` placeholder at top, fill at bottom — or read widget keys directly.
+13. **Removing scroll buttons when editing page structure**: NEVER remove "Back to top" scroll links. They must exist at the bottom of every page (except Setup which is too short).
+14. **Assuming both QSF and builder paths use the same state keys**: They don't. Always check which path is active before checking readiness.
 
 ### Documentation Philosophy
 
