@@ -45,7 +45,7 @@ This module is designed to run inside a `utils/` package (i.e., imported as
 """
 
 # Version identifier to help track deployed code
-__version__ = "1.7.2"  # v1.7.2: Reverse-item modeling, 8 new personas, domain-sensitive SD, study context priming
+__version__ = "1.0.4.5"  # v1.0.4.5: Bugfix condition_lower, domain expansion, persona interactions, SD improvements
 
 # =============================================================================
 # SCIENTIFIC FOUNDATIONS FOR SIMULATION
@@ -3989,7 +3989,7 @@ class EnhancedSimulationEngine:
             semantic_effect -= 0.10
 
         # =====================================================================
-        # DOMAIN 6: HEALTH/RISK MANIPULATIONS
+        # DOMAIN 6: HEALTH/RISK MANIPULATIONS (expanded v1.0.4.5)
         # =====================================================================
 
         # Self-Efficacy (Bandura, 1977; Meta-analyses)
@@ -4022,6 +4022,27 @@ class EnhancedSimulationEngine:
         if _stem_in('promot', condition_lower):
             if _word_in('gain', condition_lower):
                 semantic_effect += 0.12  # Gain frame better for prevention
+
+        # v1.0.4.5: Optimistic Bias (Weinstein, 1980; Shepperd et al. 2013 meta)
+        # People underestimate personal risk; corrective info shifts perception
+        if _any_word_in(['personal risk', 'your risk', 'individual risk', 'optimistic bias'], condition_lower):
+            semantic_effect -= 0.14  # Personal risk framing reduces optimistic bias
+        elif _any_word_in(['average risk', 'population risk', 'general risk'], condition_lower):
+            semantic_effect += 0.05  # Abstract risk maintains optimistic bias
+
+        # v1.0.4.5: Health Literacy (Berkman et al. 2011 meta)
+        # Simplified health information increases comprehension and compliance
+        if _any_word_in(['simplified', 'plain language', 'easy to read', 'health literate'], condition_lower):
+            semantic_effect += 0.15
+        elif _any_word_in(['technical', 'jargon', 'medical terminology', 'complex language'], condition_lower):
+            semantic_effect -= 0.12
+
+        # v1.0.4.5: Social Norms for Health (Cialdini, 2003; Goldstein et al. 2008)
+        # Descriptive norms ("most people do X") increase health behaviors
+        if _any_word_in(['descriptive norm', 'most people', 'majority behavior', 'social norm health'], condition_lower):
+            semantic_effect += 0.18
+        elif _any_word_in(['injunctive norm', 'should do', 'ought to'], condition_lower):
+            semantic_effect += 0.10  # Weaker than descriptive
 
         # =====================================================================
         # DOMAIN 7: ORGANIZATIONAL/LEADERSHIP MANIPULATIONS
@@ -4063,6 +4084,26 @@ class EnhancedSimulationEngine:
             semantic_effect += 0.20
         elif _any_word_in(['negative feedback', 'criticism', 'blame'], condition_lower):
             semantic_effect -= 0.22
+
+        # v1.0.4.5: Leader-Member Exchange (Gerstner & Day, 1997 meta; ρ ≈ .35)
+        # High LMX = trust, liking, respect between leader and member
+        if _any_word_in(['high lmx', 'good relationship', 'trusted employee', 'favored'], condition_lower):
+            semantic_effect += 0.20
+        elif _any_word_in(['low lmx', 'poor relationship', 'distant leader', 'unfavored'], condition_lower):
+            semantic_effect -= 0.18
+
+        # v1.0.4.5: Psychological Safety (Edmondson, 1999; Frazier et al. 2017 meta)
+        # Team psychological safety enables learning, voice, innovation
+        if _any_word_in(['psychological safety', 'safe to speak', 'no blame culture', 'speak up'], condition_lower):
+            semantic_effect += 0.22
+        elif _any_word_in(['psychologically unsafe', 'punitive', 'fear of speaking', 'blame culture'], condition_lower):
+            semantic_effect -= 0.20
+
+        # v1.0.4.5: Organizational Trust (Dirks & Ferrin, 2002 meta; ρ ≈ .30)
+        if _any_word_in(['trust in management', 'trustworthy org', 'reliable employer'], condition_lower):
+            semantic_effect += 0.18
+        elif _any_word_in(['distrust management', 'untrustworthy org', 'unreliable employer'], condition_lower):
+            semantic_effect -= 0.20
 
         # =====================================================================
         # DOMAIN 8: POLITICAL/MORAL MANIPULATIONS
@@ -4273,6 +4314,31 @@ class EnhancedSimulationEngine:
         elif _word_in('no inoculation', condition_lower):
             semantic_effect -= 0.05
 
+        # v1.0.4.5: Sleeper Effect (Kumkale & Albarracin, 2004 meta d = 0.10)
+        # Discounting cue forgotten over time, message persists
+        if _any_word_in(['sleeper effect', 'delayed persuasion', 'discounting cue'], condition_lower):
+            semantic_effect += 0.08
+
+        # v1.0.4.5: Elaboration Likelihood (Petty & Cacioppo, 1986)
+        # Central route = stronger, more durable attitudes
+        if _any_word_in(['central route', 'high elaboration', 'strong argument', 'argument quality'], condition_lower):
+            semantic_effect += 0.22
+        elif _any_word_in(['peripheral route', 'low elaboration', 'weak argument', 'heuristic cue'], condition_lower):
+            semantic_effect += 0.10  # Still persuasive, just weaker
+
+        # v1.0.4.5: Mere Exposure in Communication (Zajonc, 1968; Bornstein 1989 meta)
+        # Repeated message exposure increases liking/acceptance
+        if _any_word_in(['repeated message', 'frequent exposure', 'high frequency ad'], condition_lower):
+            semantic_effect += 0.12
+        elif _any_word_in(['single exposure', 'one time', 'novel message'], condition_lower):
+            semantic_effect += 0.02
+
+        # v1.0.4.5: Source Attractiveness (Eagly & Chaiken, 1993)
+        if _any_word_in(['attractive source', 'likable speaker', 'popular source'], condition_lower):
+            semantic_effect += 0.14
+        elif _any_word_in(['unattractive source', 'unlikable speaker', 'unpopular source'], condition_lower):
+            semantic_effect -= 0.10
+
         # =====================================================================
         # DOMAIN 11: LEARNING & MEMORY MANIPULATIONS
         # =====================================================================
@@ -4305,6 +4371,27 @@ class EnhancedSimulationEngine:
         elif _word_in('easy', condition_lower) or _word_in('simple', condition_lower):
             semantic_effect += 0.05
 
+        # v1.0.4.5: Transfer-Appropriate Processing (Morris et al., 1977)
+        # Encoding that matches retrieval conditions improves performance
+        if _any_word_in(['transfer appropriate', 'matched encoding', 'congruent context'], condition_lower):
+            semantic_effect += 0.18
+        elif _any_word_in(['mismatched encoding', 'incongruent context', 'different context'], condition_lower):
+            semantic_effect -= 0.12
+
+        # v1.0.4.5: Encoding Specificity (Tulving & Thomson, 1973)
+        # Context-dependent memory; same context at encoding and retrieval helps
+        if _any_word_in(['same context', 'encoding specificity', 'context reinstatement'], condition_lower):
+            semantic_effect += 0.16
+        elif _any_word_in(['different context', 'context change', 'new environment'], condition_lower):
+            semantic_effect -= 0.10
+
+        # v1.0.4.5: Self-Reference Effect (Rogers et al. 1977; Symons & Johnson 1997 meta d = 0.50)
+        # Information processed in relation to self is better remembered
+        if _any_word_in(['self-reference', 'relate to self', 'personal relevance', 'self-generated'], condition_lower):
+            semantic_effect += 0.22
+        elif _any_word_in(['other-reference', 'semantic processing', 'structural processing'], condition_lower):
+            semantic_effect += 0.05
+
         # =====================================================================
         # DOMAIN 12: SOCIAL IDENTITY & GROUP MANIPULATIONS
         # =====================================================================
@@ -4333,6 +4420,34 @@ class EnhancedSimulationEngine:
         if _any_word_in(['identity salient', 'reminded of', 'primed with'], condition_lower):
             semantic_effect += 0.15
         elif _word_in('identity not salient', condition_lower):
+            semantic_effect -= 0.05
+
+        # v1.0.4.5: Recategorization (Gaertner & Dovidio, 2000)
+        # Recategorizing outgroup as common ingroup reduces bias
+        if _any_word_in(['recategoriz', 'one group', 'common ingroup identity', 'merged group'], condition_lower):
+            semantic_effect += 0.20
+        elif _any_word_in(['separate groups', 'distinct groups', 'us vs them'], condition_lower):
+            semantic_effect -= 0.15
+
+        # v1.0.4.5: Crossed Categorization (Crisp & Hewstone, 2007)
+        # When multiple category memberships cross-cut, bias is reduced
+        if _any_word_in(['crossed categoriz', 'multiple identit', 'cross-cutting'], condition_lower):
+            semantic_effect += 0.12
+        elif _any_word_in(['single category', 'simple categoriz'], condition_lower):
+            semantic_effect -= 0.05
+
+        # v1.0.4.5: Relative Deprivation (Smith et al. 2012 meta)
+        # Perceiving one's group as deprived increases collective action
+        if _any_word_in(['relative deprivation', 'group disadvantage', 'inequality', 'unjust treatment'], condition_lower):
+            semantic_effect -= 0.18  # Negative toward status quo
+        elif _any_word_in(['group advantage', 'privileged group', 'equal treatment'], condition_lower):
+            semantic_effect += 0.10
+
+        # v1.0.4.5: Perspective-Taking (Galinsky & Moskowitz, 2000)
+        # Taking outgroup perspective reduces stereotyping
+        if _any_word_in(['perspective taking', 'imagine their life', 'walk in shoes', 'empathize outgroup'], condition_lower):
+            semantic_effect += 0.18
+        elif _any_word_in(['no perspective taking', 'objective view', 'detached'], condition_lower):
             semantic_effect -= 0.05
 
         # =====================================================================
@@ -4412,6 +4527,27 @@ class EnhancedSimulationEngine:
             semantic_effect += 0.08
         elif _any_word_in(['dim light', 'dark', 'low light'], condition_lower):
             semantic_effect -= 0.05
+
+        # v1.0.4.5: Noise Effects (Banbury & Berry, 2005; Szalma & Hancock 2011 meta)
+        # Noise impairs cognitive performance, increases stress
+        if _any_word_in(['noisy', 'loud', 'high noise', 'noise distraction'], condition_lower):
+            semantic_effect -= 0.14
+        elif _any_word_in(['quiet', 'silent', 'low noise', 'no noise'], condition_lower):
+            semantic_effect += 0.08
+
+        # v1.0.4.5: Color Psychology (Mehta & Zhu, 2009; Elliot & Maier 2014)
+        # Red = avoidance/arousal; Blue = approach/creativity
+        if _any_word_in(['red color', 'red background', 'red prime'], condition_lower):
+            semantic_effect -= 0.08  # Avoidance, caution
+        elif _any_word_in(['blue color', 'blue background', 'blue prime'], condition_lower):
+            semantic_effect += 0.08  # Approach, openness
+
+        # v1.0.4.5: Music/Sound (Hallam et al. 2002; Kämpfe et al. 2011 meta)
+        # Background music can enhance or impair depending on task
+        if _any_word_in(['music', 'pleasant sound', 'calming audio'], condition_lower):
+            semantic_effect += 0.06
+        elif _any_word_in(['no music', 'silence condition', 'unpleasant sound'], condition_lower):
+            semantic_effect -= 0.04
 
         # =====================================================================
         # DOMAIN 15: EMBODIMENT & PHYSICAL MANIPULATIONS
@@ -4548,8 +4684,29 @@ class EnhancedSimulationEngine:
         elif _any_word_in(['unambiguous', 'clear outcome', 'verifiable'], condition_lower):
             semantic_effect += 0.10
 
+        # v1.0.4.5: Ethical Fading (Tenbrunsel & Messick, 2004)
+        # Framing removes ethical dimension from decision; increases dishonesty
+        if _any_word_in(['business frame', 'strategic decision', 'competitive context', 'ethical fading'], condition_lower):
+            semantic_effect -= 0.12
+        elif _any_word_in(['ethical frame', 'moral decision', 'right thing'], condition_lower):
+            semantic_effect += 0.14
+
+        # v1.0.4.5: Incrementalism / Slippery Slope (Welsh et al. 2015)
+        # Small initial transgressions escalate gradually
+        if _any_word_in(['gradual escalation', 'slippery slope', 'small lie', 'incremental'], condition_lower):
+            semantic_effect -= 0.10
+        elif _any_word_in(['sudden large', 'all at once', 'single decision'], condition_lower):
+            semantic_effect += 0.05  # Harder to justify single large act
+
+        # v1.0.4.5: Self-Concept Maintenance (Mazar et al. 2008; Ariely 2012)
+        # People cheat only to extent they can maintain honest self-image
+        if _any_word_in(['self concept', 'identity threat', 'honest self-image'], condition_lower):
+            semantic_effect += 0.10  # Constrains dishonesty
+        elif _any_word_in(['deindividuated', 'group decision', 'diffused responsibility'], condition_lower):
+            semantic_effect -= 0.14  # Easier to be dishonest
+
         # =====================================================================
-        # DOMAIN 18: POWER & STATUS MANIPULATIONS (v1.0.4.4)
+        # DOMAIN 18: POWER & STATUS MANIPULATIONS (v1.0.4.4, expanded v1.0.4.5)
         # Scientific basis: Keltner et al. (2003), Galinsky et al. (2003),
         # Anderson & Berdahl (2002)
         # =====================================================================
@@ -4574,6 +4731,40 @@ class EnhancedSimulationEngine:
             semantic_effect += 0.10
         elif _any_word_in(['not accountable', 'anonymous decision', 'private choice'], condition_lower):
             semantic_effect -= 0.05
+
+        # v1.0.4.5: Dominance vs Prestige (Cheng et al. 2013; Henrich & Gil-White 2001)
+        # Two routes to status: intimidation vs. freely conferred deference
+        if _any_word_in(['dominant', 'intimidat', 'coercive power', 'aggressive leader'], condition_lower):
+            semantic_effect -= 0.12  # Dominance → negative evaluation
+        elif _any_word_in(['prestige', 'respected', 'admired leader', 'earned status'], condition_lower):
+            semantic_effect += 0.18
+
+        # v1.0.4.5: Status Anxiety (de Botton, 2004; Wilkinson & Pickett 2009)
+        # Social comparison with higher status others → negative affect
+        if _any_word_in(['status anxiety', 'upward comparison', 'outperformed', 'inferior'], condition_lower):
+            semantic_effect -= 0.16
+        elif _any_word_in(['downward comparison', 'outperforming', 'superior position'], condition_lower):
+            semantic_effect += 0.12
+
+        # v1.0.4.5: Hierarchy Legitimacy (Tyler, 2006; Jost & Banaji 1994)
+        # Perceived legitimacy of hierarchy affects acceptance and behavior
+        if _any_word_in(['legitimate hierarchy', 'meritocratic', 'fair system', 'earned position'], condition_lower):
+            semantic_effect += 0.14
+        elif _any_word_in(['illegitimate hierarchy', 'unfair system', 'nepotism', 'arbitrary status'], condition_lower):
+            semantic_effect -= 0.18
+
+        # v1.0.4.5: Power and Perspective-Taking (Galinsky et al. 2006)
+        # High power reduces perspective-taking and empathy
+        if _any_word_in(['powerful perspective', 'power empathy', 'power and others'], condition_lower):
+            semantic_effect -= 0.10  # Powerful people less considerate
+        # This extends the basic power priming effect above
+
+        # v1.0.4.5: Resource Scarcity × Status (Shah et al. 2012; Mullainathan & Shafir 2013)
+        # Scarcity captures attention but impairs long-term decision making
+        if _any_word_in(['resource scarce', 'budget constrained', 'limited resources', 'scarcity mindset'], condition_lower):
+            semantic_effect -= 0.14
+        elif _any_word_in(['resource abundant', 'unconstrained', 'plenty of resources'], condition_lower):
+            semantic_effect += 0.08
 
         # =====================================================================
         # FACTORIAL DESIGN PARSING
@@ -5843,7 +6034,9 @@ class EnhancedSimulationEngine:
             # - Rosenstock (1974): Health beliefs moderate fear appeal effectiveness
             # =====================================================================
             _domain_persona_factor = 1.0
-            _cond_var_ctx = condition_lower + " " + variable_lower
+            _condition_lower = str(condition).lower().strip()
+            _variable_lower = str(variable_name).lower().strip()
+            _cond_var_ctx = _condition_lower + " " + _variable_lower
 
             # Prosocial/empathic personas respond MORE to intergroup and prosocial
             # manipulations (Van Lange et al., 1997: SVO moderates cooperation d)
@@ -5916,6 +6109,49 @@ class EnhancedSimulationEngine:
                    'sustainab', 'carbon', 'eco']):
                 _env_sensitivity = 0.88 + (_env_concern * 0.22)
                 _domain_persona_factor *= float(np.clip(_env_sensitivity, 0.88, 1.15))
+
+            # v1.0.4.5: Political identity × Cooperation in economic games
+            # Dimant (2024): Political discrimination moderated by
+            # cooperation tendency (cooperative vs self-interested)
+            _coop = _safe_trait_value(modified_traits.get("cooperation_tendency"), 0.50)
+            if any(kw in _cond_var_ctx for kw in ['partisan', 'political',
+                   'democrat', 'republican', 'liberal', 'conservative']):
+                if any(kw in _cond_var_ctx for kw in ['dictator', 'trust game',
+                       'ultimatum', 'allocation', 'give', 'share']):
+                    # Cooperative people discriminate LESS in political economic games
+                    _pol_coop_sensitivity = 1.20 - (_coop * 0.35)
+                    _domain_persona_factor *= float(np.clip(_pol_coop_sensitivity, 0.82, 1.25))
+
+            # v1.0.4.5: Authority × Need for Cognition interaction
+            # Petty & Cacioppo (1986): Low NFC → more susceptible to authority cues
+            # High NFC → scrutinize source, less affected by authority
+            if any(kw in _cond_var_ctx for kw in ['authority', 'expert', 'credib',
+                   'source', 'endorse']):
+                _nfc_authority = _safe_trait_value(modified_traits.get("need_for_cognition"), 0.50)
+                if _nfc_authority < 0.40:
+                    _domain_persona_factor *= 1.15  # Low NFC amplifies authority
+                elif _nfc_authority > 0.70:
+                    _domain_persona_factor *= 0.88  # High NFC attenuates authority
+
+            # v1.0.4.5: Loss frame × Loss aversion trait
+            # Kahneman & Tversky (1979): Loss aversion ~2.25×
+            # Individual differences in loss aversion moderate framing effects
+            _loss_aversion = _safe_trait_value(modified_traits.get("risk_tolerance"), 0.50)
+            if any(kw in _cond_var_ctx for kw in ['loss frame', 'lose', 'penalty',
+                   'risk of losing', 'could lose']):
+                # Low risk tolerance = high loss aversion = amplified loss frame
+                _loss_sensitivity = 1.20 - (_loss_aversion * 0.35)
+                _domain_persona_factor *= float(np.clip(_loss_sensitivity, 0.85, 1.25))
+
+            # v1.0.4.5: Stereotype threat × Self-efficacy
+            # Steele & Aronson (1995): Threat moderated by self-regard
+            _self_efficacy = _safe_trait_value(modified_traits.get("engagement"), 0.60)
+            if any(kw in _cond_var_ctx for kw in ['stereotype threat', 'diagnostic test',
+                   'gender test', 'race test', 'identity threat']):
+                if _self_efficacy < 0.40:
+                    _domain_persona_factor *= 1.25  # Low efficacy amplifies threat
+                elif _self_efficacy > 0.70:
+                    _domain_persona_factor *= 0.80  # High efficacy buffers threat
 
             # Clamp total domain persona factor
             _domain_persona_factor = float(np.clip(_domain_persona_factor, 0.65, 1.45))
@@ -6052,6 +6288,7 @@ class EnhancedSimulationEngine:
         # 4. Acquiescent respondents: Additional positive-direction pull even
         #    after reversal (inflating scores on reverse items)
         # =====================================================================
+        _correctly_reversed = False  # Track for SD × reverse interaction
         if is_reverse:
             _attention = _safe_trait_value(modified_traits.get("attention_level"), 0.75)
             _engagement = _safe_trait_value(modified_traits.get("engagement"), 0.65)
@@ -6064,20 +6301,37 @@ class EnhancedSimulationEngine:
             _reversal_probability = 0.50 + (_attention * 0.35) + (_engagement * 0.15)
             _reversal_probability = float(np.clip(_reversal_probability, 0.30, 0.98))
 
+            # v1.0.4.5: Engagement-level differential failure rates
+            # Krosnick (1991): Satisficers partially fail reverse items
+            # Engaged: ~95% correct; Satisficers (0.3-0.6): ~60-75%; Careless: ~30-50%
+            if _engagement < 0.35:
+                # Careless responders: nearly random reversal
+                _reversal_probability *= 0.70  # Reduce by 30%
+            elif _engagement < 0.55:
+                # Satisficers: partially fail — they see the words but don't
+                # always cognitively invert the meaning
+                _reversal_probability *= 0.88  # Reduce by 12%
+
+            _reversal_probability = float(np.clip(_reversal_probability, 0.25, 0.98))
+
             if rng.random() < _reversal_probability:
                 # Correctly reverses the item
                 center = scale_max - (center - scale_min)
+                _correctly_reversed = True
             else:
                 # Fails to reverse — responds as if positively worded
                 # This creates the acquiescence-driven inconsistency pattern
                 # that reliability analysts see in real data
-                pass  # center stays at its unreversed value
+                _correctly_reversed = False
 
             # Acquiescence pull on reverse items (Weijters et al., 2010)
             # Even respondents who DO reverse still show partial acquiescence
             # Effect: ~0.5 point inflation for strong acquiescers
+            # v1.0.4.5: Acquiescence pull is STRONGER when reversal fails
+            # (person already showing agree-tendency, acq reinforces it)
             if acquiescence > 0.55:
-                _acq_reverse_pull = (acquiescence - 0.5) * scale_range * 0.20
+                _acq_multiplier = 0.20 if _correctly_reversed else 0.30
+                _acq_reverse_pull = (acquiescence - 0.5) * scale_range * _acq_multiplier
                 center += _acq_reverse_pull
 
         # =====================================================================
@@ -6188,6 +6442,27 @@ class EnhancedSimulationEngine:
             if any(kw in _cond_lower for kw in ['dishonest', 'cheat', 'prejudic',
                    'discriminat', 'immoral']):
                 _sd_sensitivity = max(_sd_sensitivity, 1.3)
+
+            # v1.0.4.5: Economic game SD sensitivity
+            # In dictator/trust/ultimatum games, allocations reveal character
+            # SD bias is MODERATE-HIGH (not LOW) because fairness norms are strong
+            # Engel (2011): Dictator giving inflated by ~5% in observed conditions
+            if any(kw in _var_lower for kw in ['dictator', 'trust_game', 'ultimatum',
+                   'allocat', 'give', 'donat', 'share', 'split']):
+                if any(kw in _cond_lower for kw in ['dictator', 'trust', 'ultimatum',
+                       'public good', 'economic game']):
+                    _sd_sensitivity = max(_sd_sensitivity, 1.3)  # Override LOW→MODERATE-HIGH
+
+            # v1.0.4.5: SD × Reverse-item interaction
+            # When a reverse item is correctly reversed, SD and reversal align
+            # → ATTENUATE SD slightly (both pushing same direction)
+            # When reversal fails, SD contradicts the unreversed response
+            # → AMPLIFY SD (person trying to present well but reversal failure fights it)
+            if is_reverse:
+                if _correctly_reversed:
+                    _sd_sensitivity *= 0.85  # Attenuate: reversal already adjusted direction
+                else:
+                    _sd_sensitivity *= 1.20  # Amplify: SD fights the reversal failure
 
             # Apply domain-sensitive SD effect
             # Paulhus (1991): ~0.8-1.2 point inflation for high IM on sensitive topics
