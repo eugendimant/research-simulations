@@ -63,7 +63,7 @@ association, impression, perception, feedback, comment, observation, general
 Version: 1.8.5 - Improved domain detection with weighted scoring and disambiguation
 """
 
-__version__ = "1.0.3.7"
+__version__ = "1.0.3.8"
 
 import random
 import re
@@ -6783,8 +6783,21 @@ class ComprehensiveResponseGenerator:
         # Extract keywords from the question text for unique response generation
         question_keywords = self._extract_question_keywords(question_text)
 
-        # Get appropriate template (using local RNG)
-        response = self._get_template_response(domain, q_type, sentiment, local_rng)
+        # v1.0.3.8: Extract question context if embedded in question_text
+        # The engine embeds "Question: ...\nContext: ..." format
+        _embedded_context = ""
+        if "\nContext: " in question_text:
+            _ctx_parts = question_text.split("\nContext: ")
+            if len(_ctx_parts) > 1:
+                _embedded_context = _ctx_parts[1].split("\n")[0].strip()
+
+        # Get appropriate template (using local RNG) — now passes question
+        # text and context for context-grounded response generation
+        response = self._get_template_response(
+            domain, q_type, sentiment, local_rng,
+            question_text=question_text,
+            question_context=_embedded_context,
+        )
 
         # Personalize response based on question content (using local RNG)
         response = self._personalize_for_question(response, question_text, question_keywords, condition, local_rng)
@@ -6805,14 +6818,15 @@ class ComprehensiveResponseGenerator:
         # v1.1.0: Add topic-specific context to keep response on-topic
         response = self._add_topic_context(response, question_text, question_keywords, domain, local_rng)
 
-        # v1.0.0: Ensure we never return an empty response
+        # v1.0.3.8: Ensure we never return an empty response — use topic words
         if not response or not response.strip():
+            _fallback_topic = ' '.join(question_keywords[:2]) if question_keywords else 'this'
             fallback_responses = [
-                "I found this interesting to consider.",
-                "This made me think about my experience.",
-                "I had some thoughts about this.",
-                "Overall, it was a reasonable experience.",
-                "I appreciated the opportunity to reflect on this.",
+                f"I thought about {_fallback_topic} and gave my honest answer.",
+                f"{_fallback_topic} is something I have views on.",
+                f"My response about {_fallback_topic} reflects how I feel.",
+                f"I answered based on my feelings about {_fallback_topic}.",
+                f"I shared my thoughts on {_fallback_topic}.",
             ]
             response = local_rng.choice(fallback_responses)
 
@@ -7062,19 +7076,33 @@ class ComprehensiveResponseGenerator:
         domain: StudyDomain,
         q_type: QuestionType,
         sentiment: str,
-        local_rng: random.Random = None
+        local_rng: random.Random = None,
+        question_text: str = "",
+        question_context: str = "",
     ) -> str:
         """Get a template response for the given domain and sentiment.
 
-        v1.0.0: Uses local RNG for deterministic, question-specific selection.
+        v1.0.3.8: Enhanced to generate context-grounded responses. When
+        question_context is available, generates a response that directly
+        addresses the question subject rather than using generic templates.
+        Falls back to domain templates when no context is provided.
         """
         rng = local_rng or random.Random()
         domain_key = domain.value
 
+        # v1.0.3.8: If we have question context, generate a context-grounded
+        # response instead of picking a generic domain template. This is the
+        # KEY improvement — responses now address the actual question topic.
+        _subject = self._extract_response_subject(question_text, question_context)
+        if _subject:
+            return self._generate_context_grounded_response(
+                _subject, sentiment, q_type, domain, rng
+            )
+
         # Try to find domain-specific templates
         if domain_key in DOMAIN_TEMPLATES:
             templates = DOMAIN_TEMPLATES[domain_key]
-            if "explanation" in templates:  # Most common question type
+            if "explanation" in templates:
                 sentiment_templates = templates["explanation"].get(sentiment, templates["explanation"].get("neutral", []))
                 if sentiment_templates:
                     return rng.choice(sentiment_templates)
@@ -7088,23 +7116,148 @@ class ComprehensiveResponseGenerator:
 
         return "No specific comment."
 
+    def _extract_response_subject(self, question_text: str, question_context: str) -> str:
+        """Extract the core subject/topic from question text and context.
+
+        Returns a short phrase describing what the question is actually about,
+        or empty string if we can't determine the subject.
+        """
+        # Use question context first (most specific)
+        source = question_context.strip() if question_context else ''
+        if not source:
+            source = question_text.strip() if question_text else ''
+        if not source:
+            return ''
+
+        # If source has embedded format "Question: ...\nContext: ..."
+        if '\nContext: ' in source:
+            parts = source.split('\nContext: ')
+            if len(parts) > 1:
+                source = parts[1].split('\n')[0].strip()
+
+        # Clean up variable-name-style text
+        if ' ' not in source:
+            source = re.sub(r'[_\-]+', ' ', source).strip()
+
+        # Only return if source has meaningful content (> 10 chars)
+        if len(source) > 10:
+            return source
+        return ''
+
+    def _generate_context_grounded_response(
+        self,
+        subject: str,
+        sentiment: str,
+        q_type: QuestionType,
+        domain: StudyDomain,
+        rng: random.Random,
+    ) -> str:
+        """Generate a response grounded in the specific question subject.
+
+        v1.0.3.8: This method produces responses that directly address the
+        question topic. Instead of generic "I feel strongly about my views",
+        it generates "I feel strongly about [actual topic]".
+
+        The response structure varies by sentiment, question type, and a
+        randomized template selection for natural diversity.
+        """
+        # Extract key topic words from subject for natural insertion
+        _stop = {'the', 'a', 'an', 'is', 'are', 'was', 'were', 'be', 'been',
+                 'this', 'that', 'these', 'those', 'it', 'its', 'they', 'we',
+                 'to', 'of', 'in', 'for', 'on', 'with', 'at', 'by', 'from',
+                 'and', 'or', 'but', 'not', 'no', 'how', 'much', 'wants', 'want',
+                 'understand', 'better', 'question', 'participants', 'about',
+                 'deeply', 'held', 'more', 'also', 'very', 'just', 'really',
+                 'what', 'who', 'why', 'when', 'where', 'which'}
+        _words = re.findall(r'\b[a-zA-Z]{3,}\b', subject.lower())
+        _topic_words = [w for w in _words if w not in _stop][:6]
+        # Build a short topic phrase
+        _topic = ' '.join(_topic_words[:4]) if _topic_words else subject[:40]
+        # Capitalize known proper nouns
+        _proper = {'trump', 'biden', 'obama', 'clinton', 'harris', 'congress',
+                   'republican', 'democrat', 'america', 'american', 'covid',
+                   'facebook', 'google', 'amazon', 'apple', 'microsoft', 'tesla',
+                   'maga', 'gop', 'nato', 'china', 'russia', 'europe', 'mexico'}
+        _topic_parts = _topic.split()
+        _topic_parts = [w.capitalize() if w.lower() in _proper else w for w in _topic_parts]
+        _topic = ' '.join(_topic_parts)
+
+        # Subject may contain the full context — use a shorter version for templates
+        _short_subj = subject[:80] if len(subject) > 80 else subject
+
+        # Build sentiment-specific, topic-grounded templates
+        if sentiment in ('very_positive', 'positive'):
+            templates = [
+                f"I have pretty strong feelings about {_topic}, and honestly I think things are moving in a good direction.",
+                f"When it comes to {_topic}, I'm fairly positive. It aligns with how I see things and what I value.",
+                f"I feel good about {_topic}. My personal experiences have shaped my views and I think it's important.",
+                f"Honestly {_topic} is something I care about and I'm generally supportive of where things are headed.",
+                f"I'd say I'm quite positive when it comes to {_topic}. It resonates with my own views and experiences.",
+                f"My feelings about {_topic} are mostly positive. I've thought about it a lot and I think it matters.",
+                f"{_topic} is important to me. I tried to answer honestly about how I feel and why.",
+                f"I feel pretty strongly that {_topic} is heading in the right direction, based on what I've seen and experienced.",
+            ]
+        elif sentiment in ('very_negative', 'negative'):
+            templates = [
+                f"I'm honestly not happy about {_topic}. There are real problems that I think people are ignoring.",
+                f"When it comes to {_topic}, I have serious concerns. Things aren't going well in my opinion.",
+                f"I feel frustrated about {_topic}. My experiences have made me pretty skeptical about the whole thing.",
+                f"{_topic} is something that bothers me. I don't think the current situation is good at all.",
+                f"I have some strong negative feelings about {_topic}. I tried to be honest about my concerns.",
+                f"Honestly {_topic} makes me uneasy. I see too many problems and not enough people addressing them.",
+                f"My views on {_topic} are pretty critical. I don't think things are working the way they should be.",
+                f"I'm disappointed with {_topic}. Based on what I've seen, there's a lot that needs to change.",
+            ]
+        else:  # neutral
+            templates = [
+                f"I have mixed feelings about {_topic}. I can see both the good and bad sides of it.",
+                f"When it comes to {_topic}, I'm not strongly one way or another. I just tried to answer honestly.",
+                f"I don't feel super strongly about {_topic} but I do have some thoughts on it that I shared.",
+                f"{_topic} is something I've thought about but I don't have extreme views on it either way.",
+                f"My views on {_topic} are pretty moderate. I tried to give my genuine perspective.",
+                f"I'm somewhat ambivalent about {_topic}. There are things I like and things I don't.",
+                f"Honestly I could go either way on {_topic}. I just answered based on how I actually feel.",
+                f"I thought about {_topic} and tried to give an honest answer. Not too positive or negative.",
+            ]
+
+        return rng.choice(templates)
+
     def _make_careless(self, response: str, engagement: float, local_rng: random.Random = None) -> str:
         """Transform response to reflect careless/disengaged responding.
 
-        v1.0.0: Uses local RNG for deterministic selection.
+        v1.0.3.8: Careless responses are now STILL ON-TOPIC. A careless
+        participant in a Trump study writes 'trump is ok i guess' not
+        'the study was fine'. We extract topic words from the response
+        and build a short topic-relevant careless response.
         """
         rng = local_rng or random.Random()
-        careless_responses = [
-            "ok", "fine", "idk", "whatever", "no reason",
-            "just because", "not sure", "dont know", "didnt think about it",
-            "i guess so", "no comment", "n/a", "nothing really",
-        ]
 
         if engagement < 0.2:
-            return rng.choice(careless_responses)
+            # Extract a topic word from the response to stay on-topic
+            _words = re.findall(r'\b[a-zA-Z]{4,}\b', response.lower())
+            _stop = {'this', 'that', 'about', 'think', 'feel', 'have', 'some',
+                     'with', 'from', 'very', 'really', 'quite', 'when', 'what',
+                     'their', 'honestly', 'strong', 'pretty', 'based', 'things',
+                     'going', 'important', 'something', 'direction', 'personal',
+                     'feelings', 'topic', 'comes', 'tried', 'answer', 'genuine',
+                     'views', 'experiences', 'shaped', 'resonates'}
+            _topic_words = [w for w in _words if w not in _stop][:3]
+            _topic = ' '.join(_topic_words[:2]) if _topic_words else 'it'
+
+            careless_templates = [
+                f"{_topic} is ok i guess",
+                f"idk {_topic}",
+                f"{_topic} whatever",
+                f"meh {_topic}",
+                f"dont care about {_topic}",
+                f"{_topic} is fine",
+                f"sure {_topic}",
+                f"{_topic}",
+            ]
+            return rng.choice(careless_templates)
         elif engagement < 0.3:
-            # Very short version
-            words = response.split()[:3]
+            # Very short version — keep first meaningful fragment
+            words = response.split()[:5]
             return ' '.join(words).rstrip('.,!?') + '.'
         return response
 

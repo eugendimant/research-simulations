@@ -409,6 +409,56 @@ Example iteration sequence that worked well:
 12. **Reading session_state at page top for values set by widgets below**: Use `st.container()` placeholder at top, fill at bottom — or read widget keys directly.
 13. **Removing scroll buttons when editing page structure**: NEVER remove "Back to top" scroll links. They must exist at the bottom of every page (except Setup which is too short).
 14. **Assuming both QSF and builder paths use the same state keys**: They don't. Always check which path is active before checking readiness.
+15. **Using generic/hardcoded response banks for open-text preview**: ALWAYS use question_text, question_context, condition, and study_title to generate topical preview responses. Generic meta-commentary ("the study was interesting") is NEVER acceptable.
+16. **Generating off-topic careless responses**: Even careless/low-effort participants write about the TOPIC. "trump is ok i guess" NOT "fine". Extract topic words and build short topic-relevant careless versions.
+17. **Defaulting to consumer/product language in templates**: Don't use "item", "product", "aspect" as fallback context values. Extract meaningful topics from question text. Condition modifiers like "AI-recommended" only apply to consumer/AI domains.
+
+#### Open-Text Response Generation (CRITICAL — v1.0.3.8 Overhaul)
+
+**TWO SEPARATE SYSTEMS exist for open-text responses:**
+1. **Preview system** (`_get_sample_text_response()` in app.py): Generates 5-row preview data
+2. **Full generation system** (`_generate_open_response()` in enhanced_simulation_engine.py): Three-level cascade for actual dataset generation
+
+**The three-level cascade (full generation):**
+1. **LLM Generator** (llm_response_generator.py): Uses free LLM APIs (Gemini Flash Lite → Gemma 3 → Groq → Cerebras → OpenRouter) with sophisticated prompts
+2. **ComprehensiveResponseGenerator** (response_library.py): Template-based with 225+ domain-specific template sets, Markov chain generation
+3. **TextResponseGenerator** (persona_library.py): Basic template-based fallback
+
+**Root causes of broken responses (pre-v1.0.3.8):**
+- Preview generator had **hardcoded generic response banks** ("I found this experience engaging", "Made me think about the topic") that completely ignored question text, context, conditions, and study title
+- ComprehensiveResponseGenerator's `_get_template_response()` always used the `"explanation"` question type key and returned generic domain templates that didn't address the specific question
+- `_make_careless()` returned fully off-topic responses like "ok", "fine", "idk" — real careless participants still write about the topic ("trump is ok i guess")
+- Basic text generator used consumer/product language defaults (`"item"`, `"aspect"`) producing "This item is good, the aspect is nice" for ALL questions
+- Condition modifiers (e.g., "AI-recommended") were applied universally, even to political studies
+
+**Fixes applied (v1.0.3.8):**
+- **Preview**: Complete rewrite of `_get_sample_text_response()` — now accepts `question_text`, `question_context`, `condition`, `study_title` and extracts key themes/subjects to generate topical responses
+- **ComprehensiveResponseGenerator**: Added `_extract_response_subject()` and `_generate_context_grounded_response()` — when question context is available, generates responses that directly reference the question topic instead of generic domain templates
+- **Careless responses**: Now extract topic words from the already-generated response and build short topic-relevant careless versions
+- **Basic text generator**: Context dict now uses question text/context to derive meaningful `topic`, `stimulus`, `product`, `feature` values instead of defaults
+- **Condition modifiers**: Only applied for relevant domains (consumer, AI, advertising) — not for political, health, etc.
+- **Empty fallbacks**: All fallback responses now include topic words instead of generic meta-commentary
+
+**Key principle: NO response should EVER be off-topic.**
+- High quality: Detailed, specific, directly addresses the question topic
+- Medium quality: Brief but still about the topic
+- Low quality: Very short but topic-relevant ("trump is ok i guess")
+- Very low quality: May be gibberish but topic words when possible
+- Careless: Short and lazy, but STILL about the actual topic
+
+**Context flow through the pipeline:**
+1. User provides `question_context` via OE context input on Design page
+2. Engine embeds context into `question_text`: `"Question: ...\nContext: ...\nStudy topic: ...\nCondition: ..."`
+3. LLM generator: Extracts context block, builds prominent `╔══ QUESTION CONTEXT ══╗` section in prompt
+4. ComprehensiveResponseGenerator: Extracts embedded context, calls `_generate_context_grounded_response()`
+5. Basic text generator: Uses question text to extract topic words for template placeholders
+
+**Provider chain (Gemini already #1):**
+- Google AI Studio Gemini 2.5 Flash Lite (10 RPM, 250K TPM, 20 RPD)
+- Google AI Studio Gemma 3 27B (30 RPM, 15K TPM, 14,400 RPD)
+- Groq Llama 3.3 70B (~30 RPM, 14,400 RPD)
+- Cerebras Llama 3.3 70B (~30 RPM, 1M tokens/day)
+- OpenRouter Mistral Small 3.1 (varies)
 
 ### Documentation Philosophy
 

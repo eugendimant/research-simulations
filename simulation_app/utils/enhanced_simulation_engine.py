@@ -5242,21 +5242,47 @@ class EnhancedSimulationEngine:
             style = "default"
 
         # Build context from study_context and question_spec
-        # v1.4.0: Enhanced context building with better condition and question integration
+        # v1.0.3.8: Heavily revised — extract meaningful topics from question
+        # text/context so fallback templates are grounded in the actual question.
         study_domain = self.study_context.get("study_domain", "general")
         survey_name = self.study_context.get("survey_name", self.study_title)
 
-        # Extract meaningful topic from question text or study context
-        topic = question_spec.get("topic", study_domain)
-        if topic == "general" and question_text:
-            # Try to extract a topic from the question text itself
-            q_words = [w for w in question_text.lower().split() if len(w) > 4 and w not in {
-                "about", "would", "could", "should", "which", "there", "their", "these",
-                "those", "where", "while", "being", "other", "after", "before", "during",
-                "please", "describe", "explain"
-            }]
-            if q_words:
-                topic = q_words[0]
+        # v1.0.3.8: Extract MEANINGFUL topic from question text and context
+        # Priority: question_context > question_text > study_domain
+        topic = question_spec.get("topic", "")
+        _stimulus_source = question_spec.get("stimulus", survey_name or "this study")
+        _product_source = question_spec.get("product", "")
+        _feature_source = question_spec.get("feature", "")
+
+        # Extract topic words from question context or text
+        import re as _ctx_re
+        _ctx_stop = {'the', 'a', 'an', 'is', 'are', 'was', 'were', 'be', 'been',
+                     'this', 'that', 'these', 'those', 'it', 'its', 'they', 'we',
+                     'to', 'of', 'in', 'for', 'on', 'with', 'at', 'by', 'from',
+                     'and', 'or', 'but', 'not', 'no', 'how', 'much', 'wants', 'want',
+                     'understand', 'better', 'question', 'participants', 'about',
+                     'deeply', 'held', 'more', 'also', 'very', 'just', 'really',
+                     'what', 'who', 'why', 'when', 'where', 'which', 'please',
+                     'describe', 'explain', 'tell', 'share', 'your', 'you'}
+        _qt_for_topic = question_text or ""
+        _qt_words = _ctx_re.findall(r'\b[a-zA-Z]{3,}\b', _qt_for_topic.lower())
+        _topic_words = [w for w in _qt_words if w not in _ctx_stop][:6]
+
+        if not topic or topic == "general":
+            if _topic_words:
+                topic = ' '.join(_topic_words[:3])
+            elif study_domain and study_domain != "general":
+                topic = study_domain.replace('_', ' ')
+            else:
+                topic = survey_name or "the study topic"
+
+        # v1.0.3.8: Use topic as stimulus and product when no specific values exist
+        if not _product_source:
+            _product_source = topic
+        if not _feature_source:
+            _feature_source = _topic_words[0] if _topic_words else "topic"
+        if _stimulus_source in ("this study", "item", ""):
+            _stimulus_source = topic
 
         # Map sentiment to emotion words
         emotion_map = {
@@ -5270,29 +5296,29 @@ class EnhancedSimulationEngine:
 
         context = {
             "topic": topic,
-            "stimulus": question_spec.get("stimulus", survey_name),
-            "product": question_spec.get("product", "item"),
-            "feature": question_spec.get("feature", "aspect"),
+            "stimulus": _stimulus_source,
+            "product": _product_source,
+            "feature": _feature_source,
             "emotion": str(rng.choice(emotion_words)),
             "sentiment": sentiment.replace("very_", ""),  # Basic generator uses simple sentiment
             "question_text": question_text,
             "study_domain": study_domain,
-            "condition": condition,  # v1.4.0: Pass condition for context-aware generation
+            "condition": condition,
         }
 
+        # v1.0.3.8: Only add condition modifiers when they're meaningful
+        # (don't prepend "AI-recommended" to a political topic)
         cond = str(condition).lower()
         if "ai" in cond and "no ai" not in cond:
-            context["stimulus"] = "AI-recommended " + str(context["stimulus"])
+            if study_domain in ("consumer", "ai_attitudes", "advertising", "brand", "product_evaluation"):
+                context["stimulus"] = "AI-recommended " + str(context["stimulus"])
         elif "human" in cond or "no ai" in cond:
-            context["stimulus"] = "human-curated " + str(context["stimulus"])
+            if study_domain in ("consumer", "ai_attitudes", "advertising", "brand", "product_evaluation"):
+                context["stimulus"] = "human-curated " + str(context["stimulus"])
         if "hedonic" in cond or "experiential" in cond:
             context["product"] = "hedonic " + str(context["product"])
         elif "utilitarian" in cond or "functional" in cond:
             context["product"] = "functional " + str(context["product"])
-        if "high" in cond:
-            context["feature"] = "prominent " + str(context["feature"])
-        elif "low" in cond:
-            context["feature"] = "subtle " + str(context["feature"])
 
         # v1.0.0 CRITICAL FIX: Create question-specific seed for fallback generator
         # Combine participant_seed with a stable hash of the question identity
