@@ -53,8 +53,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.0.3.1"
-BUILD_ID = "20260210-v1031-stepper-redesign-nav-fix"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.0.3.2"
+BUILD_ID = "20260210-v1032-sj-hide-observer-design-polish"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -119,7 +119,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.0.3.1"  # v1.0.3.1: Stepper redesign, fix button visibility, stepper-only navigation
+APP_VERSION = "1.0.3.2"  # v1.0.3.2: MutationObserver sj-hide, design polish, form styling
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -5042,9 +5042,10 @@ def _section_summary(idx: int) -> str:
 _FLOW_NAV_CSS = """<style>
 /* === v1.8.0: Premium landing page + segmented progress === */
 
-/* v1.0.3.1: Hide stepper jump buttons via CSS — prevents flash before JS runs */
-.stepper-jump-row,
-.stepper-jump-row * {
+/* v1.0.3.2: Hide stepper jump buttons — CSS fallback + JS MutationObserver */
+[data-sj-hidden],
+[data-sj-hidden] * {
+    display: none !important;
     height: 0 !important;
     overflow: hidden !important;
     margin: 0 !important;
@@ -5056,6 +5057,11 @@ _FLOW_NAV_CSS = """<style>
     position: absolute !important;
     left: -9999px !important;
 }
+/* Also hide by button text content — catches any __sj*__ buttons the observer misses */
+button[kind="secondary"]:empty,
+div[data-testid="stHorizontalBlock"]:has(button) {
+    /* Only hidden by JS — this selector is a documentation marker */
+}
 
 /* Base layout */
 section.main .block-container {
@@ -5066,18 +5072,26 @@ section.main h1 { font-size: 1.75rem; font-weight: 700; letter-spacing: -0.02em;
 section.main h2 { font-size: 1.35rem; font-weight: 600; color: #1F2937; }
 section.main h3 { font-size: 1.1rem; font-weight: 600; color: #1F2937; }
 section.main h4 {
-    font-size: 1rem; font-weight: 600; margin-bottom: 0.5rem; color: #1F2937;
-    padding-bottom: 6px; border-bottom: 1px solid #F3F4F6;
+    font-size: 1rem; font-weight: 600; margin-bottom: 0.6rem; color: #111827;
+    padding-bottom: 8px; border-bottom: 2px solid #F3F4F6;
+    margin-top: 1.2rem;
 }
 section[data-testid="stSidebar"] .stCaption { line-height: 1.4; }
 
-/* v1.0.3.1: Cleaner expander styling */
+/* v1.0.3.2: Cleaner expander styling */
 details[data-testid="stExpander"] summary {
     font-weight: 500 !important;
+    font-size: 0.9rem !important;
+    color: #374151 !important;
 }
 details[data-testid="stExpander"] {
-    border-radius: 8px !important;
+    border-radius: 10px !important;
     border-color: #E5E7EB !important;
+    background: white !important;
+}
+details[data-testid="stExpander"][open] {
+    border-color: #D1D5DB !important;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.03) !important;
 }
 
 /* ─── Landing page hero ─── */
@@ -5470,16 +5484,18 @@ details[data-testid="stExpander"] {
     .use-case-grid { grid-template-columns: 1fr; }
 }
 
-/* ─── v1.0.3.1: Redesigned stepper — large, readable, primary navigation ─── */
+/* ─── v1.0.3.2: Redesigned stepper — large, readable, primary navigation ─── */
 .stepper-nav {
     display: flex;
     align-items: flex-start;
     justify-content: center;
-    padding: 20px 8px 12px;
+    padding: 22px 16px 16px;
     position: relative;
-    background: linear-gradient(180deg, #F8FAFC 0%, transparent 100%);
-    border-radius: 12px;
-    margin-bottom: 8px;
+    background: white;
+    border-radius: 14px;
+    margin-bottom: 16px;
+    border: 1px solid #E5E7EB;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.04);
 }
 .stepper-step {
     display: flex;
@@ -5494,9 +5510,9 @@ details[data-testid="stExpander"] {
 .stepper-step:not(:last-child)::after {
     content: '';
     position: absolute;
-    top: 23px;
-    left: calc(50% + 24px);
-    width: calc(100% - 48px);
+    top: 24px;
+    left: calc(50% + 26px);
+    width: calc(100% - 52px);
     height: 3px;
     background: #E5E7EB;
     z-index: 0;
@@ -5504,7 +5520,7 @@ details[data-testid="stExpander"] {
     transition: background 0.3s ease;
 }
 .stepper-step.st-done:not(:last-child)::after {
-    background: #22C55E;
+    background: linear-gradient(90deg, #22C55E, #4ADE80);
 }
 .stepper-step.st-active:not(:last-child)::after {
     background: linear-gradient(90deg, #3B82F6 0%, #E5E7EB 100%);
@@ -5512,17 +5528,17 @@ details[data-testid="stExpander"] {
 .stepper-step.st-active.step-done:not(:last-child)::after {
     background: linear-gradient(90deg, #22C55E 0%, #F97316 100%);
 }
-/* Circle indicator — 46px for clear readability */
+/* Circle indicator — 48px for clear readability */
 .stepper-circle {
-    width: 46px;
-    height: 46px;
+    width: 48px;
+    height: 48px;
     border-radius: 50%;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 16px;
+    font-size: 17px;
     font-weight: 700;
-    margin-bottom: 8px;
+    margin-bottom: 10px;
     transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
     position: relative;
     z-index: 2;
@@ -5531,14 +5547,14 @@ details[data-testid="stExpander"] {
 }
 /* Done state — green with checkmark */
 .stepper-step.st-done .stepper-circle {
-    background: #22C55E;
+    background: linear-gradient(135deg, #22C55E 0%, #16A34A 100%);
     color: white;
     border-color: #22C55E;
-    box-shadow: 0 2px 10px rgba(34, 197, 94, 0.3);
+    box-shadow: 0 3px 12px rgba(34, 197, 94, 0.3);
 }
 /* Active state — blue with number */
 .stepper-step.st-active .stepper-circle {
-    background: #2563EB;
+    background: linear-gradient(135deg, #2563EB 0%, #1D4ED8 100%);
     color: white;
     border-color: #2563EB;
     box-shadow: 0 0 0 5px rgba(37, 99, 235, 0.15);
@@ -5546,7 +5562,7 @@ details[data-testid="stExpander"] {
 }
 @keyframes stepPulse {
     0%, 100% { box-shadow: 0 0 0 5px rgba(37, 99, 235, 0.15); }
-    50% { box-shadow: 0 0 0 8px rgba(37, 99, 235, 0.08); }
+    50% { box-shadow: 0 0 0 9px rgba(37, 99, 235, 0.07); }
 }
 /* Active + done — green circle with checkmark */
 .stepper-step.st-active.step-done .stepper-circle {
@@ -5559,13 +5575,13 @@ details[data-testid="stExpander"] {
 .stepper-step.st-active.step-done .stepper-desc { color: #16A34A; }
 @keyframes activeDonePulse {
     0%, 100% { box-shadow: 0 0 0 5px rgba(34, 197, 94, 0.2); }
-    50% { box-shadow: 0 0 0 8px rgba(34, 197, 94, 0.1); }
+    50% { box-shadow: 0 0 0 9px rgba(34, 197, 94, 0.08); }
 }
 /* Upcoming (reachable) — light gray */
 .stepper-step.st-upcoming .stepper-circle {
-    background: #F3F4F6;
+    background: #F9FAFB;
     color: #6B7280;
-    border-color: #D1D5DB;
+    border: 2px solid #D1D5DB;
 }
 /* Next step — orange pulsing */
 .stepper-step.st-next-target .stepper-circle {
@@ -5576,10 +5592,10 @@ details[data-testid="stExpander"] {
     animation: nextPulse 2s ease-in-out infinite;
 }
 .stepper-step.st-next-target .stepper-title { color: #C2410C; font-weight: 700; }
-.stepper-step.st-next-target .stepper-desc { color: #EA580C; }
+.stepper-step.st-next-target .stepper-desc { color: #EA580C; font-weight: 500; }
 @keyframes nextPulse {
     0%, 100% { box-shadow: 0 0 0 4px rgba(249, 115, 22, 0.15); }
-    50% { box-shadow: 0 0 0 7px rgba(249, 115, 22, 0.08); }
+    50% { box-shadow: 0 0 0 8px rgba(249, 115, 22, 0.07); }
 }
 /* Locked — dimmed */
 .stepper-step.st-locked { cursor: default; }
@@ -5588,36 +5604,35 @@ details[data-testid="stExpander"] {
     color: #D1D5DB;
     border-color: #E5E7EB;
     cursor: default;
-    opacity: 0.5;
+    opacity: 0.45;
 }
 /* Clickable stepper — click any non-locked step to jump */
 .stepper-step.clickable { cursor: pointer; }
 .stepper-step.clickable .stepper-circle { cursor: pointer; }
 .stepper-step.clickable .stepper-title { cursor: pointer; }
 .stepper-step.clickable:hover .stepper-circle {
-    transform: scale(1.12);
-    filter: brightness(1.06);
+    transform: scale(1.1);
+    filter: brightness(1.05);
 }
 .stepper-step.clickable.st-done:hover .stepper-circle {
-    box-shadow: 0 3px 14px rgba(34, 197, 94, 0.4);
+    box-shadow: 0 4px 16px rgba(34, 197, 94, 0.4);
 }
 .stepper-step.clickable.st-upcoming:hover .stepper-circle,
 .stepper-step.clickable.st-next-target:hover .stepper-circle {
-    box-shadow: 0 3px 14px rgba(37, 99, 235, 0.3);
+    box-shadow: 0 4px 16px rgba(37, 99, 235, 0.3);
 }
 .stepper-step.clickable:hover .stepper-title {
-    text-decoration: underline;
-    text-underline-offset: 3px;
+    color: #111827;
 }
 /* Step title — readable, prominent */
 .stepper-title {
-    font-size: 0.88rem;
+    font-size: 0.9rem;
     font-weight: 600;
     color: #6B7280;
     text-align: center;
     transition: color 0.2s ease;
     line-height: 1.3;
-    max-width: 140px;
+    max-width: 150px;
     cursor: default;
     user-select: none;
 }
@@ -5626,12 +5641,12 @@ details[data-testid="stExpander"] {
 .stepper-step.st-locked .stepper-title { color: #D1D5DB; }
 /* Step description under title */
 .stepper-desc {
-    font-size: 0.75rem;
+    font-size: 0.76rem;
     color: #9CA3AF;
     text-align: center;
-    max-width: 140px;
-    line-height: 1.3;
-    margin-top: 2px;
+    max-width: 150px;
+    line-height: 1.35;
+    margin-top: 3px;
 }
 .stepper-step.st-done .stepper-desc { color: #4ADE80; }
 .stepper-step.st-active .stepper-desc { color: #60A5FA; }
@@ -5639,76 +5654,83 @@ details[data-testid="stExpander"] {
 
 /* Responsive stepper */
 @media (max-width: 600px) {
-    .stepper-circle { width: 36px; height: 36px; font-size: 14px; }
-    .stepper-title { font-size: 0.75rem; max-width: 80px; }
+    .stepper-circle { width: 38px; height: 38px; font-size: 14px; }
+    .stepper-title { font-size: 0.78rem; max-width: 85px; }
     .stepper-desc { display: none; }
-    .stepper-step:not(:last-child)::after { top: 18px; left: calc(50% + 20px); width: calc(100% - 40px); }
-    .stepper-nav { padding: 14px 4px 8px; }
+    .stepper-step:not(:last-child)::after { top: 19px; left: calc(50% + 21px); width: calc(100% - 42px); }
+    .stepper-nav { padding: 14px 6px 10px; }
 }
 
-/* ─── v1.0.3.1: Section wrapper — breathing room below stepper ─── */
+/* ─── v1.0.3.2: Section wrapper — card container for subpages ─── */
 .flow-section {
-    padding-top: 4px;
+    background: white;
+    border-radius: 14px;
+    border: 1px solid #F3F4F6;
+    padding: 20px 24px 28px;
+    margin-bottom: 8px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.02);
     animation: sectionEnter 0.3s ease-out;
 }
 @keyframes sectionEnter {
-    from { opacity: 0; transform: translateY(8px); }
+    from { opacity: 0; transform: translateY(6px); }
     to   { opacity: 1; transform: translateY(0); }
 }
 
-/* v1.0.3.1: Section guide — clear step header with better hierarchy */
+/* v1.0.3.2: Section guide — clean step header with subtle left accent */
 .section-guide {
-    font-size: 0.9rem;
-    color: #4B5563;
-    margin: 0 0 24px 0;
-    padding: 14px 20px;
-    background: linear-gradient(135deg, #EFF6FF 0%, #F0F9FF 100%);
-    border-radius: 10px;
-    border-left: 4px solid #2563EB;
-    line-height: 1.5;
+    font-size: 0.92rem;
+    color: #374151;
+    margin: 0 0 20px 0;
+    padding: 16px 22px;
+    background: #F8FAFC;
+    border-radius: 12px;
+    border-left: 4px solid #3B82F6;
+    line-height: 1.55;
 }
 .section-guide strong {
     color: #1E40AF;
-    font-size: 0.9rem;
+    font-size: 0.92rem;
+    font-weight: 700;
 }
 
-/* v1.0.3.1: Section complete banner — prominent success state */
+/* v1.0.3.2: Section complete banner — clean success state */
 .section-done-banner {
     display: flex; align-items: center; gap: 10px;
-    padding: 14px 20px;
-    background: linear-gradient(135deg, #F0FDF4 0%, #ECFDF5 100%);
+    padding: 14px 22px;
+    background: #F0FDF4;
     border: 1px solid #BBF7D0;
     border-left: 4px solid #22C55E;
-    border-radius: 10px;
-    margin: 8px 0 20px 0;
-    font-size: 0.9rem; color: #166534; font-weight: 500;
-    animation: bannerSlideIn 0.35s ease-out;
+    border-radius: 12px;
+    margin: 4px 0 20px 0;
+    font-size: 0.88rem; color: #166534; font-weight: 500;
+    animation: bannerSlideIn 0.3s ease-out;
 }
 @keyframes bannerSlideIn {
-    from { opacity: 0; transform: translateY(-4px); }
+    from { opacity: 0; transform: translateY(-3px); }
     to   { opacity: 1; transform: translateY(0); }
 }
 
-/* Design page cards */
+/* v1.0.3.2: Design page cards — polished container look */
 .design-card {
-    padding: 16px 18px;
+    padding: 18px 20px;
     background: white;
     border: 1px solid #E5E7EB;
-    border-radius: 10px;
-    margin: 8px 0;
-    transition: border-color 0.15s ease;
+    border-radius: 12px;
+    margin: 10px 0;
+    transition: all 0.2s ease;
 }
 .design-card:hover {
     border-color: #D1D5DB;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.04);
 }
 .design-card-header {
-    font-size: 0.9rem; font-weight: 600;
-    color: #1F2937; margin: 0 0 8px 0;
+    font-size: 0.92rem; font-weight: 600;
+    color: #111827; margin: 0 0 10px 0;
 }
 .config-status {
     display: inline-flex; align-items: center; gap: 4px;
-    font-size: 11px; padding: 2px 8px;
-    border-radius: 12px;
+    font-size: 11px; padding: 3px 10px;
+    border-radius: 12px; font-weight: 500;
 }
 .config-status.ready {
     background: #F0FDF4; color: #166534;
@@ -5719,12 +5741,39 @@ details[data-testid="stExpander"] {
     border: 1px solid #FDE68A;
 }
 
+/* v1.0.3.2: Better form element spacing */
+section.main .stTextInput > div, section.main .stTextArea > div,
+section.main .stSelectbox > div, section.main .stMultiSelect > div,
+section.main .stNumberInput > div {
+    margin-bottom: 2px;
+}
+section.main .stTextInput label, section.main .stTextArea label,
+section.main .stSelectbox label, section.main .stMultiSelect label,
+section.main .stNumberInput label {
+    font-weight: 500;
+    color: #374151;
+    font-size: 0.88rem;
+}
+/* Cleaner radio buttons */
+section.main .stRadio > div {
+    margin-bottom: 4px;
+}
+section.main .stRadio label {
+    font-weight: 500;
+    font-size: 0.88rem;
+}
+/* Better checkbox styling */
+section.main .stCheckbox label span {
+    font-size: 0.88rem;
+    color: #374151;
+}
+
 /* v1.8.7.4: nav-btn-row removed (CSS selector never matched Streamlit DOM) */
 
 /* Compact feedback link */
 .feedback-bar {
     display: flex; align-items: center; justify-content: center;
-    gap: 8px; padding: 8px 16px; margin-top: 20px;
+    gap: 8px; padding: 10px 16px; margin-top: 28px;
     border-top: 1px solid #F3F4F6;
     font-size: 11px; color: #9CA3AF;
 }
@@ -5733,20 +5782,23 @@ details[data-testid="stExpander"] {
 
 /* v1.0.3.0: Back-to-top links removed — stepper handles navigation */
 
-/* ─── v1.0.3.1: Polished button styles ─── */
+/* ─── v1.0.3.2: Polished button styles ─── */
 .stButton button[kind="secondary"] {
     border-radius: 8px !important;
     font-size: 0.85rem !important;
+    font-weight: 500 !important;
     transition: all 0.2s ease !important;
-    padding: 8px 20px !important;
+    padding: 8px 18px !important;
+    border-color: #D1D5DB !important;
 }
 .stButton button[kind="secondary"]:hover {
     transform: translateY(-1px) !important;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.08) !important;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06) !important;
     border-color: #9CA3AF !important;
+    background: #F9FAFB !important;
 }
 .stButton button[kind="primary"] {
-    border-radius: 8px !important;
+    border-radius: 10px !important;
     font-size: 0.9rem !important;
     font-weight: 600 !important;
     transition: all 0.2s ease !important;
@@ -5756,6 +5808,11 @@ details[data-testid="stExpander"] {
 .stButton button[kind="primary"]:hover {
     transform: translateY(-1px) !important;
     box-shadow: 0 4px 14px rgba(255,75,75,0.25) !important;
+}
+/* Warning/info/success/error message polish */
+div[data-testid="stAlert"] {
+    border-radius: 10px !important;
+    font-size: 0.88rem !important;
 }
 
 /* ─── Responsive ─── */
@@ -5877,70 +5934,113 @@ def _render_flow_nav(active: int, done: List[bool]) -> None:
 
     st.markdown(html, unsafe_allow_html=True)
 
-    # v1.0.3.1: Hidden stepper jump buttons — CSS-hidden container, no visual flash.
-    # We wrap in a container that is invisible from the start via inline style.
-    st.markdown(
-        '<div class="stepper-jump-row" style="height:0;overflow:hidden;margin:0;padding:0;'
-        'border:0;min-height:0;opacity:0;pointer-events:none;position:absolute;left:-9999px;">',
-        unsafe_allow_html=True,
-    )
+    # ── v1.0.3.2: STEPPER JUMP BUTTONS ──────────────────────────────────
+    # Problem: st.markdown wrapper divs do NOT wrap st.button widgets in
+    # the Streamlit DOM. The buttons render as siblings, not children.
+    # Solution: (1) Inject a MutationObserver BEFORE the buttons that hides
+    # them the instant they appear in the DOM. (2) Use requestAnimationFrame
+    # to hide before the browser paints. (3) Wire click handlers after.
+
+    # STEP A: Pre-inject observer + CSS into parent doc — catches buttons
+    # before browser paints.  Uses THREE layers of defense:
+    #   1. Inject <style> into parent <head> for [data-sj-hidden]
+    #   2. MutationObserver marks sj buttons with data-sj-hidden immediately
+    #   3. setInterval polls every 60 ms for 15 s as a continuous fallback
+    _pre_hide_js = """<script>
+(function() {
+    var doc = window.parent.document;
+    // Layer 1: inject CSS rule into parent <head>
+    if (!doc.getElementById('sj-hide-css')) {
+        var s = doc.createElement('style');
+        s.id = 'sj-hide-css';
+        s.textContent = '[data-sj-hidden],[data-sj-hidden] *{display:none!important;height:0!important;max-height:0!important;overflow:hidden!important;margin:0!important;padding:0!important;border:0!important;position:absolute!important;left:-9999px!important;pointer-events:none!important;opacity:0!important;}';
+        doc.head.appendChild(s);
+    }
+    function hideSJ() {
+        doc.querySelectorAll('button').forEach(function(b) {
+            var txt = (b.textContent || '').trim();
+            if (!/^__sj\\d__$/.test(txt)) return;
+            // Walk up DOM tree and mark every ancestor up to stHorizontalBlock
+            var el = b;
+            for (var i = 0; i < 12 && el && el !== doc.body; i++) {
+                el.setAttribute('data-sj-hidden', '1');
+                el.style.cssText = 'display:none!important;height:0!important;overflow:hidden!important;';
+                var tid = el.getAttribute('data-testid') || '';
+                if (tid === 'stHorizontalBlock' || tid === 'stVerticalBlockBorderWrapper') break;
+                el = el.parentElement;
+            }
+        });
+    }
+    // Layer 2: MutationObserver — fires on every DOM change
+    if (!doc._sjObs) {
+        doc._sjObs = new MutationObserver(function() {
+            hideSJ();
+            requestAnimationFrame(hideSJ);
+        });
+        doc._sjObs.observe(doc.body || doc.documentElement, {childList:true, subtree:true});
+        setTimeout(function() { if(doc._sjObs){doc._sjObs.disconnect(); doc._sjObs=null;} }, 15000);
+    }
+    // Layer 3: setInterval — catches anything the observer misses
+    hideSJ();
+    requestAnimationFrame(hideSJ);
+    var ivl = setInterval(hideSJ, 60);
+    setTimeout(function() { clearInterval(ivl); }, 15000);
+})();
+</script>"""
+    _st_components.html(_pre_hide_js, height=0)
+
+    # STEP B: Render the 4 jump buttons (observer hides them instantly)
     _jump_cols = st.columns(4)
     for _ji in range(4):
         with _jump_cols[_ji]:
             if st.button(f"__sj{_ji}__", key=f"stepper_jump_{_ji}"):
                 _navigate_to(_ji)
-    st.markdown('</div>', unsafe_allow_html=True)
 
-    # v1.0.3.1: JS wires stepper clicks → hidden buttons. Also force-hides
-    # the button container in parent DOM (belt-and-suspenders).
-    _stepper_click_js = """<script>
+    # STEP C: Wire stepper circle clicks → hidden jump buttons + re-hide
+    _wire_js = """<script>
 (function() {
     var doc = window.parent.document;
-    function setup() {
-        // Force-hide any visible jump button rows (belt-and-suspenders)
-        doc.querySelectorAll('button').forEach(function(btn) {
-            var txt = (btn.textContent || '').trim();
-            if (/^__sj[0-3]__$/.test(txt)) {
-                // Hide the button itself
-                btn.style.cssText = 'height:0!important;overflow:hidden!important;opacity:0!important;pointer-events:none!important;position:absolute!important;';
-                // Hide parent containers up to the horizontal block
-                var p = btn.parentElement;
-                for (var i = 0; i < 5 && p; i++) {
-                    if (p.getAttribute && (p.getAttribute('data-testid') === 'stHorizontalBlock' || p.classList.contains('stepper-jump-row'))) {
-                        p.style.cssText = 'height:0!important;overflow:hidden!important;margin:0!important;padding:0!important;border:0!important;min-height:0!important;opacity:0!important;pointer-events:none!important;position:absolute!important;left:-9999px!important;';
-                        break;
-                    }
-                    p = p.parentElement;
-                }
+    function hideSJ() {
+        doc.querySelectorAll('button').forEach(function(b) {
+            var txt = (b.textContent || '').trim();
+            if (!/^__sj\\d__$/.test(txt)) return;
+            var el = b;
+            for (var i = 0; i < 12 && el && el !== doc.body; i++) {
+                el.setAttribute('data-sj-hidden', '1');
+                el.style.cssText = 'display:none!important;height:0!important;overflow:hidden!important;';
+                if (/^(stHorizontalBlock|stVerticalBlockBorderWrapper)$/.test(el.getAttribute('data-testid')||'')) break;
+                el = el.parentElement;
             }
         });
-        // Wire click handlers on stepper steps
+    }
+    function wireClicks() {
         doc.querySelectorAll('.stepper-step.clickable').forEach(function(step) {
-            if (step._clickWired) return;
-            step._clickWired = true;
+            if (step._cw) return;
+            step._cw = true;
             var idx = step.getAttribute('data-step');
             step.addEventListener('click', function(e) {
                 e.preventDefault();
+                // Temporarily unhide the target button to allow click
+                var targets = [];
                 doc.querySelectorAll('button').forEach(function(btn) {
-                    if ((btn.textContent || '').trim() === '__sj' + idx + '__') {
-                        btn.click();
+                    if ((btn.textContent||'').trim() === '__sj' + idx + '__') {
+                        targets.push(btn);
+                        btn.style.cssText = '';
+                        btn.removeAttribute('data-sj-hidden');
                     }
                 });
+                // Click the button, then re-hide after a tick
+                targets.forEach(function(btn) { btn.click(); });
+                setTimeout(hideSJ, 10);
             });
         });
     }
-    // Run immediately and on multiple delays
-    setup();
-    [30, 80, 150, 300, 600, 1000].forEach(function(d) { setTimeout(setup, d); });
-    try {
-        var target = doc.querySelector('section.main') || doc.body;
-        var obs = new MutationObserver(function() { setup(); });
-        obs.observe(target, {childList: true, subtree: true});
-        setTimeout(function() { obs.disconnect(); }, 5000);
-    } catch(e) {}
+    hideSJ(); wireClicks();
+    var ivl = setInterval(function(){ hideSJ(); wireClicks(); }, 80);
+    setTimeout(function() { clearInterval(ivl); }, 15000);
 })();
 </script>"""
-    _st_components.html(_stepper_click_js, height=0)
+    _st_components.html(_wire_js, height=0)
 
 
 _SCROLL_TO_TOP_JS = """<script>
