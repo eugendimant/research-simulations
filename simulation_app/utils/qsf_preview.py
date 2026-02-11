@@ -33,7 +33,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 # Version identifier to help track deployed code
-__version__ = "1.0.3.2"  # v1.0.3.2: MutationObserver sj-hide, design polish
+__version__ = "1.0.3.3"  # v1.0.3.3: Remove hidden buttons, query-param nav
 
 
 # ============================================================================
