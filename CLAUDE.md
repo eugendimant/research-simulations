@@ -673,3 +673,117 @@ Always filter stop words from extracted topic, take first 2-4 content words, joi
 
 ### Strategic Priority
 **Start with Idea #1 (User Accounts + Workspaces)** — it's the prerequisite for everything else. Without it, you can't bill, can't track, can't collaborate, can't do enterprise sales. It's the keystone.
+
+---
+
+## Simulation Realism Improvement Plan (v1.0.4.3 → v1.0.5.x)
+
+### Audit Summary (2026-02-11)
+
+Comprehensive audit of the simulation pipeline identified 12 improvement areas across 5 files. The engine is strong on political/economic game realism but has systematic gaps in other domains. Key findings:
+
+1. **STEP 2 domain keyword→effect mappings**: 16 domains implemented but several are thin (embodiment: 3 rules, time/temporal: 2 rules). Missing domains: stereotype threat, sunk cost escalation, linguistic styles, deception detection.
+2. **Reverse item × acquiescence interaction**: `is_reverse` parameter exists but only flips the scale. Should interact with acquiescence (acquiescent respondents incorrectly agree with reverse-coded items at higher rates) and engagement (careless responders fail reverse items).
+3. **Study context underutilized in trait modifiers**: `_get_condition_trait_modifier()` only reads condition text. Study title/description contain domain signals that should enrich trait modification (e.g., "dictator game" in study title + "high trustworthiness" condition = double effect).
+4. **Missing domain-specific personas**: No dedicated personas for clinical/anxiety, legal/forensic, sports/competition, relationships/attachment, financial decision-making, or communication/media.
+5. **Social desirability bias is domain-agnostic**: SD effect (STEP 9) applies equally to all DVs. In reality, SD effects are strongest for sensitive topics (prejudice, aggression, substance use) and weakest for behavioral/factual reports.
+6. **Response library thin domains**: Several domains have <15 template sentences vs. 100+ for rich domains. Survey_feedback domain still contains meta-commentary.
+7. **Scale type detection limited**: Only 4 categories (slider, Likert, bipolar, WTP). Missing: matrix scales, forced choice, semantic differential.
+
+### Implementation Plan: 3 Iterations
+
+#### Iteration 1: Simulation Engine Core — Reverse Items, Study Context, STEP 2 Domains
+**Files**: `enhanced_simulation_engine.py`
+
+1. **Enhance reverse-item modeling (STEP 5)**
+   - Current: Simple flip `center = scale_max - (center - scale_min)` + acquiescence noise
+   - New: Careless respondents fail to reverse at rate proportional to `(1 - attention_level)`
+   - New: Engagement-dependent reversal accuracy — engaged respondents reverse correctly, satisficers often ignore reversal
+   - Scientific basis: Woods (2006): 10-15% of respondents ignore item directionality; Weijters et al. (2010): acquiescence inflates reverse-coded item error by ~0.5 points
+
+2. **Integrate study context into trait modifiers**
+   - Pass `self.study_title` and `self.study_description` to `_get_condition_trait_modifier()`
+   - Detect study-level domain (health, political, consumer, etc.) from title/description
+   - Apply domain-based trait adjustments that interact with condition-level modifiers
+   - Example: "Political identity" study + "control" condition → still add political extremity (+0.08) because even control groups in political studies show domain priming
+
+3. **Expand STEP 2 with thin/missing domains**
+   - Add: Deception/dishonesty (honest vs. dishonest conditions, die-rolling paradigms)
+   - Add: Stereotype threat (diagnostic vs. non-diagnostic test framing)
+   - Add: Sunk cost (invested vs. not invested in prior commitment)
+   - Add: Construal level (abstract/why vs. concrete/how)
+   - Add: Reactance (freedom threat vs. choice conditions)
+   - Expand: Embodiment (facial feedback, power pose, touch, warmth/cold priming)
+   - Expand: Temporal (time scarcity, deadline, temporal reframing, future time perspective)
+   - Each with published effect sizes and references
+
+#### Iteration 2: Persona Library Expansion + Domain-Condition Interactions
+**Files**: `persona_library.py`, `enhanced_simulation_engine.py`
+
+1. **Add 6+ new domain-specific personas**
+   - Clinical/Anxiety Persona: High anxiety, avoidant, low confidence (Clark & Watson, 1991)
+   - Legal/Forensic Persona: Authority-sensitive, justice-focused, literal (Tyler, 2006)
+   - Sports/Competition Persona: High achievement motivation, competitive, risk-taking (Vealey, 1986)
+   - Relationships/Attachment Persona: Attachment anxiety/avoidance, intimacy needs (Brennan et al., 1998)
+   - Financial Decision Persona: Loss-averse, overconfident, status-quo bias (Barber & Odean, 2001)
+   - Media/Communication Persona: Source-critical, information-seeking, persuasion knowledge (Friestad & Wright, 1994)
+
+2. **Add domain-condition interaction patterns to STEP 3**
+   - Power/hierarchy conditions: boost authority-sensitivity traits
+   - Competition conditions: boost achievement motivation, reduce cooperation
+   - Mindfulness/meditation conditions: boost attention, reduce extremity
+   - Accountability conditions: boost accuracy motivation, reduce SD bias
+   - Goal-setting conditions: boost engagement, consistency
+   - Priming conditions: detect prime type (semantic, identity, mortality) and adjust relevant traits
+
+#### Iteration 3: Social Desirability Domain Sensitivity + Documentation
+**Files**: `enhanced_simulation_engine.py`, `response_library.py`, `docs/CHANGELOG.md`
+
+1. **Make social desirability bias domain-sensitive (STEP 9)**
+   - Current: Flat `social_des * scale_range * 0.12` for all DVs
+   - New: SD multiplier varies by construct sensitivity
+     - Sensitive (prejudice, aggression, substance use, dishonesty): 1.5× SD effect
+     - Moderate (prosocial, compliance, health behaviors): 1.0× (default)
+     - Low (factual, behavioral frequency, risk perception): 0.5× SD effect
+     - Counter (negative self-presentation topics like vulnerability, anxiety): -0.5× (SD inverts)
+   - Scientific basis: Nederhof (1985 meta): SD bias d = 0.25-0.75 for sensitive topics; Paulhus (2002): Impression Management vs. Self-Deception differ by domain
+
+2. **Expand _personalize_for_question() domain modifiers**
+   - Currently only AI, hedonic, utilitarian get condition-specific modifiers
+   - Add: Political condition modifiers ("As someone who leans [direction]...")
+   - Add: Health condition modifiers ("Given my health situation...")
+   - Add: Moral/ethical modifiers ("From an ethical standpoint...")
+   - Add: Intergroup modifiers ("Thinking about the other group...")
+   - Add: Financial modifiers ("Considering the financial implications...")
+
+3. **Update documentation**
+   - CHANGELOG.md: Full entry for v1.0.4.4 with all changes
+   - README.md: Update features section
+   - CLAUDE.md: Mark plan items as completed
+
+### Success Criteria
+
+After all 3 iterations:
+- **18+ domains** have domain-specific effect multipliers (STEP 4)
+- **25+ condition categories** trigger trait modifications (STEP 3)
+- **10+ persona sensitivity factors** in personality × condition interactions
+- **50+ domain personas** with 25 trait dimensions each
+- Reverse-coded items show realistic failure patterns for inattentive respondents
+- Social desirability varies by topic sensitivity (not flat across all DVs)
+- Study context (title/description) informs trait modification beyond just condition text
+- All fallback response paths remain on-topic (no generic meta-commentary regression)
+
+### Scientific References for Planned Additions
+
+| Improvement | Key Reference | Expected Effect |
+|-------------|--------------|-----------------|
+| Reverse item failure | Woods (2006) | 10-15% ignore directionality |
+| Acquiescence × reverse | Weijters et al. (2010) | +0.5 point error inflation |
+| Stereotype threat | Nguyen & Ryan (2008 meta) | d = 0.26 |
+| Sunk cost | Arkes & Blumer (1985) | d = 0.30-0.50 |
+| Construal level | Trope & Liberman (2010) | Modulates evaluation abstraction |
+| Reactance | Brehm & Brehm (1981) | d = 0.30-0.40 |
+| SD domain sensitivity | Nederhof (1985 meta) | d = 0.25-0.75 for sensitive topics |
+| Power pose effects | Cuddy et al. (2018 reanalysis) | d = 0.10-0.25 (small) |
+| Clinical anxiety traits | Clark & Watson (1991) | Tripartite model calibrations |
+| Attachment dimensions | Brennan et al. (1998) | ECR anxiety/avoidance norms |

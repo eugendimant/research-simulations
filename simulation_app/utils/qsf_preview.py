@@ -33,7 +33,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 # Version identifier to help track deployed code
-__version__ = "1.0.4.3"  # v1.0.4.3: Domain-aware scaling, persona sensitivity, expanded calibrations
+__version__ = "1.0.4.4"  # v1.0.4.4: Reverse-item modeling, 8 new personas, domain-sensitive SD
 
 
 # ============================================================================
