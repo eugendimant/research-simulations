@@ -323,6 +323,39 @@ Example iteration sequence that worked well:
 - **Never auto-select trash**: Always filter before presenting to user
 - **Validate against known patterns**: Check both exact matches and regex patterns
 
+#### Streamlit DOM & Navigation (CRITICAL — Hard-Won Lessons)
+
+**`st.markdown('<div class="X">')` does NOT wrap subsequent widgets.**
+- Streamlit renders each widget independently as siblings in the DOM.
+- A `<div>` opened in one `st.markdown()` call is auto-closed by the browser. The next `st.button()`, `st.text_input()`, etc. render as siblings, NOT children.
+- **NEVER** use `st.markdown('<div>')` to create wrapper containers for styling. It creates empty styled elements (e.g., empty white cards).
+- **Use `st.container()`** if you need a proper wrapping DOM element.
+
+**`st.container(height=N)` creates a clipped container.**
+- Creates a `<div>` with `max-height: Npx; overflow: auto;` inline style.
+- With `height=1`, contents are clipped to 1px tall — effectively invisible.
+- Can be targeted with CSS: `div[data-testid="stVerticalBlockBorderWrapper"][style*="max-height: 1px"]`
+- Programmatic `.click()` on buttons inside works even when container is clipped.
+- Available since Streamlit 1.29.0. Use `try/except TypeError` for older versions.
+
+**`_st_components.html()` creates an iframe.**
+- JS inside can access `window.parent.document` (same-origin sandbox).
+- The iframe is CACHED by Streamlit — if the HTML string doesn't change between reruns, the iframe is preserved and JS does NOT re-execute.
+- **MutationObserver created in the iframe persists across Streamlit reruns.** This is the correct pattern for continuously re-wiring event handlers.
+- **NEVER use `window.parent.location.href = ...`** — it causes a full page reload which destroys the WebSocket connection and loses ALL session state.
+
+**Correct navigation pattern: Hidden buttons + MutationObserver.**
+1. Render `st.button()` calls inside `st.container(height=1)` — invisible via CSS.
+2. Use `_st_components.html()` with MutationObserver that watches `section.main`.
+3. Observer fires on DOM mutations → re-wires click handlers on stepper circles.
+4. Stepper circle click → `document.querySelector('button')` → `.click()` → triggers Streamlit callback.
+5. Three defense layers: (a) CSS hides container, (b) JS hides individual buttons, (c) MutationObserver continuously re-wires.
+
+**Query-param navigation does NOT work.**
+- `window.parent.location.href = url` causes full page reload → new WebSocket → session state lost.
+- `st.query_params` works for reading params, but setting them via JS reload is destructive.
+- This approach was tried and failed in v1.0.3.3.
+
 ### Anti-Patterns to Avoid
 
 1. **Big-bang rewrites**: Break into iterations instead
@@ -332,6 +365,9 @@ Example iteration sequence that worked well:
 5. **Hardcoding patterns**: Use configurable lists for exclusions
 6. **Skipping validation**: Users will find edge cases you missed
 7. **Ignoring UI feedback**: Scroll position, visual feedback matter
+8. **Using `st.markdown('<div>')` as wrapper**: It doesn't wrap — use `st.container()` instead
+9. **Using `window.parent.location.href` in iframe JS**: Destroys session state — use programmatic `.click()` on hidden buttons
+10. **Relying on one-time JS execution**: Streamlit re-renders DOM on every rerun — use MutationObserver for persistence
 
 ### Documentation Philosophy
 

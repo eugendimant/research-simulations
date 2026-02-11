@@ -33,7 +33,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 # Version identifier to help track deployed code
-__version__ = "1.0.3.3"  # v1.0.3.3: Remove hidden buttons, query-param nav
+__version__ = "1.0.3.4"  # v1.0.3.4: Hidden buttons + MutationObserver nav
 
 
 # ============================================================================
