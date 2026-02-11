@@ -53,8 +53,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.0.3.2"
-BUILD_ID = "20260210-v1032-sj-hide-observer-design-polish"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.0.3.3"
+BUILD_ID = "20260211-v1033-remove-sj-buttons-query-param-nav"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -119,7 +119,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.0.3.2"  # v1.0.3.2: MutationObserver sj-hide, design polish, form styling
+APP_VERSION = "1.0.3.3"  # v1.0.3.3: Remove hidden buttons, query-param stepper navigation
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -5042,26 +5042,7 @@ def _section_summary(idx: int) -> str:
 _FLOW_NAV_CSS = """<style>
 /* === v1.8.0: Premium landing page + segmented progress === */
 
-/* v1.0.3.2: Hide stepper jump buttons — CSS fallback + JS MutationObserver */
-[data-sj-hidden],
-[data-sj-hidden] * {
-    display: none !important;
-    height: 0 !important;
-    overflow: hidden !important;
-    margin: 0 !important;
-    padding: 0 !important;
-    border: 0 !important;
-    min-height: 0 !important;
-    opacity: 0 !important;
-    pointer-events: none !important;
-    position: absolute !important;
-    left: -9999px !important;
-}
-/* Also hide by button text content — catches any __sj*__ buttons the observer misses */
-button[kind="secondary"]:empty,
-div[data-testid="stHorizontalBlock"]:has(button) {
-    /* Only hidden by JS — this selector is a documentation marker */
-}
+/* v1.0.3.3: No hidden buttons — stepper uses query-param navigation */
 
 /* Base layout */
 section.main .block-container {
@@ -5934,85 +5915,13 @@ def _render_flow_nav(active: int, done: List[bool]) -> None:
 
     st.markdown(html, unsafe_allow_html=True)
 
-    # ── v1.0.3.2: STEPPER JUMP BUTTONS ──────────────────────────────────
-    # Problem: st.markdown wrapper divs do NOT wrap st.button widgets in
-    # the Streamlit DOM. The buttons render as siblings, not children.
-    # Solution: (1) Inject a MutationObserver BEFORE the buttons that hides
-    # them the instant they appear in the DOM. (2) Use requestAnimationFrame
-    # to hide before the browser paints. (3) Wire click handlers after.
-
-    # STEP A: Pre-inject observer + CSS into parent doc — catches buttons
-    # before browser paints.  Uses THREE layers of defense:
-    #   1. Inject <style> into parent <head> for [data-sj-hidden]
-    #   2. MutationObserver marks sj buttons with data-sj-hidden immediately
-    #   3. setInterval polls every 60 ms for 15 s as a continuous fallback
-    _pre_hide_js = """<script>
-(function() {
-    var doc = window.parent.document;
-    // Layer 1: inject CSS rule into parent <head>
-    if (!doc.getElementById('sj-hide-css')) {
-        var s = doc.createElement('style');
-        s.id = 'sj-hide-css';
-        s.textContent = '[data-sj-hidden],[data-sj-hidden] *{display:none!important;height:0!important;max-height:0!important;overflow:hidden!important;margin:0!important;padding:0!important;border:0!important;position:absolute!important;left:-9999px!important;pointer-events:none!important;opacity:0!important;}';
-        doc.head.appendChild(s);
-    }
-    function hideSJ() {
-        doc.querySelectorAll('button').forEach(function(b) {
-            var txt = (b.textContent || '').trim();
-            if (!/^__sj\\d__$/.test(txt)) return;
-            // Walk up DOM tree and mark every ancestor up to stHorizontalBlock
-            var el = b;
-            for (var i = 0; i < 12 && el && el !== doc.body; i++) {
-                el.setAttribute('data-sj-hidden', '1');
-                el.style.cssText = 'display:none!important;height:0!important;overflow:hidden!important;';
-                var tid = el.getAttribute('data-testid') || '';
-                if (tid === 'stHorizontalBlock' || tid === 'stVerticalBlockBorderWrapper') break;
-                el = el.parentElement;
-            }
-        });
-    }
-    // Layer 2: MutationObserver — fires on every DOM change
-    if (!doc._sjObs) {
-        doc._sjObs = new MutationObserver(function() {
-            hideSJ();
-            requestAnimationFrame(hideSJ);
-        });
-        doc._sjObs.observe(doc.body || doc.documentElement, {childList:true, subtree:true});
-        setTimeout(function() { if(doc._sjObs){doc._sjObs.disconnect(); doc._sjObs=null;} }, 15000);
-    }
-    // Layer 3: setInterval — catches anything the observer misses
-    hideSJ();
-    requestAnimationFrame(hideSJ);
-    var ivl = setInterval(hideSJ, 60);
-    setTimeout(function() { clearInterval(ivl); }, 15000);
-})();
-</script>"""
-    _st_components.html(_pre_hide_js, height=0)
-
-    # STEP B: Render the 4 jump buttons (observer hides them instantly)
-    _jump_cols = st.columns(4)
-    for _ji in range(4):
-        with _jump_cols[_ji]:
-            if st.button(f"__sj{_ji}__", key=f"stepper_jump_{_ji}"):
-                _navigate_to(_ji)
-
-    # STEP C: Wire stepper circle clicks → hidden jump buttons + re-hide
+    # ── v1.0.3.3: STEPPER NAVIGATION VIA QUERY PARAMS ──────────────────
+    # No hidden buttons. Stepper circle clicks set a URL query param
+    # (?_nav_to=<index>), triggering a page reload. Python reads the
+    # param at startup and calls _navigate_to().
     _wire_js = """<script>
 (function() {
     var doc = window.parent.document;
-    function hideSJ() {
-        doc.querySelectorAll('button').forEach(function(b) {
-            var txt = (b.textContent || '').trim();
-            if (!/^__sj\\d__$/.test(txt)) return;
-            var el = b;
-            for (var i = 0; i < 12 && el && el !== doc.body; i++) {
-                el.setAttribute('data-sj-hidden', '1');
-                el.style.cssText = 'display:none!important;height:0!important;overflow:hidden!important;';
-                if (/^(stHorizontalBlock|stVerticalBlockBorderWrapper)$/.test(el.getAttribute('data-testid')||'')) break;
-                el = el.parentElement;
-            }
-        });
-    }
     function wireClicks() {
         doc.querySelectorAll('.stepper-step.clickable').forEach(function(step) {
             if (step._cw) return;
@@ -6020,24 +5929,17 @@ def _render_flow_nav(active: int, done: List[bool]) -> None:
             var idx = step.getAttribute('data-step');
             step.addEventListener('click', function(e) {
                 e.preventDefault();
-                // Temporarily unhide the target button to allow click
-                var targets = [];
-                doc.querySelectorAll('button').forEach(function(btn) {
-                    if ((btn.textContent||'').trim() === '__sj' + idx + '__') {
-                        targets.push(btn);
-                        btn.style.cssText = '';
-                        btn.removeAttribute('data-sj-hidden');
-                    }
-                });
-                // Click the button, then re-hide after a tick
-                targets.forEach(function(btn) { btn.click(); });
-                setTimeout(hideSJ, 10);
+                var url = new URL(window.parent.location);
+                url.searchParams.set('_nav_to', idx);
+                window.parent.location.href = url.toString();
             });
         });
     }
-    hideSJ(); wireClicks();
-    var ivl = setInterval(function(){ hideSJ(); wireClicks(); }, 80);
-    setTimeout(function() { clearInterval(ivl); }, 15000);
+    wireClicks();
+    // Retry wiring in case stepper DOM isn't ready yet
+    [50, 200, 600, 1500].forEach(function(d) {
+        setTimeout(wireClicks, d);
+    });
 })();
 </script>"""
     _st_components.html(_wire_js, height=0)
@@ -6213,6 +6115,19 @@ if st.session_state.pop("_pending_reset", False):
 # Clean up any stale flags from previous versions
 st.session_state.pop("_scroll_then_nav_target", None)
 st.session_state.pop("_review_at_top", None)
+
+# ── v1.0.3.3: Handle stepper navigation via query params ─────────────
+# Stepper circle clicks set ?_nav_to=<index> in the URL. Read it here,
+# clear the param, and route through the standard _navigate_to() flow.
+_qp_nav = st.query_params.get("_nav_to")
+if _qp_nav is not None:
+    try:
+        _qp_target = int(_qp_nav)
+        # Clear the query param so it doesn't loop
+        del st.query_params["_nav_to"]
+        _navigate_to(_qp_target)  # sets _pending_nav + st.rerun()
+    except (ValueError, TypeError):
+        del st.query_params["_nav_to"]
 
 # ── Apply pending navigation (from auto-advance or _navigate_to) ─────
 _pending_nav = st.session_state.pop("_pending_nav", None)
