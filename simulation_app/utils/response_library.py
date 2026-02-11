@@ -63,7 +63,7 @@ association, impression, perception, feedback, comment, observation, general
 Version: 1.8.5 - Improved domain detection with weighted scoring and disambiguation
 """
 
-__version__ = "1.0.4.8"
+__version__ = "1.0.4.9"
 
 import random
 import re
@@ -3490,6 +3490,32 @@ DOMAIN_TEMPLATES: Dict[str, Dict[str, Dict[str, List[str]]]] = {
             "negative": ["Social comparison often makes me feel worse.", "I tend to compare unfavorably.", "Comparing myself to others is discouraging.", "I find it more harmful than helpful.", "I try to avoid social comparison."],
             "very_negative": ["Social comparison is very harmful to me.", "I always feel worse after comparing.", "Comparison triggers negative feelings.", "I strongly dislike social comparison.", "It's toxic for my wellbeing."],
         },
+        "evaluation": {
+            "positive": [
+                "Upward comparison can be genuinely motivating when I see it as aspirational rather than threatening.",
+                "I think comparing ourselves to people we admire helps set realistic goals.",
+                "Social comparison gives me a helpful frame of reference for where I stand.",
+                "Looking at how others handle similar challenges helps me calibrate my own progress.",
+                "I find that downward comparison occasionally reminds me to appreciate what I have.",
+                "Comparison becomes constructive when I focus on learning rather than judging myself.",
+            ],
+            "neutral": [
+                "Social comparison seems to be a double-edged sword depending on the direction.",
+                "I think whether comparison helps or hurts depends a lot on the context and your mindset.",
+                "There are times when comparing is useful and times when it just makes things worse.",
+                "It's hard to evaluate comparison overall because the effects are so mixed.",
+                "I can see the argument for both sides - comparison can motivate or demoralize.",
+                "The impact of social comparison seems to vary a lot from person to person.",
+            ],
+            "negative": [
+                "Upward comparison tends to make me feel inadequate more often than inspired.",
+                "I think social media has made social comparison far more toxic than it used to be.",
+                "Constantly measuring yourself against others erodes your sense of self-worth.",
+                "The problem with comparison is that you usually compare your worst to others' best.",
+                "I find that comparison creates a cycle of dissatisfaction that's hard to break.",
+                "Downward comparison might feel good briefly but it doesn't actually improve anything.",
+            ],
+        },
     },
 
     # SELF-REGULATION
@@ -3577,6 +3603,223 @@ DOMAIN_TEMPLATES: Dict[str, Dict[str, Dict[str, List[str]]]] = {
             "neutral": ["The mental effort was moderate.", "This required some thinking.", "The cognitive demand was average.", "It wasn't too easy or hard.", "The effort required was typical."],
             "negative": ["This required significant mental effort.", "I found it somewhat demanding.", "The cognitive load was high.", "This was mentally taxing.", "I had to think quite hard."],
             "very_negative": ["This was very mentally demanding.", "I found it extremely difficult to process.", "The cognitive load was overwhelming.", "This was exhausting to think about.", "The mental effort was excessive."],
+        },
+    },
+
+    # ========== NARRATIVE TRANSPORTATION ==========
+
+    "narrative_transportation": {
+        "explanation": {
+            "positive": [
+                "I got completely absorbed in the story and lost track of time while reading it.",
+                "The narrative pulled me in so deeply that I felt like I was living in the story world.",
+                "I found myself emotionally invested in the characters and their outcomes.",
+                "The story was so vivid that I could picture everything happening as if I were there.",
+                "I was fully transported into the narrative and forgot about my surroundings.",
+                "The fictional world felt real to me while I was engaged with it.",
+            ],
+            "neutral": [
+                "I followed the story but didn't feel particularly drawn into it.",
+                "The narrative held my attention but I was still aware I was reading a story.",
+                "I engaged with the plot at a surface level without strong emotional involvement.",
+                "The story was interesting enough but I wouldn't say I was transported.",
+                "I read through it and understood the events but didn't feel immersed.",
+                "My engagement with the narrative was moderate and fairly detached.",
+            ],
+            "negative": [
+                "I had trouble getting into the story and my mind kept wandering.",
+                "The narrative felt flat and I couldn't connect with the characters at all.",
+                "I was aware the whole time that this was just a story and it didn't move me.",
+                "I found it hard to stay engaged and kept thinking about other things.",
+                "The story didn't feel believable enough for me to get absorbed in it.",
+                "I remained emotionally detached throughout the entire narrative.",
+            ],
+        },
+        "evaluation": {
+            "positive": [
+                "Narrative transportation is a powerful mechanism for shifting attitudes because it bypasses critical resistance.",
+                "Stories that deeply absorb readers are far more persuasive than straightforward arguments.",
+                "I think the ability to get lost in a story is a fundamental part of how fiction shapes our beliefs.",
+                "Emotional engagement with characters creates lasting attitude change in ways that facts alone cannot.",
+                "Being transported into a narrative makes the message more compelling because you experience it rather than just hear it.",
+            ],
+            "neutral": [
+                "The effects of narrative transportation seem to depend heavily on the quality of the story and the reader.",
+                "Getting absorbed in fiction might shift attitudes temporarily but I'm not sure how lasting those effects are.",
+                "Narrative persuasion is interesting but it probably works better for some people than others.",
+                "I think transportation matters for entertainment but its persuasive impact may be overstated.",
+                "Whether narrative absorption changes beliefs likely depends on how closely the story relates to real issues.",
+            ],
+            "negative": [
+                "I think people overestimate how much a story can actually change someone's mind about real issues.",
+                "Being absorbed in fiction is enjoyable but it shouldn't be confused with genuine attitude change.",
+                "Narrative transportation seems like a form of manipulation when used deliberately for persuasion.",
+                "The persuasive power of stories concerns me because it bypasses rational evaluation of evidence.",
+                "I'm skeptical that getting lost in a fictional world translates to meaningful real-world belief changes.",
+            ],
+        },
+    },
+
+    # ========== GRATITUDE INTERVENTION ==========
+
+    "gratitude_intervention": {
+        "explanation": {
+            "positive": [
+                "Writing about things I'm grateful for genuinely shifted my mood and outlook.",
+                "The gratitude exercise helped me notice positive aspects of my life I usually overlook.",
+                "Focusing on thankfulness made me realize how much I take for granted day to day.",
+                "I found the gratitude practice surprisingly effective at reducing my stress and worry.",
+                "Listing things I appreciate gave me a sense of perspective on my problems.",
+                "The intervention reminded me that I have a lot of good things going on even when times are tough.",
+            ],
+            "neutral": [
+                "I did the gratitude exercise but I'm not sure it changed how I actually feel.",
+                "Writing about gratitude was fine but it felt a bit forced rather than natural.",
+                "I can see how this might help some people but it didn't have a strong effect on me.",
+                "The practice was pleasant enough but I wouldn't say it transformed my thinking.",
+                "I listed grateful things as instructed but my overall mood stayed about the same.",
+                "It was an interesting exercise though I'm uncertain about its lasting impact.",
+            ],
+            "negative": [
+                "Forced gratitude feels artificial to me and doesn't address real problems.",
+                "I struggled to come up with things to be grateful for, which actually made me feel worse.",
+                "The gratitude exercise felt dismissive of genuine difficulties I'm dealing with.",
+                "Being told to focus on positives when things are hard feels like toxic positivity.",
+                "I found the intervention irritating because it implies my negative feelings are just a perspective problem.",
+                "Gratitude practices seem like a superficial band-aid that ignores structural issues people face.",
+            ],
+        },
+        "evaluation": {
+            "positive": [
+                "Gratitude interventions have strong evidence behind them for boosting subjective wellbeing.",
+                "I think gratitude practices work because they train attention toward positive experiences that are already there.",
+                "Counting blessings is one of the most accessible and cost-effective psychological interventions available.",
+                "Regular gratitude practice creates a genuine upward spiral of positive emotion and prosocial behavior.",
+                "The research on gratitude journals improving sleep, mood, and relationships is very convincing.",
+            ],
+            "neutral": [
+                "Gratitude interventions seem to work for some people and not others depending on personality.",
+                "The evidence is mixed on how long the benefits of gratitude exercises actually last.",
+                "I think gratitude practices are helpful as one tool but they're not a cure-all for wellbeing.",
+                "The effectiveness probably depends on whether someone does it voluntarily or is assigned to do it.",
+                "Gratitude interventions have promise but more research is needed on who benefits most.",
+            ],
+            "negative": [
+                "Gratitude interventions can be harmful when they pressure people to minimize real suffering.",
+                "I think the gratitude movement oversells its benefits and ignores important boundary conditions.",
+                "Forced gratitude can backfire for people dealing with depression, trauma, or genuine hardship.",
+                "The emphasis on gratitude places the burden on individuals rather than addressing systemic problems.",
+                "I find the research on gratitude interventions less robust than popular psychology books suggest.",
+            ],
+        },
+    },
+
+    # ========== MORAL CLEANSING ==========
+
+    "moral_cleansing": {
+        "explanation": {
+            "positive": [
+                "After doing something I felt bad about, engaging in a good deed helped restore my sense of being a decent person.",
+                "I feel like my ethical identity is important to me, and I actively work to maintain it through my actions.",
+                "When I fall short of my moral standards, I feel driven to compensate by doing something positive.",
+                "I believe redemption is possible and that past mistakes can be offset by genuine good behavior.",
+                "My moral self-image matters deeply to me and I take steps to protect it when it feels threatened.",
+                "I've noticed that guilt motivates me to act more ethically afterward, almost like a moral reset.",
+            ],
+            "neutral": [
+                "I'm not sure whether doing good after doing bad actually balances things out morally.",
+                "Sometimes I feel the urge to compensate for ethical failures but I question whether it really helps.",
+                "My moral identity fluctuates and I don't always feel compelled to restore it after a lapse.",
+                "The idea of moral cleansing makes sense psychologically but I'm unsure if it reflects true moral growth.",
+                "I have mixed feelings about whether guilt-driven good deeds are genuinely ethical or just self-serving.",
+                "I think about my moral identity sometimes but I wouldn't say it dominates my decision-making.",
+            ],
+            "negative": [
+                "I don't think you can erase unethical behavior by doing something good afterward.",
+                "The concept of moral cleansing feels like a convenient way to excuse bad behavior.",
+                "Doing a good deed after a bad one doesn't actually undo the harm that was caused.",
+                "I worry that moral licensing lets people behave worse because they feel they've earned ethical credit.",
+                "Sacred values shouldn't be tradeable and the idea that you can compensate for violating them is troubling.",
+                "Guilt-driven charity isn't the same as genuine moral commitment in my view.",
+            ],
+        },
+        "evaluation": {
+            "positive": [
+                "Moral cleansing is a fascinating mechanism that shows how deeply people care about maintaining an ethical self-image.",
+                "The research on moral self-regulation reveals an important psychological need for consistency between actions and values.",
+                "I think moral cleansing is actually healthy because it motivates people to repair harm and recommit to their values.",
+                "The connection between guilt and prosocial behavior demonstrates that moral emotions serve an important social function.",
+                "Understanding moral cleansing dynamics helps explain why people donate after ethical lapses, which still benefits recipients.",
+            ],
+            "neutral": [
+                "Moral cleansing is psychologically interesting but its implications for actual ethical behavior are ambiguous.",
+                "The research shows people regulate their moral self-concept, but whether that produces better behavior overall is debatable.",
+                "I think moral self-regulation is real but it's unclear whether it leads to genuine moral improvement or just psychological comfort.",
+                "The moral cleansing effect seems to depend heavily on whether the person acknowledges the initial transgression.",
+                "It's a well-documented phenomenon but I'm uncertain whether it's ultimately positive or negative for moral behavior.",
+            ],
+            "negative": [
+                "Moral cleansing enables a troubling cycle where people feel licensed to behave unethically as long as they compensate later.",
+                "I think the research on moral licensing shows that self-regulation can actually undermine consistent ethical behavior.",
+                "The problem with moral cleansing is that it treats ethics like a bank account rather than a consistent commitment.",
+                "Moral self-regulation might maintain self-image but it doesn't necessarily reduce the total harm people cause.",
+                "I find the implications concerning because it suggests people use good deeds as permission slips for future transgressions.",
+            ],
+        },
+    },
+
+    # ========== DIGITAL WELLBEING ==========
+
+    "digital_wellbeing": {
+        "explanation": {
+            "positive": [
+                "Reducing my screen time made a noticeable difference in my sleep quality and overall mood.",
+                "I've set boundaries with my phone and it feels liberating to not check notifications constantly.",
+                "Taking a digital detox helped me reconnect with activities and people I had been neglecting.",
+                "I realized how much of my day I was spending scrolling mindlessly and cutting back felt empowering.",
+                "Managing my technology use has improved my focus and ability to be present in conversations.",
+                "I feel much better since I started being intentional about when and how I use my devices.",
+            ],
+            "neutral": [
+                "I've tried reducing screen time but I'm not sure it made a huge difference either way.",
+                "My phone use is probably average and I don't feel strongly that it's a problem.",
+                "I think about digital wellbeing sometimes but I haven't made major changes to my habits.",
+                "Technology is a mixed bag for me - some screen time is valuable and some is wasteful.",
+                "I use my devices a lot but I wouldn't say I'm addicted or that it's seriously hurting me.",
+                "I can see the arguments for reducing phone use but I also rely on it for a lot of things.",
+            ],
+            "negative": [
+                "I know I spend too much time on my phone but I find it really hard to stop.",
+                "Notification overload is genuinely stressful and I feel tethered to my devices against my will.",
+                "My screen time habits have gotten worse and it's affecting my sleep and relationships.",
+                "I feel anxious when I'm away from my phone which tells me something is wrong.",
+                "Digital devices have made it impossible for me to focus for extended periods anymore.",
+                "I resent how much time technology takes from me but I can't seem to break the cycle.",
+            ],
+        },
+        "evaluation": {
+            "positive": [
+                "Digital wellbeing initiatives are important because excessive screen time has documented effects on mental health.",
+                "I think intentional technology use is one of the most important skills for modern life.",
+                "Screen time awareness tools and digital detox practices can meaningfully improve quality of life.",
+                "The research linking excessive phone use to anxiety and sleep disruption is compelling and actionable.",
+                "Setting boundaries with technology is essential for maintaining focus, relationships, and psychological health.",
+                "I believe digital literacy should include knowing when to disconnect, not just how to use devices.",
+            ],
+            "neutral": [
+                "The digital wellbeing conversation is important but I think the panic about screen time is sometimes exaggerated.",
+                "Not all screen time is equal and I think the focus should be on quality of use rather than total hours.",
+                "Digital wellbeing matters but the evidence on specific harms of phone use is more nuanced than headlines suggest.",
+                "I think the effects of technology on wellbeing depend heavily on what you're doing and who you are.",
+                "There's probably a healthy balance with technology but I'm not convinced the science has found it yet.",
+            ],
+            "negative": [
+                "I think the digital wellbeing movement puts too much responsibility on individuals instead of tech companies.",
+                "Screen time limits feel paternalistic and ignore that many people need devices for work and social connection.",
+                "Digital detox culture is mostly a privilege for people who can afford to disconnect from their obligations.",
+                "The moral panic about phones resembles past panics about television and radio that turned out to be overblown.",
+                "I'm skeptical that individual digital wellbeing practices can solve problems created by addictive design choices.",
+            ],
         },
     },
 }

@@ -33,7 +33,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 # Version identifier to help track deployed code
-__version__ = "1.0.4.8"  # v1.0.4.8: Behavioral coherence pipeline
+__version__ = "1.0.4.9"  # v1.0.4.9: Domain template expansion
 
 
 # ============================================================================
