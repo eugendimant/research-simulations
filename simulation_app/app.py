@@ -53,8 +53,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.0.3.4"
-BUILD_ID = "20260211-v1034-hidden-buttons-mutation-observer-nav"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.0.3.5"
+BUILD_ID = "20260211-v1035-visible-next-buttons-top-only"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -119,7 +119,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.0.3.4"  # v1.0.3.4: Hidden buttons in container + MutationObserver nav, remove flow-section
+APP_VERSION = "1.0.3.5"  # v1.0.3.5: Visible Next buttons at top of each page, stepper visual-only
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -3618,12 +3618,8 @@ def _render_conversational_builder() -> None:
 
     # Check if builder is already complete
     if st.session_state.get("conversational_builder_complete"):
-        st.markdown(
-            '<div class="section-done-banner">'
-            '\u2705 Study specification built \u2014 use the navigation at the top to proceed to Design'
-            '</div>',
-            unsafe_allow_html=True,
-        )
+        if st.button("Continue to Design \u2192", key="nav_next_builder", type="primary", use_container_width=True):
+            _navigate_to(2)
         if st.button("Edit my description", key="builder_reopen_edit"):
             st.session_state["conversational_builder_complete"] = False
             st.rerun()
@@ -5042,20 +5038,7 @@ def _section_summary(idx: int) -> str:
 _FLOW_NAV_CSS = """<style>
 /* === v1.8.0: Premium landing page + segmented progress === */
 
-/* v1.0.3.4: Hide stepper jump button container (clipped st.container) */
-/* CSS targets the inline max-height style set by st.container(height=1) */
-div[data-testid="stVerticalBlockBorderWrapper"][style*="max-height: 1px"] {
-    position: absolute !important;
-    width: 1px !important;
-    height: 1px !important;
-    overflow: hidden !important;
-    clip: rect(0, 0, 0, 0) !important;
-    clip-path: inset(50%) !important;
-    opacity: 0 !important;
-    margin: -1px !important;
-    padding: 0 !important;
-    border: 0 !important;
-}
+/* v1.0.3.5: Hidden-button infrastructure removed. Navigation via visible Next buttons. */
 
 /* Base layout */
 section.main .block-container {
@@ -5600,24 +5583,7 @@ details[data-testid="stExpander"][open] {
     cursor: default;
     opacity: 0.45;
 }
-/* Clickable stepper — click any non-locked step to jump */
-.stepper-step.clickable { cursor: pointer; }
-.stepper-step.clickable .stepper-circle { cursor: pointer; }
-.stepper-step.clickable .stepper-title { cursor: pointer; }
-.stepper-step.clickable:hover .stepper-circle {
-    transform: scale(1.1);
-    filter: brightness(1.05);
-}
-.stepper-step.clickable.st-done:hover .stepper-circle {
-    box-shadow: 0 4px 16px rgba(34, 197, 94, 0.4);
-}
-.stepper-step.clickable.st-upcoming:hover .stepper-circle,
-.stepper-step.clickable.st-next-target:hover .stepper-circle {
-    box-shadow: 0 4px 16px rgba(37, 99, 235, 0.3);
-}
-.stepper-step.clickable:hover .stepper-title {
-    color: #111827;
-}
+/* v1.0.3.5: Stepper is visual-only — clickable hover styles removed */
 /* Step title — readable, prominent */
 .stepper-title {
     font-size: 0.9rem;
@@ -5905,9 +5871,8 @@ def _render_flow_nav(active: int, done: List[bool]) -> None:
 
         # v1.0.2.0: Add step-done class to active step when it's complete
         _extra_cls = " step-done" if (i == active and _active_done) else ""
-        # v1.0.3.1: All non-locked steps are clickable (including active for reload)
-        _click_cls = " clickable" if state != "locked" else ""
-        html += f'<div class="stepper-step {state_cls}{_extra_cls}{_click_cls}" data-step="{i}" data-state="{state}">'
+        # v1.0.3.5: Stepper is visual-only (no clickable class, no JS wiring)
+        html += f'<div class="stepper-step {state_cls}{_extra_cls}" data-step="{i}" data-state="{state}">'
         html += f'<div class="stepper-circle">{circle_content}</div>'
         html += f'<div class="stepper-title">{sm["title"]}</div>'
         html += f'<div class="stepper-desc">{summary}</div>'
@@ -5916,90 +5881,7 @@ def _render_flow_nav(active: int, done: List[bool]) -> None:
 
     st.markdown(html, unsafe_allow_html=True)
 
-    # ── v1.0.3.4: Hidden stepper jump buttons ──────────────────────────
-    # Native st.button() inside a 1px-tall container (invisible via CSS).
-    # MutationObserver in iframe JS wires stepper circle clicks to these
-    # hidden buttons. The observer persists across Streamlit reruns
-    # because the iframe is cached (same HTML string).
-    try:
-        _sj_ctr = st.container(height=1)
-    except TypeError:
-        _sj_ctr = st.container()
-    with _sj_ctr:
-        _sj_cols = st.columns(len(SECTION_META))
-        for _sj_i in range(len(SECTION_META)):
-            with _sj_cols[_sj_i]:
-                if st.button(f"__sj{_sj_i}__", key=f"__sj{_sj_i}__"):
-                    _navigate_to(_sj_i)
-
-    # JS: Hide buttons (backup) + wire stepper circle clicks → hidden buttons
-    _wire_js = """<script>
-(function() {
-    var doc = window.parent.document;
-
-    /* Layer 1: Hide any button with __sj\\d__ text (backup for CSS) */
-    function hideSJ() {
-        doc.querySelectorAll('button').forEach(function(btn) {
-            var t = (btn.textContent || '').trim();
-            if (/^__sj\\d__$/.test(t)) {
-                var wrap = btn.closest('[data-testid="stButton"]');
-                if (wrap && !wrap._sjHidden) {
-                    wrap._sjHidden = true;
-                    wrap.style.position = 'absolute';
-                    wrap.style.width = '1px';
-                    wrap.style.height = '1px';
-                    wrap.style.overflow = 'hidden';
-                    wrap.style.opacity = '0';
-                    wrap.style.clipPath = 'inset(50%)';
-                }
-            }
-        });
-    }
-
-    /* Layer 2: Wire stepper circle clicks to hidden button clicks */
-    function wireClicks() {
-        hideSJ();
-        doc.querySelectorAll('.stepper-step.clickable').forEach(function(step) {
-            if (step._sjWired) return;
-            step._sjWired = true;
-            step.style.cursor = 'pointer';
-            var idx = step.getAttribute('data-step');
-            step.addEventListener('click', function(e) {
-                e.preventDefault();
-                e.stopPropagation();
-                /* Find the hidden button matching this step index */
-                var found = false;
-                doc.querySelectorAll('button').forEach(function(btn) {
-                    if (found) return;
-                    var t = (btn.textContent || '').trim();
-                    if (t === '__sj' + idx + '__') {
-                        found = true;
-                        btn.click();
-                    }
-                });
-            });
-        });
-    }
-
-    /* Initial wiring + retries at increasing delays */
-    wireClicks();
-    [50, 150, 400, 800, 1500, 3000].forEach(function(d) {
-        setTimeout(wireClicks, d);
-    });
-
-    /* Layer 3: MutationObserver — re-wire after Streamlit DOM changes */
-    try {
-        var target = doc.querySelector('section.main') || doc.body;
-        var debounce = null;
-        var obs = new MutationObserver(function() {
-            clearTimeout(debounce);
-            debounce = setTimeout(wireClicks, 30);
-        });
-        obs.observe(target, { childList: true, subtree: true });
-    } catch(e) {}
-})();
-</script>"""
-    _st_components.html(_wire_js, height=0)
+    # v1.0.3.5: Stepper is visual-only. Navigation via visible Next buttons on each page.
 
 
 _SCROLL_TO_TOP_JS = """<script>
@@ -6173,10 +6055,7 @@ if st.session_state.pop("_pending_reset", False):
 st.session_state.pop("_scroll_then_nav_target", None)
 st.session_state.pop("_review_at_top", None)
 
-# ── v1.0.3.4: Navigation via hidden buttons (query-param approach removed) ──
-# Hidden st.button() calls inside _render_flow_nav() handle navigation.
-# MutationObserver JS wires stepper circle clicks to those buttons.
-
+# ── v1.0.3.5: Navigation via visible Next buttons on each page ──────
 # ── Apply pending navigation (from auto-advance or _navigate_to) ─────
 _pending_nav = st.session_state.pop("_pending_nav", None)
 if _pending_nav is not None:
@@ -6690,6 +6569,11 @@ if active_page == 0:
     completion = _get_step_completion()
     step1_done = completion["study_title"] and completion["study_description"]
 
+    # v1.0.3.5: Next button at top, right under stepper (only when step is complete)
+    if step1_done:
+        if st.button("Continue to Study Input \u2192", key="nav_next_0", type="primary", use_container_width=True):
+            _navigate_to(1)
+
     # v1.7.0: Clean form — study details first, team optional below
     study_title = st.text_input(
         "Study title *",
@@ -6734,20 +6618,11 @@ if active_page == 0:
         st.session_state["_p_team_name"] = team_name or ""
         st.session_state["_p_team_members_raw"] = members or ""
 
-    # v1.0.2.1: Structured completion indicator with checklist
-    if step1_done:
-        st.markdown(
-            '<div class="section-done-banner">'
-            '\u2705 Setup complete \u2014 click <strong>Study Input</strong> in the progress bar to continue'
-            '</div>',
-            unsafe_allow_html=True,
-        )
-    else:
+    # v1.0.2.1: Structured completion indicator (bottom of form)
+    if not step1_done:
         _title_ok = "\u2705" if completion["study_title"] else "\u2B1C"
         _desc_ok = "\u2705" if completion["study_description"] else "\u2B1C"
         st.caption(f"{_title_ok} Study title &nbsp;&nbsp; {_desc_ok} Study description")
-
-    # v1.0.3.1: All navigation via stepper circles — no bottom buttons
 
 
 # =====================================================================
@@ -6764,17 +6639,13 @@ if active_page == 1:
     step1_done = completion["study_title"] and completion["study_description"]
     step2_done = completion["qsf_uploaded"]
 
-    # v1.0.3.0: Section-done banner when step is complete
+    # v1.0.3.5: Next button at top, right under stepper
     if step2_done:
-        st.markdown(
-            '<div class="section-done-banner">'
-            '\u2705 Study input complete \u2014 click <strong>Design</strong> in the progress bar to continue'
-            '</div>',
-            unsafe_allow_html=True,
-        )
+        if st.button("Continue to Design \u2192", key="nav_next_1", type="primary", use_container_width=True):
+            _navigate_to(2)
 
     if not step1_done:
-        st.warning("Complete **Setup** first \u2014 click **Setup** in the progress bar above.")
+        st.warning("Complete **Setup** first \u2014 fill in the study title and description on the Setup page.")
 
     # v1.6.0: Cleaner mode selector with descriptive labels
     _mode_options = {
@@ -7157,7 +7028,7 @@ if active_page == 1:
             unsafe_allow_html=True,
         )
         if _n_questions > 0 and not warnings:
-            st.caption(f"QSF parsed successfully. Click **Design** in the progress bar to continue.")
+            st.caption(f"QSF parsed successfully. Use the **Continue** button at the top to proceed.")
 
         errors = getattr(preview, "validation_errors", []) or []
 
@@ -7210,7 +7081,6 @@ if active_page == 1:
         if selected_conditions:
             st.success(f"✓ Conditions: {', '.join(selected_conditions)}")
 
-    # v1.0.3.0: Forward navigation handled by clickable stepper
 
 
 # =====================================================================
@@ -7226,7 +7096,7 @@ if active_page == 2:
         'Configure conditions, DVs, and sample size.</div>',
         unsafe_allow_html=True,
     )
-    # v1.0.2.4: Section-done banner — check session state directly (avoids stale _step_done)
+    # v1.0.3.5: Next button at top, right under stepper
     _p3_banner_ready = bool(
         st.session_state.get("inferred_design")
         and st.session_state.get("scales_confirmed", False)
@@ -7235,12 +7105,8 @@ if active_page == 2:
              or st.session_state.get("conversational_builder_complete"))
     )
     if _p3_banner_ready:
-        st.markdown(
-            '<div class="section-done-banner">'
-            '\u2705 Design complete \u2014 click <strong>Generate</strong> in the progress bar to continue'
-            '</div>',
-            unsafe_allow_html=True,
-        )
+        if st.button("Continue to Generate \u2192", key="nav_next_2", type="primary", use_container_width=True):
+            _navigate_to(3)
     preview: Optional[QSFPreviewResult] = st.session_state.get("qsf_preview", None)
     enhanced_analysis: Optional[DesignAnalysisResult] = st.session_state.get("enhanced_analysis", None)
 
@@ -7256,7 +7122,7 @@ if active_page == 2:
         if _user_input_mode == "describe_study":
             st.warning("Complete **Study Input** first \u2014 describe your study, then click **Build Study Specification**.")
         else:
-            st.warning("Complete **Study Input** first \u2014 click **Study Input** in the progress bar above.")
+            st.warning("Complete **Study Input** first \u2014 upload a QSF file or describe your study.")
         _skip_qsf_design = True
     elif _builder_complete and not preview:
         # Conversational builder path — show review mode, skip QSF config
@@ -8529,7 +8395,7 @@ if active_page == 2:
             st.session_state["inferred_design"]["missing_data_rate"] = _missing_rate
             st.session_state["inferred_design"]["dropout_rate"] = _dropout_rate
 
-            st.caption("Design ready. Click **Generate** in the progress bar to continue.")
+            st.caption("Design ready. Use the **Continue** button at the top to proceed.")
         else:
             # v1.0.3.0: Concise missing-item notice
             missing_bits = []
@@ -8577,7 +8443,6 @@ if active_page == 2:
                     )
                     st.session_state["variable_review_rows"] = variable_df.to_dict(orient="records")
 
-    # v1.0.3.0: Forward navigation handled by clickable stepper
 
 
 # =====================================================================
@@ -8613,7 +8478,7 @@ if active_page == 3:
     )
 
     if not inferred:
-        st.warning("No experiment design configured. Complete **Study Input** and **Design** using the progress bar above.")
+        st.warning("No experiment design configured. Complete **Study Input** and **Design** first.")
         st.stop()
 
     # v1.8.9: Readiness checklist — compact inline, includes DVs
@@ -8634,7 +8499,7 @@ if active_page == 3:
 
     missing_fields = [label for label, ok in required_fields.items() if not ok]
     if missing_fields:
-        st.warning(f"Missing: {', '.join(missing_fields)}. Complete earlier steps using the progress bar.")
+        st.warning(f"Missing: {', '.join(missing_fields)}. Complete earlier steps first.")
 
     # Quick summary — metrics row
     conditions = inferred.get('conditions', [])

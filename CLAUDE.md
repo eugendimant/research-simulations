@@ -1,5 +1,17 @@
 # Claude Code Development Guidelines
 
+## ABSOLUTE RULE: NO "Next" Buttons at the Bottom of Pages
+
+**THIS RULE CANNOT BE OVERRIDDEN UNDER ANY CIRCUMSTANCES.**
+
+- NEVER place "Next", "Continue", or any forward-navigation button at the bottom of a page.
+- The bottom of each page ONLY contains a "Back to top" scroll link. Nothing else.
+- All forward-navigation buttons go at the TOP of the page, right underneath the stepper (1-2-3-4 progress bar).
+- Navigation buttons appear only when all required fields on the current step are complete.
+- The stepper bar is visual-only (not clickable). Navigation happens via the visible "Continue to..." button at the top.
+
+---
+
 ## MANDATORY: PR Link After Every Change
 
 **EVERY response that involves code changes MUST end with a working, mergeable PR link.**
@@ -344,17 +356,18 @@ Example iteration sequence that worked well:
 - **MutationObserver created in the iframe persists across Streamlit reruns.** This is the correct pattern for continuously re-wiring event handlers.
 - **NEVER use `window.parent.location.href = ...`** — it causes a full page reload which destroys the WebSocket connection and loses ALL session state.
 
-**Correct navigation pattern: Hidden buttons + MutationObserver.**
-1. Render `st.button()` calls inside `st.container(height=1)` — invisible via CSS.
-2. Use `_st_components.html()` with MutationObserver that watches `section.main`.
-3. Observer fires on DOM mutations → re-wires click handlers on stepper circles.
-4. Stepper circle click → `document.querySelector('button')` → `.click()` → triggers Streamlit callback.
-5. Three defense layers: (a) CSS hides container, (b) JS hides individual buttons, (c) MutationObserver continuously re-wires.
+**FINAL CORRECT navigation pattern: Visible `st.button()` at top of each page.**
+- Stepper (1-2-3-4) is VISUAL ONLY — no click handlers, no JS wiring.
+- Each page has a visible "Continue to [Next Step]" primary button right under the stepper.
+- Button only appears when the current step's required fields are complete.
+- Button calls `_navigate_to(next_page_index)` which sets `_pending_nav` + `st.rerun()`.
+- This is the simplest, most reliable approach. No JS, no iframes, no hidden buttons.
 
-**Query-param navigation does NOT work.**
-- `window.parent.location.href = url` causes full page reload → new WebSocket → session state lost.
-- `st.query_params` works for reading params, but setting them via JS reload is destructive.
-- This approach was tried and failed in v1.0.3.3.
+**FAILED approaches (DO NOT retry):**
+1. **Hidden buttons + MutationObserver (v1.0.3.4):** Buttons inside `st.container(height=1)` with iframe JS wiring stepper clicks. Failed: container still showed as gray bar, buttons leaked into UI.
+2. **Query-param navigation (v1.0.3.3):** `window.parent.location.href = url` causes full page reload → new WebSocket → session state lost.
+3. **CSS wrapper hiding (v1.0.3.1-3.2):** `st.markdown('<div class="hidden">')` + buttons. Failed: Streamlit renders buttons as siblings, not children — wrapper is empty, buttons visible.
+4. **MutationObserver + setInterval hiding (v1.0.3.2):** JS-based button hiding with 3 defense layers. Failed: timing issues, buttons flash before hiding.
 
 ### Anti-Patterns to Avoid
 
@@ -366,8 +379,9 @@ Example iteration sequence that worked well:
 6. **Skipping validation**: Users will find edge cases you missed
 7. **Ignoring UI feedback**: Scroll position, visual feedback matter
 8. **Using `st.markdown('<div>')` as wrapper**: It doesn't wrap — use `st.container()` instead
-9. **Using `window.parent.location.href` in iframe JS**: Destroys session state — use programmatic `.click()` on hidden buttons
-10. **Relying on one-time JS execution**: Streamlit re-renders DOM on every rerun — use MutationObserver for persistence
+9. **Using `window.parent.location.href` in iframe JS**: Destroys session state
+10. **Hidden buttons with JS wiring**: Too complex, unreliable — use visible `st.button()` instead
+11. **Putting "Next" buttons at the bottom of pages**: NEVER. Only at the top, right under the stepper. Bottom only has "Back to top" scroll link.
 
 ### Documentation Philosophy
 
