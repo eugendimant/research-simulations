@@ -3554,6 +3554,12 @@ class EnhancedSimulationEngine:
         Effects are determined ONLY by semantic content matching these literature findings.
         """
         condition_lower = str(condition).lower().strip()
+        variable_lower = str(variable).lower().strip()
+
+        # Build study context string from all conditions + title for relational parsing
+        _all_conds_text = " ".join(c.lower() for c in self.conditions) if self.conditions else ""
+        _study_text = (self.study_title or "").lower() + " " + (self.study_description or "").lower()
+        _full_context = _all_conds_text + " " + _study_text + " " + variable_lower
 
         # Default medium effect size parameters
         default_d = 0.5
@@ -3563,49 +3569,208 @@ class EnhancedSimulationEngine:
         semantic_effect = 0.0
 
         # =====================================================================
-        # STEP 1: Parse valence keywords (directional effects)
-        # Based on affective meaning of condition labels
+        # STEP 0: RELATIONAL/MATCHING CONDITION PARSING (v1.0.4.2)
+        # Detects conditions that describe WHO the participant interacts with.
+        # CRITICAL for economic games, intergroup studies, social psychology.
+        #
+        # Scientific basis:
+        # - Social Identity Theory (Tajfel & Turner, 1979): People favor ingroup
+        # - Affective Polarization (Iyengar & Westwood, 2015): Partisan bias d>0.5
+        # - Dictator Game Intergroup (Fershtman & Gneezy, 2001): Ingroup giving
+        #   is ~30-40% higher than outgroup giving
+        # - Political Identity Dictator Game (Dimant, 2024): Strong discrimination
+        #   based on political identity, d ≈ 0.6-0.9
         # =====================================================================
 
-        # Strong positive valence keywords → positive effect
-        positive_keywords = [
-            'lover', 'friend', 'positive', 'high', 'good', 'best', 'strong',
-            'success', 'win', 'gain', 'benefit', 'reward', 'pleasant',
-            'like', 'love', 'favor', 'approve', 'support', 'prosocial',
-            'cooperative', 'trust', 'warm', 'kind', 'helpful', 'generous',
-            'optimistic', 'confident', 'empowered', 'satisfied'
-        ]
+        _handled_by_relational = False
 
-        # Strong negative valence keywords → negative effect
-        negative_keywords = [
-            'hater', 'enemy', 'negative', 'low', 'bad', 'worst', 'weak',
-            'failure', 'lose', 'loss', 'cost', 'punish', 'unpleasant',
-            'dislike', 'hate', 'oppose', 'disapprove', 'reject', 'antisocial',
-            'competitive', 'distrust', 'cold', 'hostile', 'harmful', 'selfish',
-            'pessimistic', 'anxious', 'threatened', 'dissatisfied'
-        ]
+        # Detect POLITICAL IDENTITY conditions
+        # These describe the political leaning of the PARTNER/RECIPIENT, not the
+        # participant. The key behavioral distinction is:
+        # - Matching political ingroup → more generous/cooperative (ingroup favoritism)
+        # - Matching political outgroup → less generous/cooperative (outgroup discrimination)
+        # - No identity / control → baseline behavior
+        _political_figures = ['trump', 'biden', 'obama', 'clinton', 'harris',
+                              'desantis', 'sanders', 'pelosi', 'mcconnell']
+        _political_labels = ['republican', 'democrat', 'liberal', 'conservative',
+                             'left', 'right', 'progressive', 'maga']
+        _political_attitudes = ['lover', 'hater', 'supporter', 'opponent',
+                                'fan', 'critic', 'admirer', 'detractor',
+                                'pro', 'anti']
+        _identity_keywords = ['identity', 'political', 'partisan', 'party']
 
-        # Neutral/baseline keywords → zero effect
-        neutral_keywords = [
-            'unknown', 'control', 'baseline', 'neutral', 'moderate',
-            'medium', 'average', 'standard', 'normal', 'typical', 'placebo'
-        ]
+        # Check if this is a political identity study
+        _is_political_study = (
+            any(_word_in(fig, _full_context) for fig in _political_figures) or
+            any(_word_in(lab, _full_context) for lab in _political_labels) or
+            any(kw in _full_context for kw in _identity_keywords)
+        )
 
-        # Check for valence keywords (v1.0.1.3: word-boundary matching)
-        for keyword in positive_keywords:
-            if _word_in(keyword, condition_lower):
-                semantic_effect += 0.35  # Moderate positive shift
-                break
+        # Check if the DV is an economic game / allocation measure
+        _econ_game_keywords = ['dollar', 'amount', 'allocat', 'give', 'sent',
+                               'offer', 'share', 'split', 'endow', 'dictator',
+                               'trust game', 'ultimatum', 'public good',
+                               'contribution', 'transfer', 'payment']
+        _is_economic_game_dv = any(kw in _full_context for kw in _econ_game_keywords)
 
-        for keyword in negative_keywords:
-            if _word_in(keyword, condition_lower):
-                semantic_effect -= 0.35  # Moderate negative shift
-                break
+        if _is_political_study:
+            # Parse the relational dynamic: is this condition describing
+            # ingroup matching, outgroup matching, or no identity?
+            _has_lover = any(_word_in(att, condition_lower) for att in
+                             ['lover', 'supporter', 'fan', 'admirer', 'pro'])
+            _has_hater = any(_word_in(att, condition_lower) for att in
+                             ['hater', 'opponent', 'critic', 'detractor', 'anti'])
+            _has_neutral_id = any(_word_in(att, condition_lower) for att in
+                                  ['neutral', 'moderate', 'independent', 'undecided'])
+            _no_identity = any(kw in condition_lower for kw in
+                               ['no identity', 'control', 'unknown', 'no info',
+                                'anonymous', 'no political'])
 
-        for keyword in neutral_keywords:
-            if _word_in(keyword, condition_lower):
-                semantic_effect *= 0.3  # Reduce effect toward neutral
-                break
+            # Count how many political attitude words appear in this condition
+            # If condition has BOTH lover AND hater → it's describing a MIXED/OUTGROUP pairing
+            _attitude_count = sum(1 for att in _political_attitudes
+                                  if _word_in(att, condition_lower))
+
+            if _attitude_count >= 2:
+                # Condition contains multiple political attitudes (e.g., "trump lover, trump hater")
+                # This is an OUTGROUP MATCHING condition
+                # Iyengar & Westwood (2015): d > 0.5 for affective polarization
+                # Fershtman & Gneezy (2001): ~20-30% less generous to outgroup
+                # Dimant (2024): Strong discrimination in political dictator games
+                semantic_effect -= 0.40  # Strong outgroup discrimination effect
+                _handled_by_relational = True
+            elif _has_lover and not _has_hater:
+                # Only positive attitude → INGROUP condition
+                # Social Identity Theory: ingroup favoritism
+                # Balliet et al. (2014): d ≈ 0.3-0.5 for ingroup cooperation
+                semantic_effect += 0.30  # Ingroup favoritism
+                _handled_by_relational = True
+            elif _has_hater and not _has_lover:
+                # Only negative attitude → OUTGROUP condition
+                semantic_effect -= 0.35  # Outgroup discrimination
+                _handled_by_relational = True
+            elif _has_neutral_id:
+                # Neutral identity → moderate, between ingroup and outgroup
+                semantic_effect -= 0.05  # Slight caution toward unknown
+                _handled_by_relational = True
+            elif _no_identity:
+                # No identity shown → baseline behavior (control)
+                # Dictator game control: mean giving ≈ 28% of endowment (Engel, 2011)
+                semantic_effect += 0.0  # Pure baseline
+                _handled_by_relational = True
+
+            # If it's also an economic game, amplify the intergroup effect
+            # because discrimination is MORE pronounced in resource allocation
+            if _handled_by_relational and _is_economic_game_dv:
+                semantic_effect *= 1.3  # Amplify for economic allocation decisions
+
+        # Detect GENERAL INTERGROUP/MATCHING conditions (non-political)
+        # e.g., "same race", "different ethnicity", "ingroup partner", "outgroup partner"
+        # v1.0.4.2: Expanded to cover racial, ethnic, religious, gender, and
+        # arbitrary group identity conditions
+        #
+        # Scientific basis:
+        # - Tajfel (1971): Minimal Group Paradigm — even arbitrary categories
+        #   produce ingroup favoritism (d ≈ 0.3-0.5)
+        # - Balliet et al. (2014, Psych Bulletin meta): Ingroup cooperation
+        #   significantly higher than outgroup, d ≈ 0.32
+        # - Fershtman & Gneezy (2001): Ethnic discrimination in trust games
+        # - Bauer et al. (2016): Religious identity affects prosocial behavior
+        if not _handled_by_relational:
+            _same_group_markers = ['same group', 'same race', 'same team',
+                                   'same ethnicity', 'same religion', 'same gender',
+                                   'same nationality', 'same school', 'same university',
+                                   'ingroup partner', 'ingroup member', 'fellow member',
+                                   'same party', 'co-ethnic', 'co-religious',
+                                   'shared identity', 'common group']
+            _diff_group_markers = ['different group', 'different race', 'different team',
+                                   'different ethnicity', 'different religion', 'different gender',
+                                   'different nationality', 'different school',
+                                   'outgroup partner', 'outgroup member', 'other member',
+                                   'opposing party', 'other ethnicity', 'other religion',
+                                   'cross-group', 'intergroup']
+
+            if any(kw in condition_lower for kw in _same_group_markers):
+                _ingroup_d = 0.28  # Balliet et al. (2014)
+                if _is_economic_game_dv:
+                    _ingroup_d = 0.35  # Stronger in resource allocation
+                semantic_effect += _ingroup_d
+                _handled_by_relational = True
+            elif any(kw in condition_lower for kw in _diff_group_markers):
+                _outgroup_d = -0.25
+                if _is_economic_game_dv:
+                    _outgroup_d = -0.32  # Stronger discrimination in allocation
+                semantic_effect += _outgroup_d
+                _handled_by_relational = True
+
+            # v1.0.4.2: Detect racial/ethnic identity studies
+            # Fershtman & Gneezy (2001): Discrimination varies by group
+            # Stereotype content model (Fiske et al., 2002): Groups judged on
+            # warmth and competence dimensions
+            _racial_terms = ['white', 'black', 'asian', 'hispanic', 'latino',
+                             'african american', 'caucasian', 'arab', 'muslim',
+                             'jewish', 'christian', 'hindu']
+            _racial_in_cond = [t for t in _racial_terms if _word_in(t, condition_lower)]
+            if _racial_in_cond and not _handled_by_relational:
+                # Check study context for what the manipulation is
+                # If multiple racial terms in study (suggests comparison), treat as
+                # intergroup study — the participant evaluates someone of this identity
+                _racial_in_study = [t for t in _racial_terms if _word_in(t, _full_context)]
+                if len(_racial_in_study) >= 2:
+                    # Multi-group comparison — this is an intergroup study
+                    # No universal direction; effect depends on perceiver-target match
+                    # Add moderate variance but no directional effect by default
+                    semantic_effect += 0.0  # Direction depends on specific matchup
+                    _handled_by_relational = True
+
+        # =====================================================================
+        # STEP 1: Parse valence keywords (directional effects)
+        # Based on affective meaning of condition labels
+        # SKIP if already handled by relational parsing above
+        # =====================================================================
+
+        if not _handled_by_relational:
+            # Strong positive valence keywords → positive effect
+            # NOTE: 'lover', 'hater' removed to prevent false positives
+            # in political identity conditions (handled in STEP 0)
+            positive_keywords = [
+                'friend', 'positive', 'high', 'good', 'best', 'strong',
+                'success', 'win', 'gain', 'benefit', 'reward', 'pleasant',
+                'like', 'love', 'favor', 'approve', 'support', 'prosocial',
+                'cooperative', 'trust', 'warm', 'kind', 'helpful', 'generous',
+                'optimistic', 'confident', 'empowered', 'satisfied'
+            ]
+
+            # Strong negative valence keywords → negative effect
+            negative_keywords = [
+                'enemy', 'negative', 'low', 'bad', 'worst', 'weak',
+                'failure', 'lose', 'loss', 'cost', 'punish', 'unpleasant',
+                'dislike', 'hate', 'oppose', 'disapprove', 'reject', 'antisocial',
+                'competitive', 'distrust', 'cold', 'hostile', 'harmful', 'selfish',
+                'pessimistic', 'anxious', 'threatened', 'dissatisfied'
+            ]
+
+            # Neutral/baseline keywords → zero effect
+            neutral_keywords = [
+                'unknown', 'control', 'baseline', 'neutral', 'moderate',
+                'medium', 'average', 'standard', 'normal', 'typical', 'placebo'
+            ]
+
+            # Check for valence keywords (v1.0.1.3: word-boundary matching)
+            for keyword in positive_keywords:
+                if _word_in(keyword, condition_lower):
+                    semantic_effect += 0.35  # Moderate positive shift
+                    break
+
+            for keyword in negative_keywords:
+                if _word_in(keyword, condition_lower):
+                    semantic_effect -= 0.35  # Moderate negative shift
+                    break
+
+            for keyword in neutral_keywords:
+                if _word_in(keyword, condition_lower):
+                    semantic_effect *= 0.3  # Reduce effect toward neutral
+                    break
 
         # =====================================================================
         # DOMAIN 1: AI/TECHNOLOGY MANIPULATIONS
@@ -3918,10 +4083,34 @@ class EnhancedSimulationEngine:
 
         # Political Polarization (Iyengar & Westwood, 2015, AJPS)
         # Partisan affect stronger than racial prejudice. d > 0.5
-        if _any_word_in(['same party', 'co-partisan', 'inparty'], condition_lower):
-            semantic_effect += 0.30
-        elif _any_word_in(['other party', 'opposing party', 'outparty'], condition_lower):
-            semantic_effect -= 0.30
+        # v1.0.4.2: Expanded detection for complex condition names
+        _copartisan_kws = ['same party', 'co-partisan', 'inparty', 'fellow partisan',
+                           'political ally', 'same side', 'political ingroup']
+        _outpartisan_kws = ['other party', 'opposing party', 'outparty', 'cross-partisan',
+                            'political opponent', 'other side', 'political outgroup']
+        if _any_word_in(_copartisan_kws, condition_lower):
+            semantic_effect += 0.35
+        elif _any_word_in(_outpartisan_kws, condition_lower):
+            semantic_effect -= 0.35
+
+        # v1.0.4.2: Detect political figure + attitude combinations
+        # e.g., condition "trump supporter" in a study about political attitudes
+        # The FIGURE isn't the effect — the ATTITUDE toward the figure matters
+        # for how OTHERS treat that person (ingroup vs outgroup dynamics)
+        for fig in ['trump', 'biden', 'obama', 'clinton', 'harris', 'desantis', 'sanders']:
+            if _word_in(fig, condition_lower):
+                # Political figure detected — check if we already handled in STEP 0
+                # If not, apply a moderate polarization effect
+                if not _handled_by_relational:
+                    _fig_positive = any(_word_in(w, condition_lower) for w in
+                                        ['supporter', 'lover', 'fan', 'pro', 'admirer'])
+                    _fig_negative = any(_word_in(w, condition_lower) for w in
+                                        ['opponent', 'hater', 'critic', 'anti', 'detractor'])
+                    if _fig_positive and not _fig_negative:
+                        semantic_effect += 0.20  # Positive political identity
+                    elif _fig_negative and not _fig_positive:
+                        semantic_effect -= 0.20  # Negative political identity
+                break  # Only process first political figure found
 
         # Disgust (Inbar et al., 2009)
         if _word_in('disgust', condition_lower):
@@ -4393,8 +4582,25 @@ class EnhancedSimulationEngine:
         # from producing unrealistically large effects
         semantic_effect = max(-0.5, min(0.5, semantic_effect))
 
-        # Apply Cohen's d scaling
-        return semantic_effect * default_d * COHENS_D_TO_NORMALIZED
+        # v1.0.4.2: Apply domain-aware scaling
+        # Some research domains have LARGER effect sizes in the literature
+        # than the generic default_d=0.5 would produce.
+        # Adjust the scaling factor based on detected paradigm.
+        _domain_d_multiplier = 1.0
+        if _is_political_study and _is_economic_game_dv:
+            # Political identity + economic game: effects are large
+            # Dimant (2024): d ≈ 0.6-0.9 for political discrimination in games
+            # Iyengar & Westwood (2015): d > 0.5 for affective polarization
+            _domain_d_multiplier = 1.6
+        elif _is_political_study:
+            # Political studies generally show large effects for partisan bias
+            _domain_d_multiplier = 1.3
+        elif _is_economic_game_dv:
+            # Economic games with identity info show moderate-large effects
+            _domain_d_multiplier = 1.2
+
+        # Apply Cohen's d scaling with domain-aware multiplier
+        return semantic_effect * default_d * COHENS_D_TO_NORMALIZED * _domain_d_multiplier
 
     def _get_condition_trait_modifier(self, condition: str) -> Dict[str, float]:
         """
@@ -4436,6 +4642,31 @@ class EnhancedSimulationEngine:
         elif 'control' in condition_lower:
             modifiers['attention_level'] = -0.02
 
+        # v1.0.4.2: Political identity / intergroup conditions
+        # When political identity is made salient, responses become more extreme
+        # and variance increases (Iyengar & Westwood, 2015)
+        _political_terms = ['trump', 'biden', 'political', 'partisan', 'republican',
+                            'democrat', 'liberal', 'conservative']
+        _is_political = any(kw in condition_lower for kw in _political_terms)
+        if _is_political:
+            modifiers['extremity'] = 0.12  # More polarized responses
+            modifiers['response_consistency'] = 0.08  # More consistent within-person
+            # Outgroup conditions: more negative emotional valence
+            _outgroup_markers = ['hater', 'opponent', 'outgroup', 'other party',
+                                 'opposing', 'different', 'anti']
+            if any(kw in condition_lower for kw in _outgroup_markers):
+                modifiers['acquiescence'] = -0.10  # Negative bias in outgroup evaluations
+                modifiers['extremity'] = 0.15  # Even more extreme for outgroup
+
+        # v1.0.4.2: Economic game conditions — intergroup matching
+        # When participants play economic games with identified partners,
+        # the partner's group membership strongly affects behavior
+        _econ_game = any(kw in condition_lower for kw in
+                         ['dictator', 'trust game', 'ultimatum', 'public good'])
+        if _econ_game:
+            modifiers['engagement'] = 0.05  # Economic games increase engagement
+            modifiers['response_consistency'] = 0.05
+
         return modifiers
 
     def _get_domain_response_calibration(
@@ -4466,6 +4697,48 @@ class EnhancedSimulationEngine:
 
         var_lower = variable_name.lower()
         condition_lower = str(condition).lower()
+
+        # ===== ECONOMIC GAME / ALLOCATION MEASURES (v1.0.4.2) =====
+        # Engel (2011 meta-analysis): Dictator game mean giving ≈ 28% of endowment
+        # Berg et al. (1995): Trust game mean sent ≈ 50%
+        # Sally (1995 meta): Prisoner's dilemma cooperation ≈ 47%
+        # Güth et al. (1982): Ultimatum offers ≈ 40-50%, rejected below 20%
+        # Fehr & Gächter (2000): Public goods mean contribution ≈ 40-60%
+        _econ_kws = ['dollar', 'amount', 'allocat', 'give', 'giving', 'sent',
+                     'offer', 'share', 'split', 'endow', 'dictator',
+                     'trust game', 'ultimatum', 'public good', 'contribution',
+                     'transfer', 'payment', 'donate', 'generosity']
+        _is_econ_game = any(kw in var_lower for kw in _econ_kws) or any(
+            kw in condition_lower for kw in ['dictator', 'trust game', 'ultimatum',
+                                              'public good', 'prisoner'])
+        if _is_econ_game:
+            # Detect specific game type for precise calibration
+            _full_ctx = var_lower + " " + condition_lower + " " + (
+                self.study_title or "").lower() + " " + (self.study_description or "").lower()
+            if 'dictator' in _full_ctx:
+                # Dictator game: mean giving ≈ 28% of endowment (Engel, 2011)
+                # On 0-100 scale, this means center should be ~28, not ~50
+                # Adjustment: shift from 0.5 (midpoint) down to ~0.28
+                calibration['mean_adjustment'] = -0.22
+                calibration['positivity_bias'] = -0.05
+                calibration['variance_adjustment'] = 0.12  # High variance in giving
+            elif 'trust' in _full_ctx and 'game' in _full_ctx:
+                # Trust game: mean sent ≈ 50% (Berg et al., 1995)
+                calibration['mean_adjustment'] = 0.0  # Already near midpoint
+                calibration['variance_adjustment'] = 0.10
+            elif 'ultimatum' in _full_ctx:
+                # Ultimatum: mean offer ≈ 40-50% (modal: 50%)
+                calibration['mean_adjustment'] = -0.02
+                calibration['variance_adjustment'] = 0.08
+            elif 'public good' in _full_ctx:
+                # Public goods: mean contribution ≈ 40-60%
+                calibration['mean_adjustment'] = -0.05
+                calibration['variance_adjustment'] = 0.12
+            else:
+                # Generic economic allocation: slightly below midpoint
+                calibration['mean_adjustment'] = -0.10
+                calibration['variance_adjustment'] = 0.10
+            return calibration  # Return early — economic game calibration takes priority
 
         # ===== SATISFACTION SCALES =====
         # Oliver (1980): Satisfaction has positive skew (M ≈ 5.0-5.5)

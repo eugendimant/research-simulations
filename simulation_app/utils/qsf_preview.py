@@ -33,7 +33,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 # Version identifier to help track deployed code
-__version__ = "1.0.3.11"  # v1.0.3.11: Flexible condition allocation on builder path
+__version__ = "1.0.4.2"  # v1.0.4.2: LLM response quality + behavioral realism
 
 
 # ============================================================================
