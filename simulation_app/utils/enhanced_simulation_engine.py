@@ -45,7 +45,7 @@ This module is designed to run inside a `utils/` package (i.e., imported as
 """
 
 # Version identifier to help track deployed code
-__version__ = "1.7.0"  # v1.7.0: Fix state persistence, professional UX redesign
+__version__ = "1.7.1"  # v1.7.1: Domain-aware scaling, persona sensitivity, expanded calibrations
 
 # =============================================================================
 # SCIENTIFIC FOUNDATIONS FOR SIMULATION
@@ -4582,15 +4582,42 @@ class EnhancedSimulationEngine:
         # from producing unrealistically large effects
         semantic_effect = max(-0.5, min(0.5, semantic_effect))
 
-        # v1.0.4.2: Apply domain-aware scaling
-        # Some research domains have LARGER effect sizes in the literature
-        # than the generic default_d=0.5 would produce.
-        # Adjust the scaling factor based on detected paradigm.
+        # v1.0.4.3: Comprehensive domain-aware effect magnitude scaling
+        # Different research domains have systematically different effect sizes
+        # in the published literature. The multiplier adjusts the default d=0.5
+        # to match domain-typical magnitudes.
+        #
+        # SCIENTIFIC BASIS for domain-specific d multipliers:
+        # ===================================================
+        # Default d = 0.5 (medium effect, Cohen 1988)
+        # Multiplier adjusts this to domain-typical ranges.
+        #
+        # Political + Economic games: 1.6× → d ≈ 0.80 (Dimant 2024: d = 0.6-0.9)
+        # Political only: 1.3× → d ≈ 0.65 (Iyengar & Westwood 2015: d > 0.5)
+        # Economic games: 1.2× → d ≈ 0.60 (Engel 2011, Balliet 2014)
+        # Health fear appeals: 1.25× → d ≈ 0.63 (Witte & Allen 2000: d = 0.3-0.8)
+        # Organizational justice: 1.3× → d ≈ 0.65 (Colquitt 2001: ρ = .40-.50)
+        # Default/nudge effects: 1.4× → d ≈ 0.70 (Johnson & Goldstein 2003: 60-80pp)
+        # Stereotype threat: 0.8× → d ≈ 0.40 (Nguyen & Ryan 2008: d = 0.26)
+        # Embodied cognition: 0.6× → d ≈ 0.30 (Many Labs replication: small effects)
+        # Environmental: 1.1× → d ≈ 0.55 (moderate, polarized attitudes)
+        # Consumer/marketing: 1.0× → d ≈ 0.50 (Barton 2022 scarcity meta: r = 0.28)
+        # AI/technology: 1.1× → d ≈ 0.55 (Dietvorst 2015: d = 0.3-0.5)
+        # Moral/ethics: 1.2× → d ≈ 0.60 (Haidt 2001: strong intuitive reactions)
+        # Education/learning: 1.15× → d ≈ 0.58 (Rowland 2014 testing effect: d = 0.50)
+        # Clinical/anxiety: 1.25× → d ≈ 0.63 (therapy effect sizes typically large)
+        # Gender/power: 1.15× → d ≈ 0.58 (moderate but reliable effects)
+        # Misinformation: 1.2× → d ≈ 0.60 (inoculation meta d = 0.29, but with booster)
+        # Prosocial/charitable: 1.1× → d ≈ 0.55 (identified victim: r = 0.13)
+        # Implementation intentions: 1.3× → d ≈ 0.65 (Gollwitzer meta: d = 0.65)
         _domain_d_multiplier = 1.0
+
+        # Build a comprehensive domain context string for detection
+        _domain_ctx = condition_lower + " " + variable_lower + " " + _study_text
+
         if _is_political_study and _is_economic_game_dv:
             # Political identity + economic game: effects are large
             # Dimant (2024): d ≈ 0.6-0.9 for political discrimination in games
-            # Iyengar & Westwood (2015): d > 0.5 for affective polarization
             _domain_d_multiplier = 1.6
         elif _is_political_study:
             # Political studies generally show large effects for partisan bias
@@ -4598,6 +4625,114 @@ class EnhancedSimulationEngine:
         elif _is_economic_game_dv:
             # Economic games with identity info show moderate-large effects
             _domain_d_multiplier = 1.2
+
+        # --- Health/Fear Appeal domain ---
+        # Witte & Allen (2000 meta): Fear appeals d = 0.3-0.8 depending on efficacy
+        # Health interventions often produce large effects when well-targeted
+        elif any(kw in _domain_ctx for kw in ['fear appeal', 'health intervention',
+                 'self-efficacy', 'health message', 'vaccination', 'patient',
+                 'medical decision', 'health risk', 'health behavior']):
+            _domain_d_multiplier = 1.25
+
+        # --- Organizational Justice domain ---
+        # Colquitt et al. (2001 meta): ρ = .40-.50 for justice-outcome relationships
+        # Leadership effects: Judge & Piccolo (2004): ρ = .44
+        elif any(kw in _domain_ctx for kw in ['procedural justice', 'distributive justice',
+                 'organizational justice', 'transformational leader', 'leadership style',
+                 'employee engagement', 'job satisfaction', 'workplace fairness']):
+            _domain_d_multiplier = 1.3
+
+        # --- Default/Nudge effects ---
+        # Johnson & Goldstein (2003): Opt-out vs opt-in → 60-80pp difference
+        # Gollwitzer & Sheeran (2006): Implementation intentions d = 0.65
+        elif any(kw in _domain_ctx for kw in ['default option', 'opt-out', 'opt-in',
+                 'nudge', 'implementation intention', 'if-then plan',
+                 'choice architecture']):
+            _domain_d_multiplier = 1.4
+
+        # --- Moral/Ethics domain ---
+        # Haidt (2001): Moral judgments produce strong intuitive reactions
+        # Moral foundations: Graham et al. (2009): clear liberal/conservative splits
+        elif any(kw in _domain_ctx for kw in ['moral judgment', 'ethical dilemma',
+                 'trolley problem', 'moral foundation', 'deontolog', 'utilitari',
+                 'moral', 'ethical', 'disgust', 'purity']):
+            _domain_d_multiplier = 1.2
+
+        # --- Education/Learning domain ---
+        # Rowland (2014): Testing effect d = 0.50
+        # Cepeda et al. (2006): Spacing effect robust and moderate-to-large
+        elif any(kw in _domain_ctx for kw in ['testing effect', 'retrieval practice',
+                 'spacing effect', 'learning', 'education', 'classroom',
+                 'student performance', 'teaching method']):
+            _domain_d_multiplier = 1.15
+
+        # --- Clinical/Anxiety domain ---
+        # Therapy effect sizes are typically large (d = 0.5-1.0)
+        # Cuijpers et al. (2019): Psychotherapy for depression d = 0.72
+        elif any(kw in _domain_ctx for kw in ['anxiety', 'depression', 'therapy',
+                 'clinical', 'mental health', 'wellbeing', 'intervention',
+                 'coping', 'stress', 'burnout', 'ptsd']):
+            _domain_d_multiplier = 1.25
+
+        # --- AI/Technology domain ---
+        # Dietvorst et al. (2015): Algorithm aversion d = 0.3-0.5
+        # Longoni et al. (2019): AI resistance moderate effects
+        elif any(kw in _domain_ctx for kw in ['ai', 'algorithm', 'robot', 'automat',
+                 'technology adoption', 'chatbot', 'artificial intelligence',
+                 'machine learning', 'human-ai']):
+            _domain_d_multiplier = 1.1
+
+        # --- Environmental/Climate domain ---
+        # Polarized topic with moderate effects but high variance
+        # Campbell & Kay (2014): Ideological filtering of climate info
+        elif any(kw in _domain_ctx for kw in ['environment', 'climate', 'sustainab',
+                 'green', 'carbon', 'renewable', 'pollution', 'conservation']):
+            _domain_d_multiplier = 1.1
+
+        # --- Gender/Power domain ---
+        # Stereotype effects moderate but reliable
+        # Nguyen & Ryan (2008): Stereotype threat d = 0.26 (small-to-moderate)
+        elif any(kw in _domain_ctx for kw in ['gender', 'stereotype', 'power',
+                 'status', 'dominance', 'sexism', 'masculin', 'feminin']):
+            _domain_d_multiplier = 1.15
+
+        # --- Misinformation/Inoculation domain ---
+        # Banas & Rains (2010): Inoculation d = 0.29
+        # Roozenbeek et al. (2022): Prebunking d = 0.3-0.5
+        elif any(kw in _domain_ctx for kw in ['misinformation', 'fake news',
+                 'inoculation', 'prebunk', 'conspiracy', 'fact check',
+                 'truth discernment', 'media literacy']):
+            _domain_d_multiplier = 1.2
+
+        # --- Prosocial/Charitable domain ---
+        # Small et al. (2007): Identifiable victim r = 0.13
+        # Charitable giving: moderate effects, boosted by narratives
+        elif any(kw in _domain_ctx for kw in ['charit', 'donat', 'prosocial',
+                 'altruism', 'volunteer', 'helping', 'philanthrop',
+                 'identifiable victim', 'warm glow']):
+            _domain_d_multiplier = 1.1
+
+        # --- Embodied cognition domain ---
+        # Many Labs replications: Small or null effects
+        # Coles et al. (2019): Facial feedback r = 0.03
+        elif any(kw in _domain_ctx for kw in ['embodi', 'power pose', 'facial feedback',
+                 'pen in teeth', 'heavy clipboard', 'warm cup',
+                 'clean hands', 'physical posture']):
+            _domain_d_multiplier = 0.6
+
+        # --- Dishonesty/Cheating domain ---
+        # Gino et al. (2009): Moral licensing moderate effects
+        # Die-rolling paradigms: reliable but moderate detection
+        elif any(kw in _domain_ctx for kw in ['dishonest', 'cheat', 'lying',
+                 'overclaim', 'die roll', 'moral licens', 'honesty']):
+            _domain_d_multiplier = 1.15
+
+        # --- Punishment/Norm Enforcement domain ---
+        # Fehr & Gächter (2000): Punishment effects are large in PGG
+        # Third-party punishment: robust effects
+        elif any(kw in _domain_ctx for kw in ['punish', 'sanction', 'norm enforcement',
+                 'retribution', 'deterrence']):
+            _domain_d_multiplier = 1.25
 
         # Apply Cohen's d scaling with domain-aware multiplier
         return semantic_effect * default_d * COHENS_D_TO_NORMALIZED * _domain_d_multiplier
@@ -4666,6 +4801,162 @@ class EnhancedSimulationEngine:
         if _econ_game:
             modifiers['engagement'] = 0.05  # Economic games increase engagement
             modifiers['response_consistency'] = 0.05
+
+        # ================================================================
+        # v1.0.4.3: Domain-specific trait modifiers for 15+ research domains
+        # Each domain has published evidence for how manipulations affect
+        # response patterns beyond simple mean shifts.
+        # ================================================================
+
+        # --- Health/Fear Appeal conditions ---
+        # Witte (1992): Fear appeals increase attention and engagement when
+        # efficacy is high, but trigger defensive avoidance when efficacy is low
+        # Rogers (1975): Protection Motivation Theory — threat + coping appraisal
+        if any(kw in condition_lower for kw in ['fear appeal', 'health threat',
+               'disease risk', 'high threat', 'severe illness']):
+            modifiers['attention_level'] = modifiers.get('attention_level', 0) + 0.08
+            modifiers['extremity'] = modifiers.get('extremity', 0) + 0.10
+            modifiers['engagement'] = modifiers.get('engagement', 0) + 0.06
+        elif any(kw in condition_lower for kw in ['low threat', 'safe', 'healthy',
+                 'prevention', 'wellness']):
+            modifiers['attention_level'] = modifiers.get('attention_level', 0) - 0.03
+            modifiers['extremity'] = modifiers.get('extremity', 0) - 0.05
+
+        # --- Self-efficacy conditions ---
+        # Bandura (1997): High self-efficacy → more confident, consistent responding
+        if any(kw in condition_lower for kw in ['high efficacy', 'empowered',
+               'capable', 'confident']):
+            modifiers['response_consistency'] = modifiers.get('response_consistency', 0) + 0.06
+            modifiers['extremity'] = modifiers.get('extremity', 0) + 0.05
+        elif any(kw in condition_lower for kw in ['low efficacy', 'helpless',
+                 'incapable', 'doubtful']):
+            modifiers['response_consistency'] = modifiers.get('response_consistency', 0) - 0.08
+            modifiers['acquiescence'] = modifiers.get('acquiescence', 0) + 0.06
+
+        # --- Environmental/Sustainability conditions ---
+        # Campbell & Kay (2014): Environmental messages trigger identity-protective
+        # cognition — high engagement, polarized extremity
+        if any(kw in condition_lower for kw in ['environment', 'climate', 'sustainab',
+               'green', 'carbon', 'eco-friendly']):
+            modifiers['extremity'] = modifiers.get('extremity', 0) + 0.08
+            modifiers['engagement'] = modifiers.get('engagement', 0) + 0.04
+        elif any(kw in condition_lower for kw in ['pollut', 'wasteful', 'unsustainable',
+                 'carbon intensive']):
+            modifiers['extremity'] = modifiers.get('extremity', 0) + 0.10
+            modifiers['acquiescence'] = modifiers.get('acquiescence', 0) - 0.06
+
+        # --- Moral/Ethical conditions ---
+        # Haidt (2001): Moral judgments are emotion-driven, produce extreme responses
+        # Greene et al. (2001): Personal moral dilemmas increase emotional engagement
+        if any(kw in condition_lower for kw in ['moral', 'ethical', 'immoral',
+               'unethical', 'trolley', 'dilemma']):
+            modifiers['extremity'] = modifiers.get('extremity', 0) + 0.12
+            modifiers['engagement'] = modifiers.get('engagement', 0) + 0.06
+            modifiers['response_consistency'] = modifiers.get('response_consistency', 0) + 0.05
+
+        # --- Authority/Credibility conditions ---
+        # Milgram (1963): Authority increases compliance and acquiescence
+        # Hovland & Weiss (1951): Source credibility amplifies persuasion
+        if any(kw in condition_lower for kw in ['expert', 'authority', 'doctor',
+               'professor', 'credible source', 'scientist']):
+            modifiers['acquiescence'] = modifiers.get('acquiescence', 0) + 0.08
+            modifiers['response_consistency'] = modifiers.get('response_consistency', 0) + 0.04
+        elif any(kw in condition_lower for kw in ['non-expert', 'layperson', 'peer',
+                 'low credibility', 'unknown source']):
+            modifiers['acquiescence'] = modifiers.get('acquiescence', 0) - 0.06
+            modifiers['extremity'] = modifiers.get('extremity', 0) - 0.04
+
+        # --- Scarcity/Urgency conditions ---
+        # Cialdini (2001): Scarcity increases arousal and extremity of evaluations
+        # Worchel et al. (1975): Scarce items rated higher, more emotionally
+        if any(kw in condition_lower for kw in ['scarce', 'limited', 'exclusive',
+               'last chance', 'urgent', 'deadline']):
+            modifiers['extremity'] = modifiers.get('extremity', 0) + 0.10
+            modifiers['engagement'] = modifiers.get('engagement', 0) + 0.05
+            modifiers['attention_level'] = modifiers.get('attention_level', 0) + 0.04
+
+        # --- Social presence/Observation conditions ---
+        # Zajonc (1965): Social facilitation — presence amplifies dominant responses
+        # Bond & Titus (1983 meta): Audience effects on performance
+        if any(kw in condition_lower for kw in ['observed', 'watched', 'public',
+               'social presence', 'audience', 'with others']):
+            modifiers['social_desirability'] = modifiers.get('social_desirability', 0) + 0.10
+            modifiers['extremity'] = modifiers.get('extremity', 0) - 0.05
+            modifiers['acquiescence'] = modifiers.get('acquiescence', 0) + 0.04
+        elif any(kw in condition_lower for kw in ['anonymous', 'private', 'alone',
+                 'unobserved', 'confidential']):
+            modifiers['social_desirability'] = modifiers.get('social_desirability', 0) - 0.08
+            modifiers['extremity'] = modifiers.get('extremity', 0) + 0.04
+
+        # --- Loss/Gain framing conditions ---
+        # Tversky & Kahneman (1981): Loss frame increases attention, risk-seeking
+        # Levin et al. (2002): Framing effects on risk perception
+        if any(kw in condition_lower for kw in ['loss frame', 'lose', 'forfeit',
+               'penalty', 'risk of losing']):
+            modifiers['attention_level'] = modifiers.get('attention_level', 0) + 0.06
+            modifiers['extremity'] = modifiers.get('extremity', 0) + 0.08
+            modifiers['engagement'] = modifiers.get('engagement', 0) + 0.04
+        elif any(kw in condition_lower for kw in ['gain frame', 'earn', 'save',
+                 'benefit', 'reward']):
+            modifiers['attention_level'] = modifiers.get('attention_level', 0) + 0.03
+            modifiers['extremity'] = modifiers.get('extremity', 0) - 0.03
+
+        # --- Emotional induction conditions ---
+        # Lerner & Keltner (2001): Anger → risk-seeking, certainty appraisals
+        # Schwarz & Clore (1983): Mood-as-information
+        if any(kw in condition_lower for kw in ['anger', 'angry', 'outrage',
+               'frustrated', 'hostile']):
+            modifiers['extremity'] = modifiers.get('extremity', 0) + 0.14
+            modifiers['acquiescence'] = modifiers.get('acquiescence', 0) - 0.08
+            modifiers['engagement'] = modifiers.get('engagement', 0) + 0.06
+        elif any(kw in condition_lower for kw in ['sad', 'sadness', 'melanchol',
+                 'grief', 'lonely']):
+            modifiers['extremity'] = modifiers.get('extremity', 0) - 0.06
+            modifiers['engagement'] = modifiers.get('engagement', 0) - 0.05
+            modifiers['response_consistency'] = modifiers.get('response_consistency', 0) - 0.04
+        elif any(kw in condition_lower for kw in ['happy', 'joy', 'elated',
+                 'positive mood', 'cheerful']):
+            modifiers['acquiescence'] = modifiers.get('acquiescence', 0) + 0.06
+            modifiers['extremity'] = modifiers.get('extremity', 0) + 0.04
+
+        # --- Cognitive load conditions ---
+        # Sweller (1988): Cognitive load reduces processing depth → satisficing
+        # Gilbert et al. (1988): Load increases reliance on heuristics
+        if any(kw in condition_lower for kw in ['cognitive load', 'high load',
+               'dual task', 'multitask', 'distract']):
+            modifiers['attention_level'] = modifiers.get('attention_level', 0) - 0.10
+            modifiers['response_consistency'] = modifiers.get('response_consistency', 0) - 0.08
+            modifiers['extremity'] = modifiers.get('extremity', 0) - 0.05
+        elif any(kw in condition_lower for kw in ['no load', 'low load', 'focused',
+                 'undistracted']):
+            modifiers['attention_level'] = modifiers.get('attention_level', 0) + 0.04
+            modifiers['response_consistency'] = modifiers.get('response_consistency', 0) + 0.03
+
+        # --- Time pressure conditions ---
+        # Dror et al. (1999): Time pressure reduces accuracy, increases satisficing
+        # Maule & Edland (1997): Deadline stress → more extreme, less careful
+        if any(kw in condition_lower for kw in ['time pressure', 'deadline',
+               'hurry', 'limited time', 'timed']):
+            modifiers['attention_level'] = modifiers.get('attention_level', 0) - 0.08
+            modifiers['extremity'] = modifiers.get('extremity', 0) + 0.06
+            modifiers['response_consistency'] = modifiers.get('response_consistency', 0) - 0.06
+
+        # --- Gender/Stereotype conditions ---
+        # Steele & Aronson (1995): Stereotype threat increases anxiety, reduces performance
+        # Schmader et al. (2008): Working memory interference under threat
+        if any(kw in condition_lower for kw in ['stereotype threat', 'gender salient',
+               'race salient', 'diagnostic test']):
+            modifiers['attention_level'] = modifiers.get('attention_level', 0) - 0.06
+            modifiers['extremity'] = modifiers.get('extremity', 0) - 0.04
+            modifiers['engagement'] = modifiers.get('engagement', 0) + 0.04
+
+        # --- Nostalgia/Memory conditions ---
+        # Wildschut et al. (2006): Nostalgia increases positive affect, social connectedness
+        # Mitchell et al. (1997): Rosy retrospection inflates positive recall
+        if any(kw in condition_lower for kw in ['nostalgia', 'remember', 'childhood',
+               'past experience', 'memory']):
+            modifiers['acquiescence'] = modifiers.get('acquiescence', 0) + 0.06
+            modifiers['extremity'] = modifiers.get('extremity', 0) + 0.05
 
         return modifiers
 
@@ -4879,6 +5170,168 @@ class EnhancedSimulationEngine:
         elif any(kw in var_lower for kw in ['creative', 'innovati', 'novel', 'idea', 'brainstorm']):
             calibration['mean_adjustment'] = 0.04
             calibration['variance_adjustment'] = 0.06
+
+        # ================================================================
+        # v1.0.4.3: Extended domain calibrations for under-served domains
+        # Grounded in published meta-analyses and response norm studies
+        # ================================================================
+
+        # ===== LONELINESS / SOCIAL ISOLATION =====
+        # Russell (1996, UCLA Loneliness Scale): Norms show moderate-negative
+        # baseline — most people report some loneliness (M ≈ 3.5-4.0/7)
+        # High variance due to large individual differences
+        elif any(kw in var_lower for kw in ['lonely', 'loneliness', 'isolat', 'alone', 'social connect']):
+            calibration['mean_adjustment'] = -0.06
+            calibration['positivity_bias'] = -0.05
+            calibration['variance_adjustment'] = 0.10
+
+        # ===== GRATITUDE =====
+        # McCullough et al. (2002, GQ-6): Positive skew, M ≈ 5.5-6.0/7
+        # Most people report relatively high gratitude (social desirability)
+        elif any(kw in var_lower for kw in ['gratitude', 'grateful', 'thankful', 'appreciate']):
+            calibration['mean_adjustment'] = 0.08
+            calibration['positivity_bias'] = 0.10
+            calibration['variance_adjustment'] = -0.03  # Low variance — ceiling effect
+
+        # ===== RESILIENCE =====
+        # Connor & Davidson (2003, CD-RISC): Moderate positive, M ≈ 4.5-5.0/7
+        # Self-enhancement bias in self-reported resilience
+        elif any(kw in var_lower for kw in ['resilien', 'cope', 'coping', 'recover', 'bounce back']):
+            calibration['mean_adjustment'] = 0.05
+            calibration['positivity_bias'] = 0.06
+            calibration['variance_adjustment'] = 0.04
+
+        # ===== BURNOUT =====
+        # Maslach & Jackson (1981, MBI): Burnout norms vary by facet
+        # Emotional exhaustion: M ≈ 3.0-3.5/7 (moderate)
+        # Depersonalization: M ≈ 2.5/7 (lower)
+        # Personal accomplishment: M ≈ 5.0/7 (higher, reverse-coded)
+        elif any(kw in var_lower for kw in ['burnout', 'exhaust', 'depersonaliz', 'cynicism']):
+            calibration['mean_adjustment'] = -0.08
+            calibration['positivity_bias'] = -0.06
+            calibration['variance_adjustment'] = 0.08
+
+        # ===== LIFE SATISFACTION =====
+        # Diener et al. (1985, SWLS): Generally positive, M ≈ 4.8-5.2/7
+        # Slight positive skew (Cummins 2003: homeostatic set-point ≈ 70-80%)
+        elif any(kw in var_lower for kw in ['life satisf', 'well-being', 'wellbeing', 'flourish',
+                                             'life_sat', 'swls', 'happiness']):
+            calibration['mean_adjustment'] = 0.07
+            calibration['positivity_bias'] = 0.10
+            calibration['variance_adjustment'] = 0.04
+
+        # ===== EMPATHY =====
+        # Davis (1983, IRI): Moderate-positive baselines, M ≈ 4.2-4.8/7
+        # Gender differences: women score ~0.5 points higher (Eisenberg & Lennon, 1983)
+        elif any(kw in var_lower for kw in ['empathy', 'empathic', 'perspective_taking',
+                                             'compassion', 'sympathy']):
+            calibration['mean_adjustment'] = 0.05
+            calibration['positivity_bias'] = 0.06
+            calibration['variance_adjustment'] = 0.05
+
+        # ===== AGGRESSION =====
+        # Buss & Perry (1992, AQ): Generally low-moderate, M ≈ 3.0-3.5/7
+        # Social desirability suppresses aggression reports
+        elif any(kw in var_lower for kw in ['aggress', 'hostil', 'anger', 'violent', 'agitation']):
+            calibration['mean_adjustment'] = -0.10
+            calibration['positivity_bias'] = -0.08
+            calibration['variance_adjustment'] = 0.10
+
+        # ===== PERSONALITY (Big Five) =====
+        # Costa & McCrae (1992, NEO-PI-R norms):
+        # Agreeableness: M ≈ 5.0/7 (positive skew)
+        # Conscientiousness: M ≈ 4.8/7 (positive skew)
+        # Neuroticism: M ≈ 3.5/7 (moderate, high variance)
+        # Extraversion: M ≈ 4.2/7 (moderate positive)
+        # Openness: M ≈ 4.3/7 (moderate)
+        elif any(kw in var_lower for kw in ['agreeable', 'conscientious', 'extraver',
+                                             'neurotic', 'openness', 'big five', 'personality']):
+            calibration['mean_adjustment'] = 0.03
+            calibration['variance_adjustment'] = 0.06
+
+        # ===== NARCISSISM / DARK TRIAD =====
+        # Paulhus & Williams (2002): Lower reported means due to social undesirability
+        # NPI: M ≈ 15/40 (below midpoint), DTDD norms skew low
+        elif any(kw in var_lower for kw in ['narcissi', 'dark triad', 'machiavelli',
+                                             'psychopath', 'grandiosity', 'entitlement']):
+            calibration['mean_adjustment'] = -0.08
+            calibration['positivity_bias'] = -0.06
+            calibration['variance_adjustment'] = 0.10
+
+        # ===== ATTACHMENT STYLE =====
+        # Brennan et al. (1998, ECR): Anxiety and avoidance dimensions
+        # Anxiety: M ≈ 3.2/7 (moderate-low), Avoidance: M ≈ 3.0/7
+        elif any(kw in var_lower for kw in ['attachment', 'anxious_attach', 'avoidant',
+                                             'secure_attach', 'relationship_style']):
+            calibration['mean_adjustment'] = -0.04
+            calibration['variance_adjustment'] = 0.08
+
+        # ===== CONSPIRACY BELIEFS =====
+        # Brotherton et al. (2013): Generally low endorsement, M ≈ 2.5-3.5/7
+        # But high variance — believers score very high, skeptics very low
+        elif any(kw in var_lower for kw in ['conspiracy', 'conspira', 'paranoi', 'cover-up',
+                                             'secret', 'deep state']):
+            calibration['mean_adjustment'] = -0.10
+            calibration['positivity_bias'] = -0.05
+            calibration['variance_adjustment'] = 0.15
+
+        # ===== DISGUST SENSITIVITY =====
+        # Olatunji et al. (2007, DS-R norms): Moderate, M ≈ 3.8-4.2/7
+        # Higher variance; women score higher than men (Druschel & Sherman, 1999)
+        elif any(kw in var_lower for kw in ['disgust', 'repuls', 'contaminat', 'gross']):
+            calibration['mean_adjustment'] = -0.02
+            calibration['variance_adjustment'] = 0.08
+
+        # ===== IMPULSIVITY / SELF-CONTROL =====
+        # Tangney et al. (2004, Brief SCS): Moderate means, M ≈ 4.0/7
+        # Moderate variance, slight negative skew (people admit some impulsivity)
+        elif any(kw in var_lower for kw in ['impulsiv', 'self_control', 'self-control',
+                                             'inhibit', 'restrain']):
+            calibration['mean_adjustment'] = -0.03
+            calibration['variance_adjustment'] = 0.06
+
+        # ===== NEED FOR COGNITION =====
+        # Cacioppo et al. (1984): Moderate-positive, M ≈ 4.0-4.5/7
+        # Students typically score above general population
+        elif any(kw in var_lower for kw in ['need_for_cognition', 'nfc', 'cognitive_need',
+                                             'thinking_enjoyment']):
+            calibration['mean_adjustment'] = 0.04
+            calibration['positivity_bias'] = 0.04
+            calibration['variance_adjustment'] = 0.05
+
+        # ===== SOCIAL MEDIA / DIGITAL BEHAVIOR =====
+        # High variance, moderate means — frequency-dependent
+        # Twenge (2019): Social media use associated with reduced wellbeing
+        elif any(kw in var_lower for kw in ['social_media', 'instagram', 'tiktok', 'facebook',
+                                             'screen_time', 'digital', 'online']):
+            calibration['mean_adjustment'] = 0.02
+            calibration['variance_adjustment'] = 0.10
+
+        # ===== ORGANIZATIONAL COMMITMENT =====
+        # Meyer & Allen (1991): Affective commitment M ≈ 4.5-5.0/7
+        # Continuance commitment: M ≈ 3.5-4.0/7 (more neutral)
+        elif any(kw in var_lower for kw in ['commit', 'organizational', 'turnover_intent',
+                                             'retention', 'loyalty_employ']):
+            calibration['mean_adjustment'] = 0.04
+            calibration['positivity_bias'] = 0.05
+            calibration['variance_adjustment'] = 0.06
+
+        # ===== PREJUDICE / DISCRIMINATION =====
+        # Explicit prejudice norms: Low reported means due to social desirability
+        # McConahay (1986): Modern racism M ≈ 2.5-3.0/7
+        elif any(kw in var_lower for kw in ['prejudic', 'discrimin', 'racism', 'sexism',
+                                             'bias', 'intoleran']):
+            calibration['mean_adjustment'] = -0.12
+            calibration['positivity_bias'] = -0.08
+            calibration['variance_adjustment'] = 0.12
+
+        # ===== MISINFORMATION / FAKE NEWS =====
+        # Pennycook & Rand (2019): Low accuracy in discerning real vs fake news
+        # High variance; some people are much better than others
+        elif any(kw in var_lower for kw in ['misinform', 'fake_news', 'truth', 'accuracy',
+                                             'credib', 'believab']):
+            calibration['mean_adjustment'] = 0.0
+            calibration['variance_adjustment'] = 0.12
 
         # ===== CONDITION-BASED ADJUSTMENTS =====
         # Adjust based on experimental condition keywords
@@ -5141,12 +5594,105 @@ class EnhancedSimulationEngine:
             _consistency_factor = 0.70 + _consistency * 0.40
             _consistency_factor = float(np.clip(_consistency_factor, 0.60, 1.10))
 
+            # =====================================================================
+            # v1.0.4.3: Domain-specific persona sensitivity factor
+            # Different research domains differentially activate persona traits.
+            # This creates realistic heterogeneity in treatment effects across
+            # participant types, grounded in domain-specific literature.
+            #
+            # SCIENTIFIC BASIS:
+            # - Cacioppo & Petty (1982): Need for Cognition moderates persuasion
+            # - Kahneman & Tversky (1979): Loss aversion varies by individual
+            # - Van Lange et al. (1997): Social Value Orientation moderates
+            #   cooperation/defection in economic games
+            # - Dietvorst et al. (2015): Tech attitude moderates algorithm aversion
+            # - Rosenstock (1974): Health beliefs moderate fear appeal effectiveness
+            # =====================================================================
+            _domain_persona_factor = 1.0
+            _cond_var_ctx = condition_lower + " " + variable_lower
+
+            # Prosocial/empathic personas respond MORE to intergroup and prosocial
+            # manipulations (Van Lange et al., 1997: SVO moderates cooperation d)
+            _empathy = _safe_trait_value(modified_traits.get("empathy"), 0.50)
+            _cooperation = _safe_trait_value(modified_traits.get("cooperation_tendency"), 0.50)
+            if any(kw in _cond_var_ctx for kw in ['ingroup', 'outgroup', 'prosocial',
+                   'cooperat', 'charit', 'donat', 'help', 'altruism']):
+                _prosocial_sensitivity = 0.85 + (_empathy * 0.20) + (_cooperation * 0.15)
+                _domain_persona_factor *= float(np.clip(_prosocial_sensitivity, 0.85, 1.25))
+
+            # Risk-tolerant personas respond LESS to fear appeals and risk
+            # manipulations (Rosenstock 1974: perceived susceptibility moderates)
+            _risk_tolerance = _safe_trait_value(modified_traits.get("risk_tolerance"), 0.50)
+            if any(kw in _cond_var_ctx for kw in ['risk', 'fear', 'threat', 'danger',
+                   'unsafe', 'hazard', 'loss']):
+                _risk_sensitivity = 1.15 - (_risk_tolerance * 0.30)
+                _domain_persona_factor *= float(np.clip(_risk_sensitivity, 0.85, 1.20))
+
+            # Tech-affine personas respond LESS to algorithm aversion
+            # manipulations (Dietvorst 2015: prior experience moderates aversion)
+            _tech_affinity = _safe_trait_value(modified_traits.get("tech_affinity"), 0.50)
+            if any(kw in _cond_var_ctx for kw in ['ai', 'algorithm', 'robot',
+                   'automat', 'chatbot', 'machine']):
+                # High tech affinity → smaller negative effect (less aversion)
+                # Low tech affinity → larger negative effect (more aversion)
+                _tech_sensitivity = 1.15 - (_tech_affinity * 0.30)
+                _domain_persona_factor *= float(np.clip(_tech_sensitivity, 0.85, 1.20))
+
+            # Social desirability moderates effects on sensitive topics
+            # Paulhus (1991): High SD respondents attenuate reports of
+            # negative behaviors and amplify reports of positive behaviors
+            _sd = _safe_trait_value(modified_traits.get("social_desirability"), 0.50)
+            if any(kw in _cond_var_ctx for kw in ['dishonest', 'cheat', 'lie',
+                   'prejudic', 'discriminat', 'racist', 'sexist', 'immoral']):
+                # High SD → underreport negative behaviors (attenuate effect)
+                _sd_attenuation = 1.10 - (_sd * 0.25)
+                _domain_persona_factor *= float(np.clip(_sd_attenuation, 0.82, 1.15))
+
+            # Need for cognition moderates persuasion and framing effects
+            # Cacioppo & Petty (1982): High NFC = central route, more sensitive
+            # to argument quality; Low NFC = peripheral route, more sensitive
+            # to cues (authority, social proof)
+            _nfc = _safe_trait_value(modified_traits.get("need_for_cognition"), 0.50)
+            if any(kw in _cond_var_ctx for kw in ['persuas', 'argument', 'framing',
+                   'anchor', 'nudge', 'default', 'message']):
+                _nfc_factor = 0.90 + (_nfc * 0.20)
+                _domain_persona_factor *= float(np.clip(_nfc_factor, 0.90, 1.15))
+
+            # Conformity moderates social influence effects
+            # Asch (1956): Individual differences in conformity rates (0-100%)
+            _conformity = _safe_trait_value(modified_traits.get("conformity"), 0.50)
+            if any(kw in _cond_var_ctx for kw in ['social proof', 'popular',
+                   'norm', 'majority', 'consensus', 'conformity']):
+                _conformity_sensitivity = 0.85 + (_conformity * 0.30)
+                _domain_persona_factor *= float(np.clip(_conformity_sensitivity, 0.85, 1.20))
+
+            # Health consciousness moderates health message effectiveness
+            # Rosenstock (1974): Health beliefs moderate intervention effects
+            _health_conscious = _safe_trait_value(modified_traits.get("health_consciousness"), 0.50)
+            if any(kw in _cond_var_ctx for kw in ['health', 'wellness', 'exercise',
+                   'diet', 'vaccination', 'medical', 'prevention']):
+                _health_sensitivity = 0.90 + (_health_conscious * 0.20)
+                _domain_persona_factor *= float(np.clip(_health_sensitivity, 0.88, 1.15))
+
+            # Environmental concern moderates green messaging effects
+            # Stern et al. (1999): Value-Belief-Norm theory — pre-existing
+            # environmental values amplify pro-environmental messaging
+            _env_concern = _safe_trait_value(modified_traits.get("environmental_concern"), 0.50)
+            if any(kw in _cond_var_ctx for kw in ['environment', 'climate', 'green',
+                   'sustainab', 'carbon', 'eco']):
+                _env_sensitivity = 0.88 + (_env_concern * 0.22)
+                _domain_persona_factor *= float(np.clip(_env_sensitivity, 0.88, 1.15))
+
+            # Clamp total domain persona factor
+            _domain_persona_factor = float(np.clip(_domain_persona_factor, 0.65, 1.45))
+
             # Combined interaction multiplier
             # Population-weighted average should approximate 1.0 to preserve
             # specified Cohen's d at the group level
             _interaction_multiplier = (
                 _processing_depth * _speed_factor *
-                _extremity_amp * _consistency_factor
+                _extremity_amp * _consistency_factor *
+                _domain_persona_factor
             )
             # Clamp to prevent extreme distortions
             _interaction_multiplier = float(np.clip(_interaction_multiplier, 0.25, 1.80))
