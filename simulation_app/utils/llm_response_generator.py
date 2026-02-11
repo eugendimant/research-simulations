@@ -5,9 +5,10 @@ Uses free LLM APIs (multi-provider with automatic failover) to generate
 realistic, question-specific, persona-aligned open-ended survey responses.
 
 Architecture:
-- Multi-provider: Google AI Studio (Gemini 2.5 Flash Lite + Gemma 3 27B),
-  Groq, Cerebras, OpenRouter — with automatic key detection, per-provider
-  rate limiting, and intelligent failover
+- Multi-provider: Groq (Llama 3.3 70B), Cerebras (Llama 3.3 70B),
+  Google AI Studio (Gemini 2.5 Flash Lite + Gemma 3 27B), OpenRouter
+  — with automatic key detection, per-provider rate limiting, and
+  intelligent failover. Llama 3.3 70B prioritized for natural language.
 - Large batch sizes: 20 responses per API call (within 32K context)
 - Smart pool scaling: calculates exact pool size needed from sample_size
 - Draw-with-replacement + deep variation: a pool of 50 base responses
@@ -187,32 +188,56 @@ SYSTEM_PROMPT = (
     "- Hedged opener: 'Not sure exactly but I think the label made a difference'\n"
     "- Colloquial: 'Ok so basically the whole thing felt kinda off to me'\n"
     "- Emotional lead: 'Pretty frustrated with the whole experience tbh'\n"
-    "Vary the opening structure across participants to avoid repetitive patterns."
+    "Vary the opening structure across participants to avoid repetitive patterns.\n\n"
+    "===== RULE #9 — BANNED PHRASES (INSTANT FAIL) =====\n"
+    "The following phrases are NEVER used by real survey participants. If you "
+    "write any of these, the response is instantly invalid:\n"
+    "- 'in terms of' — academic/corporate jargon, real people say 'when it comes to' or just skip it\n"
+    "- 'it's worth noting' / 'it is worth noting' — essay phrase, not conversational\n"
+    "- 'I would say that' — stilted, real people just say the thing\n"
+    "- 'in terms of the' — double ban, extremely unnatural\n"
+    "- 'from my perspective' / 'from my point of view' — too formal for survey responses\n"
+    "- 'I appreciate the' — sounds like customer service, not a participant\n"
+    "- 'overall experience' — meta-commentary about the survey\n"
+    "- 'in this regard' / 'in that regard' — academic filler\n"
+    "- 'with respect to' / 'with regards to' — formal writing, not speech\n"
+    "- 'it resonated with me' — AI-sounding phrase\n"
+    "- 'I found it to be' — stilted phrasing, people say 'it was' or 'I thought it was'\n"
+    "- 'particularly' at start of sentence — essay word\n"
+    "- 'Moreover' / 'Furthermore' / 'Additionally' — essay connectors\n"
+    "- 'I must say' / 'I have to say' — theatrical\n"
+    "Real people use simple, direct language. They say 'I liked it' not "
+    "'I found it to be quite enjoyable'. They say 'the price was too high' "
+    "not 'in terms of the pricing, it was somewhat elevated'. Write like a "
+    "real person typing into a text box, not like a formal essay."
 )
 
 # ---------------------------------------------------------------------------
 # Synonym / filler banks for deep variation
 # ---------------------------------------------------------------------------
 _HEDGING_PHRASES = [
-    "I think ", "I feel like ", "I guess ", "In my opinion, ",
-    "From my perspective, ", "I'd say ", "It seems to me that ",
-    "I believe ", "I suppose ", "Personally, ",
+    "I think ", "I feel like ", "I guess ", "I mean, ",
+    "I'd say ", "I dunno, ", "For me, ",
+    "I suppose ", "Personally, ", "My take is ",
 ]
 
 _FILLER_INSERTIONS = [
     ", you know,", ", I mean,", ", like,", ", honestly,",
     ", basically,", ", actually,", ", sort of,",
+    ", right,", ", I guess,", ", or whatever,",
 ]
 
 _CASUAL_STARTERS = [
-    "Honestly, ", "I mean, ", "Well, ", "Like, ",
-    "So basically, ", "Tbh, ", "Ok so ", "Yeah, ",
-    "Idk, ", "Hmm, ",
+    "Honestly ", "I mean ", "Well ", "Like ",
+    "So basically ", "Tbh ", "Ok so ", "Yeah ",
+    "Idk ", "Hmm ", "Ngl ", "Look ",
+    "So yeah ", "Lol ", "Fr ", "Lowkey ",
 ]
 
 _FORMAL_CONNECTORS = [
-    "Furthermore, ", "Additionally, ", "Moreover, ",
-    "In addition, ", "It is worth noting that ",
+    "I would also add that ", "On top of that, ",
+    "It's also true that ", "That said, ",
+    "And I should mention, ", "Along those lines, ",
 ]
 
 _TYPO_MAP = {
@@ -795,6 +820,15 @@ def _build_batch_prompt(
         f"others write 4 sentences. Do NOT make responses uniformly "
         f"similar in length. Follow each participant's length spec "
         f"precisely.\n\n"
+        f"8. BANNED PHRASES — NEVER use any of these (they sound like AI, "
+        f"not humans): 'in terms of', 'it's worth noting', 'I would say that', "
+        f"'from my perspective', 'I appreciate the', 'overall experience', "
+        f"'in this regard', 'with respect to', 'it resonated with me', "
+        f"'I found it to be', 'Moreover', 'Furthermore', 'Additionally', "
+        f"'I must say', 'with regards to', 'particularly' at start of sentence. "
+        f"Real people use SIMPLE words: 'I liked it', 'it was weird', "
+        f"'made me think', 'kinda annoyed me'. Write like texting a friend, "
+        f"not writing an essay.\n\n"
         f"Return ONLY a JSON array of {n} strings (one per participant), "
         f"no other text:\n"
         f'["response 1", "response 2", ...]'
@@ -1047,6 +1081,108 @@ def _parse_json_responses(raw: str, expected_n: int) -> List[str]:
 
 
 # ---------------------------------------------------------------------------
+# Post-processing: strip AI-sounding phrases from LLM responses
+# ---------------------------------------------------------------------------
+_BANNED_PHRASES: List[Tuple[str, str]] = [
+    # (pattern, replacement) — replacement is the natural human alternative
+    ("in terms of the ", "about the "),
+    ("in terms of ", "about "),
+    ("In terms of the ", "About the "),
+    ("In terms of ", "About "),
+    ("it's worth noting that ", ""),
+    ("it is worth noting that ", ""),
+    ("It's worth noting that ", ""),
+    ("It is worth noting that ", ""),
+    ("I would say that ", ""),
+    ("I would say ", ""),
+    ("from my perspective, ", ""),
+    ("from my perspective ", ""),
+    ("From my perspective, ", ""),
+    ("from my point of view, ", ""),
+    ("From my point of view, ", ""),
+    ("in this regard", "about this"),
+    ("In this regard", "About this"),
+    ("in that regard", "about that"),
+    ("with respect to ", "about "),
+    ("With respect to ", "About "),
+    ("with regards to ", "about "),
+    ("With regards to ", "About "),
+    ("it resonated with me", "it hit me"),
+    ("It resonated with me", "It hit me"),
+    ("resonated with me", "stuck with me"),
+    ("I found it to be ", "it was "),
+    ("I found it to be", "it was"),
+    ("I must say ", ""),
+    ("I must say,", ""),
+    ("I must say", ""),
+    ("I have to say ", ""),
+    ("I have to say,", ""),
+    ("Moreover, ", "Also "),
+    ("Furthermore, ", "Also "),
+    ("Additionally, ", "Also "),
+    ("moreover, ", "also "),
+    ("furthermore, ", "also "),
+    ("additionally, ", "also "),
+    ("Particularly, ", ""),
+    ("particularly, ", ""),
+    ("I appreciate the ", "I liked the "),
+    ("I appreciate ", "I liked "),
+    ("overall experience", "whole thing"),
+    ("Overall experience", "Whole thing"),
+    ("the overall ", "the whole "),
+    ("quite enjoyable", "pretty good"),
+    ("somewhat elevated", "kinda high"),
+    ("I found myself ", "I "),
+    ("I find myself ", "I "),
+]
+
+# Regex patterns for more complex replacements
+_BANNED_PATTERNS: List[Tuple[str, str]] = [
+    (r'\bparticularly\b (\w)', r'\1'),  # Remove "particularly" before adjectives
+    (r'\bquite frankly\b', 'honestly'),
+    (r'\bto be quite honest\b', 'honestly'),
+    (r'\bif I\'m being honest\b', 'honestly'),
+    (r'\bI would argue that\b', ''),
+    (r'\bone might say\b', ''),
+    (r'\bit is important to note\b', ''),
+    (r'\bIt is important to note\b', ''),
+]
+
+
+def _clean_ai_artifacts(text: str) -> str:
+    """Remove AI-sounding phrases from a response and replace with natural alternatives.
+
+    This post-processes LLM output to sound more like real human survey responses.
+    """
+    if not text or len(text) < 5:
+        return text
+
+    # Apply exact replacements
+    for banned, replacement in _BANNED_PHRASES:
+        if banned in text:
+            text = text.replace(banned, replacement, 1)
+
+    # Apply regex patterns
+    for pattern, replacement in _BANNED_PATTERNS:
+        text = re.sub(pattern, replacement, text, count=1)
+
+    # Clean up artifacts: double spaces, leading spaces, orphaned commas
+    text = re.sub(r'  +', ' ', text)
+    text = re.sub(r'^\s*,\s*', '', text)
+    text = re.sub(r'\.\s*,', '.', text)
+    text = text.strip()
+
+    # If cleaning left the response starting lowercase after removing a phrase,
+    # capitalize the first letter
+    if text and text[0].islower() and not any(text.startswith(w) for w in
+            ('i ', 'i\'', 'ok', 'idk', 'yeah', 'nah', 'meh', 'tbh', 'lol')):
+        # Only capitalize if it doesn't look intentionally lowercase
+        pass  # Leave as-is since many human responses start lowercase
+
+    return text
+
+
+# ---------------------------------------------------------------------------
 # Key auto-detection for multi-provider support
 # ---------------------------------------------------------------------------
 def detect_provider_from_key(api_key: str) -> Optional[Dict[str, str]]:
@@ -1269,27 +1405,29 @@ class LLMResponseGenerator:
         self._batch_failure_count = 0
 
         # Build provider chain with per-provider rate limits.
-        # Priority: Google AI (quality) → Google AI (volume) → Groq → Cerebras → OpenRouter
+        # Priority: Groq (natural) → Cerebras (natural) → Google AI (quality) → Google AI (volume) → OpenRouter
         self._providers: List[_LLMProvider] = []
         user_key = api_key or os.environ.get("LLM_API_KEY", "") or os.environ.get("GROQ_API_KEY", "")
         _all_builtin_keys = {_DEFAULT_GROQ_KEY, _DEFAULT_CEREBRAS_KEY,
                              _DEFAULT_GOOGLE_AI_KEY, _DEFAULT_OPENROUTER_KEY}
 
         # Built-in providers (in priority order) with rate limits from provider dashboards:
-        # 1. Google AI Gemini 2.5 Flash Lite: 10 RPM, 250K TPM, 20 RPD (quality)
-        # 2. Google AI Gemma 3 27B:           30 RPM, 15K TPM, 14,400 RPD (volume)
-        # 3. Groq Llama 3.3 70B:              ~30 RPM, 14,400 RPD
-        # 4. Cerebras Llama 3.3 70B:          ~30 RPM, 1M tokens/day
+        # 1. Groq Llama 3.3 70B:              ~30 RPM, 14,400 RPD (best natural language)
+        # 2. Cerebras Llama 3.3 70B:          ~30 RPM, 1M tokens/day (fast + natural)
+        # 3. Google AI Gemini 2.5 Flash Lite: 10 RPM, 250K TPM, 20 RPD
+        # 4. Google AI Gemma 3 27B:           30 RPM, 15K TPM, 14,400 RPD (volume)
         # 5. OpenRouter Mistral Small 3.1:    varies by model
+        # NOTE: Llama 3.3 70B produces more natural, human-sounding responses
+        # than Gemini models which tend toward repetitive phrasing ("in terms of").
         _builtin_providers = [
-            ("google_ai_builtin", GOOGLE_AI_API_URL, GOOGLE_AI_MODEL,
-             _DEFAULT_GOOGLE_AI_KEY, 8, 20, 20),
-            ("google_ai_gemma", GOOGLE_AI_API_URL, GOOGLE_AI_MODEL_HIGHVOL,
-             _DEFAULT_GOOGLE_AI_KEY, 25, 14400, 10),
             ("groq_builtin", GROQ_API_URL, GROQ_MODEL,
              _DEFAULT_GROQ_KEY, 28, 0, 20),
             ("cerebras_builtin", CEREBRAS_API_URL, CEREBRAS_MODEL,
              _DEFAULT_CEREBRAS_KEY, 28, 0, 20),
+            ("google_ai_builtin", GOOGLE_AI_API_URL, GOOGLE_AI_MODEL,
+             _DEFAULT_GOOGLE_AI_KEY, 8, 20, 20),
+            ("google_ai_gemma", GOOGLE_AI_API_URL, GOOGLE_AI_MODEL_HIGHVOL,
+             _DEFAULT_GOOGLE_AI_KEY, 25, 14400, 10),
             ("openrouter_builtin", OPENROUTER_API_URL, OPENROUTER_MODEL,
              _DEFAULT_OPENROUTER_KEY, 20, 0, 20),
         ]
@@ -1538,8 +1676,12 @@ class LLMResponseGenerator:
             if raw is not None:
                 responses = _parse_json_responses(raw, len(persona_specs))
                 if responses:
-                    self._batch_failure_count = 0  # Reset on success
-                    return responses
+                    # Post-process: strip AI-sounding phrases
+                    responses = [_clean_ai_artifacts(r) for r in responses]
+                    responses = [r for r in responses if r and len(r.strip()) >= 3]
+                    if responses:
+                        self._batch_failure_count = 0  # Reset on success
+                        return responses
                 logger.warning("Provider '%s' returned unparseable response, trying next...",
                                provider.name)
             else:
@@ -1689,19 +1831,34 @@ class LLMResponseGenerator:
                 swap_idx = rng.randint(1, len(words) - 3)
                 words[swap_idx], words[swap_idx + 1] = words[swap_idx + 1], words[swap_idx]
 
-            # Axis 4: replace a common word with an alternative (35% chance)
-            if rng.random() < 0.35:
+            # Axis 4: replace a common word with an alternative (40% chance)
+            if rng.random() < 0.40:
                 replacements = {
-                    "good": ["nice", "great", "solid", "fine", "okay"],
-                    "bad": ["poor", "weak", "lacking", "not great", "subpar"],
-                    "like": ["enjoy", "appreciate", "prefer", "favor"],
-                    "think": ["feel", "believe", "reckon", "suppose", "figure"],
-                    "really": ["truly", "genuinely", "honestly", "certainly"],
-                    "very": ["quite", "really", "rather", "pretty", "fairly"],
-                    "was": ["felt", "seemed", "appeared"],
-                    "interesting": ["compelling", "engaging", "thought-provoking", "notable"],
-                    "important": ["significant", "crucial", "key", "essential"],
-                    "different": ["distinct", "unique", "varied", "diverse"],
+                    "good": ["nice", "great", "solid", "fine", "decent", "alright"],
+                    "bad": ["not great", "rough", "off", "meh", "crappy", "weak"],
+                    "like": ["enjoy", "dig", "prefer", "am into"],
+                    "think": ["feel", "believe", "reckon", "figure", "guess"],
+                    "really": ["honestly", "seriously", "legit", "for real"],
+                    "very": ["quite", "pretty", "super", "so", "real"],
+                    "was": ["felt", "seemed", "came across as"],
+                    "interesting": ["cool", "wild", "neat", "weird", "surprising"],
+                    "important": ["big", "huge", "key", "a big deal"],
+                    "different": ["not the same", "way off", "another thing entirely"],
+                    "understand": ["get", "see", "follow"],
+                    "difficult": ["hard", "tough", "rough", "tricky"],
+                    "agree": ["go along with", "buy that", "am on board with"],
+                    "disagree": ["don't buy that", "can't get behind", "push back on"],
+                    "concerned": ["worried", "uneasy", "not comfortable"],
+                    "positive": ["good", "solid", "encouraging"],
+                    "negative": ["not good", "rough", "bad"],
+                    "experience": ["thing", "situation", "deal"],
+                    "opinion": ["take", "view", "feeling"],
+                    "believe": ["feel", "think", "figure", "reckon"],
+                    "definitely": ["for sure", "absolutely", "100%", "no doubt"],
+                    "probably": ["I guess", "most likely", "I bet"],
+                    "however": ["but", "though", "still"],
+                    "because": ["cause", "since", "bc", "cuz"],
+                    "although": ["even though", "but", "despite that"],
                 }
                 for i, w in enumerate(words):
                     clean_w = w.lower().strip(".,!?;:")
@@ -1744,11 +1901,17 @@ class LLMResponseGenerator:
             # adding off-topic meta-commentary. These are deliberately
             # neutral continuations that work with ANY topic.
             elaborations = [
-                "I could go on about this honestly.",
-                "There's definitely more to say about it.",
-                "But that's where I land for now.",
-                "I've given this a lot of thought.",
-                "I could probably write more but that covers the main points.",
+                "I could go on but yeah.",
+                "theres more to it but whatever.",
+                "anyway thats my take.",
+                "idk I could keep going lol.",
+                "but yeah thats basically it.",
+                "so yeah. thats where im at.",
+                "honestly could write way more about this.",
+                "its complicated tho.",
+                "thats the gist of it anyway.",
+                "like I said its a lot to unpack.",
+                "but ill leave it at that.",
             ]
             sentences.append(rng.choice(elaborations))
 
@@ -1815,13 +1978,21 @@ class LLMResponseGenerator:
         # --- Layer 6: Synonym swaps (ALL personas, higher probability) ---
         swaps = [
             ("I think", "I feel"), ("I feel", "I think"),
-            ("really", "truly"), ("very", "quite"),
-            ("good", "decent"), ("bad", "poor"),
-            ("important", "significant"), ("interesting", "noteworthy"),
-            ("a lot", "quite a bit"), ("kind of", "somewhat"),
-            ("because", "since"), ("but", "however"),
-            ("want", "would like"), ("need", "require"),
-            ("seems", "appears"), ("shows", "demonstrates"),
+            ("really", "honestly"), ("very", "pretty"),
+            ("good", "decent"), ("bad", "rough"),
+            ("important", "a big deal"), ("interesting", "worth noting"),
+            ("a lot", "tons"), ("kind of", "sorta"),
+            ("because", "since"), ("but", "though"),
+            ("want", "wanna"), ("need", "gotta"),
+            ("seems", "looks"), ("shows", "tells me"),
+            ("maybe", "I guess"), ("definitely", "for sure"),
+            ("difficult", "hard"), ("easy", "simple"),
+            ("understand", "get"), ("agree", "am with you on"),
+            ("surprised", "caught off guard"), ("concerned", "worried"),
+            ("enjoy", "dig"), ("prefer", "lean toward"),
+            ("believe", "figure"), ("consider", "look at"),
+            ("However,", "But"), ("Therefore,", "So"),
+            ("certainly", "for sure"), ("perhaps", "maybe"),
         ]
         # Apply 1-3 random swaps
         n_swaps = rng.randint(1, min(3, len(swaps)))

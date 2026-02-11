@@ -78,6 +78,17 @@ When making ANY changes to the codebase, ALL version numbers must be updated tog
 [ ] Features section header in README.md
 ```
 
+### Version Numbering Scheme (CRITICAL)
+
+**Each version segment goes from 0 to 9 only. After 9, it rolls back to 0 and the digit to the left increments.**
+
+Examples:
+- `1.0.3.9` → next is `1.0.4.0` (NOT `1.0.3.10`)
+- `1.0.9.9` → next is `1.1.0.0`
+- `1.9.9.9` → next is `2.0.0.0`
+
+**NEVER use two-digit segments like `.10`, `.11`, `.12`.** Each segment is a single digit 0-9.
+
 ### Why This Matters:
 
 The app performs a version check at startup:
@@ -170,6 +181,65 @@ Key state that must persist:
 - Confirmed scales/DVs
 - Factorial table configuration
 - Sample size and effect size settings
+
+### Science-Informed Behavioral Realism (CRITICAL)
+
+**ALL simulated behavioral data MUST be consistent with established scientific findings.**
+
+The simulation engine must produce results that make sense given the study design, domain, and conditions. Nonsensical results (e.g., equal intergroup giving in a political polarization dictator game) are unacceptable.
+
+#### Architecture: `_get_automatic_condition_effect()` in enhanced_simulation_engine.py
+
+The effect detection pipeline runs in this order:
+1. **STEP 0 — Relational/Matching Condition Parsing** (fires FIRST):
+   - Detects WHO is matched with WHOM (e.g., "trump lover, trump hater" = outgroup pairing)
+   - Political identity detection: figures (trump, biden, obama) + attitudes (lover, hater, supporter, opponent)
+   - Ingroup matching → positive effect (+0.30), outgroup matching → negative effect (-0.35 to -0.40)
+   - Sets `_handled_by_relational = True` to skip simple valence keywords
+   - Economic game DVs amplify intergroup effects by 1.3×
+   - General intergroup matching (racial, ethnic, religious, gender identity)
+
+2. **STEP 1 — Simple valence keywords** (ONLY if STEP 0 didn't handle it):
+   - Words like "positive", "negative", "reward", "punishment"
+   - NOTE: 'lover' and 'hater' are EXCLUDED from valence keywords (they're identity markers, not valence)
+
+3. **STEP 2 — Domain-specific semantic effects** (14+ research domain models):
+   - Behavioral economics, social psychology, political science, consumer, health, etc.
+   - Each domain has its own keyword → effect mappings grounded in literature
+
+4. **STEP 3 — Condition trait modifiers** (personality-level effects):
+   - Political identity conditions → increased extremity, consistency
+   - Outgroup conditions → negative acquiescence bias, higher extremity
+   - Economic game conditions → increased engagement
+
+5. **STEP 4 — Domain-aware effect magnitude scaling**:
+   - Political + economic game: 1.6× multiplier (Dimant 2024: d ≈ 0.6-0.9)
+   - Political only: 1.3× multiplier
+   - Economic game only: 1.2× multiplier
+
+#### Economic Game DV Calibration (`_get_domain_response_calibration()`)
+
+Economic games have well-established baselines from meta-analyses:
+- **Dictator game**: mean_adjustment = -0.22 (centers at ~28%, Engel 2011 meta-analysis)
+- **Trust game**: baseline at ~50% (Berg et al. 1995)
+- **Ultimatum game**: mean_adjustment = -0.02 (offers ~40-50%)
+- **Public goods game**: mean_adjustment = -0.05 (contributions ~40-60%)
+
+#### Key Scientific References Embedded in Code
+
+- **Intergroup discrimination**: Iyengar & Westwood (2015) — political partisans discriminate in economic games
+- **Dictator game baseline**: Engel (2011) meta-analysis — mean giving ~28%
+- **Political polarization effects**: Dimant (2024) — d ≈ 0.6-0.9 for partisan intergroup effects
+- **Intergroup cooperation**: Balliet et al. (2014) — ingroup favoritism in cooperation games
+- **Racial discrimination**: Fershtman & Gneezy (2001) — ethnic discrimination in trust/dictator games
+
+#### Anti-Patterns for Behavioral Realism
+
+1. **Using simple valence keywords for identity conditions**: "trump lover" should NOT trigger "lover" as positive valence. It's an identity marker describing WHO the person is, not how they feel.
+2. **Equal effects across ingroup/outgroup**: Intergroup studies MUST show discrimination effects. Equal giving/trust across conditions is almost always wrong.
+3. **Generic 50% baselines for economic games**: Each game type has established baselines from decades of research. Use them.
+4. **Ignoring domain when scaling effects**: Political polarization studies have larger effect sizes than consumer preference studies. Scale accordingly.
+5. **Treating condition labels literally**: "trump hater, trump hater" = ingroup (two haters matched together). "trump lover, trump hater" = outgroup (opposing attitudes matched). Parse the RELATIONAL meaning, not individual words.
 
 ---
 
