@@ -63,7 +63,7 @@ association, impression, perception, feedback, comment, observation, general
 Version: 1.8.5 - Improved domain detection with weighted scoring and disambiguation
 """
 
-__version__ = "1.0.4.2"
+__version__ = "1.0.4.3"
 
 import random
 import re
@@ -7326,51 +7326,215 @@ class ComprehensiveResponseGenerator:
         """
         rng = local_rng or random.Random()
 
-        # v1.0.3.9: Expanded domain-specific extensions
+        # v1.0.4.3: Comprehensive domain-specific extensions for 30+ domains
+        # Each domain has sentiment-aligned elaborations grounded in how real
+        # participants in that domain actually write about their experiences.
         domain_extensions = {
+            # --- Behavioral Economics domains ---
             StudyDomain.DICTATOR_GAME: {
-                "positive": [" Fairness is important to me.", " I tried to be reasonable about sharing."],
-                "negative": [" The situation felt unfair.", " I wasn't sure what the right split was."],
+                "positive": [" Fairness is important to me.", " I tried to be reasonable about sharing.",
+                             " I believe in treating people generously."],
+                "negative": [" The situation felt unfair.", " I wasn't sure what the right split was.",
+                             " I kept more because the stakes felt real to me."],
             },
             StudyDomain.RISK_PREFERENCE: {
-                "positive": [" I'm comfortable with some uncertainty.", " Risk doesn't bother me much."],
-                "negative": [" I prefer to play it safe.", " Too much uncertainty makes me nervous."],
+                "positive": [" I'm comfortable with some uncertainty.", " Risk doesn't bother me much.",
+                             " Sometimes you have to take chances."],
+                "negative": [" I prefer to play it safe.", " Too much uncertainty makes me nervous.",
+                             " I'd rather keep what I have than gamble."],
             },
             StudyDomain.TRUST_GAME: {
-                "positive": [" I generally try to give people the benefit of the doubt."],
-                "negative": [" Trust has to be earned.", " I'm cautious about trusting others."],
+                "positive": [" I generally try to give people the benefit of the doubt.",
+                             " I think most people will reciprocate if you trust them."],
+                "negative": [" Trust has to be earned.", " I'm cautious about trusting others.",
+                             " People don't always follow through on their word."],
             },
+            StudyDomain.ULTIMATUM_GAME: {
+                "positive": [" I think fair splits are the right approach.", " Both sides deserve respect."],
+                "negative": [" Low offers feel insulting.", " It's hard to accept something that seems unfair."],
+            },
+            StudyDomain.PUBLIC_GOODS: {
+                "positive": [" Contributing to the group makes sense when everyone does their part.",
+                             " Cooperation pays off in the long run."],
+                "negative": [" Free riders make it hard to trust the group.",
+                             " I'm reluctant to contribute when others don't."],
+            },
+            StudyDomain.LOSS_AVERSION: {
+                "positive": [" Focusing on what I could gain helps me decide.",
+                             " I try not to let fear of loss control my choices."],
+                "negative": [" The thought of losing what I have really bothers me.",
+                             " I'd rather avoid a loss than pursue a gain."],
+            },
+            StudyDomain.FRAMING_EFFECTS: {
+                "positive": [" The way things were presented made the choice clearer.",
+                             " I felt the information helped me decide."],
+                "negative": [" I noticed the framing and tried to think past it.",
+                             " The presentation made me more cautious."],
+            },
+            StudyDomain.BEHAVIORAL_ECONOMICS: {
+                "positive": [" I considered the tradeoffs carefully.", " My decision felt rational."],
+                "negative": [" The decision was harder than I expected.", " I'm not sure I chose optimally."],
+            },
+
+            # --- Consumer/Marketing domains ---
             StudyDomain.CONSUMER: {
-                "positive": [" Quality matters to me when choosing.", " I'm drawn to well-made things."],
-                "negative": [" I'm particular about what I choose.", " Value matters a lot to me."],
+                "positive": [" Quality matters to me when choosing.", " I'm drawn to well-made things.",
+                             " The option aligned with what I value."],
+                "negative": [" I'm particular about what I choose.", " Value matters a lot to me.",
+                             " I wasn't impressed with the options."],
             },
+
+            # --- AI/Technology domains ---
             StudyDomain.AI_ATTITUDES: {
-                "positive": [" Technology can be really helpful when used well.", " I'm open to new approaches."],
-                "negative": [" I prefer human judgment in most cases.", " Automation isn't always the answer."],
+                "positive": [" Technology can be really helpful when used well.", " I'm open to new approaches.",
+                             " AI tools have a lot of potential if done right."],
+                "negative": [" I prefer human judgment in most cases.", " Automation isn't always the answer.",
+                             " I worry about relying too much on technology."],
             },
+
+            # --- Political/Social domains ---
             StudyDomain.POLITICAL: {
-                "positive": [" These are issues I care about deeply.", " My political views guide my thinking here."],
-                "negative": [" The political situation frustrates me.", " I think our politics are broken."],
+                "positive": [" These are issues I care about deeply.", " My political views guide my thinking here.",
+                             " I believe civic engagement matters."],
+                "negative": [" The political situation frustrates me.", " I think our politics are broken.",
+                             " Politicians don't seem to listen."],
             },
             StudyDomain.POLARIZATION: {
-                "positive": [" I try to see things from multiple angles.", " Common ground is possible."],
-                "negative": [" The divide keeps getting worse.", " People don't listen to each other."],
+                "positive": [" I try to see things from multiple angles.", " Common ground is possible.",
+                             " We need to listen more and judge less."],
+                "negative": [" The divide keeps getting worse.", " People don't listen to each other.",
+                             " Both sides seem to just talk past each other."],
             },
             StudyDomain.INTERGROUP: {
-                "positive": [" People are individuals first.", " Group labels don't define everyone."],
-                "negative": [" Group differences are real and sometimes hard to navigate."],
+                "positive": [" People are individuals first.", " Group labels don't define everyone.",
+                             " I try to judge people on their own merits."],
+                "negative": [" Group differences are real and sometimes hard to navigate.",
+                             " It's difficult to overcome ingrained biases."],
             },
             StudyDomain.IDENTITY: {
-                "positive": [" My identity shapes how I see things.", " Being true to who I am matters."],
-                "negative": [" Identity shouldn't define everything.", " Labels can be limiting."],
+                "positive": [" My identity shapes how I see things.", " Being true to who I am matters.",
+                             " I'm proud of where I come from."],
+                "negative": [" Identity shouldn't define everything.", " Labels can be limiting.",
+                             " People shouldn't be put in boxes."],
             },
             StudyDomain.NORMS: {
-                "positive": [" Social expectations can guide good behavior.", " Norms exist for a reason."],
-                "negative": [" Not all social norms make sense.", " Conformity isn't always right."],
+                "positive": [" Social expectations can guide good behavior.", " Norms exist for a reason.",
+                             " Following shared rules makes communities work."],
+                "negative": [" Not all social norms make sense.", " Conformity isn't always right.",
+                             " Some expectations are outdated."],
             },
             StudyDomain.TRUST: {
-                "positive": [" I believe most people try to do the right thing."],
-                "negative": [" It's hard to know who to trust these days."],
+                "positive": [" I believe most people try to do the right thing.",
+                             " Trust is the foundation of good relationships."],
+                "negative": [" It's hard to know who to trust these days.",
+                             " Trust has been eroded by too many broken promises."],
+            },
+
+            # --- Health domains ---
+            StudyDomain.HEALTH: {
+                "positive": [" Taking care of my health is a priority for me.",
+                             " I believe prevention is better than cure."],
+                "negative": [" Health decisions can be overwhelming.",
+                             " I wish health information were easier to understand."],
+            },
+
+            # --- Environmental domains ---
+            StudyDomain.ENVIRONMENTAL: {
+                "positive": [" I think we all have a responsibility to the planet.",
+                             " Small changes add up when everyone participates."],
+                "negative": [" Environmental problems feel overwhelming sometimes.",
+                             " It's hard to know if individual actions really make a difference."],
+            },
+
+            # --- Education domains ---
+            StudyDomain.EDUCATION: {
+                "positive": [" Learning new things is rewarding.", " Good teaching makes a real difference.",
+                             " I value educational opportunities."],
+                "negative": [" The education system has real problems.", " Not everyone has equal access to learning.",
+                             " Some teaching methods just don't work."],
+            },
+
+            # --- Moral/Ethics domains ---
+            StudyDomain.ETHICS: {
+                "positive": [" I try to make decisions that align with my values.",
+                             " Doing the right thing matters even when it's hard."],
+                "negative": [" Ethical dilemmas don't have easy answers.",
+                             " I struggle with situations where there's no clear right choice."],
+            },
+
+            # --- Fairness domains ---
+            StudyDomain.FAIRNESS: {
+                "positive": [" Everyone deserves to be treated fairly.",
+                             " Fairness is a core value for me."],
+                "negative": [" The system isn't fair to everyone.",
+                             " Inequality really bothers me."],
+            },
+
+            # --- Cooperation domains ---
+            StudyDomain.COOPERATION: {
+                "positive": [" Working together usually leads to better outcomes.",
+                             " Cooperation builds stronger communities."],
+                "negative": [" It's hard to cooperate when others don't pull their weight.",
+                             " Trust is essential for real cooperation."],
+            },
+
+            # --- Conformity domains ---
+            StudyDomain.CONFORMITY: {
+                "positive": [" There's value in going along with the group sometimes.",
+                             " Social harmony matters."],
+                "negative": [" I don't like feeling pressured to conform.",
+                             " Independent thinking is important."],
+            },
+
+            # --- Self-esteem domains ---
+            StudyDomain.SELF_ESTEEM: {
+                "positive": [" I feel good about who I am.", " My self-confidence has grown over time."],
+                "negative": [" Self-doubt is something I deal with.", " It's hard not to compare yourself to others."],
+            },
+
+            # --- Empathy domains ---
+            StudyDomain.EMPATHY: {
+                "positive": [" Understanding others' feelings comes naturally to me.",
+                             " I try to put myself in other people's shoes."],
+                "negative": [" It's emotionally draining to feel everything so deeply.",
+                             " Empathy fatigue is real."],
+            },
+
+            # --- Prosocial domains ---
+            StudyDomain.PROSOCIAL: {
+                "positive": [" Helping others gives me genuine satisfaction.",
+                             " I believe in giving back to the community."],
+                "negative": [" It's frustrating when generosity isn't appreciated.",
+                             " You can't help everyone, even if you want to."],
+            },
+
+            # --- Prejudice/Stereotype domains ---
+            StudyDomain.PREJUDICE: {
+                "positive": [" I think we've made progress on reducing prejudice.",
+                             " Most people are better than their stereotypes."],
+                "negative": [" Prejudice is still a major problem.", " Stereotypes do real harm to people."],
+            },
+            StudyDomain.STEREOTYPE: {
+                "positive": [" People are more complex than any stereotype.",
+                             " I try to see past initial impressions."],
+                "negative": [" Stereotypes are hard to shake once formed.",
+                             " Media reinforces harmful stereotypes."],
+            },
+
+            # --- Social influence domains ---
+            StudyDomain.SOCIAL_INFLUENCE: {
+                "positive": [" I think social influence can be a force for good.",
+                             " We naturally look to others for guidance."],
+                "negative": [" It's important to think for yourself.",
+                             " Peer pressure can lead to bad decisions."],
+            },
+
+            # --- Attribution domains ---
+            StudyDomain.ATTRIBUTION: {
+                "positive": [" I try to understand why people act the way they do.",
+                             " Context matters more than people think."],
+                "negative": [" People are too quick to blame individuals.",
+                             " We underestimate how much situations shape behavior."],
             },
         }
 
