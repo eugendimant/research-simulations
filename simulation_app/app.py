@@ -53,8 +53,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.0.3.7"
-BUILD_ID = "20260211-v1037-fix-checklist-logic-confirm-banners"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.0.3.8"
+BUILD_ID = "20260211-v1038-context-aware-open-text-responses"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -119,7 +119,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.0.3.7"  # v1.0.3.7: Fix checklist logic, confirmation banners, back buttons
+APP_VERSION = "1.0.3.8"  # v1.0.3.8: Context-aware open-text response generation overhaul
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -1067,9 +1067,16 @@ def _generate_preview_data(
     scales: List[Dict[str, Any]],
     open_ended: List[Dict[str, Any]],
     n_rows: int = 5,
-    difficulty: str = 'medium'
+    difficulty: str = 'medium',
+    study_title: str = '',
+    study_description: str = '',
 ) -> pd.DataFrame:
-    """Generate a preview of simulated data (5 rows by default)."""
+    """Generate a preview of simulated data (5 rows by default).
+
+    v1.0.3.8: Now accepts study_title and study_description for context-aware
+    open-ended response generation. Responses are grounded in the actual
+    question text and context instead of generic meta-commentary.
+    """
     preview_data = {}
     difficulty_settings = _get_difficulty_settings(difficulty)
 
@@ -1174,21 +1181,30 @@ def _generate_preview_data(
             preview_data[f"{var_name}_mean"] = mean_values
 
     # Add sample open-ended responses
-    # v1.0.0 CRITICAL FIX: Pass question name to ensure UNIQUE responses per question
-    # v1.4.2.1: Handle both dict and string elements in open_ended list
+    # v1.0.3.8: Context-aware preview responses that address the actual question
     for oe in open_ended[:2]:  # Limit to 2 open-ended for preview
         if isinstance(oe, str):
             var_name = oe
             question_text = oe
+            question_context = ''
         elif isinstance(oe, dict):
             var_name = oe.get('variable_name', oe.get('name', 'OE'))
             question_text = oe.get('question_text', var_name)
+            question_context = oe.get('question_context', '')
         else:
             continue
-        # Use both var_name AND question_text to create truly unique identifier
         unique_question_id = f"{var_name}_{question_text[:50]}"
+        # Determine the condition for each row
+        row_conditions = [conditions[i % len(conditions)] if conditions else '' for i in range(n_rows)]
         preview_data[var_name] = [
-            _get_sample_text_response(difficulty_settings['text_quality'], i, unique_question_id)
+            _get_sample_text_response(
+                difficulty_settings['text_quality'], i, unique_question_id,
+                question_text=question_text,
+                question_context=question_context,
+                condition=row_conditions[i],
+                study_title=study_title,
+                study_description=study_description,
+            )
             for i in range(n_rows)
         ]
 
@@ -1205,131 +1221,238 @@ def _generate_preview_data(
     return pd.DataFrame(preview_data)
 
 
-def _get_sample_text_response(quality: str, participant_idx: int, question_name: str = "") -> str:
-    """Generate sample text responses based on quality level.
+def _get_sample_text_response(
+    quality: str,
+    participant_idx: int,
+    question_name: str = "",
+    question_text: str = "",
+    question_context: str = "",
+    condition: str = "",
+    study_title: str = "",
+    study_description: str = "",
+) -> str:
+    """Generate context-aware sample text responses for preview.
 
-    v1.0.0 CRITICAL FIX: Uses proper seeded random generator to GUARANTEE unique
-    responses for each participant-question combination. The seed is deterministic
-    so the same inputs always produce the same output, but different questions
-    will ALWAYS get different responses.
+    v1.0.3.8: COMPLETE REWRITE — responses are now grounded in the actual
+    question content. Uses question_text, question_context, condition, and
+    study_title to generate topical responses that actually answer the question,
+    instead of generic meta-commentary like 'it was an interesting task'.
+
+    The function extracts key themes/subjects from the question context and
+    builds response templates that reference those specific themes. For
+    questions without context, it still tries to extract meaning from the
+    question text / variable name.
 
     Args:
         quality: Response quality level (high/medium/low/very_low)
         participant_idx: Index of the participant (0-based)
-        question_name: REQUIRED - unique identifier for the question
+        question_name: Unique identifier for the question
+        question_text: The actual question text
+        question_context: Researcher-provided context explaining the question
+        condition: Experimental condition for this participant
+        study_title: Title of the study
+        study_description: Description of the study
 
     Returns:
-        Unique response for this participant-question combination
+        Context-aware response for this participant-question combination
     """
     import random as random_module
+    import re as _re
 
     # CRITICAL: Create a unique seed that combines participant index AND question identity
-    # Use a deterministic hash that's independent of Python's hash randomization
     if question_name:
-        # Create a stable hash from the question name
         name_hash = sum(ord(c) * (i + 1) * 31 for i, c in enumerate(question_name[:100]))
     else:
         name_hash = 0
-
-    # Combine participant and question into a unique seed
-    unique_seed = (participant_idx * 100003) + name_hash  # Use prime multiplier
-
-    # Create a LOCAL random generator with this unique seed
+    unique_seed = (participant_idx * 100003) + name_hash
     local_rng = random_module.Random(unique_seed)
 
-    # Large response banks for maximum variety - 30+ responses per quality level
-    high_quality_responses = [
-        "I found this experience to be quite engaging and thought-provoking.",
-        "The scenario presented was realistic and made me consider multiple perspectives.",
-        "This was an interesting task that required careful deliberation.",
-        "I appreciated the clarity of the instructions and the relevance of the topic.",
-        "The questions were well-designed and captured my genuine reactions.",
-        "Overall, I thought this was a meaningful exercise that made me reflect.",
-        "The task was engaging and I tried to answer as honestly as possible.",
-        "I gave careful thought to each response and tried to be accurate.",
-        "The scenario felt realistic and relevant to real-world situations.",
-        "I found the questions interesting and engaging to answer.",
-        "This made me think about my own values and preferences.",
-        "The experience was well-structured and easy to follow.",
-        "I appreciated being asked to share my genuine thoughts.",
-        "The questions prompted genuine reflection on my part.",
-        "I tried to provide thoughtful and honest answers throughout.",
-        "The study made me consider perspectives I hadn't thought of before.",
-        "I engaged seriously with the material and gave it due consideration.",
-        "The questions were clear and I felt I could express my views well.",
-        "This was a valuable exercise that prompted self-reflection.",
-        "I found myself thinking carefully about each response.",
-        "The task helped me articulate my thoughts on this topic.",
-        "I appreciated the opportunity to share my genuine perspective.",
-        "The scenario was compelling and held my attention throughout.",
-        "I tried to be as accurate as possible in describing my reactions.",
-        "This experience made me consider the topic from new angles.",
-        "The questions captured aspects of my thinking that I hadn't considered.",
-        "I found the exercise to be worthwhile and thought-provoking.",
-        "The study was well-constructed and easy to understand.",
-        "I gave honest responses based on my true feelings about the topic.",
-        "This made me reflect on my own experiences and beliefs.",
-    ]
+    # ------------------------------------------------------------------
+    # Extract the SUBJECT of the question from context/text/name
+    # ------------------------------------------------------------------
+    subject = ""
+    topic_words: List[str] = []
 
-    medium_quality_responses = [
-        "It was okay, nothing special.",
-        "I thought about it for a bit before deciding.",
-        "The task was straightforward.",
-        "Made me think about the topic.",
-        "Interesting scenario overall.",
-        "Seemed like a reasonable exercise.",
-        "I tried to answer honestly.",
-        "Pretty standard experience overall.",
-        "The questions made sense to me.",
-        "I gave it some thought before answering.",
-        "Nothing too surprising here.",
-        "It was a reasonable task.",
-        "I did my best to respond accurately.",
-        "The scenario was understandable.",
-        "It was fine, I suppose.",
-        "The questions were clear enough.",
-        "I answered based on my initial thoughts.",
-        "The experience was okay overall.",
-        "I tried to give truthful answers.",
-        "Nothing out of the ordinary.",
-        "The task was pretty simple.",
-        "I understood what was being asked.",
-        "My responses reflect my honest opinion.",
-        "It was an average experience.",
-        "The questions were reasonable.",
-        "I completed the task without difficulty.",
-        "Fairly straightforward exercise.",
-        "I gave it reasonable consideration.",
-        "The scenario was acceptable.",
-        "Not too different from what I expected.",
-    ]
+    # Priority 1: Use question_context (researcher-provided, most specific)
+    if question_context and question_context.strip():
+        subject = question_context.strip()
+        # Extract key noun phrases / topic words
+        _stop = {'the', 'a', 'an', 'is', 'are', 'was', 'were', 'be', 'been', 'being',
+                 'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could',
+                 'should', 'may', 'might', 'must', 'shall', 'can', 'need', 'this',
+                 'that', 'these', 'those', 'it', 'its', 'they', 'them', 'their',
+                 'we', 'our', 'you', 'your', 'to', 'of', 'in', 'for', 'on', 'with',
+                 'at', 'by', 'from', 'up', 'about', 'into', 'how', 'much', 'wants',
+                 'want', 'understand', 'better', 'question', 'participants', 'and',
+                 'or', 'but', 'not', 'no', 'so', 'what', 'who', 'why', 'when', 'where',
+                 'deeply', 'held', 'more', 'also', 'very', 'just', 'really'}
+        _words = _re.findall(r'\b[a-zA-Z]{3,}\b', question_context.lower())
+        topic_words = [w for w in _words if w not in _stop][:8]
 
-    low_quality_responses = [
-        "fine", "good", "ok", "yes", "idk", "sure", "maybe",
-        "whatever", "alright", "meh", "k", "yeah", "dunno", "yep",
-    ]
+    # Priority 2: Use question_text if context is missing
+    elif question_text and question_text.strip():
+        # If question_text looks like a variable name, humanize it
+        _qt = question_text.strip()
+        if ' ' not in _qt:
+            subject = _re.sub(r'[_\-]+', ' ', _qt).strip()
+        else:
+            subject = _qt
+        _stop = {'the', 'a', 'an', 'is', 'are', 'was', 'were', 'please', 'describe',
+                 'explain', 'tell', 'share', 'your', 'you', 'how', 'what', 'why',
+                 'about', 'thoughts', 'feelings', 'think', 'feel', 'this', 'that'}
+        _words = _re.findall(r'\b[a-zA-Z]{3,}\b', subject.lower())
+        topic_words = [w for w in _words if w not in _stop][:6]
 
-    very_low_quality_responses = [
-        "asdf", "...", "n/a", "x", "", ".", "na",
-        "aaa", "-", "no", "?", "z", "blah", "xyz",
-    ]
+    # Add study title words as fallback context
+    if study_title and study_title.strip():
+        _title_words = _re.findall(r'\b[a-zA-Z]{4,}\b', study_title.lower())
+        _stop_title = {'study', 'experiment', 'survey', 'research', 'behavioral', 'simulation'}
+        _title_topics = [w for w in _title_words if w not in _stop_title]
+        if not topic_words:
+            topic_words = _title_topics[:4]
 
-    # Select appropriate response bank
+    # Build a compact subject phrase for template insertion
+    subject_phrase = ' '.join(topic_words[:4]) if topic_words else 'this topic'
+    # Capitalize proper nouns we can detect
+    _proper_nouns = {'trump', 'biden', 'obama', 'clinton', 'harris', 'congress',
+                     'republican', 'democrat', 'america', 'american', 'covid',
+                     'facebook', 'google', 'amazon', 'apple', 'microsoft', 'tesla'}
+    subject_words_list = subject_phrase.split()
+    subject_words_list = [w.capitalize() if w.lower() in _proper_nouns else w for w in subject_words_list]
+    subject_phrase = ' '.join(subject_words_list)
+
+    # Also prepare condition-aware modifiers
+    cond_phrase = ""
+    if condition and condition.strip():
+        _cond_humanized = _re.sub(r'[_\-]+', ' ', condition).strip()
+        cond_phrase = _cond_humanized
+
+    # ------------------------------------------------------------------
+    # Generate context-aware responses based on quality level
+    # ------------------------------------------------------------------
+    if quality in ('low', 'very_low'):
+        # Low quality: short but STILL about the topic (never generic)
+        if quality == 'very_low':
+            low_templates = [
+                f"{subject_phrase[:20]}",
+                "idk",
+                f"{topic_words[0] if topic_words else 'ok'}",
+                "...",
+                f"{'yes' if local_rng.random() > 0.5 else 'no'}",
+                "n/a",
+                f"{topic_words[0] if topic_words else 'fine'} i guess",
+            ]
+            return local_rng.choice(low_templates)
+        else:
+            low_templates = [
+                f"{subject_phrase} is ok i guess",
+                f"idk {subject_phrase} seems fine",
+                f"whatever about {subject_phrase}",
+                f"yeah {subject_phrase}",
+                f"its fine",
+                f"didnt think much about {subject_phrase}",
+                f"{subject_phrase} is alright",
+                f"meh {subject_phrase}",
+                f"not sure about {subject_phrase}",
+                f"i guess so about {subject_phrase}",
+                f"don't really care about {subject_phrase}",
+                f"{subject_phrase} is whatever",
+            ]
+            return local_rng.choice(low_templates)
+
+    # For high and medium quality, build context-aware response templates
+    # that reference the SPECIFIC subject/topic
+
+    # Sentiment variation based on participant index
+    sentiment_idx = participant_idx % 5
+    sentiments = ['positive', 'neutral', 'negative', 'positive', 'mixed']
+    sentiment = sentiments[sentiment_idx]
+
+    # Condition-aware opening modifiers
+    condition_ref = ""
+    if cond_phrase:
+        cond_refs = [
+            f"Given the {cond_phrase} scenario, ",
+            f"After experiencing the {cond_phrase} condition, ",
+            f"In the {cond_phrase} context, ",
+            f"Considering {cond_phrase}, ",
+            "",  # Sometimes no condition reference
+        ]
+        condition_ref = local_rng.choice(cond_refs)
+
     if quality == 'high':
-        responses = high_quality_responses
-    elif quality == 'medium':
-        responses = medium_quality_responses
-    elif quality == 'low':
-        responses = low_quality_responses
-    else:  # very_low
-        responses = very_low_quality_responses
+        if sentiment == 'positive':
+            templates = [
+                f"{condition_ref}I have quite strong feelings about {subject_phrase}. It really made me think about what matters to me personally, and I tried to express that in my answers.",
+                f"Honestly, {subject_phrase} is something I care about. {condition_ref}I found myself reflecting on my own experiences and beliefs while answering.",
+                f"{condition_ref}I think {subject_phrase} is genuinely important. I tried to give thoughtful answers because this topic resonates with me on a personal level.",
+                f"When it comes to {subject_phrase}, I feel pretty strongly. {condition_ref}My responses reflect my genuine views and I spent time thinking about each one.",
+                f"{subject_phrase} is something I've thought about before. {condition_ref}I was glad to share my perspective because I think these issues really matter.",
+                f"{condition_ref}I found the questions about {subject_phrase} really engaging. This is clearly an important topic and I tried to be as honest as possible about how I feel.",
+                f"My views on {subject_phrase} are based on my own experiences. {condition_ref}I feel positively about the direction things are going and wanted to express that clearly.",
+            ]
+        elif sentiment == 'negative':
+            templates = [
+                f"{condition_ref}Honestly I have some concerns about {subject_phrase}. I think there are real problems that aren't being addressed and my answers reflect that frustration.",
+                f"I'm not very positive about {subject_phrase}. {condition_ref}There are issues that bother me and I tried to express those concerns honestly in my responses.",
+                f"{condition_ref}{subject_phrase} is a topic where I have strong negative feelings. I don't think the current situation is good and I wanted to be honest about that.",
+                f"When thinking about {subject_phrase}, I feel disappointed. {condition_ref}My responses reflect genuine concerns that I think are important to voice.",
+                f"{condition_ref}I have to say I'm quite critical when it comes to {subject_phrase}. Things could be so much better and I feel like that needs to be said.",
+            ]
+        elif sentiment == 'mixed':
+            templates = [
+                f"{condition_ref}I have mixed feelings about {subject_phrase}. On one hand I see the positives, but there are also real concerns that I can't ignore.",
+                f"{subject_phrase} is complicated for me. {condition_ref}I can see both sides and tried to reflect that ambivalence in my answers.",
+                f"{condition_ref}I'm honestly torn about {subject_phrase}. There are things I appreciate but also things that worry me, so my answers might seem contradictory.",
+                f"My thoughts on {subject_phrase} are nuanced. {condition_ref}It's not a black-and-white issue for me and I tried to capture that complexity.",
+            ]
+        else:  # neutral
+            templates = [
+                f"{condition_ref}I don't have super strong opinions about {subject_phrase}, but I tried to give honest answers based on what I actually think.",
+                f"{subject_phrase} isn't something I think about constantly, but {condition_ref}I did my best to reflect on it and answer honestly.",
+                f"{condition_ref}I'd say I'm fairly neutral on {subject_phrase}. I can see different perspectives and tried to represent my actual views.",
+                f"I thought about {subject_phrase} and {condition_ref}gave what I think are reasonable answers. Nothing too extreme either way.",
+                f"{condition_ref}My views on {subject_phrase} are moderate. I tried to think carefully about the questions and respond authentically.",
+            ]
+    else:  # medium quality
+        if sentiment == 'positive':
+            templates = [
+                f"{subject_phrase} is fine with me.",
+                f"I feel okay about {subject_phrase}.",
+                f"Yeah, {subject_phrase} seems good.",
+                f"I'm generally positive about {subject_phrase}.",
+                f"No issues with {subject_phrase} personally.",
+                f"I think {subject_phrase} is alright overall.",
+                f"{condition_ref}{subject_phrase} works for me.",
+            ]
+        elif sentiment == 'negative':
+            templates = [
+                f"Not a fan of {subject_phrase} honestly.",
+                f"I have some problems with {subject_phrase}.",
+                f"{subject_phrase} concerns me a bit.",
+                f"I'm not too happy about {subject_phrase}.",
+                f"There are issues with {subject_phrase}.",
+                f"{condition_ref}{subject_phrase} could be better.",
+            ]
+        elif sentiment == 'mixed':
+            templates = [
+                f"Mixed feelings about {subject_phrase}.",
+                f"{subject_phrase} has pros and cons.",
+                f"I see both sides of {subject_phrase}.",
+                f"Not sure how I feel about {subject_phrase}.",
+                f"{condition_ref}{subject_phrase} is complicated.",
+            ]
+        else:  # neutral
+            templates = [
+                f"I don't feel strongly about {subject_phrase}.",
+                f"{subject_phrase} is whatever.",
+                f"I thought about {subject_phrase} and answered honestly.",
+                f"No strong opinion on {subject_phrase}.",
+                f"{condition_ref}I just answered what I think about {subject_phrase}.",
+                f"{subject_phrase} - answered based on my views.",
+            ]
 
-    # Shuffle the responses using our unique seed, then pick the first one
-    # This guarantees different questions get different shuffles and thus different responses
-    shuffled = responses.copy()
-    local_rng.shuffle(shuffled)
-
-    return shuffled[0]
+    return local_rng.choice(templates)
 
 
 def _merge_condition_sources(qsf_conditions: List[str], prereg_conditions: List[str]) -> Tuple[List[str], List[Dict[str, str]]]:
@@ -8794,12 +8917,17 @@ if active_page == 3:
 
     if st.button("Generate Preview (5 rows)", key="preview_button"):
         open_ended_for_preview = st.session_state.get('confirmed_open_ended', [])
+        # v1.0.3.8: Pass study context for context-aware open-text preview
+        _preview_study_title = st.session_state.get('study_title', '') or st.session_state.get('_p_study_title', '')
+        _preview_study_desc = st.session_state.get('study_description', '') or st.session_state.get('_p_study_description', '')
         preview_df = _generate_preview_data(
             conditions=conditions,
             scales=scales,
             open_ended=open_ended_for_preview,
             n_rows=5,
-            difficulty=difficulty_level
+            difficulty=difficulty_level,
+            study_title=_preview_study_title,
+            study_description=_preview_study_desc,
         )
         st.session_state['preview_df'] = preview_df
 
