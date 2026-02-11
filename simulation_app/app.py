@@ -53,8 +53,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.0.3.10"
-BUILD_ID = "20260211-v10310-zero-generic-responses-all-fallbacks-hardened"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.0.3.11"
+BUILD_ID = "20260211-v10311-flexible-builder-condition-allocation"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -119,7 +119,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.0.3.10"  # v1.0.3.10: Zero generic responses — all fallbacks hardened
+APP_VERSION = "1.0.3.11"  # v1.0.3.11: Flexible condition allocation on builder path
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -4841,27 +4841,137 @@ def _render_builder_design_review() -> None:
     if conditions and len(conditions) >= 2:
         st.markdown("---")
         st.markdown("#### Condition Allocation")
-        per_cond = sample // len(conditions)
-        remainder = sample % len(conditions)
-        alloc = {}
-        alloc_n = {}
-        for i, cond in enumerate(conditions):
-            n = per_cond + (1 if i < remainder else 0)
-            alloc_n[cond] = n
-            alloc[cond] = round(100.0 * n / sample, 1)
-        st.session_state["condition_allocation_n"] = alloc_n
-        st.session_state["condition_allocation"] = alloc
 
-        # Visual allocation display
         n_conds = len(conditions)
-        cols_per_row = min(n_conds, 4)
-        alloc_cols = st.columns(cols_per_row)
+        sample_size = int(sample)
+
+        # Track changes to conditions/sample to know when to recalculate
+        _br_prev_sample = st.session_state.get("_br_prev_sample_size", 0)
+        _br_prev_n_conds = st.session_state.get("_br_prev_n_conditions", 0)
+        _br_prev_conds = st.session_state.get("_br_prev_conditions", [])
+
+        _br_conds_changed = (
+            n_conds != _br_prev_n_conds or
+            set(_br_prev_conds) != set(conditions)
+        )
+        _br_sample_changed = _br_prev_sample != sample_size and _br_prev_sample > 0
+
+        _br_needs_recalc = (
+            "condition_allocation_n" not in st.session_state or
+            _br_conds_changed
+        )
+
+        if _br_needs_recalc:
+            # Fresh allocation: equal distribution
+            n_per = sample_size // n_conds
+            remainder = sample_size % n_conds
+            st.session_state["condition_allocation_n"] = {
+                cond: n_per + (1 if i < remainder else 0)
+                for i, cond in enumerate(conditions)
+            }
+            _br_alloc_ver = st.session_state.get("_br_alloc_version", 0) + 1
+            st.session_state["_br_alloc_version"] = _br_alloc_ver
+        elif _br_sample_changed:
+            # Proportionally adjust existing allocations to match new total
+            old_alloc = st.session_state.get("condition_allocation_n", {})
+            old_total = sum(old_alloc.values())
+            if old_total > 0 and sample_size > 0:
+                scale_factor = sample_size / old_total
+                new_alloc = {}
+                running_total = 0
+                sorted_conds = list(conditions)
+                for j, c in enumerate(sorted_conds[:-1]):
+                    new_alloc[c] = max(1, round(old_alloc.get(c, sample_size // n_conds) * scale_factor))
+                    running_total += new_alloc[c]
+                new_alloc[sorted_conds[-1]] = max(1, sample_size - running_total)
+                st.session_state["condition_allocation_n"] = new_alloc
+                _br_alloc_ver = st.session_state.get("_br_alloc_version", 0) + 1
+                st.session_state["_br_alloc_version"] = _br_alloc_ver
+
+        # Update tracking variables
+        st.session_state["_br_prev_sample_size"] = sample_size
+        st.session_state["_br_prev_n_conditions"] = n_conds
+        st.session_state["_br_prev_conditions"] = list(conditions)
+
+        allocation_n = st.session_state["condition_allocation_n"]
+        _br_alloc_ver = st.session_state.get("_br_alloc_version", 0)
+
+        # Render number input widgets per condition
+        st.markdown("**Participants per condition:**")
+        cols_per_row = min(n_conds, 3)
+        input_cols = st.columns(cols_per_row)
+
+        new_allocation_n = {}
         for i, cond in enumerate(conditions):
-            with alloc_cols[i % cols_per_row]:
-                n_val = alloc_n[cond]
-                pct = alloc[cond]
-                st.metric(label=cond, value=f"{n_val}", delta=f"{pct}%")
-        st.caption("Equal allocation across conditions")
+            col_idx = i % cols_per_row
+            with input_cols[col_idx]:
+                display_name = _clean_condition_name(cond)
+                if len(display_name) > 22:
+                    display_name = display_name[:20] + "..."
+                current_n = allocation_n.get(cond, sample_size // n_conds)
+                current_n = min(max(1, current_n), sample_size)
+
+                new_n = st.number_input(
+                    display_name,
+                    min_value=1,
+                    max_value=sample_size,
+                    value=current_n,
+                    step=1,
+                    key=f"br_alloc_n_v{_br_alloc_ver}_{i}",
+                    help=f"Number of participants in '{display_name}'"
+                )
+                new_allocation_n[cond] = new_n
+
+        # Validate totals
+        total_n = sum(new_allocation_n.values())
+        diff = total_n - sample_size
+
+        _br_btn_col1, _br_btn_col2 = st.columns(2)
+        if diff != 0:
+            st.warning(f"Allocations sum to **{total_n}** (should be {sample_size}). Difference: {'+' if diff > 0 else ''}{diff}")
+            with _br_btn_col1:
+                if st.button("Auto-balance to match total", key=f"br_auto_balance_v{_br_alloc_ver}"):
+                    _scale_f = sample_size / total_n if total_n > 0 else 1
+                    normalized = {}
+                    _running = 0
+                    _sorted = list(conditions)
+                    for j, c in enumerate(_sorted[:-1]):
+                        normalized[c] = max(1, round(new_allocation_n[c] * _scale_f))
+                        _running += normalized[c]
+                    normalized[_sorted[-1]] = max(1, sample_size - _running)
+                    st.session_state["condition_allocation_n"] = normalized
+                    st.session_state["_br_alloc_version"] = _br_alloc_ver + 1
+                    st.rerun()
+            with _br_btn_col2:
+                if st.button("Reset to equal", key=f"br_equal_reset_v{_br_alloc_ver}"):
+                    _per = sample_size // n_conds
+                    _rem = sample_size % n_conds
+                    st.session_state["condition_allocation_n"] = {
+                        c: _per + (1 if idx < _rem else 0) for idx, c in enumerate(conditions)
+                    }
+                    st.session_state["_br_alloc_version"] = _br_alloc_ver + 1
+                    st.rerun()
+        else:
+            st.success(f"Allocations sum to {sample_size}")
+            st.session_state["condition_allocation_n"] = new_allocation_n
+            _min_cell_n = min(new_allocation_n.values()) if new_allocation_n else 0
+            if _min_cell_n < 20:
+                st.caption(f"Smallest cell has {_min_cell_n} participants. Consider at least 20 per cell for adequate statistical power.")
+            with _br_btn_col2:
+                if st.button("Reset to equal", key=f"br_equal_reset_ok_v{_br_alloc_ver}"):
+                    _per = sample_size // n_conds
+                    _rem = sample_size % n_conds
+                    st.session_state["condition_allocation_n"] = {
+                        c: _per + (1 if idx < _rem else 0) for idx, c in enumerate(conditions)
+                    }
+                    st.session_state["_br_alloc_version"] = _br_alloc_ver + 1
+                    st.rerun()
+
+        # Convert to percentage-based allocation for the simulation engine
+        st.session_state["condition_allocation"] = {
+            cond: (new_allocation_n.get(cond, 0) / sample_size * 100) if sample_size > 0 else 0
+            for cond in conditions
+        }
 
     # ── Difficulty Level ─────────────────────────────────────────────────
     st.markdown("---")

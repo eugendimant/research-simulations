@@ -33,7 +33,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 # Version identifier to help track deployed code
-__version__ = "1.0.3.10"  # v1.0.3.10: Zero generic responses — all fallbacks hardened
+__version__ = "1.0.3.11"  # v1.0.3.11: Flexible condition allocation on builder path
 
 
 # ============================================================================
