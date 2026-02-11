@@ -209,7 +209,18 @@ SYSTEM_PROMPT = (
     "Real people use simple, direct language. They say 'I liked it' not "
     "'I found it to be quite enjoyable'. They say 'the price was too high' "
     "not 'in terms of the pricing, it was somewhat elevated'. Write like a "
-    "real person typing into a text box, not like a formal essay."
+    "real person typing into a text box, not like a formal essay.\n\n"
+    "===== RULE #10 — BEHAVIORAL CONSISTENCY (CRITICAL) =====\n"
+    "When a participant's BEHAVIOR profile is provided (their numeric rating "
+    "pattern from the study), their open-text response MUST be tonally "
+    "consistent with their numeric data. A participant who rated items 6-7/7 "
+    "should sound genuinely enthusiastic or supportive in their text. A "
+    "participant who rated 1-2/7 should sound critical or dissatisfied. A "
+    "participant who straight-lined (gave identical ratings) should write "
+    "brief, low-effort text. The same person produced BOTH the ratings AND "
+    "the text — they must tell the same story. This is scientifically "
+    "critical: rating-text inconsistency is a hallmark of fabricated data "
+    "(Krosnick, 1999; Podsakoff et al., 2003)."
 )
 
 # ---------------------------------------------------------------------------
@@ -512,6 +523,9 @@ def _build_batch_prompt(
     so responses are contextually grounded even when question_text is sparse.
     v1.8.3: Enhanced with question-type-specific style guidance, persona voice
     differentiation, condition behavioral cues, and diversity instructions.
+    v1.0.4.8: Enhanced with behavioral profiles — each participant's numeric
+    response pattern, intensity, and consistency flows into their profile so
+    the LLM generates text that is consistent with their quantitative behavior.
     """
     n = len(persona_specs)
 
@@ -574,10 +588,27 @@ def _build_batch_prompt(
         if expertise:
             demo_hints += f" | expertise={expertise}"
 
+        # v1.0.4.8: Behavioral profile — their numeric behavior in the study
+        _beh_hint = ""
+        _beh = spec.get("behavioral_profile")
+        if _beh and isinstance(_beh, dict):
+            _beh_summary = _beh.get("behavioral_summary", "")
+            _beh_pattern = _beh.get("response_pattern", "")
+            _beh_mean = _beh.get("response_mean")
+            _persona_name = _beh.get("persona_name", "")
+            if _beh_summary:
+                _beh_hint += f" | BEHAVIOR: {_beh_summary}"
+            if _persona_name and _persona_name != "Default":
+                _beh_hint += f" | PERSONA: {_persona_name}"
+            if _beh.get("straight_lined"):
+                _beh_hint += " | WARNING: straight-lined numeric responses, text should also show low engagement"
+            elif _beh_mean is not None:
+                _beh_hint += f" | numeric_mean={_beh_mean:.1f}/7"
+
         participant_lines.append(
             f"Participant {i}: length={length_hint} | "
             f"style={style_hint} | effort={effort_hint} | "
-            f"sentiment={sentiment_hint}{rating_cue}{demo_hints}"
+            f"sentiment={sentiment_hint}{rating_cue}{demo_hints}{_beh_hint}"
         )
 
     participants_block = "\n".join(participant_lines)
@@ -829,6 +860,16 @@ def _build_batch_prompt(
         f"Real people use SIMPLE words: 'I liked it', 'it was weird', "
         f"'made me think', 'kinda annoyed me'. Write like texting a friend, "
         f"not writing an essay.\n\n"
+        f"9. BEHAVIORAL CONSISTENCY — When a participant's BEHAVIOR profile "
+        f"is given, their open-text response MUST be consistent with their "
+        f"numeric ratings. If they rated items very positively (mean 6+/7), "
+        f"they should write enthusiastically about the topic. If they gave "
+        f"low ratings (mean 2-/7), they should express criticism or disapproval. "
+        f"If they straight-lined, their text should also be low-effort. "
+        f"A participant who rated everything 6-7 should NOT write 'it was "
+        f"ok i guess'. A participant who rated everything 1-2 should NOT "
+        f"write 'I really enjoyed it'. The text is the SAME person who gave "
+        f"those numeric ratings — their words must match their numbers.\n\n"
         f"Return ONLY a JSON array of {n} strings (one per participant), "
         f"no other text:\n"
         f'["response 1", "response 2", ...]'
@@ -1722,14 +1763,28 @@ class LLMResponseGenerator:
         condition: str = "",
         question_name: str = "",
         participant_seed: int = 0,
+        behavioral_profile: Optional[Dict[str, Any]] = None,
     ) -> str:
         """Generate a single open-ended response.
 
         Uses draw-with-replacement from the pool + deep persona variation
         to produce unique responses for each participant.  Returns a
         non-empty string or falls back to the template generator.
+
+        v1.0.4.8: Accepts behavioral_profile dict containing the participant's
+        numeric response pattern, intensity, consistency, and behavioral summary.
+        This is used to modulate deep variation so OE text matches quantitative data.
         """
         local_rng = random.Random(participant_seed)
+
+        # v1.0.4.8: Adjust engagement based on behavioral profile
+        _effective_engagement = persona_engagement
+        if behavioral_profile:
+            if behavioral_profile.get('straight_lined'):
+                _effective_engagement = min(_effective_engagement, 0.2)
+            elif behavioral_profile.get('response_pattern') in ('strongly_positive', 'strongly_negative'):
+                # Strongly opinionated participants tend to write more
+                _effective_engagement = max(_effective_engagement, 0.5)
 
         # 1. Try pool (draw-with-replacement)
         resp = self._pool.draw_with_replacement(
@@ -1738,7 +1793,7 @@ class LLMResponseGenerator:
         if resp and resp.strip():
             result = self._apply_deep_variation(
                 resp, persona_verbosity, persona_formality,
-                persona_engagement, local_rng,
+                _effective_engagement, local_rng,
             )
             if result and len(result.strip()) >= 3:
                 return result.strip()
@@ -1746,13 +1801,21 @@ class LLMResponseGenerator:
         # 2. Try on-demand LLM batch (if pool was empty)
         if self._api_available:
             specs = []
-            for _ in range(self._batch_size):
-                specs.append({
+            for _bi in range(self._batch_size):
+                _spec: Dict[str, Any] = {
                     "verbosity": self._rng.uniform(0.1, 0.9),
                     "formality": self._rng.uniform(0.1, 0.9),
                     "engagement": self._rng.uniform(0.2, 0.95),
                     "sentiment": sentiment,
-                })
+                }
+                # v1.0.4.8: Include behavioral profile in the first spec slot
+                # so at least one response in the batch matches this participant
+                if _bi == 0 and behavioral_profile:
+                    _spec["verbosity"] = persona_verbosity
+                    _spec["formality"] = persona_formality
+                    _spec["engagement"] = persona_engagement
+                    _spec["behavioral_profile"] = behavioral_profile
+                specs.append(_spec)
             batch = self._generate_batch(question_text, condition, sentiment, specs)
             if batch:
                 self._pool.add(question_text, condition, sentiment, batch)

@@ -6827,6 +6827,121 @@ class EnhancedSimulationEngine:
             return 1, True
         return int(rng.randint(2, 5)), False
 
+    def _build_behavioral_profile(
+        self,
+        persona: 'Persona',
+        traits: Dict[str, float],
+        response_vals: List[int],
+        response_mean: Optional[float],
+        condition: str,
+        scale_names: Optional[List[str]] = None,
+    ) -> Dict[str, Any]:
+        """Build a rich behavioral profile summarizing this participant's behavior.
+
+        v1.0.4.8: Creates a structured behavioral summary from the participant's
+        numeric responses, persona traits, and condition assignment. This profile
+        flows to ALL text generators (LLM, ComprehensiveResponseGenerator,
+        TextResponseGenerator) to ensure open-text responses are consistent with
+        the participant's quantitative behavior in the study.
+
+        Returns a dict with:
+        - response_pattern: str description of their numeric behavior
+        - intensity: float (0-1) how extreme their numeric responses were
+        - consistency_score: float (0-1) how consistent across items
+        - behavioral_summary: str natural-language summary for LLM prompts
+        - trait_profile: dict of all 7 trait dimensions
+        - scale_summaries: list of per-scale behavioral descriptions
+        """
+        profile: Dict[str, Any] = {
+            'response_mean': response_mean,
+            'response_vals': response_vals,
+            'persona_name': persona.name if persona else 'Default',
+            'persona_description': getattr(persona, 'description', ''),
+            'condition': condition,
+        }
+
+        # Full 7-dimensional trait vector
+        profile['trait_profile'] = {
+            'attention_level': _safe_trait_value(traits.get("attention_level"), 0.8),
+            'verbosity': _safe_trait_value(traits.get("verbosity"), 0.5),
+            'formality': _safe_trait_value(traits.get("formality"), 0.5),
+            'social_desirability': _safe_trait_value(traits.get("social_desirability"), 0.3),
+            'consistency': _safe_trait_value(traits.get("response_consistency"), 0.6),
+            'response_latency': _safe_trait_value(traits.get("response_latency"), 0.5),
+            'extremity': _safe_trait_value(traits.get("extremity"), 0.4),
+        }
+
+        # Behavioral pattern from numeric responses
+        if response_vals and len(response_vals) >= 2:
+            vals = [float(v) for v in response_vals]
+            _mean = float(np.mean(vals))
+            _std = float(np.std(vals))
+            _min_v, _max_v = float(min(vals)), float(max(vals))
+            _range = _max_v - _min_v
+
+            # Intensity: how far from scale midpoint (assuming 1-7)
+            _midpoint = 4.0
+            profile['intensity'] = min(1.0, abs(_mean - _midpoint) / 3.0)
+
+            # Consistency: inverse of variability (low SD = high consistency)
+            profile['consistency_score'] = max(0.0, 1.0 - (_std / 3.0))
+
+            # Straight-lining detection
+            _unique_vals = len(set(int(v) for v in vals))
+            profile['straight_lined'] = _unique_vals <= 2 and len(vals) >= 4
+
+            # Response pattern classification
+            if _mean >= 5.5:
+                profile['response_pattern'] = 'strongly_positive'
+            elif _mean >= 4.5:
+                profile['response_pattern'] = 'moderately_positive'
+            elif _mean <= 2.5:
+                profile['response_pattern'] = 'strongly_negative'
+            elif _mean <= 3.5:
+                profile['response_pattern'] = 'moderately_negative'
+            elif _std < 0.8:
+                profile['response_pattern'] = 'consistently_neutral'
+            else:
+                profile['response_pattern'] = 'mixed_ambivalent'
+
+            # Build natural-language behavioral summary for LLM
+            _pattern_desc = {
+                'strongly_positive': f'rated items very positively (mean {_mean:.1f}/7)',
+                'moderately_positive': f'rated items somewhat positively (mean {_mean:.1f}/7)',
+                'strongly_negative': f'rated items very negatively (mean {_mean:.1f}/7)',
+                'moderately_negative': f'rated items somewhat negatively (mean {_mean:.1f}/7)',
+                'consistently_neutral': f'gave consistently moderate ratings (mean {_mean:.1f}/7, low variation)',
+                'mixed_ambivalent': f'gave mixed ratings (mean {_mean:.1f}/7, range {_min_v:.0f}-{_max_v:.0f})',
+            }
+
+            _consistency_desc = ''
+            if profile['straight_lined']:
+                _consistency_desc = ' They appear to have straight-lined (gave nearly identical responses across items).'
+            elif _std < 0.5:
+                _consistency_desc = ' Their responses were very uniform, suggesting limited discrimination between items.'
+            elif _std > 2.0:
+                _consistency_desc = ' Their responses varied widely across items, suggesting they differentiated carefully.'
+
+            _effort_desc = ''
+            _attn = profile['trait_profile']['attention_level']
+            if _attn < 0.3:
+                _effort_desc = ' This participant showed signs of low effort/carelessness.'
+            elif _attn > 0.8:
+                _effort_desc = ' This participant was highly engaged and attentive.'
+
+            profile['behavioral_summary'] = (
+                f"This participant {_pattern_desc.get(profile['response_pattern'], 'responded moderately')}."
+                f"{_consistency_desc}{_effort_desc}"
+            )
+        else:
+            profile['intensity'] = 0.5
+            profile['consistency_score'] = 0.5
+            profile['straight_lined'] = False
+            profile['response_pattern'] = 'unknown'
+            profile['behavioral_summary'] = 'No prior numeric response data available for this participant.'
+
+        return profile
+
     def _generate_open_response(
         self,
         question_spec: Dict[str, Any],
@@ -6835,6 +6950,7 @@ class EnhancedSimulationEngine:
         condition: str,
         participant_seed: int,
         response_mean: Optional[float] = None,
+        behavioral_profile: Optional[Dict[str, Any]] = None,
     ) -> str:
         """Generate an open-ended response using context-aware text generation.
 
@@ -6842,12 +6958,18 @@ class EnhancedSimulationEngine:
         responses across 50+ research domains. Falls back to the basic text
         generator if the library is not available.
 
+        v1.0.4.8: Enhanced with full behavioral profile to ensure OE responses
+        are consistent with the participant's quantitative behavior. The
+        behavioral_profile dict contains response patterns, intensity, consistency,
+        and a natural-language summary that flows to all generators.
+
         The response is generated based on:
         - Question text and type (explanation, feedback, description, etc.)
         - Study context (domain, topics, survey name)
-        - Persona traits (verbosity, formality, engagement, attention)
+        - Persona traits (ALL 7 dimensions, not just 3)
         - Experimental condition
         - Response sentiment (based on scale responses)
+        - Behavioral profile (response pattern, intensity, consistency)
         """
         response_type = str(question_spec.get("type", "general"))
         question_text = str(question_spec.get("question_text", ""))
@@ -6923,6 +7045,11 @@ class EnhancedSimulationEngine:
         else:
             engagement = 0.5
 
+        # v1.0.4.8: Extract full trait vector for all generators
+        _social_des = _safe_trait_value(traits.get("social_desirability"), 0.3)
+        _consistency = _safe_trait_value(traits.get("response_consistency"), 0.6)
+        _extremity = _safe_trait_value(traits.get("extremity"), 0.4)
+
         # v1.4.9: Try LLM generator first (question-specific, persona-aligned)
         if self.llm_generator is not None:
             try:
@@ -6935,6 +7062,7 @@ class EnhancedSimulationEngine:
                     condition=condition,
                     question_name=str(question_spec.get("name", "")),
                     participant_seed=participant_seed,
+                    behavioral_profile=behavioral_profile,
                 )
                 if resp and resp.strip():
                     return resp
@@ -6957,13 +7085,20 @@ class EnhancedSimulationEngine:
                     condition=condition,
                     question_name=unique_question_id,
                     participant_seed=participant_seed,
+                    behavioral_profile=behavioral_profile,
                 )
             except Exception as _comp_gen_err:
                 logger.debug("ComprehensiveResponseGenerator error for '%s': %s",
                              question_text[:80] if question_text else "unknown", _comp_gen_err)
 
         # Fallback to basic text generator
-        if attention_level < 0.5:
+        # v1.0.4.8: Also consider behavioral profile for style override
+        _effective_attn = attention_level
+        if behavioral_profile and isinstance(behavioral_profile, dict):
+            if behavioral_profile.get('straight_lined'):
+                _effective_attn = min(_effective_attn, 0.3)  # Force careless style
+
+        if _effective_attn < 0.5:
             style = "careless"
         elif persona.name == "Satisficer":
             style = "satisficer"
@@ -7021,9 +7156,8 @@ class EnhancedSimulationEngine:
             'much', 'more', 'most', 'very', 'really', 'just', 'also', 'please',
             'better', 'deeply', 'held', 'quite',
         }
-        # v1.0.4.7: Extract topic from ORIGINAL question context/text, not the
-        # combined embedded string (which contains researcher instructions).
-        # Priority: question_context > original question_text > combined string
+        # v1.0.4.8: Multi-strategy topic extraction
+        # Strategy 1: Extract from ORIGINAL question context/text (not embedded string)
         _qt_for_topic = question_context or _original_question_text or question_text or ""
         # Strip common researcher framing prefixes
         _qt_for_topic = _ctx_re.sub(
@@ -7032,9 +7166,71 @@ class EnhancedSimulationEngine:
         _qt_words = _ctx_re.findall(r'\b[a-zA-Z]{3,}\b', _qt_for_topic.lower())
         _topic_words = [w for w in _qt_words if w not in _ctx_stop][:6]
 
+        # Strategy 2: Phrase-level extraction — find meaningful noun phrases
+        # Look for "X about Y", "feelings toward Y", "thoughts on Y" patterns
+        _phrase_topic = ""
+        _phrase_patterns = [
+            r'(?:feelings?|thoughts?|opinions?|views?|attitudes?)\s+(?:about|toward|towards|on|regarding)\s+(.+?)(?:\.|$|\?)',
+            r'(?:describe|explain|tell\s+us)\s+(?:about|how\s+you\s+feel\s+about)\s+(.+?)(?:\.|$|\?)',
+            r'(?:how\s+do\s+you\s+feel\s+about)\s+(.+?)(?:\.|$|\?)',
+            r'(?:what\s+do\s+you\s+think\s+(?:about|of))\s+(.+?)(?:\.|$|\?)',
+        ]
+        for _pp in _phrase_patterns:
+            _pm = _ctx_re.search(_pp, _qt_for_topic, flags=_ctx_re.IGNORECASE)
+            if _pm:
+                _phrase_topic = _pm.group(1).strip()[:60]
+                break
+
+        # Strategy 3: Condition-aware topic enrichment
+        # Extract meaningful words from condition name to enrich topic
+        _cond_topic_words = []
+        if condition:
+            _cond_clean = _ctx_re.sub(r'[_\-,]+', ' ', condition).strip()
+            _cond_words = _ctx_re.findall(r'\b[a-zA-Z]{3,}\b', _cond_clean.lower())
+            _cond_stop = _ctx_stop | {'control', 'baseline', 'treatment', 'group', 'condition',
+                                      'level', 'high', 'low', 'cell'}
+            _cond_topic_words = [w for w in _cond_words if w not in _cond_stop][:3]
+
+        # Strategy 4: Study-design-aware vocabulary hints
+        _domain_topic_hints = {
+            'dictator': 'giving and allocation decisions',
+            'trust': 'trust and reciprocity',
+            'ultimatum': 'fairness and offers',
+            'public_goods': 'cooperation and contributions',
+            'polarization': 'political attitudes and divisions',
+            'intergroup': 'group identity and relations',
+            'consumer': 'product preferences and choices',
+            'health': 'health decisions and wellbeing',
+            'ai_attitudes': 'AI technology and trust',
+        }
+        _domain_hint = ""
+        for _dk, _dv in _domain_topic_hints.items():
+            if _dk in study_domain.lower() or _dk in (self.study_title or '').lower():
+                _domain_hint = _dv
+                break
+
+        # Build final topic using best available strategy
         if not topic or topic == "general":
-            if _topic_words:
-                topic = ' '.join(_topic_words[:3])
+            if _phrase_topic:
+                # Capitalize proper nouns in the extracted phrase
+                _proper = {'trump', 'biden', 'obama', 'clinton', 'harris', 'congress',
+                          'republican', 'democrat', 'america', 'american', 'covid',
+                          'facebook', 'google', 'amazon', 'apple', 'microsoft', 'tesla',
+                          'maga', 'gop', 'nato', 'china', 'russia', 'europe', 'mexico'}
+                _parts = _phrase_topic.split()
+                _parts = [w.capitalize() if w.lower() in _proper else w for w in _parts]
+                topic = ' '.join(_parts)
+            elif _topic_words:
+                # Combine content words with condition-specific words for richer topic
+                _combined = _topic_words[:3]
+                for _cw in _cond_topic_words:
+                    if _cw not in _combined:
+                        _combined.append(_cw)
+                topic = ' '.join(_combined[:4])
+            elif _cond_topic_words:
+                topic = ' '.join(_cond_topic_words[:3])
+            elif _domain_hint:
+                topic = _domain_hint
             elif study_domain and study_domain != "general":
                 topic = study_domain.replace('_', ' ')
             else:
@@ -7069,6 +7265,17 @@ class EnhancedSimulationEngine:
             "study_domain": study_domain,
             "condition": condition,
         }
+
+        # v1.0.4.8: Embed behavioral profile data into context for fallback generator
+        if behavioral_profile and isinstance(behavioral_profile, dict):
+            _bp = behavioral_profile
+            context["response_pattern"] = _bp.get("response_pattern", "unknown")
+            context["behavioral_summary"] = _bp.get("behavioral_summary", "")
+            context["persona_name"] = _bp.get("persona_name", "Default")
+            if _bp.get("response_mean") is not None:
+                context["response_mean_str"] = f"{_bp['response_mean']:.1f}"
+            if _bp.get("straight_lined"):
+                context["straight_lined"] = "true"
 
         # v1.0.3.8: Only add condition modifiers when they're meaningful
         # (don't prepend "AI-recommended" to a political topic)
@@ -7799,7 +8006,13 @@ class EnhancedSimulationEngine:
                 response_vals = participant_item_responses[i]
                 response_mean = float(np.mean(response_vals)) if response_vals else None
 
-                # Generate response with enhanced uniqueness
+                # v1.0.4.8: Build full behavioral profile for OE-numeric consistency
+                _beh_profile = self._build_behavioral_profile(
+                    persona, all_traits[i], response_vals, response_mean,
+                    participant_condition,
+                )
+
+                # Generate response with enhanced uniqueness + behavioral context
                 text = self._generate_open_response(
                     q,
                     persona,
@@ -7807,6 +8020,7 @@ class EnhancedSimulationEngine:
                     participant_condition,
                     p_seed,
                     response_mean=response_mean,
+                    behavioral_profile=_beh_profile,
                 )
                 responses.append(str(text))
 

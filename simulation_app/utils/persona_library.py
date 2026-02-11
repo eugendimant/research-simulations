@@ -3880,6 +3880,14 @@ class TextResponseGenerator:
         """
         rng = random.Random(seed)
 
+        # v1.0.4.8: Override persona_style based on behavioral profile if present
+        # Straight-liners get careless style; strongly opinionated get engaged style
+        if context.get("straight_lined") == "true":
+            persona_style = "careless"
+        elif context.get("response_pattern") in ("strongly_positive", "strongly_negative"):
+            if persona_style == "default":
+                persona_style = "engaged"  # Strong opinions => more articulate
+
         # Get templates for this response type
         type_templates = self.templates.get(response_type, self.templates['task_summary'])
 
@@ -3902,6 +3910,22 @@ class TextResponseGenerator:
 
         # Add natural variation
         response = self._add_natural_variation(response, traits, rng)
+
+        # v1.0.4.8: Behavioral coherence for fallback generator
+        # Ensure the tone of the generated text matches the numeric response pattern
+        _beh_pattern = context.get("response_pattern", "")
+        _topic = context.get("topic", "this")
+        if _beh_pattern in ("strongly_positive", "moderately_positive"):
+            # Check if response accidentally sounds negative
+            _resp_lower = response.lower()
+            if any(w in _resp_lower for w in ['bad', 'terrible', 'hate', 'upset', 'awful']):
+                if not any(w in _resp_lower for w in ['good', 'like', 'enjoy', 'positive']):
+                    response = f"Overall I feel positively about {_topic}. {response}"
+        elif _beh_pattern in ("strongly_negative", "moderately_negative"):
+            _resp_lower = response.lower()
+            if any(w in _resp_lower for w in ['good', 'great', 'love', 'enjoy', 'wonderful']):
+                if not any(w in _resp_lower for w in ['bad', 'dislike', 'concern', 'negative']):
+                    response = f"I have concerns about {_topic}. {response}"
 
         # v1.0.3.9: Domain-neutral follow-up thoughts — no consumer language
         followups = {

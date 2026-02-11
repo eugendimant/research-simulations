@@ -53,8 +53,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.0.4.7"
-BUILD_ID = "20260211-v10470-topic-extract-cond-parse-admin"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.0.4.8"
+BUILD_ID = "20260211-v10480-behavioral-coherence-oe-pipeline"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -119,7 +119,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.0.4.7"  # v1.0.4.7: Topic extraction fix, condition parsing, edit state, admin dashboard
+APP_VERSION = "1.0.4.8"  # v1.0.4.8: Behavioral coherence pipeline, OE-numeric consistency, topic intelligence
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -1338,6 +1338,22 @@ def _get_sample_text_response(
         _words = _re.findall(r'\b[a-zA-Z]{3,}\b', subject.lower())
         topic_words = [w for w in _words if w not in _stop][:6]
 
+    # v1.0.4.8: Strategy 2 — Phrase-level extraction for richer topic understanding
+    # Look for "feelings about X", "thoughts on X", "how you feel about X" patterns
+    _phrase_topic = ""
+    _source_text = question_context or question_text or ""
+    _phrase_patterns = [
+        r'(?:feelings?|thoughts?|opinions?|views?|attitudes?)\s+(?:about|toward|towards|on|regarding)\s+(.+?)(?:\.|$|\?)',
+        r'(?:describe|explain|tell\s+us)\s+(?:about|how\s+you\s+feel\s+about)\s+(.+?)(?:\.|$|\?)',
+        r'(?:how\s+do\s+you\s+feel\s+about)\s+(.+?)(?:\.|$|\?)',
+        r'(?:what\s+do\s+you\s+think\s+(?:about|of))\s+(.+?)(?:\.|$|\?)',
+    ]
+    for _pp in _phrase_patterns:
+        _pm = _re.search(_pp, _source_text, flags=_re.IGNORECASE)
+        if _pm:
+            _phrase_topic = _pm.group(1).strip()[:60]
+            break
+
     # Add study title words as fallback context
     if study_title and study_title.strip():
         _title_words = _re.findall(r'\b[a-zA-Z]{4,}\b', study_title.lower())
@@ -1346,20 +1362,44 @@ def _get_sample_text_response(
         if not topic_words:
             topic_words = _title_topics[:4]
 
+    # v1.0.4.8: Strategy 3 — Condition-aware topic enrichment
+    _cond_topic_words: List[str] = []
+    if condition and condition.strip():
+        _cond_clean = _re.sub(r'[_\-,]+', ' ', condition).strip()
+        _cw = _re.findall(r'\b[a-zA-Z]{3,}\b', _cond_clean.lower())
+        _cond_stop_extra = {'control', 'baseline', 'treatment', 'group', 'condition',
+                            'level', 'high', 'low', 'cell'}
+        _cond_topic_words = [w for w in _cw if w not in (_stop | _cond_stop_extra)][:3]
+
     # v1.0.3.10: Build a compact subject phrase for template insertion.
-    # NEVER fall back to generic "this topic" — try extracting from
-    # question_name (variable name) as last resort.
+    # v1.0.4.8: Enhanced with phrase-level and condition-aware extraction.
     if not topic_words and question_name:
         # question_name may be "var_name_question_text[:50]" — extract words
         _name_clean = _re.sub(r'[_\-]+', ' ', question_name).strip()
         _name_words = _re.findall(r'\b[a-zA-Z]{3,}\b', _name_clean.lower())
         _name_stop = {'open', 'ended', 'text', 'question', 'response', 'answer'}
         topic_words = [w for w in _name_words if w not in _name_stop][:4]
-    subject_phrase = ' '.join(topic_words[:4]) if topic_words else 'the questions asked'
+
+    # Build subject_phrase: prefer phrase-level extraction over word-level
+    if _phrase_topic:
+        subject_phrase = _phrase_topic
+    elif topic_words:
+        # Combine topic words with condition words for richer phrase
+        _combined_tw = topic_words[:3]
+        for _ctw in _cond_topic_words:
+            if _ctw not in _combined_tw and len(_combined_tw) < 5:
+                _combined_tw.append(_ctw)
+        subject_phrase = ' '.join(_combined_tw[:4])
+    elif _cond_topic_words:
+        subject_phrase = ' '.join(_cond_topic_words[:3])
+    else:
+        subject_phrase = 'the questions asked'
+
     # Capitalize proper nouns we can detect
     _proper_nouns = {'trump', 'biden', 'obama', 'clinton', 'harris', 'congress',
                      'republican', 'democrat', 'america', 'american', 'covid',
-                     'facebook', 'google', 'amazon', 'apple', 'microsoft', 'tesla'}
+                     'facebook', 'google', 'amazon', 'apple', 'microsoft', 'tesla',
+                     'maga', 'gop', 'nato', 'china', 'russia', 'europe', 'mexico'}
     subject_words_list = subject_phrase.split()
     subject_words_list = [w.capitalize() if w.lower() in _proper_nouns else w for w in subject_words_list]
     subject_phrase = ' '.join(subject_words_list)
@@ -6142,7 +6182,7 @@ div[data-testid="stAlert"] {
 # Access: Add ?admin=1 to the URL. Password required.
 # Shows: LLM stats, simulation history, system diagnostics, session state.
 # =====================================================================
-_ADMIN_PASSWORD_HASH = "5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8"  # SHA-256 of "password"
+_ADMIN_PASSWORD_HASH = "19465e8fc94da7f22aec392a5514a6494a3e090ce0ba3bd1773c1c9e339dcfac"  # SHA-256 of "Dimant_Admin"
 
 
 def _render_admin_dashboard() -> None:
