@@ -63,7 +63,7 @@ association, impression, perception, feedback, comment, observation, general
 Version: 1.8.5 - Improved domain detection with weighted scoring and disambiguation
 """
 
-__version__ = "1.0.4.7"
+__version__ = "1.0.4.8"
 
 import random
 import re
@@ -6740,6 +6740,7 @@ class ComprehensiveResponseGenerator:
         condition: str = "",
         question_name: str = "",
         participant_seed: int = 0,
+        behavioral_profile: Optional[Dict[str, Any]] = None,
     ) -> str:
         """
         Generate a context-appropriate response to an open-ended question.
@@ -6747,6 +6748,10 @@ class ComprehensiveResponseGenerator:
         v1.0.0: CRITICAL FIX - Each question now gets a unique response using
         a per-question seeded RNG. This ensures the same participant gives
         DIFFERENT responses to DIFFERENT questions.
+
+        v1.0.4.8: Enhanced with behavioral_profile dict that carries the
+        participant's numeric response patterns, intensity, consistency, and
+        persona information. Used to ensure text-numeric coherence.
 
         Args:
             question_text: The question being answered
@@ -6757,6 +6762,8 @@ class ComprehensiveResponseGenerator:
             condition: Experimental condition (for context)
             question_name: Unique identifier for the question (CRITICAL for uniqueness)
             participant_seed: Base random seed for this participant
+            behavioral_profile: Dict with response_pattern, intensity, consistency_score,
+                              behavioral_summary, trait_profile, persona_name
 
         Returns:
             Generated response text
@@ -6802,9 +6809,18 @@ class ComprehensiveResponseGenerator:
         # Personalize response based on question content (using local RNG)
         response = self._personalize_for_question(response, question_text, question_keywords, condition, local_rng)
 
+        # v1.0.4.8: Override engagement if behavioral profile indicates straight-lining
+        _effective_engagement = persona_engagement
+        if behavioral_profile and isinstance(behavioral_profile, dict):
+            if behavioral_profile.get('straight_lined'):
+                _effective_engagement = min(_effective_engagement, 0.2)
+            # Strongly opinionated participants (very high/low means) tend to write more
+            if behavioral_profile.get('response_pattern') in ('strongly_positive', 'strongly_negative'):
+                _effective_engagement = max(_effective_engagement, 0.5)
+
         # Handle disengaged/careless personas
-        if persona_engagement < 0.3:
-            response = self._make_careless(response, persona_engagement, local_rng, question_text=question_text)
+        if _effective_engagement < 0.3:
+            response = self._make_careless(response, _effective_engagement, local_rng, question_text=question_text)
 
         # Add variation (using local RNG)
         response = add_variation(response, persona_verbosity, persona_formality, local_rng)
@@ -6814,6 +6830,13 @@ class ComprehensiveResponseGenerator:
             response = self._shorten(response, local_rng)
         elif persona_verbosity > 0.7:
             response = self._extend(response, domain, sentiment, local_rng)
+
+        # v1.0.4.8: Behavioral coherence adjustment — ensure text tone matches
+        # numeric response pattern from the behavioral profile
+        if behavioral_profile and isinstance(behavioral_profile, dict):
+            response = self._enforce_behavioral_coherence(
+                response, behavioral_profile, sentiment, local_rng
+            )
 
         # v1.1.0: Add topic-specific context to keep response on-topic
         response = self._add_topic_context(response, question_text, question_keywords, domain, local_rng)
@@ -7375,6 +7398,123 @@ class ComprehensiveResponseGenerator:
             ]
 
         return rng.choice(templates)
+
+    def _enforce_behavioral_coherence(
+        self,
+        response: str,
+        behavioral_profile: Dict[str, Any],
+        sentiment: str,
+        local_rng: random.Random,
+    ) -> str:
+        """Ensure open-text response is coherent with numeric behavioral data.
+
+        v1.0.4.8: Cross-validates the generated text against the participant's
+        quantitative response pattern. If a participant rated items very
+        positively (mean 6+/7), their text should not sound negative/neutral.
+        If they rated very negatively (mean 2-/7), their text should not
+        sound enthusiastic.
+
+        Adjustments are light-touch: prepending/appending tone-setting phrases
+        rather than rewriting the entire response. This preserves the domain-
+        specific content while correcting tone mismatches.
+
+        Scientific basis:
+        - Krosnick (1999): Satisficing respondents show cross-method consistency
+          in their low effort (both numeric and open-ended)
+        - Podsakoff et al. (2003): Common method variance creates within-person
+          consistency patterns that should be reflected in simulated data
+        """
+        if not response or not behavioral_profile:
+            return response
+
+        _pattern = behavioral_profile.get('response_pattern', 'unknown')
+        _mean = behavioral_profile.get('response_mean')
+        _intensity = behavioral_profile.get('intensity', 0.5)
+        _straight = behavioral_profile.get('straight_lined', False)
+
+        # Straight-liners get minimal text regardless of content
+        if _straight:
+            # Truncate to first sentence or fewer words
+            sentences = re.split(r'(?<=[.!?])\s+', response)
+            if len(sentences) > 1:
+                response = sentences[0]
+            words = response.split()
+            if len(words) > 12:
+                response = ' '.join(words[:8])
+            return response
+
+        # Check for tone mismatches between numeric pattern and text sentiment
+        if _pattern in ('strongly_positive', 'moderately_positive') and _mean is not None and _mean >= 5.0:
+            # Participant was positive numerically — text should reflect this
+            _positive_indicators = [
+                'good', 'great', 'like', 'liked', 'enjoy', 'enjoyed', 'positive',
+                'happy', 'pleased', 'love', 'loved', 'agree', 'support', 'trust',
+                'glad', 'nice', 'awesome', 'amazing', 'wonderful', 'appreciate',
+            ]
+            _negative_indicators = [
+                'bad', 'terrible', 'hate', 'dislike', 'negative', 'angry',
+                'frustrated', 'upset', 'disagree', 'distrust', 'awful',
+                'horrible', 'worst', 'annoying', 'disappointing',
+            ]
+            _resp_lower = response.lower()
+            _has_positive = any(w in _resp_lower for w in _positive_indicators)
+            _has_negative = any(w in _resp_lower for w in _negative_indicators)
+
+            # If text sounds negative but ratings were positive, add positive framing
+            if _has_negative and not _has_positive:
+                _positive_leads = [
+                    "Overall I felt pretty positively about this. ",
+                    "I generally had a good impression. ",
+                    "Looking back I think it was mostly positive. ",
+                ]
+                response = local_rng.choice(_positive_leads) + response
+
+        elif _pattern in ('strongly_negative', 'moderately_negative') and _mean is not None and _mean <= 3.0:
+            # Participant was negative numerically — text should reflect this
+            _positive_indicators = [
+                'good', 'great', 'like', 'liked', 'enjoy', 'enjoyed',
+                'happy', 'pleased', 'love', 'loved', 'agree', 'wonderful',
+            ]
+            _negative_indicators = [
+                'bad', 'terrible', 'hate', 'dislike', 'negative', 'angry',
+                'frustrated', 'upset', 'disagree', 'distrust', 'awful',
+                'annoying', 'disappointing', 'concerned', 'worried',
+            ]
+            _resp_lower = response.lower()
+            _has_positive = any(w in _resp_lower for w in _positive_indicators)
+            _has_negative = any(w in _resp_lower for w in _negative_indicators)
+
+            # If text sounds positive but ratings were negative, add negative framing
+            if _has_positive and not _has_negative:
+                _negative_leads = [
+                    "Honestly I wasn't too happy about this. ",
+                    "I had some real concerns about this. ",
+                    "I didn't feel great about it. ",
+                ]
+                response = local_rng.choice(_negative_leads) + response
+
+        # v1.0.4.8: Intensity matching — extreme raters get intensifiers
+        if _intensity > 0.7 and _mean is not None:
+            if _mean >= 6.0:
+                _intensifiers = [
+                    " I feel really strongly about this.",
+                    " This is something I care a lot about.",
+                ]
+                if local_rng.random() < 0.4 and not response.rstrip().endswith('.'):
+                    response = response.rstrip() + '.'
+                if local_rng.random() < 0.35:
+                    response = response.rstrip() + local_rng.choice(_intensifiers)
+            elif _mean <= 2.0:
+                _intensifiers = [
+                    " I really didn't like this at all.",
+                    " This was genuinely frustrating.",
+                ]
+                if local_rng.random() < 0.4 and not response.rstrip().endswith('.'):
+                    response = response.rstrip() + '.'
+                if local_rng.random() < 0.35:
+                    response = response.rstrip() + local_rng.choice(_intensifiers)
+
+        return response
 
     def _make_careless(self, response: str, engagement: float, local_rng: random.Random = None, question_text: str = "") -> str:
         """Transform response to reflect careless/disengaged responding.

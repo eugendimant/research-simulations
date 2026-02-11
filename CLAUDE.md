@@ -6,7 +6,7 @@
 The full system for generating realistic participant behavior: domain detection → persona filtering → weight adjustment → assignment → trait generation → response generation. Refers to the complete chain from `detected_domains` through persona selection (`_CONDITION_PERSONA_AFFINITIES`, `_ADJACENT_DOMAINS`) to the 10-step simulation pipeline in `enhanced_simulation_engine.py`. Use this term to reference the end-to-end behavioral simulation architecture.
 
 ### Admin Dashboard
-Hidden password-protected diagnostics page at `?admin=1`. Shows LLM provider stats, simulation history, session state explorer, system info. Password: "password" (SHA-256 hashed). Only accessible to program administrators.
+Hidden password-protected diagnostics page at `?admin=1`. Shows LLM provider stats, simulation history, session state explorer, system info. Password: "Dimant_Admin" (SHA-256 hashed, updated v1.0.4.8). Only accessible to program administrators.
 
 ---
 
@@ -815,6 +815,99 @@ Comprehensive audit of the simulation pipeline identified 12 improvement areas a
 | Reverse-item engagement failure | Yes | Yes (3-tier: careless/satisficer/engaged) |
 | SD domain sensitivity | Yes | Yes (5 categories + economic game override) |
 | SD × reverse interaction | Yes | Yes (attenuate/amplify by reversal status) |
+
+### v1.0.4.8 Behavioral Coherence Pipeline (2026-02-11)
+
+**COMPLETED** — 5 iterations implementing OE-numeric behavioral consistency:
+
+#### Problem Statement
+Open-text responses were generated with only 3 of 7 persona traits (verbosity, formality, engagement) and a single `response_mean` float. The LLM and fallback generators had no knowledge of:
+- The participant's full behavioral profile (all 7 trait dimensions)
+- Their numeric response pattern (strongly positive, negative, mixed, straight-lined)
+- Their response consistency and intensity
+- Whether they straight-lined (identical ratings across items)
+
+This created **OE-numeric incoherence**: a participant who rated everything 1-2/7 could get enthusiastic text, or a straight-liner could produce articulate paragraphs.
+
+#### Architecture Changes
+
+**Iteration 1: Behavioral Context Pipeline**
+- New `_build_behavioral_profile()` method in `enhanced_simulation_engine.py`
+- Computes: response_pattern, intensity, consistency_score, straight_lined flag, behavioral_summary
+- Full 7-dimensional trait vector passed through (not just 3)
+- `_generate_open_response()` now accepts `behavioral_profile` dict
+- Call site builds profile from `participant_item_responses[i]` before each OE generation
+
+**Iteration 2: LLM Prompt Enhancement**
+- `_build_batch_prompt()` now includes BEHAVIOR and PERSONA hints per participant
+- New RULE #9 (BEHAVIORAL CONSISTENCY) in batch prompt mandatory rules
+- New RULE #10 in SYSTEM_PROMPT about rating-text consistency (Krosnick 1999; Podsakoff 2003)
+- Straight-liners get explicit "WARNING: text should also show low engagement" in profile
+- On-demand batch generation includes behavioral profile in first spec slot
+
+**Iteration 3: Cross-Correlation Enforcement**
+- New `_enforce_behavioral_coherence()` method in `response_library.py`
+- Post-generation validation: checks if text tone matches numeric pattern
+- Straight-liners get response truncated to first sentence / 8 words max
+- Positive-raters with negative text get positive framing prepended
+- Negative-raters with positive text get negative framing prepended
+- Intensity matching: extreme raters (6+/7 or 2-/7) get intensifier phrases at 35% rate
+- Scientific basis: Krosnick (1999), Podsakoff et al. (2003)
+
+**Iteration 4: Fallback Generator Behavioral Grounding**
+- `ComprehensiveResponseGenerator.generate()` now accepts `behavioral_profile`
+- Engagement override: straight-liners → engagement capped at 0.2; strong opinionators → min 0.5
+- `persona_library.py` `generate_response()` reads behavioral context from context dict
+- Style override: straight_lined → careless style; strongly opinionated → engaged style
+- Post-generation tone correction in fallback generator
+
+**Iteration 5: Topic Intelligence Upgrade**
+- Multi-strategy topic extraction in engine's `_generate_open_response()`:
+  - Strategy 1: Stop-word filtered content words (existing, improved)
+  - Strategy 2: Phrase-level extraction ("feelings about X" → X) via regex patterns
+  - Strategy 3: Condition-aware topic enrichment (meaningful words from condition names)
+  - Strategy 4: Study-design-aware vocabulary hints (dictator→"giving and allocation", etc.)
+- Same improvements applied to preview system `_get_sample_text_response()`
+- Condition words combined with topic words for richer subject phrases
+- Domain hint table for 9 common experimental paradigms
+
+#### Data Flow (v1.0.4.8)
+
+```
+participant_item_responses[i] → _build_behavioral_profile()
+    ↓
+behavioral_profile = {
+    response_mean: 5.8,
+    response_pattern: "strongly_positive",
+    intensity: 0.6,
+    consistency_score: 0.7,
+    straight_lined: False,
+    behavioral_summary: "rated items very positively (mean 5.8/7)",
+    trait_profile: {attention: 0.8, verbosity: 0.5, formality: 0.5,
+                    social_desirability: 0.3, consistency: 0.6,
+                    response_latency: 0.5, extremity: 0.4},
+    persona_name: "Engaged Responder",
+}
+    ↓
+_generate_open_response(behavioral_profile=profile)
+    ↓
+├─ LLM Generator: profile embedded in participant spec → batch prompt
+│   → "BEHAVIOR: rated items very positively (mean 5.8/7) | PERSONA: Engaged Responder"
+│   → RULE #9: text must match numeric ratings
+├─ ComprehensiveResponseGenerator: _enforce_behavioral_coherence() post-processes
+│   → truncates straight-liners, prepends tone-correction phrases
+└─ TextResponseGenerator: context dict carries response_pattern, behavioral_summary
+    → style override (careless for straight-liners, engaged for strong opinions)
+    → tone correction (positive raters don't get negative text)
+```
+
+#### Key Principle: The Same Person Produced Both Ratings AND Text
+Every simulated participant is ONE person. Their numeric responses and open-text responses must tell a coherent story. A participant who gave 6-7/7 on trust scales writes about trusting. A participant who straight-lined 4s writes "its fine idk". This is scientifically critical — rating-text inconsistency is a hallmark of fabricated data.
+
+### Admin Dashboard
+- **Access**: `?admin=1` query parameter
+- **Password**: "Dimant_Admin" (SHA-256 hashed, updated v1.0.4.8)
+- **Shows**: LLM provider stats, simulation history, session state explorer, system info
 
 ### Next Improvement Targets (v1.0.5.x)
 
