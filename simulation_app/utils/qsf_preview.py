@@ -33,7 +33,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 # Version identifier to help track deployed code
-__version__ = "1.0.5.8"  # v1.0.5.8: User API key fallback, anti-detection realism
+__version__ = "1.0.5.9"  # v1.0.5.9: Poe LLM provider integration
 
 
 # ============================================================================

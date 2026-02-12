@@ -53,8 +53,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.0.5.8"
-BUILD_ID = "20260212-v10508-user-api-fallback-antidetect"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.0.5.9"
+BUILD_ID = "20260212-v10509-poe-provider"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -119,7 +119,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.0.5.8"  # v1.0.5.8: User API key fallback, anti-detection realism, failure analytics
+APP_VERSION = "1.0.5.9"  # v1.0.5.9: Poe (poe.com) added as built-in LLM provider
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -10109,7 +10109,7 @@ if active_page == 3:
                 '<span style="font-size:1.2em;font-weight:700;color:#991b1b;">'
                 'All Built-in AI Providers Are Currently Unavailable</span><br>'
                 '<span style="color:#b91c1c;font-size:0.95em;">'
-                'All 5 built-in AI services have reached their rate limits. '
+                'All 6 built-in AI services have reached their rate limits. '
                 'You have two options:</span>'
                 '<ol style="color:#7f1d1d;font-size:0.9em;margin-top:8px;">'
                 '<li><strong>Provide your own API key</strong> (free or paid) — '
@@ -10130,6 +10130,7 @@ if active_page == 3:
                     "| **Google AI Studio** | Free Gemini | [aistudio.google.com](https://aistudio.google.com) |\n"
                     "| **Cerebras** | 1M tokens/day | [cloud.cerebras.ai](https://cloud.cerebras.ai) |\n"
                     "| **OpenRouter** | Free models | [openrouter.ai](https://openrouter.ai) |\n"
+                    "| **Poe** | 3K points/day | [poe.com/api_key](https://poe.com/api_key) |\n"
                     "| **OpenAI** | Paid (~$0.15/1M tokens) | [platform.openai.com](https://platform.openai.com) |\n"
                 )
 
@@ -10139,6 +10140,7 @@ if active_page == 3:
                     "Groq (Llama 3.3 70B) — Free",
                     "Cerebras (Llama 3.3 70B) — Free",
                     "Google AI (Gemini Flash) — Free",
+                    "Poe (GPT-4o-mini) — Free tier",
                     "OpenRouter (Mistral) — Free tier",
                     "OpenAI (GPT-4o-mini)",
                 ]
@@ -10158,7 +10160,7 @@ if active_page == 3:
                     value=_existing_plain,
                     type="password",
                     key="user_llm_key_input",
-                    placeholder="Paste your key here (e.g., gsk_..., csk-..., sk-or-..., sk-...)",
+                    placeholder="Paste your key here (e.g., gsk_..., csk-..., sk-or-..., poe.com key, sk-...)",
                 )
 
                 # Detect key change and encrypt + store

@@ -579,12 +579,13 @@ Always filter stop words from extracted topic, take first 2-4 content words, joi
 - v1.0.3.10: Fixed the edge cases (every fallback path, silent exceptions, meta-commentary templates, pronoun fallbacks)
 - **Lesson**: Generic responses hide in fallback paths, not in primary code. The primary path may be perfect while 10+ fallback paths produce "it is ok i guess" or "No specific comment." Always audit EVERY fallback, EVERY default value, EVERY empty-string handler.
 
-**Provider chain (Gemini already #1):**
-- Google AI Studio Gemini 2.5 Flash Lite (10 RPM, 250K TPM, 20 RPD)
-- Google AI Studio Gemma 3 27B (30 RPM, 15K TPM, 14,400 RPD)
+**Provider chain (priority order):**
 - Groq Llama 3.3 70B (~30 RPM, 14,400 RPD)
 - Cerebras Llama 3.3 70B (~30 RPM, 1M tokens/day)
+- Google AI Studio Gemini 2.5 Flash Lite (10 RPM, 250K TPM, 20 RPD)
+- Google AI Studio Gemma 3 27B (30 RPM, 15K TPM, 14,400 RPD)
 - OpenRouter Mistral Small 3.1 (varies)
+- Poe GPT-4o-mini (~20 RPM, 3K points/day free via poe.com)
 
 ### Documentation Philosophy
 

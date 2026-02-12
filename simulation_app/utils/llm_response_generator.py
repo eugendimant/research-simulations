@@ -6,9 +6,10 @@ realistic, question-specific, persona-aligned open-ended survey responses.
 
 Architecture:
 - Multi-provider: Groq (Llama 3.3 70B), Cerebras (Llama 3.3 70B),
-  Google AI Studio (Gemini 2.5 Flash Lite + Gemma 3 27B), OpenRouter
-  — with automatic key detection, per-provider rate limiting, and
-  intelligent failover. Llama 3.3 70B prioritized for natural language.
+  Google AI Studio (Gemini 2.5 Flash Lite + Gemma 3 27B), OpenRouter,
+  Poe (GPT-4o-mini via poe.com) — with automatic key detection,
+  per-provider rate limiting, and intelligent failover.
+  Llama 3.3 70B prioritized for natural language.
 - Large batch sizes: 20 responses per API call (within 32K context)
 - Smart pool scaling: calculates exact pool size needed from sample_size
 - Draw-with-replacement + deep variation: a pool of 50 base responses
@@ -19,7 +20,7 @@ Architecture:
 Version: 1.0.1.4
 """
 
-__version__ = "1.0.5.8"
+__version__ = "1.0.5.9"
 
 import hashlib
 import json
@@ -54,6 +55,11 @@ OPENROUTER_MODEL = "mistralai/mistral-small-3.1-24b-instruct:free"
 SAMBANOVA_API_URL = "https://api.sambanova.ai/v1/chat/completions"
 SAMBANOVA_MODEL = "Meta-Llama-3.1-70B-Instruct"
 
+# v1.0.5.9: Poe (poe.com) — OpenAI-compatible gateway to multiple models
+# Free tier: 3,000 compute points/day (~200 messages with GPT-4o-mini)
+POE_API_URL = "https://api.poe.com/v1/chat/completions"
+POE_MODEL = "GPT-4o-mini"  # Best value: ~15 points/message
+
 # v1.0.5.8: Additional user-selectable providers for fallback API key entry
 OPENAI_API_URL = "https://api.openai.com/v1/chat/completions"
 OPENAI_MODEL = "gpt-4o-mini"
@@ -66,6 +72,7 @@ USER_SELECTABLE_PROVIDERS: Dict[str, Dict[str, str]] = {
     "Groq (Llama 3.3 70B) — Free": {"api_url": GROQ_API_URL, "model": GROQ_MODEL, "hint": "gsk_..."},
     "Cerebras (Llama 3.3 70B) — Free": {"api_url": CEREBRAS_API_URL, "model": CEREBRAS_MODEL, "hint": "csk-..."},
     "Google AI (Gemini Flash) — Free": {"api_url": GOOGLE_AI_API_URL, "model": GOOGLE_AI_MODEL, "hint": "AIza..."},
+    "Poe (GPT-4o-mini) — Free tier": {"api_url": POE_API_URL, "model": POE_MODEL, "hint": "pFBb..."},
     "OpenRouter (Mistral) — Free tier": {"api_url": OPENROUTER_API_URL, "model": OPENROUTER_MODEL, "hint": "sk-or-..."},
     "OpenAI (GPT-4o-mini)": {"api_url": OPENAI_API_URL, "model": OPENAI_MODEL, "hint": "sk-..."},
 }
@@ -106,6 +113,12 @@ _EB_OPENROUTER = [41, 49, 119, 53, 40, 119, 44, 107, 119, 63, 111, 62, 104, 63, 
                   98, 56, 105, 111, 109, 110, 108, 105, 98, 59, 98, 63, 60, 57, 108,
                   98, 110, 57, 59, 98, 107, 56, 107, 98, 107, 107, 107, 99]
 _DEFAULT_OPENROUTER_KEY = bytes(b ^ _XK for b in _EB_OPENROUTER).decode()
+
+# Poe (poe.com) — OpenAI-compatible gateway, free tier 3,000 points/day
+_EB_POE = [42, 28, 24, 56, 10, 2, 2, 105, 5, 28, 22, 119, 14, 55, 104, 111,
+           54, 107, 15, 29, 108, 31, 27, 28, 8, 14, 3, 31, 61, 56, 24, 43,
+           24, 61, 106, 31, 119, 53, 40, 17, 31, 10, 15]
+_DEFAULT_POE_KEY = bytes(b ^ _XK for b in _EB_POE).decode()
 
 # Legacy alias
 _DEFAULT_API_KEY = _DEFAULT_GROQ_KEY
@@ -1410,6 +1423,11 @@ def detect_provider_from_key(api_key: str) -> Optional[Dict[str, str]]:
     elif key.startswith("sk-") and not key.startswith("sk-or-"):
         # v1.0.5.8: OpenAI keys start with "sk-" (but not "sk-or-" which is OpenRouter)
         return {"name": "openai", "api_url": OPENAI_API_URL, "model": OPENAI_MODEL}
+    elif key.startswith("poe-") or (len(key) >= 40 and "_" in key and "-" in key
+                                     and not any(key.startswith(p) for p in ("gsk_", "csk-", "sk-", "AIza", "snova-", "sambanova-"))):
+        # v1.0.5.9: Poe keys — base64-like, ~43 chars with mixed _/- separators
+        # Explicit "poe-" prefix check first, then heuristic for typical Poe key format
+        return {"name": "poe", "api_url": POE_API_URL, "model": POE_MODEL}
     elif len(key) > 30:
         # Default to Groq for unrecognized long keys
         return {"name": "groq", "api_url": GROQ_API_URL, "model": GROQ_MODEL}
@@ -1446,6 +1464,13 @@ def get_supported_providers() -> List[Dict[str, str]]:
             "url": "https://aistudio.google.com",
             "free_tier": "Gemini 2.5 Flash Lite (10 RPM, 20 RPD) + Gemma 3 27B (30 RPM, 14.4K RPD)",
             "recommended": True,
+        },
+        {
+            "name": "Poe",
+            "prefix": "(poe.com key)",
+            "url": "https://poe.com/api_key",
+            "free_tier": "3,000 points/day (~200 messages)",
+            "recommended": False,
         },
         {
             "name": "SambaNova",
@@ -1569,9 +1594,9 @@ class LLMResponseGenerator:
     """Generate open-ended survey responses using free LLM APIs.
 
     Multi-provider architecture with automatic failover:
-    1. Built-in default Groq key (seamless for all users)
-    2. User-provided key (auto-detected: Groq, Cerebras, Google AI Studio, OpenRouter)
-    3. Environment variable providers (Google AI Studio, Cerebras, OpenRouter)
+    1. Built-in keys: Groq, Cerebras, Google AI, OpenRouter, Poe (seamless)
+    2. User-provided key (auto-detected: Groq, Cerebras, Google AI, OpenRouter, Poe, OpenAI)
+    3. Environment variable providers (Google AI, Cerebras, OpenRouter, Poe)
     4. Template fallback (always works)
 
     Draw-with-replacement + deep variation means a pool of ~50 base
@@ -1630,11 +1655,12 @@ class LLMResponseGenerator:
         self._max_recent_starts: int = 200  # Rolling window size
 
         # Build provider chain with per-provider rate limits.
-        # Priority: Groq (natural) → Cerebras (natural) → Google AI (quality) → Google AI (volume) → OpenRouter
+        # Priority: Groq (natural) → Cerebras (natural) → Google AI (quality) → Google AI (volume) → OpenRouter → Poe
         self._providers: List[_LLMProvider] = []
         user_key = api_key or os.environ.get("LLM_API_KEY", "") or os.environ.get("GROQ_API_KEY", "")
         _all_builtin_keys = {_DEFAULT_GROQ_KEY, _DEFAULT_CEREBRAS_KEY,
-                             _DEFAULT_GOOGLE_AI_KEY, _DEFAULT_OPENROUTER_KEY}
+                             _DEFAULT_GOOGLE_AI_KEY, _DEFAULT_OPENROUTER_KEY,
+                             _DEFAULT_POE_KEY}
 
         # Built-in providers (in priority order) with rate limits from provider dashboards:
         # 1. Groq Llama 3.3 70B:              ~30 RPM, 14,400 RPD (best natural language)
@@ -1642,6 +1668,7 @@ class LLMResponseGenerator:
         # 3. Google AI Gemini 2.5 Flash Lite: 10 RPM, 250K TPM, 20 RPD
         # 4. Google AI Gemma 3 27B:           30 RPM, 15K TPM, 14,400 RPD (volume)
         # 5. OpenRouter Mistral Small 3.1:    varies by model
+        # 6. Poe GPT-4o-mini:                ~20 RPM, ~200 RPD (3K points/day free)
         # NOTE: Llama 3.3 70B produces more natural, human-sounding responses
         # than Gemini models which tend toward repetitive phrasing ("in terms of").
         _builtin_providers = [
@@ -1655,6 +1682,9 @@ class LLMResponseGenerator:
              _DEFAULT_GOOGLE_AI_KEY, 25, 14400, 10),
             ("openrouter_builtin", OPENROUTER_API_URL, OPENROUTER_MODEL,
              _DEFAULT_OPENROUTER_KEY, 20, 0, 20),
+            # v1.0.5.9: Poe — OpenAI-compatible gateway, free 3K points/day
+            ("poe_builtin", POE_API_URL, POE_MODEL,
+             _DEFAULT_POE_KEY, 20, 200, 20),
         ]
         for name, url, model, key, rpm, rpd, max_bs in _builtin_providers:
             if key:
@@ -1707,6 +1737,7 @@ class LLMResponseGenerator:
         for env_var, name, url, model in [
             ("CEREBRAS_API_KEY", "cerebras_env", CEREBRAS_API_URL, CEREBRAS_MODEL),
             ("OPENROUTER_API_KEY", "openrouter_env", OPENROUTER_API_URL, OPENROUTER_MODEL),
+            ("POE_API_KEY", "poe_env", POE_API_URL, POE_MODEL),
         ]:
             env_key = os.environ.get(env_var, "")
             if env_key and not any(p.api_key == env_key for p in self._providers):
