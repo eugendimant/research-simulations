@@ -53,8 +53,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.0.6.6"
-BUILD_ID = "20260212-v10606-comprehensive-domain-hints"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.0.6.7"
+BUILD_ID = "20260212-v10607-fix-ux-preview-warnings"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -119,7 +119,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.0.6.6"  # v1.0.6.6: Comprehensive domain topic hints (350+ entries)
+APP_VERSION = "1.0.6.7"  # v1.0.6.7: Fix UX — no OE preview, OE context prompt, hide flash warnings
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -1233,33 +1233,24 @@ def _generate_preview_data(
             preview_data[f"{var_name}_1"] = item1_values
             preview_data[f"{var_name}_mean"] = mean_values
 
-    # Add sample open-ended responses
-    # v1.0.3.8: Context-aware preview responses that address the actual question
-    for oe in open_ended[:2]:  # Limit to 2 open-ended for preview
-        if isinstance(oe, str):
-            var_name = oe
-            question_text = oe
-            question_context = ''
-        elif isinstance(oe, dict):
-            var_name = oe.get('variable_name', oe.get('name', 'OE'))
-            question_text = oe.get('question_text', var_name)
-            question_context = oe.get('question_context', '')
-        else:
-            continue
-        unique_question_id = f"{var_name}_{question_text[:50]}"
-        # Determine the condition for each row
-        row_conditions = [conditions[i % len(conditions)] if conditions else '' for i in range(n_rows)]
-        preview_data[var_name] = [
-            _get_sample_text_response(
-                difficulty_settings['text_quality'], i, unique_question_id,
-                question_text=question_text,
-                question_context=question_context,
-                condition=row_conditions[i],
-                study_title=study_title,
-                study_description=study_description,
-            )
-            for i in range(n_rows)
-        ]
+    # v1.0.6.7: Open-ended columns EXCLUDED from preview.
+    # OE responses are always generated via LLM API calls during full simulation.
+    # Template-based preview responses were misleading, so we only show numeric
+    # columns + demographics in the preview to set correct expectations.
+    if open_ended:
+        # Show a note in the preview that OE columns will appear in the full dataset
+        _oe_names = []
+        for oe in open_ended[:3]:
+            if isinstance(oe, str):
+                _oe_names.append(oe)
+            elif isinstance(oe, dict):
+                _oe_names.append(oe.get('variable_name', oe.get('name', 'OE')))
+        if _oe_names:
+            _oe_note = ", ".join(_oe_names)
+            if len(open_ended) > 3:
+                _oe_note += f", ... (+{len(open_ended) - 3} more)"
+            # Store note for display after the preview table
+            preview_data['_oe_note'] = _oe_note
 
     # Add demographics
     preview_data['age'] = [np.random.randint(18, 65) for _ in range(n_rows)]
@@ -9287,13 +9278,27 @@ if active_page == 2:
                 # User cleared all variable names — warn but don't silently delete
                 st.warning("All open-ended question names are empty. Fill in names or remove them explicitly.")
 
-        # v1.0.3.0: Compact context quality indicator (OUTSIDE expander)
+        # v1.0.6.7: Prominent context recommendation (OUTSIDE expander) for QSF path
         _oe_final = st.session_state.get("confirmed_open_ended", [])
         _oe_version_outer = st.session_state.get("_oe_version", 0)
         if _oe_final:
             _ctx_filled = sum(1 for _oq in _oe_final if _oq.get("question_context", "").strip())
-            if _ctx_filled < len(_oe_final):
-                st.caption(f"{_ctx_filled}/{len(_oe_final)} have context \u2014 adding context improves AI responses")
+            _ctx_missing = len(_oe_final) - _ctx_filled
+            if _ctx_missing > 0:
+                st.markdown(
+                    '<div style="background:#FEF3C7;border:1px solid #F59E0B;border-radius:8px;'
+                    'padding:10px 14px;margin:6px 0 10px 0;">'
+                    '<span style="color:#92400E;font-weight:600;">Tip: Add context to your open-ended questions</span><br>'
+                    '<span style="color:#92400E;font-size:0.9em;">'
+                    f'{_ctx_missing} of {len(_oe_final)} open-ended question(s) have no context yet. '
+                    'Expand the section above and add 1\u20132 sentences per question explaining what the '
+                    'participant experienced and what kind of response you expect. '
+                    'This is the single biggest factor in getting realistic AI-generated open-text responses.'
+                    '</span></div>',
+                    unsafe_allow_html=True,
+                )
+            elif _ctx_filled == len(_oe_final):
+                st.caption(f"All {len(_oe_final)} open-ended question(s) have context \u2014 great for AI response quality")
         # v1.0.3.7: Prominent OE confirmation — styled banner + checkbox
         if _oe_final:
             _oe_live = bool(st.session_state.get(
@@ -9877,9 +9882,17 @@ if active_page == 3:
         st.session_state['preview_df'] = preview_df
 
     if 'preview_df' in st.session_state and st.session_state['preview_df'] is not None:
-        st.dataframe(st.session_state['preview_df'], use_container_width=True, height=200)
+        _preview_show = st.session_state['preview_df']
+        # v1.0.6.7: Extract OE note before displaying, then drop the meta column
+        _preview_oe_note = None
+        if '_oe_note' in _preview_show.columns:
+            _preview_oe_note = _preview_show['_oe_note'].iloc[0] if len(_preview_show) > 0 else None
+            _preview_show = _preview_show.drop(columns=['_oe_note'])
+        st.dataframe(_preview_show, use_container_width=True, height=200)
         _diff_info = DIFFICULTY_LEVELS.get(difficulty_level, DIFFICULTY_LEVELS.get("medium", {}))
         st.caption(f"Preview at difficulty: **{_diff_info.get('name', difficulty_level)}**")
+        if _preview_oe_note:
+            st.caption(f"Open-ended columns ({_preview_oe_note}) will be generated via AI in the full dataset.")
 
     if not st.session_state.get("advanced_mode", False):
         # v1.0.0: Use difficulty level settings
@@ -10376,11 +10389,16 @@ if active_page == 3:
             """, unsafe_allow_html=True)
 
     if has_generated:
-        # Generation warnings (if any) shown inline near download section
+        # v1.0.6.7: Generation warnings stored for display in quality report expander
+        # instead of showing as prominent yellow warnings that confuse users.
         _gen_meta = st.session_state.get("generated_metadata", {})
         _gen_warns = _gen_meta.get("generation_warnings", []) if isinstance(_gen_meta, dict) else []
-        for _gw in _gen_warns:
-            st.warning(_gw)
+        if _gen_warns:
+            _existing_notes = st.session_state.get("_gen_quality_notes", [])
+            for _gw in _gen_warns:
+                if _gw not in _existing_notes:
+                    _existing_notes.append(_gw)
+            st.session_state["_gen_quality_notes"] = _existing_notes
 
     # v1.4.5: CSS to prevent disabled buttons from appearing clickable
     st.markdown("""
@@ -10736,39 +10754,35 @@ if active_page == 3:
             # v1.0.6.3: Persist admin history to disk for cross-session survival
             _save_admin_history()
 
-            # v1.0.5.8: Post-simulation LLM exhaustion banner — notify user if providers
-            # failed during generation and offer to re-run with their own API key.
+            # v1.0.6.7: Store LLM exhaustion info in session state for post-generation display
+            # instead of showing a yellow banner that flashes and disappears during generation.
             _run_exhaustions = _llm_run_stats.get("provider_exhaustions", 0)
             _run_fallbacks = _llm_run_stats.get("fallback_uses", 0)
             _run_pool = _llm_run_stats.get("pool_size", 0)
             if _run_exhaustions > 0 and _run_fallbacks > 0:
                 _fb_pct = (_run_fallbacks / max(1, _run_pool + _run_fallbacks)) * 100
-                # Track cumulative exhaustions for admin
                 _cum_exhaustions = st.session_state.get("_admin_total_exhaustions", 0)
                 st.session_state["_admin_total_exhaustions"] = _cum_exhaustions + _run_exhaustions
-                st.markdown(
-                    f'<div style="background:#fef3c7;border:2px solid #f59e0b;border-radius:10px;'
-                    f'padding:14px 18px;margin:12px 0;">'
-                    f'<span style="font-size:1.05em;font-weight:600;color:#92400e;">'
-                    f'AI providers experienced {_run_exhaustions} exhaustion event(s) during generation</span><br>'
-                    f'<span style="color:#a16207;font-size:0.9em;">'
-                    f'{_fb_pct:.0f}% of open-ended responses used template fallback instead of AI. '
-                    f'To get 100% AI-generated responses, provide your own API key and re-run the simulation.</span></div>',
-                    unsafe_allow_html=True,
+                st.session_state["_gen_llm_exhaustion_note"] = (
+                    f"AI providers experienced {_run_exhaustions} exhaustion event(s). "
+                    f"{_fb_pct:.0f}% of open-ended responses used template fallback instead of AI. "
+                    f"Provide your own API key and re-run for 100% AI-generated responses."
                 )
 
             # v1.2.4: Run simulation quality validation
             validation_results = _validate_simulation_output(df, metadata, clean_scales)
             st.session_state["_validation_results"] = validation_results
+            # v1.0.6.7: Store validation warnings in session state for post-generation display
+            # instead of showing them inline during generation (they flash and disappear).
+            _gen_quality_notes: List[str] = []
             if not validation_results["passed"]:
                 for err in validation_results["errors"]:
-                    st.error(err)
-                st.warning("⚠️ Simulation validation found issues. Data may need review.")
-            # v1.0.1.6: Filter out low-uniqueness warnings (noisy for non-LLM OE columns)
+                    _gen_quality_notes.append(f"Error: {err}")
             for warn in validation_results.get("warnings", []):
                 if "unique responses" in warn:
-                    continue  # suppress — these are expected for template-based OE generation
-                st.warning(warn)
+                    continue  # suppress — expected for template-based OE generation
+                _gen_quality_notes.append(warn)
+            st.session_state["_gen_quality_notes"] = _gen_quality_notes
 
             # v1.2.5: Show quick data quality summary
             progress_bar.progress(50, text="Step 3/5 — Validating data quality...")  # v1.4.2.1: Fixed duplicate step numbering
@@ -10989,12 +11003,15 @@ if active_page == 3:
             status_placeholder.info("Packaging your data...")
             # (success message consolidated into download section banner below)
 
+            # v1.0.6.7: Schema validation results stored in quality notes instead of flashing
             if not schema_results.get("valid", True):
-                st.error("Schema validation failed. Review Schema_Validation.json in the download.")
+                _existing_qn = st.session_state.get("_gen_quality_notes", [])
+                _existing_qn.append("Schema validation failed. Review Schema_Validation.json in the download.")
+                st.session_state["_gen_quality_notes"] = _existing_qn
             elif schema_results.get("warnings"):
-                st.info("Schema validation warnings found. Review Schema_Validation.json in the download.")
-            else:
-                st.info("Schema validation passed.")
+                _existing_qn = st.session_state.get("_gen_quality_notes", [])
+                _existing_qn.append("Schema validation warnings found. Review Schema_Validation.json in the download.")
+                st.session_state["_gen_quality_notes"] = _existing_qn
 
             # v1.0.0: Enhanced instructor email notification with better diagnostics
             instructor_email = st.secrets.get("INSTRUCTOR_NOTIFICATION_EMAIL", "edimant@sas.upenn.edu")
@@ -11207,10 +11224,17 @@ if active_page == 3:
                 st.warning(f"Could not render data preview: {_preview_err}")
                 st.caption("The data was generated successfully. Download the ZIP to access it.")
 
-        # v1.2.5: Data Quality Report expander
+        # v1.2.5 / v1.0.6.7: Data Quality Report expander — includes validation warnings + LLM exhaustion notes
         quality_checks = st.session_state.get("_quality_checks", [])
-        if quality_checks:
+        _gen_quality_notes = st.session_state.get("_gen_quality_notes", [])
+        _gen_llm_note = st.session_state.get("_gen_llm_exhaustion_note", "")
+        _has_quality_content = quality_checks or _gen_quality_notes or _gen_llm_note
+        if _has_quality_content:
             with st.expander("📊 Data Quality Report", expanded=False):
+                if _gen_llm_note:
+                    st.info(_gen_llm_note)
+                for _gqn in _gen_quality_notes:
+                    st.markdown(f"- {_gqn}")
                 for check in quality_checks:
                     st.markdown(check)
 
