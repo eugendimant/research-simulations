@@ -1031,7 +1031,8 @@ class OpenEndedTextGenerator:
             # Add formal prefix occasionally
             if random.random() < 0.3:
                 prefix = random.choice(FORMAL_PHRASES)
-                response = f"{prefix} {response[0].lower()}{response[1:]}"
+                if len(response) >= 2:
+                    response = f"{prefix} {response[0].lower()}{response[1:]}"
         elif traits.formality < 0.3:
             # Add casual elements
             if random.random() < 0.3:
@@ -1050,7 +1051,8 @@ class OpenEndedTextGenerator:
             # Make more disengaged
             if random.random() < 0.3:
                 prefix = random.choice(DISENGAGED_PHRASES)
-                response = f"{prefix}, {response[0].lower()}{response[1:]}"
+                if len(response) >= 2:
+                    response = f"{prefix}, {response[0].lower()}{response[1:]}"
 
         return response
 
@@ -1100,7 +1102,8 @@ class OpenEndedTextGenerator:
         if random.random() < 0.25 and traits.verbosity > 0.4:
             filler = random.choice(filler_phrases)
             if not response.startswith(tuple(filler_phrases)):
-                response = f"{filler} {response[0].lower()}{response[1:]}"
+                if len(response) >= 2:
+                    response = f"{filler} {response[0].lower()}{response[1:]}"
 
         # 3. Punctuation style variation
         if random.random() < 0.15:

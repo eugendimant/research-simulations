@@ -53,8 +53,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.0.5.2"
-BUILD_ID = "20260212-v10502-fix-widget-state-errors"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.0.5.3"
+BUILD_ID = "20260212-v10503-comprehensive-bugfix"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -67,7 +67,7 @@ from utils.qsf_preview import QSFPreviewParser, QSFPreviewResult
 from utils.schema_validator import validate_schema
 from utils.github_qsf_collector import collect_qsf_async, is_collection_enabled
 from utils.instructor_report import InstructorReportGenerator, ComprehensiveInstructorReport
-from utils.survey_builder import SurveyDescriptionParser, ParsedDesign, ParsedScale, KNOWN_SCALES, AVAILABLE_DOMAINS, generate_qsf_from_design
+from utils.survey_builder import SurveyDescriptionParser, ParsedDesign, ParsedCondition, ParsedScale, KNOWN_SCALES, AVAILABLE_DOMAINS, generate_qsf_from_design
 from utils.persona_library import PersonaLibrary, Persona
 from utils.enhanced_simulation_engine import (
     EnhancedSimulationEngine,
@@ -106,7 +106,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
         from utils.schema_validator import validate_schema  # noqa: F811
         from utils.github_qsf_collector import collect_qsf_async, is_collection_enabled  # noqa: F811
         from utils.instructor_report import InstructorReportGenerator, ComprehensiveInstructorReport  # noqa: F811
-        from utils.survey_builder import SurveyDescriptionParser, ParsedDesign, ParsedScale, KNOWN_SCALES, AVAILABLE_DOMAINS, generate_qsf_from_design  # noqa: F811
+        from utils.survey_builder import SurveyDescriptionParser, ParsedDesign, ParsedCondition, ParsedScale, KNOWN_SCALES, AVAILABLE_DOMAINS, generate_qsf_from_design  # noqa: F811
         from utils.persona_library import PersonaLibrary, Persona  # noqa: F811
         from utils.enhanced_simulation_engine import EnhancedSimulationEngine, EffectSizeSpec, ExclusionCriteria  # noqa: F811
         from utils.condition_identifier import DesignAnalysisResult, VariableRole, analyze_qsf_design  # noqa: F811
@@ -119,7 +119,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.0.5.2"  # v1.0.5.2: Fix StreamlitAPIException when adding conditions — use del instead of assign for widget keys
+APP_VERSION = "1.0.5.3"  # v1.0.5.3: Comprehensive bugfix — NameError, StreamlitAPIException, IndexError, division-by-zero, widget key collision
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -2143,9 +2143,8 @@ def _render_analytics_dashboard(
                     _g2 = df.loc[df["CONDITION"] == conditions[1], _sel_dv].dropna()
                     if len(_g1) > 1 and len(_g2) > 1:
                         _t, _p = _sp_stats.ttest_ind(_g1, _g2, equal_var=False)
-                        _d = (float(_g1.mean()) - float(_g2.mean())) / np.sqrt(
-                            (float(_g1.std())**2 + float(_g2.std())**2) / 2
-                        )
+                        _pooled_var = (float(_g1.std())**2 + float(_g2.std())**2) / 2
+                        _d = (float(_g1.mean()) - float(_g2.mean())) / np.sqrt(_pooled_var) if _pooled_var > 0 else 0.0
                         _sig = "***" if _p < 0.001 else "**" if _p < 0.01 else "*" if _p < 0.05 else "ns"
                         st.markdown(
                             f"**Welch's t-test:** t({len(_g1)+len(_g2)-2}) = {_t:.3f}, "
@@ -3977,9 +3976,9 @@ def _render_conversational_builder() -> None:
                     "description": _new_cond_desc.strip(),
                 })
                 st.session_state["builder_structured_conditions"] = _struct_conds
-                # Clear input fields — must delete (not assign) to avoid StreamlitAPIException
-                del st.session_state["struct_cond_name_input"]
-                del st.session_state["struct_cond_desc_input"]
+                # Clear input fields — must pop (not assign) to avoid StreamlitAPIException
+                st.session_state.pop("struct_cond_name_input", None)
+                st.session_state.pop("struct_cond_desc_input", None)
                 st.rerun()
 
         # Convert structured conditions to parsed conditions for downstream
@@ -4584,7 +4583,7 @@ def _render_builder_design_review() -> None:
                                 max_value=100,
                                 value=int(float(_pv.get("weight", 0)) * 100),
                                 step=5,
-                                key=f"pw_{_pk}",
+                                key=f"pw_ds_{_pk}",
                                 help=_pv.get("description", "")[:200],
                             )
                             _custom_weights[_pk] = _w / 100.0
@@ -4773,9 +4772,9 @@ def _render_builder_design_review() -> None:
                     c: _per + (1 if idx < _rem else 0) for idx, c in enumerate(conditions)
                 }
                 st.session_state["condition_allocation"] = {c: round(100.0 / _n, 1) for c in conditions}
-                # Clear input fields — must delete (not assign) to avoid StreamlitAPIException
-                del st.session_state["builder_review_extra_conds"]
-                del st.session_state["builder_review_extra_desc"]
+                # Clear input fields — must pop (not assign) to avoid StreamlitAPIException
+                st.session_state.pop("builder_review_extra_conds", None)
+                st.session_state.pop("builder_review_extra_desc", None)
                 st.session_state["_br_cond_version"] = st.session_state.get("_br_cond_version", 0) + 1
                 st.rerun()
 
@@ -8038,8 +8037,8 @@ if active_page == 2:
                     if _nc and _nc.lower() not in _all_existing:
                         custom_conditions.append(_nc)
                         st.session_state["custom_conditions"] = custom_conditions
-                        # Clear input — must delete (not assign) to avoid StreamlitAPIException
-                        del st.session_state["new_condition_input"]
+                        # Clear input — must pop (not assign) to avoid StreamlitAPIException
+                        st.session_state.pop("new_condition_input", None)
                         st.rerun()
                     elif _nc and _nc.lower() in _all_existing:
                         st.warning(f"Condition '{_nc}' already exists (case-insensitive match).")
@@ -10098,7 +10097,10 @@ if active_page == 3:
         # v1.0.1.5: Use _p_ persist fallback — widget keys may not survive cross-page navigation
         title = (st.session_state.get("study_title") or st.session_state.get("_p_study_title", "")) or "Untitled Study"
         desc = (st.session_state.get("study_description") or st.session_state.get("_p_study_description", "")) or ""
-        requested_n = int(st.session_state.get("sample_size", 200))
+        try:
+            requested_n = int(st.session_state.get("sample_size", 200))
+        except (ValueError, TypeError):
+            requested_n = 200
         if requested_n > MAX_SIMULATED_N:
             st.info(
                 f"Requested N ({requested_n}) exceeds the cap ({MAX_SIMULATED_N}). "

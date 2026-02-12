@@ -63,7 +63,7 @@ association, impression, perception, feedback, comment, observation, general
 Version: 1.8.5 - Improved domain detection with weighted scoring and disambiguation
 """
 
-__version__ = "1.0.5.2"
+__version__ = "1.0.5.3"
 
 import random
 import re
@@ -6441,7 +6441,7 @@ def add_variation(response: str, persona_verbosity: float, persona_formality: fl
     # Add hedging for less confident personas
     if rng.random() < (1 - persona_verbosity) * 0.4:
         hedge = rng.choice(HEDGING_PHRASES)
-        if not result.startswith(('I ', 'My ')):
+        if not result.startswith(('I ', 'My ')) and len(result) >= 2:
             result = hedge + result[0].lower() + result[1:]
 
     # Add connector for verbose personas
@@ -6666,7 +6666,7 @@ class ComprehensiveResponseGenerator:
                     if sentence.lower().startswith(existing_starter.lower()):
                         stripped = sentence[len(existing_starter):]
                         break
-                if stripped:
+                if len(stripped) >= 2:
                     varied = starter + stripped[0].lower() + stripped[1:]
                     norm = self._normalize_sentence(varied)
                     if norm not in ComprehensiveResponseGenerator._used_sentences:
@@ -6683,7 +6683,7 @@ class ComprehensiveResponseGenerator:
                     "In my experience, ", "As far as I can tell, ",
                 ]
                 qualifier = local_rng.choice(qualifiers)
-                varied = qualifier + sentence[0].lower() + sentence[1:] if sentence else sentence
+                varied = qualifier + sentence[0].lower() + sentence[1:] if len(sentence) >= 2 else sentence
                 norm = self._normalize_sentence(varied)
                 if norm not in ComprehensiveResponseGenerator._used_sentences:
                     return varied
@@ -6753,7 +6753,7 @@ class ComprehensiveResponseGenerator:
         # Fallback: just prepend a unique hedge word
         hedges = ["Essentially, ", "Basically, ", "Fundamentally, ", "Simply put, ", "Put simply, "]
         hedge = local_rng.choice(hedges)
-        return hedge + sentence[0].lower() + sentence[1:] if sentence else sentence
+        return hedge + sentence[0].lower() + sentence[1:] if len(sentence) >= 2 else sentence
 
     def _enforce_sentence_uniqueness(self, response: str, local_rng: random.Random) -> str:
         """Final pass: replace any sentence that has already been used in the dataset.
@@ -6859,14 +6859,14 @@ class ComprehensiveResponseGenerator:
                 if response.lower().startswith(existing_starter.lower()):
                     response = response[len(existing_starter):]
                     break
-            return starter + response[0].lower() + response[1:] if response else response
+            return starter + response[0].lower() + response[1:] if len(response) >= 2 else response
 
         # Level 1: Add transition phrase in middle
         elif variation_level == 1:
             sentences = response.split('. ')
             if len(sentences) >= 2:
                 transition = local_rng.choice(self.TRANSITION_PHRASES)
-                sentences[1] = transition.lower() + sentences[1][0].lower() + sentences[1][1:] if sentences[1] else sentences[1]
+                sentences[1] = transition.lower() + sentences[1][0].lower() + sentences[1][1:] if len(sentences[1]) >= 2 else sentences[1]
                 return '. '.join(sentences)
 
         # Level 2: Change concluding phrase
@@ -6891,7 +6891,9 @@ class ComprehensiveResponseGenerator:
                 "To be honest, ", "Thinking about it, ", "Upon reflection, ",
                 "When I consider this, ", "Given the circumstances, ",
             ]
-            return local_rng.choice(qualifiers) + response[0].lower() + response[1:]
+            if len(response) >= 2:
+                return local_rng.choice(qualifiers) + response[0].lower() + response[1:]
+            return response
 
         # Level 5: Synonym substitution for common adjectives/adverbs
         elif variation_level == 5:
@@ -6916,7 +6918,7 @@ class ComprehensiveResponseGenerator:
                     # Preserve original capitalization of first char
                     def _replace_preserving_case(match: re.Match) -> str:
                         original = match.group(0)
-                        if original[0].isupper():
+                        if original[0].isupper() and len(replacement) >= 2:
                             return replacement[0].upper() + replacement[1:]
                         return replacement
                     varied = pattern.sub(_replace_preserving_case, varied, count=1)
@@ -6936,7 +6938,7 @@ class ComprehensiveResponseGenerator:
             ]
             phrase = local_rng.choice(anecdote_phrases)
             # Insert at the beginning, adjusting case of the original start
-            if response:
+            if len(response) >= 2:
                 return phrase + response[0].lower() + response[1:]
             return response
 
@@ -6953,7 +6955,7 @@ class ComprehensiveResponseGenerator:
                         idx = text.lower().index(pattern)
                         first_part = text[:idx].rstrip(',') + '.'
                         second_part = text[idx + len(pattern):].strip()
-                        if second_part:
+                        if len(second_part) >= 2:
                             second_part = second_part[0].upper() + second_part[1:]
                             return first_part + ' ' + second_part
                         break
@@ -6962,7 +6964,7 @@ class ComprehensiveResponseGenerator:
                 s1 = sentences[0].rstrip('.!?')
                 s2 = sentences[1]
                 if s2:
-                    s2_lower = s2[0].lower() + s2[1:] if s2 else s2
+                    s2_lower = s2[0].lower() + s2[1:] if len(s2) >= 2 else s2
                     connectors = [', and ', ', and I think ', '. Moreover, ', ' - and furthermore, ']
                     connector = local_rng.choice(connectors)
                     combined = s1 + connector + s2_lower
@@ -7260,12 +7262,16 @@ class ComprehensiveResponseGenerator:
                     # Insert phrase naturally into response
                     if local_rng.random() < 0.5:
                         # Add at beginning
-                        return f"{phrase.capitalize()}, {response[0].lower()}{response[1:]}"
+                        if len(response) >= 2:
+                            return f"{phrase.capitalize()}, {response[0].lower()}{response[1:]}"
+                        return f"{phrase.capitalize()}, {response}"
                     else:
                         # Add before last sentence
                         sentences = response.rsplit('. ', 1)
                         if len(sentences) == 2:
-                            return f"{sentences[0]}. {phrase.capitalize()}, {sentences[1][0].lower()}{sentences[1][1:]}"
+                            if len(sentences[1]) >= 2:
+                                return f"{sentences[0]}. {phrase.capitalize()}, {sentences[1][0].lower()}{sentences[1][1:]}"
+                            return f"{sentences[0]}. {phrase.capitalize()}, {sentences[1]}"
                     break
 
         return response
@@ -7334,7 +7340,7 @@ class ComprehensiveResponseGenerator:
         for keyword, intros in topic_intros.items():
             if keyword in question_lower or any(kw == keyword for kw in keywords):
                 intro = rng.choice(intros)
-                if not response.lower().startswith(intro.lower().split()[0]):
+                if not response.lower().startswith(intro.lower().split()[0]) and len(response) >= 2:
                     response = intro + response[0].lower() + response[1:]
                 break
 

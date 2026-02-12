@@ -3904,7 +3904,7 @@ class TextResponseGenerator:
         attention = traits.get('attention_level', 0.5)
 
         # Sometimes add a hedge
-        if traits.get('response_consistency', 0.5) < 0.6 and rng.random() < 0.25:
+        if traits.get('response_consistency', 0.5) < 0.6 and rng.random() < 0.25 and len(response) >= 2:
             hedge = rng.choice(self.hedges)
             response = f"{hedge}, {response[0].lower()}{response[1:]}"
 
@@ -3927,10 +3927,10 @@ class TextResponseGenerator:
                 # Insert self-correction before a random non-first sentence
                 insert_pos = rng.randint(1, len(sentences) - 1)
                 sent = sentences[insert_pos]
-                if sent:
+                if len(sent) >= 2:
                     sentences[insert_pos] = correction + sent[0].lower() + sent[1:]
                     response = '. '.join(sentences)
-            else:
+            elif len(response) >= 2:
                 response = correction + response[0].lower() + response[1:]
 
         # Trailing off for satisficers (attention < 0.4)
@@ -3964,7 +3964,8 @@ class TextResponseGenerator:
             sentences = response.split('. ')
             if len(sentences) > 1:
                 insert_pos = rng.randint(1, len(sentences) - 1)
-                sentences[insert_pos] = filler + sentences[insert_pos][0].lower() + sentences[insert_pos][1:]
+                if len(sentences[insert_pos]) >= 2:
+                    sentences[insert_pos] = filler + sentences[insert_pos][0].lower() + sentences[insert_pos][1:]
                 response = '. '.join(sentences)
 
         return response
@@ -4007,7 +4008,7 @@ class TextResponseGenerator:
                 ]
                 transition = rng.choice(transition_phrases)
                 # Join the two responses: primary + transition + second (lowercased start)
-                if second_response:
+                if len(second_response) >= 2:
                     combined_second = second_response[0].lower() + second_response[1:]
                     # Ensure primary ends with proper punctuation before joining
                     if not response.rstrip().endswith(('.', '!', '?')):
@@ -4037,11 +4038,17 @@ class TextResponseGenerator:
             if strategy == 0:
                 # Add a time phrase at the beginning
                 time_phrase = rng.choice(self._variation_phrases['time_phrases'])
-                response = f"{time_phrase} {original_response[0].lower()}{original_response[1:]}"
+                if len(original_response) >= 2:
+                    response = f"{time_phrase} {original_response[0].lower()}{original_response[1:]}"
+                else:
+                    response = f"{time_phrase} {original_response}"
             elif strategy == 1:
                 # Add a personal phrase at the beginning
                 personal_phrase = rng.choice(self._variation_phrases['personal_phrases'])
-                response = f"{personal_phrase} {original_response[0].lower()}{original_response[1:]}"
+                if len(original_response) >= 2:
+                    response = f"{personal_phrase} {original_response[0].lower()}{original_response[1:]}"
+                else:
+                    response = f"{personal_phrase} {original_response}"
             elif strategy == 2:
                 # Add an ending phrase
                 ending = rng.choice([e for e in self._variation_phrases['ending_phrases'] if e])
@@ -4053,8 +4060,10 @@ class TextResponseGenerator:
                 if ". " in original_response:
                     parts = original_response.split(". ", 1)
                     response = f"{certainty} {parts[0].lower()}. {parts[1]}"
-                else:
+                elif len(original_response) >= 2:
                     response = f"{certainty} {original_response[0].lower()}{original_response[1:]}"
+                else:
+                    response = f"{certainty} {original_response}"
             elif strategy == 4:
                 # Paraphrase by restructuring: swap order of first two sentences
                 sentences = original_response.split('. ')
@@ -4065,7 +4074,10 @@ class TextResponseGenerator:
                 else:
                     # Single sentence -- fall back to adding a time phrase
                     time_phrase = rng.choice(self._variation_phrases['time_phrases'])
-                    response = f"{time_phrase} {original_response[0].lower()}{original_response[1:]}"
+                    if len(original_response) >= 2:
+                        response = f"{time_phrase} {original_response[0].lower()}{original_response[1:]}"
+                    else:
+                        response = f"{time_phrase} {original_response}"
             else:
                 # Strategy 5: Add a topic-relevant detail insertion
                 topic = (context or {}).get('topic', '')
@@ -4076,7 +4088,7 @@ class TextResponseGenerator:
                         first_sentence += '.'
                     topic_prefix = f"When it comes to {topic} specifically, "
                     # Build: topic prefix + lowercased first sentence + rest
-                    lowered_first = first_sentence[0].lower() + first_sentence[1:]
+                    lowered_first = first_sentence[0].lower() + first_sentence[1:] if len(first_sentence) >= 2 else first_sentence
                     rest_parts = original_response.split('. ', 1)
                     if len(rest_parts) > 1:
                         response = f"{topic_prefix}{lowered_first} {rest_parts[1]}"
@@ -4085,7 +4097,10 @@ class TextResponseGenerator:
                 else:
                     # No topic available -- fall back to a personal phrase
                     personal_phrase = rng.choice(self._variation_phrases['personal_phrases'])
-                    response = f"{personal_phrase} {original_response[0].lower()}{original_response[1:]}"
+                    if len(original_response) >= 2:
+                        response = f"{personal_phrase} {original_response[0].lower()}{original_response[1:]}"
+                    else:
+                        response = f"{personal_phrase} {original_response}"
 
         # If still not unique after max attempts, add a unique identifier phrase
         if response in self._used_responses:
@@ -4095,7 +4110,10 @@ class TextResponseGenerator:
                 "Candidly speaking,", "Truth be told,", "Honestly speaking,", "Frankly,"
             ]
             modifier = rng.choice(unique_modifiers)
-            response = f"{modifier} {original_response[0].lower()}{original_response[1:]}"
+            if len(original_response) >= 2:
+                response = f"{modifier} {original_response[0].lower()}{original_response[1:]}"
+            else:
+                response = f"{modifier} {original_response}"
 
         self._used_responses.add(response)
         return response
@@ -4130,10 +4148,22 @@ class TextResponseGenerator:
         # Uses full trait vector and behavioral pattern for precise style matching
         _straight_lined = context.get("straight_lined") == "true"
         _beh_pattern = context.get("response_pattern", "")
-        _intensity = float(context.get("intensity", "0.5"))
-        _consistency = float(context.get("consistency_score", "0.5"))
-        _sd = float(context.get("trait_social_desirability", "0.3"))
-        _extremity = float(context.get("trait_extremity", "0.4"))
+        try:
+            _intensity = float(context.get("intensity", "0.5"))
+        except (ValueError, TypeError):
+            _intensity = 0.5
+        try:
+            _consistency = float(context.get("consistency_score", "0.5"))
+        except (ValueError, TypeError):
+            _consistency = 0.5
+        try:
+            _sd = float(context.get("trait_social_desirability", "0.3"))
+        except (ValueError, TypeError):
+            _sd = 0.3
+        try:
+            _extremity = float(context.get("trait_extremity", "0.4"))
+        except (ValueError, TypeError):
+            _extremity = 0.4
 
         if _straight_lined:
             persona_style = "careless"
