@@ -4115,6 +4115,9 @@ class TextResponseGenerator:
             response_type: Type of response (task_summary, product_evaluation, etc.)
             persona_style: Persona style key (engaged, satisficer, etc.)
             context: Dict with placeholders like {stimulus}, {topic}, {product}
+                     v1.0.5.0: Also contains behavioral_summary, response_pattern,
+                     intensity, consistency_score, trait_* dimensions, entities,
+                     question_intent, condition_framing, etc.
             traits: Participant trait values
             seed: Random seed for reproducibility
 
@@ -4123,13 +4126,25 @@ class TextResponseGenerator:
         """
         rng = random.Random(seed)
 
-        # v1.0.4.8: Override persona_style based on behavioral profile if present
-        # Straight-liners get careless style; strongly opinionated get engaged style
-        if context.get("straight_lined") == "true":
+        # v1.0.5.0: Enhanced behavioral-profile-driven style selection
+        # Uses full trait vector and behavioral pattern for precise style matching
+        _straight_lined = context.get("straight_lined") == "true"
+        _beh_pattern = context.get("response_pattern", "")
+        _intensity = float(context.get("intensity", "0.5"))
+        _consistency = float(context.get("consistency_score", "0.5"))
+        _sd = float(context.get("trait_social_desirability", "0.3"))
+        _extremity = float(context.get("trait_extremity", "0.4"))
+
+        if _straight_lined:
             persona_style = "careless"
-        elif context.get("response_pattern") in ("strongly_positive", "strongly_negative"):
+        elif _beh_pattern in ("strongly_positive", "strongly_negative") and _intensity > 0.6:
+            persona_style = "extreme" if _extremity > 0.6 else "engaged"
+        elif _beh_pattern in ("strongly_positive", "strongly_negative"):
             if persona_style == "default":
-                persona_style = "engaged"  # Strong opinions => more articulate
+                persona_style = "engaged"
+        elif _beh_pattern == "consistently_neutral" and _consistency > 0.8:
+            if persona_style not in ("careless", "satisficer"):
+                persona_style = "satisficer"  # Consistent neutrality = low differentiation
 
         # Get templates for this response type
         type_templates = self.templates.get(response_type, self.templates['task_summary'])
@@ -4154,21 +4169,78 @@ class TextResponseGenerator:
         # Add natural variation
         response = self._add_natural_variation(response, traits, rng)
 
-        # v1.0.4.8: Behavioral coherence for fallback generator
-        # Ensure the tone of the generated text matches the numeric response pattern
-        _beh_pattern = context.get("response_pattern", "")
+        # v1.0.5.0: Comprehensive behavioral coherence for fallback generator
+        # Uses full trait profile + behavioral pattern for rich tone matching
         _topic = context.get("topic", "this")
         if _beh_pattern in ("strongly_positive", "moderately_positive"):
-            # Check if response accidentally sounds negative
             _resp_lower = response.lower()
-            if any(w in _resp_lower for w in ['bad', 'terrible', 'hate', 'upset', 'awful']):
-                if not any(w in _resp_lower for w in ['good', 'like', 'enjoy', 'positive']):
+            _neg_words = ['bad', 'terrible', 'hate', 'upset', 'awful', 'frustrated',
+                          'disappointed', 'angry', 'worst', 'horrible']
+            _pos_words = ['good', 'like', 'enjoy', 'positive', 'great', 'appreciate',
+                          'happy', 'love', 'glad', 'pleased']
+            if any(w in _resp_lower for w in _neg_words):
+                if not any(w in _resp_lower for w in _pos_words):
                     response = f"Overall I feel positively about {_topic}. {response}"
         elif _beh_pattern in ("strongly_negative", "moderately_negative"):
             _resp_lower = response.lower()
-            if any(w in _resp_lower for w in ['good', 'great', 'love', 'enjoy', 'wonderful']):
-                if not any(w in _resp_lower for w in ['bad', 'dislike', 'concern', 'negative']):
+            _pos_words = ['good', 'great', 'love', 'enjoy', 'wonderful', 'amazing',
+                          'happy', 'pleased', 'appreciate']
+            _neg_words = ['bad', 'dislike', 'concern', 'negative', 'frustrated',
+                          'disappointed', 'upset', 'worried']
+            if any(w in _resp_lower for w in _pos_words):
+                if not any(w in _resp_lower for w in _neg_words):
                     response = f"I have concerns about {_topic}. {response}"
+
+        # v1.0.5.0: Intensity-driven response modulation
+        # Extreme raters (high intensity) get more emphatic language
+        if _intensity > 0.7 and _extremity > 0.5:
+            if _beh_pattern in ("strongly_positive",) and rng.random() < 0.5:
+                _emphatics = [
+                    f" I feel really strongly about {_topic}.",
+                    f" {_topic} is genuinely important to me.",
+                    f" I can't emphasize enough how I feel about {_topic}.",
+                ]
+                response = response.rstrip()
+                if not response.endswith('.'):
+                    response += '.'
+                response += rng.choice(_emphatics)
+            elif _beh_pattern in ("strongly_negative",) and rng.random() < 0.5:
+                _emphatics = [
+                    f" I feel really strongly about {_topic} and not in a good way.",
+                    f" {_topic} seriously concerns me.",
+                    f" I can't overstate my frustration with {_topic}.",
+                ]
+                response = response.rstrip()
+                if not response.endswith('.'):
+                    response += '.'
+                response += rng.choice(_emphatics)
+
+        # v1.0.5.0: Social desirability modulation — high SD personas add hedges/qualifiers
+        if _sd > 0.7 and rng.random() < 0.4:
+            _sd_hedges = [
+                "I tried to be fair in my responses. ",
+                "I want to give a balanced perspective. ",
+                "I considered different viewpoints. ",
+            ]
+            response = rng.choice(_sd_hedges) + response
+
+        # v1.0.5.0: Straight-liner truncation — behavioral coherence with numeric pattern
+        if _straight_lined:
+            words = response.split()
+            if len(words) > 8:
+                response = ' '.join(words[:6])
+
+        # v1.0.5.0: Entity injection — if named entities were detected but aren't
+        # mentioned in the response, weave them in naturally
+        _entities = context.get("entities")
+        if _entities and isinstance(_entities, list) and len(_entities) > 0:
+            _resp_lower = response.lower()
+            _missing_entities = [e for e in _entities if e.lower() not in _resp_lower]
+            if _missing_entities and rng.random() < 0.6:
+                _ent = rng.choice(_missing_entities)
+                if len(response) > 20:
+                    response = response.rstrip('.')
+                    response += f", especially regarding {_ent}."
 
         # v1.0.3.9: Domain-neutral follow-up thoughts — no consumer language
         followups = {
@@ -4178,7 +4250,6 @@ class TextResponseGenerator:
                 " This left me feeling good about it.",
                 " I think this is heading in the right direction.",
                 " I'm genuinely supportive of where this is going.",
-                " This resonated with me personally.",
             ],
             'negative': [
                 " Overall I wasn't that impressed.",
@@ -4186,14 +4257,12 @@ class TextResponseGenerator:
                 " I was hoping for something better honestly.",
                 " I think there are real problems here.",
                 " This is concerning to me.",
-                " I'm not satisfied with how things are.",
             ],
             'neutral': [
                 " I don't have particularly strong feelings about it.",
                 " Could go either way on this.",
                 " My feelings are mixed.",
                 " I can see both sides of this.",
-                " It depends on how you look at it.",
                 " I'm still forming my opinion.",
             ]
         }

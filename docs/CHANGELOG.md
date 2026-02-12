@@ -1,5 +1,43 @@
 # Agent Change Log
 
+## 2026-02-12 — v1.0.5.0
+### OE Behavioral Realism Pipeline — 5 Iterations: Topic Intelligence, Persona Integration, Behavioral Coherence, Cross-Response Consistency
+
+#### Iteration 1: Deep Topic Intelligence & Semantic Context Pipeline
+- **7-strategy topic extraction** (up from 4): entity extraction, question intent classification, study title topic extraction
+- Expanded phrase capture from 60 to 150 characters with 8 new extraction patterns
+- **30 paradigm domain hints** (up from 9): moral, stereotype, prejudice, discrimination, persuasion, negotiation, risk, prosocial, cooperation, punishment, identity, emotion, mindfulness, stress, wellbeing, environmental, education, leadership, conformity, deception, attachment
+- **Named entity extraction**: 45+ entities (people, brands, concepts) detected and passed through all generators
+- **Question intent classification**: 7 types (opinion, explanation, description, emotional_reaction, evaluation, prediction, recommendation) shape response framing
+
+#### Iteration 2: Full Persona Trait Integration into All Generators
+- LLM prompt VOICE cues from full 7-dimensional trait profile (social desirability, extremity, consistency, intensity)
+- New LLM MANDATORY RULE #10: Persona Voice & Trait Expression — traits must pervade entire response
+- ComprehensiveResponseGenerator question-type routing: evaluation → explanation fallback chain (no longer hardcoded "explanation")
+- Intent-specific context-grounded templates: 18+ new templates across 3 intents × 3 sentiments
+- TextResponseGenerator enhanced style selection using full trait vector
+
+#### Iteration 3: Deep Behavioral Coherence Enforcement
+- `_enforce_behavioral_coherence()` expanded from 3 to 6 checks
+- Expanded sentiment indicators: 30+ positive/negative words (up from 20)
+- Intensity-driven intensifier injection with scaled probability (25%-65% based on intensity, up from flat 35%)
+- Social desirability modulation: high-SD personas add qualifying hedges (Paulhus, 2002)
+- Extremity-driven absolute language: replaces hedging words with absolutes for extreme responders (Greenleaf, 1992)
+
+#### Iteration 4: Fallback Generator Full Behavioral Alignment
+- TextResponseGenerator uses full behavioral context: intensity, consistency, SD, extremity, entities, question_intent, condition_framing
+- Entity injection: named entities woven into responses at 60% probability
+- LLM generator fallback path now passes behavioral_profile through to ComprehensiveResponseGenerator
+- Domain-aware condition modifiers expanded: political (progressive/conservative), ingroup/outgroup, health (risk/benefit)
+
+#### Iteration 5: Cross-Response Consistency & Participant Voice Memory
+- `_participant_voice_memory` dict tracks established tone, prior responses, and style across OE questions
+- Voice consistency hints in LLM CONTINUITY cues and fallback context dict
+- Tone detection from generated text: positive/negative word counting establishes voice for subsequent questions
+- Ensures same participant sounds the same across all their OE answers
+
+---
+
 ## 2026-02-11 — v1.0.4.9
 ### 5 Deep Improvement Iterations: New Paradigms, Personas, SD Refinement, Validation, Documentation
 

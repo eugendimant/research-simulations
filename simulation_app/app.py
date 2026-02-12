@@ -53,8 +53,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.0.4.9"
-BUILD_ID = "20260211-v10490-domain-templates-expansion"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.0.5.0"
+BUILD_ID = "20260212-v10500-oe-behavioral-realism-pipeline"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -119,7 +119,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.0.4.9"  # v1.0.4.9: Domain template expansion (narrative_transportation, gratitude_intervention, moral_cleansing, digital_wellbeing)
+APP_VERSION = "1.0.5.0"  # v1.0.5.0: OE behavioral realism pipeline — topic intelligence, persona integration, behavioral coherence, cross-response consistency
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")

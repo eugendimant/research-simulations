@@ -588,7 +588,9 @@ def _build_batch_prompt(
         if expertise:
             demo_hints += f" | expertise={expertise}"
 
-        # v1.0.4.8: Behavioral profile — their numeric behavior in the study
+        # v1.0.5.0: Full behavioral profile — 7 traits + numeric pattern + persona
+        # All trait dimensions influence the LLM's response generation to produce
+        # text that sounds like it came from the SAME person who gave the ratings.
         _beh_hint = ""
         _beh = spec.get("behavioral_profile")
         if _beh and isinstance(_beh, dict):
@@ -596,14 +598,48 @@ def _build_batch_prompt(
             _beh_pattern = _beh.get("response_pattern", "")
             _beh_mean = _beh.get("response_mean")
             _persona_name = _beh.get("persona_name", "")
+            _persona_desc = _beh.get("persona_description", "")
             if _beh_summary:
                 _beh_hint += f" | BEHAVIOR: {_beh_summary}"
             if _persona_name and _persona_name != "Default":
                 _beh_hint += f" | PERSONA: {_persona_name}"
+                if _persona_desc:
+                    _beh_hint += f" ({_persona_desc[:80]})"
             if _beh.get("straight_lined"):
                 _beh_hint += " | WARNING: straight-lined numeric responses, text should also show low engagement"
             elif _beh_mean is not None:
                 _beh_hint += f" | numeric_mean={_beh_mean:.1f}/7"
+
+            # v1.0.5.0: Expose key trait dimensions that shape writing voice
+            _traits = _beh.get("trait_profile", {})
+            _trait_cues = []
+            _sd = _traits.get("social_desirability", 0.3)
+            if _sd > 0.7:
+                _trait_cues.append("socially careful (avoids controversial statements)")
+            elif _sd < 0.2:
+                _trait_cues.append("blunt and unfiltered")
+            _ext = _traits.get("extremity", 0.4)
+            if _ext > 0.7:
+                _trait_cues.append("uses strong/absolute language")
+            elif _ext < 0.2:
+                _trait_cues.append("moderate and hedging")
+            _cons = _traits.get("consistency", 0.6)
+            if _cons > 0.85:
+                _trait_cues.append("very consistent views across items")
+            elif _cons < 0.3:
+                _trait_cues.append("contradictory/variable across items")
+            _intensity = _beh.get("intensity", 0.5)
+            if _intensity > 0.7:
+                _trait_cues.append("emotionally intense about this topic")
+            elif _intensity < 0.2:
+                _trait_cues.append("emotionally detached")
+            if _trait_cues:
+                _beh_hint += f" | VOICE: {'; '.join(_trait_cues)}"
+
+            # v1.0.5.0: Cross-response voice consistency
+            _voice_hint = _beh.get("voice_consistency_hint", "")
+            if _voice_hint:
+                _beh_hint += f" | CONTINUITY: {_voice_hint[:120]}"
 
         participant_lines.append(
             f"Participant {i}: length={length_hint} | "
@@ -870,6 +906,17 @@ def _build_batch_prompt(
         f"ok i guess'. A participant who rated everything 1-2 should NOT "
         f"write 'I really enjoyed it'. The text is the SAME person who gave "
         f"those numeric ratings — their words must match their numbers.\n\n"
+        f"10. PERSONA VOICE & TRAIT EXPRESSION — When a participant has "
+        f"VOICE cues (e.g., 'blunt and unfiltered', 'uses strong/absolute "
+        f"language', 'socially careful'), their writing style MUST reflect "
+        f"those traits throughout the ENTIRE response, not just the first "
+        f"sentence. A 'blunt and unfiltered' person writes directly without "
+        f"hedging. A 'socially careful' person qualifies statements. An "
+        f"'emotionally intense' person uses emphatic language ('really', "
+        f"'absolutely', 'genuinely'). These are personality traits — they "
+        f"pervade every sentence, not just the opening line. Treat VOICE "
+        f"cues as the participant's core personality that shapes HOW they "
+        f"express their opinion.\n\n"
         f"Return ONLY a JSON array of {n} strings (one per participant), "
         f"no other text:\n"
         f'["response 1", "response 2", ...]'
@@ -1831,6 +1878,7 @@ class LLMResponseGenerator:
                         return result.strip()
 
         # 3. Fall back to template generator
+        # v1.0.5.0: Pass behavioral_profile through to fallback so it maintains coherence
         self._fallback_count += 1
         if self._fallback:
             return self._fallback.generate(
@@ -1842,6 +1890,7 @@ class LLMResponseGenerator:
                 condition=condition,
                 question_name=question_name,
                 participant_seed=participant_seed,
+                behavioral_profile=behavioral_profile,
             )
         return ""
 

@@ -7540,7 +7540,11 @@ class EnhancedSimulationEngine:
             'much', 'more', 'most', 'very', 'really', 'just', 'also', 'please',
             'better', 'deeply', 'held', 'quite',
         }
-        # v1.0.4.8: Multi-strategy topic extraction
+        # v1.0.5.0: Deep topic intelligence — 7-strategy semantic context extraction
+        # Produces a structured understanding of what the question is ABOUT, who/what
+        # entities are involved, and what kind of response the question expects.
+        # This flows through all three generators (LLM, Comprehensive, TextResponse).
+
         # Strategy 1: Extract from ORIGINAL question context/text (not embedded string)
         _qt_for_topic = question_context or _original_question_text or question_text or ""
         # Strip common researcher framing prefixes
@@ -7551,18 +7555,25 @@ class EnhancedSimulationEngine:
         _topic_words = [w for w in _qt_words if w not in _ctx_stop][:6]
 
         # Strategy 2: Phrase-level extraction — find meaningful noun phrases
-        # Look for "X about Y", "feelings toward Y", "thoughts on Y" patterns
+        # v1.0.5.0: Expanded patterns + increased capture from 60 to 150 chars
         _phrase_topic = ""
         _phrase_patterns = [
-            r'(?:feelings?|thoughts?|opinions?|views?|attitudes?)\s+(?:about|toward|towards|on|regarding)\s+(.+?)(?:\.|$|\?)',
-            r'(?:describe|explain|tell\s+us)\s+(?:about|how\s+you\s+feel\s+about)\s+(.+?)(?:\.|$|\?)',
+            r'(?:feelings?|thoughts?|opinions?|views?|attitudes?|reactions?|impressions?)\s+(?:about|toward|towards|on|regarding|concerning)\s+(.+?)(?:\.|$|\?)',
+            r'(?:describe|explain|tell\s+us|share)\s+(?:about|how\s+you\s+feel\s+about|your\s+views?\s+on)\s+(.+?)(?:\.|$|\?)',
             r'(?:how\s+do\s+you\s+feel\s+about)\s+(.+?)(?:\.|$|\?)',
             r'(?:what\s+do\s+you\s+think\s+(?:about|of))\s+(.+?)(?:\.|$|\?)',
+            r'(?:what\s+(?:is|are)\s+your\s+(?:views?|thoughts?|opinions?)\s+(?:on|about))\s+(.+?)(?:\.|$|\?)',
+            # v1.0.5.0: New — capture "how [X] makes you feel" type questions
+            r'(?:how\s+(?:does|did|would))\s+(.+?)\s+(?:make\s+you\s+feel|affect\s+you|influence)',
+            # v1.0.5.0: New — capture "why did you [choose/rate/respond]" questions
+            r'(?:why\s+did\s+you\s+(?:choose|select|rate|respond|decide|prefer))\s+(.+?)(?:\.|$|\?)',
+            # v1.0.5.0: New — capture prepositional objects "your experience with X"
+            r'(?:your\s+(?:experience|interaction|encounter)\s+with)\s+(.+?)(?:\.|$|\?)',
         ]
         for _pp in _phrase_patterns:
             _pm = _ctx_re.search(_pp, _qt_for_topic, flags=_ctx_re.IGNORECASE)
             if _pm:
-                _phrase_topic = _pm.group(1).strip()[:60]
+                _phrase_topic = _pm.group(1).strip()[:150]
                 break
 
         # Strategy 3: Condition-aware topic enrichment
@@ -7576,6 +7587,7 @@ class EnhancedSimulationEngine:
             _cond_topic_words = [w for w in _cond_words if w not in _cond_stop][:3]
 
         # Strategy 4: Study-design-aware vocabulary hints
+        # v1.0.5.0: Expanded from 9 to 30 paradigm hints
         _domain_topic_hints = {
             'dictator': 'giving and allocation decisions',
             'trust': 'trust and reciprocity',
@@ -7586,6 +7598,28 @@ class EnhancedSimulationEngine:
             'consumer': 'product preferences and choices',
             'health': 'health decisions and wellbeing',
             'ai_attitudes': 'AI technology and trust',
+            # v1.0.5.0: New paradigm hints
+            'moral': 'moral judgments and ethical decisions',
+            'stereotype': 'stereotypes and social categorization',
+            'prejudice': 'attitudes toward social groups',
+            'discrimination': 'fairness and equal treatment',
+            'persuasion': 'persuasive messages and attitude change',
+            'negotiation': 'negotiation strategies and outcomes',
+            'risk': 'risk perception and decision-making under uncertainty',
+            'prosocial': 'helping behavior and prosocial motivation',
+            'cooperation': 'cooperation and collective action',
+            'punishment': 'punishment and norm enforcement',
+            'identity': 'identity and self-concept',
+            'emotion': 'emotional experiences and regulation',
+            'mindfulness': 'mindfulness and attention',
+            'stress': 'stress and coping strategies',
+            'wellbeing': 'subjective wellbeing and life satisfaction',
+            'environmental': 'environmental attitudes and sustainable behavior',
+            'education': 'learning and educational experiences',
+            'leadership': 'leadership and authority',
+            'conformity': 'conformity and social influence',
+            'deception': 'honesty and deceptive behavior',
+            'attachment': 'interpersonal attachment and relationships',
         }
         _domain_hint = ""
         for _dk, _dv in _domain_topic_hints.items():
@@ -7593,16 +7627,55 @@ class EnhancedSimulationEngine:
                 _domain_hint = _dv
                 break
 
+        # Strategy 5 (v1.0.5.0): Entity extraction — identify named entities
+        # (people, organizations, concepts) that should appear in responses
+        _proper_nouns = {
+            'trump', 'biden', 'obama', 'clinton', 'harris', 'congress',
+            'republican', 'democrat', 'america', 'american', 'covid',
+            'facebook', 'google', 'amazon', 'apple', 'microsoft', 'tesla',
+            'maga', 'gop', 'nato', 'china', 'russia', 'europe', 'mexico',
+            'instagram', 'twitter', 'tiktok', 'youtube', 'chatgpt', 'openai',
+            'walmart', 'nike', 'starbucks', 'uber', 'airbnb', 'spotify',
+            'netflix', 'disney', 'pfizer', 'moderna', 'climate', 'ukraine',
+            'gaza', 'israel', 'palestine', 'brexit', 'samsung', 'sony',
+        }
+        _entities = []
+        _all_source = f"{_qt_for_topic} {condition or ''}".lower()
+        for _ent in _proper_nouns:
+            if _ent in _all_source:
+                _entities.append(_ent.capitalize())
+
+        # Strategy 6 (v1.0.5.0): Question intent classification
+        # Determines what KIND of response the question expects
+        _question_intent = "opinion"  # default
+        _qt_lower = _qt_for_topic.lower()
+        if any(w in _qt_lower for w in ('why', 'explain', 'reason', 'because')):
+            _question_intent = "explanation"
+        elif any(w in _qt_lower for w in ('describe', 'tell us about', 'what happened')):
+            _question_intent = "description"
+        elif any(w in _qt_lower for w in ('how do you feel', 'feelings', 'emotions', 'react')):
+            _question_intent = "emotional_reaction"
+        elif any(w in _qt_lower for w in ('evaluate', 'rate', 'assess', 'compare')):
+            _question_intent = "evaluation"
+        elif any(w in _qt_lower for w in ('predict', 'expect', 'future', 'will you')):
+            _question_intent = "prediction"
+        elif any(w in _qt_lower for w in ('recommend', 'suggest', 'advice', 'should')):
+            _question_intent = "recommendation"
+        elif any(w in _qt_lower for w in ('remember', 'recall', 'memory', 'past')):
+            _question_intent = "recall"
+
+        # Strategy 7 (v1.0.5.0): Study-title topic extraction as additional signal
+        _study_title_words = []
+        if self.study_title:
+            _st_words = _ctx_re.findall(r'\b[a-zA-Z]{3,}\b', self.study_title.lower())
+            _study_title_words = [w for w in _st_words if w not in _ctx_stop][:4]
+
         # Build final topic using best available strategy
         if not topic or topic == "general":
             if _phrase_topic:
                 # Capitalize proper nouns in the extracted phrase
-                _proper = {'trump', 'biden', 'obama', 'clinton', 'harris', 'congress',
-                          'republican', 'democrat', 'america', 'american', 'covid',
-                          'facebook', 'google', 'amazon', 'apple', 'microsoft', 'tesla',
-                          'maga', 'gop', 'nato', 'china', 'russia', 'europe', 'mexico'}
                 _parts = _phrase_topic.split()
-                _parts = [w.capitalize() if w.lower() in _proper else w for w in _parts]
+                _parts = [w.capitalize() if w.lower() in _proper_nouns else w for w in _parts]
                 topic = ' '.join(_parts)
             elif _topic_words:
                 # Combine content words with condition-specific words for richer topic
@@ -7610,15 +7683,27 @@ class EnhancedSimulationEngine:
                 for _cw in _cond_topic_words:
                     if _cw not in _combined:
                         _combined.append(_cw)
-                topic = ' '.join(_combined[:4])
+                # v1.0.5.0: Also fold in study title words if topic is thin
+                if len(_combined) < 3:
+                    for _sw in _study_title_words:
+                        if _sw not in _combined:
+                            _combined.append(_sw)
+                topic = ' '.join(_combined[:5])
             elif _cond_topic_words:
                 topic = ' '.join(_cond_topic_words[:3])
             elif _domain_hint:
                 topic = _domain_hint
+            elif _study_title_words:
+                topic = ' '.join(_study_title_words[:3])
             elif study_domain and study_domain != "general":
                 topic = study_domain.replace('_', ' ')
             else:
                 topic = survey_name or "the study topic"
+
+        # v1.0.5.0: Capitalize any proper nouns in final topic
+        _t_parts = topic.split()
+        _t_parts = [w.capitalize() if w.lower() in _proper_nouns else w for w in _t_parts]
+        topic = ' '.join(_t_parts)
 
         # v1.0.3.8: Use topic as stimulus and product when no specific values exist
         if not _product_source:
@@ -7648,32 +7733,87 @@ class EnhancedSimulationEngine:
             "question_text": question_text,
             "study_domain": study_domain,
             "condition": condition,
+            # v1.0.5.0: Rich topic intelligence for all generators
+            "question_intent": _question_intent,
+            "entities": _entities,
+            "topic_words": _topic_words,
+            "domain_hint": _domain_hint,
+            "question_context_raw": question_context,
+            "original_question_text": _original_question_text,
+            "study_title": self.study_title or "",
         }
 
         # v1.0.4.8: Embed behavioral profile data into context for fallback generator
+        # v1.0.5.0: Enhanced — pass full trait profile + intensity + consistency
         if behavioral_profile and isinstance(behavioral_profile, dict):
             _bp = behavioral_profile
             context["response_pattern"] = _bp.get("response_pattern", "unknown")
             context["behavioral_summary"] = _bp.get("behavioral_summary", "")
             context["persona_name"] = _bp.get("persona_name", "Default")
+            context["persona_description"] = _bp.get("persona_description", "")
+            context["intensity"] = str(_bp.get("intensity", 0.5))
+            context["consistency_score"] = str(_bp.get("consistency_score", 0.5))
             if _bp.get("response_mean") is not None:
                 context["response_mean_str"] = f"{_bp['response_mean']:.1f}"
             if _bp.get("straight_lined"):
                 context["straight_lined"] = "true"
+            # v1.0.5.0: Pass full 7-dimensional trait vector
+            _tp = _bp.get("trait_profile", {})
+            if _tp:
+                context["trait_social_desirability"] = str(_tp.get("social_desirability", 0.3))
+                context["trait_extremity"] = str(_tp.get("extremity", 0.4))
+                context["trait_consistency"] = str(_tp.get("consistency", 0.6))
+                context["trait_attention"] = str(_tp.get("attention_level", 0.8))
+            # v1.0.5.0: Voice memory for cross-response consistency
+            _voice_hint = _bp.get("voice_consistency_hint", "")
+            if _voice_hint:
+                context["voice_consistency_hint"] = _voice_hint
+            _established_tone = _bp.get("established_tone", "")
+            if _established_tone:
+                context["established_tone"] = _established_tone
 
-        # v1.0.3.8: Only add condition modifiers when they're meaningful
-        # (don't prepend "AI-recommended" to a political topic)
+        # v1.0.5.0: Domain-aware condition modifiers — covers consumer, political,
+        # health, economic games, intergroup, and more. Each modifier only applies
+        # when the study domain is relevant.
         cond = str(condition).lower()
+        _sd_lower = study_domain.lower() if study_domain else ""
+        _consumer_domains = {"consumer", "ai_attitudes", "advertising", "brand", "product_evaluation"}
+        _political_domains = {"political", "polarization", "intergroup", "identity"}
+        _health_domains = {"health", "wellbeing", "clinical", "stress"}
+        _econ_game_domains = {"dictator", "trust", "ultimatum", "public_goods", "economic"}
+
         if "ai" in cond and "no ai" not in cond:
-            if study_domain in ("consumer", "ai_attitudes", "advertising", "brand", "product_evaluation"):
+            if _sd_lower in _consumer_domains:
                 context["stimulus"] = "AI-recommended " + str(context["stimulus"])
         elif "human" in cond or "no ai" in cond:
-            if study_domain in ("consumer", "ai_attitudes", "advertising", "brand", "product_evaluation"):
+            if _sd_lower in _consumer_domains:
                 context["stimulus"] = "human-curated " + str(context["stimulus"])
         if "hedonic" in cond or "experiential" in cond:
             context["product"] = "hedonic " + str(context["product"])
         elif "utilitarian" in cond or "functional" in cond:
             context["product"] = "functional " + str(context["product"])
+
+        # v1.0.5.0: Political condition modifiers
+        if any(w in cond for w in ('liberal', 'democrat', 'progressive', 'left')):
+            if any(d in _sd_lower for d in _political_domains):
+                context["condition_framing"] = "progressive/liberal"
+        elif any(w in cond for w in ('conservative', 'republican', 'right')):
+            if any(d in _sd_lower for d in _political_domains):
+                context["condition_framing"] = "conservative/right-leaning"
+
+        # v1.0.5.0: Ingroup/outgroup condition modifiers
+        if any(w in cond for w in ('ingroup', 'in_group', 'same', 'similar')):
+            context["condition_framing"] = context.get("condition_framing", "") + " ingroup"
+        elif any(w in cond for w in ('outgroup', 'out_group', 'different', 'other')):
+            context["condition_framing"] = context.get("condition_framing", "") + " outgroup"
+
+        # v1.0.5.0: Health condition modifiers
+        if any(w in cond for w in ('risk', 'threat', 'danger', 'severity')):
+            if any(d in _sd_lower for d in _health_domains):
+                context["condition_framing"] = "health risk/threat"
+        elif any(w in cond for w in ('prevention', 'benefit', 'gain', 'healthy')):
+            if any(d in _sd_lower for d in _health_domains):
+                context["condition_framing"] = "health benefit/prevention"
 
         # v1.0.0 CRITICAL FIX: Create question-specific seed for fallback generator
         # Combine participant_seed with a stable hash of the question identity
@@ -8359,6 +8499,13 @@ class EnhancedSimulationEngine:
                     self.llm_generator._reset_all_providers()
                     self.llm_generator._api_available = True
 
+        # v1.0.5.0: Participant voice memory — tracks style, tone, and themes across
+        # multiple OE questions for the SAME participant. This ensures cross-response
+        # consistency: the same person should sound the same across all their answers.
+        # Key insight: a real participant doesn't change personality between questions.
+        _participant_voice_memory: Dict[int, Dict[str, Any]] = {}
+        # Will be populated as OE questions are generated, keyed by participant index
+
         # ONLY generate open-ended responses for questions actually in the QSF
         # Never create default/fake questions - this prevents fake variables like "Task_Summary"
         # v1.0.0: Use survey flow handler to determine question visibility per condition
@@ -8407,6 +8554,19 @@ class EnhancedSimulationEngine:
                     participant_condition,
                 )
 
+                # v1.0.5.0: Inject cross-response voice memory into profile
+                # If this participant has answered prior OE questions, carry forward
+                # their established tone, style, and thematic orientation.
+                if i in _participant_voice_memory:
+                    _voice = _participant_voice_memory[i]
+                    _beh_profile['prior_responses'] = _voice.get('responses', [])
+                    _beh_profile['established_tone'] = _voice.get('tone', '')
+                    _beh_profile['voice_consistency_hint'] = (
+                        f"This participant previously wrote: \"{_voice.get('last_response', '')[:80]}...\" "
+                        f"Their tone was {_voice.get('tone', 'neutral')}. "
+                        f"Maintain consistent voice and personality across questions."
+                    ) if _voice.get('last_response') else ""
+
                 # Generate response with enhanced uniqueness + behavioral context
                 text = self._generate_open_response(
                     q,
@@ -8417,7 +8577,32 @@ class EnhancedSimulationEngine:
                     response_mean=response_mean,
                     behavioral_profile=_beh_profile,
                 )
-                responses.append(str(text))
+                _text_str = str(text)
+                responses.append(_text_str)
+
+                # v1.0.5.0: Update voice memory for this participant
+                if _text_str.strip():
+                    if i not in _participant_voice_memory:
+                        _participant_voice_memory[i] = {
+                            'responses': [],
+                            'tone': sentiment if response_mean is not None else 'neutral',
+                            'last_response': '',
+                        }
+                    _vm = _participant_voice_memory[i]
+                    _vm['responses'].append(_text_str[:100])
+                    _vm['last_response'] = _text_str
+                    # Detect established tone from response
+                    _tl = _text_str.lower()
+                    _pos_count = sum(1 for w in ['good', 'like', 'enjoy', 'happy', 'great', 'love', 'positive', 'support']
+                                     if w in _tl)
+                    _neg_count = sum(1 for w in ['bad', 'hate', 'dislike', 'frustrated', 'upset', 'terrible', 'negative', 'concerned']
+                                     if w in _tl)
+                    if _pos_count > _neg_count + 1:
+                        _vm['tone'] = 'positive'
+                    elif _neg_count > _pos_count + 1:
+                        _vm['tone'] = 'negative'
+                    else:
+                        _vm['tone'] = 'neutral'
 
             data[col_name] = responses
             q_desc = q.get("question_text", "")[:50] if q.get("question_text") else q.get('type', 'text')
