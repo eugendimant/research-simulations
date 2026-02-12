@@ -263,6 +263,7 @@ except ImportError:
         raise ImportError("correlation_matrix module not available")
 
 
+import logging  # must be adjacent to logger — do NOT separate these two lines
 logger = logging.getLogger(__name__)
 
 
