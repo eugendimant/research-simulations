@@ -969,7 +969,7 @@ def _call_llm_api(
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
-        "User-Agent": "BehavioralSimulationTool/1.0.2.5",
+        "User-Agent": f"BehavioralSimulationTool/{__version__}",
     }
 
     # OpenRouter requires/recommends HTTP-Referer and X-Title
@@ -1500,6 +1500,8 @@ class LLMResponseGenerator:
         self._pool = _ResponsePool()
         self._fallback_count = 0
         self._batch_failure_count = 0
+        self._api_disabled_time: float = 0.0  # v1.0.5.7: When API was disabled
+        self._api_recovery_secs: float = 60.0  # v1.0.5.7: Auto-recover after this many seconds
 
         # Build provider chain with per-provider rate limits.
         # Priority: Groq (natural) → Cerebras (natural) → Google AI (quality) → Google AI (volume) → OpenRouter
@@ -1599,6 +1601,18 @@ class LLMResponseGenerator:
 
     @property
     def is_llm_available(self) -> bool:
+        # v1.0.5.7: Auto-recover after cooldown period instead of staying
+        # permanently disabled.  After 60s, reset all providers and try again.
+        if not self._api_available and self._api_disabled_time > 0:
+            _elapsed = time.time() - self._api_disabled_time
+            if _elapsed >= self._api_recovery_secs:
+                logger.info("LLM API auto-recovering after %.0fs cooldown "
+                            "(was disabled after %d failures)",
+                            _elapsed, self._batch_failure_count)
+                self._reset_all_providers()
+                self._api_available = True
+                self._batch_failure_count = 0
+                self._api_disabled_time = 0.0
         return self._api_available
 
     @property
@@ -1679,7 +1693,8 @@ class LLMResponseGenerator:
         Smart scaling (C): calculates optimal pool size from sample_size.
         With draw-with-replacement (D), we need far fewer base responses.
         """
-        if not self._api_available:
+        # v1.0.5.7: Use property (triggers auto-recovery check)
+        if not self.is_llm_available:
             return 0
 
         if sentiments is None:
@@ -1722,29 +1737,49 @@ class LLMResponseGenerator:
                         "engagement": _e,
                         "sentiment": sentiment,
                     }
-                    # v1.0.5.5: Give every 4th spec in prefill a synthetic
-                    # behavioral_profile so the pool contains behaviorally
-                    # grounded responses, not just generic ones.
-                    if _si % 4 == 0:
-                        _synth_pattern = {
-                            "very_positive": "strongly_positive",
-                            "positive": "positive",
-                            "neutral": "neutral",
-                            "negative": "negative",
-                            "very_negative": "strongly_negative",
-                        }.get(sentiment, "neutral")
-                        _synth_intensity = self._rng.uniform(0.3, 0.9)
-                        _spec_i["behavioral_profile"] = {
-                            "response_pattern": _synth_pattern,
-                            "intensity": _synth_intensity,
-                            "consistency_score": self._rng.uniform(0.4, 0.9),
-                            "straight_lined": _e < 0.15,
-                            "behavioral_summary": f"rated items {_synth_pattern.replace('_', ' ')} (intensity {_synth_intensity:.1f})",
-                            "persona_name": self._rng.choice([
-                                "Engaged Responder", "Satisficer", "Default",
-                                "Extreme Responder", "Acquiescent",
-                            ]),
-                        }
+                    # v1.0.5.7: EVERY prefill spec gets a behavioral_profile
+                    # (not just every 4th) with full 7-dimensional trait
+                    # vector.  This ensures the pool contains responses
+                    # that are pre-grounded in realistic behavioral
+                    # patterns, reducing the need for heavy post-hoc
+                    # variation to create cross-correlation.
+                    _synth_pattern = {
+                        "very_positive": "strongly_positive",
+                        "positive": "positive",
+                        "neutral": "neutral",
+                        "negative": "negative",
+                        "very_negative": "strongly_negative",
+                    }.get(sentiment, "neutral")
+                    _synth_intensity = self._rng.uniform(0.3, 0.9)
+                    _synth_ext = self._rng.uniform(0.2, 0.8)
+                    _synth_sd = self._rng.uniform(0.1, 0.7)
+                    _synth_attn = self._rng.uniform(0.3, 0.95)
+                    _is_straight = _e < 0.12 and self._rng.random() < 0.1
+                    _persona_choice = self._rng.choice([
+                        "Engaged Responder", "Satisficer", "Default",
+                        "Extreme Responder", "Acquiescent",
+                        "Careful Responder", "Disengaged",
+                    ])
+                    _spec_i["behavioral_profile"] = {
+                        "response_pattern": _synth_pattern,
+                        "intensity": _synth_intensity,
+                        "consistency_score": self._rng.uniform(0.4, 0.9),
+                        "straight_lined": _is_straight,
+                        "behavioral_summary": (
+                            f"rated items {_synth_pattern.replace('_', ' ')} "
+                            f"(intensity {_synth_intensity:.1f})"
+                        ),
+                        "persona_name": _persona_choice,
+                        "trait_profile": {
+                            "attention": _synth_attn,
+                            "verbosity": _v,
+                            "formality": _f,
+                            "social_desirability": _synth_sd,
+                            "consistency": self._rng.uniform(0.4, 0.9),
+                            "extremity": _synth_ext,
+                            "response_latency": self._rng.uniform(0.3, 0.8),
+                        },
+                    }
                     specs.append(_spec_i)
 
                 responses = self._generate_batch(
@@ -1756,7 +1791,8 @@ class LLMResponseGenerator:
                     needed -= len(responses)
                 else:
                     break  # Provider failed
-            if not self._api_available:
+            # v1.0.5.7: Use property for auto-recovery check
+            if not self.is_llm_available:
                 break  # Don't try remaining sentiments if all providers down
 
         return total
@@ -1817,14 +1853,19 @@ class LLMResponseGenerator:
         self._batch_failure_count += 1
         if self._batch_failure_count >= 12:
             self._api_available = False
+            self._api_disabled_time = time.time()  # v1.0.5.7: Record for auto-recovery
             logger.warning("All %d LLM providers exhausted after %d batch failures — "
-                           "falling back to templates",
-                           len(self._providers), self._batch_failure_count)
+                           "falling back to templates (will auto-recover in %.0fs)",
+                           len(self._providers), self._batch_failure_count,
+                           self._api_recovery_secs)
         else:
-            _backoff_secs = min(2.0 * self._batch_failure_count, 10.0)
-            logger.info("Batch %d/%d failed, sleeping %.1fs before retry",
-                        self._batch_failure_count, 12, _backoff_secs)
-            import time
+            # v1.0.5.7: Add random jitter to prevent thundering-herd when
+            # multiple sessions hit rate limits simultaneously.
+            _base = min(2.0 * self._batch_failure_count, 10.0)
+            _jitter = random.uniform(0, min(2.0, _base * 0.3))
+            _backoff_secs = _base + _jitter
+            logger.info("Batch %d/%d failed, sleeping %.1fs (jitter %.1fs) before retry",
+                        self._batch_failure_count, 12, _backoff_secs, _jitter)
             time.sleep(_backoff_secs)
             self._reset_all_providers()
         return []
@@ -1884,7 +1925,8 @@ class LLMResponseGenerator:
                 return result.strip()
 
         # 2. Try on-demand LLM batch (if pool was empty)
-        if self._api_available:
+        # v1.0.5.7: Use property (triggers auto-recovery check) not raw field
+        if self.is_llm_available:
             specs = []
             for _bi in range(self._batch_size):
                 _spec: Dict[str, Any] = {
@@ -1912,9 +1954,11 @@ class LLMResponseGenerator:
                     question_text, condition, sentiment, local_rng
                 )
                 if resp and resp.strip():
+                    # v1.0.5.7: Use _effective_engagement (behavioral-adjusted)
+                    # instead of raw persona_engagement — matches pool-draw path
                     result = self._apply_deep_variation(
                         resp, persona_verbosity, persona_formality,
-                        persona_engagement, local_rng,
+                        _effective_engagement, local_rng,
                         behavioral_profile=behavioral_profile,
                     )
                     if result and len(result.strip()) >= 3:

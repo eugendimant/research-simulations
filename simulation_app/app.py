@@ -53,8 +53,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.0.5.6"
-BUILD_ID = "20260212-v10506-behavioral-variation"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.0.5.7"
+BUILD_ID = "20260212-v10507-llm-pipeline-fix"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -119,7 +119,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.0.5.6"  # v1.0.5.6: Admin dashboard fix, behavioral-aware variation, LLM resilience
+APP_VERSION = "1.0.5.7"  # v1.0.5.7: LLM pipeline fix, auto-recovery, voice memory, cumulative stats
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -6428,23 +6428,42 @@ def _render_admin_dashboard() -> None:
         return
 
     # ── Top metrics bar ───────────────────────────────────────────────
+    # v1.0.5.7: Compute CUMULATIVE stats across all simulations, not just
+    # the last one.  Also fall back to per-history-entry llm_stats if
+    # _last_llm_stats is empty (handles page refresh after simulation).
     st.markdown("---")
     _m1, _m2, _m3, _m4 = st.columns(4)
     _sim_history = st.session_state.get("_admin_sim_history", [])
     _current_llm_stats = st.session_state.get("_last_llm_stats", {})
-    _pool = _current_llm_stats.get("pool_size", 0)
-    _calls = _current_llm_stats.get("llm_calls", 0)
-    _fallbacks = _current_llm_stats.get("fallback_uses", 0)
-    _provider = _current_llm_stats.get("active_provider", "none")
+
+    # Cumulative stats from ALL simulation runs in this session
+    _cum_calls = 0
+    _cum_pool = 0
+    _cum_fallbacks = 0
+    _last_provider = "none"
+    for _hist_entry in _sim_history:
+        _hls = _hist_entry.get("llm_stats", {})
+        _cum_calls += _hls.get("llm_calls", 0)
+        _cum_pool += _hls.get("pool_size", 0)
+        _cum_fallbacks += _hls.get("fallback_uses", 0)
+        _hp = _hls.get("active_provider", "")
+        if _hp:
+            _last_provider = _hp
+    # If no history entries had stats, fall back to _last_llm_stats
+    if _cum_calls == 0 and _cum_pool == 0 and _current_llm_stats:
+        _cum_calls = _current_llm_stats.get("llm_calls", 0)
+        _cum_pool = _current_llm_stats.get("pool_size", 0)
+        _cum_fallbacks = _current_llm_stats.get("fallback_uses", 0)
+        _last_provider = _current_llm_stats.get("active_provider", "none")
 
     with _m1:
         st.metric("Total Simulations", len(_sim_history))
     with _m2:
-        st.metric("LLM API Calls", _calls)
+        st.metric("LLM API Calls", _cum_calls)
     with _m3:
-        st.metric("LLM Pool Size", _pool)
+        st.metric("LLM Pool Size", _cum_pool)
     with _m4:
-        _fb_pct = f"{(_fallbacks / max(1, _pool + _fallbacks)) * 100:.0f}%" if (_pool + _fallbacks) > 0 else "N/A"
+        _fb_pct = f"{(_cum_fallbacks / max(1, _cum_pool + _cum_fallbacks)) * 100:.0f}%" if (_cum_pool + _cum_fallbacks) > 0 else "N/A"
         st.metric("Template Fallback", _fb_pct)
 
     # ── Tabs ──────────────────────────────────────────────────────────
@@ -6455,16 +6474,16 @@ def _render_admin_dashboard() -> None:
     # ── TAB 1: LLM Pipeline ──────────────────────────────────────────
     with _tab_llm:
         st.markdown("### LLM Provider Chain")
-        if _current_llm_stats:
-            st.markdown(f"**Active Provider:** `{_provider}`")
-            st.markdown(f"**Total API Calls:** {_calls}")
-            st.markdown(f"**Response Pool Size:** {_pool}")
-            st.markdown(f"**Template Fallbacks:** {_fallbacks}")
+        if _cum_calls > 0 or _cum_pool > 0 or _current_llm_stats:
+            st.markdown(f"**Active Provider:** `{_last_provider}`")
+            st.markdown(f"**Total API Calls (cumulative):** {_cum_calls}")
+            st.markdown(f"**Response Pool Size (cumulative):** {_cum_pool}")
+            st.markdown(f"**Template Fallbacks (cumulative):** {_cum_fallbacks}")
 
-            # Provider breakdown
+            # Provider breakdown from most recent simulation
             _providers = _current_llm_stats.get("providers", {})
             if _providers:
-                st.markdown("#### Provider Breakdown")
+                st.markdown("#### Provider Breakdown (last run)")
                 _prov_data = []
                 for _pname, _pinfo in _providers.items():
                     _prov_data.append({
@@ -6476,11 +6495,11 @@ def _render_admin_dashboard() -> None:
                     st.dataframe(_prov_data, use_container_width=True, hide_index=True)
 
             # LLM generation quality
-            if _pool > 0:
-                _total_gen = _pool + _fallbacks
-                _llm_pct = (_pool / _total_gen) * 100
+            if _cum_pool > 0:
+                _total_gen = _cum_pool + _cum_fallbacks
+                _llm_pct = (_cum_pool / _total_gen) * 100
                 st.markdown("#### Generation Quality")
-                st.progress(_llm_pct / 100)
+                st.progress(min(1.0, _llm_pct / 100))
                 st.caption(f"{_llm_pct:.1f}% AI-generated, {100 - _llm_pct:.1f}% template fallback")
         else:
             st.info("No LLM statistics available yet. Run a simulation first.")
@@ -6587,22 +6606,26 @@ def _render_admin_dashboard() -> None:
         # LLM provider chain info
         st.markdown("### LLM Provider Chain Configuration")
         try:
-            from simulation_app.utils.llm_response_generator import LLMResponseGenerator
+            from utils.llm_response_generator import LLMResponseGenerator
             _temp_gen = LLMResponseGenerator(seed=42)
             _prov_info = []
             for _p in _temp_gen._providers:
+                _key_preview = (_p.api_key[:6] + "..." + _p.api_key[-4:]) if _p.api_key and len(_p.api_key) > 12 else "(none)"
                 _prov_info.append({
                     "Provider": _p.name,
                     "Model": _p.model,
+                    "API Key": _key_preview,
                     "Available": "Yes" if _p.available else "No",
-                    "Calls": _p.call_count,
+                    "Rate Limit": f"{_p.max_rpm} RPM" if hasattr(_p, 'max_rpm') else "N/A",
                 })
             if _prov_info:
                 st.dataframe(_prov_info, use_container_width=True, hide_index=True)
+                st.caption(f"API Available: {'Yes' if _temp_gen.is_llm_available else 'No'}")
             else:
                 st.caption("No providers configured")
         except Exception as _pe:
-            st.caption(f"Could not load provider info: {_pe}")
+            st.error(f"Could not load provider info: {_pe}")
+            st.caption("Check that utils/llm_response_generator.py imports correctly.")
 
     # ── Logout ────────────────────────────────────────────────────────
     st.markdown("---")
