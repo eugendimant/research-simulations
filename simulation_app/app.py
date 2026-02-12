@@ -10750,6 +10750,11 @@ if active_page == 3:
         if _user_llm_key:
             os.environ["LLM_API_KEY"] = _user_llm_key
 
+        # v1.0.7.1: Clear cached LLM connectivity status so next page load re-checks
+        st.session_state["_llm_connectivity_status"] = None
+        # v1.0.7.1: Clear previous exhaustion note
+        st.session_state.pop("_gen_llm_exhaustion_note", None)
+
         # v1.8.8.0: Retrieve correlation matrix and missing data settings
         _engine_corr_matrix = None
         _raw_corr = inferred.get("correlation_matrix")
@@ -10817,8 +10822,17 @@ if active_page == 3:
 
             progress_bar.progress(10, text="Step 1/5 — Initializing simulation engine...")
 
-            # Show animated spinner during the actual data generation
-            with st.spinner("Generating participant responses... Please wait."):
+            # v1.0.7.1: Better progress messaging — tell user what's happening
+            # so they don't think the app is stuck
+            _gen_has_oe = bool(open_ended_questions_for_engine)
+            _gen_spinner_msg = "Generating participant responses..."
+            if _gen_has_oe:
+                _gen_spinner_msg = ("Generating participant responses (AI text + numeric data)... "
+                                   "This typically takes 15-45 seconds.")
+            else:
+                _gen_spinner_msg = "Generating numeric responses... This typically takes 5-15 seconds."
+
+            with st.spinner(_gen_spinner_msg):
                 progress_bar.progress(25, text="Step 2/5 — Generating participant responses...")
                 df, metadata = engine.generate()
 
@@ -11270,6 +11284,22 @@ if active_page == 3:
             '<div class="section-done-banner">Simulation complete — download your dataset below</div>',
             unsafe_allow_html=True,
         )
+
+        # v1.0.7.1: Prominent LLM status note — shown before download, not hidden in expander
+        _post_gen_llm_note = st.session_state.get("_gen_llm_exhaustion_note", "")
+        if _post_gen_llm_note:
+            st.markdown(
+                '<div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;'
+                'padding:12px 16px;margin:8px 0 12px 0;">'
+                '<span style="font-size:0.92em;color:#92400e;">'
+                f'{_post_gen_llm_note}</span><br>'
+                '<span style="color:#78350f;font-size:0.85em;">'
+                'To use AI-generated responses, click <strong>Reset &amp; Generate New</strong> above, '
+                'enter a free API key in the AI section, then re-generate.</span>'
+                '</div>',
+                unsafe_allow_html=True,
+            )
+
         st.markdown('<div id="download"></div>', unsafe_allow_html=True)
         st.markdown("#### Download")
 
