@@ -107,14 +107,17 @@ The system produces a publication-ready CSV file containing:
 
 Rather than generating random responses, the system assigns each simulated participant a "persona" based on survey methodology research. **These personas have been trained on hundreds of scientific insights from decades of research across the social and behavioral sciences**, including:
 
-- **Behavioral Economics**: Trust, cooperation, altruism, fairness, reciprocity, risk preferences, loss aversion, framing effects
-- **Social Psychology**: Social identity, group dynamics, conformity, prosocial behavior, intergroup relations, attitudes, persuasion
-- **Cognitive Psychology**: Decision-making heuristics, cognitive biases, memory, attention, reasoning processes
-- **Organizational Behavior**: Leadership, motivation, job satisfaction, team dynamics, workplace attitudes
-- **Political Psychology**: Polarization, partisanship, civic engagement, media effects, political trust
-- **Consumer Behavior**: Brand perception, purchase intent, product evaluation, advertising effectiveness
-- **Moral Psychology**: Ethical judgment, values, moral emotions, fairness perceptions
-- **Health Psychology**: Medical decisions, wellbeing, health behaviors, treatment preferences
+- **Behavioral Economics**: Trust, cooperation, altruism, fairness, reciprocity, risk preferences, loss aversion, framing effects, sunk cost, anchoring
+- **Social Psychology**: Social identity, group dynamics, conformity, prosocial behavior, intergroup relations, attitudes, persuasion, social comparison
+- **Cognitive Psychology**: Decision-making heuristics, cognitive biases, memory, attention, reasoning processes, construal level
+- **Organizational Behavior**: Leadership, motivation, job satisfaction, team dynamics, workplace attitudes, power dynamics
+- **Political Psychology**: Polarization, partisanship, civic engagement, media effects, political trust, sacred values
+- **Consumer Behavior**: Brand perception, purchase intent, product evaluation, advertising effectiveness, choice architecture
+- **Moral Psychology**: Ethical judgment, values, moral emotions, fairness perceptions, moral cleansing, sacred value tradeoffs
+- **Health Psychology**: Medical decisions, wellbeing, health behaviors, treatment preferences, gratitude interventions
+- **Narrative & Communication**: Narrative transportation, story persuasion, source credibility, elaboration likelihood, inoculation theory
+- **Digital & Technology**: Attention economy, phone distraction, social media comparison, digital wellbeing, algorithm aversion
+- **Positive Psychology**: Gratitude interventions, savoring, best possible self, acts of kindness, growth mindset
 
 This rich scientific foundation enables each persona to generate responses that align with documented human response patterns across these diverse research domains.
 
@@ -162,9 +165,33 @@ The system models several well-documented response styles:
 
 **Extreme Response Style**: Tendency to use scale endpoints. Higher extremity = more responses at 1 or 7 (on 7-point scales).
 
-**Social Desirability**: Inflation of socially favorable responses. Applied proportionally based on item content.
+**Social Desirability**: Inflation of socially favorable responses. Applied proportionally based on item content, with **domain-sensitive intensity**: highly sensitive topics (prejudice, dishonesty) receive 1.5× the social desirability adjustment, while factual/behavioral reports receive only 0.5×. Based on Nederhof (1985) and Paulhus (2002).
 
 **Midpoint Avoidance**: Cultural variation in willingness to use neutral midpoint. East Asian samples typically show lower midpoint avoidance than Western samples.
+
+### Behavioral Coherence (Rating–Text Consistency)
+
+A key advancement is the **behavioral coherence pipeline** that ensures each simulated participant's numeric ratings and open-text responses tell a coherent story. The same person who rates trust at 6-7/7 writes positively about trust; a participant who straight-lines 4s across all items writes brief, disengaged text.
+
+This is enforced through:
+1. **Behavioral profiling**: Each participant's numeric pattern (mean, variability, straight-lining) is computed before text generation
+2. **Profile-guided text**: The behavioral profile flows to all text generators, constraining tone, length, and engagement
+3. **Post-generation validation**: Text responses are checked against numeric patterns and corrected if mismatched
+4. **Cross-item consistency tracking**: Participants who fail reverse-coded items are more likely to fail subsequent ones, matching Woods (2006) findings that reversal failure is trait-like within session
+
+### Reverse-Coded Item Modeling
+
+Reverse-coded items receive sophisticated handling that goes beyond simple scale inversion:
+- **Engagement-dependent accuracy**: Engaged respondents correctly reverse ~95% of the time; careless respondents only ~30-50%
+- **Acquiescence interaction**: Even respondents who correctly reverse show partial acquiescence pull (~0.5 point, Weijters et al. 2010)
+- **Cross-item failure consistency**: A participant who fails one reverse item is more likely to fail the next (trait-like within session)
+
+### Response Validation Layer
+
+Generated responses are validated against expected patterns for each persona type:
+- **Longstring detection**: Flags unrealistic straight-lining for engaged personas
+- **IRV checks**: Ensures response variability matches persona engagement level
+- **Endpoint utilization**: Verifies extreme response style personas actually use scale endpoints
 
 ### Survey Flow Logic
 
@@ -240,9 +267,12 @@ The system covers **33 major research categories** with over **225 specialized d
 | **Organizational Behavior** | 10 | Leadership, teamwork, motivation, job satisfaction, organizational commitment, work-life balance, employee engagement, organizational culture |
 | **Technology & AI** | 10 | AI attitudes, privacy concerns, automation, algorithm aversion, technology adoption, social media, digital wellbeing, human-AI interaction |
 | **Health Psychology** | 10 | Medical decision-making, wellbeing, health behaviors, mental health, vaccination attitudes, pain management, patient-provider communication |
-| **Ethics & Moral Psychology** | 8 | Moral judgment, ethical dilemmas, moral emotions, values, ethical leadership, corporate ethics, research ethics |
+| **Ethics & Moral Psychology** | 10 | Moral judgment, ethical dilemmas, moral emotions, values, ethical leadership, corporate ethics, moral cleansing, sacred values, moral licensing |
 | **Environmental Psychology** | 8 | Sustainability, climate attitudes, pro-environmental behavior, green consumption, conservation, energy behavior |
 | **Cognitive Psychology** | 8 | Decision-making, memory, attention, reasoning, problem-solving, cognitive biases, metacognition |
+| **Narrative & Communication** | 8 | Narrative transportation, story persuasion, source credibility, elaboration likelihood, inoculation, message framing |
+| **Digital & Attention** | 6 | Phone distraction, notification effects, media multitasking, digital detox, screen time, social media comparison |
+| **Positive Psychology** | 8 | Gratitude, savoring, kindness interventions, best possible self, growth mindset, resilience, flourishing |
 
 ### Additional Specialized Domains
 
@@ -460,17 +490,31 @@ The comprehensive HTML report includes:
 
 The simulation algorithms are grounded in established survey methodology research:
 
+### Core Survey Methodology
 1. **Cohen, J. (1988)**. Statistical power analysis for the behavioral sciences. *Effect size conventions and calculations.*
+2. **Krosnick, J. A. (1991)**. Response strategies for coping with the cognitive demands of attitude measures in surveys. *Applied Cognitive Psychology, 5*, 213-236.
+3. **Greenleaf, E. A. (1992)**. Measuring extreme response style. *Public Opinion Quarterly, 56*, 328-351.
+4. **Billiet, J. B., & McClendon, M. J. (2000)**. Modeling acquiescence in measurement models for two balanced sets of items. *Structural Equation Modeling, 7*, 608-628.
+5. **Meade, A. W., & Craig, S. B. (2012)**. Identifying careless responses in survey data. *Psychological Methods, 17*, 437-455.
+6. **Paulhus, D. L. (2002)**. Socially desirable responding. *Journal of Personality Assessment, 40*, 13-44.
+7. **Nederhof, A. J. (1985)**. Methods of coping with social desirability bias. *European Journal of Social Psychology, 15*, 263-280.
+8. **Woods, C. M. (2006)**. Careless responding to reverse-worded items. *Journal of Psychoeducational Assessment, 24*, 207-220.
+9. **Weijters, B., et al. (2010)**. The effect of rating scale format on response styles. *International Journal of Research in Marketing, 27*, 236-247.
 
-2. **Krosnick, J. A. (1991)**. Response strategies for coping with the cognitive demands of attitude measures in surveys. *Applied Cognitive Psychology, 5*, 213-236. *Optimizing vs. satisficing response strategies.*
+### Behavioral Economics & Game Theory
+10. **Engel, C. (2011)**. Dictator games: A meta study. *Experimental Economics, 14*, 583-610.
+11. **Dimant, E. (2024)**. Partisan intergroup discrimination in economic games.
+12. **Iyengar, S., & Westwood, S. J. (2015)**. Fear and loathing across party lines. *American Journal of Political Science, 59*, 690-707.
+13. **Kahneman, D., & Tversky, A. (1979)**. Prospect theory. *Econometrica, 47*, 263-291.
 
-3. **Greenleaf, E. A. (1992)**. Measuring extreme response style. *Public Opinion Quarterly, 56*, 328-351. *Extreme response style measurement and prevalence.*
-
-4. **Billiet, J. B., & McClendon, M. J. (2000)**. Modeling acquiescence in measurement models for two balanced sets of items. *Structural Equation Modeling, 7*, 608-628. *Acquiescence bias quantification.*
-
-5. **Meade, A. W., & Craig, S. B. (2012)**. Identifying careless responses in survey data. *Psychological Methods, 17*, 437-455. *Careless response detection methods.*
-
-6. **Richard, F. D., Bond, C. F., & Stokes-Zoota, J. J. (2003)**. One hundred years of social psychology quantitatively described. *Review of General Psychology, 7*, 331-363. *Meta-analytic effect size distributions.*
+### Paradigms & Phenomena
+14. **Green, M. C., & Brock, T. C. (2000)**. The role of transportation in the persuasiveness of public narratives. *JPSP, 79*, 701-721.
+15. **Festinger, L. (1954)**. A theory of social comparison processes. *Human Relations, 7*, 117-140.
+16. **Emmons, R. A., & McCullough, M. E. (2003)**. Counting blessings versus burdens. *JPSP, 84*, 377-389.
+17. **Zhong, C. B., & Liljenquist, K. (2006)**. Washing away your sins: Threatened morality and physical cleansing. *Science, 313*, 1451-1452.
+18. **Ward, A. F., et al. (2017)**. Brain drain: The mere presence of one's own smartphone reduces available cognitive capacity. *JACR, 2*, 140-154.
+19. **Tetlock, P. E., et al. (2000)**. The psychology of the unthinkable: Taboo trade-offs, forbidden base rates, and heretical counterfactuals. *JPSP, 78*, 853-870.
+20. **Podsakoff, P. M., et al. (2003)**. Common method biases in behavioral research. *JAP, 88*, 879-903.
 
 ---
 
@@ -484,7 +528,17 @@ If you use this tool in your research or teaching, please acknowledge:
 
 ## Changelog Highlights
 
-### Version 1.4 (Latest)
+### Version 1.0.4.9 (Latest)
+- **5 new research paradigm domains**: Narrative transportation, social comparison, gratitude interventions, moral cleansing/sacred values, digital attention economy
+- **6 new domain-specific personas**: Narrative Thinker, Social Comparer, Grateful Optimist, Moral Absolutist, Digital Native, Financial Deliberator
+- **Enhanced social desirability**: Domain-sensitive construct detection for moral identity, gratitude, digital habits, social comparison
+- **Cross-item reverse-failure tracking**: Participants who fail one reverse item are more likely to fail subsequent ones (Woods 2006)
+- **Response validation layer**: Post-generation checks for longstring, IRV, and endpoint utilization anomalies
+- **Expanded domain templates**: 5 new domain template sets with both explanation and evaluation question types
+- **Behavioral coherence pipeline**: Rating–text consistency ensures numeric patterns match open-text tone
+- **Front-facing methods documentation**: Comprehensive update with new paradigms and scientific references
+
+### Version 1.0.4.8
 - **AI-powered open-ended responses**: LLM-generated text with draw-with-replacement pooling and 7-layer deep persona variation
 - **Multi-provider failover**: Groq, Cerebras, and OpenRouter with automatic key detection
 - **Smart pool scaling**: Automatically adapts response pool size to study sample size
@@ -515,6 +569,6 @@ For questions, feature requests, or collaboration inquiries, please contact thro
 
 ---
 
-*Version 1.4.10 | Proprietary Software | All Rights Reserved*
+*Version 1.0.4.9 | Proprietary Software | All Rights Reserved*
 
 *Developed by Dr. Eugen Dimant*

@@ -45,7 +45,7 @@ This module is designed to run inside a `utils/` package (i.e., imported as
 """
 
 # Version identifier to help track deployed code
-__version__ = "1.0.4.7"  # v1.0.4.7: Topic extraction fix (researcher vocab stop words), context separation
+__version__ = "1.0.4.9"  # v1.0.4.9: 5 new paradigm domains, narrative transportation, social comparison, gratitude, moral cleansing, attention economy
 
 # =============================================================================
 # SCIENTIFIC FOUNDATIONS FOR SIMULATION
@@ -3923,6 +3923,11 @@ class EnhancedSimulationEngine:
             16: {'behavioral_economics', 'social_psychology'},
             17: {'behavioral_economics', 'dishonesty'},
             18: {'power_status', 'organizational_behavior'},
+            19: {'media_communication', 'social_psychology'},
+            20: {'social_psychology', 'consumer_behavior'},
+            21: {'positive_psychology', 'health_psychology'},
+            22: {'moral_psychology', 'deontology_utilitarianism'},
+            23: {'technology', 'cognitive_psychology'},
         }
 
         def _domain_is_relevant(domain_num: int) -> bool:
@@ -4926,6 +4931,162 @@ class EnhancedSimulationEngine:
             semantic_effect += 0.08
 
         # =====================================================================
+        # DOMAIN 19: NARRATIVE TRANSPORTATION (v1.0.4.9)
+        # Green & Brock (2000): Absorption into narrative worlds increases
+        # persuasion by reducing counterarguing and increasing emotional engagement.
+        # van Laer et al. (2014 meta): r = 0.35 for narrative persuasion
+        # Appel & Richter (2007): Fiction can change real-world beliefs
+        # =====================================================================
+
+        if _any_word_in(['narrative', 'story', 'transported', 'immersed', 'absorbed'], condition_lower):
+            if _any_word_in(['high transport', 'vivid narrative', 'immersive story', 'engaging narrative'], condition_lower):
+                semantic_effect += 0.22  # Strong transportation → high persuasion
+            else:
+                semantic_effect += 0.15  # General narrative advantage
+        elif _any_word_in(['expository', 'factual', 'report', 'data only', 'no narrative'], condition_lower):
+            semantic_effect -= 0.05
+
+        # Fictional vs real narratives (Appel & Richter, 2007)
+        if _word_in('fictional', condition_lower) or _word_in('imagined', condition_lower):
+            semantic_effect += 0.08  # Fiction still persuasive
+        elif _word_in('real story', condition_lower) or _word_in('true account', condition_lower):
+            semantic_effect += 0.12  # Real accounts slightly more persuasive
+
+        # First-person vs third-person narrative (de Graaf et al., 2012)
+        if _any_word_in(['first person', 'i perspective', 'my experience'], condition_lower):
+            semantic_effect += 0.10  # Greater identification
+        elif _any_word_in(['third person', 'they perspective', 'observer'], condition_lower):
+            semantic_effect += 0.04
+
+        # =====================================================================
+        # DOMAIN 20: SOCIAL COMPARISON (v1.0.4.9)
+        # Festinger (1954): Upward/downward comparison affects self-evaluation.
+        # Gerber et al. (2018 meta): Social comparison d = 0.20-0.50
+        # Wheeler & Miyake (1992): Upward comparison → negative affect
+        # Wills (1981): Downward comparison → positive affect
+        # =====================================================================
+
+        # Upward social comparison (Wheeler & Miyake, 1992)
+        if _any_word_in(['upward comparison', 'better than you', 'higher performer',
+                         'outperformed by', 'social comparison up'], condition_lower):
+            semantic_effect -= 0.18  # Self-threat, negative affect
+        elif _any_word_in(['downward comparison', 'worse than you', 'lower performer',
+                           'outperforming', 'social comparison down'], condition_lower):
+            semantic_effect += 0.15  # Self-enhancement, positive affect
+
+        # Social media comparison (Vogel et al., 2014)
+        if _any_word_in(['social media feed', 'instagram', 'curated profile',
+                         'highlight reel', 'idealized images'], condition_lower):
+            semantic_effect -= 0.15  # Social media upward comparison
+        elif _any_word_in(['no social media', 'authentic post', 'real life'], condition_lower):
+            semantic_effect += 0.05
+
+        # Assimilation vs contrast (Mussweiler, 2003)
+        if _any_word_in(['similar target', 'assimilation', 'like me'], condition_lower):
+            semantic_effect += 0.10  # Assimilation toward comparison target
+        elif _any_word_in(['dissimilar target', 'contrast', 'unlike me'], condition_lower):
+            semantic_effect -= 0.12  # Contrast away from comparison target
+
+        # =====================================================================
+        # DOMAIN 21: GRATITUDE & POSITIVE INTERVENTIONS (v1.0.4.9)
+        # Emmons & McCullough (2003): Gratitude journaling increases wellbeing
+        # Davis et al. (2016 meta): Gratitude interventions d = 0.31
+        # Sin & Lyubomirsky (2009 meta): Positive psychology interventions d = 0.29
+        # Seligman et al. (2005): Three good things, gratitude visits
+        # =====================================================================
+
+        # Gratitude induction (Emmons & McCullough, 2003)
+        if _any_word_in(['gratitude', 'thankful', 'grateful', 'count blessings',
+                         'gratitude journal', 'three good things'], condition_lower):
+            semantic_effect += 0.18  # Robust positive effect
+        elif _any_word_in(['hassles', 'complaints', 'annoyances', 'neutral listing'], condition_lower):
+            semantic_effect -= 0.10
+
+        # Kindness intervention (Lyubomirsky et al., 2005)
+        if _any_word_in(['acts of kindness', 'kindness task', 'helping others'], condition_lower):
+            semantic_effect += 0.15
+        elif _any_word_in(['self-focused', 'no kindness', 'routine activities'], condition_lower):
+            semantic_effect -= 0.03
+
+        # Savoring (Bryant & Veroff, 2007)
+        if _any_word_in(['savoring', 'mindful attention', 'positive focus', 'appreciate moment'], condition_lower):
+            semantic_effect += 0.14
+        elif _any_word_in(['distraction', 'mind wandering', 'dampening'], condition_lower):
+            semantic_effect -= 0.08
+
+        # Best possible self (King, 2001; Meevissen et al., 2011)
+        if _any_word_in(['best possible self', 'ideal future', 'future self visualization'], condition_lower):
+            semantic_effect += 0.16
+        elif _any_word_in(['typical day', 'ordinary future', 'no visualization'], condition_lower):
+            semantic_effect -= 0.02
+
+        # =====================================================================
+        # DOMAIN 22: MORAL CLEANSING & COMPENSATION (v1.0.4.9)
+        # Zhong & Liljenquist (2006): "Macbeth effect" - moral threat → physical cleansing
+        # Sachdeva et al. (2009): Moral self-regulation via licensing/cleansing
+        # Jordan et al. (2011): Moral identity priming increases prosocial behavior
+        # Tetlock et al. (2000): Sacred value tradeoffs trigger moral outrage
+        # =====================================================================
+
+        # Moral threat / transgression (Zhong & Liljenquist, 2006)
+        if _any_word_in(['moral threat', 'recalled transgression', 'unethical memory',
+                         'moral failure', 'guilt prime'], condition_lower):
+            semantic_effect -= 0.16  # Moral distress → compensatory behavior
+        elif _any_word_in(['moral affirmation', 'ethical memory', 'virtuous recall',
+                           'moral success'], condition_lower):
+            semantic_effect += 0.14  # Moral licensing risk
+
+        # Sacred values (Tetlock et al., 2000; Tetlock, 2003)
+        if _any_word_in(['sacred value', 'taboo tradeoff', 'money for morals',
+                         'sell out', 'commodify'], condition_lower):
+            semantic_effect -= 0.25  # Strong moral outrage
+        elif _any_word_in(['routine tradeoff', 'cost-benefit', 'utilitarian calculus'], condition_lower):
+            semantic_effect += 0.05
+
+        # Moral identity salience (Aquino & Reed, 2002)
+        if _any_word_in(['moral identity', 'ethical self', 'virtuous person'], condition_lower):
+            semantic_effect += 0.15  # Motivates moral behavior
+        elif _any_word_in(['amoral', 'pragmatic identity', 'self-interest'], condition_lower):
+            semantic_effect -= 0.10
+
+        # =====================================================================
+        # DOMAIN 23: ATTENTION ECONOMY & DIGITAL DISTRACTION (v1.0.4.9)
+        # Ward et al. (2017, JACR): Phone presence reduces cognitive capacity
+        # Stothart et al. (2015): Phone notifications impair attention
+        # Ophir et al. (2009): Media multitasking reduces filtering ability
+        # Uncapher & Wagner (2018): Heavy media multitasking → attention deficits
+        # =====================================================================
+
+        # Phone/device presence (Ward et al., 2017)
+        if _any_word_in(['phone present', 'phone on desk', 'device visible',
+                         'smartphone nearby'], condition_lower):
+            semantic_effect -= 0.14  # Cognitive drain
+        elif _any_word_in(['no phone', 'phone away', 'device removed',
+                           'phone absent'], condition_lower):
+            semantic_effect += 0.08
+
+        # Notification interruption (Stothart et al., 2015)
+        if _any_word_in(['notification', 'interrupted', 'alert', 'ping'], condition_lower):
+            semantic_effect -= 0.16
+        elif _any_word_in(['no interruption', 'do not disturb', 'silent mode',
+                           'focus mode'], condition_lower):
+            semantic_effect += 0.10
+
+        # Media multitasking (Ophir et al., 2009)
+        if _any_word_in(['multitask', 'dual task', 'split attention',
+                         'media multitask'], condition_lower):
+            semantic_effect -= 0.18
+        elif _any_word_in(['single task', 'focused', 'undivided attention'], condition_lower):
+            semantic_effect += 0.12
+
+        # Digital detox (Radtke et al., 2022)
+        if _any_word_in(['digital detox', 'screen break', 'tech-free',
+                         'offline period'], condition_lower):
+            semantic_effect += 0.14
+        elif _any_word_in(['continuous use', 'always connected', 'high screen time'], condition_lower):
+            semantic_effect -= 0.10
+
+        # =====================================================================
         # v1.0.4.6: DOMAIN-AWARE EFFECT STACKING GUARD
         #
         # After all STEP 2 domains have been checked, apply two safeguards:
@@ -5146,6 +5307,19 @@ class EnhancedSimulationEngine:
             elif _det & {'punishment'}:
                 _domain_d_multiplier = 1.25
                 _used_detected_scaling = True
+            # v1.0.4.9: New domain scaling for added paradigms
+            elif _det & {'positive_psychology'}:
+                _domain_d_multiplier = 1.0  # Davis et al. 2016 meta: d = 0.31
+                _used_detected_scaling = True
+            elif _det & {'narrative_persuasion'}:
+                _domain_d_multiplier = 1.15  # van Laer et al. 2014: r = 0.35
+                _used_detected_scaling = True
+            elif _det & {'digital_wellbeing'}:
+                _domain_d_multiplier = 1.1  # Ward et al. 2017: moderate effects
+                _used_detected_scaling = True
+            elif _det & {'moral_psychology'}:
+                _domain_d_multiplier = 1.2  # Sacred values: strong effects
+                _used_detected_scaling = True
 
         # Fallback: keyword matching if detected domains didn't match scaling
         if not _used_detected_scaling:
@@ -5345,6 +5519,27 @@ class EnhancedSimulationEngine:
         # Communication/media studies prime source evaluation
         if _detected & {'media_communication', 'accuracy_misinformation'}:
             modifiers['attention_level'] = modifiers.get('attention_level', 0) + 0.03
+
+        # v1.0.4.9: Positive psychology/gratitude studies prime positive affect
+        if _detected & {'positive_psychology'}:
+            modifiers['acquiescence'] = modifiers.get('acquiescence', 0) + 0.04
+            modifiers['extremity'] = modifiers.get('extremity', 0) + 0.03
+
+        # v1.0.4.9: Moral/ethics studies prime evaluative intensity
+        if _detected & {'moral_psychology'}:
+            modifiers['extremity'] = modifiers.get('extremity', 0) + 0.06
+            modifiers['engagement'] = modifiers.get('engagement', 0) + 0.04
+            modifiers['social_desirability'] = modifiers.get('social_desirability', 0) + 0.05
+
+        # v1.0.4.9: Narrative/media engagement primes elaboration
+        if _detected & {'narrative_persuasion', 'media_communication'}:
+            modifiers['engagement'] = modifiers.get('engagement', 0) + 0.05
+            modifiers['attention_level'] = modifiers.get('attention_level', 0) + 0.03
+
+        # v1.0.4.9: Digital/attention studies prime awareness of distraction
+        if _detected & {'digital_wellbeing', 'technology'}:
+            modifiers['attention_level'] = modifiers.get('attention_level', 0) + 0.02
+            modifiers['response_consistency'] = modifiers.get('response_consistency', 0) + 0.02
 
         # Fallback: if no domains detected, use keyword matching on study text
         if not _detected:
@@ -5631,6 +5826,50 @@ class EnhancedSimulationEngine:
             modifiers['extremity'] = modifiers.get('extremity', 0) + 0.12
             modifiers['engagement'] = modifiers.get('engagement', 0) + 0.06
             modifiers['social_desirability'] = modifiers.get('social_desirability', 0) + 0.05
+
+        # --- v1.0.4.9: Narrative transportation conditions ---
+        # Green & Brock (2000): Transportation reduces counterarguing
+        if any(kw in condition_lower for kw in ['narrative', 'story', 'transported',
+               'immersed', 'fictional scenario']):
+            modifiers['engagement'] = modifiers.get('engagement', 0) + 0.08
+            modifiers['extremity'] = modifiers.get('extremity', 0) + 0.05
+            modifiers['response_consistency'] = modifiers.get('response_consistency', 0) + 0.04
+
+        # --- v1.0.4.9: Social comparison conditions ---
+        # Festinger (1954): Social comparison affects self-evaluation
+        if any(kw in condition_lower for kw in ['upward comparison', 'better than',
+               'outperformed', 'social comparison']):
+            modifiers['extremity'] = modifiers.get('extremity', 0) + 0.08
+            modifiers['social_desirability'] = modifiers.get('social_desirability', 0) + 0.06
+        elif any(kw in condition_lower for kw in ['downward comparison', 'worse than',
+                 'outperforming']):
+            modifiers['extremity'] = modifiers.get('extremity', 0) + 0.04
+
+        # --- v1.0.4.9: Gratitude/positive intervention conditions ---
+        # Emmons & McCullough (2003): Gratitude increases positive affect
+        if any(kw in condition_lower for kw in ['gratitude', 'thankful', 'count blessings',
+               'three good things', 'best possible self']):
+            modifiers['acquiescence'] = modifiers.get('acquiescence', 0) + 0.05
+            modifiers['engagement'] = modifiers.get('engagement', 0) + 0.04
+
+        # --- v1.0.4.9: Moral threat/cleansing conditions ---
+        # Sachdeva et al. (2009): Moral self-regulation
+        if any(kw in condition_lower for kw in ['moral threat', 'guilt', 'transgression',
+               'sacred value', 'taboo']):
+            modifiers['extremity'] = modifiers.get('extremity', 0) + 0.10
+            modifiers['social_desirability'] = modifiers.get('social_desirability', 0) + 0.08
+            modifiers['engagement'] = modifiers.get('engagement', 0) + 0.06
+
+        # --- v1.0.4.9: Digital distraction conditions ---
+        # Ward et al. (2017): Phone presence reduces cognitive capacity
+        if any(kw in condition_lower for kw in ['phone present', 'notification',
+               'multitask', 'distract', 'interrupted']):
+            modifiers['attention_level'] = modifiers.get('attention_level', 0) - 0.08
+            modifiers['response_consistency'] = modifiers.get('response_consistency', 0) - 0.05
+        elif any(kw in condition_lower for kw in ['no phone', 'focus mode',
+                 'single task', 'no distraction']):
+            modifiers['attention_level'] = modifiers.get('attention_level', 0) + 0.04
+            modifiers['response_consistency'] = modifiers.get('response_consistency', 0) + 0.03
 
         return modifiers
 
@@ -6044,6 +6283,35 @@ class EnhancedSimulationEngine:
                                              'credib', 'believab']):
             calibration['mean_adjustment'] = 0.0
             calibration['variance_adjustment'] = 0.12
+
+        # ===== v1.0.4.9: NARRATIVE ENGAGEMENT =====
+        # Green & Brock (2000): Transportation into narrative worlds
+        # Transported readers show moderate-high engagement (M ≈ 4.5-5.2/7)
+        elif any(kw in var_lower for kw in ['transport', 'narrative', 'immersion', 'absorbed', 'story_engage']):
+            calibration['mean_adjustment'] = 0.04
+            calibration['positivity_bias'] = 0.06
+            calibration['variance_adjustment'] = 0.05
+
+        # ===== v1.0.4.9: SOCIAL COMPARISON MEASURES =====
+        # Gibbons & Buunk (1999, Iowa-Netherlands Comparison Scale): M ≈ 3.5-4.5/7
+        # High variance due to individual differences in comparison orientation
+        elif any(kw in var_lower for kw in ['comparison', 'compare', 'relative', 'better_than', 'worse_than']):
+            calibration['mean_adjustment'] = 0.0
+            calibration['variance_adjustment'] = 0.10
+
+        # ===== v1.0.4.9: DIGITAL WELLBEING =====
+        # Smartphone/social media usage effects — high variance
+        elif any(kw in var_lower for kw in ['screen_time', 'phone_use', 'social_media', 'digital_wellbeing',
+                                             'device', 'app_use']):
+            calibration['mean_adjustment'] = -0.03
+            calibration['variance_adjustment'] = 0.08
+
+        # ===== v1.0.4.9: MORAL CLEANSING / MORAL SELF =====
+        # Aquino & Reed (2002): Moral identity M ≈ 5.5-6.0/7 (positive skew)
+        elif any(kw in var_lower for kw in ['moral_self', 'moral_identity', 'ethical_self', 'virtue']):
+            calibration['mean_adjustment'] = 0.08
+            calibration['positivity_bias'] = 0.10
+            calibration['variance_adjustment'] = -0.02
 
         # ===== CONDITION-BASED ADJUSTMENTS =====
         # Adjust based on experimental condition keywords
@@ -6610,6 +6878,20 @@ class EnhancedSimulationEngine:
             _reversal_probability = 0.50 + (_attention * 0.35) + (_engagement * 0.15)
             _reversal_probability = float(np.clip(_reversal_probability, 0.30, 0.98))
 
+            # v1.0.4.9: Cross-item reverse failure consistency
+            # If this participant has already failed reverse items, they're MORE likely
+            # to fail subsequent ones (trait-like within session; Woods 2006)
+            _p_idx = getattr(self, '_current_participant_idx', None)
+            if _p_idx is not None and hasattr(self, '_participant_reverse_tracking'):
+                _rt = self._participant_reverse_tracking[_p_idx]
+                if _rt['total_reverse'] >= 2:
+                    _fail_rate = _rt['failed_reverse'] / max(_rt['total_reverse'], 1)
+                    # Adjust probability toward their established failure rate
+                    # Weight: 0.3 = moderate influence from past behavior
+                    _reversal_probability = (0.7 * _reversal_probability +
+                                             0.3 * (1.0 - _fail_rate))
+                    _reversal_probability = float(np.clip(_reversal_probability, 0.20, 0.98))
+
             # v1.0.4.5: Engagement-level differential failure rates
             # Krosnick (1991): Satisficers partially fail reverse items
             # Engaged: ~95% correct; Satisficers (0.3-0.6): ~60-75%; Careless: ~30-50%
@@ -6632,6 +6914,12 @@ class EnhancedSimulationEngine:
                 # This creates the acquiescence-driven inconsistency pattern
                 # that reliability analysts see in real data
                 _correctly_reversed = False
+
+            # v1.0.4.9: Update reverse-item tracking for this participant
+            if _p_idx is not None and hasattr(self, '_participant_reverse_tracking'):
+                self._participant_reverse_tracking[_p_idx]['total_reverse'] += 1
+                if not _correctly_reversed:
+                    self._participant_reverse_tracking[_p_idx]['failed_reverse'] += 1
 
             # Acquiescence pull on reverse items (Weijters et al., 2010)
             # Even respondents who DO reverse still show partial acquiescence
@@ -6745,6 +7033,31 @@ class EnhancedSimulationEngine:
                      'vulnerable', 'weakness', 'failure', 'shame', 'guilt',
                      'insecur', 'fear', 'worry', 'burnout']):
                 _sd_sensitivity = -0.5  # Negative = suppresses admission of negatives
+
+            # v1.0.4.9: MORAL/SACRED VALUE topics — very high SD sensitivity
+            # Tetlock et al. (2000): Sacred value violations trigger moral outrage
+            # People strongly inflate their moral standing in self-reports
+            elif any(kw in _var_lower for kw in ['moral_identity', 'ethical_self', 'sacred',
+                     'virtuous', 'moral_self', 'integrity']):
+                _sd_sensitivity = 1.4  # Very high — moral self-presentation
+
+            # v1.0.4.9: GRATITUDE/POSITIVE PSYCH — moderate-high inflation
+            # McCullough et al. (2002): Gratitude self-reports positively skewed
+            elif any(kw in _var_lower for kw in ['gratitude', 'grateful', 'thankful',
+                     'wellbeing', 'flourish', 'life_satisf']):
+                _sd_sensitivity = 1.2  # Moderate-high — socially desirable to be grateful
+
+            # v1.0.4.9: SOCIAL COMPARISON — moderate sensitivity
+            # Admitting social comparison is somewhat undesirable
+            elif any(kw in _var_lower for kw in ['compar', 'envy', 'jealous',
+                     'social_comparison', 'relative_standing']):
+                _sd_sensitivity = 1.1
+
+            # v1.0.4.9: DIGITAL HABITS — moderate (people downplay usage)
+            # Self-reported screen time systematically underestimated (Andrews et al. 2015)
+            elif any(kw in _var_lower for kw in ['screen_time', 'phone_use', 'social_media_use',
+                     'app_usage', 'internet_addict', 'phone_depend']):
+                _sd_sensitivity = 1.15  # People underreport digital dependence
 
             # Also check condition context for sensitivity
             _cond_lower = condition.lower() if condition else ""
@@ -6941,6 +7254,77 @@ class EnhancedSimulationEngine:
             profile['behavioral_summary'] = 'No prior numeric response data available for this participant.'
 
         return profile
+
+    def _validate_participant_responses(
+        self,
+        responses: List[int],
+        scale_min: int,
+        scale_max: int,
+        persona_name: str,
+        traits: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """v1.0.4.9: Post-generation validation of participant response patterns.
+
+        Checks that generated responses match expected patterns for the participant's
+        persona type. Returns a validation report with any detected anomalies.
+
+        Scientific basis:
+        - Meade & Craig (2012): Careless responder detection via IRV, longstring
+        - Curran (2016): Insufficient effort responding indicators
+        - DeSimone et al. (2018): Inconsistency indices for data quality
+        """
+        report: Dict[str, Any] = {'valid': True, 'warnings': []}
+        if not responses or len(responses) < 3:
+            return report
+
+        vals = [float(v) for v in responses]
+        _mean = float(np.mean(vals))
+        _std = float(np.std(vals))
+        _unique = len(set(int(v) for v in vals))
+        _scale_range = max(scale_max - scale_min, 1)
+
+        # Check 1: Longstring detection (consecutive identical responses)
+        _max_longstring = 1
+        _current_run = 1
+        for j in range(1, len(vals)):
+            if int(vals[j]) == int(vals[j - 1]):
+                _current_run += 1
+                _max_longstring = max(_max_longstring, _current_run)
+            else:
+                _current_run = 1
+
+        # Longstring > 80% of items is suspicious even for straight-liners
+        if _max_longstring > max(4, len(vals) * 0.8):
+            _attn = _safe_trait_value(traits.get("attention_level"), 0.75)
+            if _attn > 0.7:  # Engaged respondent shouldn't straight-line this much
+                report['warnings'].append(
+                    f"Longstring ({_max_longstring}/{len(vals)}) for engaged persona '{persona_name}'"
+                )
+
+        # Check 2: IRV (Intra-individual Response Variability)
+        # Dunn et al. (2018): IRV should match persona engagement level
+        if _std < 0.3 and _unique <= 2 and len(vals) >= 5:
+            _engagement = _safe_trait_value(traits.get("engagement"), 0.6)
+            if _engagement > 0.6:
+                report['warnings'].append(
+                    f"Near-zero IRV (SD={_std:.2f}) for engaged persona '{persona_name}'"
+                )
+
+        # Check 3: Scale range utilization
+        # Greenleaf (1992): Extreme responders should use endpoints
+        _extremity = _safe_trait_value(traits.get("extremity"), 0.3)
+        _uses_endpoints = any(int(v) == scale_min or int(v) == scale_max for v in vals)
+        if _extremity > 0.7 and len(vals) >= 5 and not _uses_endpoints:
+            report['warnings'].append(
+                f"High extremity ({_extremity:.2f}) but no endpoint use for '{persona_name}'"
+            )
+
+        report['valid'] = len(report['warnings']) == 0
+        report['stats'] = {
+            'mean': round(_mean, 2), 'sd': round(_std, 2),
+            'unique_values': _unique, 'max_longstring': _max_longstring,
+        }
+        return report
 
     def _generate_open_response(
         self,
@@ -7652,6 +8036,15 @@ class EnhancedSimulationEngine:
         # Store reference on self so _generate_scale_response can access it
         self._participant_response_history = _participant_response_history
 
+        # v1.0.4.9: Per-participant reverse-item failure tracking
+        # Tracks whether each participant consistently fails or passes reverse items.
+        # Careless respondents who fail one reverse item are more likely to fail others.
+        # Scientific basis: Woods (2006) — reverse-item failure is trait-like within session
+        self._participant_reverse_tracking: List[Dict[str, int]] = [
+            {'total_reverse': 0, 'failed_reverse': 0}
+            for _ in range(n)
+        ]
+
         attention_results: List[List[bool]] = []
         attention_check_values: List[int] = []
         for i in range(n):
@@ -7781,6 +8174,7 @@ class EnhancedSimulationEngine:
                 col_hash = _stable_int_hash(col_name)
                 for i in range(n):
                     p_seed = (self.seed + i * 100 + col_hash) % (2**31)
+                    self._current_participant_idx = i  # v1.0.4.9: for reverse tracking
                     val = self._generate_scale_response(
                         scale_min,
                         scale_max,
@@ -7872,6 +8266,7 @@ class EnhancedSimulationEngine:
             values: List[int] = []
             for i in range(n):
                 p_seed = (self.seed + i * 100 + col_hash) % (2**31)
+                self._current_participant_idx = i  # v1.0.4.9: for reverse tracking
                 val = self._generate_scale_response(
                     var_min, var_max, all_traits[i], False, conditions.iloc[i], var_name, p_seed
                 )

@@ -159,7 +159,7 @@ Based on recent LLM simulation research:
 """
 
 # Version identifier to help track deployed code
-__version__ = "1.0.4.6"  # v1.0.4.6: 8 new personas (political, economic game, intergroup), expanded domain mappings
+__version__ = "1.0.4.9"  # v1.0.4.9: 6 new domain-specific personas (narrative, social comparison, positive psych, moral, digital, financial)
 
 import hashlib
 import random
@@ -2103,6 +2103,249 @@ class PersonaLibrary:
                 'sentiment_alignment': 'resistant'
             },
             applicable_domains=['communication', 'persuasion', 'advertising', 'propaganda', 'misinformation', 'media']
+        )
+
+        # ================================================================
+        # NARRATIVE THINKER (v1.0.4.9)
+        # Scientific basis: Green & Brock (2000) Transportation theory,
+        # Transportability Scale; Appel & Richter (2010) need for narrative.
+        # High narrative engagement predicts persuasion via transported states.
+        # ================================================================
+
+        personas['narrative_thinker'] = Persona(
+            name="Narrative Thinker",
+            category="cognitive",
+            description="Person who processes information through narrative frameworks. "
+                       "High transportation tendency, vivid imagery, emotional engagement with stories. "
+                       "Green & Brock (2000): Transported readers show d=0.5-0.7 attitude shifts.",
+            weight=0.08,
+            traits={
+                # Core 8 traits
+                'attention_level': PersonaTrait('attention_level', 0.88, 0.06, 'High — absorbed in content'),
+                'response_consistency': PersonaTrait('response_consistency', 0.75, 0.08, 'Consistent — narrative coherence'),
+                'scale_use_breadth': PersonaTrait('scale_use_breadth', 0.68, 0.10, 'Moderate-broad — emotional range'),
+                'acquiescence': PersonaTrait('acquiescence', 0.52, 0.08, 'Neutral — content-driven agreement'),
+                'social_desirability': PersonaTrait('social_desirability', 0.45, 0.10, 'Low-moderate — authentic expression'),
+                'reading_speed': PersonaTrait('reading_speed', 0.48, 0.10, 'Slower — immersive processing'),
+                'response_tendency': PersonaTrait('response_tendency', 0.62, 0.12, 'Slightly positive — narrative optimism'),
+                'extremity': PersonaTrait('extremity', 0.30, 0.10, 'Moderate — nuanced but emotionally moved'),
+                # Domain-specific traits
+                'engagement': PersonaTrait('engagement', 0.85, 0.07, 'Very high — transported processing'),
+                'elaboration': PersonaTrait('elaboration', 0.80, 0.08, 'High — rich narrative detail'),
+                'imagery_vividness': PersonaTrait('imagery_vividness', 0.82, 0.08, 'Strong mental imagery'),
+                'emotional_engagement': PersonaTrait('emotional_engagement', 0.78, 0.10, 'High empathic response'),
+            },
+            text_style={
+                'verbosity': 'elaborate',
+                'detail_level': 'narrative_rich',
+                'coherence': 'very_high',
+                'sentiment_alignment': 'emotionally_engaged'
+            },
+            applicable_domains=['narrative', 'communication', 'media', 'persuasion',
+                                'advertising', 'fiction', 'storytelling', 'entertainment']
+        )
+
+        # ================================================================
+        # SOCIAL COMPARER (v1.0.4.9)
+        # Scientific basis: Gibbons & Buunk (1999) Iowa-Netherlands
+        # Comparison Orientation Measure (INCOM); Festinger (1954) social
+        # comparison theory. High comparers show reference-dependent evaluation.
+        # ================================================================
+
+        personas['social_comparer'] = Persona(
+            name="Social Comparer",
+            category="social",
+            description="Person who habitually evaluates self and options relative to others. "
+                       "Frequent upward/downward comparisons, reference-dependent judgments, "
+                       "sensitive to social rank. Gibbons & Buunk (1999): INCOM M=3.8/5 for high comparers.",
+            weight=0.10,
+            traits={
+                # Core 8 traits
+                'attention_level': PersonaTrait('attention_level', 0.78, 0.08, 'Good — vigilant to social cues'),
+                'response_consistency': PersonaTrait('response_consistency', 0.55, 0.12, 'Lower — comparison-driven variability'),
+                'scale_use_breadth': PersonaTrait('scale_use_breadth', 0.65, 0.10, 'Moderate — context-sensitive'),
+                'acquiescence': PersonaTrait('acquiescence', 0.55, 0.10, 'Slightly elevated — conformity tendency'),
+                'social_desirability': PersonaTrait('social_desirability', 0.72, 0.08, 'High — image-conscious'),
+                'reading_speed': PersonaTrait('reading_speed', 0.62, 0.10, 'Moderate — scanning for social info'),
+                'response_tendency': PersonaTrait('response_tendency', 0.55, 0.14, 'Variable — depends on comparison direction'),
+                'extremity': PersonaTrait('extremity', 0.45, 0.12, 'Moderate-high — polarized by comparisons'),
+                # Domain-specific traits
+                'comparison_orientation': PersonaTrait('comparison_orientation', 0.82, 0.08, 'Very high — habitual comparer'),
+                'reference_dependence': PersonaTrait('reference_dependence', 0.78, 0.10, 'High — anchors to others'),
+                'status_sensitivity': PersonaTrait('status_sensitivity', 0.75, 0.10, 'High — rank-aware'),
+                'envy_proneness': PersonaTrait('envy_proneness', 0.62, 0.12, 'Moderate-high — upward comparison effect'),
+            },
+            text_style={
+                'verbosity': 'moderate',
+                'detail_level': 'comparative',
+                'coherence': 'moderate',
+                'sentiment_alignment': 'reference_dependent'
+            },
+            applicable_domains=['social_psychology', 'consumer_behavior', 'social_media',
+                                'marketing', 'wellbeing', 'self_esteem', 'body_image']
+        )
+
+        # ================================================================
+        # GRATEFUL OPTIMIST (v1.0.4.9)
+        # Scientific basis: McCullough et al. (2002) GQ-6 gratitude scale,
+        # Emmons & McCullough (2003) gratitude and wellbeing interventions,
+        # Scheier & Carver (1985) LOT dispositional optimism.
+        # ================================================================
+
+        personas['grateful_optimist'] = Persona(
+            name="Grateful Optimist",
+            category="positive_psychology",
+            description="Person with dispositional gratitude and optimistic outlook. "
+                       "Positive interpretation bias, high life satisfaction, appreciation-focused. "
+                       "Emmons & McCullough (2003): Gratitude journaling d=0.4 on wellbeing.",
+            weight=0.08,
+            traits={
+                # Core 8 traits
+                'attention_level': PersonaTrait('attention_level', 0.82, 0.07, 'Good — attentive to positives'),
+                'response_consistency': PersonaTrait('response_consistency', 0.72, 0.08, 'Consistent — stable positive bias'),
+                'scale_use_breadth': PersonaTrait('scale_use_breadth', 0.58, 0.10, 'Moderate — skewed positive'),
+                'acquiescence': PersonaTrait('acquiescence', 0.62, 0.08, 'Elevated — agreeable disposition'),
+                'social_desirability': PersonaTrait('social_desirability', 0.68, 0.08, 'Higher — positive self-presentation'),
+                'reading_speed': PersonaTrait('reading_speed', 0.58, 0.10, 'Moderate — thorough engagement'),
+                'response_tendency': PersonaTrait('response_tendency', 0.72, 0.08, 'Positive — gratitude/optimism bias'),
+                'extremity': PersonaTrait('extremity', 0.28, 0.08, 'Moderate — positive but not extreme'),
+                # Domain-specific traits
+                'gratitude': PersonaTrait('gratitude', 0.85, 0.07, 'Very high — GQ-6 top quartile'),
+                'optimism': PersonaTrait('optimism', 0.80, 0.08, 'High — LOT-R top quartile'),
+                'life_satisfaction': PersonaTrait('life_satisfaction', 0.78, 0.10, 'High — SWLS above average'),
+                'positive_affect': PersonaTrait('positive_affect', 0.75, 0.10, 'High — PANAS positive'),
+            },
+            text_style={
+                'verbosity': 'warm',
+                'detail_level': 'appreciative',
+                'coherence': 'high',
+                'sentiment_alignment': 'positive_genuine'
+            },
+            applicable_domains=['positive_psychology', 'health_psychology', 'wellbeing',
+                                'gratitude', 'life_satisfaction', 'resilience', 'mental_health']
+        )
+
+        # ================================================================
+        # MORAL ABSOLUTIST (v1.0.4.9)
+        # Scientific basis: Tetlock et al. (2000) sacred values and
+        # taboo trade-offs; Haidt (2001) moral intuitionism; Graham et al.
+        # (2013) Moral Foundations Theory. Strong moral convictions produce
+        # high extremity and resistance to trade-offs.
+        # ================================================================
+
+        personas['moral_absolutist'] = Persona(
+            name="Moral Absolutist",
+            category="moral",
+            description="Person with strong deontological moral convictions. "
+                       "Refuses trade-offs on sacred values, high moral outrage, principled responding. "
+                       "Tetlock et al. (2000): Sacred value holders show extreme rejection of taboo trade-offs.",
+            weight=0.07,
+            traits={
+                # Core 8 traits
+                'attention_level': PersonaTrait('attention_level', 0.85, 0.06, 'High — morally vigilant'),
+                'response_consistency': PersonaTrait('response_consistency', 0.80, 0.07, 'Very consistent — principled'),
+                'scale_use_breadth': PersonaTrait('scale_use_breadth', 0.75, 0.10, 'Broad — strong opinions both ways'),
+                'acquiescence': PersonaTrait('acquiescence', 0.48, 0.08, 'Moderate — agrees with moral items, rejects immoral'),
+                'social_desirability': PersonaTrait('social_desirability', 0.70, 0.08, 'High — moral self-image'),
+                'reading_speed': PersonaTrait('reading_speed', 0.52, 0.10, 'Slower — deliberate moral processing'),
+                'response_tendency': PersonaTrait('response_tendency', 0.60, 0.15, 'Variable — depends on moral content'),
+                'extremity': PersonaTrait('extremity', 0.78, 0.08, 'Very high — moral convictions are strong'),
+                # Domain-specific traits
+                'engagement': PersonaTrait('engagement', 0.85, 0.07, 'Very high — morally invested'),
+                'moral_conviction': PersonaTrait('moral_conviction', 0.88, 0.06, 'Very high — sacred value holder'),
+                'moral_outrage': PersonaTrait('moral_outrage', 0.75, 0.10, 'High — strong reactive emotion'),
+                'trade_off_resistance': PersonaTrait('trade_off_resistance', 0.85, 0.07, 'Very high — refuses taboo trade-offs'),
+            },
+            text_style={
+                'verbosity': 'passionate',
+                'detail_level': 'principled',
+                'coherence': 'very_high',
+                'sentiment_alignment': 'morally_charged'
+            },
+            applicable_domains=['moral_psychology', 'ethical_judgment', 'political_psychology',
+                                'justice', 'fairness', 'bioethics', 'environmental_ethics']
+        )
+
+        # ================================================================
+        # DIGITAL NATIVE (v1.0.4.9)
+        # Scientific basis: Prensky (2001) digital native concept,
+        # Ophir et al. (2009) cognitive control and media multitasking,
+        # Uncapher & Wagner (2018) media multitasking and attention.
+        # Habitual multitaskers show faster but less consistent processing.
+        # ================================================================
+
+        personas['digital_native'] = Persona(
+            name="Digital Native",
+            category="technology",
+            description="Person raised with digital technology, habitual multitasker. "
+                       "Fast processing, moderate attention fragmentation, high tech comfort. "
+                       "Ophir et al. (2009): Heavy media multitaskers show d=0.4 attention cost.",
+            weight=0.10,
+            traits={
+                # Core 8 traits
+                'attention_level': PersonaTrait('attention_level', 0.72, 0.10, 'Moderate — fragmented by multitasking'),
+                'response_consistency': PersonaTrait('response_consistency', 0.58, 0.12, 'Lower — context-switching cost'),
+                'scale_use_breadth': PersonaTrait('scale_use_breadth', 0.62, 0.10, 'Moderate — quick judgments'),
+                'acquiescence': PersonaTrait('acquiescence', 0.50, 0.10, 'Neutral'),
+                'social_desirability': PersonaTrait('social_desirability', 0.42, 0.12, 'Low — authentic digital culture'),
+                'reading_speed': PersonaTrait('reading_speed', 0.85, 0.07, 'Very fast — skimming habit'),
+                'response_tendency': PersonaTrait('response_tendency', 0.58, 0.12, 'Slightly positive — tech-optimistic'),
+                'extremity': PersonaTrait('extremity', 0.35, 0.10, 'Moderate — quick but not polarized'),
+                # Domain-specific traits
+                'engagement': PersonaTrait('engagement', 0.65, 0.12, 'Moderate — brief bursts of focus'),
+                'tech_comfort': PersonaTrait('tech_comfort', 0.90, 0.05, 'Very high — native facility'),
+                'multitasking_tendency': PersonaTrait('multitasking_tendency', 0.82, 0.08, 'High — habitual switcher'),
+                'novelty_seeking': PersonaTrait('novelty_seeking', 0.72, 0.10, 'Higher — drawn to new stimuli'),
+            },
+            text_style={
+                'verbosity': 'concise',
+                'detail_level': 'surface',
+                'coherence': 'moderate',
+                'sentiment_alignment': 'casual'
+            },
+            applicable_domains=['technology', 'social_media', 'digital_wellbeing', 'ai',
+                                'online_behavior', 'gaming', 'communication', 'education']
+        )
+
+        # ================================================================
+        # FINANCIAL DELIBERATOR (v1.0.4.9)
+        # Scientific basis: Kahneman & Tversky (1979) prospect theory,
+        # Barber & Odean (2001) individual investor behavior,
+        # Frederick (2005) cognitive reflection test.
+        # Careful, analytical decision-maker in financial contexts.
+        # ================================================================
+
+        personas['financial_deliberator'] = Persona(
+            name="Financial Deliberator",
+            category="economics",
+            description="Careful, analytical person in financial decision contexts. "
+                       "High cognitive effort, risk-aware, values information before deciding. "
+                       "Frederick (2005): High CRT scorers are more patient and risk-neutral.",
+            weight=0.08,
+            traits={
+                # Core 8 traits
+                'attention_level': PersonaTrait('attention_level', 0.88, 0.06, 'High — careful evaluation'),
+                'response_consistency': PersonaTrait('response_consistency', 0.78, 0.08, 'High — systematic processing'),
+                'scale_use_breadth': PersonaTrait('scale_use_breadth', 0.65, 0.10, 'Moderate — calibrated judgments'),
+                'acquiescence': PersonaTrait('acquiescence', 0.42, 0.08, 'Low — skeptical, evaluative'),
+                'social_desirability': PersonaTrait('social_desirability', 0.38, 0.10, 'Low — values accuracy over impression'),
+                'reading_speed': PersonaTrait('reading_speed', 0.45, 0.10, 'Slow — deliberate, careful reading'),
+                'response_tendency': PersonaTrait('response_tendency', 0.52, 0.10, 'Centered — avoids optimism bias'),
+                'extremity': PersonaTrait('extremity', 0.25, 0.08, 'Low — calibrated, moderate positions'),
+                # Domain-specific traits
+                'engagement': PersonaTrait('engagement', 0.82, 0.07, 'High — invested in financial decisions'),
+                'need_for_cognition': PersonaTrait('need_for_cognition', 0.80, 0.08, 'High — enjoys complex analysis'),
+                'risk_tolerance': PersonaTrait('risk_tolerance', 0.48, 0.12, 'Moderate — risk-aware not risk-averse'),
+                'information_seeking': PersonaTrait('information_seeking', 0.82, 0.08, 'High — gathers before deciding'),
+            },
+            text_style={
+                'verbosity': 'analytical',
+                'detail_level': 'quantitative',
+                'coherence': 'very_high',
+                'sentiment_alignment': 'measured'
+            },
+            applicable_domains=['behavioral_economics', 'financial_psychology', 'consumer_behavior',
+                                'investment', 'risk', 'judgment', 'decision_making']
         )
 
         return personas
