@@ -7611,49 +7611,38 @@ class EnhancedSimulationEngine:
                                       'level', 'high', 'low', 'cell'}
             _cond_topic_words = [w for w in _cond_words if w not in _cond_stop][:3]
 
-        # Strategy 4: Study-design-aware vocabulary hints
-        # v1.0.5.0: Expanded from 9 to 30 paradigm hints
-        _domain_topic_hints = {
+        # Strategy 4: Dynamic domain description generation
+        # v1.0.6.5: REPLACED hardcoded 30-keyword dict with adaptive model.
+        # Uses self.detected_domains (computed during engine init via 5-phase
+        # scoring) to dynamically generate domain descriptions. Works for ANY
+        # research topic, not just pre-listed keywords.
+        #
+        # Only 4 economic-game paradigm hints are retained because they need
+        # precise vocabulary tied to meta-analysis-calibrated baselines
+        # (Engel 2011, Berg et al. 1995).
+        _econ_game_hints = {
             'dictator': 'giving and allocation decisions',
             'trust': 'trust and reciprocity',
             'ultimatum': 'fairness and offers',
             'public_goods': 'cooperation and contributions',
-            'polarization': 'political attitudes and divisions',
-            'intergroup': 'group identity and relations',
-            'consumer': 'product preferences and choices',
-            'health': 'health decisions and wellbeing',
-            'ai_attitudes': 'AI technology and trust',
-            # v1.0.5.0: New paradigm hints
-            'moral': 'moral judgments and ethical decisions',
-            'stereotype': 'stereotypes and social categorization',
-            'prejudice': 'attitudes toward social groups',
-            'discrimination': 'fairness and equal treatment',
-            'persuasion': 'persuasive messages and attitude change',
-            'negotiation': 'negotiation strategies and outcomes',
-            'risk': 'risk perception and decision-making under uncertainty',
-            'prosocial': 'helping behavior and prosocial motivation',
-            'cooperation': 'cooperation and collective action',
-            'punishment': 'punishment and norm enforcement',
-            'identity': 'identity and self-concept',
-            'emotion': 'emotional experiences and regulation',
-            'mindfulness': 'mindfulness and attention',
-            'stress': 'stress and coping strategies',
-            'wellbeing': 'subjective wellbeing and life satisfaction',
-            'environmental': 'environmental attitudes and sustainable behavior',
-            'education': 'learning and educational experiences',
-            'leadership': 'leadership and authority',
-            'conformity': 'conformity and social influence',
-            'deception': 'honesty and deceptive behavior',
-            'attachment': 'interpersonal attachment and relationships',
         }
         _domain_hint = ""
-        for _dk, _dv in _domain_topic_hints.items():
-            if _dk in study_domain.lower() or _dk in (self.study_title or '').lower():
+        # Step A: Check economic-game paradigms (need precise vocabulary)
+        _sd_lower = study_domain.lower()
+        _st_lower = (self.study_title or '').lower()
+        for _dk, _dv in _econ_game_hints.items():
+            if _dk in _sd_lower or _dk in _st_lower:
                 _domain_hint = _dv
                 break
-        # v1.0.6.4: General-purpose fallback — when no domain hint matched,
-        # construct a topic description from the extracted topic words. This
-        # ensures ANY topic (not just hardcoded domains) gets a meaningful hint.
+        # Step B: If no econ-game match, dynamically build from detected domains
+        if not _domain_hint and hasattr(self, 'detected_domains') and self.detected_domains:
+            # Humanize detected domain names: "social_psychology" → "social psychology"
+            _humanized = [d.replace('_', ' ') for d in self.detected_domains[:2]]
+            _domain_hint = ' and '.join(_humanized)
+        # Step C: If detected_domains didn't help, try study_domain
+        if not _domain_hint and study_domain and study_domain not in ('general', ''):
+            _domain_hint = study_domain.replace('_', ' ')
+        # Step D: Construct from topic words as last resort
         if not _domain_hint and _topic_words:
             _domain_hint = ' '.join(_topic_words[:4])
 
@@ -7685,6 +7674,9 @@ class EnhancedSimulationEngine:
                 _seen_ents.add(_el)
                 _unique_entities.append(_e)
         _entities = _unique_entities[:5]
+
+        # v1.0.6.5: Derive proper nouns from extracted entities (fixes undefined _proper_nouns bug)
+        _proper_nouns = {e.lower() for e in _entities}
 
         # Strategy 6 (v1.0.5.0): Question intent classification
         # Determines what KIND of response the question expects
