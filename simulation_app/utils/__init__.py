@@ -2,7 +2,7 @@
 """
 Utility modules for the Behavioral Experiment Simulation Tool.
 
-Version: 1.0.5.0 - OE behavioral realism pipeline (topic intelligence, persona integration, behavioral coherence, cross-response consistency)
+Version: 1.0.5.1 - UX overhaul: structured condition input, treatment descriptions, crash fix, label truncation, warning sync
 
 Changes (v1.0.0 - 20 Iterations of Comprehensive Improvements):
     === ENHANCED SCALE/MATRIX DETECTION ===
@@ -65,7 +65,7 @@ Modules:
 """
 
 # Package version - should match all module versions
-__version__ = "1.0.5.0"
+__version__ = "1.0.5.1"
 
 from .qsf_parser import parse_qsf_file, extract_survey_structure, generate_qsf_summary
 from .simulation_engine import SimulationEngine

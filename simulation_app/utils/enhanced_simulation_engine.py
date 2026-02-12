@@ -2719,6 +2719,10 @@ class EnhancedSimulationEngine:
         self.exclusion_criteria = exclusion_criteria or ExclusionCriteria()
         self.open_ended_questions = _normalize_open_ended(open_ended_questions)
         self.study_context = study_context or {}
+        # v1.0.5.1: Extract condition descriptions for domain detection and effect sizing
+        self.condition_descriptions: Dict[str, str] = {}
+        if self.study_context.get("condition_descriptions"):
+            self.condition_descriptions = dict(self.study_context["condition_descriptions"])
         self.stimulus_evaluations = stimulus_evaluations or []
         self.condition_allocation = self._normalize_condition_allocation(
             condition_allocation, self.conditions
@@ -2760,8 +2764,11 @@ class EnhancedSimulationEngine:
         self.detected_domains = self.persona_library.detect_domains(
             self.study_description, self.study_title
         )
-        # Also detect domains from condition names for better persona matching
+        # Also detect domains from condition names AND descriptions for better persona matching
+        # v1.0.5.1: Include condition descriptions in domain detection text
         condition_text = " ".join(str(c) for c in self.conditions)
+        if self.condition_descriptions:
+            condition_text += " " + " ".join(str(d) for d in self.condition_descriptions.values() if d)
         condition_domains = self.persona_library.detect_domains(
             condition_text, ""
         )
@@ -3672,7 +3679,11 @@ class EnhancedSimulationEngine:
         # Build study context string from all conditions + title for relational parsing
         _all_conds_text = " ".join(c.lower() for c in self.conditions) if self.conditions else ""
         _study_text = (self.study_title or "").lower() + " " + (self.study_description or "").lower()
-        _full_context = _all_conds_text + " " + _study_text + " " + variable_lower
+        # v1.0.5.1: Include condition descriptions in full context for better semantic matching
+        _cond_desc_text = ""
+        if self.condition_descriptions:
+            _cond_desc_text = " ".join(str(d).lower() for d in self.condition_descriptions.values() if d)
+        _full_context = _all_conds_text + " " + _study_text + " " + variable_lower + " " + _cond_desc_text
 
         # Default medium effect size parameters
         default_d = 0.5
@@ -8583,9 +8594,23 @@ class EnhancedSimulationEngine:
                 # v1.0.5.0: Update voice memory for this participant
                 if _text_str.strip():
                     if i not in _participant_voice_memory:
+                        # Derive initial tone from response_mean (same logic as _generate_open_response)
+                        if response_mean is not None:
+                            if response_mean >= 5.5:
+                                _init_tone = "positive"
+                            elif response_mean >= 4.5:
+                                _init_tone = "positive"
+                            elif response_mean <= 2.5:
+                                _init_tone = "negative"
+                            elif response_mean <= 3.5:
+                                _init_tone = "negative"
+                            else:
+                                _init_tone = "neutral"
+                        else:
+                            _init_tone = "neutral"
                         _participant_voice_memory[i] = {
                             'responses': [],
-                            'tone': sentiment if response_mean is not None else 'neutral',
+                            'tone': _init_tone,
                             'last_response': '',
                         }
                     _vm = _participant_voice_memory[i]

@@ -53,8 +53,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.0.5.0"
-BUILD_ID = "20260212-v10500-oe-behavioral-realism-pipeline"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.0.5.1"
+BUILD_ID = "20260212-v10501-ux-conditions-crash-fix"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -119,7 +119,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.0.5.0"  # v1.0.5.0: OE behavioral realism pipeline — topic intelligence, persona integration, behavioral coherence, cross-response consistency
+APP_VERSION = "1.0.5.1"  # v1.0.5.1: UX overhaul — structured condition input, treatment descriptions, crash fix, label truncation, warning sync
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -3891,85 +3891,206 @@ def _render_conversational_builder() -> None:
     # ── Section 1: Experimental Conditions ──────────────────────────────
     st.markdown("")
     st.markdown("#### Experimental Conditions *")
-    st.caption(
-        "List your groups (comma-separated) or describe a factorial design. "
-        "NxM notation, factor labels, and crossed conditions are auto-detected."
+
+    # v1.0.5.1: Dual-mode condition input — structured (default) vs text (advanced)
+    _cond_input_mode = st.radio(
+        "How would you like to define conditions?",
+        options=["Structured (recommended)", "Text / Factorial notation"],
+        index=0 if not st.session_state.get("builder_conditions_text", "").strip() else 1,
+        key="cond_input_mode",
+        horizontal=True,
+        help="Structured mode: add conditions one by one with descriptions. Text mode: type conditions as text or use factorial notation.",
     )
 
-    conditions_placeholder = (
-        "Control, Treatment A, Treatment B\n"
-        "\n"
-        "Or factorial: 2 (Source: AI vs Human) × 3 (Frame: Gain, Loss, Neutral)"
-    )
+    if _cond_input_mode == "Structured (recommended)":
+        # ── Structured condition input ──
+        st.caption(
+            "Add each condition with a short name and a description of what participants experience. "
+            "Descriptions help the simulator understand your treatments."
+        )
 
-    conditions_text = st.text_area(
-        "Conditions",
-        placeholder=conditions_placeholder,
-        height=100,
-        key="builder_conditions_text",
-        help=(
-            "Describe your experimental design. Supports:\n"
-            "- Simple lists: 'Control, Treatment A, Treatment B'\n"
-            "- Factorial notation: '2x2', '3×2', '2x2x2'\n"
-            "- Labeled factorial: '3 (Source: AI vs Human vs None) × 2 (Product: Hedonic vs Utilitarian)'\n"
-            "- Parenthetical: 'Trust (high, low) and Risk (high, low)'\n"
-            "Any NxM (and NxMxK, etc.) factorial is automatically detected and crossed."
-        ),
-    )
+        # Initialize structured conditions list in session state
+        if "builder_structured_conditions" not in st.session_state:
+            st.session_state["builder_structured_conditions"] = []
 
-    # Live parsing preview for conditions
-    if conditions_text.strip():
-        parsed_conditions, cond_warnings = parser.parse_conditions(conditions_text)
-    else:
-        parsed_conditions, cond_warnings = [], []
-    for cw in cond_warnings:
-        st.warning(cw)
+        _struct_conds = st.session_state["builder_structured_conditions"]
 
-    # Check for duplicate conditions
-    if parsed_conditions:
-        _cond_names_lower = [c.name.lower().strip() for c in parsed_conditions]
-        _seen = set()
-        _dupes = []
-        for cn in _cond_names_lower:
-            if cn in _seen:
-                _dupes.append(cn)
-            _seen.add(cn)
-        if _dupes:
-            st.error(f"Duplicate condition(s) detected: {', '.join(set(_dupes))}. Each condition must be unique.")
+        # Display existing structured conditions
+        _struct_to_remove = None
+        for _si, _sc in enumerate(_struct_conds):
+            _sc_col1, _sc_col2, _sc_col3 = st.columns([2, 5, 0.5])
+            with _sc_col1:
+                st.markdown(
+                    f'<div style="background:{"#E8F5E9" if _sc.get("is_control") else "#E3F2FD"};'
+                    f'border-radius:6px;padding:6px 10px;margin-top:4px;">'
+                    f'<strong>{_sc["name"]}</strong><br>'
+                    f'<span style="font-size:0.8em;color:#666;">{"Control" if _sc.get("is_control") else "Treatment"}</span>'
+                    f'</div>',
+                    unsafe_allow_html=True,
+                )
+            with _sc_col2:
+                st.markdown(
+                    f'<div style="color:#555;font-size:0.9em;padding-top:8px;">{_sc.get("description", "")}</div>',
+                    unsafe_allow_html=True,
+                )
+            with _sc_col3:
+                if st.button("X", key=f"rm_struct_cond_{_si}"):
+                    _struct_to_remove = _si
 
-    if parsed_conditions:
-        cond_names = [c.name for c in parsed_conditions]
-        # Detect if factorial (conditions contain ×)
-        _is_factorial = any(" × " in cn for cn in cond_names)
-        if _is_factorial:
-            # Count factors from first condition
-            _n_facs = len(cond_names[0].split(" × "))
-            st.caption(
-                f"Detected **{_n_facs}-factor factorial** design "
-                f"with **{len(cond_names)}** crossed conditions"
+        if _struct_to_remove is not None:
+            _struct_conds.pop(_struct_to_remove)
+            st.session_state["builder_structured_conditions"] = _struct_conds
+            st.rerun()
+
+        # Add new condition form
+        st.markdown("---")
+        _add_c1, _add_c2 = st.columns([1, 2])
+        with _add_c1:
+            _new_cond_name = st.text_input(
+                "Condition name",
+                key="struct_cond_name_input",
+                placeholder="e.g., Republican identity visible",
             )
+            _new_cond_type = st.selectbox(
+                "Type",
+                options=["Treatment", "Control"],
+                key="struct_cond_type_input",
+            )
+        with _add_c2:
+            _new_cond_desc = st.text_area(
+                "What do participants experience in this condition?",
+                key="struct_cond_desc_input",
+                placeholder="e.g., Participants see a profile picture with a visible Republican pin. They then play a dictator game where they decide how much to share with this person.",
+                height=100,
+                help="Describe the manipulation or experience. This helps the simulator choose appropriate behavioral patterns, personas, and effect sizes.",
+            )
+
+        _can_add_cond = bool(_new_cond_name.strip())
+        if st.button("Add condition", key="struct_add_cond_btn", disabled=not _can_add_cond, type="primary"):
+            _existing_names = [c["name"].lower() for c in _struct_conds]
+            if _new_cond_name.strip().lower() in _existing_names:
+                st.warning(f"Condition '{_new_cond_name.strip()}' already exists.")
+            else:
+                _struct_conds.append({
+                    "name": _new_cond_name.strip(),
+                    "is_control": _new_cond_type == "Control",
+                    "description": _new_cond_desc.strip(),
+                })
+                st.session_state["builder_structured_conditions"] = _struct_conds
+                # Clear input fields
+                st.session_state["struct_cond_name_input"] = ""
+                st.session_state["struct_cond_desc_input"] = ""
+                st.rerun()
+
+        # Convert structured conditions to parsed conditions for downstream
+        parsed_conditions = []
+        cond_warnings = []
+        for _sc in _struct_conds:
+            parsed_conditions.append(ParsedCondition(
+                name=_sc["name"],
+                is_control=_sc.get("is_control", False),
+            ))
+
+        # Build the text representation for downstream compatibility
+        if parsed_conditions:
+            conditions_text = ", ".join(c.name for c in parsed_conditions)
+            st.session_state["builder_conditions_text"] = conditions_text
         else:
-            st.caption(f"Detected **{len(cond_names)}** conditions: {', '.join(cond_names)}")
+            conditions_text = ""
 
-        # Feedback for unusual condition counts
-        if len(cond_names) == 1:
-            st.warning(
-                "Only 1 condition detected. An experiment needs at least 2 conditions "
-                "(e.g., control vs treatment)."
-            )
-        elif len(cond_names) > 16:
-            st.warning(
-                f"{len(cond_names)} conditions detected. This is unusually many "
-                "-- verify this is correct. Large designs need larger sample sizes."
-            )
+        # Store condition descriptions for simulation engine
+        if _struct_conds:
+            st.session_state["builder_condition_descriptions"] = {
+                sc["name"]: sc.get("description", "") for sc in _struct_conds
+            }
 
-        # Check for factorial structure
-        factors = parser.detect_factorial_structure(parsed_conditions)
-        if factors:
-            st.caption(
-                f"Factorial design detected: "
-                + " x ".join(f"{f['name']} ({', '.join(f['levels'])})" for f in factors)
-            )
+        # Status display
+        if parsed_conditions:
+            st.caption(f"**{len(parsed_conditions)}** condition(s) defined")
+            if len(parsed_conditions) < 2:
+                st.warning("At least 2 conditions needed for an experiment.")
+
+    else:
+        # ── Original text-based input (for factorial and advanced users) ──
+        st.caption(
+            "List your groups (comma-separated) or describe a factorial design. "
+            "NxM notation, factor labels, and crossed conditions are auto-detected."
+        )
+
+        conditions_placeholder = (
+            "Control, Treatment A, Treatment B\n"
+            "\n"
+            "Or factorial: 2 (Source: AI vs Human) × 3 (Frame: Gain, Loss, Neutral)"
+        )
+
+        conditions_text = st.text_area(
+            "Conditions",
+            placeholder=conditions_placeholder,
+            height=100,
+            key="builder_conditions_text",
+            help=(
+                "Describe your experimental design. Supports:\n"
+                "- Simple lists: 'Control, Treatment A, Treatment B'\n"
+                "- Factorial notation: '2x2', '3×2', '2x2x2'\n"
+                "- Labeled factorial: '3 (Source: AI vs Human vs None) × 2 (Product: Hedonic vs Utilitarian)'\n"
+                "- Parenthetical: 'Trust (high, low) and Risk (high, low)'\n"
+                "Any NxM (and NxMxK, etc.) factorial is automatically detected and crossed."
+            ),
+        )
+
+        # Live parsing preview for conditions
+        if conditions_text.strip():
+            parsed_conditions, cond_warnings = parser.parse_conditions(conditions_text)
+        else:
+            parsed_conditions, cond_warnings = [], []
+        for cw in cond_warnings:
+            st.warning(cw)
+
+        # Check for duplicate conditions
+        if parsed_conditions:
+            _cond_names_lower = [c.name.lower().strip() for c in parsed_conditions]
+            _seen = set()
+            _dupes = []
+            for cn in _cond_names_lower:
+                if cn in _seen:
+                    _dupes.append(cn)
+                _seen.add(cn)
+            if _dupes:
+                st.error(f"Duplicate condition(s) detected: {', '.join(set(_dupes))}. Each condition must be unique.")
+
+        if parsed_conditions:
+            cond_names = [c.name for c in parsed_conditions]
+            # Detect if factorial (conditions contain ×)
+            _is_factorial = any(" × " in cn for cn in cond_names)
+            if _is_factorial:
+                # Count factors from first condition
+                _n_facs = len(cond_names[0].split(" × "))
+                st.caption(
+                    f"Detected **{_n_facs}-factor factorial** design "
+                    f"with **{len(cond_names)}** crossed conditions"
+                )
+            else:
+                st.caption(f"Detected **{len(cond_names)}** conditions: {', '.join(cond_names)}")
+
+            # Feedback for unusual condition counts
+            if len(cond_names) == 1:
+                st.warning(
+                    "Only 1 condition detected. An experiment needs at least 2 conditions "
+                    "(e.g., control vs treatment)."
+                )
+            elif len(cond_names) > 16:
+                st.warning(
+                    f"{len(cond_names)} conditions detected. This is unusually many "
+                    "-- verify this is correct. Large designs need larger sample sizes."
+                )
+
+            # Check for factorial structure
+            factors = parser.detect_factorial_structure(parsed_conditions)
+            if factors:
+                st.caption(
+                    f"Factorial design detected: "
+                    + " x ".join(f"{f['name']} ({', '.join(f['levels'])})" for f in factors)
+                )
 
     # ── Section 2: Dependent Variables / Scales ─────────────────────────
     st.markdown("")
@@ -4318,20 +4439,9 @@ def _render_builder_design_review() -> None:
         unsafe_allow_html=True,
     )
 
-    # Design completeness check
-    _design_issues: list[str] = []
-    if _n_conds < 2:
-        _design_issues.append("At least 2 conditions needed")
-    if _n_scales < 1:
-        _design_issues.append("At least 1 scale/DV needed")
-    # v1.0.1.2: Block progression if open-ended questions are missing context (mandatory for builder path)
-    if _n_oe > 0 and not st.session_state.get("_builder_oe_context_complete", False):
-        _design_issues.append("Open-ended questions need context (see below)")
-    if _design_issues:
-        st.warning("Design incomplete: " + "; ".join(_design_issues))
-    else:
-        # v1.0.2.3: Design ready — top nav buttons handle navigation
-        st.success("Design complete! Use the buttons at the top to proceed to **Generate**.")
+    # v1.0.5.1: Use a placeholder for the design completeness message so it shows
+    # CURRENT values (conditions/scales may be added/removed below on this page).
+    _design_status_placeholder = st.container()
 
     # Show design improvement suggestions if available
     _builder_feedback = st.session_state.get("_builder_feedback", [])
@@ -4525,6 +4635,12 @@ def _render_builder_design_review() -> None:
     # ── Conditions ──────────────────────────────────────────────────────
     st.markdown("---")
     st.markdown("#### Conditions")
+
+    # v1.0.5.1: Initialize condition descriptions from builder structured input or empty
+    if "builder_condition_descriptions" not in st.session_state:
+        st.session_state["builder_condition_descriptions"] = {}
+    _cond_descs = st.session_state["builder_condition_descriptions"]
+
     if conditions:
         # Build a lookup: condition name → factor-level decomposition for factorial designs
         _cond_factor_map: dict[str, list[str]] = {}
@@ -4534,7 +4650,6 @@ def _render_builder_design_review() -> None:
                 for _fac in factors:
                     _fac_name = _fac.get("name", "Factor")
                     for _lev in _fac.get("levels", []):
-                        # Check if this level appears in the condition name (case-insensitive)
                         if _lev.lower() in _cond_name.lower():
                             _parts.append(f"{_fac_name}: {_lev}")
                             break
@@ -4542,95 +4657,126 @@ def _render_builder_design_review() -> None:
                     _cond_factor_map[_cond_name] = _parts
 
         cond_to_remove = None
+        _br_cond_ver = st.session_state.get("_br_cond_version", 0)
         for i, cond in enumerate(conditions):
-            cond_col, cond_btn_col = st.columns([8, 1])
-            with cond_col:
+            # v1.0.5.1: Full-width condition card with name, description, and remove button
+            _cond_card_cols = st.columns([7, 2, 0.5])
+            with _cond_card_cols[0]:
                 _factor_info = _cond_factor_map.get(cond, [])
+                _is_ctrl = any(w in cond.lower() for w in ('control', 'baseline', 'placebo', 'no treatment', 'neutral'))
+                _type_badge = "Control" if _is_ctrl else "Treatment"
+                _badge_color = "#16A34A" if _type_badge == "Control" else "#2563EB"
+                st.markdown(
+                    f'<div style="display:flex;align-items:center;gap:8px;">'
+                    f'<strong>{i+1}. {cond}</strong>'
+                    f'<span style="background:{_badge_color};color:white;font-size:0.7em;'
+                    f'padding:2px 8px;border-radius:10px;">{_type_badge}</span>'
+                    f'</div>',
+                    unsafe_allow_html=True,
+                )
                 if _factor_info:
-                    # Factorial condition: show name prominently with factor breakdown
-                    st.markdown(f"**{i+1}. {cond}**")
                     st.caption(" | ".join(_factor_info))
-                else:
-                    st.markdown(f"**{i+1}. {cond}**")
-            with cond_btn_col:
-                # Require at least 2 conditions for a valid experiment
-                if len(conditions) > 2 and st.button("X", key=f"br_remove_cond_{i}", help=f"Remove '{cond}'"):
+            with _cond_card_cols[1]:
+                # Inline description input
+                _existing_desc = _cond_descs.get(cond, "")
+                _new_desc = st.text_input(
+                    "Description",
+                    value=_existing_desc,
+                    key=f"br_cond_desc_v{_br_cond_ver}_{i}",
+                    placeholder="What do participants experience?",
+                    label_visibility="collapsed",
+                )
+                if _new_desc != _existing_desc:
+                    _cond_descs[cond] = _new_desc
+                    st.session_state["builder_condition_descriptions"] = _cond_descs
+            with _cond_card_cols[2]:
+                # v1.0.5.1: Allow removing ANY condition
+                if st.button("X", key=f"br_remove_cond_{i}", help=f"Remove '{cond}'"):
                     cond_to_remove = i
-                elif len(conditions) <= 2:
-                    st.button("X", key=f"br_remove_cond_dis_{i}", disabled=True,
-                              help="Minimum 2 conditions required for an experiment")
-        if cond_to_remove is not None:
-            conditions.pop(cond_to_remove)
-            inferred["conditions"] = conditions
-            # Recalculate factors from remaining conditions
-            inferred["factors"] = _infer_factors_from_conditions(conditions)
-            st.session_state["inferred_design"] = inferred
-            st.session_state["selected_conditions"] = conditions
-            # Clear stale effect sizes that may reference removed condition
-            st.session_state["builder_effect_sizes"] = []
-            # Update allocation with proper remainder distribution
-            _n = max(len(conditions), 1)
-            _samp = int(st.session_state.get("sample_size", 100))
-            _per = _samp // _n
-            _rem = _samp % _n
-            st.session_state["condition_allocation_n"] = {
-                c: _per + (1 if i < _rem else 0) for i, c in enumerate(conditions)
-            }
-            st.session_state["condition_allocation"] = {c: round(100.0 / _n, 1) for c in conditions}
-            # v1.0.1.5: Use st.rerun() to avoid scroll-to-top on builder condition removal
-            st.rerun()
-    else:
-        st.warning("No conditions found. Please go back and describe your conditions.")
 
-    # Allow adding custom conditions
-    _add_col1, _add_col2 = st.columns([6, 1])
-    with _add_col1:
-        extra_conds = st.text_input(
-            "Add more conditions (comma-separated)",
-            value="",
-            key="builder_review_extra_conds",
-            help="Add additional conditions not captured from your description.",
-        )
-    with _add_col2:
-        st.markdown("<br>", unsafe_allow_html=True)
-        _add_clicked = st.button("Add", key="builder_add_cond_btn")
-    if _add_clicked and extra_conds.strip():
-        new_conds = [c.strip() for c in extra_conds.split(",") if c.strip()]
-        _added = 0
-        _skipped = []
-        for c in new_conds:
-            # Skip if duplicate or contains factorial separator (would break factor parsing)
-            if c in conditions:
-                continue
-            if " × " in c or " x " in c.lower():
-                _skipped.append(c)
-                continue
-            if len(c) > 200:
-                _skipped.append(c[:50] + "... (too long)")
-                continue
-            conditions.append(c)
-            _added += 1
-        if _skipped:
-            st.warning(f"Skipped invalid conditions: {', '.join(_skipped)}")
-        if _added > 0:
+        if cond_to_remove is not None:
+            _removed_cond = conditions.pop(cond_to_remove)
+            # Clean up description for removed condition
+            _cond_descs.pop(_removed_cond, None)
+            st.session_state["builder_condition_descriptions"] = _cond_descs
             inferred["conditions"] = conditions
-            # Recalculate factors from updated conditions
             inferred["factors"] = _infer_factors_from_conditions(conditions)
             st.session_state["inferred_design"] = inferred
             st.session_state["selected_conditions"] = conditions
-            # Clear stale effect sizes that may reference removed/added conditions
             st.session_state["builder_effect_sizes"] = []
-            # Update allocation with proper remainder distribution
             _n = max(len(conditions), 1)
             _samp = int(st.session_state.get("sample_size", 100))
             _per = _samp // _n
             _rem = _samp % _n
             st.session_state["condition_allocation_n"] = {
-                c: _per + (1 if i < _rem else 0) for i, c in enumerate(conditions)
+                c: _per + (1 if idx < _rem else 0) for idx, c in enumerate(conditions)
             }
             st.session_state["condition_allocation"] = {c: round(100.0 / _n, 1) for c in conditions}
-            # v1.0.1.5: Use st.rerun() to avoid scroll-to-top on builder condition addition
+            st.session_state["_br_cond_version"] = _br_cond_ver + 1
             st.rerun()
+
+        # v1.0.5.1: Show guidance about descriptions
+        _n_with_desc = sum(1 for c in conditions if _cond_descs.get(c, "").strip())
+        if _n_with_desc < len(conditions):
+            st.caption(
+                f"{_n_with_desc}/{len(conditions)} conditions have descriptions. "
+                "Adding descriptions helps generate more realistic simulated data."
+            )
+        else:
+            st.caption("All conditions have descriptions.")
+    else:
+        st.warning("No conditions defined. Add conditions below to proceed.")
+
+    # Allow adding custom conditions — with name and optional description
+    with st.expander("Add condition", expanded=not bool(conditions) or len(conditions) < 2):
+        _add_c1, _add_c2 = st.columns([1, 2])
+        with _add_c1:
+            extra_cond_name = st.text_input(
+                "Condition name",
+                key="builder_review_extra_conds",
+                placeholder="e.g., Democrat identity visible",
+                help="Enter the name for the new condition.",
+            )
+        with _add_c2:
+            extra_cond_desc = st.text_area(
+                "What do participants experience? (recommended)",
+                key="builder_review_extra_desc",
+                placeholder="e.g., Participants see a profile with visible Democrat campaign pin, then play an economic sharing game.",
+                height=68,
+                help="Describe the manipulation. This helps the simulator generate scientifically realistic behavioral patterns.",
+            )
+        _can_add = bool(extra_cond_name.strip())
+        if st.button("Add condition", key="builder_add_cond_btn", disabled=not _can_add, type="primary"):
+            _nc = extra_cond_name.strip()
+            if _nc in conditions:
+                st.warning(f"Condition '{_nc}' already exists.")
+            elif " × " in _nc or " x " in _nc.lower():
+                st.warning("Cannot add factorial conditions manually. Use text mode on the Study Input page.")
+            elif len(_nc) > 200:
+                st.warning("Condition name is too long (max 200 characters).")
+            else:
+                conditions.append(_nc)
+                # Save description
+                if extra_cond_desc.strip():
+                    _cond_descs[_nc] = extra_cond_desc.strip()
+                    st.session_state["builder_condition_descriptions"] = _cond_descs
+                inferred["conditions"] = conditions
+                inferred["factors"] = _infer_factors_from_conditions(conditions)
+                st.session_state["inferred_design"] = inferred
+                st.session_state["selected_conditions"] = conditions
+                st.session_state["builder_effect_sizes"] = []
+                _n = max(len(conditions), 1)
+                _samp = int(st.session_state.get("sample_size", 100))
+                _per = _samp // _n
+                _rem = _samp % _n
+                st.session_state["condition_allocation_n"] = {
+                    c: _per + (1 if idx < _rem else 0) for idx, c in enumerate(conditions)
+                }
+                st.session_state["condition_allocation"] = {c: round(100.0 / _n, 1) for c in conditions}
+                st.session_state["builder_review_extra_conds"] = ""
+                st.session_state["builder_review_extra_desc"] = ""
+                st.session_state["_br_cond_version"] = st.session_state.get("_br_cond_version", 0) + 1
+                st.rerun()
 
     # ── Factorial Structure ─────────────────────────────────────────────
     if factors:
@@ -5002,8 +5148,10 @@ def _render_builder_design_review() -> None:
             col_idx = i % cols_per_row
             with input_cols[col_idx]:
                 display_name = _clean_condition_name(cond)
-                if len(display_name) > 22:
-                    display_name = display_name[:20] + "..."
+                full_name = display_name  # Keep full name for tooltip
+                # v1.0.5.1: Wider truncation (35 chars) + full name in help tooltip
+                if len(display_name) > 37:
+                    display_name = display_name[:35] + "..."
                 current_n = allocation_n.get(cond, sample_size // n_conds)
                 current_n = min(max(1, current_n), sample_size)
 
@@ -5014,7 +5162,7 @@ def _render_builder_design_review() -> None:
                     value=current_n,
                     step=1,
                     key=f"br_alloc_n_v{_br_alloc_ver}_{i}",
-                    help=f"Number of participants in '{display_name}'"
+                    help=f"Participants in: {full_name}"
                 )
                 new_allocation_n[cond] = new_n
 
@@ -5141,19 +5289,35 @@ def _render_builder_design_review() -> None:
                 # Clear stale effect sizes when checkbox is unchecked
                 st.session_state["builder_effect_sizes"] = []
 
+    # v1.0.5.1: Fill the design status placeholder with CURRENT values
+    # (all conditions/scales/OE edits above have been applied by this point)
+    with _design_status_placeholder:
+        _final_issues: list[str] = []
+        _final_n_conds = len(conditions) if conditions else 0
+        _final_n_scales = len(scales) if scales else 0
+        _final_n_oe = len(open_ended) if open_ended else 0
+        if _final_n_conds < 2:
+            _final_issues.append(f"At least 2 conditions needed (currently {_final_n_conds})")
+        if _final_n_scales < 1:
+            _final_issues.append("At least 1 scale/DV needed")
+        if _final_n_oe > 0 and not st.session_state.get("_builder_oe_context_complete", False):
+            _final_issues.append("Open-ended questions need context (see below)")
+        if _final_issues:
+            st.warning("Design incomplete: " + "; ".join(_final_issues))
+        else:
+            st.success("Design complete! Use the buttons at the top to proceed to **Generate**.")
+
     # ── Confirmation ────────────────────────────────────────────────────
     st.markdown("---")
-    if conditions and scales:
-        st.success(
-            f"Design ready: **{len(conditions)}** conditions, **{len(scales)}** scale(s), "
-            f"**{sample}** participants."
-        )
+    if conditions and scales and len(conditions) >= 2:
         st.info(
-            "Your design is fully configured. Use the buttons at the top to proceed to "
-            "**Generate** and simulate your data."
+            f"Design ready: **{len(conditions)}** conditions, **{len(scales)}** scale(s), "
+            f"**{sample}** participants. Use the **Continue** button at the top to proceed."
         )
-    else:
-        st.error("Design incomplete. Please go back and provide conditions and scales.")
+    elif not conditions or len(conditions) < 2:
+        st.error(f"Need at least 2 conditions (currently {len(conditions) if conditions else 0}). Add conditions above.")
+    elif not scales:
+        st.error("Need at least 1 scale/DV. Go back to Study Input and add scales.")
 
     # ── Proceed to Generate guidance ───────────────────────────────────
     if conditions and scales:
@@ -7873,6 +8037,8 @@ if active_page == 2:
                     if _nc and _nc.lower() not in _all_existing:
                         custom_conditions.append(_nc)
                         st.session_state["custom_conditions"] = custom_conditions
+                        # v1.0.5.1: Clear input after successful add
+                        st.session_state["new_condition_input"] = ""
                         st.rerun()
                     elif _nc and _nc.lower() in _all_existing:
                         st.warning(f"Condition '{_nc}' already exists (case-insensitive match).")
@@ -7909,6 +8075,29 @@ if active_page == 2:
         else:
             st.error("No conditions defined. Select or add at least one condition above.")
             all_conditions = []
+
+        # v1.0.5.1: Condition descriptions (optional, improves simulation realism)
+        if all_conditions and len(all_conditions) >= 2:
+            if "builder_condition_descriptions" not in st.session_state:
+                st.session_state["builder_condition_descriptions"] = {}
+            _qsf_cond_descs = st.session_state["builder_condition_descriptions"]
+            with st.expander("Describe your conditions (recommended for better simulation)", expanded=False):
+                st.caption(
+                    "Briefly describe what participants experience in each condition. "
+                    "This helps the simulator choose appropriate behavioral patterns and effect sizes."
+                )
+                for _ci, _cond in enumerate(all_conditions):
+                    _c_clean = _clean_condition_name(_cond)
+                    _existing_d = _qsf_cond_descs.get(_cond, "")
+                    _new_d = st.text_input(
+                        f"{_c_clean}",
+                        value=_existing_d,
+                        key=f"qsf_cond_desc_{_ci}",
+                        placeholder="e.g., Participants read a positive framing of the product",
+                    )
+                    if _new_d != _existing_d:
+                        _qsf_cond_descs[_cond] = _new_d
+                        st.session_state["builder_condition_descriptions"] = _qsf_cond_descs
 
         # ── Design Structure ────────────────────────────────────────────
         st.markdown("#### Design Structure")
@@ -8044,8 +8233,10 @@ if active_page == 2:
                 with input_cols[col_idx]:
                     # Clean display name
                     display_name = _clean_condition_name(cond)
-                    if len(display_name) > 22:
-                        display_name = display_name[:20] + "..."
+                    full_name = display_name  # Keep full name for tooltip
+                    # v1.0.5.1: Wider truncation (35 chars) + full name in help tooltip
+                    if len(display_name) > 37:
+                        display_name = display_name[:35] + "..."
 
                     current_n = allocation_n.get(cond, sample_size // n_conditions)
                     # Ensure current_n doesn't exceed sample_size
@@ -8059,7 +8250,7 @@ if active_page == 2:
                         value=current_n,
                         step=1,
                         key=f"alloc_n_v{alloc_version}_{i}",
-                        help=f"Number of participants in '{display_name}'"
+                        help=f"Participants in: {full_name}"
                     )
                     new_allocation_n[cond] = new_n
 
@@ -9131,11 +9322,15 @@ if active_page == 2:
         _b_design = st.session_state.get("inferred_design", {})
         _b_conds = _b_design.get("conditions", []) if isinstance(_b_design, dict) else []
         _b_scales = _b_design.get("scales", []) if isinstance(_b_design, dict) else []
-        _p3_ready = len(_b_conds) >= 2 and len(_b_scales) >= 1
+        _b_oe = _b_design.get("open_ended_questions", []) if isinstance(_b_design, dict) else []
+        _b_oe_ctx_ok = st.session_state.get("_builder_oe_context_complete", True) if _b_oe else True
+        _p3_ready = len(_b_conds) >= 2 and len(_b_scales) >= 1 and _b_oe_ctx_ok
         _chk_items_final: list = [
             (len(_b_conds) >= 2, f"Conditions ({len(_b_conds)})"),
             (len(_b_scales) >= 1, f"DVs / scales ({len(_b_scales)})"),
         ]
+        if _b_oe and not _b_oe_ctx_ok:
+            _chk_items_final.append((False, "OE context needed"))
     else:
         # QSF path: readiness based on checkboxes and design state
         _chk_has_conds = bool(
@@ -10105,6 +10300,12 @@ if active_page == 3:
         _engine_missing_rate = float(inferred.get("missing_data_rate", 0.03))
         _engine_dropout_rate = float(inferred.get("dropout_rate", 0.05))
 
+        # v1.0.5.1: Inject condition descriptions into study_context for the engine
+        _engine_study_context = dict(inferred.get("study_context", {}))
+        _cond_descs_for_engine = st.session_state.get("builder_condition_descriptions", {})
+        if _cond_descs_for_engine:
+            _engine_study_context["condition_descriptions"] = _cond_descs_for_engine
+
         engine = EnhancedSimulationEngine(
             study_title=title,
             study_description=desc,
@@ -10120,7 +10321,7 @@ if active_page == 3:
             exclusion_criteria=exclusion,
             custom_persona_weights=custom_persona_weights,
             open_ended_questions=open_ended_questions_for_engine,
-            study_context=inferred.get("study_context", {}),
+            study_context=_engine_study_context,
             condition_allocation=condition_allocation,
             seed=None,
             mode="pilot" if not st.session_state.get("advanced_mode", False) else "final",

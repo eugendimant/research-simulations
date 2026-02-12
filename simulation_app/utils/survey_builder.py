@@ -513,10 +513,13 @@ class SurveyDescriptionParser:
         #   "1 control (no identity) + 2 treatments (Rep visible, Dem visible)"
         _ctl_treat_text = text_clean.replace(' + ', '\n').replace(' +\n', '\n')
         _ct_lines = [l.strip() for l in _ctl_treat_text.split('\n') if l.strip()]
-        # Filter bare header lines ("Conditions:", "Groups:", "Experimental conditions:")
+        # Filter bare header lines ("Conditions:", "Groups:", "3 Conditions:")
         _ct_lines = [l for l in _ct_lines if not re.match(
-            r'^(?:conditions?|groups?|experimental\s+(?:conditions?|design|groups?))\s*:?\s*$',
+            r'^(?:\d+\s+)?(?:conditions?|groups?|experimental\s+(?:conditions?|design|groups?))\s*:?\s*$',
             l, re.IGNORECASE)]
+        # v1.0.5.1: Strip leading list markers (-, •, *, numbered) before matching
+        _ct_lines = [re.sub(r'^[-•*]\s*|^\d+[.)]\s*', '', l).strip() for l in _ct_lines]
+        _ct_lines = [l for l in _ct_lines if l]  # Remove lines that became empty after stripping
         _ct_conditions: List[ParsedCondition] = []
         _ct_pattern = re.compile(
             r'^(?:(\d+)\s+)?'          # Optional count
@@ -534,10 +537,13 @@ class SurveyDescriptionParser:
                     # Multiple conditions: split by comma
                     _ct_items = [s.strip() for s in _ct_desc.split(',') if s.strip()]
                     for item in _ct_items:
-                        _ct_conditions.append(ParsedCondition(
-                            name=item,
-                            is_control=self._is_control_condition(item),
-                        ))
+                        # v1.0.5.1: Strip leading sub-numbering like "(1)", "(2)", "1)", "1."
+                        item = re.sub(r'^\(?(\d+)\)?\s*\.?\s*', '', item).strip()
+                        if item:
+                            _ct_conditions.append(ParsedCondition(
+                                name=item,
+                                is_control=self._is_control_condition(item),
+                            ))
                 else:
                     _ct_conditions.append(ParsedCondition(
                         name=_ct_desc,
