@@ -1,3 +1,15 @@
+
+## 2026-02-12 — v1.0.6.8
+### Critical Fixes
+- Enforced LLM-first open-ended generation gate in the Generate UI: when LLM providers are unavailable, generation is blocked unless the user either provides a key or explicitly allows one-run final fallback.
+- Added `allow_template_fallback` policy plumbing from app → simulation engine → LLM generator.
+- `LLMResponseGenerator` now raises a hard failure when all providers fail and fallback is disabled, preventing silent template substitution.
+- Fixed a major data-integrity bug where OE dedup logic accidentally mutated `CONDITION` and `_PERSONA` columns; dedup now scopes strictly to open-ended columns.
+- Added instructor report condition canonicalization to recover canonical condition labels from contaminated values when possible.
+
+### Version Synchronization
+- Updated to v1.0.6.8 across: app.py, utils/__init__.py, qsf_preview.py, response_library.py, README.md, enhanced_simulation_engine.py, llm_response_generator.py.
+
 # Agent Change Log
 
 ## 2026-02-12 — v1.0.5.9

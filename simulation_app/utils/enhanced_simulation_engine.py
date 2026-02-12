@@ -45,7 +45,7 @@ This module is designed to run inside a `utils/` package (i.e., imported as
 """
 
 # Version identifier to help track deployed code
-__version__ = "1.0.5.8"  # v1.0.5.8: User API key fallback, anti-detection realism, OE skip-rate, cross-participant dedup, zigzag prevention
+__version__ = "1.0.6.8"  # v1.0.6.8: LLM-first enforcement and OE dedup safety fixes
 
 # =============================================================================
 # SCIENTIFIC FOUNDATIONS FOR SIMULATION
@@ -212,7 +212,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple, Set, Union
 
 import hashlib
-import logging
+import os
 import random
 import re
 
@@ -2699,6 +2699,7 @@ class EnhancedSimulationEngine:
         missing_data_rate: float = 0.0,  # 0.0 = none; 0.04 = 4% item-level missingness
         dropout_rate: float = 0.0,  # 0.0 = none; 0.07 = 7% participant dropout
         missing_data_mechanism: str = "realistic",  # "none", "mcar", "realistic"
+        allow_template_fallback: bool = True,
     ):
         self.study_title = str(study_title or "").strip()
         self.study_description = str(study_description or "").strip()
@@ -2741,6 +2742,7 @@ class EnhancedSimulationEngine:
             missing_data_mechanism if missing_data_mechanism in ("none", "mcar", "realistic")
             else "realistic"
         )
+        self.allow_template_fallback = bool(allow_template_fallback)
         self.mode = (mode or "pilot").strip().lower()
         if self.mode not in ("pilot", "final"):
             self.mode = "pilot"
@@ -2866,6 +2868,7 @@ class EnhancedSimulationEngine:
         # Initialize LLM-powered response generator (optional upgrade)
         # Must come after validation_log init so _log() works
         self.llm_generator = None
+        self.llm_init_error: str = ""
         try:
             from .llm_response_generator import LLMResponseGenerator
             # LLMResponseGenerator has a built-in default API key;
@@ -2877,6 +2880,7 @@ class EnhancedSimulationEngine:
                 study_description=self.study_description,
                 seed=self.seed,
                 fallback_generator=self.comprehensive_generator,
+                allow_template_fallback=self.allow_template_fallback,
                 batch_size=20,
                 all_conditions=self.conditions if self.conditions else None,
             )
@@ -2893,6 +2897,7 @@ class EnhancedSimulationEngine:
                     self.llm_generator._reset_all_providers()
                     self.llm_generator._api_available = True
         except Exception as _llm_err:
+            self.llm_init_error = str(_llm_err)
             self._log(f"LLM generator not available (using templates): {_llm_err}")
 
     @staticmethod
@@ -7110,6 +7115,41 @@ class EnhancedSimulationEngine:
         response = max(scale_min, min(scale_max, round(response)))
         result = int(response)
 
+        # =====================================================================
+        # STEP 11: Human-like micro-pattern adjustments (v1.0.6.9)
+        # Adds realistic item-position drift, streak inertia, and occasional
+        # correction behavior without overwhelming experimental effects.
+        # =====================================================================
+        _p_idx = getattr(self, "_current_participant_idx", None)
+        _item_pos = int(getattr(self, "_current_item_position", 1))
+        _item_total = int(max(1, getattr(self, "_current_item_total", 1)))
+        if isinstance(_p_idx, int) and _p_idx >= 0:
+            _progress = _item_pos / max(1, _item_total)
+            _attn = _safe_trait_value(traits.get("attention_level"), 0.7)
+            _cons = _safe_trait_value(traits.get("response_consistency"), 0.6)
+            _ext = _safe_trait_value(traits.get("extremity"), 0.3)
+
+            # Fatigue drift: slight move toward midpoint later in long scales
+            if _item_total >= 5 and _progress >= 0.6 and _attn < 0.6:
+                _mid = (scale_min + scale_max) / 2.0
+                _shrink = 0.12 + (0.6 - _attn) * 0.20
+                result = int(round(result + (_mid - result) * _shrink))
+
+            # Streak inertia: low-consistency participants sometimes repeat prior value
+            if not hasattr(self, "_item_response_memory"):
+                self._item_response_memory = {}
+            _prev = self._item_response_memory.get((_p_idx, variable_name))
+            if _prev is not None and _cons < 0.55 and rng.random() < (0.08 + (0.55 - _cons) * 0.20):
+                result = int(round((_prev + result) / 2.0))
+
+            # Human correction: engaged respondents occasionally counter-correct extremes
+            if _attn > 0.75 and _ext < 0.5 and rng.random() < 0.05:
+                if result in (scale_min, scale_max):
+                    result += -1 if result == scale_max else 1
+
+            # Store memory for next item in same construct
+            self._item_response_memory[(_p_idx, variable_name)] = int(result)
+
         # SAFETY CHECK: Final validation that result is within bounds
         # This guards against any floating point edge cases
         if result < scale_min:
@@ -7470,6 +7510,8 @@ class EnhancedSimulationEngine:
                 if resp and resp.strip():
                     return resp
             except Exception as _llm_gen_err:
+                if "template fallback is disabled" in str(_llm_gen_err).lower():
+                    raise
                 # v1.0.5.7: Log at WARNING (not debug) so failures are visible
                 logger.warning("LLM generate() error: %s", _llm_gen_err)
                 self._log(f"WARNING: LLM generation failed, falling back: {_llm_gen_err}")
@@ -8822,6 +8864,8 @@ class EnhancedSimulationEngine:
                 for i in range(n):
                     p_seed = (self.seed + i * 100 + col_hash) % (2**31)
                     self._current_participant_idx = i  # v1.0.4.9: for reverse tracking
+                    self._current_item_position = item_num
+                    self._current_item_total = num_items
                     val = self._generate_scale_response(
                         scale_min,
                         scale_max,
@@ -8948,6 +8992,8 @@ class EnhancedSimulationEngine:
             for i in range(n):
                 p_seed = (self.seed + i * 100 + col_hash) % (2**31)
                 self._current_participant_idx = i  # v1.0.4.9: for reverse tracking
+                self._current_item_position = 1
+                self._current_item_total = 1
                 val = self._generate_scale_response(
                     var_min, var_max, all_traits[i], False, conditions.iloc[i], var_name, p_seed
                 )
@@ -9245,10 +9291,12 @@ class EnhancedSimulationEngine:
         # v1.0.0 CRITICAL FIX: Post-processing validation to detect and fix duplicate responses
         # Check each participant's responses across all open-ended questions
         # Use actual column names from data (accounting for any renames due to collisions)
-        open_ended_cols = [col for col in data
-                          if isinstance(data[col], list)
-                          and len(data[col]) > 0
-                          and isinstance(data[col][0], str)]
+        open_ended_cols = []
+        for q in self.open_ended_questions:
+            _candidate = _clean_column_name(str(q.get("name", "Open_Response")))
+            if (_candidate in data and isinstance(data[_candidate], list)
+                    and len(data[_candidate]) > 0 and isinstance(data[_candidate][0], str)):
+                open_ended_cols.append(_candidate)
         if len(open_ended_cols) > 1:
             for i in range(n):
                 participant_responses = {}
@@ -9544,6 +9592,7 @@ class EnhancedSimulationEngine:
             # v1.4.6: LLM response generation stats
             # v1.0.6.1: Guard against .stats being None
             "llm_response_stats": (getattr(self.llm_generator, 'stats', None) or {"llm_calls": 0, "fallback_uses": 0}) if self.llm_generator else {"llm_calls": 0, "fallback_uses": 0},
+            "llm_init_error": self.llm_init_error,
             # v1.4.3: Column descriptions for data dictionary / codebook generation
             "column_descriptions": {col: desc for col, desc in self.column_info},
             # v1.4.11: Scale generation log — maps scale names to actual generated columns
