@@ -53,8 +53,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.0.6.3"
-BUILD_ID = "20260212-v10603-report-llm-oe-admin"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.0.6.4"
+BUILD_ID = "20260212-v10604-general-purpose-topics"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -119,7 +119,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.0.6.3"  # v1.0.6.3: Fix report N=1, LLM stats, OE quality, admin persistence
+APP_VERSION = "1.0.6.4"  # v1.0.6.4: General-purpose topic extraction, heuristic entity detection
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -1439,16 +1439,28 @@ def _get_sample_text_response(
         _name_stop = {'open', 'ended', 'text', 'question', 'response', 'answer'}
         topic_words = [w for w in _name_words if w not in _name_stop][:4]
 
-    _proper_nouns = {'trump', 'biden', 'obama', 'clinton', 'harris', 'congress',
-                     'republican', 'democrat', 'america', 'american', 'covid',
-                     'facebook', 'google', 'amazon', 'apple', 'microsoft', 'tesla',
-                     'maga', 'gop', 'nato', 'china', 'russia', 'europe', 'mexico',
-                     'instagram', 'twitter', 'tiktok', 'youtube', 'chatgpt',
-                     'netflix', 'disney', 'uber', 'airbnb', 'spotify'}
+    # v1.0.6.4: GENERAL-PURPOSE entity detection via heuristics. Detects
+    # capitalized words and acronyms from the ORIGINAL (non-lowered) source text.
+    # Works for ANY topic — not just pre-listed names.
+    _orig_source = f"{question_context or ''} {question_text or ''} {condition or ''}"
+    _detected_entities: set = set()
+    # Heuristic 1: Capitalized words mid-sentence
+    for _cw in _re.findall(r'(?<=[a-z]\s)([A-Z][a-zA-Z]{2,})', _orig_source):
+        if _cw.lower() not in _stop:
+            _detected_entities.add(_cw.lower())
+    # Heuristic 2: ALL-CAPS acronyms (2-6 chars)
+    for _acr in _re.findall(r'\b([A-Z]{2,6})\b', _orig_source):
+        if _acr.lower() not in _stop:
+            _detected_entities.add(_acr.lower())
+    # Heuristic 3: First capitalized word in source (often the topic)
+    _first_cap = _re.findall(r'^([A-Z][a-zA-Z]{3,})', _orig_source.strip())
+    for _fc in _first_cap:
+        if _fc.lower() not in _stop:
+            _detected_entities.add(_fc.lower())
 
-    # v1.0.5.5: Prefer named entities as topic, then max 2 content words
-    _entities_in_words = [w for w in topic_words if w.lower() in _proper_nouns]
-    _content_in_words = [w for w in topic_words if w.lower() not in _proper_nouns]
+    # Prefer named entities as topic, then max 2 content words
+    _entities_in_words = [w for w in topic_words if w.lower() in _detected_entities]
+    _content_in_words = [w for w in topic_words if w.lower() not in _detected_entities]
 
     if _phrase_topic:
         subject_phrase = _phrase_topic

@@ -7645,66 +7645,46 @@ class EnhancedSimulationEngine:
             'conformity': 'conformity and social influence',
             'deception': 'honesty and deceptive behavior',
             'attachment': 'interpersonal attachment and relationships',
-            # v1.0.6.3: Additional domain hints for broader topic coverage
-            'conspiracy': 'conspiracy theories and beliefs about hidden forces',
-            'misinformation': 'misinformation, fake news, and media credibility',
-            'belief': 'personal beliefs and worldviews',
-            'fake_news': 'fake news detection and media literacy',
-            'media': 'media consumption and information sources',
-            'religion': 'religious beliefs and spiritual experiences',
-            'technology': 'technology use and digital behavior',
-            'privacy': 'privacy concerns and data sharing',
-            'justice': 'justice perceptions and fairness judgments',
-            'anxiety': 'anxiety and worry experiences',
-            'depression': 'mood and depressive experiences',
-            'addiction': 'addictive behaviors and substance use',
-            'trauma': 'traumatic experiences and coping',
-            'motivation': 'motivation and goal pursuit',
-            'creativity': 'creative thinking and problem solving',
-            'memory': 'memory and recall experiences',
-            'aging': 'aging experiences and perceptions',
-            'food': 'food preferences and eating behavior',
-            'exercise': 'exercise habits and physical activity',
-            'sleep': 'sleep quality and habits',
-            'social_media': 'social media use and online behavior',
-            'dating': 'dating preferences and romantic experiences',
-            'parenting': 'parenting approaches and child-rearing',
-            'immigration': 'immigration attitudes and policy preferences',
-            'climate_change': 'climate change beliefs and environmental action',
-            'vaccine': 'vaccination attitudes and health decisions',
-            'gun': 'gun policy attitudes and safety perceptions',
-            'abortion': 'reproductive rights and policy attitudes',
         }
         _domain_hint = ""
         for _dk, _dv in _domain_topic_hints.items():
             if _dk in study_domain.lower() or _dk in (self.study_title or '').lower():
                 _domain_hint = _dv
                 break
+        # v1.0.6.4: General-purpose fallback — when no domain hint matched,
+        # construct a topic description from the extracted topic words. This
+        # ensures ANY topic (not just hardcoded domains) gets a meaningful hint.
+        if not _domain_hint and _topic_words:
+            _domain_hint = ' '.join(_topic_words[:4])
 
         # Strategy 5 (v1.0.5.0): Entity extraction — identify named entities
         # (people, organizations, concepts) that should appear in responses
-        _proper_nouns = {
-            'trump', 'biden', 'obama', 'clinton', 'harris', 'congress',
-            'republican', 'democrat', 'america', 'american', 'covid',
-            'facebook', 'google', 'amazon', 'apple', 'microsoft', 'tesla',
-            'maga', 'gop', 'nato', 'china', 'russia', 'europe', 'mexico',
-            'instagram', 'twitter', 'tiktok', 'youtube', 'chatgpt', 'openai',
-            'walmart', 'nike', 'starbucks', 'uber', 'airbnb', 'spotify',
-            'netflix', 'disney', 'pfizer', 'moderna', 'climate', 'ukraine',
-            'gaza', 'israel', 'palestine', 'brexit', 'samsung', 'sony',
-            # v1.0.6.3: Conspiracy, media, and broader entity coverage
-            'qanon', 'illuminati', 'fauci', 'vaccine', 'pentagon',
-            'cia', 'fbi', 'nsa', 'nasa', 'who', 'cdc', 'un',
-            'fox_news', 'cnn', 'msnbc', 'breitbart', 'infowars',
-            'alex_jones', 'elon_musk', 'zuckerberg', 'bezos',
-            'desantis', 'pence', 'pelosi', 'mcconnell', 'sanders',
-            'warren', 'aoc', 'supreme_court', 'bitcoin', 'crypto',
-        }
+        # v1.0.6.4: GENERAL-PURPOSE heuristic detection. Instead of relying on
+        # a hardcoded list, detect entities from the ORIGINAL (non-lowered) text
+        # by finding capitalized words that aren't at sentence starts. This works
+        # for ANY topic — political figures, brands, diseases, places, etc.
         _entities = []
-        _all_source = f"{_qt_for_topic} {condition or ''}".lower()
-        for _ent in _proper_nouns:
-            if _ent in _all_source:
-                _entities.append(_ent.capitalize())
+        _original_source = f"{question_context or _original_question_text or question_text or ''} {condition or ''}"
+        # Heuristic 1: Words capitalized mid-sentence (proper nouns)
+        _orig_words = _ctx_re.findall(r'(?<=[a-z]\s)([A-Z][a-zA-Z]{2,})', _original_source)
+        _entities.extend(w for w in _orig_words if w.lower() not in _ctx_stop)
+        # Heuristic 2: ALL-CAPS words of 2+ letters (acronyms like AI, FBI, GDP)
+        _acronyms = _ctx_re.findall(r'\b([A-Z]{2,})\b', _original_source)
+        _entities.extend(a for a in _acronyms if len(a) <= 6 and a.lower() not in _ctx_stop)
+        # Heuristic 3: Words after "about", "regarding", "on" that are capitalized
+        _after_prep = _ctx_re.findall(
+            r'(?:about|regarding|on|toward|towards|of)\s+([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)*)',
+            _original_source)
+        _entities.extend(_after_prep)
+        # Deduplicate while preserving order
+        _seen_ents: set = set()
+        _unique_entities: list = []
+        for _e in _entities:
+            _el = _e.lower()
+            if _el not in _seen_ents and _el not in _ctx_stop:
+                _seen_ents.add(_el)
+                _unique_entities.append(_e)
+        _entities = _unique_entities[:5]
 
         # Strategy 6 (v1.0.5.0): Question intent classification
         # Determines what KIND of response the question expects
