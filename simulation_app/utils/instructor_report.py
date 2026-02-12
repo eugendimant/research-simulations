@@ -2181,7 +2181,7 @@ class ComprehensiveInstructorReport:
                         lines.append(f"| {col} | {stats['mean']:.2f} | {stats['std']:.2f} | {stats['min']:.0f} | {stats['max']:.0f} |")
                 lines.append("")
 
-                # Composite calculation
+                # v1.0.5.4: Compute composite for multi-item scales, use raw values for single-item DVs
                 if len(scale_cols) >= 2:
                     composite = df_clean[scale_cols].mean(axis=1)
                     lines.append("#### Composite Score (Mean)")
@@ -2191,47 +2191,50 @@ class ComprehensiveInstructorReport:
                     lines.append(f"- SD: {comp_stats['std']:.3f}")
                     lines.append(f"- Range: [{comp_stats['min']:.2f}, {comp_stats['max']:.2f}]")
                     lines.append("")
+                else:
+                    # Single-item DV — use the column directly (no composite needed)
+                    composite = df_clean[scale_cols[0]]
 
-                    # By condition
-                    if "CONDITION" in df_clean.columns:
-                        lines.append("#### By Condition")
-                        lines.append("")
-                        lines.append("| Condition | N | Mean | SD | 95% CI |")
-                        lines.append("|-----------|---|------|----|---------| ")
+                # v1.0.5.4: By-condition analysis runs for ALL DVs (single-item and multi-item)
+                if "CONDITION" in df_clean.columns:
+                    lines.append("#### By Condition")
+                    lines.append("")
+                    lines.append("| Condition | N | Mean | SD | 95% CI |")
+                    lines.append("|-----------|---|------|----|---------| ")
 
-                        df_clean_copy = df_clean.copy()
-                        df_clean_copy["_composite"] = composite
+                    df_clean_copy = df_clean.copy()
+                    df_clean_copy["_composite"] = composite
 
-                        for cond in conditions:
-                            cond_data = df_clean_copy[df_clean_copy["CONDITION"] == cond]["_composite"]
-                            if len(cond_data) > 0:
-                                mean = cond_data.mean()
-                                sd = cond_data.std()
-                                n = len(cond_data)
-                                se = sd / (n ** 0.5) if n > 0 else 0
-                                ci_low = mean - 1.96 * se
-                                ci_high = mean + 1.96 * se
-                                lines.append(f"| {cond} | {n} | {mean:.3f} | {sd:.3f} | [{ci_low:.3f}, {ci_high:.3f}] |")
-                        lines.append("")
+                    for cond in conditions:
+                        cond_data = df_clean_copy[df_clean_copy["CONDITION"] == cond]["_composite"]
+                        if len(cond_data) > 0:
+                            mean = cond_data.mean()
+                            sd = cond_data.std()
+                            n = len(cond_data)
+                            se = sd / (n ** 0.5) if n > 0 else 0
+                            ci_low = mean - 1.96 * se
+                            ci_high = mean + 1.96 * se
+                            lines.append(f"| {cond} | {n} | {mean:.3f} | {sd:.3f} | [{ci_low:.3f}, {ci_high:.3f}] |")
+                    lines.append("")
 
-                        # Effect size (Cohen's d for first two conditions)
-                        if len(conditions) >= 2:
-                            cond1_data = df_clean_copy[df_clean_copy["CONDITION"] == conditions[0]]["_composite"]
-                            cond2_data = df_clean_copy[df_clean_copy["CONDITION"] == conditions[1]]["_composite"]
-                            if len(cond1_data) > 1 and len(cond2_data) > 1:
-                                pooled_std = ((cond1_data.std()**2 + cond2_data.std()**2) / 2) ** 0.5
-                                if pooled_std > 0:
-                                    cohens_d = (cond1_data.mean() - cond2_data.mean()) / pooled_std
-                                    lines.append(f"**Effect size (Cohen's d, {conditions[0]} vs {conditions[1]}):** {cohens_d:.3f}")
-                                    if abs(cohens_d) < 0.2:
-                                        lines.append("  → Negligible effect")
-                                    elif abs(cohens_d) < 0.5:
-                                        lines.append("  → Small effect")
-                                    elif abs(cohens_d) < 0.8:
-                                        lines.append("  → Medium effect")
-                                    else:
-                                        lines.append("  → Large effect")
-                                    lines.append("")
+                    # Effect size (Cohen's d for first two conditions)
+                    if len(conditions) >= 2:
+                        cond1_data = df_clean_copy[df_clean_copy["CONDITION"] == conditions[0]]["_composite"]
+                        cond2_data = df_clean_copy[df_clean_copy["CONDITION"] == conditions[1]]["_composite"]
+                        if len(cond1_data) > 1 and len(cond2_data) > 1:
+                            pooled_std = ((cond1_data.std()**2 + cond2_data.std()**2) / 2) ** 0.5
+                            if pooled_std > 0:
+                                cohens_d = (cond1_data.mean() - cond2_data.mean()) / pooled_std
+                                lines.append(f"**Effect size (Cohen's d, {conditions[0]} vs {conditions[1]}):** {cohens_d:.3f}")
+                                if abs(cohens_d) < 0.2:
+                                    lines.append("  → Negligible effect")
+                                elif abs(cohens_d) < 0.5:
+                                    lines.append("  → Small effect")
+                                elif abs(cohens_d) < 0.8:
+                                    lines.append("  → Medium effect")
+                                else:
+                                    lines.append("  → Large effect")
+                                lines.append("")
 
             lines.append("")
 

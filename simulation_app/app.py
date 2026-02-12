@@ -53,8 +53,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.0.5.3"
-BUILD_ID = "20260212-v10503-comprehensive-bugfix"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.0.5.4"
+BUILD_ID = "20260212-v10504-ux-fixes"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -119,7 +119,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.0.5.3"  # v1.0.5.3: Comprehensive bugfix — NameError, StreamlitAPIException, IndexError, division-by-zero, widget key collision
+APP_VERSION = "1.0.5.4"  # v1.0.5.4: UX fixes — form clearing, control/treatment labels, description display, negative scales, single-item DV report
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -3979,6 +3979,7 @@ def _render_conversational_builder() -> None:
                 # Clear input fields — must pop (not assign) to avoid StreamlitAPIException
                 st.session_state.pop("struct_cond_name_input", None)
                 st.session_state.pop("struct_cond_desc_input", None)
+                st.session_state.pop("struct_cond_type_input", None)
                 st.rerun()
 
         # Convert structured conditions to parsed conditions for downstream
@@ -3997,10 +3998,13 @@ def _render_conversational_builder() -> None:
         else:
             conditions_text = ""
 
-        # Store condition descriptions for simulation engine
+        # Store condition descriptions and control flags for simulation engine
         if _struct_conds:
             st.session_state["builder_condition_descriptions"] = {
                 sc["name"]: sc.get("description", "") for sc in _struct_conds
+            }
+            st.session_state["builder_condition_controls"] = {
+                sc["name"]: sc.get("is_control", False) for sc in _struct_conds
             }
 
         # Status display
@@ -4640,6 +4644,9 @@ def _render_builder_design_review() -> None:
         st.session_state["builder_condition_descriptions"] = {}
     _cond_descs = st.session_state["builder_condition_descriptions"]
 
+    # v1.0.5.4: Load stored is_control flags from structured input
+    _cond_controls: dict[str, bool] = st.session_state.get("builder_condition_controls", {})
+
     if conditions:
         # Build a lookup: condition name → factor-level decomposition for factorial designs
         _cond_factor_map: dict[str, list[str]] = {}
@@ -4658,11 +4665,12 @@ def _render_builder_design_review() -> None:
         cond_to_remove = None
         _br_cond_ver = st.session_state.get("_br_cond_version", 0)
         for i, cond in enumerate(conditions):
-            # v1.0.5.1: Full-width condition card with name, description, and remove button
-            _cond_card_cols = st.columns([7, 2, 0.5])
+            # v1.0.5.4: Condition card — name + badge on top, description below, remove button on right
+            _cond_card_cols = st.columns([8.5, 0.5])
             with _cond_card_cols[0]:
                 _factor_info = _cond_factor_map.get(cond, [])
-                _is_ctrl = any(w in cond.lower() for w in ('control', 'baseline', 'placebo', 'no treatment', 'neutral'))
+                # v1.0.5.4: Use stored is_control flag (from structured input), fall back to keyword matching
+                _is_ctrl = _cond_controls.get(cond, any(w in cond.lower() for w in ('control', 'baseline', 'placebo', 'no treatment', 'neutral')))
                 _type_badge = "Control" if _is_ctrl else "Treatment"
                 _badge_color = "#16A34A" if _type_badge == "Control" else "#2563EB"
                 st.markdown(
@@ -4675,8 +4683,7 @@ def _render_builder_design_review() -> None:
                 )
                 if _factor_info:
                     st.caption(" | ".join(_factor_info))
-            with _cond_card_cols[1]:
-                # Inline description input
+                # v1.0.5.4: Show full description below name (not in narrow column)
                 _existing_desc = _cond_descs.get(cond, "")
                 _new_desc = st.text_input(
                     "Description",
@@ -4688,7 +4695,7 @@ def _render_builder_design_review() -> None:
                 if _new_desc != _existing_desc:
                     _cond_descs[cond] = _new_desc
                     st.session_state["builder_condition_descriptions"] = _cond_descs
-            with _cond_card_cols[2]:
+            with _cond_card_cols[1]:
                 # v1.0.5.1: Allow removing ANY condition
                 if st.button("X", key=f"br_remove_cond_{i}", help=f"Remove '{cond}'"):
                     cond_to_remove = i
@@ -4866,7 +4873,7 @@ def _render_builder_design_review() -> None:
             with col3:
                 new_min = st.number_input(
                     "Min", value=scale.get("scale_min", 1),
-                    min_value=0, max_value=100, key=f"br_scale_min_v{_br_scale_ver}_{i}"
+                    min_value=-1000, max_value=100, key=f"br_scale_min_v{_br_scale_ver}_{i}"
                 )
                 scale["scale_min"] = new_min
             with col4:
@@ -8635,23 +8642,23 @@ if active_page == 2:
                         # Get current min, default to 1
                         current_min = int(scale_min) if scale_min is not None else 1
                         if dv_type == 'numeric_input':
-                            # Numeric inputs can have any range
+                            # Numeric inputs can have any range (incl. negative for games with taking)
                             new_scale_min = st.number_input(
                                 "Min",
-                                min_value=0,
+                                min_value=-1000,
                                 max_value=1000,
                                 value=current_min,
                                 key=f"dv_min_v{dv_version}_{i}",
-                                help="Minimum value (e.g., 0 for slider, 1 for Likert)"
+                                help="Minimum value (e.g., 0 for slider, -10 for games with taking option)"
                             )
                         else:
                             new_scale_min = st.number_input(
                                 "Min",
-                                min_value=0,
+                                min_value=-1000,
                                 max_value=100,
                                 value=current_min,
                                 key=f"dv_min_v{dv_version}_{i}",
-                                help="Minimum scale value (usually 0 or 1)"
+                                help="Minimum scale value (e.g., 0 or 1, negative for bipolar scales)"
                             )
 
                     with col3b:
