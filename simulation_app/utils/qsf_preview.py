@@ -33,7 +33,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 # Version identifier to help track deployed code
-__version__ = "1.0.6.0"  # v1.0.6.0: LLM provider failover fix + reorder
+__version__ = "1.0.6.2"  # v1.0.6.2: Simulation hardening + validation fixes
 
 
 # ============================================================================
