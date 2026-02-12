@@ -214,6 +214,7 @@ from typing import Any, Dict, List, Optional, Tuple, Set, Union
 import hashlib
 import random
 import re
+import time
 
 import numpy as np
 import pandas as pd
@@ -8988,16 +8989,34 @@ class EnhancedSimulationEngine:
         # v1.9.1: Always try prefill if generator exists — providers may recover
         # during actual generation even if initial check was uncertain
         # v1.0.6.3: Force provider reset before prefill for clean state
+        # v1.0.7.1: TOTAL prefill time budget — shared across ALL OE question × condition
+        # combinations. This prevents the scenario where auto-recovery re-enables
+        # providers between prefill_pool calls, causing each call to retry and fail
+        # for another 30s. With this budget, the entire prefill phase takes max 30s.
+        _PREFILL_TOTAL_BUDGET = 30.0  # seconds
         if self.llm_generator and self.open_ended_questions:
             try:
                 self.llm_generator.reset_providers()
                 self._log("LLM providers reset before prefill (clean state)")
             except Exception:
                 pass
+            _prefill_wall_start = time.time()
+            _prefill_timed_out = False
             try:
                 _unique_conditions = list(set(conditions.tolist()))
                 _sents = ["very_positive", "positive", "neutral", "negative", "very_negative"]
                 for oq in self.open_ended_questions:
+                    # v1.0.7.1: Check total budget before each OE question
+                    _elapsed = time.time() - _prefill_wall_start
+                    if _elapsed >= _PREFILL_TOTAL_BUDGET:
+                        self._log(f"LLM prefill: total time budget ({_PREFILL_TOTAL_BUDGET:.0f}s) "
+                                  f"exceeded after {_elapsed:.1f}s — remaining questions use templates")
+                        _prefill_timed_out = True
+                        break
+                    # v1.0.7.1: If API was disabled during prefill, stop immediately
+                    if not self.llm_generator.is_llm_available:
+                        self._log("LLM prefill: API unavailable — switching to template fallback")
+                        break
                     _q_text = str(oq.get("question_text", oq.get("name", "")))
                     _q_ctx = str(oq.get("question_context", "")).strip()
                     # v1.0.1.2: Enrich pool pre-fill with user-provided context + condition
@@ -9017,25 +9036,39 @@ class EnhancedSimulationEngine:
                         else:
                             _q_text = f"Please share your thoughts on: {_humanized_pool}"
                     for _cond in _unique_conditions:
+                        # v1.0.7.1: Check budget and API status before each condition
+                        if time.time() - _prefill_wall_start >= _PREFILL_TOTAL_BUDGET:
+                            _prefill_timed_out = True
+                            break
+                        if not self.llm_generator.is_llm_available:
+                            break
                         if self.survey_flow_handler.is_question_visible(
                             _clean_column_name(str(oq.get("name", ""))), _cond
                         ):
+                            # Per-call budget = remaining total budget
+                            _remaining = max(5.0, _PREFILL_TOTAL_BUDGET - (time.time() - _prefill_wall_start))
                             self.llm_generator.prefill_pool(
                                 question_text=_q_text,
                                 condition=_cond,
                                 sentiments=_sents,
                                 sample_size=n,
                                 n_conditions=len(_unique_conditions),
+                                max_time=_remaining,
                             )
+                    if _prefill_timed_out:
+                        break
+                _prefill_elapsed = time.time() - _prefill_wall_start
                 _stats = self.llm_generator.stats
                 if _stats['pool_size'] > 0:
                     self._log(f"LLM pre-filled pool: {_stats['llm_calls']} API calls, "
-                              f"{_stats['pool_size']} responses via {_stats.get('active_provider', 'unknown')}")
+                              f"{_stats['pool_size']} responses via {_stats.get('active_provider', 'unknown')} "
+                              f"({_prefill_elapsed:.1f}s)")
                 else:
-                    self._log(f"LLM prefill: {_stats['llm_calls']} API calls but 0 responses — "
-                              f"will retry on-demand during generation. "
+                    self._log(f"LLM prefill: {_stats['llm_calls']} API calls but 0 responses in "
+                              f"{_prefill_elapsed:.1f}s — using template fallback. "
                               f"Providers: {_stats.get('providers', {})}")
-                    # v1.9.1: Reset providers for a fresh start during individual generation
+                    # v1.0.7.1: Reset providers for on-demand generation (but don't
+                    # disable auto-recovery timeout — respect the 20s cooldown)
                     if hasattr(self.llm_generator, '_reset_all_providers'):
                         self.llm_generator._reset_all_providers()
                         self.llm_generator._api_available = True

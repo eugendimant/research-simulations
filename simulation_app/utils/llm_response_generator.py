@@ -21,7 +21,7 @@ Architecture:
 Version: 1.0.7.0
 """
 
-__version__ = "1.0.7.0"
+__version__ = "1.0.7.1"
 
 import hashlib
 import json
@@ -1018,7 +1018,7 @@ def _call_llm_api(
     user_prompt: str,
     temperature: float = 0.7,
     max_tokens: int = 4000,
-    timeout: int = 60,
+    timeout: int = 25,  # v1.0.7.1: Reduced from 60 → 25s for faster failover
 ) -> Optional[str]:
     """Call an OpenAI-compatible chat completion API.
 
@@ -1517,10 +1517,10 @@ class _LLMProvider:
         self._daily_call_count = 0
         self._daily_reset_time = time.time()
         self._consecutive_failures = 0
-        self._max_failures = 6
+        self._max_failures = 3  # v1.0.7.1: Reduced from 6 → 3 for faster failover
         self._total_failures = 0
         self._last_failure_time = 0.0
-        self._cooldown_seconds = 30.0
+        self._cooldown_seconds = 10.0  # v1.0.7.1: Reduced from 30 → 10s for faster recovery
         self._rate_limiter = _RateLimiter(max_rpm=max_rpm)
         # v1.0.7.0: Per-call diagnostic log for admin dashboard
         self._call_log: List[Dict[str, Any]] = []  # Last N call results
@@ -1558,18 +1558,19 @@ class _LLMProvider:
         # Per-provider rate limiting
         self._rate_limiter.wait_if_needed()
 
-        # Retry with backoff (up to 2 retries per call)
+        # v1.0.7.1: Retry with backoff (up to 1 retry per call — reduced from 2)
+        # Total max sleep per provider: 1.5s (down from 4.5s)
         result = None
         _call_start = time.time()
-        for attempt in range(3):
+        for attempt in range(2):  # v1.0.7.1: 2 attempts (down from 3) — fail fast
             result = _call_llm_api(
                 self.api_url, self.api_key, self.model,
                 system_prompt, user_prompt, temperature, max_tokens,
             )
             if result is not None:
                 break
-            if attempt < 2:
-                _backoff = 1.5 * (attempt + 1)
+            if attempt < 1:
+                _backoff = 1.5
                 logger.debug("Provider '%s' attempt %d failed, retrying in %.1fs...",
                              self.name, attempt + 1, _backoff)
                 time.sleep(_backoff)
@@ -1593,7 +1594,7 @@ class _LLMProvider:
             _log_entry["error"] = self._last_error_message
             if self._consecutive_failures >= self._max_failures:
                 self.available = False
-                self._cooldown_seconds = min(300.0, self._cooldown_seconds * 2)
+                self._cooldown_seconds = min(30.0, self._cooldown_seconds * 2)  # v1.0.7.1: Cap at 30s (down from 300s)
                 logger.info("Provider '%s' disabled after %d consecutive failures "
                             "(cooldown: %.0fs)",
                             self.name, self._consecutive_failures, self._cooldown_seconds)
@@ -1612,7 +1613,7 @@ class _LLMProvider:
         """Re-enable the provider (e.g., after rate-limit window expires)."""
         self.available = True
         self._consecutive_failures = 0
-        self._cooldown_seconds = 30.0
+        self._cooldown_seconds = 10.0  # v1.0.7.1: Match initial value (was 30.0)
 
 
 # ---------------------------------------------------------------------------
@@ -1671,7 +1672,7 @@ class LLMResponseGenerator:
         self._fallback_count = 0
         self._batch_failure_count = 0
         self._api_disabled_time: float = 0.0  # v1.0.5.7: When API was disabled
-        self._api_recovery_secs: float = 60.0  # v1.0.5.7: Auto-recover after this many seconds
+        self._api_recovery_secs: float = 20.0  # v1.0.7.1: Reduced from 60 → 20s for faster recovery
         # v1.0.5.8: Track provider exhaustion events for admin analytics
         self._provider_exhaustion_count: int = 0  # Times ALL providers failed in a batch
         self._user_key_activations: int = 0  # Times a user-provided key was activated mid-session
@@ -1853,9 +1854,15 @@ class LLMResponseGenerator:
             self._all_conditions = list(conditions)
 
     def reset_providers(self) -> None:
-        """Re-enable all providers (useful after rate-limit windows expire)."""
+        """Re-enable all providers (useful after rate-limit windows expire).
+
+        v1.0.7.1: Also resets batch failure count and API disabled time
+        so providers are truly fresh for the next generation attempt.
+        """
         for p in self._providers:
             p.reset()
+        self._batch_failure_count = 0
+        self._api_disabled_time = 0.0
         self._api_available = any(p.available and p.api_key for p in self._providers)
 
     @property
@@ -1895,15 +1902,20 @@ class LLMResponseGenerator:
         count_per_sentiment: int = 0,
         sample_size: int = 200,
         n_conditions: int = 2,
+        max_time: float = 30.0,  # v1.0.7.1: Wall-clock time budget (seconds)
     ) -> int:
         """Pre-generate a pool of LLM responses for a question+condition.
 
         Smart scaling (C): calculates optimal pool size from sample_size.
         With draw-with-replacement (D), we need far fewer base responses.
+
+        v1.0.7.1: Added max_time budget. Prefill aborts after max_time seconds
+        to prevent long waits. Remaining responses use template fallback.
         """
         # v1.0.5.7: Use property (triggers auto-recovery check)
         if not self.is_llm_available:
             return 0
+        _prefill_start = time.time()
 
         if sentiments is None:
             sentiments = ["very_positive", "positive", "neutral",
@@ -1923,12 +1935,22 @@ class LLMResponseGenerator:
             count_per_sentiment = target
 
         total = 0
-        max_retries_per_bucket = 10  # Safety cap to prevent infinite loops
+        max_retries_per_bucket = 3  # v1.0.7.1: Reduced from 10 → 3 (30s max wait)
         for sentiment in sentiments:
+            # v1.0.7.1: Wall-clock time budget check — abort if exceeded
+            if time.time() - _prefill_start >= max_time:
+                logger.info("Prefill time budget (%.0fs) exceeded after %d responses — "
+                            "remaining sentiments use template fallback",
+                            max_time, total)
+                break
             already_have = self._pool.available(question_text, condition, sentiment)
             needed = max(0, count_per_sentiment - already_have)
             retries = 0
             while needed > 0 and retries < max_retries_per_bucket:
+                # v1.0.7.1: Also check time budget inside retry loop
+                if time.time() - _prefill_start >= max_time:
+                    logger.info("Prefill time budget exceeded mid-retry (sentiment=%s)", sentiment)
+                    break
                 retries += 1
                 # Adaptive batch size: use active provider's max_batch_size if available
                 _active = self._get_active_provider()
@@ -2072,21 +2094,23 @@ class LLMResponseGenerator:
                 _tried_summary.append(f"{p.name}:{_status}:fails={p._consecutive_failures}")
         logger.info("All providers exhausted for batch %d: %s",
                      self._batch_failure_count, " | ".join(_tried_summary))
-        if self._batch_failure_count >= 12:
+        # v1.0.7.1: Reduced threshold from 12 → 3 — fail fast, don't hang.
+        # After 3 batch failures, fall back to templates immediately.
+        # APIs auto-recover after 20s, so next generation attempt will retry them.
+        if self._batch_failure_count >= 3:
             self._api_available = False
-            self._api_disabled_time = time.time()  # v1.0.5.7: Record for auto-recovery
+            self._api_disabled_time = time.time()
             logger.warning("All %d LLM providers exhausted after %d batch failures — "
                            "falling back to templates (will auto-recover in %.0fs)",
                            len(self._providers), self._batch_failure_count,
                            self._api_recovery_secs)
         else:
-            # v1.0.5.7: Add random jitter to prevent thundering-herd when
-            # multiple sessions hit rate limits simultaneously.
-            _base = min(2.0 * self._batch_failure_count, 10.0)
-            _jitter = random.uniform(0, min(2.0, _base * 0.3))
+            # v1.0.7.1: Reduced max sleep from 10s → 5s, jitter from 2s → 1s
+            _base = min(2.0 * self._batch_failure_count, 5.0)
+            _jitter = random.uniform(0, min(1.0, _base * 0.3))
             _backoff_secs = _base + _jitter
             logger.info("Batch %d/%d failed, sleeping %.1fs (jitter %.1fs) before retry",
-                        self._batch_failure_count, 12, _backoff_secs, _jitter)
+                        self._batch_failure_count, 3, _backoff_secs, _jitter)
             time.sleep(_backoff_secs)
             self._reset_all_providers()
         return []
@@ -2622,14 +2646,14 @@ class LLMResponseGenerator:
     # ------------------------------------------------------------------
     # Connectivity check (used by UI to show status)
     # ------------------------------------------------------------------
-    def check_connectivity(self, timeout: int = 15) -> Dict[str, Any]:
+    def check_connectivity(self, timeout: int = 8) -> Dict[str, Any]:
         """Quick connectivity test — loops through ALL providers.
 
         v1.9.0: Does NOT permanently disable providers during check.
         Tries each provider in order until one responds.
 
         Args:
-            timeout: Max seconds per individual provider check (default 15).
+            timeout: Max seconds per individual provider check (default 8, v1.0.7.1 reduced from 15).
 
         Returns dict with 'available', 'provider', 'error' keys.
         """
