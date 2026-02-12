@@ -17,10 +17,10 @@ Architecture:
 - Graceful fallback: if all LLM providers fail, silently falls back to
   the existing template-based ComprehensiveResponseGenerator
 
-Version: 1.0.7.0
+Version: 1.0.6.8
 """
 
-__version__ = "1.0.7.0"
+__version__ = "1.0.6.8"
 
 import hashlib
 import json
@@ -1709,7 +1709,6 @@ class LLMResponseGenerator:
         self._user_key_activations: int = 0  # Times a user-provided key was activated mid-session
         self._exhaustion_timestamps: List[float] = []  # When each exhaustion occurred
         self._blocked_fallback_count: int = 0
-        self._quality_rejection_count: int = 0
         # v1.0.5.8: Anti-detection — cross-participant response uniqueness tracker.
         # Stores normalized first-10-words of recent responses to detect and prevent
         # near-identical outputs across different participants.
@@ -1869,7 +1868,6 @@ class LLMResponseGenerator:
             "batch_failures": self._batch_failure_count,
             "allow_template_fallback": self._allow_template_fallback,
             "blocked_fallbacks": self._blocked_fallback_count,
-            "quality_rejections": self._quality_rejection_count,
         }
 
     @property

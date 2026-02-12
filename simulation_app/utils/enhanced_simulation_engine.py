@@ -45,7 +45,7 @@ This module is designed to run inside a `utils/` package (i.e., imported as
 """
 
 # Version identifier to help track deployed code
-__version__ = "1.0.7.0"  # v1.0.7.0: LLM init hotfix + human-like DV realism pass
+__version__ = "1.0.6.8"  # v1.0.6.8: LLM-first enforcement and OE dedup safety fixes
 
 # =============================================================================
 # SCIENTIFIC FOUNDATIONS FOR SIMULATION
@@ -7113,7 +7113,7 @@ class EnhancedSimulationEngine:
         result = int(response)
 
         # =====================================================================
-        # STEP 11: Human-like micro-pattern adjustments (v1.0.7.0)
+        # STEP 11: Human-like micro-pattern adjustments (v1.0.6.9)
         # Adds realistic item-position drift, streak inertia, and occasional
         # correction behavior without overwhelming experimental effects.
         # =====================================================================

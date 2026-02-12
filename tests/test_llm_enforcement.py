@@ -1,10 +1,7 @@
 import pytest
 
 from simulation_app.utils.enhanced_simulation_engine import EnhancedSimulationEngine
-from simulation_app.utils.llm_response_generator import (
-    LLMResponseGenerator,
-    _is_low_quality_response,
-)
+from simulation_app.utils.llm_response_generator import LLMResponseGenerator
 
 
 def _basic_engine(**overrides):
@@ -35,7 +32,6 @@ def test_llm_generator_blocks_template_fallback_when_disabled():
 
 def test_open_ended_dedup_does_not_mutate_condition_column(monkeypatch):
     engine = _basic_engine(allow_template_fallback=True)
-    engine.llm_generator = None
 
     def _same_response(*args, **kwargs):
         return "This is intentionally duplicated text for dedup testing."
@@ -48,29 +44,3 @@ def test_open_ended_dedup_does_not_mutate_condition_column(monkeypatch):
     expected = set(engine.conditions)
     assert observed.issubset(expected)
     assert len(observed) == len(expected)
-
-
-def test_google_ai_is_prioritized_first_in_builtin_provider_chain():
-    gen = LLMResponseGenerator(seed=2, allow_template_fallback=False)
-    assert gen._providers, "Expected at least one provider in chain"
-    assert gen._providers[0].name.startswith("google_ai")
-
-
-def test_quality_filter_flags_generic_gibberish():
-    bad = "In my estimation, the enjoyment factor was notable and practical aspects mattered."
-    assert _is_low_quality_response(bad, topic_tokens=["trump", "politics"])
-
-
-def test_engine_init_does_not_fail_with_missing_os_regression():
-    engine = _basic_engine(allow_template_fallback=False)
-    joined_log = "\n".join(engine.validation_log)
-    assert "name 'os' is not defined" not in joined_log
-
-
-def test_metadata_includes_llm_init_error_field():
-    engine = _basic_engine(allow_template_fallback=False)
-    engine.llm_generator = None
-    engine.llm_init_error = "forced test error"
-    df, metadata = engine.generate()
-    assert len(df) == 24
-    assert metadata.get("llm_init_error") == "forced test error"
