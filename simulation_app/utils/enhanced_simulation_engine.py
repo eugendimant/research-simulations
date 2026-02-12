@@ -9235,16 +9235,22 @@ class EnhancedSimulationEngine:
                     continue
 
                 # Generate response with enhanced uniqueness + behavioral context
-                text = self._generate_open_response(
-                    q,
-                    persona,
-                    all_traits[i],
-                    participant_condition,
-                    p_seed,
-                    response_mean=response_mean,
-                    behavioral_profile=_beh_profile,
-                )
-                _text_str = str(text)
+                # v1.0.7.0: Wrapped in try/except to guarantee simulation never hard-stops
+                # from OE generation failures (LLM or template errors).
+                try:
+                    text = self._generate_open_response(
+                        q,
+                        persona,
+                        all_traits[i],
+                        participant_condition,
+                        p_seed,
+                        response_mean=response_mean,
+                        behavioral_profile=_beh_profile,
+                    )
+                    _text_str = str(text) if text else ""
+                except Exception as _oe_err:
+                    logger.warning("OE response generation failed for participant %d: %s", i + 1, _oe_err)
+                    _text_str = ""
                 responses.append(_text_str)
 
                 # v1.0.5.0: Update voice memory for this participant

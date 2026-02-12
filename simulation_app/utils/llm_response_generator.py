@@ -5,17 +5,18 @@ Uses free LLM APIs (multi-provider with automatic failover) to generate
 realistic, question-specific, persona-aligned open-ended survey responses.
 
 Architecture:
-- Multi-provider: Groq (Llama 3.3 70B), Cerebras (Llama 3.3 70B),
-  Google AI Studio (Gemma 3 27B + Gemini 2.5 Flash Lite), Poe (GPT-4o-mini),
+- Multi-provider: Google AI Studio (Gemini 2.5 Flash Lite + Gemma 3 27B),
+  Groq (Llama 3.3 70B), Cerebras (Llama 3.3 70B), Poe (GPT-4o-mini),
   OpenRouter (Mistral Small 3.1) — with automatic key detection,
   per-provider rate limiting, and intelligent failover.
-  Llama 3.3 70B prioritized for natural language.
+  Google AI prioritized for reliability.
 - Large batch sizes: 20 responses per API call (within 32K context)
 - Smart pool scaling: calculates exact pool size needed from sample_size
 - Draw-with-replacement + deep variation: a pool of 50 base responses
   can serve 2,000+ participants with minimal repetition
 - Graceful fallback: if all LLM providers fail, silently falls back to
   the existing template-based ComprehensiveResponseGenerator
+- Never hard-stops: always walks user through options when APIs fail
 
 Version: 1.0.6.8
 """
@@ -1552,6 +1553,7 @@ class _LLMProvider:
 
     v1.9.0: Improved resilience — higher failure threshold, retry with backoff,
     and soft-disable that allows periodic re-attempts.
+    v1.0.7.0: Added per-call diagnostic log for admin dashboard visibility.
     """
 
     def __init__(self, name: str, api_url: str, model: str, api_key: str,
@@ -1575,6 +1577,10 @@ class _LLMProvider:
         self._last_failure_time = 0.0
         self._cooldown_seconds = 30.0
         self._rate_limiter = _RateLimiter(max_rpm=max_rpm)
+        # v1.0.7.0: Per-call diagnostic log for admin dashboard
+        self._call_log: List[Dict[str, Any]] = []  # Last N call results
+        self._max_call_log = 50  # Keep last 50 entries per provider
+        self._last_error_message: str = ""  # Most recent error for diagnostics
 
     def call(self, system_prompt: str, user_prompt: str,
              temperature: float = 0.7, max_tokens: int = 4000) -> Optional[str]:
@@ -1609,6 +1615,7 @@ class _LLMProvider:
 
         # Retry with backoff (up to 2 retries per call)
         result = None
+        _call_start = time.time()
         for attempt in range(3):
             result = _call_llm_api(
                 self.api_url, self.api_key, self.model,
@@ -1622,20 +1629,38 @@ class _LLMProvider:
                              self.name, attempt + 1, _backoff)
                 time.sleep(_backoff)
 
+        _call_duration = time.time() - _call_start
         self.call_count += 1
         self._daily_call_count += 1
+
+        # v1.0.7.0: Log call result for admin diagnostics
+        _log_entry = {
+            "timestamp": time.time(),
+            "success": result is not None,
+            "duration_s": round(_call_duration, 2),
+            "retries": min(2, attempt) if result is None else attempt,
+        }
         if result is None:
             self._consecutive_failures += 1
             self._total_failures += 1
             self._last_failure_time = time.time()
+            self._last_error_message = f"Failed after {attempt + 1} attempts ({_call_duration:.1f}s)"
+            _log_entry["error"] = self._last_error_message
             if self._consecutive_failures >= self._max_failures:
                 self.available = False
                 self._cooldown_seconds = min(300.0, self._cooldown_seconds * 2)
                 logger.info("Provider '%s' disabled after %d consecutive failures "
                             "(cooldown: %.0fs)",
                             self.name, self._consecutive_failures, self._cooldown_seconds)
+                _log_entry["disabled"] = True
         else:
             self._consecutive_failures = 0
+            self._last_error_message = ""
+
+        self._call_log.append(_log_entry)
+        if len(self._call_log) > self._max_call_log:
+            self._call_log = self._call_log[-self._max_call_log:]
+
         return result
 
     def reset(self) -> None:
@@ -1730,10 +1755,8 @@ class LLMResponseGenerator:
         # 4. Cerebras Llama 3.3 70B:          ~30 RPM, 1M tokens/day
         # 5. Poe GPT-4o-mini:                ~20 RPM, ~200 RPD (3K points/day free)
         # 6. OpenRouter Mistral Small 3.1:    varies by model
-        # NOTE: Llama 3.3 70B produces more natural, human-sounding responses
-        # than Gemini models which tend toward repetitive phrasing ("in terms of").
-        # v1.0.6.0: Reordered — Gemma (high-volume, 14.4K RPD) before Flash Lite
-        # (low-volume, 20 RPD); Poe (GPT-4o-mini, reliable) before OpenRouter.
+        # NOTE: Google AI moved to top because it's confirmed accessible and reliable.
+        # Groq/Cerebras sometimes have intermittent auth/rate issues.
         _builtin_providers = [
             ("google_ai_gemma", GOOGLE_AI_API_URL, GOOGLE_AI_MODEL_HIGHVOL,
              _DEFAULT_GOOGLE_AI_KEY, 25, 14400, 10),
@@ -1855,8 +1878,19 @@ class LLMResponseGenerator:
             "providers_available": sum(1 for p in self._providers if p.available and p.api_key),
             "providers_total": len(self._providers),
             "providers": {
-                p.name: {"calls": p.call_count, "attempts": p.attempt_count,
-                         "available": p.available}
+                p.name: {
+                    "calls": p.call_count,
+                    "attempts": p.attempt_count,
+                    "available": p.available,
+                    # v1.0.7.0: Enhanced diagnostics for admin dashboard
+                    "failures": p._total_failures,
+                    "consecutive_failures": p._consecutive_failures,
+                    "last_error": p._last_error_message,
+                    "rpd_used": p._daily_call_count,
+                    "rpd_limit": p.max_rpd,
+                    "model": p.model,
+                    "recent_calls": p._call_log[-10:],  # Last 10 calls
+                }
                 for p in self._providers
             },
             # v1.0.5.8: Failure analytics for admin dashboard
@@ -2103,6 +2137,14 @@ class LLMResponseGenerator:
         # v1.0.5.8: Track each provider exhaustion event for admin analytics
         self._provider_exhaustion_count += 1
         self._exhaustion_timestamps.append(time.time())
+        # v1.0.7.0: Log which providers were tried and why they failed
+        _tried_summary = []
+        for p in self._providers:
+            if p.api_key:
+                _status = "available" if p.available else f"cooldown({p._cooldown_seconds:.0f}s)"
+                _tried_summary.append(f"{p.name}:{_status}:fails={p._consecutive_failures}")
+        logger.info("All providers exhausted for batch %d: %s",
+                     self._batch_failure_count, " | ".join(_tried_summary))
         if self._batch_failure_count >= 12:
             self._api_available = False
             self._api_disabled_time = time.time()  # v1.0.5.7: Record for auto-recovery
