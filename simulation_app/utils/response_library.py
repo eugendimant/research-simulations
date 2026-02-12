@@ -63,7 +63,7 @@ association, impression, perception, feedback, comment, observation, general
 Version: 1.8.5 - Improved domain detection with weighted scoring and disambiguation
 """
 
-__version__ = "1.0.5.4"
+__version__ = "1.0.5.5"
 
 import random
 import re
@@ -7083,8 +7083,11 @@ class ComprehensiveResponseGenerator:
                 response, behavioral_profile, sentiment, local_rng
             )
 
-        # v1.1.0: Add topic-specific context to keep response on-topic
-        response = self._add_topic_context(response, question_text, question_keywords, domain, local_rng)
+        # v1.0.5.5: Disabled _add_topic_context() — it added meta-commentary
+        # phrases ("in this study", "regarding this question") that made responses
+        # sound academic rather than natural.  Compositional templates already
+        # handle topic grounding without meta-commentary.
+        # response = self._add_topic_context(response, question_text, question_keywords, domain, local_rng)
 
         # v1.0.3.10: Ensure we never return an empty response — use topic words
         if not response or not response.strip():
@@ -7322,27 +7325,11 @@ class ComprehensiveResponseGenerator:
 
         question_lower = question_text.lower() if question_text else ""
 
-        # v1.0.3.9: Domain-neutral topic introductions
-        # These intros are safe for ALL study types — no consumer-specific language
-        topic_intros = {
-            'decision': ['When making this decision, ', 'Regarding my decision, '],
-            'experience': ['Based on my experience, ', 'From what I experienced, '],
-            'feeling': ['I felt that ', 'My feeling was that '],
-            'opinion': ['In my opinion, ', 'I think that '],
-            'choice': ['With my choice, ', 'Regarding my choice, '],
-            'scenario': ['In this scenario, ', 'Given the scenario, '],
-            'believe': ['I believe that ', 'What I believe is '],
-            'concern': ['My concern is that ', 'I\'m concerned that '],
-            'policy': ['Regarding this policy, ', 'On this policy issue, '],
-            'impact': ['In terms of impact, ', 'The impact was that '],
-        }
-
-        for keyword, intros in topic_intros.items():
-            if keyword in question_lower or any(kw == keyword for kw in keywords):
-                intro = rng.choice(intros)
-                if not response.lower().startswith(intro.lower().split()[0]) and len(response) >= 2:
-                    response = intro + response[0].lower() + response[1:]
-                break
+        # v1.0.5.5: Removed topic_intros system — it prepended phrases like
+        # "The impact was that" or "In terms of impact," which, combined with
+        # word-salad topic extraction, produced gibberish ("The impact was that
+        # love hate Trump...").  Compositional templates now handle topic
+        # grounding directly without needing keyword-triggered prefixes.
 
         # v1.0.3.9: Condition-specific context — ONLY for relevant domains
         # Detect study domain from question text to avoid cross-domain pollution
@@ -7609,15 +7596,25 @@ class ComprehensiveResponseGenerator:
             'much', 'more', 'most', 'very', 'really', 'just', 'also', 'please',
             'better', 'deeply', 'held', 'quite',
         }
-        _words = re.findall(r'\b[a-zA-Z]{3,}\b', subject.lower())
-        _topic_words = [w for w in _words if w not in _stop][:6]
-        # Build a short topic phrase
-        _topic = ' '.join(_topic_words[:4]) if _topic_words else subject[:40]
-        # Capitalize known proper nouns
+        _all_words = re.findall(r'\b[a-zA-Z]{3,}\b', subject.lower())
+        # v1.0.5.5: Entity-first topic construction — named entities (people,
+        # brands, places) become the primary topic to avoid word-salad like
+        # "love hate Trump political" → just "Trump".
         _proper = {'trump', 'biden', 'obama', 'clinton', 'harris', 'congress',
                    'republican', 'democrat', 'america', 'american', 'covid',
                    'facebook', 'google', 'amazon', 'apple', 'microsoft', 'tesla',
-                   'maga', 'gop', 'nato', 'china', 'russia', 'europe', 'mexico'}
+                   'maga', 'gop', 'nato', 'china', 'russia', 'europe', 'mexico',
+                   'instagram', 'twitter', 'tiktok', 'youtube', 'chatgpt',
+                   'netflix', 'disney', 'uber', 'airbnb', 'spotify'}
+        _entities = [w for w in _all_words if w in _proper]
+        _content = [w for w in _all_words if w not in _stop and w not in _proper][:4]
+        # Build topic: prefer entities (clean & recognizable), limit to 2 words max
+        if _entities:
+            _topic = _entities[0]
+        elif _content:
+            _topic = ' '.join(_content[:2])
+        else:
+            _topic = subject[:30].strip()
         _topic_parts = _topic.split()
         _topic_parts = [w.capitalize() if w.lower() in _proper else w for w in _topic_parts]
         _topic = ' '.join(_topic_parts)
@@ -7640,96 +7637,147 @@ class ComprehensiveResponseGenerator:
         elif any(w in _subj_lower for w in ('evaluate', 'rate', 'assess', 'compare')):
             _intent = "evaluation"
 
-        # Build sentiment × intent specific templates
-        if sentiment in ('very_positive', 'positive'):
-            _base_templates = [
-                f"I have pretty strong feelings about {_topic}, and honestly I think things are moving in a good direction.",
-                f"When it comes to {_topic}, I'm fairly positive. It aligns with how I see things and what I value.",
-                f"I feel good about {_topic}. My personal experiences have shaped my views and I think it's important.",
-                f"Honestly {_topic} is something I care about and I'm generally supportive of where things are headed.",
-                f"My feelings about {_topic} are mostly positive. I've thought about it a lot and I think it matters.",
-                f"{_topic} is important to me. I tried to answer honestly about how I feel and why.",
-                f"I feel pretty strongly that {_topic} is heading in the right direction, based on what I've seen and experienced.",
-            ]
-            # v1.0.5.0: Intent-specific positive templates
-            if _intent == "explanation":
-                _base_templates.extend([
-                    f"The reason I feel good about {_topic} is because of my own experiences. Things have generally gone well.",
-                    f"I support {_topic} because it makes sense to me. I've seen positive outcomes firsthand.",
-                    f"My positive view on {_topic} comes from what I've personally witnessed and experienced.",
-                ])
-            elif _intent == "emotional_reaction":
-                _base_templates.extend([
-                    f"{_topic} honestly makes me feel hopeful. I get a sense of optimism when I think about it.",
-                    f"I feel genuinely good when I think about {_topic}. It gives me a positive feeling overall.",
-                    f"My emotional reaction to {_topic} is pretty positive. I feel encouraged and optimistic.",
-                ])
-            elif _intent == "evaluation":
-                _base_templates.extend([
-                    f"Looking at {_topic} objectively, I think it scores pretty well. There's a lot to appreciate here.",
-                    f"When I evaluate {_topic}, the positives clearly outweigh the negatives in my view.",
-                    f"I'd rate {_topic} favorably. It has strong points that I think are worth recognizing.",
-                ])
-            templates = _base_templates
-        elif sentiment in ('very_negative', 'negative'):
-            _base_templates = [
-                f"I'm honestly not happy about {_topic}. There are real problems that I think people are ignoring.",
-                f"When it comes to {_topic}, I have serious concerns. Things aren't going well in my opinion.",
-                f"I feel frustrated about {_topic}. My experiences have made me pretty skeptical about the whole thing.",
-                f"{_topic} is something that bothers me. I don't think the current situation is good at all.",
-                f"I have some strong negative feelings about {_topic}. I tried to be honest about my concerns.",
-                f"Honestly {_topic} makes me uneasy. I see too many problems and not enough people addressing them.",
-                f"My views on {_topic} are pretty critical. I don't think things are working the way they should be.",
-                f"I'm disappointed with {_topic}. Based on what I've seen, there's a lot that needs to change.",
-            ]
-            if _intent == "explanation":
-                _base_templates.extend([
-                    f"The reason I'm negative about {_topic} is that I've seen too many problems. It's not working.",
-                    f"I feel this way about {_topic} because the evidence I've seen points in a bad direction.",
-                    f"My concerns about {_topic} stem from real experiences. It's not just a gut feeling.",
-                ])
-            elif _intent == "emotional_reaction":
-                _base_templates.extend([
-                    f"{_topic} genuinely frustrates me. I feel disappointed when I think about how things are going.",
-                    f"I feel a real sense of unease about {_topic}. It worries me when I think about it seriously.",
-                    f"My emotional reaction to {_topic} is pretty negative. I feel let down and concerned.",
-                ])
-            elif _intent == "evaluation":
-                _base_templates.extend([
-                    f"When I evaluate {_topic} honestly, it falls short. There are significant issues I can't ignore.",
-                    f"Looking at {_topic} critically, the problems outweigh the positives in my view.",
-                    f"I'd give {_topic} a negative assessment. Too many things aren't working well.",
-                ])
-            templates = _base_templates
-        else:  # neutral
-            _base_templates = [
-                f"I have mixed feelings about {_topic}. I can see both the good and bad sides of it.",
-                f"When it comes to {_topic}, I'm not strongly one way or another. I just tried to answer honestly.",
-                f"I don't feel super strongly about {_topic} but I do have some thoughts on it that I shared.",
-                f"{_topic} is something I've thought about but I don't have extreme views on it either way.",
-                f"My views on {_topic} are pretty moderate. I tried to give my genuine perspective.",
-                f"I'm somewhat ambivalent about {_topic}. There are things I like and things I don't.",
-                f"Honestly I could go either way on {_topic}. I just answered based on how I actually feel.",
-                f"I thought about {_topic} and tried to give an honest answer. Not too positive or negative.",
-            ]
-            if _intent == "explanation":
-                _base_templates.extend([
-                    f"I see arguments both ways when it comes to {_topic}. Neither side fully convinces me.",
-                    f"My reasoning about {_topic} keeps going back and forth. There are valid points on both sides.",
-                ])
-            elif _intent == "emotional_reaction":
-                _base_templates.extend([
-                    f"{_topic} doesn't stir strong emotions for me either way. I feel pretty neutral about it.",
-                    f"I don't have an intense emotional response to {_topic}. It's just sort of there for me.",
-                ])
-            elif _intent == "evaluation":
-                _base_templates.extend([
-                    f"Evaluating {_topic}, I see both strengths and weaknesses. It's hard to come down firmly on one side.",
-                    f"My assessment of {_topic} is mixed. Some aspects work well and others don't.",
-                ])
-            templates = _base_templates
+        # v1.0.5.5: COMPOSITIONAL template system — compose responses from modular
+        # opener + core + elaboration parts.  15 openers × 15 cores × 12 elaborations
+        # × presence/absence = thousands of unique combinations, vs. the previous
+        # 7-10 fixed templates that caused heavy repetition in larger datasets.
+        _openers = [
+            "Honestly", "I gotta say", "For me personally", "I mean",
+            "To be real", "Look", "I'll be honest", "The way I see it",
+            "I have to say", "From my perspective", "Thinking about it",
+            "Being honest here", "In my view", "So basically",
+        ]
 
-        return rng.choice(templates)
+        if sentiment in ('very_positive', 'positive'):
+            _cores = [
+                f"I feel good about {_topic}",
+                f"{_topic} is something I support",
+                f"I'm positive about {_topic}",
+                f"I think {_topic} is going in a good direction",
+                f"my views on {_topic} are favorable",
+                f"{_topic} lines up with how I see things",
+                f"I'm on board with {_topic}",
+                f"I see {_topic} in a positive light",
+                f"there's a lot to appreciate about {_topic}",
+                f"{_topic} works for me overall",
+                f"I'm fairly optimistic about {_topic}",
+                f"my experience with {_topic} has been positive",
+                f"I believe {_topic} is on the right track",
+                f"I think {_topic} deserves credit",
+                f"I care about {_topic} and I'm supportive",
+            ]
+            _elaborations = [
+                "It lines up with my values.",
+                "My own experiences back this up.",
+                "I've seen good things come from this.",
+                "I've thought about it carefully and I feel confident.",
+                "It makes sense to me when I think about the bigger picture.",
+                "I hope things keep going this way.",
+                "There's room to improve but I'm optimistic.",
+                "This really matters to me.",
+                "My opinion has gotten stronger over time.",
+                "I could go on but that's the gist of it.",
+                "I think most people would agree if they thought about it.",
+                "I just tried to be as honest as I could about how I feel.",
+            ]
+        elif sentiment in ('very_negative', 'negative'):
+            _cores = [
+                f"I'm not happy about {_topic}",
+                f"{_topic} really concerns me",
+                f"I'm critical of {_topic}",
+                f"{_topic} frustrates me honestly",
+                f"my views on {_topic} are negative",
+                f"I don't think {_topic} is working",
+                f"{_topic} is headed the wrong way",
+                f"I'm disappointed with {_topic}",
+                f"there are real problems with {_topic}",
+                f"I have serious issues with {_topic}",
+                f"{_topic} needs to change",
+                f"I'm uncomfortable with where {_topic} is going",
+                f"my experience with {_topic} has been negative",
+                f"I see major flaws when it comes to {_topic}",
+                f"I wish {_topic} was handled better",
+            ]
+            _elaborations = [
+                "There are problems people aren't addressing.",
+                "I've seen this go wrong firsthand.",
+                "Things really need to change.",
+                "I feel like nobody is listening to these concerns.",
+                "This has been a source of frustration for me.",
+                "I keep hoping for improvement but it doesn't come.",
+                "I wish I could be more positive but I can't.",
+                "My feelings about this have only gotten worse.",
+                "The situation is more serious than people realize.",
+                "I think we can and should do better.",
+                "Not enough people are talking about these issues.",
+                "I've tried to stay open-minded but it's hard.",
+            ]
+        else:  # neutral
+            _cores = [
+                f"I have mixed feelings about {_topic}",
+                f"I'm not strongly either way on {_topic}",
+                f"I can see both sides when it comes to {_topic}",
+                f"{_topic} is complicated for me",
+                f"I'm somewhere in the middle on {_topic}",
+                f"my feelings about {_topic} are moderate",
+                f"I don't have extreme views on {_topic}",
+                f"I've gone back and forth on {_topic}",
+                f"{_topic} has good and bad parts",
+                f"I'm still sorting out how I feel about {_topic}",
+                f"there are valid points on both sides of {_topic}",
+                f"I could see it going either way with {_topic}",
+                f"I understand why people disagree about {_topic}",
+                f"my take on {_topic} is pretty balanced",
+                f"I try to be fair-minded about {_topic}",
+            ]
+            _elaborations = [
+                "I try to keep an open mind about these things.",
+                "There are good arguments on both sides.",
+                "I just gave my honest take on it.",
+                "I'd need more info to feel strongly either way.",
+                "It depends on the specifics for me.",
+                "I've heard compelling points from different sides.",
+                "I try not to be extreme about anything.",
+                "My views might shift as I learn more.",
+                "Nuance matters here and I tried to show that.",
+                "Some days I lean one way, some days the other.",
+                "I just call it like I see it.",
+                "I'd rather be honest than force myself to pick a side.",
+            ]
+
+        # ── Compose response from parts ──
+        core = rng.choice(_cores)
+        # 55% chance to add opener
+        if rng.random() < 0.55:
+            opener = rng.choice(_openers)
+            response = f"{opener}, {core}."
+        else:
+            response = f"{core[0].upper()}{core[1:]}."
+        # 50% chance to add elaboration
+        if rng.random() < 0.50:
+            elab = rng.choice(_elaborations)
+            response += f" {elab}"
+        # 15% chance to add intent-specific coda
+        if rng.random() < 0.15:
+            if _intent == "explanation":
+                response += rng.choice([
+                    " That's my reasoning.",
+                    " That's where I'm coming from.",
+                    " I think that explains it.",
+                ])
+            elif _intent == "emotional_reaction":
+                response += rng.choice([
+                    " That's just how it makes me feel.",
+                    " It's hard to put into words but that's close.",
+                    " I feel pretty strongly about it.",
+                ])
+            elif _intent == "evaluation":
+                response += rng.choice([
+                    " That's my honest assessment.",
+                    " I tried to be fair in my evaluation.",
+                    " That's how I'd score it.",
+                ])
+        return response
 
     def _enforce_behavioral_coherence(
         self,

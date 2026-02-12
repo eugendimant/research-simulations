@@ -53,8 +53,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.0.5.4"
-BUILD_ID = "20260212-v10504-ux-fixes"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.0.5.5"
+BUILD_ID = "20260212-v10505-oe-quality"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -119,7 +119,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.0.5.4"  # v1.0.5.4: UX fixes — form clearing, control/treatment labels, description display, negative scales, single-item DV report
+APP_VERSION = "1.0.5.5"  # v1.0.5.5: OE response quality overhaul, forced-response DVs
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -1372,34 +1372,39 @@ def _get_sample_text_response(
         _cond_topic_words = [w for w in _cw if w not in (_stop | _cond_stop_extra)][:3]
 
     # v1.0.3.10: Build a compact subject phrase for template insertion.
-    # v1.0.4.8: Enhanced with phrase-level and condition-aware extraction.
+    # v1.0.5.5: Entity-first topic construction — use named entities as primary
+    # topic to avoid word-salad ("love hate Trump" → "Trump").
     if not topic_words and question_name:
-        # question_name may be "var_name_question_text[:50]" — extract words
         _name_clean = _re.sub(r'[_\-]+', ' ', question_name).strip()
         _name_words = _re.findall(r'\b[a-zA-Z]{3,}\b', _name_clean.lower())
         _name_stop = {'open', 'ended', 'text', 'question', 'response', 'answer'}
         topic_words = [w for w in _name_words if w not in _name_stop][:4]
 
-    # Build subject_phrase: prefer phrase-level extraction over word-level
-    if _phrase_topic:
-        subject_phrase = _phrase_topic
-    elif topic_words:
-        # Combine topic words with condition words for richer phrase
-        _combined_tw = topic_words[:3]
-        for _ctw in _cond_topic_words:
-            if _ctw not in _combined_tw and len(_combined_tw) < 5:
-                _combined_tw.append(_ctw)
-        subject_phrase = ' '.join(_combined_tw[:4])
-    elif _cond_topic_words:
-        subject_phrase = ' '.join(_cond_topic_words[:3])
-    else:
-        subject_phrase = 'the questions asked'
-
-    # Capitalize proper nouns we can detect
     _proper_nouns = {'trump', 'biden', 'obama', 'clinton', 'harris', 'congress',
                      'republican', 'democrat', 'america', 'american', 'covid',
                      'facebook', 'google', 'amazon', 'apple', 'microsoft', 'tesla',
-                     'maga', 'gop', 'nato', 'china', 'russia', 'europe', 'mexico'}
+                     'maga', 'gop', 'nato', 'china', 'russia', 'europe', 'mexico',
+                     'instagram', 'twitter', 'tiktok', 'youtube', 'chatgpt',
+                     'netflix', 'disney', 'uber', 'airbnb', 'spotify'}
+
+    # v1.0.5.5: Prefer named entities as topic, then max 2 content words
+    _entities_in_words = [w for w in topic_words if w.lower() in _proper_nouns]
+    _content_in_words = [w for w in topic_words if w.lower() not in _proper_nouns]
+
+    if _phrase_topic:
+        subject_phrase = _phrase_topic
+    elif _entities_in_words:
+        # Named entity is the cleanest topic: "Trump", "Biden", etc.
+        subject_phrase = _entities_in_words[0]
+    elif _content_in_words:
+        # Max 2 content words to avoid word-salad
+        subject_phrase = ' '.join(_content_in_words[:2])
+    elif _cond_topic_words:
+        subject_phrase = ' '.join(_cond_topic_words[:2])
+    else:
+        subject_phrase = 'the questions asked'
+
+    # Capitalize proper nouns
     subject_words_list = subject_phrase.split()
     subject_words_list = [w.capitalize() if w.lower() in _proper_nouns else w for w in subject_words_list]
     subject_phrase = ' '.join(subject_words_list)
@@ -1416,9 +1421,6 @@ def _get_sample_text_response(
     if quality in ('low', 'very_low'):
         # Low quality: short but STILL about the topic (never generic)
         if quality == 'very_low':
-            # v1.0.3.10: ALL very_low responses MUST reference the topic.
-            # Even the most careless participant writes SOMETHING about the
-            # actual question — "trump idk" NOT just "idk".
             _short_subj = subject_phrase[:15].strip()
             low_templates = [
                 f"{_short_subj}",
@@ -1441,105 +1443,146 @@ def _get_sample_text_response(
                 f"{subject_phrase} is alright",
                 f"meh {subject_phrase}",
                 f"not sure about {subject_phrase}",
-                f"i guess so about {subject_phrase}",
                 f"don't really care about {subject_phrase}",
-                f"{subject_phrase} is whatever",
             ]
             return local_rng.choice(low_templates)
 
-    # For high and medium quality, build context-aware response templates
-    # that reference the SPECIFIC subject/topic
+    # v1.0.5.5: Compositional preview templates — compose from opener + core +
+    # elaboration for high diversity instead of fixed templates.
 
     # Sentiment variation based on participant index
     sentiment_idx = participant_idx % 5
     sentiments = ['positive', 'neutral', 'negative', 'positive', 'mixed']
     sentiment = sentiments[sentiment_idx]
 
-    # Condition-aware opening modifiers
-    condition_ref = ""
-    if cond_phrase:
-        cond_refs = [
-            f"Given the {cond_phrase} scenario, ",
-            f"After experiencing the {cond_phrase} condition, ",
-            f"In the {cond_phrase} context, ",
-            f"Considering {cond_phrase}, ",
-            "",  # Sometimes no condition reference
-        ]
-        condition_ref = local_rng.choice(cond_refs)
+    _openers = [
+        "Honestly", "I gotta say", "For me personally", "I mean",
+        "To be real", "Look", "I'll be honest", "The way I see it",
+        "I have to say", "From my perspective", "Thinking about it",
+        "Being honest here", "In my view", "So basically",
+    ]
 
     if quality == 'high':
         if sentiment == 'positive':
-            templates = [
-                f"{condition_ref}I have quite strong feelings about {subject_phrase}. It really made me think about what matters to me personally, and I tried to express that in my answers.",
-                f"Honestly, {subject_phrase} is something I care about. {condition_ref}I found myself reflecting on my own experiences and beliefs while answering.",
-                f"{condition_ref}I think {subject_phrase} is genuinely important. I tried to give thoughtful answers because this topic resonates with me on a personal level.",
-                f"When it comes to {subject_phrase}, I feel pretty strongly. {condition_ref}My responses reflect my genuine views and I spent time thinking about each one.",
-                f"{subject_phrase} is something I've thought about before. {condition_ref}I was glad to share my perspective because I think these issues really matter.",
-                f"{condition_ref}I found the questions about {subject_phrase} really engaging. This is clearly an important topic and I tried to be as honest as possible about how I feel.",
-                f"My views on {subject_phrase} are based on my own experiences. {condition_ref}I feel positively about the direction things are going and wanted to express that clearly.",
+            _cores = [
+                f"I feel good about {subject_phrase}",
+                f"{subject_phrase} is something I care about",
+                f"I'm supportive of {subject_phrase}",
+                f"my views on {subject_phrase} are positive",
+                f"I think {subject_phrase} is headed in the right direction",
+                f"I see {subject_phrase} favorably",
+                f"{subject_phrase} matters to me and I'm generally optimistic",
+            ]
+            _elaborations = [
+                "It really made me think about what matters to me personally.",
+                "My experiences have shaped a pretty strong view on this.",
+                "I tried to express that honestly in my answers.",
+                "I feel like this is heading the right way and I wanted to say so.",
+                "I've thought about it a lot and I stand by my feelings.",
+                "I spent time thinking about each question because it resonates with me.",
             ]
         elif sentiment == 'negative':
-            templates = [
-                f"{condition_ref}Honestly I have some concerns about {subject_phrase}. I think there are real problems that aren't being addressed and my answers reflect that frustration.",
-                f"I'm not very positive about {subject_phrase}. {condition_ref}There are issues that bother me and I tried to express those concerns honestly in my responses.",
-                f"{condition_ref}{subject_phrase} is a topic where I have strong negative feelings. I don't think the current situation is good and I wanted to be honest about that.",
-                f"When thinking about {subject_phrase}, I feel disappointed. {condition_ref}My responses reflect genuine concerns that I think are important to voice.",
-                f"{condition_ref}I have to say I'm quite critical when it comes to {subject_phrase}. Things could be so much better and I feel like that needs to be said.",
+            _cores = [
+                f"I have real concerns about {subject_phrase}",
+                f"{subject_phrase} frustrates me",
+                f"I'm disappointed with {subject_phrase}",
+                f"my views on {subject_phrase} are pretty critical",
+                f"I don't think {subject_phrase} is working well",
+                f"there are serious problems with {subject_phrase}",
+                f"{subject_phrase} needs to change",
+            ]
+            _elaborations = [
+                "There are problems that aren't being addressed and that bothers me.",
+                "I tried to express my concerns honestly in my responses.",
+                "Things could be so much better and I feel that needs to be said.",
+                "My personal experience with this has been negative.",
+                "I've tried to stay open-minded but I keep coming back to the same issues.",
+                "I feel strongly that people need to pay more attention to this.",
             ]
         elif sentiment == 'mixed':
-            templates = [
-                f"{condition_ref}I have mixed feelings about {subject_phrase}. On one hand I see the positives, but there are also real concerns that I can't ignore.",
-                f"{subject_phrase} is complicated for me. {condition_ref}I can see both sides and tried to reflect that ambivalence in my answers.",
-                f"{condition_ref}I'm honestly torn about {subject_phrase}. There are things I appreciate but also things that worry me, so my answers might seem contradictory.",
-                f"My thoughts on {subject_phrase} are nuanced. {condition_ref}It's not a black-and-white issue for me and I tried to capture that complexity.",
+            _cores = [
+                f"I have mixed feelings about {subject_phrase}",
+                f"{subject_phrase} is complicated for me",
+                f"I'm torn about {subject_phrase}",
+                f"I see both sides when it comes to {subject_phrase}",
+                f"my thoughts on {subject_phrase} are nuanced",
+            ]
+            _elaborations = [
+                "There are things I appreciate but also things that worry me.",
+                "I can see both the positives and the problems.",
+                "It's not black-and-white for me and I tried to capture that.",
+                "I've gone back and forth on this honestly.",
+                "My answers might seem contradictory but that reflects how I actually feel.",
             ]
         else:  # neutral
-            templates = [
-                f"{condition_ref}I don't have super strong opinions about {subject_phrase}, but I tried to give honest answers based on what I actually think.",
-                f"{subject_phrase} isn't something I think about constantly, but {condition_ref}I did my best to reflect on it and answer honestly.",
-                f"{condition_ref}I'd say I'm fairly neutral on {subject_phrase}. I can see different perspectives and tried to represent my actual views.",
-                f"I thought about {subject_phrase} and {condition_ref}gave what I think are reasonable answers. Nothing too extreme either way.",
-                f"{condition_ref}My views on {subject_phrase} are moderate. I tried to think carefully about the questions and respond authentically.",
+            _cores = [
+                f"I don't have super strong opinions about {subject_phrase}",
+                f"I'm fairly neutral on {subject_phrase}",
+                f"my views on {subject_phrase} are moderate",
+                f"I don't feel strongly about {subject_phrase} either way",
+                f"{subject_phrase} is something I thought about but don't feel extreme about",
             ]
-    else:  # medium quality
-        if sentiment == 'positive':
-            templates = [
-                f"{subject_phrase} is fine with me.",
-                f"I feel okay about {subject_phrase}.",
-                f"Yeah, {subject_phrase} seems good.",
-                f"I'm generally positive about {subject_phrase}.",
-                f"No issues with {subject_phrase} personally.",
-                f"I think {subject_phrase} is alright overall.",
-                f"{condition_ref}{subject_phrase} works for me.",
-            ]
-        elif sentiment == 'negative':
-            templates = [
-                f"Not a fan of {subject_phrase} honestly.",
-                f"I have some problems with {subject_phrase}.",
-                f"{subject_phrase} concerns me a bit.",
-                f"I'm not too happy about {subject_phrase}.",
-                f"There are issues with {subject_phrase}.",
-                f"{condition_ref}{subject_phrase} could be better.",
-            ]
-        elif sentiment == 'mixed':
-            templates = [
-                f"Mixed feelings about {subject_phrase}.",
-                f"{subject_phrase} has pros and cons.",
-                f"I see both sides of {subject_phrase}.",
-                f"Not sure how I feel about {subject_phrase}.",
-                f"{condition_ref}{subject_phrase} is complicated.",
-            ]
-        else:  # neutral
-            templates = [
-                f"I don't feel strongly about {subject_phrase}.",
-                f"{subject_phrase} is whatever.",
-                f"I thought about {subject_phrase} and answered honestly.",
-                f"No strong opinion on {subject_phrase}.",
-                f"{condition_ref}I just answered what I think about {subject_phrase}.",
-                f"{subject_phrase} - answered based on my views.",
+            _elaborations = [
+                "I just tried to give honest answers based on what I actually think.",
+                "I can see different perspectives and tried to represent my actual views.",
+                "Nothing too extreme either way, just my honest take.",
+                "I tried to think carefully and respond authentically.",
+                "I didn't force myself to have a stronger opinion than I actually do.",
             ]
 
-    return local_rng.choice(templates)
+        core = local_rng.choice(_cores)
+        opener = local_rng.choice(_openers)
+        elab = local_rng.choice(_elaborations)
+        if local_rng.random() < 0.6:
+            return f"{opener}, {core}. {elab}"
+        else:
+            return f"{core[0].upper()}{core[1:]}. {elab}"
+
+    else:  # medium quality
+        if sentiment == 'positive':
+            _cores = [
+                f"I feel good about {subject_phrase}",
+                f"{subject_phrase} is fine with me",
+                f"I'm positive about {subject_phrase}",
+                f"{subject_phrase} seems good to me",
+                f"no issues with {subject_phrase}",
+                f"I think {subject_phrase} is alright",
+                f"{subject_phrase} works for me",
+            ]
+        elif sentiment == 'negative':
+            _cores = [
+                f"not a fan of {subject_phrase}",
+                f"I have problems with {subject_phrase}",
+                f"{subject_phrase} concerns me",
+                f"I'm not happy about {subject_phrase}",
+                f"there are issues with {subject_phrase}",
+                f"{subject_phrase} could be a lot better",
+            ]
+        elif sentiment == 'mixed':
+            _cores = [
+                f"mixed feelings about {subject_phrase}",
+                f"{subject_phrase} has pros and cons",
+                f"I see both sides of {subject_phrase}",
+                f"not sure how I feel about {subject_phrase}",
+                f"{subject_phrase} is complicated",
+            ]
+        else:  # neutral
+            _cores = [
+                f"I don't feel strongly about {subject_phrase}",
+                f"{subject_phrase} is whatever honestly",
+                f"no strong opinion on {subject_phrase}",
+                f"just answered what I think about {subject_phrase}",
+                f"I'm somewhere in the middle on {subject_phrase}",
+                f"{subject_phrase} - gave my honest answer",
+            ]
+
+        core = local_rng.choice(_cores)
+        # Medium quality: shorter, sometimes with opener, sometimes not
+        if local_rng.random() < 0.3:
+            opener = local_rng.choice(["Honestly", "I mean", "Yeah", "Look", "Idk"])
+            return f"{opener}, {core}."
+        else:
+            return f"{core[0].upper()}{core[1:]}."
 
 
 def _merge_condition_sources(qsf_conditions: List[str], prereg_conditions: List[str]) -> Tuple[List[str], List[Dict[str, str]]]:
@@ -9244,8 +9287,8 @@ if active_page == 2:
             # ── v1.8.8.0: Missing data settings ──────────────────────────
             # Default: automatic realistic missingness (no UI controls)
             # Advanced: configurable sliders
-            _missing_rate = 0.03  # Default: 3% item-level missingness
-            _dropout_rate = 0.05  # Default: 5% survey dropout
+            _missing_rate = 0.0  # Default: 0% — DVs are forced-response
+            _dropout_rate = 0.0  # Default: 0% — no survey dropout
             if st.session_state.get("advanced_mode", False):
                 with st.expander("Data realism settings (advanced)", expanded=False):
                     st.caption(
@@ -10307,8 +10350,8 @@ if active_page == 3:
                 _engine_corr_matrix = np.array(_raw_corr, dtype=float)
             except Exception:
                 _engine_corr_matrix = None
-        _engine_missing_rate = float(inferred.get("missing_data_rate", 0.03))
-        _engine_dropout_rate = float(inferred.get("dropout_rate", 0.05))
+        _engine_missing_rate = float(inferred.get("missing_data_rate", 0.0))
+        _engine_dropout_rate = float(inferred.get("dropout_rate", 0.0))
 
         # v1.0.5.1: Inject condition descriptions into study_context for the engine
         _engine_study_context = dict(inferred.get("study_context", {}))
