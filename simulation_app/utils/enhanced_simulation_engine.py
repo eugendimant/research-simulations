@@ -45,7 +45,7 @@ This module is designed to run inside a `utils/` package (i.e., imported as
 """
 
 # Version identifier to help track deployed code
-__version__ = "1.0.6.9"  # v1.0.6.9: LLM init hotfix + human-like DV realism pass
+__version__ = "1.0.6.8"  # v1.0.6.8: LLM-first enforcement and OE dedup safety fixes
 
 # =============================================================================
 # SCIENTIFIC FOUNDATIONS FOR SIMULATION
