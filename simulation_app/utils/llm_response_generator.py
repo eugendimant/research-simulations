@@ -606,7 +606,11 @@ def _build_batch_prompt(
                 if _persona_desc:
                     _beh_hint += f" ({_persona_desc[:80]})"
             if _beh.get("straight_lined"):
-                _beh_hint += " | WARNING: straight-lined numeric responses, text should also show low engagement"
+                _beh_hint += (" | WARNING: STRAIGHT-LINED — this person clicked the SAME "
+                              "answer for every item. Their text MUST be very short "
+                              "(1-5 words), dismissive, low-effort. Examples: "
+                              "'idk', 'its fine', 'meh whatever', 'sure'. "
+                              "Do NOT write a thoughtful paragraph for a straight-liner.")
             elif _beh_mean is not None:
                 _beh_hint += f" | numeric_mean={_beh_mean:.1f}/7"
 
@@ -869,14 +873,19 @@ def _build_batch_prompt(
         f"the other hand' essay structures. Write like someone typing "
         f"quickly into a survey text box: stream-of-consciousness, "
         f"lowercase ok, run-on sentences ok, incomplete thoughts ok.\n\n"
-        f"5. ALL DIFFERENT — Each response must be unique in content, "
-        f"phrasing, AND opening structure. Do NOT start multiple responses "
-        f"with the same phrase (e.g., 'I think', 'I feel', 'I believe'). "
-        f"Vary sentence openers: some start with a direct statement about "
-        f"the topic, some with a hedged opinion, some with an emotional "
-        f"reaction, some with a reference to what they experienced. "
-        f"Each response should read like it came from a genuinely "
-        f"different person with a different communication style.\n\n"
+        f"5. ALL DIFFERENT — MAXIMUM DIVERSITY is critical. Each response "
+        f"must be unique in content, phrasing, structure, AND vocabulary. "
+        f"Do NOT start multiple responses with the same word or phrase. "
+        f"Vary EVERYTHING: sentence openers (direct statement, hedged "
+        f"opinion, emotional reaction, personal anecdote, question, "
+        f"colloquial exclamation), sentence length (4 words to 4 "
+        f"sentences), tone (earnest, sarcastic, matter-of-fact, "
+        f"passionate, detached), vocabulary level (simple words vs. "
+        f"articulate), and structure (single sentence, run-on, "
+        f"multi-sentence, fragment). Think of {n} REAL people who differ "
+        f"in age (18-75), education, culture, personality, and "
+        f"communication style. Their responses should be IMMEDIATELY "
+        f"distinguishable from each other.\n\n"
         f"6. MATCH PROFILES — Follow each participant's length, style, "
         f"effort, sentiment, and TONE specifications exactly. A participant "
         f"with 'very positive' sentiment should sound genuinely enthusiastic, "
@@ -1703,13 +1712,40 @@ class LLMResponseGenerator:
                 _provider_max = _active.max_batch_size if _active else self._batch_size
                 batch_n = min(needed, self._batch_size, _provider_max)
                 specs = []
-                for _ in range(batch_n):
-                    specs.append({
-                        "verbosity": self._rng.uniform(0.1, 0.9),
-                        "formality": self._rng.uniform(0.1, 0.9),
-                        "engagement": self._rng.uniform(0.2, 0.95),
+                for _si in range(batch_n):
+                    _v = self._rng.uniform(0.1, 0.9)
+                    _f = self._rng.uniform(0.1, 0.9)
+                    _e = self._rng.uniform(0.2, 0.95)
+                    _spec_i: Dict[str, Any] = {
+                        "verbosity": _v,
+                        "formality": _f,
+                        "engagement": _e,
                         "sentiment": sentiment,
-                    })
+                    }
+                    # v1.0.5.5: Give every 4th spec in prefill a synthetic
+                    # behavioral_profile so the pool contains behaviorally
+                    # grounded responses, not just generic ones.
+                    if _si % 4 == 0:
+                        _synth_pattern = {
+                            "very_positive": "strongly_positive",
+                            "positive": "positive",
+                            "neutral": "neutral",
+                            "negative": "negative",
+                            "very_negative": "strongly_negative",
+                        }.get(sentiment, "neutral")
+                        _synth_intensity = self._rng.uniform(0.3, 0.9)
+                        _spec_i["behavioral_profile"] = {
+                            "response_pattern": _synth_pattern,
+                            "intensity": _synth_intensity,
+                            "consistency_score": self._rng.uniform(0.4, 0.9),
+                            "straight_lined": _e < 0.15,
+                            "behavioral_summary": f"rated items {_synth_pattern.replace('_', ' ')} (intensity {_synth_intensity:.1f})",
+                            "persona_name": self._rng.choice([
+                                "Engaged Responder", "Satisficer", "Default",
+                                "Extreme Responder", "Acquiescent",
+                            ]),
+                        }
+                    specs.append(_spec_i)
 
                 responses = self._generate_batch(
                     question_text, condition, sentiment, specs
@@ -1775,20 +1811,21 @@ class LLMResponseGenerator:
             else:
                 logger.info("Provider '%s' failed, trying next...", provider.name)
 
-        # All providers failed for THIS batch — DON'T permanently disable
-        # v1.9.0: Track batch failures separately; only disable after sustained failures
+        # All providers failed for THIS batch — DON'T permanently disable.
+        # v1.0.5.5: Increased threshold from 5→12 to tolerate transient rate-limit
+        # storms.  Also add a brief sleep so providers have time to recover.
         self._batch_failure_count += 1
-        if self._batch_failure_count >= 5:
-            # Only disable after 5 consecutive batch failures (was instant before)
+        if self._batch_failure_count >= 12:
             self._api_available = False
             logger.warning("All %d LLM providers exhausted after %d batch failures — "
                            "falling back to templates",
                            len(self._providers), self._batch_failure_count)
         else:
-            logger.info("Batch %d failed across all providers, will retry next batch "
-                        "(reset providers for next attempt)",
-                        self._batch_failure_count)
-            # Reset providers so they're tried again on next batch
+            _backoff_secs = min(2.0 * self._batch_failure_count, 10.0)
+            logger.info("Batch %d/%d failed, sleeping %.1fs before retry",
+                        self._batch_failure_count, 12, _backoff_secs)
+            import time
+            time.sleep(_backoff_secs)
             self._reset_all_providers()
         return []
 
@@ -1841,6 +1878,7 @@ class LLMResponseGenerator:
             result = self._apply_deep_variation(
                 resp, persona_verbosity, persona_formality,
                 _effective_engagement, local_rng,
+                behavioral_profile=behavioral_profile,
             )
             if result and len(result.strip()) >= 3:
                 return result.strip()
@@ -1855,12 +1893,16 @@ class LLMResponseGenerator:
                     "engagement": self._rng.uniform(0.2, 0.95),
                     "sentiment": sentiment,
                 }
-                # v1.0.4.8: Include behavioral profile in the first spec slot
-                # so at least one response in the batch matches this participant
+                # v1.0.5.5: Pass behavioral_profile to EVERY spec slot (not
+                # just slot 0) so ALL generated responses carry behavioral
+                # grounding.  Slot 0 gets exact persona params; others get
+                # random params but still carry the behavioral_profile for
+                # cross-correlation guidance in the prompt.
                 if _bi == 0 and behavioral_profile:
                     _spec["verbosity"] = persona_verbosity
                     _spec["formality"] = persona_formality
-                    _spec["engagement"] = persona_engagement
+                    _spec["engagement"] = _effective_engagement
+                if behavioral_profile:
                     _spec["behavioral_profile"] = behavioral_profile
                 specs.append(_spec)
             batch = self._generate_batch(question_text, condition, sentiment, specs)
@@ -1873,6 +1915,7 @@ class LLMResponseGenerator:
                     result = self._apply_deep_variation(
                         resp, persona_verbosity, persona_formality,
                         persona_engagement, local_rng,
+                        behavioral_profile=behavioral_profile,
                     )
                     if result and len(result.strip()) >= 3:
                         return result.strip()
@@ -1904,15 +1947,58 @@ class LLMResponseGenerator:
         formality: float,
         engagement: float,
         rng: random.Random,
+        behavioral_profile: Optional[Dict[str, Any]] = None,
     ) -> str:
         """Apply deep persona-driven variation to a pool response.
 
         Combines multiple transformation layers so even the same base text
         produces different outputs for different participants.  Layers fire
         at ALL persona levels — not just extremes — to guarantee uniqueness.
+
+        v1.0.5.6: behavioral_profile modulates every layer:
+        - straight_lined → drastically truncate, skip elaboration, add disengagement
+        - strongly_positive/negative → amplify intensity language, add emphasis
+        - high extremity → replace hedging with absolutes
+        - high social_desirability → add qualifying hedges
+        - low attention → inject typos more aggressively, skip complex transforms
         """
         if not text or len(text) < 5:
             return text
+
+        # --- Extract behavioral signals for layer modulation ---
+        _straight_lined = False
+        _response_pattern = "neutral"
+        _intensity = 0.5
+        _trait_extremity = 0.5
+        _trait_sd = 0.5
+        _trait_attention = 0.5
+        _trait_consistency = 0.5
+        if behavioral_profile:
+            _straight_lined = behavioral_profile.get('straight_lined', False)
+            _response_pattern = behavioral_profile.get('response_pattern', 'neutral')
+            _intensity = behavioral_profile.get('intensity', 0.5)
+            tp = behavioral_profile.get('trait_profile', {})
+            _trait_extremity = tp.get('extremity', 0.5)
+            _trait_sd = tp.get('social_desirability', 0.5)
+            _trait_attention = tp.get('attention', 0.5)
+            _trait_consistency = tp.get('consistency', 0.5)
+
+        # --- BEHAVIORAL OVERRIDE: straight-liners get minimal text ---
+        if _straight_lined:
+            # Straight-liners produce very short, disengaged text
+            first_sent = re.split(r'(?<=[.!?])\s+', text)[0]
+            # Cap at 8 words
+            _words = first_sent.split()[:8]
+            _truncated = " ".join(_words)
+            # 60% chance: prepend disengagement marker
+            if rng.random() < 0.6:
+                _disengage = [
+                    "idk.", "fine.", "meh.", "whatever.", "sure.",
+                    "ok.", "yeah.", "eh.", "I guess.", "not much to say.",
+                ]
+                _truncated = rng.choice(_disengage) + " " + _truncated
+            # Lowercase everything for careless feel
+            return _truncated.lower().strip()
 
         sentences = re.split(r'(?<=[.!?])\s+', text)
 
@@ -2001,14 +2087,22 @@ class LLMResponseGenerator:
                 drop_idx = rng.randint(1, len(sentences) - 2)
                 sentences.pop(drop_idx)
 
-        # --- Layer 2: Verbosity control ---
-        if verbosity < 0.2:
+        # --- Layer 2: Verbosity control (behavioral-aware) ---
+        # v1.0.5.6: Strong intensity raters write more; low attention = less
+        _effective_verbosity = verbosity
+        if behavioral_profile:
+            if _intensity > 0.7 and _response_pattern in ('strongly_positive', 'strongly_negative'):
+                _effective_verbosity = max(_effective_verbosity, 0.6)  # Push up
+            if _trait_attention < 0.3:
+                _effective_verbosity = min(_effective_verbosity, 0.4)  # Cap down
+
+        if _effective_verbosity < 0.2:
             sentences = sentences[:1]
-        elif verbosity < 0.35:
+        elif _effective_verbosity < 0.35:
             sentences = sentences[:max(1, len(sentences) // 3)]
-        elif verbosity < 0.5:
+        elif _effective_verbosity < 0.5:
             sentences = sentences[:max(2, len(sentences) // 2)]
-        elif verbosity > 0.7 and rng.random() < 0.45:
+        elif _effective_verbosity > 0.7 and rng.random() < 0.45:
             # v1.0.3.9: Elaborations that extend the thought without
             # adding off-topic meta-commentary. These are deliberately
             # neutral continuations that work with ANY topic.
@@ -2071,8 +2165,66 @@ class LLMResponseGenerator:
             if len(text) > 1:
                 text = rng.choice(_HEDGING_PHRASES) + text[0].lower() + text[1:]
 
+        # --- Layer 4b: Behavioral intensity amplification (v1.0.5.6) ---
+        if behavioral_profile and _intensity > 0.6:
+            _strongly = _response_pattern in ('strongly_positive', 'strongly_negative')
+            _is_neg = _response_pattern in ('negative', 'strongly_negative')
+            # High-intensity raters use emphatic language
+            _amp_prob = 0.25 + (_intensity - 0.5) * 0.8  # 0.33 at 0.6, 0.65 at 0.9
+            if rng.random() < _amp_prob:
+                if _is_neg:
+                    _emphatics = [
+                        "I really don't agree with this at all.",
+                        "honestly this is just wrong.",
+                        "I can't support this in any way.",
+                        "no way, this is not ok.",
+                        "strongly opposed to this.",
+                    ]
+                else:
+                    _emphatics = [
+                        "I feel very strongly about this.",
+                        "absolutely, this is the right call.",
+                        "100% behind this.",
+                        "this is exactly right.",
+                        "couldn't agree more honestly.",
+                    ]
+                # 50% prepend, 50% append
+                if rng.random() < 0.5:
+                    text = rng.choice(_emphatics) + " " + text
+                else:
+                    text = text.rstrip(".!? ") + ". " + rng.choice(_emphatics)
+
+        # --- Layer 4c: Social desirability hedging (v1.0.5.6) ---
+        if behavioral_profile and _trait_sd > 0.7 and rng.random() < 0.4:
+            _hedges = [
+                "I could be wrong but ",
+                "I don't want to offend anyone but ",
+                "I know others may disagree however ",
+                "this is just my perspective but ",
+                "I try to see both sides and ",
+            ]
+            if len(text) > 1:
+                text = rng.choice(_hedges) + text[0].lower() + text[1:]
+
+        # --- Layer 4d: Extremity → absolute language (v1.0.5.6) ---
+        if behavioral_profile and _trait_extremity > 0.7 and rng.random() < 0.5:
+            _hedge_to_absolute = [
+                ("I think", "I know"), ("maybe", "definitely"),
+                ("somewhat", "completely"), ("kind of", "totally"),
+                ("probably", "absolutely"), ("might", "will"),
+                ("could be", "is"), ("I guess", "I'm sure"),
+                ("perhaps", "certainly"), ("it seems", "it clearly is"),
+            ]
+            _pair = rng.choice(_hedge_to_absolute)
+            if _pair[0] in text:
+                text = text.replace(_pair[0], _pair[1], 1)
+
         # --- Layer 5: Typo injection for careless/casual personas ---
-        if (formality < 0.3 or engagement < 0.3) and rng.random() < 0.25:
+        # v1.0.5.6: Low-attention personas get more typos
+        _typo_prob = 0.25
+        if behavioral_profile and _trait_attention < 0.3:
+            _typo_prob = 0.50  # Double typo rate for inattentive respondents
+        if (formality < 0.3 or engagement < 0.3) and rng.random() < _typo_prob:
             w = text.split()
             if len(w) > 4:
                 typo_candidates = [

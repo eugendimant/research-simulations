@@ -63,7 +63,7 @@ association, impression, perception, feedback, comment, observation, general
 Version: 1.8.5 - Improved domain detection with weighted scoring and disambiguation
 """
 
-__version__ = "1.0.5.5"
+__version__ = "1.0.5.6"
 
 import random
 import re
@@ -7638,14 +7638,17 @@ class ComprehensiveResponseGenerator:
             _intent = "evaluation"
 
         # v1.0.5.5: COMPOSITIONAL template system — compose responses from modular
-        # opener + core + elaboration parts.  15 openers × 15 cores × 12 elaborations
-        # × presence/absence = thousands of unique combinations, vs. the previous
-        # 7-10 fixed templates that caused heavy repetition in larger datasets.
+        # opener + core + elaboration + coda parts.
+        # 25 openers × 30 cores × 25 elaborations × (presence/absence combos)
+        # = tens of thousands of unique combinations.
         _openers = [
             "Honestly", "I gotta say", "For me personally", "I mean",
             "To be real", "Look", "I'll be honest", "The way I see it",
-            "I have to say", "From my perspective", "Thinking about it",
-            "Being honest here", "In my view", "So basically",
+            "I have to say", "Thinking about it", "Being honest",
+            "In my view", "So basically", "Ok so", "Yeah so",
+            "Well", "Tbh", "I guess", "Like", "Idk but",
+            "Not gonna lie", "Real talk", "Here's the thing",
+            "So look", "I'd say",
         ]
 
         if sentiment in ('very_positive', 'positive'):
@@ -7657,35 +7660,63 @@ class ComprehensiveResponseGenerator:
                 f"my views on {_topic} are favorable",
                 f"{_topic} lines up with how I see things",
                 f"I'm on board with {_topic}",
-                f"I see {_topic} in a positive light",
                 f"there's a lot to appreciate about {_topic}",
                 f"{_topic} works for me overall",
                 f"I'm fairly optimistic about {_topic}",
                 f"my experience with {_topic} has been positive",
                 f"I believe {_topic} is on the right track",
-                f"I think {_topic} deserves credit",
                 f"I care about {_topic} and I'm supportive",
+                f"{_topic} is something I feel strongly positive about",
+                f"I like where {_topic} is headed",
+                f"I'd say {_topic} is doing well",
+                f"I'm glad about {_topic}",
+                f"when I think about {_topic} I feel hopeful",
+                f"I've always been pretty supportive of {_topic}",
+                f"{_topic} makes me feel optimistic about things",
+                f"I genuinely believe in {_topic}",
+                f"my gut tells me {_topic} is the right call",
+                f"I keep coming back to how much I appreciate {_topic}",
+                f"{_topic} just resonates with me",
+                f"I'm behind {_topic} 100 percent",
+                f"people don't give {_topic} enough credit",
+                f"I've thought about {_topic} a lot and I'm still positive",
+                f"there's something about {_topic} that just clicks for me",
+                f"I trust the direction {_topic} is going",
+                f"my feelings about {_topic} have only gotten more positive",
             ]
             _elaborations = [
                 "It lines up with my values.",
                 "My own experiences back this up.",
                 "I've seen good things come from this.",
-                "I've thought about it carefully and I feel confident.",
-                "It makes sense to me when I think about the bigger picture.",
+                "I feel confident about where I stand.",
+                "It just makes sense to me.",
                 "I hope things keep going this way.",
                 "There's room to improve but I'm optimistic.",
-                "This really matters to me.",
+                "This really matters to me personally.",
                 "My opinion has gotten stronger over time.",
-                "I could go on but that's the gist of it.",
+                "I could go on but that captures it.",
                 "I think most people would agree if they thought about it.",
-                "I just tried to be as honest as I could about how I feel.",
+                "I just gave my honest take.",
+                "I've talked to other people who feel the same.",
+                "It's one of those things where the more you think about it the more you see the good.",
+                "I know not everyone agrees but I'm firm on this.",
+                "This is based on what I've actually experienced not just what I've heard.",
+                "I feel like I've put real thought into this.",
+                "It gives me a good feeling when I consider the possibilities.",
+                "I don't say this lightly either.",
+                "Life experience has taught me to value this kind of thing.",
+                "I think history will prove this right.",
+                "My friends and family would probably agree with me here.",
+                "I stand behind what I said.",
+                "Some things are worth being positive about and this is one.",
+                "I'm not naive about it but on balance I think it's good.",
             ]
         elif sentiment in ('very_negative', 'negative'):
             _cores = [
                 f"I'm not happy about {_topic}",
                 f"{_topic} really concerns me",
                 f"I'm critical of {_topic}",
-                f"{_topic} frustrates me honestly",
+                f"{_topic} frustrates me",
                 f"my views on {_topic} are negative",
                 f"I don't think {_topic} is working",
                 f"{_topic} is headed the wrong way",
@@ -7693,24 +7724,52 @@ class ComprehensiveResponseGenerator:
                 f"there are real problems with {_topic}",
                 f"I have serious issues with {_topic}",
                 f"{_topic} needs to change",
-                f"I'm uncomfortable with where {_topic} is going",
-                f"my experience with {_topic} has been negative",
-                f"I see major flaws when it comes to {_topic}",
-                f"I wish {_topic} was handled better",
+                f"I'm uncomfortable with how {_topic} is going",
+                f"my experience with {_topic} has been bad",
+                f"I see major problems with {_topic}",
+                f"I wish {_topic} was handled differently",
+                f"{_topic} makes me uneasy",
+                f"every time I think about {_topic} it bothers me more",
+                f"I've lost faith in {_topic}",
+                f"{_topic} is failing people",
+                f"there's too much wrong with {_topic} to ignore",
+                f"I used to be more neutral about {_topic} but not anymore",
+                f"people should be more worried about {_topic}",
+                f"{_topic} has been getting worse not better",
+                f"I can't support {_topic} the way things are",
+                f"something is seriously wrong with {_topic}",
+                f"I'm pretty fed up with {_topic}",
+                f"the more I learn about {_topic} the less I like it",
+                f"I wouldn't recommend {_topic} to anyone right now",
+                f"{_topic} has let me down",
+                f"I thought {_topic} would be better than this",
             ]
             _elaborations = [
                 "There are problems people aren't addressing.",
                 "I've seen this go wrong firsthand.",
                 "Things really need to change.",
-                "I feel like nobody is listening to these concerns.",
-                "This has been a source of frustration for me.",
-                "I keep hoping for improvement but it doesn't come.",
-                "I wish I could be more positive but I can't.",
-                "My feelings about this have only gotten worse.",
-                "The situation is more serious than people realize.",
-                "I think we can and should do better.",
-                "Not enough people are talking about these issues.",
-                "I've tried to stay open-minded but it's hard.",
+                "I feel like nobody is listening.",
+                "This has been frustrating.",
+                "I keep hoping for improvement but nothing happens.",
+                "I wish I could be more positive.",
+                "My feelings have only gotten worse.",
+                "The situation is worse than people realize.",
+                "We can and should do better.",
+                "Not enough people are talking about this.",
+                "I've tried to stay open-minded but it's difficult.",
+                "It makes me angry when I really think about it.",
+                "I know others who feel the exact same way.",
+                "I don't think I'm being unreasonable here.",
+                "Every time I give it another chance I'm disappointed again.",
+                "The excuses don't hold up when you look at the facts.",
+                "I used to be more forgiving about this but not anymore.",
+                "My trust has been broken on this one.",
+                "Someone needs to take responsibility.",
+                "I feel strongly about this and I don't apologize for it.",
+                "I wouldn't be this critical if I didn't care.",
+                "It's affecting real people and that's not ok.",
+                "I think about this more than I probably should.",
+                "Something has got to give.",
             ]
         else:  # neutral
             _cores = [
@@ -7728,21 +7787,49 @@ class ComprehensiveResponseGenerator:
                 f"I could see it going either way with {_topic}",
                 f"I understand why people disagree about {_topic}",
                 f"my take on {_topic} is pretty balanced",
-                f"I try to be fair-minded about {_topic}",
+                f"I try to be fair about {_topic}",
+                f"{_topic} doesn't make me feel strongly one way or the other",
+                f"I'm kinda neutral on {_topic} honestly",
+                f"some parts of {_topic} I like, some I don't",
+                f"I think {_topic} is more complicated than people make it",
+                f"I haven't fully made up my mind about {_topic}",
+                f"I could be convinced either way about {_topic}",
+                f"my position on {_topic} keeps shifting",
+                f"{_topic} depends on so many factors for me",
+                f"I try not to jump to conclusions about {_topic}",
+                f"I get why {_topic} is controversial",
+                f"there's no easy answer when it comes to {_topic}",
+                f"I'm genuinely undecided about {_topic}",
+                f"if you asked me tomorrow I might give a different answer about {_topic}",
+                f"both sides have a point about {_topic}",
+                f"I'm not losing sleep over {_topic} one way or the other",
             ]
             _elaborations = [
-                "I try to keep an open mind about these things.",
+                "I try to keep an open mind.",
                 "There are good arguments on both sides.",
-                "I just gave my honest take on it.",
-                "I'd need more info to feel strongly either way.",
+                "I just gave my honest take.",
+                "I'd need more info to feel strongly.",
                 "It depends on the specifics for me.",
-                "I've heard compelling points from different sides.",
+                "I've heard good points from different people.",
                 "I try not to be extreme about anything.",
                 "My views might shift as I learn more.",
-                "Nuance matters here and I tried to show that.",
+                "Nuance matters here.",
                 "Some days I lean one way, some days the other.",
                 "I just call it like I see it.",
-                "I'd rather be honest than force myself to pick a side.",
+                "I don't feel the need to pick a side.",
+                "Maybe I just haven't thought about it enough.",
+                "I think the truth is somewhere in the middle.",
+                "People I respect disagree on this so I stay moderate.",
+                "I can't pretend to have all the answers.",
+                "I've changed my mind on this before and probably will again.",
+                "I try to be honest even when it's complicated.",
+                "The more I hear different perspectives the less sure I am.",
+                "I think being uncertain is ok sometimes.",
+                "I don't think anyone has this totally figured out.",
+                "My gut says one thing, my brain says another.",
+                "I'm comfortable sitting with the ambiguity.",
+                "I'd rather admit I'm unsure than pretend to know.",
+                "Life is too complicated for simple answers on this.",
             ]
 
         # ── Compose response from parts ──
@@ -7764,18 +7851,21 @@ class ComprehensiveResponseGenerator:
                     " That's my reasoning.",
                     " That's where I'm coming from.",
                     " I think that explains it.",
+                    " Make of that what you will.",
                 ])
             elif _intent == "emotional_reaction":
                 response += rng.choice([
                     " That's just how it makes me feel.",
-                    " It's hard to put into words but that's close.",
-                    " I feel pretty strongly about it.",
+                    " Hard to put into words exactly.",
+                    " I feel strongly about it.",
+                    " Can't help how I feel.",
                 ])
             elif _intent == "evaluation":
                 response += rng.choice([
                     " That's my honest assessment.",
-                    " I tried to be fair in my evaluation.",
-                    " That's how I'd score it.",
+                    " Take it for what it's worth.",
+                    " That's how I'd rate it.",
+                    " I stand by that evaluation.",
                 ])
         return response
 
