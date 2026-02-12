@@ -53,8 +53,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.0.5.1"
-BUILD_ID = "20260212-v10501-ux-conditions-crash-fix"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.0.5.2"
+BUILD_ID = "20260212-v10502-fix-widget-state-errors"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -119,7 +119,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.0.5.1"  # v1.0.5.1: UX overhaul — structured condition input, treatment descriptions, crash fix, label truncation, warning sync
+APP_VERSION = "1.0.5.2"  # v1.0.5.2: Fix StreamlitAPIException when adding conditions — use del instead of assign for widget keys
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -3977,9 +3977,9 @@ def _render_conversational_builder() -> None:
                     "description": _new_cond_desc.strip(),
                 })
                 st.session_state["builder_structured_conditions"] = _struct_conds
-                # Clear input fields
-                st.session_state["struct_cond_name_input"] = ""
-                st.session_state["struct_cond_desc_input"] = ""
+                # Clear input fields — must delete (not assign) to avoid StreamlitAPIException
+                del st.session_state["struct_cond_name_input"]
+                del st.session_state["struct_cond_desc_input"]
                 st.rerun()
 
         # Convert structured conditions to parsed conditions for downstream
@@ -4773,8 +4773,9 @@ def _render_builder_design_review() -> None:
                     c: _per + (1 if idx < _rem else 0) for idx, c in enumerate(conditions)
                 }
                 st.session_state["condition_allocation"] = {c: round(100.0 / _n, 1) for c in conditions}
-                st.session_state["builder_review_extra_conds"] = ""
-                st.session_state["builder_review_extra_desc"] = ""
+                # Clear input fields — must delete (not assign) to avoid StreamlitAPIException
+                del st.session_state["builder_review_extra_conds"]
+                del st.session_state["builder_review_extra_desc"]
                 st.session_state["_br_cond_version"] = st.session_state.get("_br_cond_version", 0) + 1
                 st.rerun()
 
@@ -8037,8 +8038,8 @@ if active_page == 2:
                     if _nc and _nc.lower() not in _all_existing:
                         custom_conditions.append(_nc)
                         st.session_state["custom_conditions"] = custom_conditions
-                        # v1.0.5.1: Clear input after successful add
-                        st.session_state["new_condition_input"] = ""
+                        # Clear input — must delete (not assign) to avoid StreamlitAPIException
+                        del st.session_state["new_condition_input"]
                         st.rerun()
                     elif _nc and _nc.lower() in _all_existing:
                         st.warning(f"Condition '{_nc}' already exists (case-insensitive match).")
