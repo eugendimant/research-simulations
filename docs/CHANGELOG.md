@@ -1,5 +1,22 @@
 # Agent Change Log
 
+## 2026-02-12 — v1.0.5.9
+### Poe (poe.com) Added as Built-in LLM Provider
+
+- **New built-in provider**: Poe (poe.com) added as 6th provider in the LLM failover chain
+  - OpenAI-compatible API at `https://api.poe.com/v1/chat/completions`
+  - Uses GPT-4o-mini model (~15 compute points/message)
+  - Free tier: 3,000 compute points/day (~200 messages)
+  - Positioned after OpenRouter in the chain (last resort before asking user for own key)
+- **Built-in API key**: XOR-encoded Poe key ships with the tool for zero-config usage
+- **Auto-detection**: `detect_provider_from_key()` updated to recognize Poe keys
+- **User-selectable**: Poe added to provider dropdown in the API key fallback dialog
+- **Env var support**: `POE_API_KEY` environment variable recognized for custom Poe keys
+- **UI updates**: Provider count updated from 5 to 6 in exhaustion messages; Poe added to free provider sign-up table
+- **Provider chain**: Groq → Cerebras → Google AI (Gemini) → Google AI (Gemma) → OpenRouter → Poe → (user key) → (template fallback)
+
+---
+
 ## 2026-02-12 — v1.0.5.0
 ### OE Behavioral Realism Pipeline — 5 Iterations: Topic Intelligence, Persona Integration, Behavioral Coherence, Cross-Response Consistency
 
