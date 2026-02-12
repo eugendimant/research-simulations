@@ -45,7 +45,7 @@ This module is designed to run inside a `utils/` package (i.e., imported as
 """
 
 # Version identifier to help track deployed code
-__version__ = "1.0.5.8"  # v1.0.5.8: User API key fallback, anti-detection realism, OE skip-rate, cross-participant dedup, zigzag prevention
+__version__ = "1.0.6.8"  # v1.0.6.8: LLM-first enforcement and OE dedup safety fixes
 
 # =============================================================================
 # SCIENTIFIC FOUNDATIONS FOR SIMULATION
@@ -2695,6 +2695,7 @@ class EnhancedSimulationEngine:
         missing_data_rate: float = 0.0,  # 0.0 = none; 0.04 = 4% item-level missingness
         dropout_rate: float = 0.0,  # 0.0 = none; 0.07 = 7% participant dropout
         missing_data_mechanism: str = "realistic",  # "none", "mcar", "realistic"
+        allow_template_fallback: bool = True,
     ):
         self.study_title = str(study_title or "").strip()
         self.study_description = str(study_description or "").strip()
@@ -2737,6 +2738,7 @@ class EnhancedSimulationEngine:
             missing_data_mechanism if missing_data_mechanism in ("none", "mcar", "realistic")
             else "realistic"
         )
+        self.allow_template_fallback = bool(allow_template_fallback)
         self.mode = (mode or "pilot").strip().lower()
         if self.mode not in ("pilot", "final"):
             self.mode = "pilot"
@@ -2873,6 +2875,7 @@ class EnhancedSimulationEngine:
                 study_description=self.study_description,
                 seed=self.seed,
                 fallback_generator=self.comprehensive_generator,
+                allow_template_fallback=self.allow_template_fallback,
                 batch_size=20,
                 all_conditions=self.conditions if self.conditions else None,
             )
@@ -7466,6 +7469,8 @@ class EnhancedSimulationEngine:
                 if resp and resp.strip():
                     return resp
             except Exception as _llm_gen_err:
+                if "template fallback is disabled" in str(_llm_gen_err).lower():
+                    raise
                 # v1.0.5.7: Log at WARNING (not debug) so failures are visible
                 logger.warning("LLM generate() error: %s", _llm_gen_err)
                 self._log(f"WARNING: LLM generation failed, falling back: {_llm_gen_err}")
@@ -9241,10 +9246,12 @@ class EnhancedSimulationEngine:
         # v1.0.0 CRITICAL FIX: Post-processing validation to detect and fix duplicate responses
         # Check each participant's responses across all open-ended questions
         # Use actual column names from data (accounting for any renames due to collisions)
-        open_ended_cols = [col for col in data
-                          if isinstance(data[col], list)
-                          and len(data[col]) > 0
-                          and isinstance(data[col][0], str)]
+        open_ended_cols = []
+        for q in self.open_ended_questions:
+            _candidate = _clean_column_name(str(q.get("name", "Open_Response")))
+            if (_candidate in data and isinstance(data[_candidate], list)
+                    and len(data[_candidate]) > 0 and isinstance(data[_candidate][0], str)):
+                open_ended_cols.append(_candidate)
         if len(open_ended_cols) > 1:
             for i in range(n):
                 participant_responses = {}
