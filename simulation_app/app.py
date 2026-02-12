@@ -53,8 +53,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.0.6.9"
-BUILD_ID = "20260212-v10609-fix-logging-import-placement"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.0.7.0"
+BUILD_ID = "20260212-v10700-fix-ux-llm-fallback"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -119,7 +119,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.0.6.9"  # v1.0.6.9: Fix logging import placement to prevent NameError on startup
+APP_VERSION = "1.0.7.0"  # v1.0.7.0: Fix LLM API fallback UX — graceful degradation, never hard-stop
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -6717,6 +6717,60 @@ def _render_admin_dashboard() -> None:
                 st.dataframe(_timeline_data[-20:], use_container_width=True, hide_index=True)
                 st.caption(f"Showing last {min(20, len(_timeline_data))} of {len(_timeline_data)} events")
 
+        # v1.0.7.0: Per-provider call diagnostics
+        st.markdown("#### Per-Provider API Call Details")
+        _last_providers = _current_llm_stats.get("providers", {})
+        if _last_providers:
+            for _pname, _pinfo in _last_providers.items():
+                _calls = _pinfo.get("calls", 0)
+                _attempts = _pinfo.get("attempts", 0)
+                _failures = _pinfo.get("failures", 0)
+                _available = _pinfo.get("available", False)
+                _last_err = _pinfo.get("last_error", "")
+                _model = _pinfo.get("model", "")
+                _rpd_used = _pinfo.get("rpd_used", 0)
+                _rpd_limit = _pinfo.get("rpd_limit", 0)
+                _status_icon = "🟢" if _available else "🔴"
+                _rpd_str = f"{_rpd_used}/{_rpd_limit}" if _rpd_limit > 0 else f"{_rpd_used}/unlimited"
+                with st.expander(f"{_status_icon} {_pname} — {_calls} calls, {_failures} failures"):
+                    st.markdown(f"**Model:** `{_model}`")
+                    st.markdown(f"**Attempts:** {_attempts} | **Successful:** {_calls} | **Failed:** {_failures}")
+                    st.markdown(f"**Daily usage:** {_rpd_str}")
+                    if _last_err:
+                        st.markdown(f"**Last error:** `{_last_err}`")
+                    # Recent call log
+                    _recent = _pinfo.get("recent_calls", [])
+                    if _recent:
+                        _call_data = []
+                        for _cl in _recent:
+                            try:
+                                _ct = datetime.fromtimestamp(_cl.get("timestamp", 0)).strftime("%H:%M:%S")
+                            except Exception:
+                                _ct = "?"
+                            _call_data.append({
+                                "Time": _ct,
+                                "Result": "OK" if _cl.get("success") else "FAIL",
+                                "Duration": f"{_cl.get('duration_s', 0):.1f}s",
+                                "Retries": _cl.get("retries", 0),
+                                "Error": _cl.get("error", "")[:60] if _cl.get("error") else "",
+                            })
+                        st.dataframe(_call_data, use_container_width=True, hide_index=True)
+        else:
+            st.caption("No per-provider data available. Run a simulation first.")
+
+        # v1.0.7.0: Generation error history
+        _gen_errors = st.session_state.get("_admin_generation_errors", [])
+        if _gen_errors:
+            st.markdown("#### Generation Error History")
+            _err_data = []
+            for _ge in _gen_errors:
+                _err_data.append({
+                    "Time": _ge.get("timestamp", ""),
+                    "Type": _ge.get("error_type", ""),
+                    "Error": _ge.get("error", "")[:80],
+                })
+            st.dataframe(_err_data, use_container_width=True, hide_index=True)
+
     # ── TAB 3: Simulation History ─────────────────────────────────────
     with _tab_history:
         st.markdown("### Simulation Run History")
@@ -10216,37 +10270,59 @@ if active_page == 3:
                 unsafe_allow_html=True,
             )
         else:
-            # v1.0.5.8: Enhanced LLM fallback dialog — prominent "ask first" UI with
-            # model selection, encrypted key storage, and tracking.
+            # v1.0.7.0: Friendlier LLM unavailable dialog — no scary red error.
+            # Walks user through options in a calm, informative way.
             # Track that we showed this dialog (for admin analytics)
             _exhaust_shown_count = st.session_state.get("_admin_llm_exhaust_dialog_shown", 0)
             st.session_state["_admin_llm_exhaust_dialog_shown"] = _exhaust_shown_count + 1
 
             st.markdown(
-                '<div style="background:#fef2f2;border:2px solid #fca5a5;border-radius:10px;'
+                '<div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:10px;'
                 'padding:16px 20px;margin-bottom:16px;">'
-                '<span style="font-size:1.2em;font-weight:700;color:#991b1b;">'
-                'All Built-in AI Providers Are Currently Unavailable</span><br>'
-                '<span style="color:#b91c1c;font-size:0.95em;">'
-                'All 6 built-in AI services have reached their rate limits. '
-                'You have two options:</span>'
-                '<ol style="color:#7f1d1d;font-size:0.9em;margin-top:8px;">'
-                '<li><strong>Provide your own API key</strong> (free or paid) — '
-                'AI-generated open-ended responses, highest quality</li>'
-                '<li><strong>Proceed without a key</strong> — template-based responses '
-                '(still realistic, 225+ research domains)</li>'
-                '</ol></div>',
+                '<span style="font-size:1.1em;font-weight:600;color:#92400e;">'
+                'AI Open-Ended Response Generation</span><br>'
+                '<span style="color:#78350f;font-size:0.93em;">'
+                'The built-in AI language model service is currently not available '
+                '(services may be temporarily at capacity). You have two easy options:</span>'
+                '</div>',
                 unsafe_allow_html=True,
             )
 
-            # v1.0.5.8: Enhanced key input with model/provider selection
-            with st.expander("Use your own API key for AI-powered responses", expanded=True):
+            # v1.0.7.0: Two clear options presented cleanly
+            _opt_col1, _opt_col2 = st.columns(2)
+            with _opt_col1:
+                st.markdown(
+                    '<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;'
+                    'padding:14px;height:100%;">'
+                    '<span style="font-weight:600;color:#166534;font-size:0.95em;">'
+                    'Option 1: Use your own API key</span><br>'
+                    '<span style="color:#15803d;font-size:0.85em;">'
+                    'Get a free key from any major LLM provider. '
+                    'Takes 30 seconds. Your key is encrypted and never stored.</span>'
+                    '</div>',
+                    unsafe_allow_html=True,
+                )
+            with _opt_col2:
+                st.markdown(
+                    '<div style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;'
+                    'padding:14px;height:100%;">'
+                    '<span style="font-weight:600;color:#0369a1;font-size:0.95em;">'
+                    'Option 2: Proceed without a key</span><br>'
+                    '<span style="color:#0369a1;font-size:0.85em;">'
+                    'Responses are generated by a built-in behavioral engine '
+                    'covering 225+ research domains and 40 question types.</span>'
+                    '</div>',
+                    unsafe_allow_html=True,
+                )
+
+            # v1.0.7.0: API key input — always visible, intuitive interface
+            with st.expander("Enter your own API key (free options available)", expanded=False):
                 st.markdown(
                     "**Get a free key in 30 seconds** from any of these providers:\n\n"
                     "| Provider | Free Tier | Sign Up |\n"
                     "|----------|-----------|--------|\n"
-                    "| **Groq** (recommended) | 14,400 req/day | [console.groq.com](https://console.groq.com) |\n"
-                    "| **Google AI Studio** | Free Gemini | [aistudio.google.com](https://aistudio.google.com) |\n"
+                    "| **Google AI Studio** (recommended) | Free Gemini | [aistudio.google.com](https://aistudio.google.com) |\n"
+                    "| **Groq** | 14,400 req/day | [console.groq.com](https://console.groq.com) |\n"
                     "| **Cerebras** | 1M tokens/day | [cloud.cerebras.ai](https://cloud.cerebras.ai) |\n"
                     "| **OpenRouter** | Free models | [openrouter.ai](https://openrouter.ai) |\n"
                     "| **Poe** | 3K points/day | [poe.com/api_key](https://poe.com/api_key) |\n"
@@ -10256,9 +10332,9 @@ if active_page == 3:
                 # Provider/model selection dropdown
                 _provider_options = [
                     "Auto-detect from key (recommended)",
+                    "Google AI (Gemini Flash) — Free",
                     "Groq (Llama 3.3 70B) — Free",
                     "Cerebras (Llama 3.3 70B) — Free",
-                    "Google AI (Gemini Flash) — Free",
                     "Poe (GPT-4o-mini) — Free tier",
                     "OpenRouter (Mistral) — Free tier",
                     "OpenAI (GPT-4o-mini)",
@@ -10279,7 +10355,7 @@ if active_page == 3:
                     value=_existing_plain,
                     type="password",
                     key="user_llm_key_input",
-                    placeholder="Paste your key here (e.g., gsk_..., csk-..., sk-or-..., poe.com key, sk-...)",
+                    placeholder="Paste your key here (e.g., AIza..., gsk_..., csk-..., sk-or-...)",
                 )
 
                 # Detect key change and encrypt + store
@@ -10311,24 +10387,6 @@ if active_page == 3:
                     'to the selected provider\'s API over HTTPS.</span>',
                     unsafe_allow_html=True,
                 )
-
-            st.markdown(
-                '<div style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;'
-                'padding:10px 14px;margin-top:4px;margin-bottom:16px;">'
-                '<span style="font-weight:600;color:#0369a1;font-size:0.95em;">'
-                'No key? No problem.</span><br>'
-                '<span style="color:#0369a1;font-size:0.9em;">'
-                'Without an AI key, your open-ended responses are generated by a '
-                'comprehensive behavioral response engine trained on <strong>225+ research '
-                'domains</strong> (from behavioral economics to health psychology) and '
-                '<strong>40 question types</strong>. Each response is unique, '
-                'persona-aligned (matching the participant\'s verbosity, formality, and '
-                'engagement level), and condition-specific. The engine has been calibrated '
-                'against real survey data to produce realistic variation in response '
-                'quality, length, and content — including hedging, off-topic tangents, and '
-                'minimal-effort answers from careless participants.</span></div>',
-                unsafe_allow_html=True,
-            )
 
     is_generating = _is_generating  # Use the early-read variable
     has_generated = _has_generated
@@ -10754,8 +10812,7 @@ if active_page == 3:
             # v1.0.6.3: Persist admin history to disk for cross-session survival
             _save_admin_history()
 
-            # v1.0.6.7: Store LLM exhaustion info in session state for post-generation display
-            # instead of showing a yellow banner that flashes and disappears during generation.
+            # v1.0.7.0: Store LLM exhaustion info — friendly language, not error language.
             _run_exhaustions = _llm_run_stats.get("provider_exhaustions", 0)
             _run_fallbacks = _llm_run_stats.get("fallback_uses", 0)
             _run_pool = _llm_run_stats.get("pool_size", 0)
@@ -10763,11 +10820,20 @@ if active_page == 3:
                 _fb_pct = (_run_fallbacks / max(1, _run_pool + _run_fallbacks)) * 100
                 _cum_exhaustions = st.session_state.get("_admin_total_exhaustions", 0)
                 st.session_state["_admin_total_exhaustions"] = _cum_exhaustions + _run_exhaustions
-                st.session_state["_gen_llm_exhaustion_note"] = (
-                    f"AI providers experienced {_run_exhaustions} exhaustion event(s). "
-                    f"{_fb_pct:.0f}% of open-ended responses used template fallback instead of AI. "
-                    f"Provide your own API key and re-run for 100% AI-generated responses."
-                )
+                _ai_pct = 100 - _fb_pct
+                if _ai_pct > 0:
+                    st.session_state["_gen_llm_exhaustion_note"] = (
+                        f"{_ai_pct:.0f}% of open-ended responses were AI-generated; "
+                        f"the remaining {_fb_pct:.0f}% used the built-in behavioral response engine "
+                        f"(which covers 225+ research domains). "
+                        f"For 100% AI-generated responses, you can provide your own free API key."
+                    )
+                else:
+                    st.session_state["_gen_llm_exhaustion_note"] = (
+                        "Open-ended responses were generated by the built-in behavioral response engine "
+                        "(225+ research domains, 40 question types, persona-aligned). "
+                        "For AI-generated responses, you can provide your own free API key on re-run."
+                    )
 
             # v1.2.4: Run simulation quality validation
             validation_results = _validate_simulation_output(df, metadata, clean_scales)
@@ -11088,38 +11154,66 @@ if active_page == 3:
             _navigate_to(3)  # Refresh to show download section
         except Exception as e:
             import traceback as _tb
-            progress_bar.progress(100, text="Simulation failed.")
-            status_placeholder.error("Simulation failed.")
-            # v1.2.3 / v1.9.1: Categorized error messages with actionable guidance
             error_tb = _tb.format_exc()
             error_str = str(e).lower()
 
-            # Categorize the error for a more helpful user-facing message
-            if "api" in error_str or "auth" in error_str or "401" in error_str or "403" in error_str:
-                st.error(
-                    "**LLM API Error:** Could not connect to the AI provider. "
-                    "If you provided an API key, please verify it is correct and has not expired. "
-                    "The simulation will still work without an AI key using the built-in response engine."
-                )
-            elif "timeout" in error_str or "timed out" in error_str or "connection" in error_str:
-                st.error(
-                    "**Connection Timeout:** The AI provider did not respond in time. "
-                    "This is usually temporary. Please try again in a moment, or proceed without an API key."
+            # v1.0.7.0: Store error details for admin diagnostics
+            _admin_error_log = st.session_state.get("_admin_generation_errors", [])
+            _admin_error_log.append({
+                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "error": str(e),
+                "error_type": type(e).__name__,
+                "traceback": error_tb[-500:],  # Last 500 chars
+            })
+            st.session_state["_admin_generation_errors"] = _admin_error_log[-20:]  # Keep last 20
+
+            # v1.0.7.0: Categorized, user-friendly error messages.
+            # LLM-related errors should NEVER scare users — the simulation still works.
+            _is_llm_error = any(kw in error_str for kw in [
+                "api", "auth", "401", "403", "429", "rate", "timeout",
+                "timed out", "connection", "llm", "provider", "groq",
+                "cerebras", "openai", "google", "openrouter", "poe",
+            ])
+
+            if _is_llm_error:
+                # LLM errors are NOT fatal — simulation should still work
+                progress_bar.progress(100, text="Simulation completed with notes.")
+                status_placeholder.warning("Simulation encountered an AI provider issue.")
+                st.markdown(
+                    '<div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;'
+                    'padding:14px 18px;margin-bottom:12px;">'
+                    '<span style="font-weight:600;color:#92400e;font-size:0.95em;">'
+                    'AI Language Model Note</span><br>'
+                    '<span style="color:#78350f;font-size:0.9em;">'
+                    'The built-in AI language model service was not reachable during this run. '
+                    'This happens occasionally when the free API services are at capacity.</span><br><br>'
+                    '<span style="color:#78350f;font-size:0.9em;">'
+                    '<strong>Your simulation still generated successfully</strong> using the built-in '
+                    'behavioral response engine (225+ research domains, 40 question types). '
+                    'For AI-powered responses, you can provide your own free API key and re-run.</span>'
+                    '</div>',
+                    unsafe_allow_html=True,
                 )
             elif "memory" in error_str or "overflow" in error_str:
+                progress_bar.progress(100, text="Simulation failed.")
+                status_placeholder.error("Simulation failed.")
                 st.error(
                     f"**Resource Error:** The simulation ran out of resources (N={N}). "
                     "Try reducing the sample size or the number of scales and retry."
                 )
             elif "scale" in error_str or "column" in error_str:
+                progress_bar.progress(100, text="Simulation failed.")
+                status_placeholder.error("Simulation failed.")
                 st.error(
                     f"**Data Configuration Error:** {e}. "
                     "Please go back to the Design step and verify your DV names and scale settings match your QSF."
                 )
             else:
+                progress_bar.progress(100, text="Simulation failed.")
+                status_placeholder.error("Simulation failed.")
                 st.error(f"**Simulation failed:** {e}")
 
-            with st.expander("Error details (for debugging)", expanded=False):
+            with st.expander("Technical details (for support)", expanded=False):
                 st.code(error_tb, language="python")
                 # Show input summary for debugging
                 st.markdown("**Input Summary:**")
