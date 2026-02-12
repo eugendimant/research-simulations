@@ -63,7 +63,7 @@ association, impression, perception, feedback, comment, observation, general
 Version: 1.8.5 - Improved domain detection with weighted scoring and disambiguation
 """
 
-__version__ = "1.0.6.2"
+__version__ = "1.0.6.3"
 
 import random
 import re
@@ -7514,7 +7514,8 @@ class ComprehensiveResponseGenerator:
         _fallback_words = re.findall(r'\b[a-zA-Z]{4,}\b', _qt.lower())
         _fallback_stop = {'this', 'that', 'about', 'what', 'your', 'please',
                           'describe', 'explain', 'question', 'context', 'study',
-                          'topic', 'condition'}
+                          'topic', 'condition', 'here', 'there', 'well', 'like',
+                          'with', 'from', 'have', 'some', 'very', 'really'}
         _fallback_topic = [w for w in _fallback_words if w not in _fallback_stop][:3]
         _fb_phrase = ' '.join(_fallback_topic) if _fallback_topic else ""
         if _fb_phrase:
@@ -7588,13 +7589,16 @@ class ComprehensiveResponseGenerator:
             'before', 'after', 'during', 'following', 'prior',
             'then', 'next', 'first', 'second', 'third',
             'stories', 'story', 'experience', 'experiences',
-            'believe', 'beliefs', 'favorite', 'favourite',
             'whether', 'toward', 'towards', 'regarding',
             'question', 'questions', 'context', 'study', 'survey', 'experiment',
             'condition', 'conditions', 'topic', 'measure', 'measured',
             'response', 'responses', 'answer', 'answers', 'item', 'items',
             'much', 'more', 'most', 'very', 'really', 'just', 'also', 'please',
             'better', 'deeply', 'held', 'quite',
+            # v1.0.6.3: Additional stop words
+            'here', 'there', 'well', 'like', 'even', 'still',
+            'only', 'each', 'every', 'both', 'many', 'overall',
+            'certain', 'particular', 'specific', 'general',
         }
         _all_words = re.findall(r'\b[a-zA-Z]{3,}\b', subject.lower())
         # v1.0.5.5: Entity-first topic construction — named entities (people,
@@ -7605,7 +7609,12 @@ class ComprehensiveResponseGenerator:
                    'facebook', 'google', 'amazon', 'apple', 'microsoft', 'tesla',
                    'maga', 'gop', 'nato', 'china', 'russia', 'europe', 'mexico',
                    'instagram', 'twitter', 'tiktok', 'youtube', 'chatgpt',
-                   'netflix', 'disney', 'uber', 'airbnb', 'spotify'}
+                   'netflix', 'disney', 'uber', 'airbnb', 'spotify',
+                   # v1.0.6.3: Broader entity coverage
+                   'qanon', 'illuminati', 'fauci', 'vaccine', 'pentagon',
+                   'cia', 'fbi', 'nsa', 'nasa', 'cdc',
+                   'elon', 'musk', 'zuckerberg', 'bezos',
+                   'desantis', 'pelosi', 'sanders', 'bitcoin', 'crypto'}
         _entities = [w for w in _all_words if w in _proper]
         _content = [w for w in _all_words if w not in _stop and w not in _proper][:4]
         # Build topic: prefer entities (clean & recognizable), limit to 2 words max
@@ -8058,6 +8067,10 @@ class ComprehensiveResponseGenerator:
                 'condition', 'conditions', 'measure', 'measured',
                 'response', 'responses', 'describe', 'explain', 'please',
                 'open', 'ended', 'text', 'variable',
+                # v1.0.6.3: Additional stop words
+                'here', 'there', 'well', 'like', 'even', 'still',
+                'only', 'each', 'every', 'both', 'many', 'overall',
+                'certain', 'particular', 'specific', 'general',
             }
             _topic_words = [w for w in _words if w not in _stop][:3]
 

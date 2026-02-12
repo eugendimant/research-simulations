@@ -1511,6 +1511,7 @@ class _LLMProvider:
         self.max_batch_size = max_batch_size
         self.available = True
         self.call_count = 0
+        self.attempt_count = 0  # v1.0.6.3: Tracks ALL attempts including early-return-blocked
         self._daily_call_count = 0
         self._daily_reset_time = time.time()
         self._consecutive_failures = 0
@@ -1524,6 +1525,8 @@ class _LLMProvider:
              temperature: float = 0.7, max_tokens: int = 4000) -> Optional[str]:
         if not self.api_key:
             return None
+
+        self.attempt_count += 1  # v1.0.6.3: Track ALL attempts
 
         # Auto-recover after cooldown period
         if not self.available:
@@ -1784,19 +1787,27 @@ class LLMResponseGenerator:
     @property
     def stats(self) -> Dict[str, Any]:
         total_calls = sum(p.call_count for p in self._providers)
+        total_attempts = sum(p.attempt_count for p in self._providers)
         return {
             "llm_calls": total_calls,
+            "llm_attempts": total_attempts,  # v1.0.6.3: Includes blocked/early-return calls
             "fallback_uses": self._fallback_count,
             "pool_size": self._pool.total_responses,
             "active_provider": self.active_provider_name,
+            "providers_available": sum(1 for p in self._providers if p.available and p.api_key),
+            "providers_total": len(self._providers),
             "providers": {
-                p.name: {"calls": p.call_count, "available": p.available}
+                p.name: {"calls": p.call_count, "attempts": p.attempt_count,
+                         "available": p.available}
                 for p in self._providers
             },
             # v1.0.5.8: Failure analytics for admin dashboard
             "provider_exhaustions": self._provider_exhaustion_count,
             "user_key_activations": self._user_key_activations,
             "exhaustion_timestamps": self._exhaustion_timestamps[-20:],  # Last 20
+            # v1.0.6.3: Init status for report accuracy
+            "api_initialized": self._api_available or total_calls > 0,
+            "batch_failures": self._batch_failure_count,
         }
 
     def set_study_context(self, title: str, description: str,

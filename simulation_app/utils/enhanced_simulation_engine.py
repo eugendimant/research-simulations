@@ -7550,7 +7550,6 @@ class EnhancedSimulationEngine:
             'before', 'after', 'during', 'following', 'prior',
             'then', 'next', 'first', 'second', 'third',
             'stories', 'story', 'experience', 'experiences',
-            'believe', 'beliefs', 'favorite', 'favourite',
             'whether', 'toward', 'towards', 'regarding',
             'question', 'questions', 'context', 'study', 'survey', 'experiment',
             'condition', 'conditions', 'topic', 'measure', 'measured',
@@ -7558,6 +7557,13 @@ class EnhancedSimulationEngine:
             'scale', 'rating', 'open', 'ended', 'text', 'variable',
             'much', 'more', 'most', 'very', 'really', 'just', 'also', 'please',
             'better', 'deeply', 'held', 'quite',
+            # v1.0.6.3: Additional stop words found to cause gibberish
+            'here', 'there', 'now', 'well', 'like', 'even', 'still', 'let',
+            'only', 'some', 'such', 'each', 'every', 'any', 'all', 'both',
+            'many', 'few', 'own', 'other', 'another', 'same', 'different',
+            'something', 'anything', 'everything', 'nothing',
+            'however', 'therefore', 'moreover', 'furthermore', 'indeed',
+            'certain', 'particular', 'specific', 'general', 'overall',
         }
         # v1.0.5.0: Deep topic intelligence — 7-strategy semantic context extraction
         # Produces a structured understanding of what the question is ABOUT, who/what
@@ -7639,6 +7645,35 @@ class EnhancedSimulationEngine:
             'conformity': 'conformity and social influence',
             'deception': 'honesty and deceptive behavior',
             'attachment': 'interpersonal attachment and relationships',
+            # v1.0.6.3: Additional domain hints for broader topic coverage
+            'conspiracy': 'conspiracy theories and beliefs about hidden forces',
+            'misinformation': 'misinformation, fake news, and media credibility',
+            'belief': 'personal beliefs and worldviews',
+            'fake_news': 'fake news detection and media literacy',
+            'media': 'media consumption and information sources',
+            'religion': 'religious beliefs and spiritual experiences',
+            'technology': 'technology use and digital behavior',
+            'privacy': 'privacy concerns and data sharing',
+            'justice': 'justice perceptions and fairness judgments',
+            'anxiety': 'anxiety and worry experiences',
+            'depression': 'mood and depressive experiences',
+            'addiction': 'addictive behaviors and substance use',
+            'trauma': 'traumatic experiences and coping',
+            'motivation': 'motivation and goal pursuit',
+            'creativity': 'creative thinking and problem solving',
+            'memory': 'memory and recall experiences',
+            'aging': 'aging experiences and perceptions',
+            'food': 'food preferences and eating behavior',
+            'exercise': 'exercise habits and physical activity',
+            'sleep': 'sleep quality and habits',
+            'social_media': 'social media use and online behavior',
+            'dating': 'dating preferences and romantic experiences',
+            'parenting': 'parenting approaches and child-rearing',
+            'immigration': 'immigration attitudes and policy preferences',
+            'climate_change': 'climate change beliefs and environmental action',
+            'vaccine': 'vaccination attitudes and health decisions',
+            'gun': 'gun policy attitudes and safety perceptions',
+            'abortion': 'reproductive rights and policy attitudes',
         }
         _domain_hint = ""
         for _dk, _dv in _domain_topic_hints.items():
@@ -7657,6 +7692,13 @@ class EnhancedSimulationEngine:
             'walmart', 'nike', 'starbucks', 'uber', 'airbnb', 'spotify',
             'netflix', 'disney', 'pfizer', 'moderna', 'climate', 'ukraine',
             'gaza', 'israel', 'palestine', 'brexit', 'samsung', 'sony',
+            # v1.0.6.3: Conspiracy, media, and broader entity coverage
+            'qanon', 'illuminati', 'fauci', 'vaccine', 'pentagon',
+            'cia', 'fbi', 'nsa', 'nasa', 'who', 'cdc', 'un',
+            'fox_news', 'cnn', 'msnbc', 'breitbart', 'infowars',
+            'alex_jones', 'elon_musk', 'zuckerberg', 'bezos',
+            'desantis', 'pence', 'pelosi', 'mcconnell', 'sanders',
+            'warren', 'aoc', 'supreme_court', 'bitcoin', 'crypto',
         }
         _entities = []
         _all_source = f"{_qt_for_topic} {condition or ''}".lower()
@@ -8501,7 +8543,13 @@ class EnhancedSimulationEngine:
         # v1.4.8: Pre-fill LLM response pool with smart scaling
         # v1.9.1: Always try prefill if generator exists — providers may recover
         # during actual generation even if initial check was uncertain
+        # v1.0.6.3: Force provider reset before prefill for clean state
         if self.llm_generator and self.open_ended_questions:
+            try:
+                self.llm_generator.reset_providers()
+                self._log("LLM providers reset before prefill (clean state)")
+            except Exception:
+                pass
             try:
                 _unique_conditions = list(set(conditions.tolist()))
                 _sents = ["very_positive", "positive", "neutral", "negative", "very_negative"]
