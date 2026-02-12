@@ -63,7 +63,7 @@ association, impression, perception, feedback, comment, observation, general
 Version: 1.8.5 - Improved domain detection with weighted scoring and disambiguation
 """
 
-__version__ = "1.0.6.3"
+__version__ = "1.0.6.4"
 
 import random
 import re
@@ -7601,22 +7601,32 @@ class ComprehensiveResponseGenerator:
             'certain', 'particular', 'specific', 'general',
         }
         _all_words = re.findall(r'\b[a-zA-Z]{3,}\b', subject.lower())
-        # v1.0.5.5: Entity-first topic construction — named entities (people,
-        # brands, places) become the primary topic to avoid word-salad like
-        # "love hate Trump political" → just "Trump".
-        _proper = {'trump', 'biden', 'obama', 'clinton', 'harris', 'congress',
-                   'republican', 'democrat', 'america', 'american', 'covid',
-                   'facebook', 'google', 'amazon', 'apple', 'microsoft', 'tesla',
-                   'maga', 'gop', 'nato', 'china', 'russia', 'europe', 'mexico',
-                   'instagram', 'twitter', 'tiktok', 'youtube', 'chatgpt',
-                   'netflix', 'disney', 'uber', 'airbnb', 'spotify',
-                   # v1.0.6.3: Broader entity coverage
-                   'qanon', 'illuminati', 'fauci', 'vaccine', 'pentagon',
-                   'cia', 'fbi', 'nsa', 'nasa', 'cdc',
-                   'elon', 'musk', 'zuckerberg', 'bezos',
-                   'desantis', 'pelosi', 'sanders', 'bitcoin', 'crypto'}
-        _entities = [w for w in _all_words if w in _proper]
-        _content = [w for w in _all_words if w not in _stop and w not in _proper][:4]
+        # v1.0.6.4: GENERAL-PURPOSE entity detection via heuristics instead of
+        # hardcoded proper noun lists. Detects capitalized words, acronyms, and
+        # words after prepositions in the original (non-lowered) subject text.
+        # This works for ANY topic — not just pre-listed political/brand names.
+        _entities = []
+        # Heuristic 1: Capitalized words mid-sentence (proper nouns)
+        _cap_words = re.findall(r'(?<=[a-z]\s)([A-Z][a-zA-Z]{2,})', subject)
+        _entities.extend(w for w in _cap_words if w.lower() not in _stop)
+        # Heuristic 2: ALL-CAPS acronyms (2-6 letters)
+        _acronyms = re.findall(r'\b([A-Z]{2,6})\b', subject)
+        _entities.extend(a for a in _acronyms if a.lower() not in _stop)
+        # Heuristic 3: First word if capitalized and > 3 chars (often the topic)
+        _first_words = re.findall(r'^([A-Z][a-zA-Z]{3,})', subject.strip())
+        for _fw in _first_words:
+            if _fw.lower() not in _stop and _fw not in _entities:
+                _entities.append(_fw)
+        # Deduplicate
+        _seen_e: set = set()
+        _uniq_entities: list = []
+        for _e in _entities:
+            if _e.lower() not in _seen_e:
+                _seen_e.add(_e.lower())
+                _uniq_entities.append(_e)
+        _entities = _uniq_entities[:3]
+
+        _content = [w for w in _all_words if w not in _stop and w not in {e.lower() for e in _entities}][:4]
         # Build topic: prefer entities (clean & recognizable), limit to 2 words max
         if _entities:
             _topic = _entities[0]
@@ -7624,8 +7634,10 @@ class ComprehensiveResponseGenerator:
             _topic = ' '.join(_content[:2])
         else:
             _topic = subject[:30].strip()
+        # Capitalize detected entities in topic
+        _entity_lower = {e.lower() for e in _entities}
         _topic_parts = _topic.split()
-        _topic_parts = [w.capitalize() if w.lower() in _proper else w for w in _topic_parts]
+        _topic_parts = [w.capitalize() if w.lower() in _entity_lower else w for w in _topic_parts]
         _topic = ' '.join(_topic_parts)
 
         # Subject may contain the full context — use a shorter version for templates
@@ -8061,8 +8073,8 @@ class ComprehensiveResponseGenerator:
                 'thinking', 'reading', 'viewing', 'watching', 'completing',
                 'answering', 'reporting', 'sharing', 'responding',
                 'before', 'after', 'during', 'following', 'prior',
-                'stories', 'story', 'experience', 'believe', 'beliefs',
-                'favorite', 'favourite', 'whether', 'toward', 'towards',
+                'stories', 'story', 'experience',
+                'whether', 'toward', 'towards',
                 'question', 'questions', 'context', 'study', 'survey',
                 'condition', 'conditions', 'measure', 'measured',
                 'response', 'responses', 'describe', 'explain', 'please',
