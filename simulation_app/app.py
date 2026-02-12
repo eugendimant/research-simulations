@@ -53,8 +53,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.0.6.2"
-BUILD_ID = "20260212-v10602-sim-hardening"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.0.6.3"
+BUILD_ID = "20260212-v10603-report-llm-oe-admin"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -119,7 +119,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.0.6.2"  # v1.0.6.2: Simulation hardening + widget state cleanup
+APP_VERSION = "1.0.6.3"  # v1.0.6.3: Fix report N=1, LLM stats, OE quality, admin persistence
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -1358,7 +1358,6 @@ def _get_sample_text_response(
         'before', 'after', 'during', 'following', 'prior',
         'then', 'next', 'first', 'second', 'third',
         'stories', 'story', 'experience', 'experiences', 'experienced',
-        'believe', 'beliefs', 'believed', 'favorite', 'favourite',
         'whether', 'toward', 'towards', 'regarding', 'concerning',
         # Survey/study metadata
         'question', 'questions', 'context', 'study', 'survey', 'experiment',
@@ -1368,6 +1367,13 @@ def _get_sample_text_response(
         # Common adjectives/adverbs (non-topical)
         'much', 'more', 'most', 'very', 'really', 'just', 'also', 'please',
         'better', 'deeply', 'held', 'quite', 'thoughts', 'feelings',
+        # v1.0.6.3: Additional stop words
+        'here', 'there', 'well', 'like', 'even', 'still', 'let',
+        'only', 'some', 'such', 'each', 'every', 'any', 'all', 'both',
+        'many', 'few', 'own', 'other', 'another', 'same', 'different',
+        'something', 'anything', 'everything', 'nothing',
+        'however', 'therefore', 'moreover', 'furthermore', 'indeed',
+        'certain', 'particular', 'specific', 'general', 'overall',
     }
 
     # Priority 1: Use question_context (researcher-provided, most specific)
@@ -6454,10 +6460,70 @@ div[data-testid="stAlert"] {
 _ADMIN_PASSWORD_HASH = "19465e8fc94da7f22aec392a5514a6494a3e090ce0ba3bd1773c1c9e339dcfac"  # SHA-256 of "Dimant_Admin"
 
 
+# v1.0.6.3: File-based admin persistence so simulation history survives browser refresh
+_ADMIN_PERSIST_DIR = Path(os.environ.get("ADMIN_DATA_DIR", "/tmp/.sim_admin"))
+_ADMIN_PERSIST_FILE = _ADMIN_PERSIST_DIR / "sim_history.json"
+
+
+def _save_admin_history() -> None:
+    """Persist admin simulation history to disk."""
+    try:
+        _ADMIN_PERSIST_DIR.mkdir(parents=True, exist_ok=True)
+        _history = st.session_state.get("_admin_sim_history", [])
+        _llm_stats = st.session_state.get("_last_llm_stats", {})
+        _engine_log = st.session_state.get("_admin_engine_log", [])
+        _data = {
+            "sim_history": _history,
+            "last_llm_stats": _llm_stats,
+            "engine_log": _engine_log,
+            "total_exhaustions": st.session_state.get("_admin_total_exhaustions", 0),
+            "dialog_shown": st.session_state.get("_admin_llm_exhaust_dialog_shown", 0),
+            "user_key_activations": st.session_state.get("_admin_user_key_activations", 0),
+        }
+        _ADMIN_PERSIST_FILE.write_text(json.dumps(_data, default=str))
+    except Exception:
+        pass  # File persistence is best-effort
+
+
+def _load_admin_history() -> None:
+    """Load persisted admin simulation history from disk into session state."""
+    if st.session_state.get("_admin_history_loaded"):
+        return  # Already loaded this session
+    try:
+        if _ADMIN_PERSIST_FILE.exists():
+            _data = json.loads(_ADMIN_PERSIST_FILE.read_text())
+            # Merge: session data takes priority, file fills in gaps
+            if not st.session_state.get("_admin_sim_history"):
+                st.session_state["_admin_sim_history"] = _data.get("sim_history", [])
+            else:
+                # Append persisted entries that aren't in current session
+                _existing = st.session_state.get("_admin_sim_history", [])
+                _persisted = _data.get("sim_history", [])
+                _existing_timestamps = {e.get("timestamp") for e in _existing}
+                for _pe in _persisted:
+                    if _pe.get("timestamp") not in _existing_timestamps:
+                        _existing.insert(0, _pe)  # Prepend older entries
+                st.session_state["_admin_sim_history"] = _existing
+            if not st.session_state.get("_last_llm_stats"):
+                st.session_state["_last_llm_stats"] = _data.get("last_llm_stats", {})
+            if not st.session_state.get("_admin_engine_log"):
+                st.session_state["_admin_engine_log"] = _data.get("engine_log", [])
+            # Restore cumulative counters
+            _stored_exhaustions = _data.get("total_exhaustions", 0)
+            _current_exhaustions = st.session_state.get("_admin_total_exhaustions", 0)
+            st.session_state["_admin_total_exhaustions"] = max(_stored_exhaustions, _current_exhaustions)
+    except Exception:
+        pass  # File persistence is best-effort
+    st.session_state["_admin_history_loaded"] = True
+
+
 def _render_admin_dashboard() -> None:
     """Render the hidden admin dashboard with full diagnostic info."""
     import hashlib
     from datetime import datetime
+
+    # v1.0.6.3: Load persisted history on dashboard render
+    _load_admin_history()
 
     st.markdown(
         '<h1 style="text-align:center;">Admin Dashboard</h1>'
@@ -6685,8 +6751,8 @@ def _render_admin_dashboard() -> None:
                         if len(_run_personas) > 10:
                             st.caption(f"... and {len(_run_personas) - 10} more")
         else:
-            st.info("No simulations have been run in this session yet.")
-            st.caption("Simulation history is tracked per browser session. Run a simulation to see entries here.")
+            st.info("No simulation history found.")
+            st.caption("Run a simulation to see entries here. History persists across browser refreshes.")
 
     # ── TAB 4: Session State Explorer ─────────────────────────────────
     with _tab_session:
@@ -10654,6 +10720,8 @@ if active_page == 3:
             # Store engine validation log for admin
             if hasattr(engine, 'validation_log'):
                 st.session_state["_admin_engine_log"] = engine.validation_log[-50:]
+            # v1.0.6.3: Persist admin history to disk for cross-session survival
+            _save_admin_history()
 
             # v1.0.5.8: Post-simulation LLM exhaustion banner — notify user if providers
             # failed during generation and offer to re-run with their own API key.
