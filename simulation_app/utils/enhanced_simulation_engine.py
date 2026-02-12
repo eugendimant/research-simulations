@@ -45,7 +45,7 @@ This module is designed to run inside a `utils/` package (i.e., imported as
 """
 
 # Version identifier to help track deployed code
-__version__ = "1.0.4.9"  # v1.0.4.9: 5 new paradigm domains, narrative transportation, social comparison, gratitude, moral cleansing, attention economy
+__version__ = "1.0.5.8"  # v1.0.5.8: User API key fallback, anti-detection realism, OE skip-rate, cross-participant dedup, zigzag prevention
 
 # =============================================================================
 # SCIENTIFIC FOUNDATIONS FOR SIMULATION
@@ -8375,6 +8375,40 @@ class EnhancedSimulationEngine:
                 except Exception as _corr_err:
                     self._log(f"WARNING: Could not inject correlation for '{scale_name_raw}': {_corr_err}")
 
+        # v1.0.5.8: Anti-detection — detect and break alternating/zigzag patterns.
+        # Mechanical alternation (e.g., 2,4,2,4,2,4 or 1,7,1,7,1,7) across items
+        # is a classic tell for non-human data. Real humans show item-content-driven
+        # variation, not mechanical oscillation. Detection: check if consecutive
+        # differences alternate sign perfectly for 6+ items.
+        for log_entry in _scale_generation_log:
+            item_cols = log_entry["columns_generated"]
+            if len(item_cols) < 6:
+                continue  # Need at least 6 items to detect a pattern
+            for i in range(n):
+                _vals = [data[c][i] for c in item_cols]
+                # Check for perfect alternation: diff signs alternate (+,-,+,-,+,-)
+                _diffs = [_vals[j+1] - _vals[j] for j in range(len(_vals)-1)]
+                _signs = [1 if d > 0 else (-1 if d < 0 else 0) for d in _diffs]
+                _nonzero_signs = [s for s in _signs if s != 0]
+                if len(_nonzero_signs) >= 5:
+                    _alternating = all(
+                        _nonzero_signs[k] != _nonzero_signs[k+1]
+                        for k in range(len(_nonzero_signs)-1)
+                    )
+                    if _alternating:
+                        # Break the pattern by adding small noise to 2-3 items
+                        _zz_rng = np.random.RandomState(self.seed + i * 777)
+                        _break_count = _zz_rng.randint(2, 4)
+                        _break_indices = _zz_rng.choice(
+                            len(item_cols), size=min(_break_count, len(item_cols)), replace=False
+                        )
+                        _s_min = log_entry["scale_min"]
+                        _s_max = log_entry["scale_max"]
+                        for _bi in _break_indices:
+                            _noise = _zz_rng.choice([-1, 0, 1])
+                            _new_val = int(np.clip(data[item_cols[_bi]][i] + _noise, _s_min, _s_max))
+                            data[item_cols[_bi]][i] = _new_val
+
         # Store generation log for post-generation verification
         self._scale_generation_log = _scale_generation_log
 
@@ -8616,6 +8650,34 @@ class EnhancedSimulationEngine:
                             f"Their text should match this tone."
                         )
 
+                # v1.0.5.8: Realistic optional question skip-rate.
+                # Real survey data shows 15-35% non-response on optional OE questions.
+                # Careless/inattentive participants skip at higher rates. Engaged
+                # participants rarely skip. This prevents the tell-tale sign of
+                # "high open-ended compliance when optional" (all boxes filled).
+                # Scientific basis: Galesic & Bosnjak (2009): OE skip rates 20-40%.
+                _is_optional = q.get("optional", True)  # OE questions default to optional
+                _rng_skip = np.random.RandomState((p_seed + 55555) % (2**31))
+                _attention = _safe_trait_value(all_traits[i].get("attention_level"), 0.7)
+                # Base skip rate: 20% for typical participants
+                # Careless (attention < 0.4): 45% skip rate
+                # Satisficers (attention 0.4-0.6): 30% skip rate
+                # Engaged (attention > 0.8): 5% skip rate
+                if _is_optional and _attention < 0.4:
+                    _skip_prob = 0.45
+                elif _is_optional and _attention < 0.6:
+                    _skip_prob = 0.30
+                elif _is_optional and _attention < 0.8:
+                    _skip_prob = 0.15
+                elif _is_optional:
+                    _skip_prob = 0.05
+                else:
+                    _skip_prob = 0.0  # Required questions: never skip
+
+                if _skip_prob > 0 and _rng_skip.random() < _skip_prob:
+                    responses.append("")  # Realistic blank response
+                    continue
+
                 # Generate response with enhanced uniqueness + behavioral context
                 text = self._generate_open_response(
                     q,
@@ -8709,6 +8771,49 @@ class EnhancedSimulationEngine:
                     else:
                         # For short responses, just add modifier
                         data[dup_col][i] = modifiers[modifier_idx] + original_response
+
+        # v1.0.5.8: CROSS-PARTICIPANT duplicate / near-duplicate detection.
+        # Real survey data NEVER has identical or near-identical OE responses
+        # across different participants. This is the #1 tell for fabricated data.
+        # Check each OE column for cross-participant duplicates and mutate them.
+        for col in open_ended_cols:
+            if col not in data:
+                continue
+            _col_responses = data[col]
+            # Build a set of (normalized_response → list of participant indices)
+            _seen: Dict[str, List[int]] = {}
+            for _pi, _resp in enumerate(_col_responses):
+                if not _resp or not _resp.strip():
+                    continue
+                # Normalize: lowercase, strip extra whitespace, remove punctuation
+                _norm = re.sub(r'[^\w\s]', '', _resp.lower()).strip()
+                _norm = re.sub(r'\s+', ' ', _norm)
+                if len(_norm) < 10:
+                    continue  # Skip very short responses (e.g., "idk")
+                if _norm in _seen:
+                    _seen[_norm].append(_pi)
+                else:
+                    _seen[_norm] = [_pi]
+            # For each group of duplicates, mutate all but the first
+            _dedup_modifiers = [
+                "I mean ", "Like ", "Honestly ", "For me personally ",
+                "Well ", "So ", "Yeah ", "Basically ", "Tbh ",
+                "From my end ", "In my case ", "For me ",
+            ]
+            _dedup_rng = np.random.RandomState(self.seed + 99999)
+            for _norm_key, _indices in _seen.items():
+                if len(_indices) > 1:
+                    for _di in _indices[1:]:  # Keep first, mutate rest
+                        _orig = _col_responses[_di]
+                        _mod = _dedup_modifiers[_dedup_rng.randint(0, len(_dedup_modifiers))]
+                        # Also shuffle a word or two for additional differentiation
+                        _words = _orig.split()
+                        if len(_words) > 5:
+                            _swap_idx = _dedup_rng.randint(1, max(2, len(_words) - 2))
+                            if _swap_idx + 1 < len(_words):
+                                _words[_swap_idx], _words[_swap_idx + 1] = _words[_swap_idx + 1], _words[_swap_idx]
+                        _col_responses[_di] = _mod + ' '.join(_words)
+                    self._log(f"Deduped {len(_indices)-1} cross-participant duplicates in '{col}'")
 
         exclusion_data: List[Dict[str, Any]] = []
         for i in range(n):

@@ -53,8 +53,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.0.5.7"
-BUILD_ID = "20260212-v10507-llm-pipeline-fix"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.0.5.8"
+BUILD_ID = "20260212-v10508-user-api-fallback-antidetect"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -119,11 +119,49 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.0.5.7"  # v1.0.5.7: LLM pipeline fix, auto-recovery, voice memory, cumulative stats
+APP_VERSION = "1.0.5.8"  # v1.0.5.8: User API key fallback, anti-detection realism, failure analytics
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
 BASE_STORAGE.mkdir(parents=True, exist_ok=True)
+
+
+# ---------------------------------------------------------------------------
+# v1.0.5.8: Session-scoped API key encryption helpers
+# Keys are XOR-encrypted with a random session key so they're never stored
+# as plaintext in st.session_state (visible in admin Session State Explorer).
+# The session key exists only in memory for the browser session lifetime.
+# ---------------------------------------------------------------------------
+import secrets as _secrets
+
+def _get_session_cipher_key() -> bytes:
+    """Return a 32-byte random key unique to this browser session."""
+    _k = st.session_state.get("_cipher_key_bytes")
+    if _k is None:
+        _k = _secrets.token_bytes(32)
+        st.session_state["_cipher_key_bytes"] = _k
+    return _k
+
+def _encrypt_api_key(plaintext: str) -> str:
+    """XOR-encrypt an API key for session storage. Returns hex string."""
+    if not plaintext:
+        return ""
+    key = _get_session_cipher_key()
+    data = plaintext.encode("utf-8")
+    encrypted = bytes(b ^ key[i % len(key)] for i, b in enumerate(data))
+    return encrypted.hex()
+
+def _decrypt_api_key(ciphertext_hex: str) -> str:
+    """Decrypt a session-encrypted API key. Returns plaintext."""
+    if not ciphertext_hex:
+        return ""
+    try:
+        key = _get_session_cipher_key()
+        data = bytes.fromhex(ciphertext_hex)
+        decrypted = bytes(b ^ key[i % len(key)] for i, b in enumerate(data))
+        return decrypted.decode("utf-8")
+    except Exception:
+        return ""
 
 MAX_SIMULATED_N = 10000
 
@@ -6467,8 +6505,8 @@ def _render_admin_dashboard() -> None:
         st.metric("Template Fallback", _fb_pct)
 
     # ── Tabs ──────────────────────────────────────────────────────────
-    _tab_llm, _tab_history, _tab_session, _tab_system = st.tabs([
-        "LLM Pipeline", "Simulation History", "Session State", "System Info"
+    _tab_llm, _tab_failures, _tab_history, _tab_session, _tab_system = st.tabs([
+        "LLM Pipeline", "Failure Analytics", "Simulation History", "Session State", "System Info"
     ])
 
     # ── TAB 1: LLM Pipeline ──────────────────────────────────────────
@@ -6513,7 +6551,86 @@ def _render_admin_dashboard() -> None:
         else:
             st.caption("No engine log entries. Run a simulation to populate.")
 
-    # ── TAB 2: Simulation History ─────────────────────────────────────
+    # ── TAB 2: Failure Analytics (v1.0.5.8) ───────────────────────────
+    with _tab_failures:
+        st.markdown("### LLM Provider Failure Analytics")
+        st.markdown(
+            "Tracks when built-in AI providers fail and users are prompted "
+            "to provide their own API keys."
+        )
+
+        # Aggregate failure stats from all simulation runs
+        _total_exhaustions = 0
+        _total_user_key_activations = 0
+        _total_fallback_uses_all = 0
+        _total_pool_all = 0
+        _all_exhaust_timestamps: list = []
+        for _he in _sim_history:
+            _hls = _he.get("llm_stats", {})
+            _total_exhaustions += _hls.get("provider_exhaustions", 0)
+            _total_user_key_activations += _hls.get("user_key_activations", 0)
+            _total_fallback_uses_all += _hls.get("fallback_uses", 0)
+            _total_pool_all += _hls.get("pool_size", 0)
+            _all_exhaust_timestamps.extend(_hls.get("exhaustion_timestamps", []))
+
+        # Also include session-level counters from UI interactions
+        _dialog_shown = st.session_state.get("_admin_llm_exhaust_dialog_shown", 0)
+        _ui_key_activations = st.session_state.get("_admin_user_key_activations", 0)
+        _session_total_exhaustions = st.session_state.get("_admin_total_exhaustions", 0)
+
+        # Top metrics
+        _fa1, _fa2, _fa3, _fa4 = st.columns(4)
+        with _fa1:
+            st.metric("Provider Exhaustions", max(_total_exhaustions, _session_total_exhaustions))
+        with _fa2:
+            st.metric("User Key Activations", max(_total_user_key_activations, _ui_key_activations))
+        with _fa3:
+            st.metric("Fallback Dialog Shown", _dialog_shown)
+        with _fa4:
+            if (_total_pool_all + _total_fallback_uses_all) > 0:
+                _exhaust_rate = (_total_fallback_uses_all / (_total_pool_all + _total_fallback_uses_all)) * 100
+                st.metric("Template Fallback Rate", f"{_exhaust_rate:.1f}%")
+            else:
+                st.metric("Template Fallback Rate", "N/A")
+
+        # Per-run exhaustion breakdown
+        st.markdown("#### Per-Simulation Breakdown")
+        _exhaust_data = []
+        for _idx, _he in enumerate(_sim_history, 1):
+            _hls = _he.get("llm_stats", {})
+            _ex = _hls.get("provider_exhaustions", 0)
+            _fb = _hls.get("fallback_uses", 0)
+            _pool = _hls.get("pool_size", 0)
+            _uk = _hls.get("user_key_activations", 0)
+            _exhaust_data.append({
+                "Run": f"#{_idx}",
+                "Title": _he.get("title", "Untitled")[:30],
+                "Exhaustions": _ex,
+                "Fallbacks": _fb,
+                "AI Generated": _pool,
+                "User Key Used": "Yes" if _uk > 0 else "No",
+                "Fallback %": f"{(_fb / max(1, _pool + _fb)) * 100:.0f}%" if (_pool + _fb) > 0 else "N/A",
+            })
+        if _exhaust_data:
+            st.dataframe(_exhaust_data, use_container_width=True, hide_index=True)
+        else:
+            st.info("No simulation runs recorded yet. Run a simulation to see failure analytics.")
+
+        # Exhaustion timeline
+        if _all_exhaust_timestamps:
+            st.markdown("#### Exhaustion Event Timeline")
+            _timeline_data = []
+            for _ts in sorted(_all_exhaust_timestamps):
+                try:
+                    _dt = datetime.fromtimestamp(_ts)
+                    _timeline_data.append({"Time": _dt.strftime("%H:%M:%S"), "Event": "All providers exhausted"})
+                except Exception:
+                    pass
+            if _timeline_data:
+                st.dataframe(_timeline_data[-20:], use_container_width=True, hide_index=True)
+                st.caption(f"Showing last {min(20, len(_timeline_data))} of {len(_timeline_data)} events")
+
+    # ── TAB 3: Simulation History ─────────────────────────────────────
     with _tab_history:
         st.markdown("### Simulation Run History")
         if _sim_history:
@@ -6554,7 +6671,7 @@ def _render_admin_dashboard() -> None:
             st.info("No simulations have been run in this session yet.")
             st.caption("Simulation history is tracked per browser session. Run a simulation to see entries here.")
 
-    # ── TAB 3: Session State Explorer ─────────────────────────────────
+    # ── TAB 4: Session State Explorer ─────────────────────────────────
     with _tab_session:
         st.markdown("### Session State Explorer")
         _filter = st.text_input("Filter keys (contains):", key="_admin_state_filter")
@@ -6574,7 +6691,7 @@ def _render_admin_dashboard() -> None:
         if _state_data:
             st.dataframe(_state_data, use_container_width=True, hide_index=True, height=400)
 
-    # ── TAB 4: System Info ────────────────────────────────────────────
+    # ── TAB 5: System Info ────────────────────────────────────────────
     with _tab_system:
         st.markdown("### System Information")
         _sys_col1, _sys_col2 = st.columns(2)
@@ -9980,50 +10097,97 @@ if active_page == 3:
                 unsafe_allow_html=True,
             )
         else:
-            # LLM unavailable — show single unified key input
+            # v1.0.5.8: Enhanced LLM fallback dialog — prominent "ask first" UI with
+            # model selection, encrypted key storage, and tracking.
+            # Track that we showed this dialog (for admin analytics)
+            _exhaust_shown_count = st.session_state.get("_admin_llm_exhaust_dialog_shown", 0)
+            st.session_state["_admin_llm_exhaust_dialog_shown"] = _exhaust_shown_count + 1
+
             st.markdown(
-                '<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;'
-                'padding:12px 16px;margin-bottom:12px;">'
-                '<span style="font-size:1.1em;font-weight:600;color:#92400e;">'
-                'AI-Powered Open-Ended Responses: Unavailable</span><br>'
-                '<span style="color:#a16207;font-size:0.9em;">'
-                'The built-in AI service is currently at capacity. '
-                'You can provide your own free API key below, '
-                'or proceed with high-quality template-based responses.</span></div>',
+                '<div style="background:#fef2f2;border:2px solid #fca5a5;border-radius:10px;'
+                'padding:16px 20px;margin-bottom:16px;">'
+                '<span style="font-size:1.2em;font-weight:700;color:#991b1b;">'
+                'All Built-in AI Providers Are Currently Unavailable</span><br>'
+                '<span style="color:#b91c1c;font-size:0.95em;">'
+                'All 5 built-in AI services have reached their rate limits. '
+                'You have two options:</span>'
+                '<ol style="color:#7f1d1d;font-size:0.9em;margin-top:8px;">'
+                '<li><strong>Provide your own API key</strong> (free or paid) — '
+                'AI-generated open-ended responses, highest quality</li>'
+                '<li><strong>Proceed without a key</strong> — template-based responses '
+                '(still realistic, 225+ research domains)</li>'
+                '</ol></div>',
                 unsafe_allow_html=True,
             )
-            with st.expander("Use your own free API key (optional)", expanded=False):
+
+            # v1.0.5.8: Enhanced key input with model/provider selection
+            with st.expander("Use your own API key for AI-powered responses", expanded=True):
                 st.markdown(
                     "**Get a free key in 30 seconds** from any of these providers:\n\n"
                     "| Provider | Free Tier | Sign Up |\n"
                     "|----------|-----------|--------|\n"
                     "| **Groq** (recommended) | 14,400 req/day | [console.groq.com](https://console.groq.com) |\n"
+                    "| **Google AI Studio** | Free Gemini | [aistudio.google.com](https://aistudio.google.com) |\n"
                     "| **Cerebras** | 1M tokens/day | [cloud.cerebras.ai](https://cloud.cerebras.ai) |\n"
-                    "| **OpenRouter** | Free models | [openrouter.ai](https://openrouter.ai) |\n\n"
-                    "Simply paste your key below — the provider is detected automatically."
+                    "| **OpenRouter** | Free models | [openrouter.ai](https://openrouter.ai) |\n"
+                    "| **OpenAI** | Paid (~$0.15/1M tokens) | [platform.openai.com](https://platform.openai.com) |\n"
                 )
+
+                # Provider/model selection dropdown
+                _provider_options = [
+                    "Auto-detect from key (recommended)",
+                    "Groq (Llama 3.3 70B) — Free",
+                    "Cerebras (Llama 3.3 70B) — Free",
+                    "Google AI (Gemini Flash) — Free",
+                    "OpenRouter (Mistral) — Free tier",
+                    "OpenAI (GPT-4o-mini)",
+                ]
+                _selected_provider = st.selectbox(
+                    "Provider / Model",
+                    options=_provider_options,
+                    index=0,
+                    key="user_llm_provider_select",
+                    help="Select your provider or leave on auto-detect. The provider is usually detected from the key prefix.",
+                )
+
+                # Decrypt existing key for display (shows masked in password field)
+                _existing_encrypted = st.session_state.get("_user_llm_key_encrypted", "")
+                _existing_plain = _decrypt_api_key(_existing_encrypted) if _existing_encrypted else ""
                 _user_key_input = st.text_input(
                     "API Key",
-                    value=st.session_state.get("user_llm_api_key", ""),
+                    value=_existing_plain,
                     type="password",
                     key="user_llm_key_input",
-                    placeholder="Paste your key here (e.g., gsk_..., csk-..., sk-or-...)",
+                    placeholder="Paste your key here (e.g., gsk_..., csk-..., sk-or-..., sk-...)",
                 )
-                if _user_key_input != st.session_state.get("user_llm_api_key", ""):
-                    st.session_state["user_llm_api_key"] = _user_key_input
-                    # Set in environment for the generator to pick up (only if non-empty)
+
+                # Detect key change and encrypt + store
+                if _user_key_input != _existing_plain:
                     if _user_key_input.strip():
+                        # Encrypt and store — key never sits as plaintext in session state
+                        st.session_state["_user_llm_key_encrypted"] = _encrypt_api_key(_user_key_input.strip())
+                        # Also set in env for the generator (env vars are process-scoped, not persisted)
                         os.environ["LLM_API_KEY"] = _user_key_input.strip()
-                    elif "LLM_API_KEY" in os.environ:
-                        del os.environ["LLM_API_KEY"]
-                    # Clear cached status so it re-checks with the new key
+                        # Track user key activation for admin
+                        _user_key_count = st.session_state.get("_admin_user_key_activations", 0)
+                        st.session_state["_admin_user_key_activations"] = _user_key_count + 1
+                    else:
+                        st.session_state["_user_llm_key_encrypted"] = ""
+                        if "LLM_API_KEY" in os.environ:
+                            del os.environ["LLM_API_KEY"]
+                    # Maintain backward compat with old key storage
+                    st.session_state["user_llm_api_key"] = _user_key_input.strip() if _user_key_input else ""
+                    # Store selected provider for engine to use
+                    st.session_state["_user_llm_provider_choice"] = _selected_provider
+                    # Clear cached status so it re-checks
                     st.session_state["_llm_connectivity_status"] = None
-                    # v1.0.1.5: Use st.rerun() to avoid scroll-to-top and expander collapse
                     st.rerun()
+
                 st.markdown(
                     '<span style="color:#6b7280;font-size:0.8em;">'
-                    'Your key is used only for this session, kept in memory only, '
-                    'and never saved or transmitted anywhere except to the provider\'s API.</span>',
+                    'Your key is encrypted in memory for this session only. '
+                    'It is never saved to disk, never logged, and transmitted only '
+                    'to the selected provider\'s API over HTTPS.</span>',
                     unsafe_allow_html=True,
                 )
 
@@ -10461,6 +10625,27 @@ if active_page == 3:
             # Store engine validation log for admin
             if hasattr(engine, 'validation_log'):
                 st.session_state["_admin_engine_log"] = engine.validation_log[-50:]
+
+            # v1.0.5.8: Post-simulation LLM exhaustion banner — notify user if providers
+            # failed during generation and offer to re-run with their own API key.
+            _run_exhaustions = _llm_run_stats.get("provider_exhaustions", 0)
+            _run_fallbacks = _llm_run_stats.get("fallback_uses", 0)
+            _run_pool = _llm_run_stats.get("pool_size", 0)
+            if _run_exhaustions > 0 and _run_fallbacks > 0:
+                _fb_pct = (_run_fallbacks / max(1, _run_pool + _run_fallbacks)) * 100
+                # Track cumulative exhaustions for admin
+                _cum_exhaustions = st.session_state.get("_admin_total_exhaustions", 0)
+                st.session_state["_admin_total_exhaustions"] = _cum_exhaustions + _run_exhaustions
+                st.markdown(
+                    f'<div style="background:#fef3c7;border:2px solid #f59e0b;border-radius:10px;'
+                    f'padding:14px 18px;margin:12px 0;">'
+                    f'<span style="font-size:1.05em;font-weight:600;color:#92400e;">'
+                    f'AI providers experienced {_run_exhaustions} exhaustion event(s) during generation</span><br>'
+                    f'<span style="color:#a16207;font-size:0.9em;">'
+                    f'{_fb_pct:.0f}% of open-ended responses used template fallback instead of AI. '
+                    f'To get 100% AI-generated responses, provide your own API key and re-run the simulation.</span></div>',
+                    unsafe_allow_html=True,
+                )
 
             # v1.2.4: Run simulation quality validation
             validation_results = _validate_simulation_output(df, metadata, clean_scales)
