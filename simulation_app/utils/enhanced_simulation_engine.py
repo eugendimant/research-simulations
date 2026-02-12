@@ -7463,7 +7463,9 @@ class EnhancedSimulationEngine:
                 if resp and resp.strip():
                     return resp
             except Exception as _llm_gen_err:
-                logger.debug("LLM generate() error: %s", _llm_gen_err)
+                # v1.0.5.7: Log at WARNING (not debug) so failures are visible
+                logger.warning("LLM generate() error: %s", _llm_gen_err)
+                self._log(f"WARNING: LLM generation failed, falling back: {_llm_gen_err}")
 
         # Try to use comprehensive response generator if available
         if self.comprehensive_generator is not None:
@@ -7484,8 +7486,10 @@ class EnhancedSimulationEngine:
                     behavioral_profile=behavioral_profile,
                 )
             except Exception as _comp_gen_err:
-                logger.debug("ComprehensiveResponseGenerator error for '%s': %s",
-                             question_text[:80] if question_text else "unknown", _comp_gen_err)
+                # v1.0.5.7: Log at WARNING (not debug) so failures are visible
+                logger.warning("ComprehensiveResponseGenerator error for '%s': %s",
+                               question_text[:80] if question_text else "unknown", _comp_gen_err)
+                self._log(f"WARNING: ComprehensiveResponseGenerator failed: {_comp_gen_err}")
 
         # Fallback to basic text generator
         # v1.0.4.8: Also consider behavioral profile for style override
@@ -8501,17 +8505,47 @@ class EnhancedSimulationEngine:
                         self.llm_generator._api_available = True
             except Exception as _pf_err:
                 self._log(f"WARNING: LLM pool prefill failed: {_pf_err}")
+                logger.warning("LLM pool prefill failed: %s", _pf_err)
                 # v1.9.1: Don't give up — reset providers so on-demand generation can try
-                if hasattr(self.llm_generator, '_reset_all_providers'):
-                    self.llm_generator._reset_all_providers()
-                    self.llm_generator._api_available = True
+                try:
+                    if hasattr(self.llm_generator, '_reset_all_providers'):
+                        self.llm_generator._reset_all_providers()
+                        self.llm_generator._api_available = True
+                except Exception as _reset_err:
+                    logger.warning("Provider reset after prefill failure also failed: %s", _reset_err)
 
         # v1.0.5.0: Participant voice memory — tracks style, tone, and themes across
         # multiple OE questions for the SAME participant. This ensures cross-response
         # consistency: the same person should sound the same across all their answers.
         # Key insight: a real participant doesn't change personality between questions.
         _participant_voice_memory: Dict[int, Dict[str, Any]] = {}
-        # Will be populated as OE questions are generated, keyed by participant index
+        # v1.0.5.7: PRE-INITIALIZE voice memory for ALL participants BEFORE the
+        # OE loop.  Previously only initialized after the first OE response,
+        # meaning the first OE question for each participant had NO voice
+        # consistency hint.  Now every participant starts with a tone derived
+        # from their numeric response pattern.
+        for _vi in range(n):
+            _v_vals = participant_item_responses[_vi]
+            _v_mean = float(np.mean(_v_vals)) if _v_vals else None
+            if _v_mean is not None:
+                if _v_mean >= 5.5:
+                    _v_tone = "positive"
+                elif _v_mean >= 4.5:
+                    _v_tone = "slightly positive"
+                elif _v_mean <= 2.5:
+                    _v_tone = "negative"
+                elif _v_mean <= 3.5:
+                    _v_tone = "slightly negative"
+                else:
+                    _v_tone = "neutral"
+            else:
+                _v_tone = "neutral"
+            _participant_voice_memory[_vi] = {
+                'responses': [],
+                'tone': _v_tone,
+                'last_response': '',
+                'response_mean': _v_mean,
+            }
 
         # ONLY generate open-ended responses for questions actually in the QSF
         # Never create default/fake questions - this prevents fake variables like "Task_Summary"
@@ -8561,18 +8595,26 @@ class EnhancedSimulationEngine:
                     participant_condition,
                 )
 
-                # v1.0.5.0: Inject cross-response voice memory into profile
-                # If this participant has answered prior OE questions, carry forward
-                # their established tone, style, and thematic orientation.
+                # v1.0.5.7: Inject cross-response voice memory into profile.
+                # Now always available (pre-initialized before OE loop).
+                # First OE question gets tone from numeric ratings; subsequent
+                # questions also get prior response excerpts for consistency.
                 if i in _participant_voice_memory:
                     _voice = _participant_voice_memory[i]
                     _beh_profile['prior_responses'] = _voice.get('responses', [])
                     _beh_profile['established_tone'] = _voice.get('tone', '')
-                    _beh_profile['voice_consistency_hint'] = (
-                        f"This participant previously wrote: \"{_voice.get('last_response', '')[:80]}...\" "
-                        f"Their tone was {_voice.get('tone', 'neutral')}. "
-                        f"Maintain consistent voice and personality across questions."
-                    ) if _voice.get('last_response') else ""
+                    if _voice.get('last_response'):
+                        _beh_profile['voice_consistency_hint'] = (
+                            f"This participant previously wrote: \"{_voice['last_response'][:80]}...\" "
+                            f"Their tone was {_voice.get('tone', 'neutral')}. "
+                            f"Maintain consistent voice and personality across questions."
+                        )
+                    elif _voice.get('tone'):
+                        # First OE question: hint from numeric pattern only
+                        _beh_profile['voice_consistency_hint'] = (
+                            f"Based on their numeric ratings, this participant's tone is {_voice['tone']}. "
+                            f"Their text should match this tone."
+                        )
 
                 # Generate response with enhanced uniqueness + behavioral context
                 text = self._generate_open_response(
