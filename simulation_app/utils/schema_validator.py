@@ -128,26 +128,46 @@ def validate_schema(
             results['warnings'].append(f"Unbalanced conditions: {unbalanced}")
 
     # Check scale columns
+    # v1.0.6.1: Try multiple name variants to match engine's _clean_column_name logic
+    import re as _re_mod
+    def _clean_col(name: str) -> str:
+        """Mimic the engine's _clean_column_name for matching."""
+        s = str(name).strip().replace(' ', '_')
+        s = _re_mod.sub(r'[^A-Za-z0-9_]', '_', s)
+        s = _re_mod.sub(r'_+', '_', s).strip('_')
+        return s if s else 'Scale'
+
     for scale in expected_scales:
-        scale_name = scale.get('name', 'Scale').replace(' ', '_')
+        # Try variable_name first (engine prefers it), fall back to name
+        _raw_name = scale.get('variable_name', '') or scale.get('name', 'Scale')
+        scale_name = _clean_col(_raw_name)
         num_items = scale.get('num_items', 5)
         scale_points = scale.get('scale_points', 6)
+        # v1.0.6.1: Use actual scale_min/scale_max instead of hardcoded 1
+        _expected_min = scale.get('scale_min', 1)
+        _expected_max = scale.get('scale_max', scale_points)
 
         for item_num in range(1, num_items + 1):
             col_name = f"{scale_name}_{item_num}"
 
-            if col_name not in df.columns:
-                results['errors'].append(f"Missing scale column: {col_name}")
-                results['valid'] = False
-            else:
-                # Check value range
-                min_val = df[col_name].min()
-                max_val = df[col_name].max()
+            # Also try the simple name variant in case variable_name differs
+            _alt_name = scale.get('name', 'Scale').replace(' ', '_')
+            _alt_col = f"{_alt_name}_{item_num}"
 
-                if min_val < 1 or max_val > scale_points:
+            if col_name not in df.columns and _alt_col not in df.columns:
+                # v1.0.6.1: Downgrade from error to warning — column naming can
+                # legitimately diverge due to deduplication in the engine
+                results['warnings'].append(f"Expected scale column not found: {col_name}")
+            else:
+                # Check value range — use whichever column name is in the DataFrame
+                _actual_col = col_name if col_name in df.columns else _alt_col
+                min_val = df[_actual_col].min()
+                max_val = df[_actual_col].max()
+
+                if min_val < _expected_min or max_val > _expected_max:
                     results['warnings'].append(
                         f"Column {col_name} has out-of-range values: [{min_val}, {max_val}] "
-                        f"(expected [1, {scale_points}])"
+                        f"(expected [{_expected_min}, {_expected_max}])"
                     )
 
     # Check for missing values
@@ -159,12 +179,23 @@ def validate_schema(
             f"Columns with missing values: {dict(columns_with_missing)}"
         )
 
-    # Check data types
+    # Check data types — exclude known text columns (OE responses, metadata, persona)
+    # v1.0.6.1: Expanded exclusion list to avoid false positive warnings
+    _known_text_cols = {'CONDITION', 'RUN_ID', 'Task_Summary', 'Gender',
+                        'SIMULATION_MODE', '_PERSONA', 'EXCLUSION_REASON'}
+    _oe_names = {s.get('variable_name', s.get('name', '')) for s in expected_scales
+                 if str(s.get('type', '')).lower() in ('text', 'open_ended', 'open-ended')}
     numeric_issues = []
     for col in df.columns:
-        if col not in ['CONDITION', 'RUN_ID', 'Task_Summary']:
-            if df[col].dtype == 'object':
-                numeric_issues.append(col)
+        if col in _known_text_cols or col in _oe_names:
+            continue
+        # Also skip columns that look like open-ended text (long string values)
+        if df[col].dtype == 'object':
+            _sample = df[col].dropna().head(5)
+            _avg_len = _sample.str.len().mean() if len(_sample) > 0 else 0
+            if _avg_len > 50:
+                continue  # Likely an OE text column
+            numeric_issues.append(col)
 
     if numeric_issues:
         results['warnings'].append(

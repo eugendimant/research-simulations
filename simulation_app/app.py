@@ -53,8 +53,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.0.6.0"
-BUILD_ID = "20260212-v10600-failover-fix"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.0.6.1"
+BUILD_ID = "20260212-v10601-ux-sim-fix"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -119,7 +119,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.0.6.0"  # v1.0.6.0: Fix LLM provider failover chain + reorder providers
+APP_VERSION = "1.0.6.1"  # v1.0.6.1: Fix field reset + simulation errors
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -4024,29 +4024,33 @@ def _render_conversational_builder() -> None:
 
         # Add new condition form
         st.markdown("---")
+        # v1.0.6.1: Use versioned keys so fields reliably reset after adding a condition.
+        # st.session_state.pop() doesn't always clear widget values in Streamlit;
+        # incrementing the version creates a brand-new widget with an empty default.
+        _struct_ver = st.session_state.get("_struct_cond_version", 0)
         _add_c1, _add_c2 = st.columns([1, 2])
         with _add_c1:
             _new_cond_name = st.text_input(
                 "Condition name",
-                key="struct_cond_name_input",
+                key=f"struct_cond_name_input_v{_struct_ver}",
                 placeholder="e.g., Republican identity visible",
             )
             _new_cond_type = st.selectbox(
                 "Type",
                 options=["Treatment", "Control"],
-                key="struct_cond_type_input",
+                key=f"struct_cond_type_input_v{_struct_ver}",
             )
         with _add_c2:
             _new_cond_desc = st.text_area(
                 "What do participants experience in this condition?",
-                key="struct_cond_desc_input",
+                key=f"struct_cond_desc_input_v{_struct_ver}",
                 placeholder="e.g., Participants see a profile picture with a visible Republican pin. They then play a dictator game where they decide how much to share with this person.",
                 height=100,
                 help="Describe the manipulation or experience. This helps the simulator choose appropriate behavioral patterns, personas, and effect sizes.",
             )
 
         _can_add_cond = bool(_new_cond_name.strip())
-        if st.button("Add condition", key="struct_add_cond_btn", disabled=not _can_add_cond, type="primary"):
+        if st.button("Add condition", key=f"struct_add_cond_btn_v{_struct_ver}", disabled=not _can_add_cond, type="primary"):
             _existing_names = [c["name"].lower() for c in _struct_conds]
             if _new_cond_name.strip().lower() in _existing_names:
                 st.warning(f"Condition '{_new_cond_name.strip()}' already exists.")
@@ -4057,10 +4061,8 @@ def _render_conversational_builder() -> None:
                     "description": _new_cond_desc.strip(),
                 })
                 st.session_state["builder_structured_conditions"] = _struct_conds
-                # Clear input fields — must pop (not assign) to avoid StreamlitAPIException
-                st.session_state.pop("struct_cond_name_input", None)
-                st.session_state.pop("struct_cond_desc_input", None)
-                st.session_state.pop("struct_cond_type_input", None)
+                # Increment version to create fresh widgets on next rerun
+                st.session_state["_struct_cond_version"] = _struct_ver + 1
                 st.rerun()
 
         # Convert structured conditions to parsed conditions for downstream
@@ -4815,25 +4817,27 @@ def _render_builder_design_review() -> None:
         st.warning("No conditions defined. Add conditions below to proceed.")
 
     # Allow adding custom conditions — with name and optional description
+    # v1.0.6.1: Use _br_cond_version in widget keys so fields reset after adding
+    _br_add_ver = st.session_state.get("_br_cond_version", 0)
     with st.expander("Add condition", expanded=not bool(conditions) or len(conditions) < 2):
         _add_c1, _add_c2 = st.columns([1, 2])
         with _add_c1:
             extra_cond_name = st.text_input(
                 "Condition name",
-                key="builder_review_extra_conds",
+                key=f"builder_review_extra_conds_v{_br_add_ver}",
                 placeholder="e.g., Democrat identity visible",
                 help="Enter the name for the new condition.",
             )
         with _add_c2:
             extra_cond_desc = st.text_area(
                 "What do participants experience? (recommended)",
-                key="builder_review_extra_desc",
+                key=f"builder_review_extra_desc_v{_br_add_ver}",
                 placeholder="e.g., Participants see a profile with visible Democrat campaign pin, then play an economic sharing game.",
                 height=68,
                 help="Describe the manipulation. This helps the simulator generate scientifically realistic behavioral patterns.",
             )
         _can_add = bool(extra_cond_name.strip())
-        if st.button("Add condition", key="builder_add_cond_btn", disabled=not _can_add, type="primary"):
+        if st.button("Add condition", key=f"builder_add_cond_btn_v{_br_add_ver}", disabled=not _can_add, type="primary"):
             _nc = extra_cond_name.strip()
             if _nc in conditions:
                 st.warning(f"Condition '{_nc}' already exists.")
@@ -4860,10 +4864,8 @@ def _render_builder_design_review() -> None:
                     c: _per + (1 if idx < _rem else 0) for idx, c in enumerate(conditions)
                 }
                 st.session_state["condition_allocation"] = {c: round(100.0 / _n, 1) for c in conditions}
-                # Clear input fields — must pop (not assign) to avoid StreamlitAPIException
-                st.session_state.pop("builder_review_extra_conds", None)
-                st.session_state.pop("builder_review_extra_desc", None)
-                st.session_state["_br_cond_version"] = st.session_state.get("_br_cond_version", 0) + 1
+                # Increment version to create fresh widgets on next rerun
+                st.session_state["_br_cond_version"] = _br_add_ver + 1
                 st.rerun()
 
     # ── Factorial Structure ─────────────────────────────────────────────
@@ -8211,24 +8213,26 @@ if active_page == 2:
 
             st.markdown("**Type manually**")
 
+            # v1.0.6.1: Use versioned keys so the field resets after adding
+            _qsf_cond_ver = st.session_state.get("_qsf_cond_version", 0)
             col_add1, col_add2 = st.columns([3, 1])
             with col_add1:
                 new_condition = st.text_input(
                     "New condition name",
-                    key="new_condition_input",
+                    key=f"new_condition_input_v{_qsf_cond_ver}",
                     placeholder="e.g., Control, Treatment, High, Low",
                     help="Type any condition name you want to add.",
                 )
             with col_add2:
-                if st.button("Add →", key="add_condition_btn", disabled=not new_condition.strip()):
+                if st.button("Add →", key=f"add_condition_btn_v{_qsf_cond_ver}", disabled=not new_condition.strip()):
                     _nc = new_condition.strip()
                     # v1.8.9: Case-insensitive duplicate check across all sources
                     _all_existing = [c.lower() for c in custom_conditions + selected]
                     if _nc and _nc.lower() not in _all_existing:
                         custom_conditions.append(_nc)
                         st.session_state["custom_conditions"] = custom_conditions
-                        # Clear input — must pop (not assign) to avoid StreamlitAPIException
-                        st.session_state.pop("new_condition_input", None)
+                        # Increment version to create fresh widget on next rerun
+                        st.session_state["_qsf_cond_version"] = _qsf_cond_ver + 1
                         st.rerun()
                     elif _nc and _nc.lower() in _all_existing:
                         st.warning(f"Condition '{_nc}' already exists (case-insensitive match).")
@@ -10744,8 +10748,10 @@ if active_page == 3:
                     expected_scales=clean_scales,
                     expected_n=N,
                 )
-            except Exception:
-                schema_results = {"passed": True, "checks": [], "warnings": [], "errors": []}
+            except Exception as _schema_err:
+                # v1.0.6.1: Log the error instead of silently swallowing
+                _log(f"Schema validation error: {_schema_err}", level="warning")
+                schema_results = {"passed": True, "checks": [], "warnings": [f"Schema validation encountered an error: {_schema_err}"], "errors": []}
 
             csv_bytes = df.to_csv(index=False).encode("utf-8")
             meta_bytes = _safe_json(metadata).encode("utf-8")

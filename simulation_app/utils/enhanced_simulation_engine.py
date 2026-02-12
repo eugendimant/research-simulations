@@ -7197,7 +7197,10 @@ class EnhancedSimulationEngine:
 
         # Behavioral pattern from numeric responses
         if response_vals and len(response_vals) >= 2:
-            vals = [float(v) for v in response_vals]
+            # v1.0.6.1: Filter out NaN/None values to prevent NaN propagation
+            vals = [float(v) for v in response_vals if v is not None and not (isinstance(v, float) and np.isnan(v))]
+            if len(vals) < 2:
+                vals = [4.0, 4.0]  # Safe midpoint fallback
             _mean = float(np.mean(vals))
             _std = float(np.std(vals))
             _min_v, _max_v = float(min(vals)), float(max(vals))
@@ -7880,6 +7883,13 @@ class EnhancedSimulationEngine:
 
         if self.condition_allocation and len(self.condition_allocation) > 0:
             # Use specified allocation percentages (already normalized by __init__)
+            # v1.0.6.1: Warn if allocation keys don't match conditions
+            _alloc_keys = set(self.condition_allocation.keys())
+            _cond_set = set(self.conditions)
+            if _alloc_keys != _cond_set:
+                _missing = _cond_set - _alloc_keys
+                if _missing:
+                    self._log(f"WARNING: Condition allocation missing keys for: {_missing}. Using equal distribution for those.")
             running_total = 0
             for i, cond in enumerate(self.conditions):
                 raw_pct = self.condition_allocation.get(cond, 100.0 / n_conditions)
@@ -8560,7 +8570,9 @@ class EnhancedSimulationEngine:
         # from their numeric response pattern.
         for _vi in range(n):
             _v_vals = participant_item_responses[_vi]
-            _v_mean = float(np.mean(_v_vals)) if _v_vals else None
+            # v1.0.6.1: Filter NaN/None before computing mean
+            _v_clean = [float(v) for v in _v_vals if v is not None and not (isinstance(v, float) and np.isnan(v))] if _v_vals else []
+            _v_mean = float(np.mean(_v_clean)) if _v_clean else None
             if _v_mean is not None:
                 if _v_mean >= 5.5:
                     _v_tone = "positive"
@@ -8619,9 +8631,14 @@ class EnhancedSimulationEngine:
                 q_text_hash = int(hashlib.md5(_q_hash_input).hexdigest()[:8], 16)
                 p_seed = (self.seed + i * 100 + col_hash + q_text_hash) % (2**31)
                 persona_name = assigned_personas[i]
-                persona = self.available_personas[persona_name]
+                # v1.0.6.1: Safe lookup — fallback to first available persona if name missing
+                persona = self.available_personas.get(
+                    persona_name, next(iter(self.available_personas.values()))
+                )
                 response_vals = participant_item_responses[i]
-                response_mean = float(np.mean(response_vals)) if response_vals else None
+                # v1.0.6.1: Filter NaN before computing mean to prevent propagation
+                _clean_resp = [float(v) for v in response_vals if v is not None and not (isinstance(v, float) and np.isnan(v))] if response_vals else []
+                response_mean = float(np.mean(_clean_resp)) if _clean_resp else None
 
                 # v1.0.4.8: Build full behavioral profile for OE-numeric consistency
                 _beh_profile = self._build_behavioral_profile(
