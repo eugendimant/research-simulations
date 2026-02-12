@@ -17,10 +17,10 @@ Architecture:
 - Graceful fallback: if all LLM providers fail, silently falls back to
   the existing template-based ComprehensiveResponseGenerator
 
-Version: 1.0.6.0
+Version: 1.0.6.8
 """
 
-__version__ = "1.0.6.0"
+__version__ = "1.0.6.8"
 
 import hashlib
 import json
@@ -1633,6 +1633,7 @@ class LLMResponseGenerator:
         study_description: str = "",
         seed: Optional[int] = None,
         fallback_generator: Any = None,
+        allow_template_fallback: bool = True,
         batch_size: int = 20,
         all_conditions: Optional[List[str]] = None,
     ) -> None:
@@ -1641,6 +1642,7 @@ class LLMResponseGenerator:
         self._all_conditions: List[str] = list(all_conditions) if all_conditions else []
         self._rng = random.Random(seed)
         self._fallback = fallback_generator
+        self._allow_template_fallback = bool(allow_template_fallback)
         self._batch_size = max(4, min(batch_size, 25))
         self._pool = _ResponsePool()
         self._fallback_count = 0
@@ -1651,6 +1653,7 @@ class LLMResponseGenerator:
         self._provider_exhaustion_count: int = 0  # Times ALL providers failed in a batch
         self._user_key_activations: int = 0  # Times a user-provided key was activated mid-session
         self._exhaustion_timestamps: List[float] = []  # When each exhaustion occurred
+        self._blocked_fallback_count: int = 0
         # v1.0.5.8: Anti-detection — cross-participant response uniqueness tracker.
         # Stores normalized first-10-words of recent responses to detect and prevent
         # near-identical outputs across different participants.
@@ -1808,7 +1811,14 @@ class LLMResponseGenerator:
             # v1.0.6.3: Init status for report accuracy
             "api_initialized": self._api_available or total_calls > 0,
             "batch_failures": self._batch_failure_count,
+            "allow_template_fallback": self._allow_template_fallback,
+            "blocked_fallbacks": self._blocked_fallback_count,
         }
+
+    @property
+    def allows_template_fallback(self) -> bool:
+        """Whether template fallback is allowed when providers are exhausted."""
+        return self._allow_template_fallback
 
     def set_study_context(self, title: str, description: str,
                          conditions: Optional[List[str]] = None) -> None:
@@ -2223,8 +2233,15 @@ class LLMResponseGenerator:
                     if result and len(result.strip()) >= 3:
                         return _ensure_unique_start(result.strip())
 
-        # 3. Fall back to template generator
+        # 3. Fall back to template generator (only if explicitly allowed)
         # v1.0.5.0: Pass behavioral_profile through to fallback so it maintains coherence
+        if not self._allow_template_fallback:
+            self._blocked_fallback_count += 1
+            raise RuntimeError(
+                "All LLM providers failed and template fallback is disabled for this run. "
+                "Add a working API key or explicitly enable fallback."
+            )
+
         self._fallback_count += 1
         if self._fallback:
             return self._fallback.generate(

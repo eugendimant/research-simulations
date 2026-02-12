@@ -201,6 +201,46 @@ def _clean_condition_name(condition: str) -> str:
     cleaned = re.sub(r'\s+', ' ', cleaned)
     return cleaned.strip()
 
+def _align_condition_values(df: pd.DataFrame, metadata_conditions: List[str]) -> pd.DataFrame:
+    """Canonicalize CONDITION values against known metadata conditions.
+
+    Handles accidental condition contamination like "Yeah AI x Utilitarian"
+    by mapping to the canonical suffix when unambiguous.
+    """
+    if "CONDITION" not in df.columns or not metadata_conditions:
+        return df
+
+    canon = [str(c).strip() for c in metadata_conditions if str(c).strip()]
+    if not canon:
+        return df
+
+    clean_to_canon = {_clean_condition_name(c).lower(): c for c in canon}
+    mapped: List[Any] = []
+    changes = 0
+
+    for raw in df["CONDITION"].astype(str):
+        raw_clean = _clean_condition_name(raw)
+        raw_low = raw_clean.lower()
+
+        if raw_low in clean_to_canon:
+            mapped.append(clean_to_canon[raw_low])
+            continue
+
+        matches = [c for c in canon if raw_low.endswith(_clean_condition_name(c).lower())]
+        if len(matches) == 1:
+            mapped.append(matches[0])
+            changes += 1
+        else:
+            mapped.append(raw)
+
+    if changes == 0:
+        return df
+
+    out = df.copy()
+    out["CONDITION"] = mapped
+    return out
+
+
 
 # ============================================================================
 # NUMPY-BASED STATISTICAL FUNCTIONS (fallbacks when scipy unavailable)
@@ -2155,6 +2195,7 @@ class ComprehensiveInstructorReport:
         conditions = metadata.get("conditions", [])
         factors = metadata.get("factors", [])
         scales = metadata.get("scales", [])
+        df = _align_condition_values(df, [str(c) for c in conditions])
 
         lines.append(f"**Design type:** {metadata.get('design_type', 'Between-subjects')}")
         lines.append(f"**Number of conditions:** {len(conditions)}")
@@ -4627,6 +4668,7 @@ class ComprehensiveInstructorReport:
         n_clean = n_total - n_excluded
         exclusion_rate = (n_excluded / n_total * 100) if n_total > 0 else 0
         conditions = metadata.get("conditions", [])
+        df = _align_condition_values(df, [str(c) for c in conditions])
         # v1.0.6.3: Fallback — if metadata conditions don't match df, use df values
         if conditions and "CONDITION" in df.columns:
             _df_conds = df["CONDITION"].unique().tolist()
