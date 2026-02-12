@@ -212,6 +212,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple, Set, Union
 
 import hashlib
+import os
 import random
 import re
 
@@ -7109,6 +7110,41 @@ class EnhancedSimulationEngine:
         response = max(scale_min, min(scale_max, round(response)))
         result = int(response)
 
+        # =====================================================================
+        # STEP 11: Human-like micro-pattern adjustments (v1.0.6.9)
+        # Adds realistic item-position drift, streak inertia, and occasional
+        # correction behavior without overwhelming experimental effects.
+        # =====================================================================
+        _p_idx = getattr(self, "_current_participant_idx", None)
+        _item_pos = int(getattr(self, "_current_item_position", 1))
+        _item_total = int(max(1, getattr(self, "_current_item_total", 1)))
+        if isinstance(_p_idx, int) and _p_idx >= 0:
+            _progress = _item_pos / max(1, _item_total)
+            _attn = _safe_trait_value(traits.get("attention_level"), 0.7)
+            _cons = _safe_trait_value(traits.get("response_consistency"), 0.6)
+            _ext = _safe_trait_value(traits.get("extremity"), 0.3)
+
+            # Fatigue drift: slight move toward midpoint later in long scales
+            if _item_total >= 5 and _progress >= 0.6 and _attn < 0.6:
+                _mid = (scale_min + scale_max) / 2.0
+                _shrink = 0.12 + (0.6 - _attn) * 0.20
+                result = int(round(result + (_mid - result) * _shrink))
+
+            # Streak inertia: low-consistency participants sometimes repeat prior value
+            if not hasattr(self, "_item_response_memory"):
+                self._item_response_memory = {}
+            _prev = self._item_response_memory.get((_p_idx, variable_name))
+            if _prev is not None and _cons < 0.55 and rng.random() < (0.08 + (0.55 - _cons) * 0.20):
+                result = int(round((_prev + result) / 2.0))
+
+            # Human correction: engaged respondents occasionally counter-correct extremes
+            if _attn > 0.75 and _ext < 0.5 and rng.random() < 0.05:
+                if result in (scale_min, scale_max):
+                    result += -1 if result == scale_max else 1
+
+            # Store memory for next item in same construct
+            self._item_response_memory[(_p_idx, variable_name)] = int(result)
+
         # SAFETY CHECK: Final validation that result is within bounds
         # This guards against any floating point edge cases
         if result < scale_min:
@@ -8823,6 +8859,8 @@ class EnhancedSimulationEngine:
                 for i in range(n):
                     p_seed = (self.seed + i * 100 + col_hash) % (2**31)
                     self._current_participant_idx = i  # v1.0.4.9: for reverse tracking
+                    self._current_item_position = item_num
+                    self._current_item_total = num_items
                     val = self._generate_scale_response(
                         scale_min,
                         scale_max,
@@ -8949,6 +8987,8 @@ class EnhancedSimulationEngine:
             for i in range(n):
                 p_seed = (self.seed + i * 100 + col_hash) % (2**31)
                 self._current_participant_idx = i  # v1.0.4.9: for reverse tracking
+                self._current_item_position = 1
+                self._current_item_total = 1
                 val = self._generate_scale_response(
                     var_min, var_max, all_traits[i], False, conditions.iloc[i], var_name, p_seed
                 )
