@@ -33,7 +33,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 # Version identifier to help track deployed code
-__version__ = "1.0.6.5"  # v1.0.6.5: Dynamic domain model, fix _proper_nouns bug
+__version__ = "1.0.6.6"  # v1.0.6.6: Comprehensive domain topic hints (350+ entries)
 
 
 # ============================================================================
