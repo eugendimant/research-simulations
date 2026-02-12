@@ -7429,13 +7429,14 @@ class EnhancedSimulationEngine:
         formality = _safe_trait_value(traits.get("formality"), 0.5)
 
         # Map persona to engagement level
+        _persona_name = getattr(persona, 'name', '') if persona else ''
         if attention_level < 0.5:
             engagement = 0.2  # Careless
-        elif persona.name == "Satisficer":
+        elif _persona_name == "Satisficer":
             engagement = 0.3
-        elif persona.name == "Extreme Responder":
+        elif _persona_name == "Extreme Responder":
             engagement = 0.6
-        elif persona.name == "Engaged Responder":
+        elif _persona_name == "Engaged Responder":
             engagement = 0.9
         else:
             engagement = 0.5
@@ -7495,11 +7496,11 @@ class EnhancedSimulationEngine:
 
         if _effective_attn < 0.5:
             style = "careless"
-        elif persona.name == "Satisficer":
+        elif _persona_name == "Satisficer":
             style = "satisficer"
-        elif persona.name == "Extreme Responder":
+        elif _persona_name == "Extreme Responder":
             style = "extreme"
-        elif persona.name == "Engaged Responder":
+        elif _persona_name == "Engaged Responder":
             style = "engaged"
         else:
             style = "default"
