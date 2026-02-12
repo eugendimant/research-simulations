@@ -53,8 +53,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.0.7.0"
-BUILD_ID = "20260212-v10700-fix-ux-llm-fallback"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.0.6.8"
+BUILD_ID = "20260212-v10608-llm-first-hardening"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -119,7 +119,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.0.7.0"  # v1.0.7.0: Fix LLM API fallback UX — graceful degradation, never hard-stop
+APP_VERSION = "1.0.6.8"  # v1.0.6.8: LLM-first enforcement, explicit fallback consent, condition integrity fix
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -10259,6 +10259,7 @@ if active_page == 3:
                 st.session_state["_llm_connectivity_status"] = _llm_status
 
         if _llm_status.get("available"):
+            st.session_state["allow_template_fallback_once"] = False
             st.markdown(
                 '<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;'
                 'padding:12px 16px;margin-bottom:16px;">'
@@ -10277,14 +10278,18 @@ if active_page == 3:
             st.session_state["_admin_llm_exhaust_dialog_shown"] = _exhaust_shown_count + 1
 
             st.markdown(
-                '<div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:10px;'
-                'padding:16px 20px;margin-bottom:16px;">'
-                '<span style="font-size:1.1em;font-weight:600;color:#92400e;">'
-                'AI Open-Ended Response Generation</span><br>'
-                '<span style="color:#78350f;font-size:0.93em;">'
-                'The built-in AI language model service is currently not available '
-                '(services may be temporarily at capacity). You have two easy options:</span>'
-                '</div>',
+                '<div style="background:#fef2f2;border:2px solid #fca5a5;border-radius:10px;'
+                'padding:16px 20px;margin-bottom:16px;'>
+                '<span style="font-size:1.2em;font-weight:700;color:#991b1b;">'
+                'All Built-in AI Providers Are Currently Unavailable</span><br>'
+                '<span style="color:#b91c1c;font-size:0.95em;">'
+                'All 6 built-in AI services are currently unavailable. '
+                'The simulator remains in LLM-first mode.</span>'
+                '<ol style="color:#7f1d1d;font-size:0.9em;margin-top:8px;">'
+                '<li><strong>Provide your own API key</strong> (free or paid) — '
+                'AI-generated open-ended responses, highest quality</li>'
+                '<li><strong>Retry generation</strong> after providers recover.</li>'
+                '</ol></div>',
                 unsafe_allow_html=True,
             )
 
@@ -10388,6 +10393,29 @@ if active_page == 3:
                     unsafe_allow_html=True,
                 )
 
+            st.session_state["allow_template_fallback_once"] = False
+            st.info(
+                "LLM-first mode is active. Template fallback is disabled by default and only offered after an API-only run fails."
+            )
+
+            _has_user_key = bool((st.session_state.get("user_llm_api_key", "") or "").strip())
+            if not _has_user_key:
+                _allow_final_fallback = st.checkbox(
+                    "If AI providers remain unavailable, allow final template fallback for this run only",
+                    value=bool(st.session_state.get("allow_template_fallback_once", False)),
+                    key="allow_template_fallback_once_checkbox",
+                    help=(
+                        "Unchecked = generation is blocked until at least one LLM provider works. "
+                        "Checked = if all LLM calls fail, the final template fallback is allowed for this run."
+                    ),
+                )
+                st.session_state["allow_template_fallback_once"] = bool(_allow_final_fallback)
+                if not _allow_final_fallback:
+                    st.error("LLM-first mode is active: generation is blocked until an API key works or you explicitly allow the final fallback for this run.")
+            else:
+                st.session_state["allow_template_fallback_once"] = False
+
+
     is_generating = _is_generating  # Use the early-read variable
     has_generated = _has_generated
 
@@ -10479,7 +10507,16 @@ if active_page == 3:
             st.markdown(f"- {_pe}")
 
     # Button: disabled if not ready, generating, or already generated
-    can_generate = all_required_complete and not is_generating and not has_generated and not _preflight_errors
+    _llm_gate_block = False
+    if _has_open_ended:
+        _llm_cached = st.session_state.get("_llm_connectivity_status", {}) or {}
+        _llm_available_now = bool(_llm_cached.get("available"))
+        _allow_final_fallback = bool(st.session_state.get("allow_template_fallback_once", False))
+        _has_user_key = bool((st.session_state.get("user_llm_api_key", "") or "").strip())
+        if not _llm_available_now and not _allow_final_fallback and not _has_user_key:
+            _llm_gate_block = True
+
+    can_generate = all_required_complete and not is_generating and not has_generated and not _preflight_errors and not _llm_gate_block
 
     # v1.4.5: No generate button during generation — just show the progress + reset
     if is_generating:
@@ -10755,6 +10792,7 @@ if active_page == 3:
             correlation_matrix=_engine_corr_matrix,
             missing_data_rate=_engine_missing_rate,
             dropout_rate=_engine_dropout_rate,
+            allow_template_fallback=bool(st.session_state.get("allow_template_fallback_once", False)),
         )
 
         # v1.2.4: Show detected research domains
@@ -10792,6 +10830,17 @@ if active_page == 3:
             # Fix: engine metadata uses "sample_size", "conditions", "scales" —
             # not "n_participants", "conditions_used", "scales_used".
             _llm_run_stats = metadata.get('llm_stats', metadata.get('llm_response_stats', {}))
+
+            # Hard LLM-first integrity guard for OE runs.
+            # If fallback is disabled, we require actual API activity.
+            if open_ended_questions_for_engine and not bool(st.session_state.get("allow_template_fallback_once", False)):
+                _llm_calls_run = int(_llm_run_stats.get("llm_calls", 0) or 0)
+                _llm_attempts_run = int(_llm_run_stats.get("llm_attempts", 0) or 0)
+                if _llm_calls_run <= 0 and _llm_attempts_run <= 0:
+                    raise RuntimeError(
+                        "LLM-first integrity check failed: open-ended questions were configured but no API calls/attempts were recorded."
+                    )
+
             st.session_state["_last_llm_stats"] = _llm_run_stats
             _admin_history = st.session_state.get("_admin_sim_history", [])
             _admin_history.append({
@@ -11157,42 +11206,22 @@ if active_page == 3:
             error_tb = _tb.format_exc()
             error_str = str(e).lower()
 
-            # v1.0.7.0: Store error details for admin diagnostics
-            _admin_error_log = st.session_state.get("_admin_generation_errors", [])
-            _admin_error_log.append({
-                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                "error": str(e),
-                "error_type": type(e).__name__,
-                "traceback": error_tb[-500:],  # Last 500 chars
-            })
-            st.session_state["_admin_generation_errors"] = _admin_error_log[-20:]  # Keep last 20
-
-            # v1.0.7.0: Categorized, user-friendly error messages.
-            # LLM-related errors should NEVER scare users — the simulation still works.
-            _is_llm_error = any(kw in error_str for kw in [
-                "api", "auth", "401", "403", "429", "rate", "timeout",
-                "timed out", "connection", "llm", "provider", "groq",
-                "cerebras", "openai", "google", "openrouter", "poe",
-            ])
-
-            if _is_llm_error:
-                # LLM errors are NOT fatal — simulation should still work
-                progress_bar.progress(100, text="Simulation completed with notes.")
-                status_placeholder.warning("Simulation encountered an AI provider issue.")
-                st.markdown(
-                    '<div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;'
-                    'padding:14px 18px;margin-bottom:12px;">'
-                    '<span style="font-weight:600;color:#92400e;font-size:0.95em;">'
-                    'AI Language Model Note</span><br>'
-                    '<span style="color:#78350f;font-size:0.9em;">'
-                    'The built-in AI language model service was not reachable during this run. '
-                    'This happens occasionally when the free API services are at capacity.</span><br><br>'
-                    '<span style="color:#78350f;font-size:0.9em;">'
-                    '<strong>Your simulation still generated successfully</strong> using the built-in '
-                    'behavioral response engine (225+ research domains, 40 question types). '
-                    'For AI-powered responses, you can provide your own free API key and re-run.</span>'
-                    '</div>',
-                    unsafe_allow_html=True,
+            # Categorize the error for a more helpful user-facing message
+            if "api" in error_str or "auth" in error_str or "401" in error_str or "403" in error_str:
+                st.error(
+                    "**LLM API Error:** Could not connect to the AI provider. "
+                    "If you provided an API key, please verify it is correct and has not expired. "
+                    "If you do not allow fallback, generation is intentionally blocked until at least one LLM provider succeeds."
+                )
+                if st.button("Allow one-time emergency template fallback and retry", key="allow_emergency_template_once"):
+                    st.session_state["allow_template_fallback_once"] = True
+                    st.session_state["is_generating"] = True
+                    st.session_state["_generation_phase"] = 1
+                    _navigate_to(3)
+            elif "timeout" in error_str or "timed out" in error_str or "connection" in error_str:
+                st.error(
+                    "**Connection Timeout:** The AI provider did not respond in time. "
+                    "This is usually temporary. Please try again in a moment, or proceed without an API key."
                 )
             elif "memory" in error_str or "overflow" in error_str:
                 progress_bar.progress(100, text="Simulation failed.")

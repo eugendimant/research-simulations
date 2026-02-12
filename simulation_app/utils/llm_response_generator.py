@@ -18,10 +18,10 @@ Architecture:
   the existing template-based ComprehensiveResponseGenerator
 - Never hard-stops: always walks user through options when APIs fail
 
-Version: 1.0.7.0
+Version: 1.0.6.8
 """
 
-__version__ = "1.0.7.0"
+__version__ = "1.0.6.8"
 
 import hashlib
 import json
@@ -1400,6 +1400,61 @@ def _clean_ai_artifacts(text: str) -> str:
     return text
 
 
+def _extract_topic_tokens(question_text: str, condition: str) -> List[str]:
+    """Extract salient topical tokens to validate response relevance."""
+    raw = f"{question_text or ''} {condition or ''}".lower()
+    tokens = re.findall(r"\b[a-z][a-z0-9_'-]{2,}\b", raw)
+    stop = {
+        "about", "please", "share", "question", "response", "study", "condition",
+        "participants", "participant", "think", "feel", "your", "with", "this",
+        "that", "from", "into", "what", "when", "where", "which", "would",
+        "could", "should", "because", "explain", "tell", "politics", "related",
+    }
+    keep = [t.replace("_", " ") for t in tokens if t not in stop]
+    # Preserve order + uniqueness
+    seen = set()
+    out: List[str] = []
+    for t in keep:
+        if t not in seen:
+            out.append(t)
+            seen.add(t)
+    return out[:10]
+
+
+def _is_low_quality_response(text: str, topic_tokens: Optional[List[str]] = None) -> bool:
+    """Heuristic filter for gibberish/generic responses."""
+    if not text:
+        return True
+    stripped = text.strip()
+    if len(stripped) < 12:
+        return True
+
+    words = re.findall(r"\b\w+\b", stripped.lower())
+    if len(words) < 4:
+        return True
+
+    # Low lexical diversity often signals templated gibberish
+    unique_ratio = len(set(words)) / max(1, len(words))
+    if unique_ratio < 0.32 and len(words) >= 10:
+        return True
+
+    # Too many hard-banned filler fragments
+    bad_markers = [
+        "enjoyment factor", "practical aspects", "favorite conspiracy 100 percent",
+        "in my estimation", "for this reason, i could go on", "this captures it",
+    ]
+    lower = stripped.lower()
+    if any(m in lower for m in bad_markers):
+        return True
+
+    # Relevance: require at least one topical token hit when available
+    if topic_tokens:
+        if not any(tok in lower for tok in topic_tokens[:6]):
+            return True
+
+    return False
+
+
 # ---------------------------------------------------------------------------
 # Key auto-detection for multi-provider support
 # ---------------------------------------------------------------------------
@@ -1658,6 +1713,7 @@ class LLMResponseGenerator:
         study_description: str = "",
         seed: Optional[int] = None,
         fallback_generator: Any = None,
+        allow_template_fallback: bool = True,
         batch_size: int = 20,
         all_conditions: Optional[List[str]] = None,
     ) -> None:
@@ -1666,6 +1722,7 @@ class LLMResponseGenerator:
         self._all_conditions: List[str] = list(all_conditions) if all_conditions else []
         self._rng = random.Random(seed)
         self._fallback = fallback_generator
+        self._allow_template_fallback = bool(allow_template_fallback)
         self._batch_size = max(4, min(batch_size, 25))
         self._pool = _ResponsePool()
         self._fallback_count = 0
@@ -1676,6 +1733,7 @@ class LLMResponseGenerator:
         self._provider_exhaustion_count: int = 0  # Times ALL providers failed in a batch
         self._user_key_activations: int = 0  # Times a user-provided key was activated mid-session
         self._exhaustion_timestamps: List[float] = []  # When each exhaustion occurred
+        self._blocked_fallback_count: int = 0
         # v1.0.5.8: Anti-detection — cross-participant response uniqueness tracker.
         # Stores normalized first-10-words of recent responses to detect and prevent
         # near-identical outputs across different participants.
@@ -1691,20 +1749,19 @@ class LLMResponseGenerator:
                              _DEFAULT_POE_KEY}
 
         # Built-in providers (in priority order) with rate limits from provider dashboards:
-        # v1.0.7.0: Reordered — Google AI FIRST (confirmed working, most reliable).
-        # 1. Google AI Gemini 2.5 Flash Lite: 10 RPM, 250K TPM, 20 RPD (quality, reliable)
-        # 2. Google AI Gemma 3 27B:           30 RPM, 15K TPM, 14,400 RPD (high volume)
-        # 3. Groq Llama 3.3 70B:             ~30 RPM, 14,400 RPD (natural language)
-        # 4. Cerebras Llama 3.3 70B:         ~30 RPM, 1M tokens/day (fast)
-        # 5. Poe GPT-4o-mini:               ~20 RPM, ~200 RPD (3K points/day free)
+        # 1. Google AI Gemma 3 27B:           30 RPM, 15K TPM, 14,400 RPD (volume)
+        # 2. Google AI Gemini 2.5 Flash Lite: 10 RPM, 250K TPM, 20 RPD (quality)
+        # 3. Groq Llama 3.3 70B:              ~30 RPM, 14,400 RPD
+        # 4. Cerebras Llama 3.3 70B:          ~30 RPM, 1M tokens/day
+        # 5. Poe GPT-4o-mini:                ~20 RPM, ~200 RPD (3K points/day free)
         # 6. OpenRouter Mistral Small 3.1:    varies by model
         # NOTE: Google AI moved to top because it's confirmed accessible and reliable.
         # Groq/Cerebras sometimes have intermittent auth/rate issues.
         _builtin_providers = [
-            ("google_ai_builtin", GOOGLE_AI_API_URL, GOOGLE_AI_MODEL,
-             _DEFAULT_GOOGLE_AI_KEY, 8, 20, 20),
             ("google_ai_gemma", GOOGLE_AI_API_URL, GOOGLE_AI_MODEL_HIGHVOL,
              _DEFAULT_GOOGLE_AI_KEY, 25, 14400, 10),
+            ("google_ai_builtin", GOOGLE_AI_API_URL, GOOGLE_AI_MODEL,
+             _DEFAULT_GOOGLE_AI_KEY, 8, 20, 20),
             ("groq_builtin", GROQ_API_URL, GROQ_MODEL,
              _DEFAULT_GROQ_KEY, 28, 0, 20),
             ("cerebras_builtin", CEREBRAS_API_URL, CEREBRAS_MODEL,
@@ -1843,7 +1900,14 @@ class LLMResponseGenerator:
             # v1.0.6.3: Init status for report accuracy
             "api_initialized": self._api_available or total_calls > 0,
             "batch_failures": self._batch_failure_count,
+            "allow_template_fallback": self._allow_template_fallback,
+            "blocked_fallbacks": self._blocked_fallback_count,
         }
+
+    @property
+    def allows_template_fallback(self) -> bool:
+        """Whether template fallback is allowed when providers are exhausted."""
+        return self._allow_template_fallback
 
     def set_study_context(self, title: str, description: str,
                          conditions: Optional[List[str]] = None) -> None:
@@ -2026,6 +2090,7 @@ class LLMResponseGenerator:
             persona_specs=persona_specs,
             all_conditions=self._all_conditions or None,
         )
+        _topic_tokens = _extract_topic_tokens(question_text, condition)
 
         # v1.0.6.0: Iterate directly over provider list for correct failover.
         # BUGFIX: Previous _get_active_provider() + tried-set pattern always
@@ -2048,7 +2113,15 @@ class LLMResponseGenerator:
                 if responses:
                     # Post-process: strip AI-sounding phrases
                     responses = [_clean_ai_artifacts(r) for r in responses]
-                    responses = [r for r in responses if r and len(r.strip()) >= 3]
+                    _filtered: List[str] = []
+                    for r in responses:
+                        if not r or len(r.strip()) < 3:
+                            continue
+                        if _is_low_quality_response(r, _topic_tokens):
+                            self._quality_rejection_count += 1
+                            continue
+                        _filtered.append(r)
+                    responses = _filtered
                     if responses:
                         self._batch_failure_count = 0  # Reset on success
                         return responses
@@ -2180,6 +2253,7 @@ class LLMResponseGenerator:
         This is used to modulate deep variation so OE text matches quantitative data.
         """
         local_rng = random.Random(participant_seed)
+        _topic_tokens = _extract_topic_tokens(question_text, condition)
 
         # v1.0.4.8: Adjust engagement based on behavioral profile
         _effective_engagement = persona_engagement
@@ -2224,7 +2298,9 @@ class LLMResponseGenerator:
                 behavioral_profile=behavioral_profile,
             )
             if result and len(result.strip()) >= 3:
-                return _ensure_unique_start(result.strip())
+                _final = _ensure_unique_start(result.strip())
+                if not _is_low_quality_response(_final, _topic_tokens):
+                    return _final
 
         # 2. Try on-demand LLM batch (if pool was empty)
         # v1.0.5.7: Use property (triggers auto-recovery check) not raw field
@@ -2264,10 +2340,19 @@ class LLMResponseGenerator:
                         behavioral_profile=behavioral_profile,
                     )
                     if result and len(result.strip()) >= 3:
-                        return _ensure_unique_start(result.strip())
+                        _final = _ensure_unique_start(result.strip())
+                        if not _is_low_quality_response(_final, _topic_tokens):
+                            return _final
 
-        # 3. Fall back to template generator
+        # 3. Fall back to template generator (only if explicitly allowed)
         # v1.0.5.0: Pass behavioral_profile through to fallback so it maintains coherence
+        if not self._allow_template_fallback:
+            self._blocked_fallback_count += 1
+            raise RuntimeError(
+                "All LLM providers failed and template fallback is disabled for this run. "
+                "Add a working API key or explicitly enable fallback."
+            )
+
         self._fallback_count += 1
         if self._fallback:
             return self._fallback.generate(

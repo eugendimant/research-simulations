@@ -2,7 +2,7 @@
 """
 Utility modules for the Behavioral Experiment Simulation Tool.
 
-Version: 1.0.7.0 - Fix LLM API fallback UX — graceful degradation, never hard-stop
+Version: 1.0.6.8 - Fix UX — no OE preview, OE context prompt, hide flash warnings
 
 Changes (v1.0.0 - 20 Iterations of Comprehensive Improvements):
     === ENHANCED SCALE/MATRIX DETECTION ===
