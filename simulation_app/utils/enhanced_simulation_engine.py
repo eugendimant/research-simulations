@@ -2865,6 +2865,7 @@ class EnhancedSimulationEngine:
         # Initialize LLM-powered response generator (optional upgrade)
         # Must come after validation_log init so _log() works
         self.llm_generator = None
+        self.llm_init_error: str = ""
         try:
             from .llm_response_generator import LLMResponseGenerator
             # LLMResponseGenerator has a built-in default API key;
@@ -2893,6 +2894,7 @@ class EnhancedSimulationEngine:
                     self.llm_generator._reset_all_providers()
                     self.llm_generator._api_available = True
         except Exception as _llm_err:
+            self.llm_init_error = str(_llm_err)
             self._log(f"LLM generator not available (using templates): {_llm_err}")
 
     @staticmethod
@@ -9587,6 +9589,7 @@ class EnhancedSimulationEngine:
             # v1.4.6: LLM response generation stats
             # v1.0.6.1: Guard against .stats being None
             "llm_response_stats": (getattr(self.llm_generator, 'stats', None) or {"llm_calls": 0, "fallback_uses": 0}) if self.llm_generator else {"llm_calls": 0, "fallback_uses": 0},
+            "llm_init_error": self.llm_init_error,
             # v1.4.3: Column descriptions for data dictionary / codebook generation
             "column_descriptions": {col: desc for col, desc in self.column_info},
             # v1.4.11: Scale generation log — maps scale names to actual generated columns
