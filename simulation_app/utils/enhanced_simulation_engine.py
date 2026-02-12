@@ -212,6 +212,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple, Set, Union
 
 import hashlib
+import logging
 import random
 import re
 
@@ -260,6 +261,9 @@ except ImportError:
     def detect_construct_types(scales: Any) -> Any:  # type: ignore[misc]
         """Fallback stub when correlation_matrix module is unavailable."""
         raise ImportError("correlation_matrix module not available")
+
+
+logger = logging.getLogger(__name__)
 
 
 def _word_in(keyword: str, text: str) -> bool:
