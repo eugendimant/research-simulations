@@ -53,8 +53,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.0.5.5"
-BUILD_ID = "20260212-v10505-oe-quality"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.0.5.6"
+BUILD_ID = "20260212-v10506-behavioral-variation"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -119,7 +119,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.0.5.5"  # v1.0.5.5: OE response quality overhaul, forced-response DVs
+APP_VERSION = "1.0.5.6"  # v1.0.5.6: Admin dashboard fix, behavioral-aware variation, LLM resilience
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -10417,17 +10417,19 @@ if active_page == 3:
             if hasattr(engine, 'llm_generator') and engine.llm_generator is not None:
                 metadata['llm_stats'] = engine.llm_generator.stats
 
-            # v1.0.4.7: Track simulation run for admin dashboard
+            # v1.0.5.5: Track simulation run for admin dashboard
+            # Fix: engine metadata uses "sample_size", "conditions", "scales" —
+            # not "n_participants", "conditions_used", "scales_used".
             _llm_run_stats = metadata.get('llm_stats', metadata.get('llm_response_stats', {}))
             st.session_state["_last_llm_stats"] = _llm_run_stats
             _admin_history = st.session_state.get("_admin_sim_history", [])
             _admin_history.append({
-                "title": st.session_state.get("study_title", "Untitled"),
+                "title": st.session_state.get("study_title", metadata.get("study_title", "Untitled")),
                 "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                "sample_size": metadata.get("n_participants", 0),
-                "n_conditions": len(metadata.get("conditions_used", [])),
-                "n_scales": len(metadata.get("scales_used", metadata.get("confirmed_scales", []))),
-                "conditions": metadata.get("conditions_used", []),
+                "sample_size": metadata.get("sample_size", metadata.get("n_participants", 0)),
+                "n_conditions": len(metadata.get("conditions", metadata.get("conditions_used", []))),
+                "n_scales": len(metadata.get("scales", metadata.get("scales_used", []))),
+                "conditions": metadata.get("conditions", metadata.get("conditions_used", [])),
                 "detected_domains": list(metadata.get("detected_domains", [])),
                 "personas_used": metadata.get("personas_used", []),
                 "llm_stats": _llm_run_stats,
