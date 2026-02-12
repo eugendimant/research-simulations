@@ -19,7 +19,7 @@ Architecture:
 Version: 1.0.1.4
 """
 
-__version__ = "1.0.3.10"
+__version__ = "1.0.5.8"
 
 import hashlib
 import json
@@ -53,6 +53,22 @@ OPENROUTER_MODEL = "mistralai/mistral-small-3.1-24b-instruct:free"
 
 SAMBANOVA_API_URL = "https://api.sambanova.ai/v1/chat/completions"
 SAMBANOVA_MODEL = "Meta-Llama-3.1-70B-Instruct"
+
+# v1.0.5.8: Additional user-selectable providers for fallback API key entry
+OPENAI_API_URL = "https://api.openai.com/v1/chat/completions"
+OPENAI_MODEL = "gpt-4o-mini"
+
+ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages"
+ANTHROPIC_MODEL = "claude-sonnet-4-5-20250929"
+
+# User-selectable provider configs: {display_name: (api_url, model, key_prefix_hint)}
+USER_SELECTABLE_PROVIDERS: Dict[str, Dict[str, str]] = {
+    "Groq (Llama 3.3 70B) — Free": {"api_url": GROQ_API_URL, "model": GROQ_MODEL, "hint": "gsk_..."},
+    "Cerebras (Llama 3.3 70B) — Free": {"api_url": CEREBRAS_API_URL, "model": CEREBRAS_MODEL, "hint": "csk-..."},
+    "Google AI (Gemini Flash) — Free": {"api_url": GOOGLE_AI_API_URL, "model": GOOGLE_AI_MODEL, "hint": "AIza..."},
+    "OpenRouter (Mistral) — Free tier": {"api_url": OPENROUTER_API_URL, "model": OPENROUTER_MODEL, "hint": "sk-or-..."},
+    "OpenAI (GPT-4o-mini)": {"api_url": OPENAI_API_URL, "model": OPENAI_MODEL, "hint": "sk-..."},
+}
 
 # ---------------------------------------------------------------------------
 # Built-in API keys (XOR-encoded for repository secret scanning compliance)
@@ -220,7 +236,39 @@ SYSTEM_PROMPT = (
     "brief, low-effort text. The same person produced BOTH the ratings AND "
     "the text — they must tell the same story. This is scientifically "
     "critical: rating-text inconsistency is a hallmark of fabricated data "
-    "(Krosnick, 1999; Podsakoff et al., 2003)."
+    "(Krosnick, 1999; Podsakoff et al., 2003).\n\n"
+    "===== RULE #11 — ANTI-DETECTION: NO CROSS-PARTICIPANT SIMILARITY =====\n"
+    "Each participant is a UNIQUE person with unique life experiences. Their "
+    "responses must be DISTINGUISHABLE from every other participant's:\n"
+    "- NO shared rare phrases across participants ('multifaceted approach', "
+    "'robust framework', 'collaborative synergy')\n"
+    "- NO identical sentence structures repeated across different people\n"
+    "- Include CONCRETE personal details: specific anecdotes ('my cousin had "
+    "this happen'), specific times ('last summer'), specific places ('at my "
+    "job at the grocery store'), specific numbers ('like 3 times')\n"
+    "- Each person has a DIFFERENT reasoning style: some reference personal "
+    "experience, some reference things they've read/heard, some reference "
+    "friends/family, some just state opinions directly\n"
+    "- Vocabulary range should vary: some people use simple words, others use "
+    "SAT-level words naturally (not affectedly)\n"
+    "- The batch must look like it came from 20 DIFFERENT real humans, not "
+    "one AI writing 20 versions of the same response.\n\n"
+    "===== RULE #12 — ANTI-DETECTION: REALISTIC NON-COMPLIANCE =====\n"
+    "Real survey datasets are MESSY. Some participants:\n"
+    "- Leave optional text boxes completely BLANK (just '' or no response) — "
+    "this is realistic and expected for ~15-30% of optional questions\n"
+    "- Answer a DIFFERENT question than what was asked ('what did you think "
+    "of the price?' → 'the website was kinda confusing honestly')\n"
+    "- Include irrelevant personal tangents ('speaking of which my dog did "
+    "the funniest thing yesterday')\n"
+    "- Write something then seem to give up mid-sentence ('I thought the "
+    "whole thing was kind of')\n"
+    "- Use text speak or abbreviations inconsistently ('tbh idk why but it '  "
+    "was rly different from what i expected ngl')\n"
+    "- Reference external context ('my roommate told me about this and')\n"
+    "About 5-10% of responses in any batch should show one of these 'messy "
+    "human' behaviors. This is NOT the same as low-effort — these participants "
+    "may be perfectly engaged but are just being imperfect humans."
 )
 
 # ---------------------------------------------------------------------------
@@ -926,6 +974,18 @@ def _build_batch_prompt(
         f"pervade every sentence, not just the opening line. Treat VOICE "
         f"cues as the participant's core personality that shapes HOW they "
         f"express their opinion.\n\n"
+        f"11. UNIQUE PERSONAL DETAILS — At least 40% of responses should "
+        f"include a CONCRETE personal detail that could NOT appear in any "
+        f"other response: a specific anecdote ('happened to my sister'), "
+        f"a specific reference ('saw something about this on tiktok'), "
+        f"a specific comparison ('reminds me of my old job'), or a specific "
+        f"number ('maybe like 3 out of 10'). These unique anchors make each "
+        f"response irreplaceable and prevent cross-participant similarity.\n\n"
+        f"12. REALISTIC MESSINESS — About 1-2 responses in each batch "
+        f"should show human messiness: a mid-sentence trail-off ('I think "
+        f"the whole thing was kind of'), a tangent ('speaking of which'), "
+        f"a slight misunderstanding of the question, or text-speak mixed "
+        f"with normal writing. Real datasets are NOT clean.\n\n"
         f"Return ONLY a JSON array of {n} strings (one per participant), "
         f"no other text:\n"
         f'["response 1", "response 2", ...]'
@@ -1231,6 +1291,40 @@ _BANNED_PHRASES: List[Tuple[str, str]] = [
     ("somewhat elevated", "kinda high"),
     ("I found myself ", "I "),
     ("I find myself ", "I "),
+    # v1.0.5.8: Additional anti-detection banned phrases
+    ("multifaceted approach", "different angles"),
+    ("robust framework", "solid setup"),
+    ("collaborative synergy", "working together"),
+    ("I demonstrate ", "I show "),
+    ("I demonstrate", "I show"),
+    ("facilitated my ", "helped my "),
+    ("facilitated ", "helped "),
+    ("personal growth", "growing as a person"),
+    ("it prompted me to", "it made me"),
+    ("It prompted me to", "It made me"),
+    ("I firmly believe that ", "I really think "),
+    ("I firmly believe ", "I really think "),
+    ("upon reflection", "thinking about it"),
+    ("Upon reflection", "Thinking about it"),
+    ("it is evident that", "you can tell that"),
+    ("It is evident that", "You can tell that"),
+    ("I was compelled to", "I felt like I had to"),
+    ("I was compelled", "I felt like I needed"),
+    ("this resonates with", "this fits with"),
+    ("This resonates with", "This fits with"),
+    ("I wholeheartedly", "I totally"),
+    ("it's noteworthy", "it's interesting"),
+    ("thought-provoking", "interesting"),
+    ("Thought-provoking", "Interesting"),
+    ("I can confidently say", "I'd say"),
+    ("aligns with my", "fits with my"),
+    ("the nuances of", "the details of"),
+    ("holistic perspective", "big picture"),
+    ("substantive", "real"),
+    ("paradigm", "way of thinking"),
+    ("juxtaposition", "contrast"),
+    ("the implications of", "what it means for"),
+    ("I value ", "I care about "),
 ]
 
 # Regex patterns for more complex replacements
@@ -1243,6 +1337,19 @@ _BANNED_PATTERNS: List[Tuple[str, str]] = [
     (r'\bone might say\b', ''),
     (r'\bit is important to note\b', ''),
     (r'\bIt is important to note\b', ''),
+    # v1.0.5.8: Additional anti-detection regex patterns
+    (r'\bI believe it(?:\'s| is) (?:crucial|essential|imperative)\b', 'I think it matters'),
+    (r'\bdemonstrates? resilience\b', 'keeps going'),
+    (r'\bnavigat(?:e|ing|ed) (?:the|this) (?:challenge|situation|complexity)\b', 'dealing with this'),
+    (r'\bdelve(?:s|d)? (?:into|deeper)\b', 'look at'),
+    (r'\binsightful\b', 'helpful'),
+    (r'\bempowering\b', 'good'),
+    (r'\bseamless(?:ly)?\b', 'smooth'),
+    (r'\beverything considered\b', 'all in all'),
+    (r'\bin summary\b', 'basically'),
+    (r'\bto sum up\b', 'basically'),
+    (r'\bIn conclusion\b', 'So basically'),
+    (r'\bin conclusion\b', 'so basically'),
 ]
 
 
@@ -1300,6 +1407,9 @@ def detect_provider_from_key(api_key: str) -> Optional[Dict[str, str]]:
         return {"name": "google_ai", "api_url": GOOGLE_AI_API_URL, "model": GOOGLE_AI_MODEL}
     elif key.startswith("snova-") or key.startswith("sambanova-"):
         return {"name": "sambanova", "api_url": SAMBANOVA_API_URL, "model": SAMBANOVA_MODEL}
+    elif key.startswith("sk-") and not key.startswith("sk-or-"):
+        # v1.0.5.8: OpenAI keys start with "sk-" (but not "sk-or-" which is OpenRouter)
+        return {"name": "openai", "api_url": OPENAI_API_URL, "model": OPENAI_MODEL}
     elif len(key) > 30:
         # Default to Groq for unrecognized long keys
         return {"name": "groq", "api_url": GROQ_API_URL, "model": GROQ_MODEL}
@@ -1342,6 +1452,13 @@ def get_supported_providers() -> List[Dict[str, str]]:
             "prefix": "(any key)",
             "url": "https://cloud.sambanova.ai",
             "free_tier": "Free Llama 3.1 70B",
+            "recommended": False,
+        },
+        {
+            "name": "OpenAI",
+            "prefix": "sk-...",
+            "url": "https://platform.openai.com",
+            "free_tier": "Paid (GPT-4o-mini ~$0.15/1M tokens)",
             "recommended": False,
         },
     ]
@@ -1502,6 +1619,15 @@ class LLMResponseGenerator:
         self._batch_failure_count = 0
         self._api_disabled_time: float = 0.0  # v1.0.5.7: When API was disabled
         self._api_recovery_secs: float = 60.0  # v1.0.5.7: Auto-recover after this many seconds
+        # v1.0.5.8: Track provider exhaustion events for admin analytics
+        self._provider_exhaustion_count: int = 0  # Times ALL providers failed in a batch
+        self._user_key_activations: int = 0  # Times a user-provided key was activated mid-session
+        self._exhaustion_timestamps: List[float] = []  # When each exhaustion occurred
+        # v1.0.5.8: Anti-detection — cross-participant response uniqueness tracker.
+        # Stores normalized first-10-words of recent responses to detect and prevent
+        # near-identical outputs across different participants.
+        self._recent_response_starts: List[str] = []
+        self._max_recent_starts: int = 200  # Rolling window size
 
         # Build provider chain with per-provider rate limits.
         # Priority: Groq (natural) → Cerebras (natural) → Google AI (quality) → Google AI (volume) → OpenRouter
@@ -1635,6 +1761,10 @@ class LLMResponseGenerator:
                 p.name: {"calls": p.call_count, "available": p.available}
                 for p in self._providers
             },
+            # v1.0.5.8: Failure analytics for admin dashboard
+            "provider_exhaustions": self._provider_exhaustion_count,
+            "user_key_activations": self._user_key_activations,
+            "exhaustion_timestamps": self._exhaustion_timestamps[-20:],  # Last 20
         }
 
     def set_study_context(self, title: str, description: str,
@@ -1851,6 +1981,9 @@ class LLMResponseGenerator:
         # v1.0.5.5: Increased threshold from 5→12 to tolerate transient rate-limit
         # storms.  Also add a brief sleep so providers have time to recover.
         self._batch_failure_count += 1
+        # v1.0.5.8: Track each provider exhaustion event for admin analytics
+        self._provider_exhaustion_count += 1
+        self._exhaustion_timestamps.append(time.time())
         if self._batch_failure_count >= 12:
             self._api_available = False
             self._api_disabled_time = time.time()  # v1.0.5.7: Record for auto-recovery
@@ -1874,6 +2007,64 @@ class LLMResponseGenerator:
         """Reset all providers to available state for retry."""
         for p in self._providers:
             p.reset()
+
+    def add_runtime_provider(
+        self,
+        api_key: str,
+        provider_name: str = "",
+        api_url: str = "",
+        model: str = "",
+    ) -> bool:
+        """Add a user-provided API key as a runtime provider (v1.0.5.8).
+
+        Called when a user provides their own key after built-in providers fail.
+        The key is added as the HIGHEST-PRIORITY provider so it's tried first.
+        Returns True if the provider was added successfully.
+
+        The key is NOT stored permanently — it exists only in this generator
+        instance's memory for the duration of the session.
+        """
+        if not api_key or not api_key.strip():
+            return False
+
+        key = api_key.strip()
+
+        # Auto-detect if no explicit provider given
+        if not api_url or not model:
+            detected = detect_provider_from_key(key)
+            if detected:
+                api_url = api_url or detected["api_url"]
+                model = model or detected["model"]
+                provider_name = provider_name or f"{detected['name']}_user_runtime"
+            else:
+                return False
+
+        if not provider_name:
+            provider_name = "user_runtime"
+
+        # Remove any existing runtime user providers
+        self._providers = [p for p in self._providers if "user_runtime" not in p.name]
+
+        # Insert at position 0 (highest priority)
+        self._providers.insert(0, _LLMProvider(
+            name=provider_name,
+            api_url=api_url,
+            model=model,
+            api_key=key,
+            max_rpm=20,
+            max_rpd=0,
+            max_batch_size=20,
+        ))
+
+        # Re-enable API and reset failure counts
+        self._api_available = True
+        self._batch_failure_count = 0
+        self._api_disabled_time = 0.0
+        self._user_key_activations += 1
+
+        logger.info("User runtime provider added: %s (model=%s), reset failure counts",
+                    provider_name, model)
+        return True
 
     # ------------------------------------------------------------------
     # Single-response generation with deep variation (D)
@@ -1911,6 +2102,29 @@ class LLMResponseGenerator:
                 # Strongly opinionated participants tend to write more
                 _effective_engagement = max(_effective_engagement, 0.5)
 
+        # v1.0.5.8: Helper — check for cross-participant start duplication
+        def _ensure_unique_start(text: str) -> str:
+            """If this response starts the same way as a recent response,
+            prepend a unique casual opener to break the pattern."""
+            if not text or len(text) < 15:
+                return text
+            _start = ' '.join(text.split()[:6]).lower().strip()
+            if _start in self._recent_response_starts:
+                _unique_openers = [
+                    "honestly ", "like ", "ok so ", "well ", "I mean ",
+                    "tbh ", "so yeah ", "hmm ", "ngl ", "look ",
+                    "for me ", "personally ", "I gotta say ",
+                    "you know what, ", "thinking about it, ",
+                ]
+                _opener = local_rng.choice(_unique_openers)
+                text = _opener + text[0].lower() + text[1:]
+            # Track this response's start
+            _new_start = ' '.join(text.split()[:6]).lower().strip()
+            self._recent_response_starts.append(_new_start)
+            if len(self._recent_response_starts) > self._max_recent_starts:
+                self._recent_response_starts = self._recent_response_starts[-self._max_recent_starts:]
+            return text
+
         # 1. Try pool (draw-with-replacement)
         resp = self._pool.draw_with_replacement(
             question_text, condition, sentiment, local_rng
@@ -1922,7 +2136,7 @@ class LLMResponseGenerator:
                 behavioral_profile=behavioral_profile,
             )
             if result and len(result.strip()) >= 3:
-                return result.strip()
+                return _ensure_unique_start(result.strip())
 
         # 2. Try on-demand LLM batch (if pool was empty)
         # v1.0.5.7: Use property (triggers auto-recovery check) not raw field
@@ -1962,7 +2176,7 @@ class LLMResponseGenerator:
                         behavioral_profile=behavioral_profile,
                     )
                     if result and len(result.strip()) >= 3:
-                        return result.strip()
+                        return _ensure_unique_start(result.strip())
 
         # 3. Fall back to template generator
         # v1.0.5.0: Pass behavioral_profile through to fallback so it maintains coherence
