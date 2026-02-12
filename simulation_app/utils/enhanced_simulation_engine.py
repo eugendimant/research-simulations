@@ -212,7 +212,6 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple, Set, Union
 
 import hashlib
-import logging
 import random
 import re
 
@@ -263,6 +262,7 @@ except ImportError:
         raise ImportError("correlation_matrix module not available")
 
 
+import logging  # must be adjacent to logger — do NOT separate these two lines
 logger = logging.getLogger(__name__)
 
 
