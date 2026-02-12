@@ -6,8 +6,8 @@ realistic, question-specific, persona-aligned open-ended survey responses.
 
 Architecture:
 - Multi-provider: Groq (Llama 3.3 70B), Cerebras (Llama 3.3 70B),
-  Google AI Studio (Gemini 2.5 Flash Lite + Gemma 3 27B), OpenRouter,
-  Poe (GPT-4o-mini via poe.com) — with automatic key detection,
+  Google AI Studio (Gemma 3 27B + Gemini 2.5 Flash Lite), Poe (GPT-4o-mini),
+  OpenRouter (Mistral Small 3.1) — with automatic key detection,
   per-provider rate limiting, and intelligent failover.
   Llama 3.3 70B prioritized for natural language.
 - Large batch sizes: 20 responses per API call (within 32K context)
@@ -17,10 +17,10 @@ Architecture:
 - Graceful fallback: if all LLM providers fail, silently falls back to
   the existing template-based ComprehensiveResponseGenerator
 
-Version: 1.0.1.4
+Version: 1.0.6.0
 """
 
-__version__ = "1.0.5.9"
+__version__ = "1.0.6.0"
 
 import hashlib
 import json
@@ -1594,9 +1594,9 @@ class LLMResponseGenerator:
     """Generate open-ended survey responses using free LLM APIs.
 
     Multi-provider architecture with automatic failover:
-    1. Built-in keys: Groq, Cerebras, Google AI, OpenRouter, Poe (seamless)
-    2. User-provided key (auto-detected: Groq, Cerebras, Google AI, OpenRouter, Poe, OpenAI)
-    3. Environment variable providers (Google AI, Cerebras, OpenRouter, Poe)
+    1. Built-in keys: Groq, Cerebras, Gemma 3, Gemini Flash, Poe, OpenRouter (seamless)
+    2. User-provided key (auto-detected: Groq, Cerebras, Google AI, Poe, OpenRouter, OpenAI)
+    3. Environment variable providers (Google AI, Cerebras, Poe, OpenRouter)
     4. Template fallback (always works)
 
     Draw-with-replacement + deep variation means a pool of ~50 base
@@ -1655,7 +1655,7 @@ class LLMResponseGenerator:
         self._max_recent_starts: int = 200  # Rolling window size
 
         # Build provider chain with per-provider rate limits.
-        # Priority: Groq (natural) → Cerebras (natural) → Google AI (quality) → Google AI (volume) → OpenRouter → Poe
+        # Priority: Groq (natural) → Cerebras (natural) → Gemma 3 (volume) → Gemini Flash (quality) → Poe → OpenRouter
         self._providers: List[_LLMProvider] = []
         user_key = api_key or os.environ.get("LLM_API_KEY", "") or os.environ.get("GROQ_API_KEY", "")
         _all_builtin_keys = {_DEFAULT_GROQ_KEY, _DEFAULT_CEREBRAS_KEY,
@@ -1665,26 +1665,27 @@ class LLMResponseGenerator:
         # Built-in providers (in priority order) with rate limits from provider dashboards:
         # 1. Groq Llama 3.3 70B:              ~30 RPM, 14,400 RPD (best natural language)
         # 2. Cerebras Llama 3.3 70B:          ~30 RPM, 1M tokens/day (fast + natural)
-        # 3. Google AI Gemini 2.5 Flash Lite: 10 RPM, 250K TPM, 20 RPD
-        # 4. Google AI Gemma 3 27B:           30 RPM, 15K TPM, 14,400 RPD (volume)
-        # 5. OpenRouter Mistral Small 3.1:    varies by model
-        # 6. Poe GPT-4o-mini:                ~20 RPM, ~200 RPD (3K points/day free)
+        # 3. Google AI Gemma 3 27B:           30 RPM, 15K TPM, 14,400 RPD (volume)
+        # 4. Google AI Gemini 2.5 Flash Lite: 10 RPM, 250K TPM, 20 RPD (quality)
+        # 5. Poe GPT-4o-mini:                ~20 RPM, ~200 RPD (3K points/day free)
+        # 6. OpenRouter Mistral Small 3.1:    varies by model
         # NOTE: Llama 3.3 70B produces more natural, human-sounding responses
         # than Gemini models which tend toward repetitive phrasing ("in terms of").
+        # v1.0.6.0: Reordered — Gemma (high-volume, 14.4K RPD) before Flash Lite
+        # (low-volume, 20 RPD); Poe (GPT-4o-mini, reliable) before OpenRouter.
         _builtin_providers = [
             ("groq_builtin", GROQ_API_URL, GROQ_MODEL,
              _DEFAULT_GROQ_KEY, 28, 0, 20),
             ("cerebras_builtin", CEREBRAS_API_URL, CEREBRAS_MODEL,
              _DEFAULT_CEREBRAS_KEY, 28, 0, 20),
-            ("google_ai_builtin", GOOGLE_AI_API_URL, GOOGLE_AI_MODEL,
-             _DEFAULT_GOOGLE_AI_KEY, 8, 20, 20),
             ("google_ai_gemma", GOOGLE_AI_API_URL, GOOGLE_AI_MODEL_HIGHVOL,
              _DEFAULT_GOOGLE_AI_KEY, 25, 14400, 10),
-            ("openrouter_builtin", OPENROUTER_API_URL, OPENROUTER_MODEL,
-             _DEFAULT_OPENROUTER_KEY, 20, 0, 20),
-            # v1.0.5.9: Poe — OpenAI-compatible gateway, free 3K points/day
+            ("google_ai_builtin", GOOGLE_AI_API_URL, GOOGLE_AI_MODEL,
+             _DEFAULT_GOOGLE_AI_KEY, 8, 20, 20),
             ("poe_builtin", POE_API_URL, POE_MODEL,
              _DEFAULT_POE_KEY, 20, 200, 20),
+            ("openrouter_builtin", OPENROUTER_API_URL, OPENROUTER_MODEL,
+             _DEFAULT_OPENROUTER_KEY, 20, 0, 20),
         ]
         for name, url, model, key, rpm, rpd, max_bs in _builtin_providers:
             if key:
@@ -1980,13 +1981,15 @@ class LLMResponseGenerator:
             all_conditions=self._all_conditions or None,
         )
 
-        # v1.9.0: Try every provider in the chain with improved resilience
-        tried: set = set()
-        while True:
-            provider = self._get_active_provider()
-            if not provider or provider.name in tried:
-                break  # All providers exhausted
-            tried.add(provider.name)
+        # v1.0.6.0: Iterate directly over provider list for correct failover.
+        # BUGFIX: Previous _get_active_provider() + tried-set pattern always
+        # returned the same (first available) provider after a failure because
+        # a single batch failure doesn't set available=False (needs 6).  This
+        # meant only 1 of 6 providers was ever attempted per batch.  Now we
+        # iterate the full chain so every provider gets a chance.
+        for provider in self._providers:
+            if not provider.available or not provider.api_key:
+                continue
 
             # Adaptive max_tokens: reduce for TPM-constrained providers (e.g. Gemma 3 27B: 15K TPM)
             _max_tokens = 4000
