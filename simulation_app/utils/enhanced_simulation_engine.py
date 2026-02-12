@@ -7682,31 +7682,26 @@ class EnhancedSimulationEngine:
             _st_words = _ctx_re.findall(r'\b[a-zA-Z]{3,}\b', self.study_title.lower())
             _study_title_words = [w for w in _st_words if w not in _ctx_stop][:4]
 
-        # Build final topic using best available strategy
+        # v1.0.5.5: Entity-first topic construction — prefer named entities
+        # (people, brands, places) as clean topic, limit to 2 content words max
+        # to avoid word-salad like "love hate Trump political".
         if not topic or topic == "general":
             if _phrase_topic:
-                # Capitalize proper nouns in the extracted phrase
                 _parts = _phrase_topic.split()
                 _parts = [w.capitalize() if w.lower() in _proper_nouns else w for w in _parts]
                 topic = ' '.join(_parts)
+            elif _entities:
+                # Named entity is the cleanest topic: "Trump", "Biden", etc.
+                topic = _entities[0]
             elif _topic_words:
-                # Combine content words with condition-specific words for richer topic
-                _combined = _topic_words[:3]
-                for _cw in _cond_topic_words:
-                    if _cw not in _combined:
-                        _combined.append(_cw)
-                # v1.0.5.0: Also fold in study title words if topic is thin
-                if len(_combined) < 3:
-                    for _sw in _study_title_words:
-                        if _sw not in _combined:
-                            _combined.append(_sw)
-                topic = ' '.join(_combined[:5])
+                # Max 2 content words to avoid word-salad
+                topic = ' '.join(_topic_words[:2])
             elif _cond_topic_words:
-                topic = ' '.join(_cond_topic_words[:3])
+                topic = ' '.join(_cond_topic_words[:2])
             elif _domain_hint:
                 topic = _domain_hint
             elif _study_title_words:
-                topic = ' '.join(_study_title_words[:3])
+                topic = ' '.join(_study_title_words[:2])
             elif study_domain and study_domain != "general":
                 topic = study_domain.replace('_', ' ')
             else:
