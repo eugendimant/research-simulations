@@ -9029,11 +9029,12 @@ class EnhancedSimulationEngine:
             "trait_averages_by_condition": trait_averages_by_condition,
             # ENHANCED: Overall trait averages
             "trait_averages_overall": overall_trait_averages,
+            # v1.0.6.1: Guard against missing flag columns if generation was partial
             "exclusion_summary": {
-                "flagged_speed": int(sum(data["Flag_Speed"])),
-                "flagged_attention": int(sum(data["Flag_Attention"])),
-                "flagged_straightline": int(sum(data["Flag_StraightLine"])),
-                "total_excluded": int(sum(data["Exclude_Recommended"])),
+                "flagged_speed": int(sum(data.get("Flag_Speed", [0]))),
+                "flagged_attention": int(sum(data.get("Flag_Attention", [0]))),
+                "flagged_straightline": int(sum(data.get("Flag_StraightLine", [0]))),
+                "total_excluded": int(sum(data.get("Exclude_Recommended", [0]))),
             },
             "validation_issues_corrected": len(validation_issues),
             "scale_verification": self._build_scale_verification_report(df),
@@ -9049,7 +9050,8 @@ class EnhancedSimulationEngine:
                 for q in self.open_ended_questions
             ],
             # v1.4.6: LLM response generation stats
-            "llm_response_stats": self.llm_generator.stats if self.llm_generator else {"llm_calls": 0, "fallback_uses": 0},
+            # v1.0.6.1: Guard against .stats being None
+            "llm_response_stats": (getattr(self.llm_generator, 'stats', None) or {"llm_calls": 0, "fallback_uses": 0}) if self.llm_generator else {"llm_calls": 0, "fallback_uses": 0},
             # v1.4.3: Column descriptions for data dictionary / codebook generation
             "column_descriptions": {col: desc for col, desc in self.column_info},
             # v1.4.11: Scale generation log — maps scale names to actual generated columns
