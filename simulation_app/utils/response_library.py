@@ -63,7 +63,7 @@ association, impression, perception, feedback, comment, observation, general
 Version: 1.8.5 - Improved domain detection with weighted scoring and disambiguation
 """
 
-__version__ = "1.0.4.9"
+__version__ = "1.0.5.0"
 
 import random
 import re
@@ -7486,20 +7486,34 @@ class ComprehensiveResponseGenerator:
                 _subject, sentiment, q_type, domain, rng
             )
 
-        # Try to find domain-specific templates
+        # v1.0.5.0: Try question-type-matched templates first, then fall back to explanation
+        _q_type_key = q_type.value if hasattr(q_type, 'value') else str(q_type)
+        _type_fallback_chain = [_q_type_key, "evaluation", "explanation"]
+        # Deduplicate while preserving order
+        _seen_types = set()
+        _type_chain = []
+        for _tk in _type_fallback_chain:
+            if _tk not in _seen_types:
+                _seen_types.add(_tk)
+                _type_chain.append(_tk)
+
+        # Try to find domain-specific templates with question type routing
         if domain_key in DOMAIN_TEMPLATES:
             templates = DOMAIN_TEMPLATES[domain_key]
-            if "explanation" in templates:
-                sentiment_templates = templates["explanation"].get(sentiment, templates["explanation"].get("neutral", []))
-                if sentiment_templates:
-                    return rng.choice(sentiment_templates)
+            for _tkey in _type_chain:
+                if _tkey in templates:
+                    sentiment_templates = templates[_tkey].get(sentiment, templates[_tkey].get("neutral", []))
+                    if sentiment_templates:
+                        return rng.choice(sentiment_templates)
 
-        # Fall back to general templates
+        # Fall back to general templates with same type routing
         if "general" in DOMAIN_TEMPLATES:
-            templates = DOMAIN_TEMPLATES["general"]["explanation"]
-            sentiment_templates = templates.get(sentiment, templates.get("neutral", []))
-            if sentiment_templates:
-                return rng.choice(sentiment_templates)
+            for _tkey in _type_chain:
+                if _tkey in DOMAIN_TEMPLATES["general"]:
+                    templates = DOMAIN_TEMPLATES["general"][_tkey]
+                    sentiment_templates = templates.get(sentiment, templates.get("neutral", []))
+                    if sentiment_templates:
+                        return rng.choice(sentiment_templates)
 
         # v1.0.3.10: Last-resort fallback — NEVER return generic meta-commentary.
         # Extract whatever topic words we can from question_text to stay on-topic.
@@ -7605,20 +7619,54 @@ class ComprehensiveResponseGenerator:
         # Subject may contain the full context — use a shorter version for templates
         _short_subj = subject[:80] if len(subject) > 80 else subject
 
-        # Build sentiment-specific, topic-grounded templates
+        # v1.0.5.0: Question-intent-aware templates — the response structure varies
+        # based on what the question is ASKING for (explanation, evaluation, emotional
+        # reaction, description, prediction, etc.) not just sentiment.
+        # Detect intent from subject/question text
+        _subj_lower = subject.lower()
+        _intent = "opinion"  # default
+        if any(w in _subj_lower for w in ('why', 'explain', 'reason')):
+            _intent = "explanation"
+        elif any(w in _subj_lower for w in ('describe', 'tell us about', 'what happened')):
+            _intent = "description"
+        elif any(w in _subj_lower for w in ('how do you feel', 'feelings', 'emotion', 'react')):
+            _intent = "emotional_reaction"
+        elif any(w in _subj_lower for w in ('evaluate', 'rate', 'assess', 'compare')):
+            _intent = "evaluation"
+
+        # Build sentiment × intent specific templates
         if sentiment in ('very_positive', 'positive'):
-            templates = [
+            _base_templates = [
                 f"I have pretty strong feelings about {_topic}, and honestly I think things are moving in a good direction.",
                 f"When it comes to {_topic}, I'm fairly positive. It aligns with how I see things and what I value.",
                 f"I feel good about {_topic}. My personal experiences have shaped my views and I think it's important.",
                 f"Honestly {_topic} is something I care about and I'm generally supportive of where things are headed.",
-                f"I'd say I'm quite positive when it comes to {_topic}. It resonates with my own views and experiences.",
                 f"My feelings about {_topic} are mostly positive. I've thought about it a lot and I think it matters.",
                 f"{_topic} is important to me. I tried to answer honestly about how I feel and why.",
                 f"I feel pretty strongly that {_topic} is heading in the right direction, based on what I've seen and experienced.",
             ]
+            # v1.0.5.0: Intent-specific positive templates
+            if _intent == "explanation":
+                _base_templates.extend([
+                    f"The reason I feel good about {_topic} is because of my own experiences. Things have generally gone well.",
+                    f"I support {_topic} because it makes sense to me. I've seen positive outcomes firsthand.",
+                    f"My positive view on {_topic} comes from what I've personally witnessed and experienced.",
+                ])
+            elif _intent == "emotional_reaction":
+                _base_templates.extend([
+                    f"{_topic} honestly makes me feel hopeful. I get a sense of optimism when I think about it.",
+                    f"I feel genuinely good when I think about {_topic}. It gives me a positive feeling overall.",
+                    f"My emotional reaction to {_topic} is pretty positive. I feel encouraged and optimistic.",
+                ])
+            elif _intent == "evaluation":
+                _base_templates.extend([
+                    f"Looking at {_topic} objectively, I think it scores pretty well. There's a lot to appreciate here.",
+                    f"When I evaluate {_topic}, the positives clearly outweigh the negatives in my view.",
+                    f"I'd rate {_topic} favorably. It has strong points that I think are worth recognizing.",
+                ])
+            templates = _base_templates
         elif sentiment in ('very_negative', 'negative'):
-            templates = [
+            _base_templates = [
                 f"I'm honestly not happy about {_topic}. There are real problems that I think people are ignoring.",
                 f"When it comes to {_topic}, I have serious concerns. Things aren't going well in my opinion.",
                 f"I feel frustrated about {_topic}. My experiences have made me pretty skeptical about the whole thing.",
@@ -7628,8 +7676,27 @@ class ComprehensiveResponseGenerator:
                 f"My views on {_topic} are pretty critical. I don't think things are working the way they should be.",
                 f"I'm disappointed with {_topic}. Based on what I've seen, there's a lot that needs to change.",
             ]
+            if _intent == "explanation":
+                _base_templates.extend([
+                    f"The reason I'm negative about {_topic} is that I've seen too many problems. It's not working.",
+                    f"I feel this way about {_topic} because the evidence I've seen points in a bad direction.",
+                    f"My concerns about {_topic} stem from real experiences. It's not just a gut feeling.",
+                ])
+            elif _intent == "emotional_reaction":
+                _base_templates.extend([
+                    f"{_topic} genuinely frustrates me. I feel disappointed when I think about how things are going.",
+                    f"I feel a real sense of unease about {_topic}. It worries me when I think about it seriously.",
+                    f"My emotional reaction to {_topic} is pretty negative. I feel let down and concerned.",
+                ])
+            elif _intent == "evaluation":
+                _base_templates.extend([
+                    f"When I evaluate {_topic} honestly, it falls short. There are significant issues I can't ignore.",
+                    f"Looking at {_topic} critically, the problems outweigh the positives in my view.",
+                    f"I'd give {_topic} a negative assessment. Too many things aren't working well.",
+                ])
+            templates = _base_templates
         else:  # neutral
-            templates = [
+            _base_templates = [
                 f"I have mixed feelings about {_topic}. I can see both the good and bad sides of it.",
                 f"When it comes to {_topic}, I'm not strongly one way or another. I just tried to answer honestly.",
                 f"I don't feel super strongly about {_topic} but I do have some thoughts on it that I shared.",
@@ -7639,6 +7706,22 @@ class ComprehensiveResponseGenerator:
                 f"Honestly I could go either way on {_topic}. I just answered based on how I actually feel.",
                 f"I thought about {_topic} and tried to give an honest answer. Not too positive or negative.",
             ]
+            if _intent == "explanation":
+                _base_templates.extend([
+                    f"I see arguments both ways when it comes to {_topic}. Neither side fully convinces me.",
+                    f"My reasoning about {_topic} keeps going back and forth. There are valid points on both sides.",
+                ])
+            elif _intent == "emotional_reaction":
+                _base_templates.extend([
+                    f"{_topic} doesn't stir strong emotions for me either way. I feel pretty neutral about it.",
+                    f"I don't have an intense emotional response to {_topic}. It's just sort of there for me.",
+                ])
+            elif _intent == "evaluation":
+                _base_templates.extend([
+                    f"Evaluating {_topic}, I see both strengths and weaknesses. It's hard to come down firmly on one side.",
+                    f"My assessment of {_topic} is mixed. Some aspects work well and others don't.",
+                ])
+            templates = _base_templates
 
         return rng.choice(templates)
 
@@ -7651,21 +7734,21 @@ class ComprehensiveResponseGenerator:
     ) -> str:
         """Ensure open-text response is coherent with numeric behavioral data.
 
-        v1.0.4.8: Cross-validates the generated text against the participant's
-        quantitative response pattern. If a participant rated items very
-        positively (mean 6+/7), their text should not sound negative/neutral.
-        If they rated very negatively (mean 2-/7), their text should not
-        sound enthusiastic.
-
-        Adjustments are light-touch: prepending/appending tone-setting phrases
-        rather than rewriting the entire response. This preserves the domain-
-        specific content while correcting tone mismatches.
+        v1.0.5.0: Comprehensive behavioral coherence pipeline with:
+        1. Straight-liner truncation (engagement-matched text length)
+        2. Sentiment polarity correction (tone must match ratings)
+        3. Intensity-driven vocabulary injection (extreme raters sound extreme)
+        4. Social desirability modulation (high-SD adds qualifying hedges)
+        5. Consistency-driven thematic coherence (consistent raters = consistent themes)
+        6. Extremity-driven absolute language (extreme responders use strong words)
 
         Scientific basis:
         - Krosnick (1999): Satisficing respondents show cross-method consistency
           in their low effort (both numeric and open-ended)
         - Podsakoff et al. (2003): Common method variance creates within-person
           consistency patterns that should be reflected in simulated data
+        - Greenleaf (1992): Extreme response style is trait-like and consistent
+        - Paulhus (2002): Social desirability manifests as qualifying language
         """
         if not response or not behavioral_profile:
             return response
@@ -7674,10 +7757,13 @@ class ComprehensiveResponseGenerator:
         _mean = behavioral_profile.get('response_mean')
         _intensity = behavioral_profile.get('intensity', 0.5)
         _straight = behavioral_profile.get('straight_lined', False)
+        _traits = behavioral_profile.get('trait_profile', {})
+        _sd = _traits.get('social_desirability', 0.3)
+        _extremity = _traits.get('extremity', 0.4)
+        _consistency = behavioral_profile.get('consistency_score', 0.5)
 
-        # Straight-liners get minimal text regardless of content
+        # 1. Straight-liners get minimal text regardless of content
         if _straight:
-            # Truncate to first sentence or fewer words
             sentences = re.split(r'(?<=[.!?])\s+', response)
             if len(sentences) > 1:
                 response = sentences[0]
@@ -7686,76 +7772,102 @@ class ComprehensiveResponseGenerator:
                 response = ' '.join(words[:8])
             return response
 
-        # Check for tone mismatches between numeric pattern and text sentiment
-        if _pattern in ('strongly_positive', 'moderately_positive') and _mean is not None and _mean >= 5.0:
-            # Participant was positive numerically — text should reflect this
-            _positive_indicators = [
-                'good', 'great', 'like', 'liked', 'enjoy', 'enjoyed', 'positive',
-                'happy', 'pleased', 'love', 'loved', 'agree', 'support', 'trust',
-                'glad', 'nice', 'awesome', 'amazing', 'wonderful', 'appreciate',
-            ]
-            _negative_indicators = [
-                'bad', 'terrible', 'hate', 'dislike', 'negative', 'angry',
-                'frustrated', 'upset', 'disagree', 'distrust', 'awful',
-                'horrible', 'worst', 'annoying', 'disappointing',
-            ]
-            _resp_lower = response.lower()
-            _has_positive = any(w in _resp_lower for w in _positive_indicators)
-            _has_negative = any(w in _resp_lower for w in _negative_indicators)
+        # 2. Expanded sentiment indicator lists for polarity correction
+        _positive_indicators = [
+            'good', 'great', 'like', 'liked', 'enjoy', 'enjoyed', 'positive',
+            'happy', 'pleased', 'love', 'loved', 'agree', 'support', 'trust',
+            'glad', 'nice', 'awesome', 'amazing', 'wonderful', 'appreciate',
+            'favorable', 'hopeful', 'optimistic', 'encouraged', 'satisfied',
+            'impressed', 'confident', 'exciting', 'interesting', 'fun',
+        ]
+        _negative_indicators = [
+            'bad', 'terrible', 'hate', 'dislike', 'negative', 'angry',
+            'frustrated', 'upset', 'disagree', 'distrust', 'awful',
+            'horrible', 'worst', 'annoying', 'disappointing', 'concerned',
+            'worried', 'skeptical', 'uneasy', 'critical', 'problems',
+            'wrong', 'fail', 'poor', 'weak', 'unfair', 'disturbing',
+        ]
+        _resp_lower = response.lower()
+        _has_positive = any(w in _resp_lower for w in _positive_indicators)
+        _has_negative = any(w in _resp_lower for w in _negative_indicators)
 
-            # If text sounds negative but ratings were positive, add positive framing
+        # Positive rater with negative-sounding text
+        if _pattern in ('strongly_positive', 'moderately_positive') and _mean is not None and _mean >= 5.0:
             if _has_negative and not _has_positive:
                 _positive_leads = [
                     "Overall I felt pretty positively about this. ",
                     "I generally had a good impression. ",
                     "Looking back I think it was mostly positive. ",
+                    "Despite some concerns, I'm largely positive. ",
                 ]
                 response = local_rng.choice(_positive_leads) + response
 
+        # Negative rater with positive-sounding text
         elif _pattern in ('strongly_negative', 'moderately_negative') and _mean is not None and _mean <= 3.0:
-            # Participant was negative numerically — text should reflect this
-            _positive_indicators = [
-                'good', 'great', 'like', 'liked', 'enjoy', 'enjoyed',
-                'happy', 'pleased', 'love', 'loved', 'agree', 'wonderful',
-            ]
-            _negative_indicators = [
-                'bad', 'terrible', 'hate', 'dislike', 'negative', 'angry',
-                'frustrated', 'upset', 'disagree', 'distrust', 'awful',
-                'annoying', 'disappointing', 'concerned', 'worried',
-            ]
-            _resp_lower = response.lower()
-            _has_positive = any(w in _resp_lower for w in _positive_indicators)
-            _has_negative = any(w in _resp_lower for w in _negative_indicators)
-
-            # If text sounds positive but ratings were negative, add negative framing
             if _has_positive and not _has_negative:
                 _negative_leads = [
                     "Honestly I wasn't too happy about this. ",
                     "I had some real concerns about this. ",
                     "I didn't feel great about it. ",
+                    "I have significant reservations. ",
                 ]
                 response = local_rng.choice(_negative_leads) + response
 
-        # v1.0.4.8: Intensity matching — extreme raters get intensifiers
-        if _intensity > 0.7 and _mean is not None:
-            if _mean >= 6.0:
-                _intensifiers = [
+        # 3. v1.0.5.0: Enhanced intensity matching — probability scales with intensity
+        # Extreme raters (high intensity) should sound emphatic more often
+        if _intensity > 0.5 and _mean is not None:
+            # Scale probability with intensity: 0.5→25%, 0.7→45%, 0.9→65%
+            _intensity_prob = 0.25 + (_intensity - 0.5) * 1.0
+            if _mean >= 5.5 and local_rng.random() < _intensity_prob:
+                _pos_intensifiers = [
                     " I feel really strongly about this.",
                     " This is something I care a lot about.",
+                    " I'm genuinely enthusiastic about this.",
+                    " This really resonated with me on a personal level.",
                 ]
-                if local_rng.random() < 0.4 and not response.rstrip().endswith('.'):
+                if not response.rstrip().endswith('.'):
                     response = response.rstrip() + '.'
-                if local_rng.random() < 0.35:
-                    response = response.rstrip() + local_rng.choice(_intensifiers)
-            elif _mean <= 2.0:
-                _intensifiers = [
+                response = response.rstrip() + local_rng.choice(_pos_intensifiers)
+            elif _mean <= 2.5 and local_rng.random() < _intensity_prob:
+                _neg_intensifiers = [
                     " I really didn't like this at all.",
                     " This was genuinely frustrating.",
+                    " I have serious issues with this.",
+                    " This needs significant improvement.",
                 ]
-                if local_rng.random() < 0.4 and not response.rstrip().endswith('.'):
+                if not response.rstrip().endswith('.'):
                     response = response.rstrip() + '.'
-                if local_rng.random() < 0.35:
-                    response = response.rstrip() + local_rng.choice(_intensifiers)
+                response = response.rstrip() + local_rng.choice(_neg_intensifiers)
+
+        # 4. v1.0.5.0: Social desirability modulation
+        # High-SD participants add qualifying/hedging language to avoid seeming extreme
+        if _sd > 0.65 and local_rng.random() < 0.4:
+            _sd_qualifiers = [
+                "I tried to be thoughtful about this. ",
+                "I want to be fair in my assessment. ",
+                "I considered different perspectives. ",
+            ]
+            # Only prepend if response doesn't already start with a qualifier
+            if not any(response.lower().startswith(q[:8].lower()) for q in _sd_qualifiers):
+                response = local_rng.choice(_sd_qualifiers) + response
+
+        # 5. v1.0.5.0: Extremity-driven absolute language
+        # Extreme responders (high extremity trait) use strong/absolute words
+        if _extremity > 0.7 and local_rng.random() < 0.5:
+            # Replace hedging words with absolutes
+            _hedge_to_absolute = {
+                'somewhat ': 'very ', 'kind of ': 'really ', 'a bit ': 'quite ',
+                'fairly ': 'extremely ', 'sort of ': 'definitely ',
+                'might ': 'clearly ', 'maybe ': 'definitely ',
+                'i think ': 'I know ', 'i guess ': 'I\'m certain ',
+            }
+            _modified = response
+            for _hedge, _absolute in _hedge_to_absolute.items():
+                if _hedge in _modified.lower():
+                    _idx = _modified.lower().find(_hedge)
+                    _modified = _modified[:_idx] + _absolute + _modified[_idx + len(_hedge):]
+                    break  # Only replace one to avoid over-correction
+            response = _modified
 
         return response
 

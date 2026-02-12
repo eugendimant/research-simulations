@@ -909,17 +909,100 @@ Every simulated participant is ONE person. Their numeric responses and open-text
 - **Password**: "Dimant_Admin" (SHA-256 hashed, updated v1.0.4.8)
 - **Shows**: LLM provider stats, simulation history, session state explorer, system info
 
-### Next Improvement Targets (v1.0.5.x)
+### v1.0.5.0 OE Behavioral Realism Pipeline (2026-02-12)
 
-**Remaining from audit that were NOT addressed in v1.0.4.5:**
+**COMPLETED** — 5 iterations implementing deep OE response realism:
 
-1. **Response library question-type diversity**: All 105 domains only have `"explanation"` type. Adding justification, evaluation, assessment types would improve specificity.
+#### Problem Statement
+Open-text responses lacked sufficient behavioral coherence with numeric survey responses. Topic extraction was shallow (9 paradigm hints, 60-char phrase cap), only 3 of 7 persona traits influenced text generation, fallback generators had no access to behavioral profiles, and each OE response was generated independently with no cross-question consistency for the same participant.
+
+#### Architecture Changes
+
+**Iteration 1: Deep Topic Intelligence & Semantic Context Pipeline**
+- 7-strategy topic extraction (up from 4): added entity extraction, question intent classification, study title topic extraction
+- Expanded phrase capture from 60 to 150 characters
+- 8 new phrase extraction patterns (e.g., "how does X make you feel", "why did you choose X", "your experience with X")
+- 30 paradigm domain hints (up from 9): moral, stereotype, prejudice, discrimination, persuasion, negotiation, risk, prosocial, cooperation, punishment, identity, emotion, mindfulness, stress, wellbeing, environmental, education, leadership, conformity, deception, attachment
+- Entity extraction: 45+ named entities (people, brands, topics) detected and passed to all generators
+- Question intent classification: 7 intent types (opinion, explanation, description, emotional_reaction, evaluation, prediction, recommendation, recall) shape response framing
+
+**Iteration 2: Full Persona Trait Integration into All Generators**
+- LLM prompt now includes full VOICE cues from 7-dimensional trait profile: social desirability, extremity, consistency, intensity
+- New Rule #10 in LLM MANDATORY RULES: Persona Voice & Trait Expression
+- ComprehensiveResponseGenerator now routes to question-type-matched templates (evaluation, explanation, emotional_reaction) instead of always using "explanation"
+- Context-grounded response templates expanded with intent-specific variants (18+ new templates across 3 intents × 3 sentiments)
+- TextResponseGenerator enhanced: style selection uses full trait vector (intensity, extremity, consistency) not just straight_lined/strongly_opinionated
+
+**Iteration 3: Deep Behavioral Coherence Enforcement**
+- `_enforce_behavioral_coherence()` expanded from 3 to 6 checks:
+  1. Straight-liner truncation (unchanged)
+  2. Expanded sentiment polarity correction (30+ positive/negative indicators, up from 20)
+  3. Intensity-driven intensifier injection (probability scales with intensity: 0.5→25%, 0.7→45%, 0.9→65%, up from flat 35%)
+  4. Social desirability modulation (high-SD personas add qualifying hedges at 40% rate)
+  5. Extremity-driven absolute language (replaces hedging words with absolutes for extreme responders)
+- Scientific basis: Greenleaf (1992) for extremity; Paulhus (2002) for SD manifestation
+
+**Iteration 4: Fallback Generator Full Behavioral Alignment**
+- TextResponseGenerator now uses full behavioral context from context dict: intensity, consistency_score, trait_social_desirability, trait_extremity, trait_attention, entities, question_intent, condition_framing
+- Intensity-driven emphatic language for strong raters (50% probability for intensity > 0.7)
+- Social desirability hedging for high-SD personas (40% probability for SD > 0.7)
+- Entity injection: named entities not mentioned in response get woven in naturally (60% probability)
+- LLM generator fallback path now passes behavioral_profile through to ComprehensiveResponseGenerator
+- Domain-aware condition modifiers expanded: political (progressive/conservative), ingroup/outgroup, health (risk/benefit)
+
+**Iteration 5: Cross-Response Consistency & Participant Voice Memory**
+- New `_participant_voice_memory` dict tracks each participant's established tone, prior response excerpts, and style across multiple OE questions
+- Voice consistency hints injected into behavioral_profile: "This participant previously wrote: [excerpt]... Their tone was [positive/negative/neutral]. Maintain consistent voice."
+- LLM prompt includes CONTINUITY cue so the same participant sounds the same across all their OE answers
+- Fallback generators receive `established_tone` and `voice_consistency_hint` via context dict
+- Tone detection from generated responses: positive/negative word counting establishes participant's voice for subsequent questions
+
+#### Data Flow (v1.0.5.0)
+
+```
+Question Analysis:
+  question_text + question_context → 7-strategy topic extraction
+    ├─ Strategy 1: Stop-word filtered content words
+    ├─ Strategy 2: Phrase-level extraction (8 patterns, 150 char)
+    ├─ Strategy 3: Condition-aware topic enrichment
+    ├─ Strategy 4: 30 paradigm domain hints
+    ├─ Strategy 5: Named entity extraction (45+ entities)
+    ├─ Strategy 6: Question intent classification (7 types)
+    └─ Strategy 7: Study title topic extraction
+    ↓
+  Structured context: {topic, entities, question_intent, domain_hint, condition_framing, ...}
+
+Participant Profile:
+  numeric_responses → _build_behavioral_profile()
+    ├─ 7-dimensional trait vector
+    ├─ response_pattern, intensity, consistency_score
+    ├─ straight_lined detection
+    └─ behavioral_summary (natural language for LLM)
+    ↓
+  + _participant_voice_memory[i] (cross-question consistency)
+    ├─ prior_responses, established_tone
+    └─ voice_consistency_hint
+
+Generation Pipeline:
+  ├─ LLM Generator: Full VOICE cues + CONTINUITY hint + Rule #10 + Rule #9
+  ├─ ComprehensiveResponseGenerator: question-type routing + 6-check coherence
+  └─ TextResponseGenerator: Full trait-driven style + entity injection + SD hedging
+```
+
+#### Key Principle: One Person, One Voice, All Questions
+A simulated participant is a consistent individual. Their personality traits, emotional intensity, social desirability, and writing style must be coherent across: (a) their numeric ratings, (b) every open-text response they give, and (c) their response length and effort level. Cross-question inconsistency is as detectable as rating-text inconsistency.
+
+### Next Improvement Targets (v1.0.6.x)
+
+**Remaining from audit that were NOT addressed:**
+
+1. ~~**Response library question-type diversity**~~: **ADDRESSED in v1.0.5.0** — question-type routing now falls through evaluation → explanation chain, and context-grounded responses have intent-specific templates.
 2. **Narrative transportation domain**: Green & Brock (2000) — emotional narrative involvement predicts persuasion. Not implemented.
-3. **Construct accessibility & recency**: Higgins et al. (1977) — recently activated constructs more accessible. Would require tracking prior question sequence.
+3. ~~**Construct accessibility & recency**~~: **PARTIALLY ADDRESSED in v1.0.5.0** — participant voice memory tracks prior OE responses, enabling cross-question consistency.
 4. **Scale type detection expansion**: Only 4 categories (slider, Likert, bipolar, WTP). Missing: matrix scales, forced choice, semantic differential.
 5. **LLM response validation layer**: Currently only checks `len(r.strip()) >= 3`. Could add off-topic detection, generic meta-commentary screening.
 6. **Authority/NFC persona-level interaction in STEP 3** trait modifiers (currently only in STEP 4a interaction effects).
-7. **Careless responder cross-item tracking**: Track whether reverse-item failure is consistent across items for same participant.
+7. ~~**Careless responder cross-item tracking**~~: **PARTIALLY ADDRESSED in v1.0.4.9** — reverse-failure tracking per participant.
 
 ### Scientific References for Planned Additions
 
