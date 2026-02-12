@@ -263,6 +263,9 @@ except ImportError:
         raise ImportError("correlation_matrix module not available")
 
 
+logger = logging.getLogger(__name__)
+
+
 def _word_in(keyword: str, text: str) -> bool:
     """Check if keyword appears in text as a whole word (word-boundary matching).
 
