@@ -33,7 +33,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 # Version identifier to help track deployed code
-__version__ = "1.0.7.9"  # v1.0.7.9: Major template-based OE response overhaul
+__version__ = "1.0.8.0"  # v1.0.8.0: Massive OE template expansion (20 iterations)
 
 
 # ============================================================================

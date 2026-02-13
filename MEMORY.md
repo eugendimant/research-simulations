@@ -1,5 +1,14 @@
 # Memory
 
+## 2026-02-13 — Massive OE template expansion (v1.0.8.0)
+
+- 20 iterations of comprehensive template-based open-text response improvements across 3 files:
+  - `response_library.py`: Domain vocabulary expanded from ~15 to 40+ categories; `_extend()` expanded with 50+ StudyDomain entries; `_personalize_for_question()` enhanced with 8 new domain condition modifiers; action verbs 15→33, object/targets 8→24, key phrases 5→15; `_make_careless()` 8→25 templates; intent detection expanded; intensifiers/qualifiers doubled; general extensions and codas expanded
+  - `persona_library.py`: All 5 question-type template banks (opinion, explanation, feeling, description, evaluation) expanded across all persona styles (engaged, satisficer, extreme, careless, default); SD hedges 3→6; follow-up thoughts 5→8 per sentiment
+  - `app.py`: Preview system synced with main engine — phrase patterns 4→11, cap 60→150 chars, intent detection added (6 categories), intent-aware preview cores, elaborations reference actual subject_phrase
+- Guiding principle: domain inclusivity across all 225+ research domains — no bias toward political/identity topics
+- Updated synchronized app/utils versions to `1.0.8.0`.
+
 ## 2026-02-12 — LLM-first simulation reliability overhaul (v1.0.6.8)
 
 - Enforced explicit fallback consent behavior for open-ended generation:

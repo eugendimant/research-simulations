@@ -54,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.0.7.9"
-BUILD_ID = "20260213-v10709-template-response-overhaul"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.0.8.0"
+BUILD_ID = "20260213-v10800-massive-oe-template-expansion"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -118,7 +118,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.0.7.9"  # v1.0.7.9: Major template-based OE response overhaul
+APP_VERSION = "1.0.8.0"  # v1.0.8.0: Massive OE template expansion (20 iterations)
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -1390,8 +1390,7 @@ def _get_sample_text_response(
         _words = _re.findall(r'\b[a-zA-Z]{3,}\b', subject.lower())
         topic_words = [w for w in _words if w not in _stop][:6]
 
-    # v1.0.4.8: Strategy 2 — Phrase-level extraction for richer topic understanding
-    # Look for "feelings about X", "thoughts on X", "how you feel about X" patterns
+    # v1.0.8.0: Strategy 2 — Phrase-level extraction SYNCED with main engine (15 patterns)
     _phrase_topic = ""
     _source_text = question_context or question_text or ""
     _phrase_patterns = [
@@ -1399,12 +1398,38 @@ def _get_sample_text_response(
         r'(?:describe|explain|tell\s+us)\s+(?:about|how\s+you\s+feel\s+about)\s+(.+?)(?:\.|$|\?)',
         r'(?:how\s+do\s+you\s+feel\s+about)\s+(.+?)(?:\.|$|\?)',
         r'(?:what\s+do\s+you\s+think\s+(?:about|of))\s+(.+?)(?:\.|$|\?)',
+        # v1.0.8.0: NEW broad patterns synced with main engine
+        r'(?:your experience with|your reaction to|your response to)\s+(.+?)(?:\.|$|\?)',
+        r'(?:how has|how does|how did)\s+(.+?)\s+(?:affect|impact|influence|change)',
+        r'(?:what do you think about|what are your thoughts on)\s+(.+?)(?:\.|$|\?)',
+        r'(?:how would you describe|tell us about|share your)\s+(.+?)(?:\.|$|\?)',
+        r'(?:what is your|what was your)\s+(?:experience|opinion|view|impression)\s+(?:of|about|with)\s+(.+?)(?:\.|$|\?)',
+        r'(?:how do you cope with|how do you handle|how do you deal with)\s+(.+?)(?:\.|$|\?)',
+        r'(?:what motivates you to|what encourages you to|what prevents you from)\s+(.+?)(?:\.|$|\?)',
     ]
     for _pp in _phrase_patterns:
         _pm = _re.search(_pp, _source_text, flags=_re.IGNORECASE)
         if _pm:
-            _phrase_topic = _pm.group(1).strip()[:60]
+            _phrase_topic = _pm.group(1).strip()[:150]
             break
+
+    # v1.0.8.0: Question intent detection synced with main engine
+    _qt_lower = (_source_text or "").lower()
+    _question_intent = "opinion"  # default
+    if any(w in _qt_lower for w in ('why did', 'why do', 'explain why', 'reason for', 'what made you')):
+        _question_intent = "explanation"
+    elif any(w in _qt_lower for w in ('how do you feel', 'how did you feel', 'feelings about',
+                                        'your feelings', 'emotional', 'your reaction')):
+        _question_intent = "emotional_reaction"
+    elif any(w in _qt_lower for w in ('describe', 'tell us about', 'what happened',
+                                        'your experience', 'what was it like')):
+        _question_intent = "description"
+    elif any(w in _qt_lower for w in ('evaluate', 'rate', 'assess', 'compare', 'how effective',
+                                        'how well', 'quality of')):
+        _question_intent = "evaluation"
+    elif any(w in _qt_lower for w in ('would you', 'in the future', 'what would you do',
+                                        'imagine if', 'predict')):
+        _question_intent = "prediction"
 
     # Add study title words as fallback context
     if study_title and study_title.strip():
@@ -1520,84 +1545,171 @@ def _get_sample_text_response(
     sentiments = ['positive', 'neutral', 'negative', 'positive', 'mixed']
     sentiment = sentiments[sentiment_idx]
 
+    # v1.0.8.0: Expanded openers with both casual and formal varieties
     _openers = [
         "Honestly", "I gotta say", "For me personally", "I mean",
         "To be real", "Look", "I'll be honest", "The way I see it",
         "I have to say", "From my perspective", "Thinking about it",
         "Being honest here", "In my view", "So basically",
+        "Ok so", "Yeah so", "Tbh", "Not gonna lie",
+        "Here's the thing", "I'd say", "In my experience",
     ]
 
     if quality == 'high':
-        if sentiment == 'positive':
-            _cores = [
-                f"I feel good about {subject_phrase}",
-                f"{subject_phrase} is something I care about",
-                f"I'm supportive of {subject_phrase}",
-                f"my views on {subject_phrase} are positive",
-                f"I think {subject_phrase} is headed in the right direction",
-                f"I see {subject_phrase} favorably",
-                f"{subject_phrase} matters to me and I'm generally optimistic",
-            ]
-            _elaborations = [
-                "It really made me think about what matters to me personally.",
-                "My experiences have shaped a pretty strong view on this.",
+        # v1.0.8.0: Intent-aware core templates — different question types
+        # produce structurally different responses
+        if _question_intent == "explanation":
+            _intent_cores = {
+                'positive': [
+                    f"I chose the way I did about {subject_phrase} because it felt right to me",
+                    f"my reasoning about {subject_phrase} comes from my positive experiences",
+                    f"the reason I feel this way about {subject_phrase} is that it aligns with my values",
+                ],
+                'negative': [
+                    f"my concerns about {subject_phrase} come from real experience",
+                    f"I responded the way I did about {subject_phrase} because I've seen the problems firsthand",
+                    f"the reason I'm critical of {subject_phrase} is based on what I've actually dealt with",
+                ],
+                'mixed': [
+                    f"my reasoning about {subject_phrase} is complicated because there are valid points on both sides",
+                    f"I can explain why I'm torn about {subject_phrase} — there are real pros and cons",
+                ],
+                'neutral': [
+                    f"I don't have a strong reason to lean one way on {subject_phrase}",
+                    f"my thinking about {subject_phrase} doesn't push me in either direction",
+                ],
+            }
+        elif _question_intent == "emotional_reaction":
+            _intent_cores = {
+                'positive': [
+                    f"when I think about {subject_phrase} I genuinely feel good about it",
+                    f"{subject_phrase} brings up positive emotions for me",
+                    f"my emotional response to {subject_phrase} is genuinely positive",
+                ],
+                'negative': [
+                    f"{subject_phrase} honestly makes me feel frustrated and concerned",
+                    f"my emotional reaction to {subject_phrase} is negative and I don't think I can hide that",
+                    f"I feel genuinely upset when I think about {subject_phrase}",
+                ],
+                'mixed': [
+                    f"I have complicated feelings about {subject_phrase} — both positive and negative",
+                    f"{subject_phrase} evokes mixed emotions for me",
+                ],
+                'neutral': [
+                    f"I don't have a particularly emotional reaction to {subject_phrase}",
+                    f"{subject_phrase} doesn't stir up strong feelings for me",
+                ],
+            }
+        elif _question_intent == "description":
+            _intent_cores = {
+                'positive': [
+                    f"my experience with {subject_phrase} was mostly positive",
+                    f"I'd describe my interaction with {subject_phrase} as good overall",
+                ],
+                'negative': [
+                    f"my experience with {subject_phrase} was disappointing",
+                    f"I'd describe {subject_phrase} as problematic based on what I observed",
+                ],
+                'mixed': [
+                    f"describing {subject_phrase} is complicated because there were good and bad parts",
+                ],
+                'neutral': [
+                    f"my experience with {subject_phrase} was pretty standard, nothing remarkable",
+                ],
+            }
+        elif _question_intent == "evaluation":
+            _intent_cores = {
+                'positive': [
+                    f"I'd rate {subject_phrase} favorably based on what I've seen",
+                    f"my assessment of {subject_phrase} is positive overall",
+                ],
+                'negative': [
+                    f"my evaluation of {subject_phrase} is critical because of specific issues I noticed",
+                    f"I'd rate {subject_phrase} poorly based on my experience",
+                ],
+                'mixed': [
+                    f"evaluating {subject_phrase} is tough because the strengths and weaknesses balance out",
+                ],
+                'neutral': [
+                    f"my assessment of {subject_phrase} is neither particularly positive nor negative",
+                ],
+            }
+        else:
+            # Default opinion cores (same structure as before but more varied)
+            _intent_cores = {
+                'positive': [
+                    f"I feel good about {subject_phrase}",
+                    f"{subject_phrase} is something I care about",
+                    f"I'm supportive of {subject_phrase}",
+                    f"my views on {subject_phrase} are positive",
+                    f"I think {subject_phrase} is headed in the right direction",
+                    f"I see {subject_phrase} favorably",
+                    f"{subject_phrase} matters to me and I'm generally optimistic",
+                ],
+                'negative': [
+                    f"I have real concerns about {subject_phrase}",
+                    f"{subject_phrase} frustrates me",
+                    f"I'm disappointed with {subject_phrase}",
+                    f"my views on {subject_phrase} are pretty critical",
+                    f"I don't think {subject_phrase} is working well",
+                    f"there are serious problems with {subject_phrase}",
+                    f"{subject_phrase} needs to change",
+                ],
+                'mixed': [
+                    f"I have mixed feelings about {subject_phrase}",
+                    f"{subject_phrase} is complicated for me",
+                    f"I'm torn about {subject_phrase}",
+                    f"I see both sides when it comes to {subject_phrase}",
+                    f"my thoughts on {subject_phrase} are nuanced",
+                ],
+                'neutral': [
+                    f"I don't have super strong opinions about {subject_phrase}",
+                    f"I'm fairly neutral on {subject_phrase}",
+                    f"my views on {subject_phrase} are moderate",
+                    f"I don't feel strongly about {subject_phrase} either way",
+                    f"{subject_phrase} is something I thought about but don't feel extreme about",
+                ],
+            }
+
+        _cores = _intent_cores.get(sentiment, _intent_cores.get('neutral', [f"I thought about {subject_phrase}"]))
+
+        # v1.0.8.0: Elaborations now reference the actual subject_phrase
+        _elaborations = {
+            'positive': [
+                f"My experiences with {subject_phrase} have been largely positive.",
                 "I tried to express that honestly in my answers.",
-                "I feel like this is heading the right way and I wanted to say so.",
                 "I've thought about it a lot and I stand by my feelings.",
-                "I spent time thinking about each question because it resonates with me.",
-            ]
-        elif sentiment == 'negative':
-            _cores = [
-                f"I have real concerns about {subject_phrase}",
-                f"{subject_phrase} frustrates me",
-                f"I'm disappointed with {subject_phrase}",
-                f"my views on {subject_phrase} are pretty critical",
-                f"I don't think {subject_phrase} is working well",
-                f"there are serious problems with {subject_phrase}",
-                f"{subject_phrase} needs to change",
-            ]
-            _elaborations = [
-                "There are problems that aren't being addressed and that bothers me.",
-                "I tried to express my concerns honestly in my responses.",
+                f"When it comes to {subject_phrase}, I feel confident in where I stand.",
+                "My personal experience has shaped a strong positive view on this.",
+                f"I care about {subject_phrase} and wanted to make that clear.",
+            ],
+            'negative': [
+                f"There are real problems with {subject_phrase} that aren't being addressed.",
+                "I tried to express my concerns honestly.",
+                "My personal experience has been negative and I think that matters.",
+                f"I keep coming back to the same issues with {subject_phrase}.",
                 "Things could be so much better and I feel that needs to be said.",
-                "My personal experience with this has been negative.",
-                "I've tried to stay open-minded but I keep coming back to the same issues.",
-                "I feel strongly that people need to pay more attention to this.",
-            ]
-        elif sentiment == 'mixed':
-            _cores = [
-                f"I have mixed feelings about {subject_phrase}",
-                f"{subject_phrase} is complicated for me",
-                f"I'm torn about {subject_phrase}",
-                f"I see both sides when it comes to {subject_phrase}",
-                f"my thoughts on {subject_phrase} are nuanced",
-            ]
-            _elaborations = [
-                "There are things I appreciate but also things that worry me.",
+                f"I've seen enough to know that {subject_phrase} has serious issues.",
+            ],
+            'mixed': [
+                f"There are things I appreciate about {subject_phrase} but also things that worry me.",
                 "I can see both the positives and the problems.",
                 "It's not black-and-white for me and I tried to capture that.",
                 "I've gone back and forth on this honestly.",
-                "My answers might seem contradictory but that reflects how I actually feel.",
-            ]
-        else:  # neutral
-            _cores = [
-                f"I don't have super strong opinions about {subject_phrase}",
-                f"I'm fairly neutral on {subject_phrase}",
-                f"my views on {subject_phrase} are moderate",
-                f"I don't feel strongly about {subject_phrase} either way",
-                f"{subject_phrase} is something I thought about but don't feel extreme about",
-            ]
-            _elaborations = [
+                f"My feelings about {subject_phrase} are genuinely complicated.",
+            ],
+            'neutral': [
                 "I just tried to give honest answers based on what I actually think.",
                 "I can see different perspectives and tried to represent my actual views.",
-                "Nothing too extreme either way, just my honest take.",
+                f"I don't feel strongly enough about {subject_phrase} to take a firm position.",
                 "I tried to think carefully and respond authentically.",
                 "I didn't force myself to have a stronger opinion than I actually do.",
-            ]
+            ],
+        }
 
         core = local_rng.choice(_cores)
         opener = local_rng.choice(_openers)
-        elab = local_rng.choice(_elaborations)
+        elab = local_rng.choice(_elaborations.get(sentiment, _elaborations['neutral']))
         if local_rng.random() < 0.6:
             return f"{opener}, {core}. {elab}"
         else:
@@ -1613,6 +1725,7 @@ def _get_sample_text_response(
                 f"no issues with {subject_phrase}",
                 f"I think {subject_phrase} is alright",
                 f"{subject_phrase} works for me",
+                f"I'm generally on board with {subject_phrase}",
             ]
         elif sentiment == 'negative':
             _cores = [
@@ -1622,6 +1735,7 @@ def _get_sample_text_response(
                 f"I'm not happy about {subject_phrase}",
                 f"there are issues with {subject_phrase}",
                 f"{subject_phrase} could be a lot better",
+                f"I'm not convinced about {subject_phrase}",
             ]
         elif sentiment == 'mixed':
             _cores = [
@@ -1630,6 +1744,7 @@ def _get_sample_text_response(
                 f"I see both sides of {subject_phrase}",
                 f"not sure how I feel about {subject_phrase}",
                 f"{subject_phrase} is complicated",
+                f"I'm on the fence about {subject_phrase}",
             ]
         else:  # neutral
             _cores = [
@@ -1638,13 +1753,14 @@ def _get_sample_text_response(
                 f"no strong opinion on {subject_phrase}",
                 f"just answered what I think about {subject_phrase}",
                 f"I'm somewhere in the middle on {subject_phrase}",
-                f"{subject_phrase} - gave my honest answer",
+                f"{subject_phrase} — gave my honest answer",
+                f"meh about {subject_phrase} honestly",
             ]
 
         core = local_rng.choice(_cores)
         # Medium quality: shorter, sometimes with opener, sometimes not
         if local_rng.random() < 0.3:
-            opener = local_rng.choice(["Honestly", "I mean", "Yeah", "Look", "Idk"])
+            opener = local_rng.choice(["Honestly", "I mean", "Yeah", "Look", "Idk", "Tbh"])
             return f"{opener}, {core}."
         else:
             return f"{core[0].upper()}{core[1:]}."

@@ -1,6 +1,6 @@
 # Technical Methods Documentation
 
-**Behavioral Experiment Simulation Tool v1.0.4.9**
+**Behavioral Experiment Simulation Tool v1.0.8.0**
 
 **Proprietary Software** | Dr. Eugen Dimant
 
@@ -173,14 +173,17 @@ The system uses a primary AI-powered generator with a template-based fallback.
 4. **Draw-with-replacement**: Individual participants draw randomly from the pool without depleting it
 5. **Deep variation**: Each drawn response passes through 7 transformation layers to ensure uniqueness
 
-**Fallback (Template-Based):**
+**Fallback (Template-Based, v1.0.8.0 Compositional Architecture):**
 
-1. **Question type classification**: 40+ types identified via regex patterns
+1. **Question intent classification**: 8 intent types (opinion, explanation, description, emotional_reaction, evaluation, prediction, causal_explanation, decision_explanation) via expanded regex patterns
 2. **Domain detection**: 225+ research domains via keyword matching
-3. **Template selection**: Domain × sentiment × question-type specific templates
-4. **Personalization**: Question-specific keywords modify template content
-5. **Persona modulation**: Verbosity, formality, and engagement adjustments
-6. **Condition context**: Condition-specific elements incorporated
+3. **Compositional template assembly**: opener + intent-matched core + domain-enriched elaboration + coda
+4. **40+ domain vocabulary sets**: Specialized terminology for clinical, sports, legal, food, developmental, personality, cognitive, neuroscience, financial, cross-cultural, and 30+ more domains
+5. **Rich question-text mining**: 33 action verb patterns, 24 object/target groups, 15 key phrase patterns extract topic from question text
+6. **Domain-gated personalization**: 8 domain condition modifier blocks (cognitive, sports, clinical, relationship, communication, food, developmental, technology) — only applied when domain matches
+7. **Behavioral coherence enforcement**: 6-check post-processing (straight-liner truncation, sentiment correction, intensity modulation, SD hedging, extremity absolutes, entity injection)
+8. **50+ domain-specific extensions**: StudyDomain-matched elaboration sentences for clinical, developmental, personality, sports, legal, food, communication, and 40+ more areas
+9. **25 careless response templates**: Topic-aware low-effort responses with engagement-dependent casing
 
 ### 5.2 Deep Variation Pipeline (7 Layers)
 

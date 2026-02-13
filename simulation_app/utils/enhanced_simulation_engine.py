@@ -45,7 +45,7 @@ This module is designed to run inside a `utils/` package (i.e., imported as
 """
 
 # Version identifier to help track deployed code
-__version__ = "1.0.7.9"  # v1.0.7.9: Major template-based OE response overhaul
+__version__ = "1.0.8.0"  # v1.0.8.0: Massive OE template expansion (20 iterations)
 
 # =============================================================================
 # SCIENTIFIC FOUNDATIONS FOR SIMULATION
