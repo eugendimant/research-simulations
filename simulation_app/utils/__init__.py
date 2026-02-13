@@ -2,7 +2,7 @@
 """
 Utility modules for the Behavioral Experiment Simulation Tool.
 
-Version: 1.0.7.4 - Fix version mismatch banner — remove fragile purge/reimport
+Version: 1.0.6.8 - Fix UX — no OE preview, OE context prompt, hide flash warnings
 
 Changes (v1.0.0 - 20 Iterations of Comprehensive Improvements):
     === ENHANCED SCALE/MATRIX DETECTION ===
