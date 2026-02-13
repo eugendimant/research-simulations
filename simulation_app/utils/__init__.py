@@ -2,7 +2,7 @@
 """
 Utility modules for the Behavioral Experiment Simulation Tool.
 
-Version: 1.0.7.1 - Fix UX — no OE preview, OE context prompt, hide flash warnings
+Version: 1.0.6.8 - Fix UX — no OE preview, OE context prompt, hide flash warnings
 
 Changes (v1.0.0 - 20 Iterations of Comprehensive Improvements):
     === ENHANCED SCALE/MATRIX DETECTION ===
