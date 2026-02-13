@@ -1,0 +1,14 @@
+[
+  "tests/test_bench_imports.py::test_imports",
+  "tests/test_bench_registry.py::test_load",
+  "tests/test_moments.py::test_moments_basic",
+  "tests/test_moments_extended.py::test_grouped_moments_and_gini_share_corr_slope",
+  "tests/test_pack_runner.py::test_pack_runner_fixture",
+  "tests/test_smoke.py::test_smoke_simulate",
+  "tests/test_v010_smoke.py::test_benchmark_suite_exists",
+  "tests/test_v010_smoke.py::test_simulate_with_survey",
+  "tests/test_v011_new_games.py::test_doi_normalize",
+  "tests/test_v011_new_games.py::test_registry_has_new_games",
+  "tests/test_web_and_corpus_smoke.py::test_corpus_store_roundtrip",
+  "tests/test_web_and_corpus_smoke.py::test_webclient_construct"
+]
