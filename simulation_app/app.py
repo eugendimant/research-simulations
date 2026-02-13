@@ -53,8 +53,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.0.7.3"
-BUILD_ID = "20260213-v10703-version-sync-fix"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.0.7.4"
+BUILD_ID = "20260213-v10704-fix-version-banner"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -92,26 +92,19 @@ try:
 except ImportError:
     _HAS_CORRELATION_MODULE = False
 
-# Verify correct version loaded — if stale, force a targeted reload
+# Verify correct version loaded — warn if stale cached bytecode detected.
+# NOTE: Do NOT purge sys.modules here. Purging causes KeyError crashes on
+# Streamlit Cloud when concurrent sessions import the same modules (see
+# https://github.com/streamlit/streamlit/issues/366). BUILD_ID changes
+# handle cache invalidation safely; a mismatch here means the deploy
+# hasn't fully propagated yet.
 if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION:
-    try:
-        # Purge stale utils sub-modules from sys.modules so fresh code is loaded
-        _stale_keys = [k for k in sys.modules if k == "utils" or k.startswith("utils.")]
-        for _k in _stale_keys:
-            del sys.modules[_k]
-        # Re-import with fresh code
-        import utils  # noqa: F811
-        from utils.group_management import GroupManager, APIKeyManager  # noqa: F811
-        from utils.qsf_preview import QSFPreviewParser, QSFPreviewResult  # noqa: F811
-        from utils.schema_validator import validate_schema  # noqa: F811
-        from utils.github_qsf_collector import collect_qsf_async, is_collection_enabled  # noqa: F811
-        from utils.instructor_report import InstructorReportGenerator, ComprehensiveInstructorReport  # noqa: F811
-        from utils.survey_builder import SurveyDescriptionParser, ParsedDesign, ParsedCondition, ParsedScale, KNOWN_SCALES, AVAILABLE_DOMAINS, generate_qsf_from_design  # noqa: F811
-        from utils.persona_library import PersonaLibrary, Persona  # noqa: F811
-        from utils.enhanced_simulation_engine import EnhancedSimulationEngine, EffectSizeSpec, ExclusionCriteria  # noqa: F811
-        from utils.condition_identifier import DesignAnalysisResult, VariableRole, analyze_qsf_design  # noqa: F811
-    except Exception:
-        st.warning(f"Utils version mismatch: expected {REQUIRED_UTILS_VERSION}, got {getattr(utils, '__version__', '?')}. Please restart the app.")
+    import logging as _logging
+    _logging.getLogger(__name__).warning(
+        "Utils version mismatch: expected %s, got %s (BUILD_ID=%s). "
+        "This usually resolves after Streamlit Cloud redeploys.",
+        REQUIRED_UTILS_VERSION, utils.__version__, BUILD_ID,
+    )
 
 
 # -----------------------------
@@ -119,7 +112,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.0.7.3"  # v1.0.7.3: Version sync fix + CLAUDE.md hardening
+APP_VERSION = "1.0.7.4"  # v1.0.7.4: Fix version mismatch banner — remove fragile purge/reimport
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
