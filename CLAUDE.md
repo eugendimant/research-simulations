@@ -100,6 +100,15 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 
 When versions don't match, users see a **yellow warning banner** at the top of the app. This looks broken and unprofessional. Streamlit's module caching makes this worse — old versions can persist across deploys unless BUILD_ID changes.
 
+### Stale Module Cache Recovery (v1.0.7.7):
+
+The app now uses `importlib.reload(utils)` as a **safe self-healing mechanism** when a mismatch is detected. This re-executes the utils `__init__.py` in-place (refreshing `__version__`) WITHOUT purging `sys.modules` (which caused KeyError crashes in v1.4.3.1 with concurrent sessions). The warning only appears if reload fails to resolve the mismatch — meaning it's a genuine code-level inconsistency, not just a stale cache.
+
+**History of failed approaches:**
+1. **sys.modules purge (v1.4.3.0):** Deleted all `utils.*` entries from `sys.modules` before import. Caused intermittent `KeyError` crashes on Streamlit Cloud with concurrent sessions.
+2. **Warning only (v1.4.3.1–v1.0.7.5):** Just displayed the banner and told users to restart. Users saw the banner after every deploy, even when code was correct.
+3. **importlib.reload (v1.0.7.7, CURRENT):** Safe in-place reload. No sys.modules mutation. Self-heals stale cache silently. Only warns on genuine mismatches.
+
 ### CRITICAL — The #1 cause of version mismatch:
 
 **Updating `utils/__init__.py` `__version__` WITHOUT updating `REQUIRED_UTILS_VERSION` in `app.py` (or vice versa).** These two values are compared directly at startup. They MUST be identical. Every single time this error has occurred, it was because ONE of these was updated and the other was not. Treat them as a single atomic operation — never touch one without the other.
