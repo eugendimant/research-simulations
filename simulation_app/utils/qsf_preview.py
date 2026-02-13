@@ -33,7 +33,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 # Version identifier to help track deployed code
-__version__ = "1.0.7.5"  # v1.0.7.5: Fix version sync across all 9 locations
+__version__ = "1.0.7.6"  # v1.0.7.6: Merge main + fix audit StringDtype detection
 
 
 # ============================================================================

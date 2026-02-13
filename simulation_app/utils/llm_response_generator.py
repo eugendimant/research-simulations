@@ -18,10 +18,10 @@ Architecture:
   the existing template-based ComprehensiveResponseGenerator
 - Never hard-stops: always walks user through options when APIs fail
 
-Version: 1.0.7.5
+Version: 1.0.7.6
 """
 
-__version__ = "1.0.7.5"
+__version__ = "1.0.7.6"
 
 import hashlib
 import json
