@@ -45,7 +45,7 @@ This module is designed to run inside a `utils/` package (i.e., imported as
 """
 
 # Version identifier to help track deployed code
-__version__ = "1.0.7.8"  # v1.0.7.8: Add _backups/ to .gitignore
+__version__ = "1.0.7.9"  # v1.0.7.9: Major template-based OE response overhaul
 
 # =============================================================================
 # SCIENTIFIC FOUNDATIONS FOR SIMULATION

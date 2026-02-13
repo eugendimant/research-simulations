@@ -3684,8 +3684,186 @@ class TextResponseGenerator:
         }
 
     def _build_templates(self) -> Dict[str, Dict[str, List[str]]]:
-        """Build extensive template library for different response types and personas."""
+        """Build extensive template library for different response types and personas.
+
+        v1.0.7.9: MAJOR OVERHAUL — Added question-type-specific template banks
+        (opinion_response, explanation_response, feeling_response, description_response,
+        evaluation_response) that produce content-responsive answers instead of
+        meta-commentary about the task. The old task_summary templates described the
+        PROCESS of answering ("I thought about {topic}") rather than actually
+        ANSWERING the question.
+        """
         return {
+            # v1.0.7.9: NEW — Opinion templates that actually express views
+            'opinion_response': {
+                'engaged': [
+                    "I think {topic} is really important and my views on it are pretty clear. I've thought about this a lot and I feel confident in where I stand.",
+                    "When it comes to {topic}, I have strong opinions based on my own experiences. I've seen enough to know how I feel about it.",
+                    "{topic} is something I feel I can speak to honestly. My perspective comes from real experience not just reading about it.",
+                    "I have genuine views on {topic} that I've developed over time. This isn't something I take lightly.",
+                    "My take on {topic} is based on what I've personally observed and experienced. I try to be thoughtful about it.",
+                    "{topic} matters to me and I think my position on it is well-reasoned. I've considered different angles.",
+                    "I've formed my views on {topic} through a mix of experience and reflection. I feel pretty solid about where I land.",
+                    "There's a lot to say about {topic} and I have real opinions on it. I tried to be honest about what I actually think.",
+                ],
+                'satisficer': [
+                    "{topic} is fine I guess.",
+                    "I don't think too hard about {topic}.",
+                    "{topic}, it's ok.",
+                    "Not much to say about {topic}.",
+                    "My view on {topic} is pretty simple.",
+                    "{topic} is whatever.",
+                ],
+                'extreme': [
+                    "I feel VERY strongly about {topic} and I don't think there's room for debate here.",
+                    "{topic} is absolutely something I have extreme views on. No middle ground for me.",
+                    "I have zero doubt about where I stand on {topic}. My position is crystal clear.",
+                    "There's no question in my mind about {topic}. I feel extremely strongly.",
+                ],
+                'careless': [
+                    "{topic} idk",
+                    "{topic} whatever",
+                    "meh {topic}",
+                    "{topic} ok",
+                    "idk about {topic}",
+                    "{topic} i guess",
+                    "yeah {topic}",
+                    "{topic} sure",
+                ],
+                'default': [
+                    "I have views on {topic} and I tried to express them honestly. It's something I've thought about before.",
+                    "My perspective on {topic} is based on my own experiences. I gave my genuine take.",
+                    "{topic} — I have real opinions and I shared them as honestly as I could.",
+                    "When it comes to {topic}, I know where I stand. I answered based on that.",
+                    "I shared my actual views on {topic}. Nothing more nothing less.",
+                    "{topic} is something I have thoughts on and I tried to capture them accurately.",
+                ],
+            },
+            # v1.0.7.9: NEW — Explanation templates that give reasons
+            'explanation_response': {
+                'engaged': [
+                    "The reason I feel this way about {topic} is that my personal experiences have shaped my view. I've seen enough to know where I stand.",
+                    "I made my choice about {topic} because it aligns with my values. I thought carefully about what matters to me.",
+                    "My reasoning on {topic} comes from real-life experience. When you've dealt with something directly it changes your perspective.",
+                    "I can explain my position on {topic} — it comes down to what I believe is right based on what I've seen and experienced.",
+                    "The way I see {topic}, there are clear reasons for my position. My past experience informs my thinking.",
+                    "My rationale for how I responded about {topic} is straightforward. I went with what I genuinely believe.",
+                ],
+                'satisficer': [
+                    "Just how I feel about {topic}.",
+                    "No big reason, {topic} is just my view.",
+                    "Its just {topic}, went with my gut.",
+                    "Thats just how I see {topic}.",
+                ],
+                'extreme': [
+                    "The reason is obvious if you think about {topic} — I can't understand how anyone sees it differently.",
+                    "My reasoning on {topic} is rock solid. I know exactly why I feel this way.",
+                    "It's clear to me why {topic} matters so much. The evidence is overwhelming.",
+                ],
+                'careless': [
+                    "idk why, just {topic}",
+                    "{topic} because",
+                    "no reason really, {topic}",
+                    "just because {topic}",
+                ],
+                'default': [
+                    "My thinking on {topic} is based on my personal experience and values. That's the honest explanation.",
+                    "I can explain my response to {topic} — it comes from how I actually see things.",
+                    "The reason behind my views on {topic} is pretty straightforward. I went with my genuine perspective.",
+                    "When it comes to {topic}, my reasoning is based on what I've actually experienced.",
+                ],
+            },
+            # v1.0.7.9: NEW — Feeling/emotional reaction templates
+            'feeling_response': {
+                'engaged': [
+                    "When I think about {topic}, I have a genuine emotional response. It's something that affects me on a personal level.",
+                    "{topic} stirs up real feelings for me. I tried to express those honestly because I think it matters.",
+                    "My emotional reaction to {topic} is genuine. I feel connected to this issue in a way that's hard to fully articulate.",
+                    "I have real feelings about {topic} that go beyond just an opinion. This touches something deeper for me.",
+                    "{topic} evokes strong emotions for me because of my personal experiences. I didn't hold back.",
+                    "How I feel about {topic} is complicated but genuine. I tried to capture the full range of my emotions.",
+                ],
+                'satisficer': [
+                    "{topic} doesn't make me feel much either way.",
+                    "I feel ok about {topic}.",
+                    "Not strong feelings about {topic}.",
+                    "{topic} — I don't feel too strongly.",
+                ],
+                'extreme': [
+                    "I feel INCREDIBLY strongly about {topic}. My emotions are intense and I make no apologies.",
+                    "{topic} triggers an extreme emotional response in me. I can't be neutral about this.",
+                    "My feelings about {topic} are powerful and deeply held. This is visceral for me.",
+                ],
+                'careless': [
+                    "{topic} dont care",
+                    "whatever about {topic}",
+                    "no feelings on {topic}",
+                    "{topic} meh",
+                ],
+                'default': [
+                    "My feelings about {topic} are genuine. I tried to express how I actually feel about it.",
+                    "When it comes to {topic}, I have real emotions. I shared those as honestly as I could.",
+                    "{topic} makes me feel a certain way and I tried to capture that in my response.",
+                    "I have genuine emotional reactions to {topic}. My answer reflects those feelings.",
+                ],
+            },
+            # v1.0.7.9: NEW — Description templates
+            'description_response': {
+                'engaged': [
+                    "My experience with {topic} was something I remember clearly. I tried to describe what actually happened and how it went.",
+                    "I can describe my interaction with {topic} in detail. There were specific things that stood out to me.",
+                    "What happened with {topic} was memorable enough that I can give a real description. I paid attention throughout.",
+                    "I observed several things about {topic} that I tried to capture. The details matter to me.",
+                ],
+                'satisficer': [
+                    "{topic} was fine. Normal.",
+                    "Nothing much to describe about {topic}.",
+                    "{topic}, it went as expected.",
+                ],
+                'extreme': [
+                    "The experience with {topic} was absolutely remarkable — either amazingly good or terrible, hard to forget.",
+                    "What happened with {topic} was extreme. There's no way to describe it as average.",
+                ],
+                'careless': [
+                    "{topic} was ok",
+                    "fine {topic}",
+                    "normal {topic}",
+                ],
+                'default': [
+                    "My experience with {topic} was what it was. I described it as honestly as I could.",
+                    "I tried to give an accurate description of {topic} based on what I observed.",
+                    "What I noticed about {topic} is what I shared. Tried to be accurate.",
+                ],
+            },
+            # v1.0.7.9: NEW — Evaluation/rating explanation templates
+            'evaluation_response': {
+                'engaged': [
+                    "I evaluated {topic} carefully and my assessment is based on real criteria that matter to me. I tried to be fair and thorough.",
+                    "My rating of {topic} reflects what I genuinely think. I considered the strengths and weaknesses before making my judgment.",
+                    "I took the evaluation of {topic} seriously. My assessment is based on what I actually observed, not assumptions.",
+                    "When assessing {topic}, I tried to be balanced but honest. Some aspects stood out more than others.",
+                ],
+                'satisficer': [
+                    "{topic} is average.",
+                    "My rating of {topic} is middle of the road.",
+                    "{topic} is ok, not great not bad.",
+                ],
+                'extreme': [
+                    "My assessment of {topic} is extreme and I stand by it completely. The quality was either outstanding or awful.",
+                    "I rated {topic} at the extreme end because that's where it deserves to be. No hedging.",
+                ],
+                'careless': [
+                    "{topic} is fine whatever",
+                    "idk {topic} is ok",
+                    "{topic} average",
+                ],
+                'default': [
+                    "I evaluated {topic} based on my honest impressions. My rating reflects what I actually think.",
+                    "My assessment of {topic} is genuine. I tried to be fair in my evaluation.",
+                    "I rated {topic} based on my real experience with it.",
+                ],
+            },
+            # LEGACY: task_summary kept for backward compatibility but improved
             'task_summary': {
                 'engaged': [
                     "I thought carefully about {topic} and tried to give honest, thoughtful responses. I reflected on my true opinions and experiences.",
@@ -3696,18 +3874,8 @@ class TextResponseGenerator:
                     "When it comes to {topic}, I have some experience and tried to respond as accurately as I could.",
                     "I focused on {topic} and gave responses that matched my actual views. I tried not to overthink but also wanted to be accurate.",
                     "I took my time thinking about {topic} and shared my genuine perspective. My past experiences definitely shaped some of my answers.",
-                    "After thinking about {topic}, I answered based on my initial reactions and then reconsidered to make sure they were accurate.",
-                    "{topic} is interesting to me. I gave honest responses based on my genuine feelings and beliefs.",
-                    "I considered each aspect of {topic} carefully. My responses reflect what I actually think, not what I thought I should say.",
-                    "I thought about {topic} based on my personal experiences and values. This is relevant to my life so I felt I could give informed responses.",
                     "{topic} is something I care about. I tried to provide meaningful and honest responses.",
-                    "I approached {topic} with genuine interest. My answers reflect my actual opinions and beliefs.",
-                    "{topic} caught my attention and I gave careful consideration to how I feel about it. I believe my responses are accurate.",
                     "I have real views on {topic} and tried to articulate my genuine reactions.",
-                    "My responses about {topic} came from careful reflection. I aimed for honesty throughout.",
-                    "I engaged seriously with {topic}. It prompted me to think about my actual views and opinions.",
-                    "Thinking about {topic} was a thoughtful process. My answers represent my true perspective.",
-                    "I gave {topic} my full attention. My responses are based on my genuine impressions and beliefs.",
                 ],
                 'satisficer': [
                     "{topic} is fine.",
@@ -3718,9 +3886,7 @@ class TextResponseGenerator:
                     "Responded about {topic}.",
                     "Shared my opinions on {topic}.",
                     "{topic}. Yeah I have views on that.",
-                    "Gave feedback on {topic}.",
                     "{topic}. Answered honestly.",
-                    "{topic} is something I know about.",
                     "My take on {topic}.",
                 ],
                 'extreme': [
@@ -3749,21 +3915,13 @@ class TextResponseGenerator:
                     "I thought about {topic} and tried to give honest responses based on how I actually feel.",
                     "{topic} is something I have opinions on. I shared my genuine reactions.",
                     "I answered about {topic} based on my actual views and experiences.",
-                    "I considered {topic} and responded honestly. Seemed straightforward.",
                     "I thought about {topic} and gave my honest impressions.",
                     "{topic} — I tried to be accurate about my views.",
-                    "I found {topic} worth thinking about. My answers reflect what I actually believe.",
                     "I thought about {topic} honestly and gave it reasonable thought.",
                     "{topic} is something I've considered before. I shared my perspective as accurately as I could.",
                     "I reflected on {topic} and shared my genuine thoughts.",
-                    "I engaged with {topic} and tried to capture my real feelings.",
                     "When it comes to {topic}, I shared my honest thoughts.",
-                    "I formed opinions about {topic} and responded accordingly.",
-                    "I provided my perspective on {topic} to the best of my ability.",
-                    "My responses about {topic} are based on my actual impressions and experiences.",
                     "I gave my honest views about {topic}.",
-                    "{topic} made me think and I shared my reactions.",
-                    "I answered about {topic} based on my genuine views and personal experience.",
                     "{topic} — I gave my real opinions.",
                     "I took {topic} seriously and answered thoughtfully.",
                 ]
@@ -4176,8 +4334,44 @@ class TextResponseGenerator:
             if persona_style not in ("careless", "satisficer"):
                 persona_style = "satisficer"  # Consistent neutrality = low differentiation
 
-        # Get templates for this response type
-        type_templates = self.templates.get(response_type, self.templates['task_summary'])
+        # v1.0.7.9: Smart template bank selection based on question intent.
+        # Instead of always falling back to task_summary (meta-commentary about the task),
+        # use question_intent from context to select content-responsive template banks.
+        _question_intent = context.get("question_intent", "")
+        _intent_to_bank = {
+            "opinion": "opinion_response",
+            "explanation": "explanation_response",
+            "causal_explanation": "explanation_response",
+            "decision_explanation": "explanation_response",
+            "emotional_reaction": "feeling_response",
+            "description": "description_response",
+            "evaluation": "evaluation_response",
+            "prediction": "opinion_response",  # predictions use opinion-like templates
+        }
+        # Try: explicit response_type → intent-based bank → task_summary fallback
+        _effective_type = response_type
+        if response_type not in self.templates or response_type == 'task_summary':
+            # If we have a question_intent, use the mapped content-responsive bank
+            if _question_intent and _question_intent in _intent_to_bank:
+                _mapped = _intent_to_bank[_question_intent]
+                if _mapped in self.templates:
+                    _effective_type = _mapped
+            elif not _question_intent:
+                # No intent info — try to detect from context/topic
+                _topic_lower = context.get("topic", "").lower()
+                _stim_lower = context.get("stimulus", "").lower()
+                _combined = _topic_lower + " " + _stim_lower
+                if any(w in _combined for w in ('why', 'reason', 'explain', 'because')):
+                    _effective_type = "explanation_response"
+                elif any(w in _combined for w in ('feel', 'emotion', 'feelings')):
+                    _effective_type = "feeling_response"
+                elif any(w in _combined for w in ('describe', 'experience', 'happened')):
+                    _effective_type = "description_response"
+                elif any(w in _combined for w in ('rate', 'evaluate', 'assess')):
+                    _effective_type = "evaluation_response"
+                else:
+                    _effective_type = "opinion_response"  # default to opinion, not meta-commentary
+        type_templates = self.templates.get(_effective_type, self.templates.get('opinion_response', self.templates['task_summary']))
 
         # Get style-specific templates or fall back to sentiment or default
         style_templates = type_templates.get(persona_style, [])
