@@ -1,6 +1,6 @@
 # Behavioral Experiment Simulation Tool
 
-**Version 1.0.6.7** | A Streamlit application for generating realistic synthetic behavioral experiment data using theory-grounded persona-driven simulation.
+**Version 1.0.7.1** | A Streamlit application for generating realistic synthetic behavioral experiment data using theory-grounded persona-driven simulation.
 
 ## What This Tool Does
 
@@ -19,11 +19,11 @@
 - **Develop analysis scripts** on properly structured data
 - **Check pre-registration consistency** before data collection
 
-## Features (v1.0.6.7)
+## Features (v1.0.7.1)
 
-### NEW: AI-Powered Open-Ended Responses with 3-Provider Failover (v1.4.10)
+### NEW: AI-Powered Open-Ended Responses with multi-provider failover (v1.4.10+)
 - **Zero-config AI**: open-ended responses are automatically AI-generated using built-in API keys — no setup needed
-- **3-provider failover chain**: Groq (Llama 3.3 70B) → Cerebras (Llama 3.3 70B) → OpenRouter (Llama 3.3 70B) — if one provider rate-limits, the next is tried automatically
+- **Prioritized failover chain**: Google AI Studio (Gemma/Gemini) → Groq → Cerebras → Poe → OpenRouter — if one provider rate-limits, the next is tried automatically
 - **Bring your own key**: optionally enter a personal API key from Groq, Cerebras, or OpenRouter for unlimited capacity (auto-detected from key prefix)
 - **Large batch architecture**: 20 persona-guided responses per API call for maximum efficiency
 - **Smart pool scaling**: pool size auto-calculated from sample_size (works for 50–5,000+ participants)
