@@ -1,0 +1,27 @@
+{
+  "game": {
+    "name": "public_goods",
+    "params": {
+      "endowment": 10,
+      "group_size": 4,
+      "mpcr": 0.4,
+      "step": 1,
+      "expected_other_contribution": 4
+    }
+  },
+  "topic": {
+    "name": "social_norms",
+    "tags": [
+      "descriptive_norms"
+    ],
+    "notes": "Public goods with expected others contribution"
+  },
+  "population": {
+    "label": "adult_online",
+    "country": "US"
+  },
+  "context": {
+    "ingroup_partner": 1,
+    "norm_salience": true
+  }
+}

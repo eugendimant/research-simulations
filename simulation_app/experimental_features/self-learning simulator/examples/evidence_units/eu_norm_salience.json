@@ -1,0 +1,29 @@
+{
+  "id": "eu_norm_salience_example",
+  "type": "param_shift",
+  "when": {
+    "ctx::norm_salience": 1
+  },
+  "effect": {
+    "norm_weight": 0.25
+  },
+  "uncertainty": {
+    "se": 0.1,
+    "n": 1000
+  },
+  "weight": 1.0,
+  "notes": "Example unit. Replace effect/uncertainty with extracted numbers from your source.",
+  "provenance": {
+    "source_type": "journal_article",
+    "title": "Replace with the actual paper you coded",
+    "url": "https://example.com",
+    "authors": [],
+    "year": 0,
+    "extraction": {
+      "coder": "you",
+      "table_or_figure": "",
+      "page": "",
+      "verbatim_excerpt": ""
+    }
+  }
+}

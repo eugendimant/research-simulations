@@ -1,0 +1,18 @@
+{
+  "game": {
+    "name": "repeated_public_goods",
+    "params": {
+      "endowment": 10,
+      "multiplier": 1.6,
+      "rounds": 10
+    }
+  },
+  "context": {
+    "endowment": 10,
+    "rounds": 10,
+    "repeated": true
+  },
+  "population": {
+    "n_agents": 4
+  }
+}

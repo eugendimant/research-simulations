@@ -1,6 +1,6 @@
 # Behavioral Experiment Simulation Tool
 
-**Version 1.0.8.0** | A Streamlit application for generating realistic synthetic behavioral experiment data using theory-grounded persona-driven simulation.
+**Version 1.0.8.1** | A Streamlit application for generating realistic synthetic behavioral experiment data using theory-grounded persona-driven simulation.
 
 ## What This Tool Does
 
@@ -19,7 +19,27 @@
 - **Develop analysis scripts** on properly structured data
 - **Check pre-registration consistency** before data collection
 
-## Features (v1.0.8.0)
+## Features (v1.0.8.1)
+
+### NEW: Generation Method Chooser (v1.0.8.1)
+- **4 simulation methods** to choose from before generation:
+  - **Built-in AI** (Recommended) — free LLM access via Groq, Cerebras, Google AI, Poe, OpenRouter
+  - **Your Own API Key** — bring your own key with auto-detection and format validation
+  - **Built-in Template Engine** — 225+ domain templates, 58+ personas, no API needed
+  - **Experimental SocSim** (Beta) — Fehr-Schmidt utility models, IRT, 28 economic games
+- Each method has an expandable "What does this do?" information panel
+
+### NEW: Real-Time Progress Counter (v1.0.8.1)
+- **Live participant counter** replaces static time estimates
+- Phase-specific updates: persona assignment, scales, open-ended, participant simulation
+- Shows: current/total count, percentage, progress bar, elapsed time, ETA
+
+### NEW: SocSim Experimental Engine (v1.0.8.1, Beta)
+- **Evidence-traceable behavioral simulation** for economic game paradigms
+- **28 games supported**: dictator, trust, ultimatum, public goods, prisoner's dilemma, die roll, gift exchange, stag hunt, Holt-Laury risk, beauty contest, and more
+- **Fehr-Schmidt inequity aversion** utility models with published parameter priors
+- **4 latent behavioral classes**: self-interested, fairness-minded, reciprocator, high-noise
+- **Auto-detection**: automatically identifies economic game DVs in your study design
 
 ### NEW: AI-Powered Open-Ended Responses with multi-provider failover (v1.4.10+)
 - **Zero-config AI**: open-ended responses are automatically AI-generated using built-in API keys — no setup needed

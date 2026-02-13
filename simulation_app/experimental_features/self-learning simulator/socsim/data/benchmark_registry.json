@@ -1,0 +1,31 @@
+{
+  "version": "0.12.0",
+  "benchmarks": [
+    {
+      "id": "pgg_meta_2021_bcw",
+      "game": "repeated_public_goods",
+      "source": {
+        "provider": "dryad",
+        "doi": "10.5061/dryad.fn2z34tsv"
+      },
+      "context_features": {
+        "repeated": true,
+        "rounds": 10,
+        "stakes_level": "low"
+      },
+      "notes": "PGG metadata dataset on Dryad (Burton-Chellew & West 2021)."
+    },
+    {
+      "id": "ultimatum_partner_choice_fairness",
+      "game": "ultimatum",
+      "source": {
+        "provider": "dryad",
+        "doi": "10.5061/dryad.6v4c0"
+      },
+      "context_features": {
+        "stakes_level": "low"
+      },
+      "notes": "Partner choice fairness dataset on Dryad."
+    }
+  ]
+}

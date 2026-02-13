@@ -1,0 +1,76 @@
+{
+  "type": "object",
+  "required": [
+    "version",
+    "benchmarks"
+  ],
+  "properties": {
+    "version": {
+      "type": "string"
+    },
+    "benchmarks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "game",
+          "source"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "game": {
+            "type": "string"
+          },
+          "source": {
+            "type": "object",
+            "required": [
+              "provider"
+            ],
+            "properties": {
+              "provider": {
+                "type": "string",
+                "enum": [
+                  "dryad",
+                  "dataverse",
+                  "osf",
+                  "url"
+                ]
+              },
+              "doi": {
+                "type": "string"
+              },
+              "persistentId": {
+                "type": "string"
+              },
+              "server": {
+                "type": "string"
+              },
+              "osf_id": {
+                "type": "string"
+              },
+              "filename": {
+                "type": "string"
+              },
+              "url": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          },
+          "context_features": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "notes": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      }
+    }
+  },
+  "additionalProperties": false
+}

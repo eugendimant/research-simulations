@@ -1,0 +1,9 @@
+{
+  "mean_offer": 4.5,
+  "q50_offer": 4.5,
+  "diff_offer": 2.0,
+  "traj_offer": {
+    "1": 4.0,
+    "2": 5.0
+  }
+}

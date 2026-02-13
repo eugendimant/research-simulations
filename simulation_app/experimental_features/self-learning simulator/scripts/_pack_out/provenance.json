@@ -1,0 +1,7 @@
+{
+  "benchmark_id": "_fixture_ultimatum",
+  "url": "LOCAL:data.csv",
+  "download_sha256": "58f9e06843d2cbfb70184f46772c6077572a0fcaee9db0e9c4c3263299ca4a3b",
+  "from_cache": true,
+  "expected_sha256": "58f9e06843d2cbfb70184f46772c6077572a0fcaee9db0e9c4c3263299ca4a3b"
+}

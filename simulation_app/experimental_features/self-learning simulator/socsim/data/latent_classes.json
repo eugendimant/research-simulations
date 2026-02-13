@@ -1,0 +1,31 @@
+{
+  "self_interested": {
+    "weight": 0.3,
+    "shifts": {
+      "fairness_alpha": -0.4,
+      "fairness_beta": -0.2,
+      "norm_weight": -0.2
+    }
+  },
+  "fairness_minded": {
+    "weight": 0.25,
+    "shifts": {
+      "fairness_alpha": 0.6,
+      "fairness_beta": 0.3,
+      "norm_weight": 0.4
+    }
+  },
+  "reciprocator": {
+    "weight": 0.25,
+    "shifts": {
+      "reciprocity_r": 0.6,
+      "norm_weight": 0.2
+    }
+  },
+  "high_noise": {
+    "weight": 0.2,
+    "shifts": {
+      "noise_lambda": -0.9
+    }
+  }
+}

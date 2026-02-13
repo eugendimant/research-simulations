@@ -1,0 +1,8 @@
+{
+  "title": "Cigarette consumption (panel) dataset (probstats4econ)",
+  "url": "https://probstats4econ.com/datasets/cigdata.csv",
+  "sha256": null,
+  "source_url": "https://probstats4econ.com/datasets.html",
+  "license": "GPL (>= 3) via CRAN probstats4econ",
+  "citation": "See dataset listing on probstats4econ.com and package citation on CRAN."
+}

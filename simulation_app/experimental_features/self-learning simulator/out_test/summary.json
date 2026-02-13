@@ -1,0 +1,32 @@
+{
+  "n_rows": 30,
+  "game": "trust",
+  "topic": "identity",
+  "matched_evidence_ids": [],
+  "mean_shifts": {},
+  "extra_sd": {},
+  "conflict_report": {
+    "n_conflicts": 0,
+    "conflicts": []
+  },
+  "action_means": {
+    "act::invest": 6.033333333333333,
+    "act::return": 4.775,
+    "act::return_frac": 0.19166666666666668
+  },
+  "payoff_means": {
+    "pay::a": 8.741666666666667,
+    "pay::b": 13.325
+  },
+  "latent_class_counts": {
+    "reciprocator": 20,
+    "high_noise": 13,
+    "fairness_minded": 11,
+    "self_interested": 16
+  },
+  "coverage_report": {
+    "matched_units": 0,
+    "unique_sources": 0,
+    "matched_domain_tags": []
+  }
+}

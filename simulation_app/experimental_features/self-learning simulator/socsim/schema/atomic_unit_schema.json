@@ -1,0 +1,104 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "socsim atomic unit schema",
+  "type": "object",
+  "required": [
+    "id",
+    "kind",
+    "title",
+    "source",
+    "tags",
+    "payload",
+    "provenance"
+  ],
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "bibliography",
+        "dataset",
+        "code",
+        "instrument",
+        "theory_note",
+        "measurement_note",
+        "other"
+      ]
+    },
+    "title": {
+      "type": "string"
+    },
+    "source": {
+      "type": "object",
+      "required": [
+        "ref_type",
+        "ref",
+        "origin"
+      ],
+      "properties": {
+        "ref_type": {
+          "type": "string",
+          "enum": [
+            "doi",
+            "url",
+            "isbn",
+            "other"
+          ]
+        },
+        "ref": {
+          "type": "string"
+        },
+        "origin": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": true
+    },
+    "tags": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "payload": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "provenance": {
+      "type": "object",
+      "required": [
+        "added_by",
+        "added_at_utc",
+        "extraction_method",
+        "notes"
+      ],
+      "properties": {
+        "added_by": {
+          "type": "string"
+        },
+        "added_at_utc": {
+          "type": "string"
+        },
+        "extraction_method": {
+          "type": "string"
+        },
+        "notes": {
+          "type": "string"
+        },
+        "retrieved_at_utc": {
+          "type": "string"
+        },
+        "body_sha256": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": false
+}

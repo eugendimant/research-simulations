@@ -1,0 +1,15 @@
+{
+  "game": {
+    "name": "coordination_min_effort",
+    "params": {
+      "levels": 7,
+      "riskiness": 0.25
+    }
+  },
+  "context": {
+    "stakes_level": "low"
+  },
+  "population": {
+    "n_agents": 6
+  }
+}

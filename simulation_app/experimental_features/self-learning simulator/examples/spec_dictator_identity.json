@@ -1,0 +1,28 @@
+{
+  "game": {
+    "name": "dictator",
+    "params": {
+      "endowment": 10,
+      "step": 1,
+      "norm_target_share": 0.5
+    }
+  },
+  "topic": {
+    "name": "identity",
+    "tags": [
+      "ingroup"
+    ],
+    "notes": "identity cue present"
+  },
+  "population": {
+    "label": "adult_online",
+    "country": "US",
+    "sampling_frame": "prolific"
+  },
+  "context": {
+    "anonymity": true,
+    "group_salience": 1,
+    "ingroup_partner": 1,
+    "norm_salience": 1
+  }
+}

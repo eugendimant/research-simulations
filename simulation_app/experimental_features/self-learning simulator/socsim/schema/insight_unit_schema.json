@@ -1,0 +1,37 @@
+{
+  "type": "object",
+  "required": [
+    "id",
+    "scope",
+    "effect",
+    "provenance"
+  ],
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "effect": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "moderators": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "quality": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

@@ -1,5 +1,24 @@
 # Memory
 
+## 2026-02-13 — Generation Method Chooser + SocSim Integration (v1.0.8.1)
+
+- 4-option generation method chooser UI with expandable info tooltips:
+  - Option 1: Built-in AI (free LLM providers) — Recommended
+  - Option 2: User's own API key (6 providers, auto-detection, format validation)
+  - Option 3: Built-in template engine (225+ domains, 58+ personas)
+  - Option 4: Experimental SocSim engine (Fehr-Schmidt, IRT, 28 games)
+- Real-time progress counter replacing static time estimates:
+  - Phase-specific updates (personas, scales, OE, generating, socsim_enrichment)
+  - Shows current/total, percentage, progress bar, elapsed time, ETA
+- SocSim v0.16 integrated as experimental feature:
+  - New `utils/socsim_adapter.py` bridge module
+  - Game DV auto-detection (12 game types via regex patterns)
+  - Condition→topic mapping (ingroup/outgroup/anonymous/etc.)
+  - Engine `use_socsim_experimental` parameter wired from UI→engine
+  - Post-generation enrichment: standard sim runs first, SocSim enriches game DVs
+- API key visual format validation (6 providers, green/red indicators)
+- Updated to v1.0.8.1.
+
 ## 2026-02-13 — Massive OE template expansion (v1.0.8.0)
 
 - 20 iterations of comprehensive template-based open-text response improvements across 3 files:

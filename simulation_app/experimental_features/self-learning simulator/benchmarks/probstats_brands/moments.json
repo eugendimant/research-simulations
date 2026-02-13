@@ -1,0 +1,7 @@
+[
+  {
+    "id": "row_count",
+    "kind": "mean",
+    "column": "__row__"
+  }
+]

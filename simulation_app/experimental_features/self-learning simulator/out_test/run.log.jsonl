@@ -1,0 +1,2 @@
+{"ts_utc": "2026-02-11T16:09:30Z", "event": "run_start", "payload": {"run_id": "ee6a2831-e991-4298-bdf4-959c9d66ab48", "seed": 0, "n": 30}}
+{"ts_utc": "2026-02-11T16:09:30Z", "event": "run_end", "payload": {"run_id": "ee6a2831-e991-4298-bdf4-959c9d66ab48", "rows": 30}}

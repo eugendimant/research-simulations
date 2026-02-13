@@ -1,0 +1,19 @@
+{
+  "game": {
+    "name": "ultimatum",
+    "params": {
+      "endowment": 10.0
+    }
+  },
+  "topic": {
+    "name": "baseline",
+    "tags": [],
+    "notes": ""
+  },
+  "population": {
+    "label": "adult_online"
+  },
+  "context": {
+    "stakes_level": "low"
+  }
+}
