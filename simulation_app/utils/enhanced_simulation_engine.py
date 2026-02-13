@@ -45,7 +45,7 @@ This module is designed to run inside a `utils/` package (i.e., imported as
 """
 
 # Version identifier to help track deployed code
-__version__ = "1.0.8.6"  # v1.0.8.6: Novel DV adaptation mechanism
+__version__ = "1.0.8.7"  # v1.0.8.7: Structured scientific knowledge base
 
 # =============================================================================
 # SCIENTIFIC FOUNDATIONS FOR SIMULATION
@@ -226,6 +226,31 @@ from .persona_library import (
     TextResponseGenerator,
     StimulusEvaluationHandler,
 )
+
+# v1.0.8.7: Import structured scientific knowledge base
+try:
+    from .scientific_knowledge_base import (
+        META_ANALYTIC_DB,
+        GAME_CALIBRATIONS,
+        CONSTRUCT_NORMS,
+        CULTURAL_ADJUSTMENTS,
+        RESPONSE_TIME_NORMS,
+        ORDER_EFFECTS,
+        get_meta_analytic_effect,
+        get_game_calibration,
+        get_construct_norm,
+        get_cultural_adjustment,
+        get_response_time_norm,
+        get_order_effect,
+        compute_fatigue_adjustment,
+        get_knowledge_base_summary,
+        MetaAnalyticEffect,
+        GameCalibration,
+        ConstructNorm,
+    )
+    HAS_KNOWLEDGE_BASE = True
+except ImportError:
+    HAS_KNOWLEDGE_BASE = False
 
 # Import comprehensive response library for LLM-quality text generation
 try:
@@ -5984,6 +6009,36 @@ class EnhancedSimulationEngine:
             # Detect specific game type for precise calibration
             _full_ctx = var_lower + " " + condition_lower + " " + (
                 self.study_title or "").lower() + " " + (self.study_description or "").lower()
+
+            # v1.0.8.7: Try structured knowledge base FIRST for game calibrations
+            if HAS_KNOWLEDGE_BASE:
+                _kb_game = None
+                for _gt in ['dictator', 'trust', 'ultimatum', 'public_good',
+                            'prisoner', 'auction', 'bargain', 'gift_exchange',
+                            'stag_hunt', 'common_pool', 'holt_laury',
+                            'beauty_contest', 'die_roll', 'bribery']:
+                    if _gt in _full_ctx:
+                        _variant = 'standard'
+                        if _gt == 'dictator' and any(kw in _full_ctx for kw in ['tak', 'steal', 'negative']):
+                            _variant = 'taking'
+                        elif _gt == 'dictator' and any(kw in _full_ctx for kw in ['third party', 'punishment']):
+                            _variant = 'third_party_punishment'
+                        elif _gt == 'public_good' and 'punish' in _full_ctx:
+                            _variant = 'punishment'
+                        _gt_clean = _gt.replace('_good', '_goods')
+                        _kb_game = get_game_calibration(_gt_clean, _variant)
+                        if _kb_game is None:
+                            _kb_game = get_game_calibration(_gt, _variant)
+                        break
+                if _kb_game:
+                    # Use structured calibration: convert mean_proportion to adjustment
+                    # mean_proportion is 0-1 scale, default midpoint is 0.5
+                    calibration['mean_adjustment'] = _kb_game.mean_proportion - 0.50
+                    calibration['variance_adjustment'] = max(0.08, _kb_game.sd_proportion * 0.8)
+                    calibration['positivity_bias'] = -0.05 if _kb_game.mean_proportion < 0.40 else 0.0
+                    calibration['_game_variant'] = f"{_kb_game.game_type}_{_kb_game.variant}"
+                    calibration['_kb_source'] = _kb_game.source
+                    return calibration
             # v1.0.8.6: Detect game VARIANTS (taking, punishment, etc.)
             _has_taking = any(kw in _full_ctx for kw in [
                 'tak', 'steal', 'subtract', 'remov', 'destroy', 'deduct',
@@ -6035,6 +6090,45 @@ class EnhancedSimulationEngine:
                 calibration['mean_adjustment'] = -0.10
                 calibration['variance_adjustment'] = 0.10
             return calibration  # Return early — economic game calibration takes priority
+
+        # v1.0.8.7: Try structured construct norms database FIRST
+        # This catches well-known scales by variable name with published norms
+        if HAS_KNOWLEDGE_BASE:
+            _construct_map = {
+                'loneliness': 'loneliness_ucla', 'lonely': 'loneliness_ucla',
+                'swls': 'life_satisfaction_swls', 'life_sat': 'life_satisfaction_swls',
+                'self_esteem': 'self_esteem_rse', 'rosenberg': 'self_esteem_rse',
+                'agreeabl': 'big_five_agreeableness', 'conscientious': 'big_five_conscientiousness',
+                'extraver': 'big_five_extraversion', 'neurotic': 'big_five_neuroticism',
+                'openness': 'big_five_openness', 'burnout': 'burnout_emotional_exhaustion',
+                'exhaust': 'burnout_emotional_exhaustion', 'mbi': 'burnout_emotional_exhaustion',
+                'gratitude': 'gratitude_gq6', 'grateful': 'gratitude_gq6',
+                'resilien': 'resilience_cd_risc', 'cd_risc': 'resilience_cd_risc',
+                'moral_identity': 'moral_identity_aquino', 'narcissi': 'narcissism_npi',
+                'npi': 'narcissism_npi', 'attachment_anx': 'attachment_anxiety_ecr',
+                'attachment_avoid': 'attachment_avoidance_ecr', 'ecr': 'attachment_anxiety_ecr',
+                'need_for_cognition': 'need_for_cognition', 'nfc': 'need_for_cognition',
+                'conspiracy': 'conspiracy_beliefs_gcbs', 'disgust': 'disgust_sensitivity_dsr',
+                'stai': 'state_anxiety_stai', 'state_anxiety': 'state_anxiety_stai',
+                'phq': 'depression_phq9', 'depression': 'depression_phq9',
+                'pss': 'perceived_stress_pss', 'perceived_stress': 'perceived_stress_pss',
+                'impulsiv': 'impulsivity_bis', 'bis_11': 'impulsivity_bis',
+            }
+            for _kw, _norm_key in _construct_map.items():
+                if _kw in var_lower:
+                    _norm = get_construct_norm(_norm_key, target_scale_points=7)
+                    if _norm:
+                        # Convert published norm to calibration adjustment
+                        # Published mean on 7-point → deviation from neutral (4.0)
+                        _dev = (_norm['mean'] - 4.0) / 3.0  # Normalize to [-1, 1]
+                        calibration['mean_adjustment'] = _dev * 0.15  # Scale to adjustment range
+                        calibration['positivity_bias'] = max(-0.10, min(0.12, _dev * 0.10))
+                        if _norm.get('skewness', 0) > 0.3:
+                            calibration['variance_adjustment'] += 0.06
+                        elif _norm.get('skewness', 0) < -0.3:
+                            calibration['variance_adjustment'] -= 0.02
+                        calibration['_kb_source'] = f"ConstructNorm: {_norm_key}"
+                        return calibration
 
         # ===== SATISFACTION SCALES =====
         # Oliver (1980): Satisfaction has positive skew (M ≈ 5.0-5.5)
@@ -7337,7 +7431,21 @@ class EnhancedSimulationEngine:
             _ext = _safe_trait_value(traits.get("extremity"), 0.3)
 
             # Fatigue drift: slight move toward midpoint later in long scales
-            if _item_total >= 5 and _progress >= 0.6 and _attn < 0.6:
+            # v1.0.8.7: Use knowledge base fatigue model when available
+            if HAS_KNOWLEDGE_BASE and _item_total >= 5:
+                _fatigue = compute_fatigue_adjustment(_item_pos, _item_total)
+                if _fatigue['mean_shift'] != 0 and _attn < 0.7:
+                    _mid = (scale_min + scale_max) / 2.0
+                    _shrink = abs(_fatigue['mean_shift']) * (1.0 - _attn) * 8.0
+                    _shrink = min(0.25, _shrink)
+                    result = int(round(result + (_mid - result) * _shrink))
+                # v1.0.8.7: Knowledge base straight-lining acceleration
+                if _fatigue['straight_line_boost'] > 0 and _cons < 0.55:
+                    if rng.random() < _fatigue['straight_line_boost'] * (0.55 - _cons) * 3:
+                        _prev_val = self._item_response_memory.get((_p_idx, variable_name)) if hasattr(self, '_item_response_memory') else None
+                        if _prev_val is not None:
+                            result = int(_prev_val)
+            elif _item_total >= 5 and _progress >= 0.6 and _attn < 0.6:
                 _mid = (scale_min + scale_max) / 2.0
                 _shrink = 0.12 + (0.6 - _attn) * 0.20
                 result = int(round(result + (_mid - result) * _shrink))
@@ -9113,48 +9221,95 @@ class EnhancedSimulationEngine:
         _engagement = _safe_trait_value(traits.get("engagement"), 0.65)
         _consistency = _safe_trait_value(traits.get("response_consistency"), 0.65)
 
-        # ---- Scale item response times ----
-        # Base time per item in milliseconds (Yan & Tourangeau, 2008)
-        # Engaged: ~4000ms (3-5s), Satisficers: ~1500ms (1-2s), Careless: ~600ms (<1s)
-        # Use attention and reading_speed (inverted) as primary drivers
-        # reading_speed is 0-1 where 1 = very fast (less time)
-        _effective_speed = 1.0 - _reading_speed  # invert: 0=fast, 1=slow/thorough
-        _base_time_ms = 800 + _effective_speed * 3200 + _attention * 1500
-        # Engagement adds deliberation time
-        _base_time_ms += _engagement * 800
-        # Clamp to realistic range: 400ms (extremely fast) to 7000ms (very deliberate)
-        _base_time_ms = float(np.clip(_base_time_ms, 400, 7000))
+        # v1.0.8.7: Determine engagement category for knowledge base lookup
+        if _attention < 0.45:
+            _eng_cat = "careless"
+        elif _attention < 0.65:
+            _eng_cat = "satisficing"
+        else:
+            _eng_cat = "engaged"
 
-        # Add log-normal variability per item (Callegaro et al., 2015)
-        # Response times are right-skewed: occasional very long pauses
-        _log_mean = np.log(_base_time_ms)
-        _log_sd = 0.30 + (1.0 - _consistency) * 0.25  # Inconsistent = more variable
+        # ---- Scale item response times ----
+        # v1.0.8.7: Use ex-Gaussian distribution from knowledge base when available
+        # Ex-Gaussian (mu, sigma, tau) captures the right-skewed RT distribution
+        # that simple lognormal misses: mu=Gaussian center, tau=exponential tail
+        _use_ex_gaussian = False
+        _ex_mu, _ex_sigma, _ex_tau = 0.0, 0.0, 0.0
+
+        if HAS_KNOWLEDGE_BASE:
+            _rt_norm = get_response_time_norm("likert", _eng_cat)
+            if _rt_norm and _rt_norm.ex_gaussian_mu > 0:
+                _use_ex_gaussian = True
+                _ex_mu = _rt_norm.ex_gaussian_mu
+                _ex_sigma = _rt_norm.ex_gaussian_sigma
+                _ex_tau = _rt_norm.ex_gaussian_tau
+                # Adjust by individual trait variation (±20%)
+                _trait_mod = 0.8 + _attention * 0.4  # 0.8 (careless) to 1.2 (very engaged)
+                _ex_mu *= _trait_mod
+                _ex_sigma *= (0.9 + (1.0 - _consistency) * 0.3)
+                _ex_tau *= (0.8 + (1.0 - _consistency) * 0.5)
+
+        if not _use_ex_gaussian:
+            # Fallback: original lognormal approach
+            _effective_speed = 1.0 - _reading_speed
+            _base_time_ms = 800 + _effective_speed * 3200 + _attention * 1500
+            _base_time_ms += _engagement * 800
+            _base_time_ms = float(np.clip(_base_time_ms, 400, 7000))
+
         if num_scale_items > 0:
-            _item_times = rng.lognormal(_log_mean, _log_sd, size=num_scale_items)
-            _item_times = np.clip(_item_times, 300, 15000)  # 0.3s to 15s per item
+            if _use_ex_gaussian:
+                # v1.0.8.7: Ex-Gaussian sampling (Ratcliff, 1978; Luce, 1986)
+                # RT = Normal(mu, sigma) + Exponential(tau)
+                _gaussian_part = rng.normal(_ex_mu, _ex_sigma, size=num_scale_items)
+                _exp_part = rng.exponential(_ex_tau, size=num_scale_items)
+                _item_times = _gaussian_part + _exp_part
+
+                # v1.0.8.7: Apply fatigue/order effects from knowledge base
+                if HAS_KNOWLEDGE_BASE:
+                    for _idx in range(num_scale_items):
+                        _fatigue = compute_fatigue_adjustment(_idx + 1, num_scale_items)
+                        # Fatigue decreases RT (speeding) and increases straight-lining
+                        _item_times[_idx] *= _fatigue['variance_multiplier']
+                        if _fatigue['mean_shift'] < 0:
+                            _item_times[_idx] *= max(0.85, 1.0 + _fatigue['mean_shift'])
+            else:
+                _log_mean = np.log(_base_time_ms)
+                _log_sd = 0.30 + (1.0 - _consistency) * 0.25
+                _item_times = rng.lognormal(_log_mean, _log_sd, size=num_scale_items)
+
+            _item_times = np.clip(_item_times, 300, 15000)
             _mean_item_time = float(np.mean(_item_times))
             _total_scale_time = float(np.sum(_item_times))
         else:
-            _mean_item_time = _base_time_ms
+            _mean_item_time = _ex_mu if _use_ex_gaussian else (_base_time_ms if not _use_ex_gaussian else 4000.0)
             _total_scale_time = 0.0
 
         # ---- Open-ended response times ----
-        # Engaged: 20-45s per question, Satisficers: 3-8s, Careless: 1-3s
+        # v1.0.8.7: Use knowledge base norms when available
         _oe_time_ms = 0.0
         if num_open_ended > 0:
-            _oe_base = 3000 + _effective_speed * 25000 + _attention * 15000
-            _oe_base = float(np.clip(_oe_base, 1000, 45000))
+            if HAS_KNOWLEDGE_BASE:
+                _oe_norm = get_response_time_norm("open_ended", _eng_cat)
+                if _oe_norm:
+                    _oe_base = _oe_norm.mean_ms
+                    _oe_sd = _oe_norm.sd_ms
+                else:
+                    _oe_base = 35000 if _eng_cat == "engaged" else (6000 if _eng_cat == "satisficing" else 2000)
+                    _oe_sd = _oe_base * 0.40
+            else:
+                _effective_speed = 1.0 - _reading_speed
+                _oe_base = 3000 + _effective_speed * 25000 + _attention * 15000
+                _oe_base = float(np.clip(_oe_base, 1000, 45000))
+                _oe_sd = _oe_base * 0.40
+
             for _ in range(num_open_ended):
-                _oe_item = float(rng.lognormal(np.log(_oe_base), 0.40))
+                _oe_item = float(rng.lognormal(np.log(max(500, _oe_base)), max(0.1, _oe_sd / _oe_base)))
                 _oe_item = float(np.clip(_oe_item, 800, 90000))
                 _oe_time_ms += _oe_item
 
         # ---- Quality-time correlation (Malhotra, 2008) ----
-        # r ~ 0.40-0.60 between time spent and response quality
-        # Computed as an estimate based on the persona traits
         _quality_score = (_attention + _consistency + (1.0 - _reading_speed)) / 3.0
-        _time_score = _mean_item_time / 7000.0  # Normalize to ~0-1
-        # Estimated correlation for this participant's profile
+        _time_score = _mean_item_time / 7000.0
         _estimated_r = 0.40 + _quality_score * 0.20
         _estimated_r = float(np.clip(_estimated_r, 0.35, 0.65))
 
@@ -9163,6 +9318,8 @@ class EnhancedSimulationEngine:
             "total_scale_time_ms": int(round(_total_scale_time)),
             "open_ended_time_ms": int(round(_oe_time_ms)),
             "response_time_quality_r": round(_estimated_r, 2),
+            "distribution_model": "ex_gaussian" if _use_ex_gaussian else "lognormal",
+            "engagement_category": _eng_cat,
         }
 
     def generate(self) -> Tuple[pd.DataFrame, Dict[str, Any]]:

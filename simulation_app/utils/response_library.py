@@ -11,7 +11,7 @@ Features:
 - 40 question type handlers for comprehensive question coverage
 - Dynamic context detection from QSF content and survey structure
 - Persona-aware response generation with 12 persona dimensions
-- Markov chain text generation with domain-specific corpora
+- Template-based text generation with domain-specific response banks
 - Sophisticated sentiment mapping (5-level with nuanced variations)
 - Condition-aware response adaptation
 - Careless/inattentive responding simulation
@@ -63,7 +63,7 @@ association, impression, perception, feedback, comment, observation, general
 Version: 1.8.5 - Improved domain detection with weighted scoring and disambiguation
 """
 
-__version__ = "1.0.8.6"
+__version__ = "1.0.8.7"
 
 import random
 import re
