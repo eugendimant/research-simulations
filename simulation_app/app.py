@@ -54,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.0.8.4"
-BUILD_ID = "20260213-v10840-oe-pipeline-hardening"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.0.8.6"
+BUILD_ID = "20260213-v10860-novel-dv-adaptation"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -118,7 +118,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.0.8.4"  # v1.0.8.4: OE pipeline hardening
+APP_VERSION = "1.0.8.6"  # v1.0.8.6: Novel DV adaptation mechanism
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -1187,12 +1187,35 @@ def _generate_preview_data(
         if _s_max <= _s_min:
             _s_max = _s_min + scale_points - 1
 
+        # v1.0.8.6: Detect bipolar scales for realistic preview distribution
+        _is_bipolar_preview = _s_min < 0 and _s_max > 0
+        _is_econ_preview = any(kw in (scale_name or '').lower() for kw in [
+            'dictator', 'allocat', 'giving', 'trust', 'ultimatum', 'endow',
+        ])
+
         if items == 1:
             # Single item
             var_name = scale_name.replace(' ', '_')
             values = []
             for row_idx in range(n_rows):
-                val = np.random.randint(_s_min, _s_max + 1)
+                if _is_bipolar_preview and _is_econ_preview:
+                    # v1.0.8.6: Realistic bipolar economic game preview
+                    # Show diverse subpopulations: some give, some keep, some take
+                    _preview_roll = np.random.random()
+                    if _preview_roll < 0.35:
+                        val = int(np.random.uniform(_s_max * 0.3, _s_max * 0.6))  # Giver
+                    elif _preview_roll < 0.55:
+                        val = int(np.random.uniform(-2, 2))  # Zero/selfish
+                    elif _preview_roll < 0.75:
+                        val = int(np.random.uniform(_s_min * 0.4, _s_min * 0.1))  # Taker
+                    else:
+                        val = int(np.random.uniform(_s_max * 0.05, _s_max * 0.25))  # Moderate giver
+                elif _is_bipolar_preview:
+                    # General bipolar: center near zero with full range spread
+                    val = int(np.random.normal(0, (_s_max - _s_min) / 4))
+                    val = max(_s_min, min(_s_max, val))
+                else:
+                    val = np.random.randint(_s_min, _s_max + 1)
                 # v1.0.1.3: Apply condition-aware shifts to preview data
                 # so researchers see realistic between-condition differences
                 if conditions:
@@ -1214,8 +1237,14 @@ def _generate_preview_data(
             item1_values = []
             mean_values = []
             for row_idx in range(n_rows):
-                val1 = np.random.randint(_s_min, _s_max + 1)
-                val_mean = np.random.uniform(_s_min, _s_max)
+                if _is_bipolar_preview:
+                    val1 = int(np.random.normal(0, (_s_max - _s_min) / 4))
+                    val1 = max(_s_min, min(_s_max, val1))
+                    val_mean = float(np.random.normal(0, (_s_max - _s_min) / 5))
+                    val_mean = max(float(_s_min), min(float(_s_max), val_mean))
+                else:
+                    val1 = np.random.randint(_s_min, _s_max + 1)
+                    val_mean = np.random.uniform(_s_min, _s_max)
                 # v1.0.1.3: Apply condition-aware shifts to preview data
                 # so researchers see realistic between-condition differences
                 if conditions:
@@ -1415,7 +1444,7 @@ def _get_sample_text_response(
         r'(?:describe|explain|tell\s+us)\s+(?:about|how\s+you\s+feel\s+about)\s+(.+?)(?:\.|$|\?)',
         r'(?:how\s+do\s+you\s+feel\s+about)\s+(.+?)(?:\.|$|\?)',
         r'(?:what\s+do\s+you\s+think\s+(?:about|of))\s+(.+?)(?:\.|$|\?)',
-        # v1.0.8.0: NEW broad patterns synced with main engine
+        # v1.0.8.0: Broad patterns synced with main engine
         r'(?:your experience with|your reaction to|your response to)\s+(.+?)(?:\.|$|\?)',
         r'(?:how has|how does|how did)\s+(.+?)\s+(?:affect|impact|influence|change)',
         r'(?:what do you think about|what are your thoughts on)\s+(.+?)(?:\.|$|\?)',
@@ -1423,6 +1452,11 @@ def _get_sample_text_response(
         r'(?:what is your|what was your)\s+(?:experience|opinion|view|impression)\s+(?:of|about|with)\s+(.+?)(?:\.|$|\?)',
         r'(?:how do you cope with|how do you handle|how do you deal with)\s+(.+?)(?:\.|$|\?)',
         r'(?:what motivates you to|what encourages you to|what prevents you from)\s+(.+?)(?:\.|$|\?)',
+        # v1.0.8.5: Imperative and comparative patterns (synced from response_library)
+        r'(?:please\s+)?(?:share|reflect on|discuss|consider|think about)\s+(.{3,150}?)(?:\.|$|\?)',
+        r'(?:please\s+)?(?:write about|elaborate on|comment on)\s+(.{3,150}?)(?:\.|$|\?)',
+        r'(?:compare|contrast)\s+(.{3,150}?)(?:\.|$|\?)',
+        r'(?:pros and cons|advantages and disadvantages)\s+(?:of\s+)?(.{3,150}?)(?:\.|$|\?)',
     ]
     for _pp in _phrase_patterns:
         _pm = _re.search(_pp, _source_text, flags=_re.IGNORECASE)
@@ -1467,17 +1501,30 @@ def _get_sample_text_response(
     elif any(w in _qt_lower for w in ('recommend', 'suggest', 'advice', 'should',
                                         'tips for', 'best way to')):
         _question_intent = "recommendation"
+    # v1.0.8.5: Comparison and recall intents
+    elif any(w in _qt_lower for w in ('compare', 'comparison', 'compared to', 'versus',
+                                        'pros and cons', 'better or worse')):
+        _question_intent = "comparison"
+    elif any(w in _qt_lower for w in ('remember', 'recall', 'looking back', 'in hindsight',
+                                        'what stands out', 'think back')):
+        _question_intent = "recall"
     elif any(w in _qt_lower for w in ('would you', 'in the future', 'what would you do',
                                         'imagine if')):
         _question_intent = "prediction"
 
-    # Add study title words as fallback context
+    # Add study title/description words as fallback context
     if study_title and study_title.strip():
         _title_words = _re.findall(r'\b[a-zA-Z]{4,}\b', study_title.lower())
         _stop_title = {'study', 'experiment', 'survey', 'research', 'behavioral', 'simulation'}
         _title_topics = [w for w in _title_words if w not in _stop_title]
         if not topic_words:
             topic_words = _title_topics[:4]
+    # v1.0.8.5: Also try study_description when topic_words still empty
+    if not topic_words and study_description and study_description.strip():
+        _desc_words = _re.findall(r'\b[a-zA-Z]{4,}\b', study_description.lower())
+        _desc_topics = [w for w in _desc_words if w not in _stop][:4]
+        if _desc_topics:
+            topic_words = _desc_topics
 
     # v1.0.4.8: Strategy 3 — Condition-aware topic enrichment
     _cond_topic_words: List[str] = []
@@ -1515,12 +1562,38 @@ def _get_sample_text_response(
     for _fc in _first_cap:
         if _fc.lower() not in _stop:
             _detected_entities.add(_fc.lower())
+    # v1.0.8.5: Heuristic 4 — Lowercase entity detection for high-salience topics
+    _known_lc_entities = {
+        'trump', 'biden', 'obama', 'clinton', 'sanders', 'desantis',
+        'democrat', 'republican', 'brexit', 'nato', 'putin', 'zelensky',
+        'facebook', 'instagram', 'twitter', 'tiktok', 'reddit', 'google',
+        'amazon', 'tesla', 'chatgpt', 'openai', 'bitcoin', 'crypto',
+        'covid', 'coronavirus', 'vaccine', 'pfizer', 'moderna',
+        'blm', 'metoo', 'lgbtq', 'maga', 'qanon',
+        'netflix', 'spotify', 'disney', 'uber', 'airbnb',
+    }
+    _lc_words = _re.findall(r'\b[a-zA-Z]{3,}\b', _orig_source.lower())
+    for _lw in _lc_words:
+        if _lw in _known_lc_entities:
+            _detected_entities.add(_lw)
+
+    # v1.0.8.5: Negation-preserving bigrams (synced from response_library)
+    # "not trusting" stays together as a semantic unit
+    _negation_bigrams: List[str] = []
+    _all_src_words = _re.findall(r'\b[a-zA-Z]+\b', (_source_text or "").lower())
+    _neg_prefixes = {'not', 'no', 'never', 'lack', 'without', 'anti'}
+    for _ni in range(len(_all_src_words) - 1):
+        if _all_src_words[_ni] in _neg_prefixes and _all_src_words[_ni + 1] not in _stop:
+            _negation_bigrams.append(f"{_all_src_words[_ni]} {_all_src_words[_ni + 1]}")
 
     # Prefer named entities as topic, then max 2 content words
     _entities_in_words = [w for w in topic_words if w.lower() in _detected_entities]
     _content_in_words = [w for w in topic_words if w.lower() not in _detected_entities]
 
-    if _phrase_topic:
+    if _negation_bigrams:
+        # Negation bigrams get highest priority — they're semantically critical
+        subject_phrase = _negation_bigrams[0]
+    elif _phrase_topic:
         subject_phrase = _phrase_topic
     elif _entities_in_words:
         # Named entity is the cleanest topic: "Trump", "Biden", etc.
@@ -1728,6 +1801,66 @@ def _get_sample_text_response(
                 return f"{opener}, {core}. {_rec_elab}"
             return f"{core[0].upper()}{core[1:]}. {_rec_elab}"
 
+        elif _question_intent == "comparison":
+            _comp_cores = {
+                'positive': [
+                    f"when I compare {subject_phrase} to alternatives I think it comes out ahead",
+                    f"the main advantage of {subject_phrase} is that it delivers on what it promises",
+                ],
+                'negative': [
+                    f"when I compare {subject_phrase} to alternatives it falls short honestly",
+                    f"the disadvantage of {subject_phrase} is that better options exist",
+                ],
+                'mixed': [
+                    f"the pros and cons of {subject_phrase} are pretty balanced",
+                    f"compared to other options {subject_phrase} has strengths and weaknesses",
+                ],
+                'neutral': [
+                    f"it's hard to say whether {subject_phrase} is better or worse than alternatives",
+                    f"the comparison depends on what you prioritize with {subject_phrase}",
+                ],
+            }
+            _cores = _comp_cores.get(sentiment, _comp_cores['neutral'])
+            core = local_rng.choice(_cores)
+            _comp_elab = local_rng.choice([
+                "That's how I see the comparison.", "Your priorities might differ though.",
+                "It really depends on what matters to you.", "The tradeoffs are real.",
+            ])
+            if local_rng.random() < 0.6:
+                opener = local_rng.choice(_openers)
+                return f"{opener}, {core}. {_comp_elab}"
+            return f"{core[0].upper()}{core[1:]}. {_comp_elab}"
+
+        elif _question_intent == "recall":
+            _recall_cores = {
+                'positive': [
+                    f"what I remember most about {subject_phrase} is how good it felt",
+                    f"looking back on {subject_phrase} the thing that stands out is the positive impact",
+                ],
+                'negative': [
+                    f"what I remember most about {subject_phrase} is the frustration",
+                    f"looking back on {subject_phrase} what stands out is how problematic it was",
+                ],
+                'mixed': [
+                    f"my memories of {subject_phrase} are honestly pretty mixed",
+                    f"looking back on {subject_phrase} I remember both good and bad parts",
+                ],
+                'neutral': [
+                    f"what I remember about {subject_phrase} is kind of unremarkable",
+                    f"my memories of {subject_phrase} don't stir up strong feelings",
+                ],
+            }
+            _cores = _recall_cores.get(sentiment, _recall_cores['neutral'])
+            core = local_rng.choice(_cores)
+            _recall_elab = local_rng.choice([
+                "That's what stuck with me.", "Memory is funny that way.",
+                "Those are the memories that stand out.", "Can't forget that.",
+            ])
+            if local_rng.random() < 0.6:
+                opener = local_rng.choice(_openers)
+                return f"{opener}, {core}. {_recall_elab}"
+            return f"{core[0].upper()}{core[1:]}. {_recall_elab}"
+
         elif _question_intent == "explanation":
             _intent_cores = {
                 'positive': [
@@ -1886,48 +2019,75 @@ def _get_sample_text_response(
             return f"{core[0].upper()}{core[1:]}. {elab}"
 
     else:  # medium quality
-        if sentiment == 'positive':
-            _cores = [
-                f"I feel good about {subject_phrase}",
-                f"{subject_phrase} is fine with me",
-                f"I'm positive about {subject_phrase}",
-                f"{subject_phrase} seems good to me",
-                f"no issues with {subject_phrase}",
-                f"I think {subject_phrase} is alright",
-                f"{subject_phrase} works for me",
-                f"I'm generally on board with {subject_phrase}",
-            ]
-        elif sentiment == 'negative':
-            _cores = [
-                f"not a fan of {subject_phrase}",
-                f"I have problems with {subject_phrase}",
-                f"{subject_phrase} concerns me",
-                f"I'm not happy about {subject_phrase}",
-                f"there are issues with {subject_phrase}",
-                f"{subject_phrase} could be a lot better",
-                f"I'm not convinced about {subject_phrase}",
-            ]
-        elif sentiment == 'mixed':
-            _cores = [
-                f"mixed feelings about {subject_phrase}",
-                f"{subject_phrase} has pros and cons",
-                f"I see both sides of {subject_phrase}",
-                f"not sure how I feel about {subject_phrase}",
-                f"{subject_phrase} is complicated",
-                f"I'm on the fence about {subject_phrase}",
-            ]
-        else:  # neutral
-            _cores = [
-                f"I don't feel strongly about {subject_phrase}",
-                f"{subject_phrase} is whatever honestly",
-                f"no strong opinion on {subject_phrase}",
-                f"just answered what I think about {subject_phrase}",
-                f"I'm somewhere in the middle on {subject_phrase}",
-                f"{subject_phrase} — gave my honest answer",
-                f"meh about {subject_phrase} honestly",
-            ]
-
-        core = local_rng.choice(_cores)
+        # v1.0.8.5: Intent-aware medium-quality templates (shorter but intent-matched)
+        if _question_intent == "comparison":
+            _cores = {
+                'positive': [f"{subject_phrase} is better than the alternative", f"I'd pick {subject_phrase} over other options"],
+                'negative': [f"the alternative is better than {subject_phrase}", f"{subject_phrase} doesn't compare well"],
+                'mixed': [f"{subject_phrase} and the alternatives are about equal", f"hard to pick between {subject_phrase} and other options"],
+                'neutral': [f"no strong preference between {subject_phrase} and alternatives", f"they seem similar to me"],
+            }
+        elif _question_intent == "recall":
+            _cores = {
+                'positive': [f"I remember {subject_phrase} positively", f"good memories of {subject_phrase}"],
+                'negative': [f"I don't remember {subject_phrase} fondly", f"not great memories about {subject_phrase}"],
+                'mixed': [f"my memories of {subject_phrase} are mixed", f"some good some bad with {subject_phrase}"],
+                'neutral': [f"don't remember much about {subject_phrase}", f"{subject_phrase} didn't leave a strong impression"],
+            }
+        elif _question_intent == "hypothetical":
+            _cores = {
+                'positive': [f"I'd probably go for it with {subject_phrase}", f"that scenario seems fine to me"],
+                'negative': [f"I'd probably pass on {subject_phrase} in that case", f"that scenario worries me"],
+                'mixed': [f"hard to say what I'd do about {subject_phrase}", f"could go either way"],
+                'neutral': [f"I'd need to think more about {subject_phrase}", f"not sure about that scenario"],
+            }
+        elif _question_intent == "recommendation":
+            _cores = {
+                'positive': [f"I'd recommend {subject_phrase}", f"give {subject_phrase} a try"],
+                'negative': [f"I wouldn't recommend {subject_phrase}", f"be careful with {subject_phrase}"],
+                'mixed': [f"depends on your situation with {subject_phrase}", f"maybe try {subject_phrase} and see"],
+                'neutral': [f"do your own research on {subject_phrase}", f"your call on {subject_phrase}"],
+            }
+        elif _question_intent == "explanation":
+            _cores = {
+                'positive': [f"my reasoning about {subject_phrase} is positive", f"I think {subject_phrase} makes sense"],
+                'negative': [f"I have concerns about {subject_phrase}", f"my reasoning leads me to doubt {subject_phrase}"],
+                'mixed': [f"there are arguments both ways about {subject_phrase}", f"it's complicated with {subject_phrase}"],
+                'neutral': [f"I don't have strong reasoning about {subject_phrase}", f"no firm view on {subject_phrase}"],
+            }
+        elif _question_intent == "emotional_reaction":
+            _cores = {
+                'positive': [f"{subject_phrase} makes me feel good", f"positive feelings about {subject_phrase}"],
+                'negative': [f"{subject_phrase} bothers me", f"negative feelings about {subject_phrase}"],
+                'mixed': [f"mixed emotions about {subject_phrase}", f"complicated feelings on {subject_phrase}"],
+                'neutral': [f"no strong emotions about {subject_phrase}", f"{subject_phrase} doesn't stir much in me"],
+            }
+        else:
+            # Default opinion-based medium quality
+            _cores = {
+                'positive': [
+                    f"I feel good about {subject_phrase}", f"{subject_phrase} is fine with me",
+                    f"I'm positive about {subject_phrase}", f"{subject_phrase} seems good to me",
+                    f"no issues with {subject_phrase}", f"{subject_phrase} works for me",
+                ],
+                'negative': [
+                    f"not a fan of {subject_phrase}", f"I have problems with {subject_phrase}",
+                    f"{subject_phrase} concerns me", f"I'm not happy about {subject_phrase}",
+                    f"there are issues with {subject_phrase}", f"{subject_phrase} could be a lot better",
+                ],
+                'mixed': [
+                    f"mixed feelings about {subject_phrase}", f"{subject_phrase} has pros and cons",
+                    f"I see both sides of {subject_phrase}", f"not sure how I feel about {subject_phrase}",
+                    f"{subject_phrase} is complicated", f"I'm on the fence about {subject_phrase}",
+                ],
+                'neutral': [
+                    f"I don't feel strongly about {subject_phrase}", f"{subject_phrase} is whatever honestly",
+                    f"no strong opinion on {subject_phrase}", f"just answered what I think about {subject_phrase}",
+                    f"I'm somewhere in the middle on {subject_phrase}", f"meh about {subject_phrase} honestly",
+                ],
+            }
+        _sent_cores = _cores.get(sentiment, _cores.get('neutral', [f"{subject_phrase}"]))
+        core = local_rng.choice(_sent_cores)
         # Medium quality: shorter, sometimes with opener, sometimes not
         if local_rng.random() < 0.3:
             opener = local_rng.choice(["Honestly", "I mean", "Yeah", "Look", "Idk", "Tbh"])

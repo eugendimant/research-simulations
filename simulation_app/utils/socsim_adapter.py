@@ -9,7 +9,7 @@ v1.0.8.3 — OE narrative fix.
 """
 from __future__ import annotations
 
-__version__ = "1.0.8.4"
+__version__ = "1.0.8.6"
 
 import json
 import logging
@@ -378,9 +378,18 @@ def run_socsim_enrichment(
                     scale_max = float(scale.get("scale_max", scale.get("max_value", 7)))
                     game_max = float(spec_dict["game"]["params"].get("endowment", 10))
 
-                    # Normalize socsim output [0, game_max] → [scale_min, scale_max]
+                    # v1.0.8.6: Detect bipolar scale (e.g., -100 to +100 for taking games)
+                    # SocSim produces values in [0, game_max] but for taking games
+                    # the target range includes negative values
+                    _src_min = 0.0
+                    if scale_min < 0:
+                        # Bipolar target: socsim may need to produce negative values
+                        # If socsim output has values near 0, they map to taking behavior
+                        _src_min = -game_max if any(v < 0 for v in socsim_values) else 0.0
+
+                    # Normalize socsim output to [scale_min, scale_max]
                     scaled_values = _scale_to_range(
-                        socsim_values, 0, game_max, scale_min, scale_max
+                        socsim_values, _src_min, game_max, scale_min, scale_max
                     )
 
                     # Find the actual column(s) in df that correspond to this scale
