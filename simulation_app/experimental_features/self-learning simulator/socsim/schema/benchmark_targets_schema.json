@@ -1,0 +1,65 @@
+{
+  "type": "object",
+  "required": [
+    "benchmark_id",
+    "moments",
+    "provenance"
+  ],
+  "properties": {
+    "benchmark_id": {
+      "type": "string"
+    },
+    "moments": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "key",
+          "value",
+          "weight"
+        ],
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "value": {
+            "type": "number"
+          },
+          "weight": {
+            "type": "number"
+          },
+          "notes": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "required": [
+        "created_at_utc",
+        "inputs"
+      ],
+      "properties": {
+        "created_at_utc": {
+          "type": "string"
+        },
+        "inputs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "checksums": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": false
+}

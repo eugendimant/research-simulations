@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ExperimentSpec",
+  "type": "object",
+  "required": [
+    "game",
+    "topic",
+    "context"
+  ],
+  "properties": {
+    "game": {
+      "type": "object",
+      "required": [
+        "name",
+        "params"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "params": {
+          "type": "object"
+        }
+      }
+    },
+    "topic": {
+      "type": "object",
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "notes": {
+          "type": "string"
+        }
+      }
+    },
+    "population": {
+      "type": "object",
+      "properties": {
+        "label": {
+          "type": "string"
+        },
+        "country": {
+          "type": "string"
+        },
+        "sampling_frame": {
+          "type": "string"
+        }
+      }
+    },
+    "context": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}
