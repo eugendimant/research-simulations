@@ -159,7 +159,7 @@ Based on recent LLM simulation research:
 """
 
 # Version identifier to help track deployed code
-__version__ = "1.0.8.3"  # v1.0.8.3: OE narrative fix
+__version__ = "1.0.8.4"  # v1.0.8.4: OE pipeline hardening
 
 import hashlib
 import random
@@ -4562,7 +4562,9 @@ class TextResponseGenerator:
             "creative_narrative": "creative_narrative_response",
             "personal_story": "personal_story_response",
             "recall": "personal_story_response",  # recall maps to personal story
-            "recommendation": "opinion_response",
+            # v1.0.8.4: Dedicated routing for recommendation and hypothetical
+            "recommendation": "opinion_response",  # recommendations use opinion bank
+            "hypothetical": "opinion_response",  # hypotheticals use opinion bank
         }
         # Try: explicit response_type → intent-based bank → task_summary fallback
         _effective_type = response_type

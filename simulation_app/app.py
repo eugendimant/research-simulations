@@ -54,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.0.8.3"
-BUILD_ID = "20260213-v10830-oe-narrative-fix"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.0.8.4"
+BUILD_ID = "20260213-v10840-oe-pipeline-hardening"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -118,7 +118,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.0.8.3"  # v1.0.8.3: OE narrative fix
+APP_VERSION = "1.0.8.4"  # v1.0.8.4: OE pipeline hardening
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -1235,24 +1235,41 @@ def _generate_preview_data(
             preview_data[f"{var_name}_1"] = item1_values
             preview_data[f"{var_name}_mean"] = mean_values
 
-    # v1.0.6.7: Open-ended columns EXCLUDED from preview.
-    # OE responses are always generated via LLM API calls during full simulation.
-    # Template-based preview responses were misleading, so we only show numeric
-    # columns + demographics in the preview to set correct expectations.
+    # v1.0.8.4: OE preview RE-ENABLED with 3-sample generation.
+    # The template system now has intent-aware responses (creative_belief,
+    # personal_disclosure, etc.) that produce realistic content, so previews
+    # are no longer misleading. Generate 3 sample responses per OE question.
+    _n_oe_preview = min(n_rows, 3)  # Show 3 samples max
     if open_ended:
-        # Show a note in the preview that OE columns will appear in the full dataset
-        _oe_names = []
-        for oe in open_ended[:3]:
+        for oe in open_ended:
             if isinstance(oe, str):
-                _oe_names.append(oe)
+                _var = oe
+                _q_text = oe
+                _q_context = ""
             elif isinstance(oe, dict):
-                _oe_names.append(oe.get('variable_name', oe.get('name', 'OE')))
-        if _oe_names:
-            _oe_note = ", ".join(_oe_names)
-            if len(open_ended) > 3:
-                _oe_note += f", ... (+{len(open_ended) - 3} more)"
-            # Store note for display after the preview table
-            preview_data['_oe_note'] = _oe_note
+                _var = oe.get('variable_name', oe.get('name', 'OE'))
+                _q_text = oe.get('question_text', oe.get('text', _var))
+                _q_context = oe.get('question_context', oe.get('context', ''))
+            else:
+                continue
+            _oe_responses = []
+            _quality_levels = ['high', 'medium', 'high', 'medium', 'low']
+            for _p_idx in range(n_rows):
+                _cond = conditions[_p_idx % len(conditions)] if conditions else ""
+                if _p_idx < _n_oe_preview:
+                    _oe_responses.append(_get_sample_text_response(
+                        quality=_quality_levels[_p_idx % len(_quality_levels)],
+                        participant_idx=_p_idx,
+                        question_name=_var,
+                        question_text=_q_text,
+                        question_context=_q_context,
+                        condition=_cond,
+                        study_title=study_title,
+                        study_description=study_description,
+                    ))
+                else:
+                    _oe_responses.append("...")  # Placeholder for rows beyond preview
+            preview_data[_var] = _oe_responses
 
     # Add demographics
     preview_data['age'] = [np.random.randint(18, 65) for _ in range(n_rows)]
@@ -1413,10 +1430,27 @@ def _get_sample_text_response(
             _phrase_topic = _pm.group(1).strip()[:150]
             break
 
-    # v1.0.8.0: Question intent detection synced with main engine
+    # v1.0.8.4: Question intent detection fully synced with main engine
     _qt_lower = (_source_text or "").lower()
     _question_intent = "opinion"  # default
-    if any(w in _qt_lower for w in ('why did', 'why do', 'explain why', 'reason for', 'what made you')):
+    # Check most specific intents first — creative/narrative before general
+    if any(w in _qt_lower for w in ('conspiracy', 'theory', 'believe in', 'crazy belie',
+                                      'paranormal', 'supernatural', 'superstition')):
+        _question_intent = "creative_belief"
+    elif any(w in _qt_lower for w in ('secret', 'only your family', 'nobody knows',
+                                        'never told', 'private', 'confession', 'reveal',
+                                        'admit', 'embarrassing')):
+        _question_intent = "personal_disclosure"
+    elif any(w in _qt_lower for w in ('tell us your', 'share your', 'write about your')):
+        if any(w in _qt_lower for w in ('craziest', 'wildest', 'favorite', 'most',
+                                          'biggest', 'worst', 'best', 'funniest', 'scariest')):
+            _question_intent = "creative_narrative"
+        elif any(w in _qt_lower for w in ('experience', 'story', 'time when', 'moment')):
+            _question_intent = "personal_story"
+    elif any(w in _qt_lower for w in ('hypothetical', 'if you were', 'imagine',
+                                        'suppose', 'what if', 'what would happen')):
+        _question_intent = "hypothetical"
+    elif any(w in _qt_lower for w in ('why did', 'why do', 'explain why', 'reason for', 'what made you')):
         _question_intent = "explanation"
     elif any(w in _qt_lower for w in ('how do you feel', 'how did you feel', 'feelings about',
                                         'your feelings', 'emotional', 'your reaction')):
@@ -1427,8 +1461,14 @@ def _get_sample_text_response(
     elif any(w in _qt_lower for w in ('evaluate', 'rate', 'assess', 'compare', 'how effective',
                                         'how well', 'quality of')):
         _question_intent = "evaluation"
+    elif any(w in _qt_lower for w in ('predict', 'expect', 'future', 'will happen',
+                                        'how likely', 'do you plan')):
+        _question_intent = "prediction"
+    elif any(w in _qt_lower for w in ('recommend', 'suggest', 'advice', 'should',
+                                        'tips for', 'best way to')):
+        _question_intent = "recommendation"
     elif any(w in _qt_lower for w in ('would you', 'in the future', 'what would you do',
-                                        'imagine if', 'predict')):
+                                        'imagine if')):
         _question_intent = "prediction"
 
     # Add study title words as fallback context
@@ -1556,9 +1596,139 @@ def _get_sample_text_response(
     ]
 
     if quality == 'high':
-        # v1.0.8.0: Intent-aware core templates — different question types
-        # produce structurally different responses
-        if _question_intent == "explanation":
+        # v1.0.8.4: Intent-aware core templates — different question types
+        # produce structurally different responses, including narrative/creative
+        if _question_intent == "creative_belief":
+            # Actual conspiracy theories / belief content
+            _belief_cores = [
+                "I genuinely think there's more government surveillance than people realize. Certain patents for technology that supposedly doesn't exist feel suspicious",
+                "my theory is that big pharma deliberately suppresses cheap generic remedies because there's no profit in curing people with $5 drugs",
+                "I believe most major media outlets coordinate coverage. Not a secret society but they push the same narratives",
+                "I think social media algorithms are designed to make people angry and addicted. That's the actual product not a side effect",
+                "I'm convinced the food industry knowingly puts addictive compounds in processed food. The sugar in everything is not accidental",
+                "most political scandals are coordinated distractions from actual policy changes happening behind the scenes",
+                "certain energy technologies have been suppressed because they'd disrupt too many powerful industries",
+                "the housing crisis is manufactured by investment firms buying up supply to keep prices high",
+                "the education system is designed to produce compliant workers not critical thinkers",
+            ]
+            core = local_rng.choice(_belief_cores)
+            if local_rng.random() < 0.5:
+                opener = local_rng.choice(_openers)
+                return f"{opener}, {core}."
+            return f"{core[0].upper()}{core[1:]}."
+
+        elif _question_intent == "personal_disclosure":
+            _disclosure_cores = [
+                "something my family knows is that I struggled badly with anxiety in my early twenties. I barely left the house for almost a year",
+                "my family knows I almost dropped out of college. I was one semester away from quitting because I felt completely lost",
+                "only my family knows about a medical scare I had a few years ago. I kept it private because I didn't want the attention",
+                "my family went through serious financial trouble when I was a teenager. It changed my relationship with money forever",
+                "my family knows I'm much more sensitive than I let on. At work I seem easy-going but I worry about everything",
+                "I was bullied pretty severely growing up. By the time I met my current friends I'd completely reinvented myself",
+                "I have a learning difference I've never told anyone at work about",
+                "I went through a really rough patch after a major relationship ended. I stopped functioning for weeks",
+            ]
+            core = local_rng.choice(_disclosure_cores)
+            if local_rng.random() < 0.5:
+                opener = local_rng.choice(_openers)
+                return f"{opener}, {core}."
+            return f"{core[0].upper()}{core[1:]}."
+
+        elif _question_intent == "creative_narrative":
+            _narrative_cores = [
+                f"the craziest thing about {subject_phrase} that I've experienced was totally unexpected. Everything I assumed turned out wrong",
+                f"I have a wild {subject_phrase} story. Something happened that most people wouldn't believe",
+                f"my most memorable experience with {subject_phrase} happened when I was least expecting it. The situation was bizarre",
+                f"the wildest thing about {subject_phrase} escalated beyond anything I could've predicted",
+                f"I have a {subject_phrase} story I rarely tell because people don't believe me",
+                f"when it comes to {subject_phrase} I once had an experience that completely defied my expectations",
+            ]
+            core = local_rng.choice(_narrative_cores)
+            if local_rng.random() < 0.5:
+                opener = local_rng.choice(_openers)
+                return f"{opener}, {core}."
+            return f"{core[0].upper()}{core[1:]}."
+
+        elif _question_intent == "personal_story":
+            _story_cores = [
+                f"there was a time when {subject_phrase} came up in my life unexpectedly. I was dealing with a work situation and it forced me to confront how I actually felt",
+                f"I remember a specific experience with {subject_phrase} that stays with me. It happened during a difficult period",
+                f"my most significant experience with {subject_phrase} was when I had to make a real decision about it",
+                f"my experience with {subject_phrase} really came into focus during a conversation with someone close to me",
+                f"there's a specific moment involving {subject_phrase} that changed how I approach things",
+            ]
+            core = local_rng.choice(_story_cores)
+            if local_rng.random() < 0.5:
+                opener = local_rng.choice(_openers)
+                return f"{opener}, {core}."
+            return f"{core[0].upper()}{core[1:]}."
+
+        elif _question_intent == "hypothetical":
+            _hypo_cores = {
+                'positive': [
+                    f"if that happened with {subject_phrase} I think I'd embrace it wholeheartedly",
+                    f"in that scenario I'd be pretty excited about {subject_phrase}",
+                    f"I'd jump at the chance to engage positively with {subject_phrase}",
+                ],
+                'negative': [
+                    f"if that happened with {subject_phrase} I'd be pretty worried honestly",
+                    f"in that scenario I'd probably try to distance myself from {subject_phrase}",
+                    f"I'd be reluctant to go along with {subject_phrase} in that situation",
+                ],
+                'mixed': [
+                    f"if that happened with {subject_phrase} I honestly don't know what I'd do",
+                    f"that's a tough one when it comes to {subject_phrase}",
+                ],
+                'neutral': [
+                    f"I'd have to weigh the options carefully with {subject_phrase}",
+                    f"in that hypothetical my response to {subject_phrase} would depend on the details",
+                ],
+            }
+            _cores = _hypo_cores.get(sentiment, _hypo_cores['neutral'])
+            core = local_rng.choice(_cores)
+            _hypo_elab = local_rng.choice([
+                "Hard to say for certain.", "In reality it might go differently.",
+                "I'd have to actually be in that situation to know.",
+                "That's my best guess at how I'd react.",
+            ])
+            if local_rng.random() < 0.6:
+                opener = local_rng.choice(_openers)
+                return f"{opener}, {core}. {_hypo_elab}"
+            return f"{core[0].upper()}{core[1:]}. {_hypo_elab}"
+
+        elif _question_intent == "recommendation":
+            _rec_cores = {
+                'positive': [
+                    f"I'd definitely recommend {subject_phrase}, it's been a positive experience",
+                    f"my advice would be to give {subject_phrase} a real chance",
+                    f"I would suggest approaching {subject_phrase} with an open mind",
+                ],
+                'negative': [
+                    f"I'd recommend being really careful with {subject_phrase}",
+                    f"my advice would be to think twice before getting involved with {subject_phrase}",
+                    f"I would suggest approaching {subject_phrase} with serious caution",
+                ],
+                'mixed': [
+                    f"I'd recommend doing some research before committing to {subject_phrase}",
+                    f"my advice is to consider both sides of {subject_phrase} carefully",
+                ],
+                'neutral': [
+                    f"I'd recommend trying {subject_phrase} on a small scale first to see how it goes",
+                    f"my recommendation is to weigh your own priorities about {subject_phrase}",
+                ],
+            }
+            _cores = _rec_cores.get(sentiment, _rec_cores['neutral'])
+            core = local_rng.choice(_cores)
+            _rec_elab = local_rng.choice([
+                "That's my honest recommendation.", "Your situation might be different though.",
+                "Take it or leave it, that's my advice.", "Hope that helps.",
+            ])
+            if local_rng.random() < 0.6:
+                opener = local_rng.choice(_openers)
+                return f"{opener}, {core}. {_rec_elab}"
+            return f"{core[0].upper()}{core[1:]}. {_rec_elab}"
+
+        elif _question_intent == "explanation":
             _intent_cores = {
                 'positive': [
                     f"I chose the way I did about {subject_phrase} because it felt right to me",
@@ -10097,16 +10267,12 @@ if active_page == 3:
 
     if 'preview_df' in st.session_state and st.session_state['preview_df'] is not None:
         _preview_show = st.session_state['preview_df']
-        # v1.0.6.7: Extract OE note before displaying, then drop the meta column
-        _preview_oe_note = None
+        # v1.0.8.4: Clean up any legacy _oe_note column (no longer generated)
         if '_oe_note' in _preview_show.columns:
-            _preview_oe_note = _preview_show['_oe_note'].iloc[0] if len(_preview_show) > 0 else None
             _preview_show = _preview_show.drop(columns=['_oe_note'])
         st.dataframe(_preview_show, use_container_width=True, height=200)
         _diff_info = DIFFICULTY_LEVELS.get(difficulty_level, DIFFICULTY_LEVELS.get("medium", {}))
         st.caption(f"Preview at difficulty: **{_diff_info.get('name', difficulty_level)}**")
-        if _preview_oe_note:
-            st.caption(f"Open-ended columns ({_preview_oe_note}) will be generated via AI in the full dataset.")
 
     if not st.session_state.get("advanced_mode", False):
         # v1.0.0: Use difficulty level settings
