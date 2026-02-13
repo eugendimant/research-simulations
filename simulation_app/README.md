@@ -1,6 +1,6 @@
 # Behavioral Experiment Simulation Tool
 
-**Version 1.0.7.9** | A Streamlit application for generating realistic synthetic behavioral experiment data using theory-grounded persona-driven simulation.
+**Version 1.0.8.0** | A Streamlit application for generating realistic synthetic behavioral experiment data using theory-grounded persona-driven simulation.
 
 ## What This Tool Does
 
@@ -19,7 +19,7 @@
 - **Develop analysis scripts** on properly structured data
 - **Check pre-registration consistency** before data collection
 
-## Features (v1.0.7.9)
+## Features (v1.0.8.0)
 
 ### NEW: AI-Powered Open-Ended Responses with multi-provider failover (v1.4.10+)
 - **Zero-config AI**: open-ended responses are automatically AI-generated using built-in API keys — no setup needed
@@ -120,10 +120,15 @@ Response styles based on survey methodology literature:
 - Satisficing and extreme responding patterns
 - Individual trait-based variation
 - Open-ended responses matching numeric sentiment
-- **NEW v1.0.4.9**: Rating–text behavioral coherence — numeric patterns drive text generation tone
-- **NEW v1.0.4.9**: Cross-item reverse-failure tracking (Woods 2006)
-- **NEW v1.0.4.9**: Domain-sensitive social desirability (10 construct categories)
-- **NEW v1.0.4.9**: Response validation layer (longstring, IRV, endpoint utilization checks)
+- Rating–text behavioral coherence — numeric patterns drive text generation tone
+- Cross-item reverse-failure tracking (Woods 2006)
+- Domain-sensitive social desirability (10 construct categories)
+- Response validation layer (longstring, IRV, endpoint utilization checks)
+- **NEW v1.0.8.0**: Compositional OE templates — intent-driven assembly (opener + core + elaboration + coda)
+- **NEW v1.0.8.0**: 40+ domain vocabulary sets for field-appropriate terminology
+- **NEW v1.0.8.0**: 8 domain-gated condition modifiers (cognitive, sports, clinical, relationship, etc.)
+- **NEW v1.0.8.0**: 25 topic-aware careless response templates
+- **NEW v1.0.8.0**: Intent-aware preview system synced with main engine
 
 ### 23 Research Paradigm Domains (v1.0.4.9)
 The simulation engine includes dedicated effect models for 23 well-established research paradigms:

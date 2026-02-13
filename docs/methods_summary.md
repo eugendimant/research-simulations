@@ -231,12 +231,16 @@ If one provider reaches its rate limit, the system automatically tries the next.
 
 ### Tier 2: Template-Based Generation (Fallback)
 
-If the AI service is unavailable, the system falls back to a comprehensive template engine covering 225+ research domains and 40 question types. This ensures:
+If the AI service is unavailable, the system falls back to a comprehensive template engine covering 225+ research domains and 40 question types. As of v1.0.8.0, the template system uses a **compositional architecture** that produces highly varied, topic-grounded responses:
 
-1. **Uniqueness**: No two participants give identical responses
-2. **Context-awareness**: Responses reference the experimental manipulation when appropriate
-3. **Condition-specificity**: Only participants who would see a question receive a response
-4. **Length variation**: Verbosity varies by persona and question type
+1. **Intent-driven composition**: Each response is assembled from opener + intent-matched core + domain-enriched elaboration + coda. Question intent is classified into 8 categories (opinion, explanation, description, emotional reaction, evaluation, prediction, causal explanation, decision explanation) and templates are selected accordingly
+2. **40+ domain vocabulary sets**: Specialized terminology for clinical/mental health, sports, legal, food, developmental, personality, cognitive, neuroscience, financial, cross-cultural, and 30+ more domains ensures responses use field-appropriate language
+3. **Rich question-text mining**: 33 action verb patterns, 24 object/target pattern groups, and 15 key phrase patterns extract the actual topic from the question text for template insertion
+4. **Domain-gated condition modifiers**: Condition-specific personalizations (e.g., "As someone who leans progressive") are only applied when the domain matches — political modifiers only fire for political studies, health modifiers only for health studies
+5. **Behavioral coherence**: Templates are post-processed to match the participant's numeric response pattern — straight-liners get truncated text, extreme raters get intensified language, high social desirability personas get qualifying hedges
+6. **25 careless response templates**: Even low-effort responses reference the actual topic ("trump is ok i guess") rather than generic off-topic text ("fine")
+7. **Context-awareness**: Responses reference the experimental manipulation when appropriate
+8. **Condition-specificity**: Only participants who would see a question receive a response
 
 ### Example Responses
 

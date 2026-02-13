@@ -63,7 +63,7 @@ association, impression, perception, feedback, comment, observation, general
 Version: 1.8.5 - Improved domain detection with weighted scoring and disambiguation
 """
 
-__version__ = "1.0.7.9"
+__version__ = "1.0.8.0"
 
 import random
 import re
@@ -7547,23 +7547,197 @@ class ComprehensiveResponseGenerator:
                         " Face-to-face interaction makes a difference.",
                     ])
 
-            # v1.0.7.9: Treatment/control condition detection — NEW
-            # Generic treatment vs. control framing
-            if not any([_is_political_domain, _is_health_domain, _is_moral_domain,
+            # v1.0.8.0: Cognitive/psychological condition modifiers — NEW
+            _is_cognitive_domain = any(w in question_lower for w in (
+                'cognitive', 'memory', 'attention', 'decision', 'thinking',
+                'reasoning', 'judgment', 'bias', 'load', 'effort',
+            ))
+            if _is_cognitive_domain and rng.random() < 0.30:
+                if any(kw in condition_lower for kw in ['high load', 'difficult', 'complex', 'time pressure', 'fast']):
+                    response += rng.choice([
+                        " The mental demands of this made it harder to think clearly.",
+                        " I felt rushed and that probably affected my response.",
+                        " When things are complex I rely more on my gut feeling.",
+                        " The difficulty level made me less careful than I'd normally be.",
+                    ])
+                elif any(kw in condition_lower for kw in ['low load', 'easy', 'simple', 'no pressure', 'slow']):
+                    response += rng.choice([
+                        " I had enough time to really think this through.",
+                        " The simpler format let me focus on what mattered.",
+                        " I felt comfortable taking my time with this.",
+                    ])
+
+            # v1.0.8.0: Sports/competition condition modifiers — NEW
+            _is_sports_domain = any(w in question_lower for w in (
+                'sport', 'athlet', 'competition', 'team', 'training', 'coach',
+                'perform', 'fitness', 'game', 'match',
+            ))
+            if _is_sports_domain and rng.random() < 0.30:
+                if any(kw in condition_lower for kw in ['competitive', 'competition', 'rival', 'opponent', 'win']):
+                    response += rng.choice([
+                        " The competitive aspect really drives my thinking here.",
+                        " Competition brings out a different side of me.",
+                        " Wanting to win is a strong motivator in my response.",
+                    ])
+                elif any(kw in condition_lower for kw in ['cooperative', 'team', 'collaborative', 'together']):
+                    response += rng.choice([
+                        " Working together changes how I approach this.",
+                        " The team aspect is important to how I think about this.",
+                        " Collaboration matters a lot to me in these situations.",
+                    ])
+
+            # v1.0.8.0: Clinical/therapy condition modifiers — NEW
+            _is_clinical_domain = any(w in question_lower for w in (
+                'anxiety', 'depression', 'therapy', 'mental health', 'stress',
+                'coping', 'clinical', 'counseling', 'wellbeing',
+            ))
+            if _is_clinical_domain and rng.random() < 0.30:
+                if any(kw in condition_lower for kw in ['treatment', 'therapy', 'intervention', 'cbt', 'mindfulness']):
+                    response += rng.choice([
+                        " The approach described resonates with my experience.",
+                        " I can see how this kind of support would make a difference.",
+                        " Having structured help really matters for these issues.",
+                    ])
+                elif any(kw in condition_lower for kw in ['control', 'no treatment', 'waitlist', 'placebo']):
+                    response += rng.choice([
+                        " Without active support things tend to stay the same.",
+                        " I responded based on how I normally handle things.",
+                    ])
+
+            # v1.0.8.0: Social/relationship condition modifiers — NEW
+            _is_relationship_domain = any(w in question_lower for w in (
+                'relationship', 'partner', 'friend', 'social', 'attachment',
+                'intimacy', 'dating', 'marriage', 'loneliness', 'support',
+            ))
+            if _is_relationship_domain and rng.random() < 0.30:
+                if any(kw in condition_lower for kw in ['close', 'intimate', 'secure', 'strong', 'supportive']):
+                    response += rng.choice([
+                        " Having close connections shapes how I see these things.",
+                        " Feeling supported by others influences my perspective.",
+                        " Secure relationships make a real difference.",
+                    ])
+                elif any(kw in condition_lower for kw in ['distant', 'conflict', 'insecure', 'rejection', 'lonely']):
+                    response += rng.choice([
+                        " Feeling disconnected from others affects how I think about this.",
+                        " Relationship difficulties color my perspective here.",
+                        " When connections feel strained everything is harder.",
+                    ])
+
+            # v1.0.8.0: Communication/media condition modifiers — NEW
+            _is_communication_domain = any(w in question_lower for w in (
+                'message', 'communicat', 'persuasi', 'media', 'news',
+                'source', 'information', 'narrative', 'credib',
+            ))
+            if _is_communication_domain and rng.random() < 0.30:
+                if any(kw in condition_lower for kw in ['expert', 'credible', 'scientific', 'authoritative', 'trustworthy']):
+                    response += rng.choice([
+                        " The credibility of the source matters a lot to me.",
+                        " I pay more attention when the information comes from an expert.",
+                        " A trustworthy source makes me take things more seriously.",
+                    ])
+                elif any(kw in condition_lower for kw in ['peer', 'personal', 'anecdot', 'testimonial', 'story']):
+                    response += rng.choice([
+                        " Personal stories hit differently than statistics.",
+                        " Hearing someone's actual experience is more convincing to me.",
+                        " Real-life accounts stick with me more than abstract facts.",
+                    ])
+                elif any(kw in condition_lower for kw in ['fake', 'misleading', 'biased', 'unreliable']):
+                    response += rng.choice([
+                        " I'm suspicious of information that seems biased.",
+                        " Unreliable sources make me question everything.",
+                    ])
+
+            # v1.0.8.0: Food/body condition modifiers — NEW
+            _is_food_domain = any(w in question_lower for w in (
+                'food', 'diet', 'eating', 'nutrition', 'body image',
+                'weight', 'meal', 'calorie', 'healthy eating',
+            ))
+            if _is_food_domain and rng.random() < 0.30:
+                if any(kw in condition_lower for kw in ['healthy', 'organic', 'natural', 'nutritious', 'clean']):
+                    response += rng.choice([
+                        " Health-conscious options appeal to me.",
+                        " I tend to favor choices that seem healthier.",
+                        " The nutritional aspect influenced my thinking.",
+                    ])
+                elif any(kw in condition_lower for kw in ['unhealthy', 'processed', 'junk', 'indulgent', 'tempting']):
+                    response += rng.choice([
+                        " I'm aware of the temptation even when I know it's not ideal.",
+                        " The appeal of indulgent options is hard to resist.",
+                        " I try to be honest about what actually tempts me.",
+                    ])
+
+            # v1.0.8.0: Developmental/age condition modifiers — NEW
+            _is_developmental_domain = any(w in question_lower for w in (
+                'child', 'parent', 'aging', 'adolescent', 'elderly',
+                'development', 'youth', 'generation', 'retirement',
+            ))
+            if _is_developmental_domain and rng.random() < 0.30:
+                if any(kw in condition_lower for kw in ['young', 'child', 'adolescent', 'early', 'youth']):
+                    response += rng.choice([
+                        " Early experiences shape so much of who we become.",
+                        " Youth perspectives are unique and important.",
+                        " Development in the early years is critical.",
+                    ])
+                elif any(kw in condition_lower for kw in ['old', 'elder', 'aging', 'senior', 'late life']):
+                    response += rng.choice([
+                        " The perspective that comes with age is valuable.",
+                        " Later life brings different challenges and priorities.",
+                        " Aging changes how you think about things.",
+                    ])
+
+            # v1.0.8.0: Technology/social media condition modifiers — NEW
+            _is_tech_domain = any(w in question_lower for w in (
+                'technology', 'digital', 'app', 'online', 'internet',
+                'social media', 'screen', 'device', 'platform',
+            ))
+            if _is_tech_domain and not _is_ai_domain and rng.random() < 0.30:
+                if any(kw in condition_lower for kw in ['high use', 'frequent', 'heavy', 'active', 'engaged']):
+                    response += rng.choice([
+                        " As someone who uses technology a lot, I have opinions about this.",
+                        " My extensive experience with this technology informs my response.",
+                        " Being a heavy user gives me a particular perspective.",
+                    ])
+                elif any(kw in condition_lower for kw in ['low use', 'infrequent', 'minimal', 'limited', 'no access']):
+                    response += rng.choice([
+                        " I don't have as much experience with this technology.",
+                        " Limited exposure gives me a different perspective.",
+                        " Not being a heavy user shapes how I see this.",
+                    ])
+
+            # v1.0.8.0: Generic treatment/control — applies when no specific domain matched
+            _any_domain_matched = any([_is_political_domain, _is_health_domain, _is_moral_domain,
                         _is_intergroup_domain, _is_financial_domain, _is_environment_domain,
-                        _is_consumer_domain, _is_ai_domain, _is_education_domain]):
+                        _is_consumer_domain, _is_ai_domain, _is_education_domain,
+                        _is_cognitive_domain, _is_sports_domain, _is_clinical_domain,
+                        _is_relationship_domain, _is_communication_domain, _is_food_domain,
+                        _is_developmental_domain, _is_tech_domain])
+            if not _any_domain_matched:
                 if any(kw in condition_lower for kw in ['treatment', 'experimental', 'intervention']):
                     if rng.random() < 0.25:
                         response += rng.choice([
                             " The specific situation presented to me shaped how I responded.",
                             " What I was shown definitely influenced my thinking.",
                             " The particular scenario affected my response.",
+                            " The way things were set up made me think about this differently.",
                         ])
                 elif any(kw in condition_lower for kw in ['control', 'baseline', 'neutral']):
                     if rng.random() < 0.15:
                         response += rng.choice([
                             " I just responded based on my natural inclinations.",
                             " I went with my default perspective on this.",
+                            " Nothing particular pushed me in any direction.",
+                        ])
+                elif any(kw in condition_lower for kw in ['high', 'strong', 'extreme', 'intense']):
+                    if rng.random() < 0.25:
+                        response += rng.choice([
+                            " The intensity of the situation influenced my response.",
+                            " Strong conditions like this make you react more firmly.",
+                        ])
+                elif any(kw in condition_lower for kw in ['low', 'mild', 'weak', 'subtle']):
+                    if rng.random() < 0.20:
+                        response += rng.choice([
+                            " The subtle framing made me respond more naturally.",
+                            " Without strong cues I went with my honest instinct.",
                         ])
 
         return response
@@ -7636,7 +7810,13 @@ class ComprehensiveResponseGenerator:
         _fallback_topic = [w for w in _fallback_words if w not in _fallback_stop][:3]
         _fb_phrase = ' '.join(_fallback_topic) if _fallback_topic else ""
         if _fb_phrase:
-            return f"I have thoughts about {_fb_phrase} but it's hard to put into words."
+            _fb_templates = [
+                f"My honest take on {_fb_phrase} is based on my personal experience.",
+                f"I feel a certain way about {_fb_phrase} and tried to express that.",
+                f"When it comes to {_fb_phrase} I went with my genuine reaction.",
+                f"{_fb_phrase} is something I have real feelings about.",
+            ]
+            return rng.choice(_fb_templates)
         return "I answered based on my honest feelings about this."
 
     def _extract_response_subject(self, question_text: str, question_context: str) -> str:
@@ -7760,42 +7940,93 @@ class ComprehensiveResponseGenerator:
         _topic_parts = [w.capitalize() if w.lower() in _entity_lower else w for w in _topic_parts]
         _topic = ' '.join(_topic_parts)
 
-        # v1.0.7.9: Extract ACTION VERBS from the question (what was the participant doing?)
+        # v1.0.8.0: Extract ACTION VERBS — expanded to cover ALL research domains
         _subj_lower = subject.lower()
         _action = ""
         _action_patterns = [
+            # Economic games
             (r'\b(gave|give|giving|donated|donating|split|splitting|shared|sharing)\b', 'gave'),
             (r'\b(trusted|trusting|sent|sending)\b', 'trusted'),
-            (r'\b(chose|choose|choosing|picked|selected|decided)\b', 'chose'),
-            (r'\b(bought|buy|buying|purchased|purchasing)\b', 'chose'),
             (r'\b(cooperated|cooperating|contributed|contributing)\b', 'cooperated'),
             (r'\b(rejected|rejecting|refused|refusing|declined)\b', 'rejected'),
             (r'\b(accepted|accepting|agreed|agreeing)\b', 'accepted'),
-            (r'\b(rated|rating|evaluated|evaluating|judged|judging)\b', 'rated'),
-            (r'\b(voted|voting|supported|supporting)\b', 'supported'),
-            (r'\b(lied|lying|cheated|cheating|deceived|deceiving)\b', 'lied'),
-            (r'\b(helped|helping|assisted|assisting)\b', 'helped'),
             (r'\b(punished|punishing|sanctioned|sanctioning)\b', 'punished'),
             (r'\b(forgave|forgiving|pardoned)\b', 'forgave'),
             (r'\b(risked|risking|gambled|gambling|bet|betting)\b', 'risked'),
             (r'\b(waited|waiting|delayed|delaying)\b', 'waited'),
+            # General decisions
+            (r'\b(chose|choose|choosing|picked|selected|decided)\b', 'chose'),
+            (r'\b(bought|buy|buying|purchased|purchasing)\b', 'bought'),
+            (r'\b(rated|rating|evaluated|evaluating|judged|judging)\b', 'rated'),
+            (r'\b(voted|voting|supported|supporting|endorsed)\b', 'supported'),
+            # Social/moral
+            (r'\b(lied|lying|cheated|cheating|deceived|deceiving)\b', 'lied'),
+            (r'\b(helped|helping|assisted|assisting|volunteered)\b', 'helped'),
+            (r'\b(blamed|blaming|accused|accusing)\b', 'blamed'),
+            (r'\b(confronted|confronting|challenged|challenging)\b', 'confronted'),
+            # Communication/persuasion
+            (r'\b(persuaded|convincing|influenced|influencing)\b', 'persuaded'),
+            (r'\b(communicated|communicating|expressed|expressing)\b', 'communicated'),
+            (r'\b(disclosed|disclosing|revealed|revealing)\b', 'disclosed'),
+            (r'\b(recommended|recommending|suggested|advising)\b', 'recommended'),
+            # Health/clinical
+            (r'\b(coped|coping|managed|managing)\b', 'coped'),
+            (r'\b(exercised|exercising|trained|training)\b', 'exercised'),
+            (r'\b(ate|eating|consumed|consuming|dieted)\b', 'consumed'),
+            (r'\b(meditated|meditating|practiced|practicing)\b', 'practiced'),
+            # Learning/cognitive
+            (r'\b(learned|learning|studied|studying|memorized)\b', 'learned'),
+            (r'\b(recalled|remembering|recognized|recognizing)\b', 'recalled'),
+            (r'\b(solved|solving|figured|figuring)\b', 'solved'),
+            (r'\b(negotiated|negotiating|bargained|bargaining)\b', 'negotiated'),
+            # Creative/work
+            (r'\b(created|creating|designed|designing|built|building)\b', 'created'),
+            (r'\b(led|leading|managed|supervising)\b', 'led'),
+            (r'\b(competed|competing|performed|performing)\b', 'competed'),
         ]
         for _pat, _act_label in _action_patterns:
             if re.search(_pat, _subj_lower):
                 _action = _act_label
                 break
 
-        # v1.0.7.9: Extract OBJECT/TARGET from the question (who/what was it about?)
+        # v1.0.8.0: Extract OBJECT/TARGET — expanded across ALL research domains
         _target = ""
         _target_patterns = [
-            (r'(?:the |your |their )?(other person|partner|opponent|stranger|recipient|receiver)', None),
-            (r'(?:the |your |their )?(other group|outgroup|ingroup|other team)', None),
-            (r'(?:the |your |their )?(product|brand|service|item|option)', None),
-            (r'(?:the |your |their )?(candidate|politician|leader|president)', None),
-            (r'(?:the |your |their )?(money|amount|endowment|offer|donation)', None),
-            (r'(?:the |your |their )?(decision|choice|outcome|result)', None),
-            (r'(?:the |your |their )?(community|society|group|team)', None),
-            (r'(?:the |your |their )?(risk|gamble|bet|investment)', None),
+            # Social/interpersonal
+            (r'(?:the |your |their )?(other person|partner|opponent|stranger|recipient|receiver|friend|colleague)', None),
+            (r'(?:the |your |their )?(other group|outgroup|ingroup|other team|rival group|minority group)', None),
+            (r'(?:the |your |their )?(relationship|marriage|friendship|bond|connection)', None),
+            # Economic/consumer
+            (r'(?:the |your |their )?(product|brand|service|item|option|package|deal)', None),
+            (r'(?:the |your |their )?(money|amount|endowment|offer|donation|salary|price)', None),
+            (r'(?:the |your |their )?(investment|portfolio|savings|retirement|budget)', None),
+            # Political/civic
+            (r'(?:the |your |their )?(candidate|politician|leader|president|party|government)', None),
+            (r'(?:the |your |their )?(policy|legislation|regulation|law|proposal)', None),
+            # Decisions/outcomes
+            (r'(?:the |your |their )?(decision|choice|outcome|result|consequence|tradeoff)', None),
+            (r'(?:the |your |their )?(risk|gamble|bet|chance|probability|odds)', None),
+            # Health/clinical
+            (r'(?:the |your |their )?(treatment|medication|therapy|vaccine|diagnosis|symptom)', None),
+            (r'(?:the |your |their )?(health|wellbeing|mental health|anxiety|diet|exercise)', None),
+            (r'(?:the |your |their )?(doctor|therapist|counselor|provider|patient)', None),
+            # Technology/AI
+            (r'(?:the |your |their )?(algorithm|AI system|chatbot|technology|platform|app)', None),
+            (r'(?:the |your |their )?(data|privacy|information|profile|account)', None),
+            # Social/community
+            (r'(?:the |your |their )?(community|society|group|team|organization|institution)', None),
+            (r'(?:the |your |their )?(norm|rule|tradition|expectation|standard)', None),
+            # Education/learning
+            (r'(?:the |your |their )?(course|class|teacher|instructor|assignment|feedback)', None),
+            (r'(?:the |your |their )?(student|learner|child|parent|mentor)', None),
+            # Legal/justice
+            (r'(?:the |your |their )?(defendant|suspect|victim|witness|jury|verdict)', None),
+            # Environment
+            (r'(?:the |your |their )?(environment|climate|carbon footprint|sustainability|pollution)', None),
+            # Food/body
+            (r'(?:the |your |their )?(food|meal|snack|diet|body|weight|nutrition)', None),
+            # Media/communication
+            (r'(?:the |your |their )?(message|article|news|source|media|story|argument)', None),
         ]
         for _tpat, _ in _target_patterns:
             _tm = re.search(_tpat, _subj_lower)
@@ -7803,14 +8034,25 @@ class ComprehensiveResponseGenerator:
                 _target = _tm.group(0).strip()
                 break
 
-        # v1.0.7.9: Extract KEY PHRASES — meaningful multi-word chunks from the question
+        # v1.0.8.0: Extract KEY PHRASES — expanded to 15+ patterns across all domains
         _key_phrases: list = []
         _phrase_patterns = [
-            r'(?:feelings?|thoughts?|opinions?|views?)\s+(?:about|toward|on|regarding)\s+(.{3,40}?)(?:\.|$|\?|,)',
-            r'(?:how|what)\s+(?:do you|did you)\s+(?:think|feel)\s+about\s+(.{3,40}?)(?:\.|$|\?|,)',
-            r'(?:why did you|why do you)\s+(.{3,40}?)(?:\.|$|\?|,)',
-            r'(?:describe|explain)\s+(?:your|how|why)\s+(.{3,40}?)(?:\.|$|\?|,)',
-            r'(?:what made you|what led you to)\s+(.{3,40}?)(?:\.|$|\?|,)',
+            r'(?:feelings?|thoughts?|opinions?|views?)\s+(?:about|toward|on|regarding)\s+(.{3,80}?)(?:\.|$|\?|,)',
+            r'(?:how|what)\s+(?:do you|did you)\s+(?:think|feel)\s+about\s+(.{3,80}?)(?:\.|$|\?|,)',
+            r'(?:why did you|why do you)\s+(.{3,80}?)(?:\.|$|\?|,)',
+            r'(?:describe|explain)\s+(?:your|how|why)\s+(.{3,80}?)(?:\.|$|\?|,)',
+            r'(?:what made you|what led you to)\s+(.{3,80}?)(?:\.|$|\?|,)',
+            # v1.0.8.0: NEW broad patterns
+            r'(?:your experience with|your reaction to|your response to)\s+(.{3,80}?)(?:\.|$|\?|,)',
+            r'(?:how has|how does|how did)\s+(.{3,80}?)\s+(?:affect|impact|influence|change)',
+            r'(?:what do you think about|what are your thoughts on)\s+(.{3,80}?)(?:\.|$|\?|,)',
+            r'(?:how would you describe|tell us about|share your)\s+(.{3,80}?)(?:\.|$|\?|,)',
+            r'(?:what is your|what was your)\s+(?:experience|opinion|view|impression)\s+(?:of|about|with)\s+(.{3,80}?)(?:\.|$|\?|,)',
+            r'(?:how do you cope with|how do you handle|how do you deal with)\s+(.{3,80}?)(?:\.|$|\?|,)',
+            r'(?:what motivates you to|what encourages you to|what prevents you from)\s+(.{3,80}?)(?:\.|$|\?|,)',
+            r'(?:imagine|suppose|consider)\s+(?:that|a situation where)\s+(.{3,80}?)(?:\.|$|\?|,)',
+            r'(?:what would you do if|how would you react if)\s+(.{3,80}?)(?:\.|$|\?|,)',
+            r'(?:what concerns you about|what excites you about|what worries you about)\s+(.{3,80}?)(?:\.|$|\?|,)',
         ]
         for _pp in _phrase_patterns:
             _pm = re.search(_pp, _subj_lower)
@@ -7821,26 +8063,50 @@ class ComprehensiveResponseGenerator:
         # Use first key phrase as richer topic if available
         _rich_topic = _key_phrases[0] if _key_phrases else _topic
 
-        # ── Step 2: Detect question INTENT with expanded categories ──
+        # ── Step 2: Detect question INTENT — v1.0.8.0 expanded patterns ──
         _intent = "opinion"  # default
-        if any(w in _subj_lower for w in ('why did', 'why do', 'explain why', 'reason for', 'reasoning behind', 'what made you')):
+        # Most specific patterns first
+        if any(w in _subj_lower for w in ('why did', 'why do', 'explain why', 'reason for',
+                                            'reasoning behind', 'what made you', 'what led you',
+                                            'what caused you', 'what motivated', 'what drove')):
             _intent = "causal_explanation"
-        elif any(w in _subj_lower for w in ('why', 'explain', 'reason', 'because', 'justify')):
+        elif any(w in _subj_lower for w in ('why', 'explain', 'reason', 'because', 'justify',
+                                              'understand your', 'share your reasoning',
+                                              'what factors', 'what considerations')):
             _intent = "explanation"
         elif any(w in _subj_lower for w in ('how do you feel', 'how did you feel', 'feelings about',
-                                              'your feelings', 'emotional', 'how does', 'how did it make')):
+                                              'your feelings', 'emotional', 'how does', 'how did it make',
+                                              'what emotions', 'your reaction', 'react to',
+                                              'makes you feel', 'made you feel', 'your mood',
+                                              'how did this affect you emotionally')):
             _intent = "emotional_reaction"
         elif any(w in _subj_lower for w in ('describe', 'tell us about', 'what happened',
-                                              'walk us through', 'tell me about')):
+                                              'walk us through', 'tell me about',
+                                              'your experience', 'what was it like',
+                                              'share your experience', 'share about',
+                                              'paint a picture', 'give an account')):
             _intent = "description"
         elif any(w in _subj_lower for w in ('evaluate', 'rate', 'assess', 'compare', 'how would you rate',
-                                              'your assessment', 'your evaluation')):
+                                              'your assessment', 'your evaluation',
+                                              'pros and cons', 'strengths and weakness',
+                                              'how well', 'how effective', 'quality of',
+                                              'what did you think of', 'how satisfied')):
             _intent = "evaluation"
         elif any(w in _subj_lower for w in ('what do you think', 'your opinion', 'your view',
-                                              'your thoughts', 'do you agree', 'do you believe')):
+                                              'your thoughts', 'do you agree', 'do you believe',
+                                              'your stance', 'your position', 'where do you stand',
+                                              'what is your take', 'how do you see')):
             _intent = "opinion"
         elif any(w in _subj_lower for w in ('would you', 'will you', 'do you plan', 'how likely',
-                                              'in the future', 'what would you do')):
+                                              'in the future', 'what would you do',
+                                              'imagine if', 'suppose', 'hypothetically',
+                                              'what would happen', 'what if', 'predict')):
+            _intent = "prediction"
+        elif any(w in _subj_lower for w in ('how do you cope', 'how do you handle', 'how do you manage',
+                                              'what do you do when', 'how do you deal')):
+            _intent = "description"
+        elif any(w in _subj_lower for w in ('recommend', 'advice', 'suggest', 'what should',
+                                              'what would you advise', 'how should')):
             _intent = "prediction"
         elif _action:
             # If an action was detected, the question is likely asking about a decision
@@ -8276,35 +8542,44 @@ class ComprehensiveResponseGenerator:
                 "causal_explanation": [
                     " That's basically why.", " That's my reasoning.", " That's what it came down to.",
                     " So yeah, that's why.", " Make of that what you will.",
+                    " Those are the real reasons.", " I don't think there's a simpler way to explain it.",
                 ],
                 "decision_explanation": [
                     " That's why I made that choice.", " Looking back I'd probably do the same.",
                     " That's the honest reason.", " So that's what drove my decision.",
+                    " I don't regret that choice.", " It felt like the right call at the time.",
                 ],
                 "emotional_reaction": [
                     " That's just how it makes me feel.", " Can't really help how I feel about it.",
                     " Hard to put into words exactly.", " I feel strongly about it.",
                     " Those are my honest emotions on it.",
+                    " Feelings are what they are.", " I tried to express this genuinely.",
                 ],
                 "description": [
                     " That's basically what happened.", " That's how I'd sum it up.",
                     " That captures my experience.", " That's the gist of it.",
+                    " I tried to be accurate about it.", " Those are the main things I noticed.",
                 ],
                 "evaluation": [
                     " That's my honest assessment.", " Take it for what it's worth.",
                     " That's how I'd rate it.", " I stand by that evaluation.",
+                    " I tried to be fair.", " Those are my genuine impressions.",
                 ],
                 "explanation": [
                     " That's where I'm coming from.", " I think that explains it.",
                     " That's my reasoning in a nutshell.", " So that's why I think this way.",
+                    " I hope that makes sense.", " That's the logic behind my answer.",
                 ],
                 "prediction": [
                     " That's my best guess.", " Time will tell if I'm right.",
                     " We'll see how it goes.", " That's what I expect anyway.",
+                    " I could be wrong but that's where I'd put my money.",
                 ],
                 "opinion": [
                     " That's my honest take.", " I said what I said.",
                     " Take it or leave it.", " That's where I stand.",
+                    " I'm not going to pretend otherwise.", " That's genuinely how I see it.",
+                    " I don't think I'll change my mind on this.",
                 ],
             }
             _intent_codas = _codas.get(_intent, _codas["opinion"])
@@ -8657,9 +8932,10 @@ class ComprehensiveResponseGenerator:
             ]
 
         # ── Education/learning vocabulary ──
-        elif domain_key in ('learning', 'online_learning') or \
+        elif domain_key in ('learning', 'online_learning', 'education', 'academic_motivation',
+                            'teaching_effectiveness', 'student_engagement', 'assessment_feedback') or \
                 any(w in subject_lower for w in ('learn', 'educat', 'school', 'teach', 'student',
-                                                   'class', 'course', 'academic')):
+                                                   'class', 'course', 'academic', 'grade', 'exam')):
             _vocab['elaborations_pos'] = [
                 "Education is one of the most important things you can invest in.",
                 "Good learning experiences stick with you for life.",
@@ -8677,6 +8953,644 @@ class ComprehensiveResponseGenerator:
                 "Some aspects of learning work well and others don't.",
                 "I have mixed feelings about my educational experiences.",
                 "There's always room for improvement in how we teach and learn.",
+            ]
+
+        # ── Clinical/mental health vocabulary ──
+        elif domain_key in ('clinical', 'anxiety', 'depression', 'coping', 'therapy_attitudes',
+                            'stress', 'mental_health', 'health_anxiety') or \
+                any(w in subject_lower for w in ('anxiety', 'depress', 'therapy', 'counseling',
+                                                   'mental health', 'coping', 'panic', 'phobia',
+                                                   'trauma', 'ptsd', 'stress', 'burnout')):
+            _vocab['elaborations_pos'] = [
+                "I've found healthy ways to manage my mental health.",
+                "Therapy has given me tools that actually help.",
+                "Talking about mental health openly is important and I support that.",
+                "I believe recovery is possible with the right support.",
+                "My coping strategies have improved over time.",
+            ]
+            _vocab['elaborations_neg'] = [
+                "Mental health struggles are exhausting and hard to explain to others.",
+                "I wish there was less stigma around getting help.",
+                "Some days are genuinely difficult and there's no easy fix.",
+                "The mental health system isn't accessible enough for most people.",
+                "Anxiety can be paralyzing even when you know it's irrational.",
+            ]
+            _vocab['elaborations_neu'] = [
+                "Mental health is complicated and everyone's experience is different.",
+                "Some approaches work for some people and not others.",
+                "I try to be aware of my mental state without obsessing over it.",
+                "There's no one-size-fits-all approach to mental wellness.",
+            ]
+
+        # ── Developmental/parenting vocabulary ──
+        elif domain_key in ('developmental', 'parenting', 'childhood', 'aging',
+                            'life_transitions', 'intergenerational') or \
+                any(w in subject_lower for w in ('child', 'parent', 'aging', 'adolescen',
+                                                   'develop', 'toddler', 'elderly', 'retirement',
+                                                   'puberty', 'infant', 'teenager', 'generation')):
+            _vocab['elaborations_pos'] = [
+                "Watching growth and development is genuinely rewarding.",
+                "Every stage of life has its own unique value.",
+                "I think the early years really shape who we become.",
+                "Supporting development at any age is meaningful work.",
+                "Family relationships are central to how I think about this.",
+            ]
+            _vocab['elaborations_neg'] = [
+                "These transitions can be really challenging to navigate.",
+                "Not everyone has the support they need during critical stages.",
+                "The pressure on parents today is unrealistic.",
+                "Aging comes with real losses that people don't talk about enough.",
+                "Growing up is harder now than it used to be.",
+            ]
+            _vocab['elaborations_neu'] = [
+                "Development is a lifelong process with ups and downs.",
+                "Every age brings its own challenges and rewards.",
+                "I think there's no single right way to approach these stages.",
+                "Some of these changes are natural and you just have to adapt.",
+            ]
+
+        # ── Personality psychology vocabulary ──
+        elif domain_key in ('personality', 'big_five', 'narcissism', 'dark_triad',
+                            'trait_assessment', 'self_concept') or \
+                any(w in subject_lower for w in ('personality', 'extravert', 'introvert',
+                                                   'narcissis', 'conscientiou', 'agreeable',
+                                                   'neurotic', 'openness', 'trait', 'temperament')):
+            _vocab['elaborations_pos'] = [
+                "I'm pretty self-aware and comfortable with who I am.",
+                "My personality is something I've come to appreciate over time.",
+                "I think understanding yourself is the foundation for everything else.",
+                "The way I naturally approach things tends to work out well.",
+            ]
+            _vocab['elaborations_neg'] = [
+                "Some aspects of my personality make things harder.",
+                "I struggle with certain tendencies even when I know they're not helpful.",
+                "Personality isn't destiny but it can feel that way sometimes.",
+                "I wish I could change some things about how I naturally react.",
+            ]
+            _vocab['elaborations_neu'] = [
+                "Everyone has a mix of strengths and weaknesses in their personality.",
+                "I've learned to work with my personality rather than against it.",
+                "Some traits serve me well in certain situations and less so in others.",
+                "Self-knowledge is useful but it doesn't solve everything.",
+            ]
+
+        # ── Sports psychology vocabulary ──
+        elif domain_key in ('sports_psychology', 'athletic_motivation', 'team_dynamics',
+                            'performance_anxiety', 'coach_athlete', 'fan_behavior') or \
+                any(w in subject_lower for w in ('sport', 'athlet', 'team', 'coach', 'competition',
+                                                   'perform', 'training', 'exercise', 'fitness',
+                                                   'player', 'game', 'champion', 'winning')):
+            _vocab['elaborations_pos'] = [
+                "Competition brings out something in me that I really value.",
+                "The discipline of training has shaped who I am as a person.",
+                "Being part of a team is one of the most rewarding experiences.",
+                "Physical activity is good for both body and mind.",
+                "I thrive under the pressure of competitive situations.",
+            ]
+            _vocab['elaborations_neg'] = [
+                "The pressure to perform can be overwhelming sometimes.",
+                "Sports culture has some toxic elements that need addressing.",
+                "Injuries and setbacks are mentally as tough as they are physical.",
+                "Not everyone thrives in competitive environments.",
+                "The expectations placed on athletes can be unrealistic.",
+            ]
+            _vocab['elaborations_neu'] = [
+                "Sports and competition are important but they're not everything.",
+                "I have a balanced view of what athletics can and can't do.",
+                "Some competition is healthy but it can go too far.",
+                "I appreciate sports without letting them define me.",
+            ]
+
+        # ── Legal psychology vocabulary ──
+        elif domain_key in ('legal_psychology', 'jury_decision', 'witness_memory',
+                            'procedural_justice', 'criminal_justice', 'legal_compliance') or \
+                any(w in subject_lower for w in ('jury', 'court', 'legal', 'law', 'justice',
+                                                   'witness', 'trial', 'crime', 'guilty',
+                                                   'innocent', 'sentence', 'punish', 'judge')):
+            _vocab['elaborations_pos'] = [
+                "I believe in the justice system even though it's imperfect.",
+                "Everyone deserves a fair process regardless of what they're accused of.",
+                "The rule of law is what holds society together.",
+                "I think most legal decisions try to be fair.",
+            ]
+            _vocab['elaborations_neg'] = [
+                "The justice system is biased in ways that are hard to ignore.",
+                "Too many innocent people get caught up in an unfair process.",
+                "Legal outcomes depend too much on money and connections.",
+                "The system punishes some people more than others for the same things.",
+                "I've lost faith in the fairness of legal proceedings.",
+            ]
+            _vocab['elaborations_neu'] = [
+                "The legal system is complicated and I don't have all the answers.",
+                "Justice means different things to different people.",
+                "Some cases are straightforward and some are genuinely difficult.",
+                "I try to think about what's fair without being naive about reality.",
+            ]
+
+        # ── Food/nutrition vocabulary ──
+        elif domain_key in ('food_psychology', 'eating_behavior', 'food_choice',
+                            'nutrition_knowledge', 'body_image', 'diet_adherence') or \
+                any(w in subject_lower for w in ('food', 'eating', 'diet', 'nutrition', 'meal',
+                                                   'body image', 'weight', 'calorie', 'organic',
+                                                   'healthy eating', 'snack', 'appetite')):
+            _vocab['elaborations_pos'] = [
+                "Food is one of life's great pleasures and I appreciate that.",
+                "I've found an eating pattern that works well for me.",
+                "Cooking and sharing food is important to my wellbeing.",
+                "I feel good about the food choices I make most of the time.",
+            ]
+            _vocab['elaborations_neg'] = [
+                "My relationship with food is complicated.",
+                "Diet culture puts way too much pressure on people.",
+                "I struggle with eating decisions more than I'd like to admit.",
+                "Food marketing makes it hard to know what's actually healthy.",
+                "Body image concerns affect how I think about eating.",
+            ]
+            _vocab['elaborations_neu'] = [
+                "I try to eat well without being obsessive about it.",
+                "Nutrition is important but I don't overthink every meal.",
+                "Food choices are personal and I try not to judge others.",
+                "Some days I eat better than others and that's fine.",
+            ]
+
+        # ── Communication/persuasion vocabulary ──
+        elif domain_key in ('communication', 'persuasion', 'media_effects', 'interpersonal',
+                            'public_opinion', 'narrative', 'misinformation') or \
+                any(w in subject_lower for w in ('persuasi', 'media', 'communicat', 'message',
+                                                   'narrative', 'misinformation', 'fake news',
+                                                   'propaganda', 'rhetoric', 'debate')):
+            _vocab['elaborations_pos'] = [
+                "Good communication can genuinely change minds and build bridges.",
+                "I appreciate when information is presented clearly and honestly.",
+                "The power of a well-told story shouldn't be underestimated.",
+                "Media can be a real force for good when done responsibly.",
+            ]
+            _vocab['elaborations_neg'] = [
+                "There's too much manipulation in how information is presented.",
+                "I'm skeptical of messages that seem designed to push me in a direction.",
+                "Misinformation is a serious problem and it's getting worse.",
+                "Media often distorts reality more than it reflects it.",
+                "People are being manipulated without even realizing it.",
+            ]
+            _vocab['elaborations_neu'] = [
+                "I try to evaluate messages critically regardless of the source.",
+                "Communication is complicated and context always matters.",
+                "Some media is helpful and some is harmful, you have to be discerning.",
+                "I don't take any single source at face value.",
+            ]
+
+        # ── Relationships/attachment vocabulary ──
+        elif domain_key in ('relationship', 'attachment', 'romantic_relationships',
+                            'social_support', 'relationship_quality') or \
+                any(w in subject_lower for w in ('relationship', 'attachment', 'romantic',
+                                                   'partner', 'dating', 'marriage', 'divorce',
+                                                   'intimacy', 'love', 'couple', 'breakup')):
+            _vocab['elaborations_pos'] = [
+                "Healthy relationships are one of the most important things in life.",
+                "I've been lucky to have supportive people around me.",
+                "Connection with others gives my life a lot of meaning.",
+                "Trust and communication are the foundation of any good relationship.",
+            ]
+            _vocab['elaborations_neg'] = [
+                "Relationships can cause as much pain as they do joy.",
+                "I've had experiences that made me more guarded about letting people in.",
+                "Not all relationships are healthy and it took me time to learn that.",
+                "Past hurt makes it harder to be open with people.",
+                "The expectations around relationships can be unrealistic.",
+            ]
+            _vocab['elaborations_neu'] = [
+                "Relationships require effort and they're not always easy.",
+                "Everyone has their own style of relating to others.",
+                "I value relationships but also my independence.",
+                "Some connections work out and some don't, that's just life.",
+            ]
+
+        # ── Cross-cultural vocabulary ──
+        elif domain_key in ('cross_cultural', 'cultural_values', 'acculturation',
+                            'cultural_identity', 'global_attitudes') or \
+                any(w in subject_lower for w in ('cultur', 'cross-cultural', 'diversity',
+                                                   'multicultural', 'immigrant', 'tradition',
+                                                   'heritage', 'ethnicity', 'global')):
+            _vocab['elaborations_pos'] = [
+                "Diversity of perspectives makes communities stronger.",
+                "My cultural background is something I'm proud of.",
+                "Exposure to different cultures has broadened my worldview.",
+                "I think cultural exchange benefits everyone involved.",
+            ]
+            _vocab['elaborations_neg'] = [
+                "Cultural clashes can be difficult and draining.",
+                "Not everyone's cultural experience is valued equally.",
+                "Fitting into a new culture while keeping your own is hard.",
+                "Some cultural practices are harmful even if they're traditional.",
+            ]
+            _vocab['elaborations_neu'] = [
+                "Cultural differences are real but they don't have to divide us.",
+                "I respect different traditions even when I don't fully understand them.",
+                "Every culture has things worth keeping and things worth changing.",
+                "Navigating cultural differences requires patience from everyone.",
+            ]
+
+        # ── Positive psychology vocabulary ──
+        elif domain_key in ('positive_psychology', 'gratitude', 'resilience',
+                            'flourishing', 'life_satisfaction') or \
+                any(w in subject_lower for w in ('gratitude', 'resilience', 'flourish',
+                                                   'happiness', 'wellbeing', 'life satisfaction',
+                                                   'strengths', 'mindful', 'grateful', 'optimis')):
+            _vocab['elaborations_pos'] = [
+                "Focusing on what's going well has genuinely helped me.",
+                "I believe everyone has strengths even if they don't see them.",
+                "Gratitude is a practice that makes a real difference in my life.",
+                "Finding meaning even in difficult times is something I value.",
+            ]
+            _vocab['elaborations_neg'] = [
+                "Toxic positivity can be as harmful as negativity.",
+                "Not everything can be fixed with a positive attitude.",
+                "Sometimes life is genuinely hard and pretending otherwise doesn't help.",
+                "The pressure to always be happy is exhausting.",
+            ]
+            _vocab['elaborations_neu'] = [
+                "I try to be realistic while also appreciating the good things.",
+                "Wellbeing is more complicated than just thinking positive thoughts.",
+                "Everyone has good days and bad days and both are valid.",
+                "I'm working on my outlook but it's a gradual process.",
+            ]
+
+        # ── Gender/sexuality vocabulary ──
+        elif domain_key in ('gender_psychology', 'gender_roles', 'sexuality_attitudes',
+                            'lgbtq_experience') or \
+                any(w in subject_lower for w in ('gender', 'sexuality', 'lgbtq', 'sexual orientation',
+                                                   'masculin', 'feminin', 'nonbinary', 'transgender',
+                                                   'sex role', 'queer')):
+            _vocab['elaborations_pos'] = [
+                "I believe everyone deserves to live authentically.",
+                "Progress on gender equality and LGBTQ rights is encouraging.",
+                "People should be free to express who they are without fear.",
+                "Diversity in gender and sexuality enriches our communities.",
+            ]
+            _vocab['elaborations_neg'] = [
+                "Gender-based discrimination is still a major issue.",
+                "Society still puts too many rigid expectations on people.",
+                "LGBTQ people face real challenges that many don't understand.",
+                "Stereotypes about gender and sexuality cause real harm.",
+            ]
+            _vocab['elaborations_neu'] = [
+                "These are complex issues and I try to be thoughtful about them.",
+                "I respect different perspectives on gender and sexuality.",
+                "Society is changing in this area and I'm still processing my views.",
+                "I think most people mean well even if they don't always get it right.",
+            ]
+
+        # ── Cognitive psychology vocabulary ──
+        elif domain_key in ('cognitive', 'decision_making', 'memory', 'attention',
+                            'reasoning', 'problem_solving', 'cognitive_bias', 'metacognition') or \
+                any(w in subject_lower for w in ('cognitive', 'memory', 'attention', 'reasoning',
+                                                   'problem solving', 'bias', 'thinking', 'judgment',
+                                                   'perception', 'recall', 'recognition')):
+            _vocab['elaborations_pos'] = [
+                "I like to think things through carefully before deciding.",
+                "I'm pretty confident in my ability to reason through problems.",
+                "I try to be aware of my own biases when making judgments.",
+                "Thoughtful decision-making usually leads to better outcomes.",
+            ]
+            _vocab['elaborations_neg'] = [
+                "Sometimes I second-guess my own thinking too much.",
+                "It's frustrating when I know my judgment was influenced by something irrelevant.",
+                "My memory isn't always as reliable as I'd like it to be.",
+                "Making decisions under pressure leads to mistakes.",
+            ]
+            _vocab['elaborations_neu'] = [
+                "Everyone has cognitive strengths and weaknesses.",
+                "I try to be systematic about decisions but I'm not always successful.",
+                "Some choices require careful thought and some are better made quickly.",
+                "I'm aware that my thinking can be biased even when I try to be objective.",
+            ]
+
+        # ── Neuroscience/cognitive load vocabulary ──
+        elif domain_key in ('neuroeconomics', 'reward_processing', 'impulse_control',
+                            'emotional_regulation', 'neural_decision', 'cognitive_load') or \
+                any(w in subject_lower for w in ('brain', 'neural', 'impulse', 'self-control',
+                                                   'cognitive load', 'mental effort', 'reward',
+                                                   'willpower', 'concentration', 'focus')):
+            _vocab['elaborations_pos'] = [
+                "I'm pretty good at staying focused when it matters.",
+                "I've learned to manage my impulses over time.",
+                "Mental discipline is something I've worked on developing.",
+                "I find it rewarding to push through difficult mental tasks.",
+            ]
+            _vocab['elaborations_neg'] = [
+                "When I'm mentally exhausted my self-control goes out the window.",
+                "It's hard to make good decisions when your brain is overloaded.",
+                "I sometimes act on impulse and regret it later.",
+                "Mental fatigue affects my judgment more than I'd like.",
+            ]
+            _vocab['elaborations_neu'] = [
+                "Everyone has limits on their mental resources.",
+                "Some tasks demand more mental effort than others.",
+                "I do my best but I can't always be at peak focus.",
+                "Self-control is easier in some situations than others.",
+            ]
+
+        # ── Human factors/UX vocabulary ──
+        elif domain_key in ('human_factors', 'user_experience', 'interface_design',
+                            'safety_behavior', 'workload', 'human_error') or \
+                any(w in subject_lower for w in ('usability', 'interface', 'user experience',
+                                                   'design', 'ergonomic', 'navigation', 'layout',
+                                                   'prototype', 'accessibility', 'workflow')):
+            _vocab['elaborations_pos'] = [
+                "Good design makes a real difference in how people interact with things.",
+                "I appreciate when things are intuitive and easy to use.",
+                "A well-designed experience can actually be enjoyable.",
+                "Attention to usability shows respect for the end user.",
+            ]
+            _vocab['elaborations_neg'] = [
+                "Poor design is frustrating and makes simple tasks difficult.",
+                "Too many things are designed without thinking about the actual user.",
+                "Confusing interfaces lead to mistakes and that's not the user's fault.",
+                "The people who design these things clearly don't use them.",
+            ]
+            _vocab['elaborations_neu'] = [
+                "Design is a tradeoff between simplicity and functionality.",
+                "Some designs work better for certain people than others.",
+                "I notice both good and bad design choices in my daily life.",
+                "Usability matters but it's not the only factor.",
+            ]
+
+        # ── Financial psychology vocabulary ──
+        elif domain_key in ('financial_psychology', 'financial_literacy', 'investment_behavior',
+                            'debt_attitudes', 'retirement_planning', 'financial_stress',
+                            'saving_behavior') or \
+                any(w in subject_lower for w in ('financial', 'debt', 'retirement', 'savings',
+                                                   'budget', 'spending', 'income', 'wealth',
+                                                   'investment', 'loan', 'credit', 'pension')):
+            _vocab['elaborations_pos'] = [
+                "I feel fairly confident about my financial decisions.",
+                "Planning ahead financially has given me peace of mind.",
+                "I've made some smart money choices that I'm glad about.",
+                "Financial literacy is something everyone should have access to.",
+            ]
+            _vocab['elaborations_neg'] = [
+                "Financial stress affects every other part of your life.",
+                "The system is set up to make financial security hard for most people.",
+                "I worry about money more than I'd like to admit.",
+                "Financial mistakes can haunt you for years.",
+                "Not everyone gets the same financial education or opportunities.",
+            ]
+            _vocab['elaborations_neu'] = [
+                "Money matters are complicated and there's no one right answer.",
+                "I try to be responsible with money without being obsessive.",
+                "Some financial decisions have worked out and some haven't.",
+                "I'm still figuring out the best approach to managing my finances.",
+            ]
+
+        # ── Gaming/entertainment vocabulary ──
+        elif domain_key in ('gaming_psychology', 'esports', 'gambling', 'entertainment_media',
+                            'streaming_behavior', 'virtual_reality') or \
+                any(w in subject_lower for w in ('gaming', 'video game', 'gambl', 'esport',
+                                                   'streaming', 'virtual reality', 'entertainment',
+                                                   'play', 'casino', 'betting', 'VR')):
+            _vocab['elaborations_pos'] = [
+                "Gaming and entertainment are important parts of my life.",
+                "Interactive media can be genuinely enriching experiences.",
+                "I enjoy the social aspects of gaming and entertainment.",
+                "Good entertainment provides both relaxation and stimulation.",
+            ]
+            _vocab['elaborations_neg'] = [
+                "Too much screen time can become a real problem.",
+                "The addictive design of some games and media concerns me.",
+                "Gambling can destroy lives and needs better regulation.",
+                "Entertainment consumption can become a way to avoid real life.",
+            ]
+            _vocab['elaborations_neu'] = [
+                "Entertainment is fine in moderation but balance matters.",
+                "I have mixed feelings about how much time people spend on screens.",
+                "Gaming and media can be positive or negative depending on usage.",
+                "I enjoy entertainment but try to be intentional about it.",
+            ]
+
+        # ── Social media vocabulary ──
+        elif domain_key in ('social_media', 'social_media_use', 'online_identity',
+                            'digital_communication', 'influencer_marketing', 'online_communities',
+                            'social_comparison') or \
+                any(w in subject_lower for w in ('social media', 'instagram', 'facebook', 'twitter',
+                                                   'tiktok', 'influencer', 'online communit',
+                                                   'follower', 'posting', 'scrolling', 'likes')):
+            _vocab['elaborations_pos'] = [
+                "Social media has helped me stay connected with people I care about.",
+                "Online communities can provide real support and belonging.",
+                "I've found valuable information and perspectives through social media.",
+                "Digital connection has genuine benefits when used well.",
+            ]
+            _vocab['elaborations_neg'] = [
+                "Social media comparison is harmful to mental health.",
+                "The addictive design of these platforms is intentional and concerning.",
+                "Online interactions can be toxic and draining.",
+                "I worry about how social media is affecting our ability to connect in person.",
+                "The curated reality of social media is damaging to self-image.",
+            ]
+            _vocab['elaborations_neu'] = [
+                "Social media is a tool and how you use it matters.",
+                "I have a complicated relationship with social platforms.",
+                "Some online experiences are great and some are awful.",
+                "I try to be intentional about my social media use.",
+            ]
+
+        # ── Decision science/nudge vocabulary ──
+        elif domain_key in ('decision_science', 'choice_architecture', 'nudge',
+                            'default_effects', 'information_overload', 'regret') or \
+                any(w in subject_lower for w in ('nudge', 'default', 'choice architect',
+                                                   'information overload', 'regret', 'opt-in',
+                                                   'opt-out', 'decision fatigue')):
+            _vocab['elaborations_pos'] = [
+                "Making the right default option available is genuinely helpful.",
+                "I appreciate when choices are structured to help good decisions.",
+                "Reducing decision complexity is a real benefit.",
+                "Smart choice design can improve outcomes for everyone.",
+            ]
+            _vocab['elaborations_neg'] = [
+                "I don't like being nudged without my knowledge.",
+                "Too many choices is paralyzing and leads to worse decisions.",
+                "Regret about past decisions is hard to shake.",
+                "Choice manipulation feels disrespectful even when well-intentioned.",
+            ]
+            _vocab['elaborations_neu'] = [
+                "How choices are presented definitely influences decisions.",
+                "I try to be aware of how options are framed before I choose.",
+                "Some nudges are helpful and some cross a line.",
+                "Decision-making is harder than most people give it credit for.",
+            ]
+
+        # ── Innovation/creativity vocabulary ──
+        elif domain_key in ('innovation', 'creativity', 'entrepreneurship',
+                            'idea_generation', 'creative_process') or \
+                any(w in subject_lower for w in ('innovat', 'creativ', 'entrepreneur',
+                                                   'invention', 'brainstorm', 'startup',
+                                                   'original', 'imagination', 'design thinking')):
+            _vocab['elaborations_pos'] = [
+                "I value creative thinking and finding new solutions.",
+                "Innovation is what drives real progress in any field.",
+                "I enjoy the process of coming up with new ideas.",
+                "Original thinking should be encouraged more than it is.",
+            ]
+            _vocab['elaborations_neg'] = [
+                "Not every new idea is a good one and that's okay.",
+                "Innovation for its own sake can be wasteful.",
+                "The pressure to be creative all the time is exhausting.",
+                "Too many innovative ideas fail because execution is hard.",
+            ]
+            _vocab['elaborations_neu'] = [
+                "Creativity is important but so is refining existing approaches.",
+                "Some innovations genuinely help while others are just hype.",
+                "I appreciate creativity but also value practicality.",
+                "Good ideas need both imagination and discipline to succeed.",
+            ]
+
+        # ── Risk/safety perception vocabulary ──
+        elif domain_key in ('risk_perception', 'safety_attitudes', 'hazard_perception',
+                            'disaster_preparedness', 'risk_communication') or \
+                any(w in subject_lower for w in ('hazard', 'safety', 'disaster', 'emergency',
+                                                   'preparedness', 'danger', 'risk perception',
+                                                   'warning', 'accident', 'catastrophe')):
+            _vocab['elaborations_pos'] = [
+                "Being prepared gives me confidence to handle what comes.",
+                "I think most risks can be managed with the right precautions.",
+                "Safety awareness doesn't have to mean living in fear.",
+                "I feel better knowing I've thought about potential risks.",
+            ]
+            _vocab['elaborations_neg'] = [
+                "Some risks are genuinely terrifying and hard to prepare for.",
+                "People underestimate dangers until it's too late.",
+                "Safety systems fail more often than people realize.",
+                "The consequences of ignoring risks can be devastating.",
+            ]
+            _vocab['elaborations_neu'] = [
+                "Risk assessment requires balancing fear with rationality.",
+                "Not all risks are equal and you have to prioritize.",
+                "Some level of risk is unavoidable in daily life.",
+                "I try to be cautious without being paralyzed by worry.",
+            ]
+
+        # ── Negotiation/bargaining vocabulary ──
+        elif domain_key in ('negotiation', 'bargaining', 'economic_expectations') or \
+                any(w in subject_lower for w in ('negotiat', 'bargain', 'compromise', 'deal',
+                                                   'agreement', 'concession', 'offer', 'counteroffer')):
+            _vocab['elaborations_pos'] = [
+                "Finding a deal that works for everyone is satisfying.",
+                "I'm a pretty good negotiator when I need to be.",
+                "Compromise doesn't have to mean losing, it can mean winning differently.",
+                "Good agreements require understanding what the other side needs.",
+            ]
+            _vocab['elaborations_neg'] = [
+                "Negotiations can feel adversarial and stressful.",
+                "I don't like being pressured into unfavorable terms.",
+                "Power imbalances make fair negotiation almost impossible.",
+                "Some people negotiate in bad faith and that ruins it for everyone.",
+            ]
+            _vocab['elaborations_neu'] = [
+                "Negotiation outcomes depend on so many factors beyond your control.",
+                "I approach negotiations pragmatically rather than emotionally.",
+                "Some deals work out and some don't, that's the nature of it.",
+                "Both sides usually have to give something to reach agreement.",
+            ]
+
+        # ── Trust & credibility vocabulary ──
+        elif domain_key in ('institutional_trust', 'expert_credibility', 'source_credibility',
+                            'science_trust', 'media_trust') or \
+                any(w in subject_lower for w in ('credib', 'trustworth', 'reliable', 'expert',
+                                                   'authority', 'institution', 'science trust',
+                                                   'media trust', 'fake', 'authentic')):
+            _vocab['elaborations_pos'] = [
+                "I think experts generally have earned our trust.",
+                "Credible sources are essential for making good decisions.",
+                "I value institutions that have proven themselves reliable.",
+                "Trust in science and expertise is worth maintaining.",
+            ]
+            _vocab['elaborations_neg'] = [
+                "Institutions have broken the public's trust too many times.",
+                "I'm skeptical of so-called experts who have their own agendas.",
+                "Credibility is hard to rebuild once it's lost.",
+                "Too much of what passes for expertise is actually opinion.",
+            ]
+            _vocab['elaborations_neu'] = [
+                "Trust should be earned rather than automatically given.",
+                "I evaluate credibility on a case-by-case basis.",
+                "Some sources are more reliable than others and that's important to recognize.",
+                "I try to verify information before accepting it.",
+            ]
+
+        # ── Workplace behavior vocabulary (remote work, burnout, etc.) ──
+        elif domain_key in ('remote_work', 'workplace_diversity', 'burnout',
+                            'career_development', 'workplace_conflict', 'organizational_justice',
+                            'job_satisfaction', 'work_life_balance', 'employee_engagement') or \
+                any(w in subject_lower for w in ('remote work', 'work from home', 'burnout',
+                                                   'career', 'promotion', 'diversity',
+                                                   'inclusion', 'work-life', 'overtime', 'salary')):
+            _vocab['elaborations_pos'] = [
+                "Having good working conditions makes all the difference.",
+                "I appreciate workplaces that respect their employees.",
+                "Career growth opportunities keep me motivated.",
+                "Work can be genuinely fulfilling when the environment is right.",
+            ]
+            _vocab['elaborations_neg'] = [
+                "Burnout is real and workplaces don't take it seriously enough.",
+                "Workplace inequality affects morale and productivity.",
+                "The expectation to always be available is destroying work-life balance.",
+                "Career advancement shouldn't require sacrificing your wellbeing.",
+            ]
+            _vocab['elaborations_neu'] = [
+                "Work is a big part of life and getting it right matters.",
+                "Every workplace has its strengths and weaknesses.",
+                "Finding the right balance between career and personal life is ongoing.",
+                "Some aspects of work are rewarding and some are just necessary.",
+            ]
+
+        # ── AI ethics/alignment vocabulary ──
+        elif domain_key in ('ai_alignment', 'ai_ethics', 'ai_safety', 'machine_values',
+                            'ai_governance', 'ai_transparency', 'algorithmic_fairness') or \
+                any(w in subject_lower for w in ('ai alignment', 'ai ethics', 'ai safety',
+                                                   'algorithmic bias', 'ai fairness', 'autonomous',
+                                                   'ai regulation', 'artificial general')):
+            _vocab['elaborations_pos'] = [
+                "I think responsible AI development is possible with the right safeguards.",
+                "AI can be a tremendous force for good if we get the ethics right.",
+                "I'm optimistic that we can develop AI that reflects human values.",
+                "Transparency in AI systems builds trust and accountability.",
+            ]
+            _vocab['elaborations_neg'] = [
+                "AI development is moving too fast for proper safety measures.",
+                "Algorithmic bias is a serious problem that's being ignored.",
+                "I don't trust that AI developers have everyone's interests in mind.",
+                "The risks of uncontrolled AI development genuinely worry me.",
+            ]
+            _vocab['elaborations_neu'] = [
+                "AI is a powerful tool that requires careful governance.",
+                "The benefits and risks of AI depend on how it's developed and deployed.",
+                "I think both AI optimists and pessimists have valid points.",
+                "Regulation should keep pace with technology but often doesn't.",
+            ]
+
+        # ── Health disparities vocabulary ──
+        elif domain_key in ('health_disparities', 'healthcare_access', 'health_equity',
+                            'social_determinants', 'health_literacy', 'medical_mistrust') or \
+                any(w in subject_lower for w in ('health disparit', 'healthcare access',
+                                                   'health equity', 'social determinant',
+                                                   'medical mistrust', 'uninsured')):
+            _vocab['elaborations_pos'] = [
+                "Access to healthcare should be a basic right for everyone.",
+                "I'm encouraged by efforts to reduce health disparities.",
+                "Health equity is worth fighting for in every community.",
+                "Better access to information helps people make informed health choices.",
+            ]
+            _vocab['elaborations_neg'] = [
+                "The gap in healthcare access between groups is unacceptable.",
+                "People's health shouldn't depend on their income or zip code.",
+                "Medical mistrust has real historical roots that can't be dismissed.",
+                "The healthcare system fails the people who need it most.",
+            ]
+            _vocab['elaborations_neu'] = [
+                "Health equity is a complex problem without easy solutions.",
+                "Progress on healthcare access has been uneven at best.",
+                "I recognize that different communities have very different health experiences.",
+                "Systemic change is needed but it's hard to know where to start.",
             ]
 
         return _vocab
@@ -8780,6 +9694,10 @@ class ComprehensiveResponseGenerator:
                     " This is something I care a lot about.",
                     " I'm genuinely enthusiastic about this.",
                     " This really resonated with me on a personal level.",
+                    " I can't overstate how much this matters to me.",
+                    " My feelings on this are very clear and very positive.",
+                    " I'd go so far as to say this was genuinely great.",
+                    " This is exactly the kind of thing I can get behind.",
                 ]
                 if not response.rstrip().endswith('.'):
                     response = response.rstrip() + '.'
@@ -8790,6 +9708,10 @@ class ComprehensiveResponseGenerator:
                     " This was genuinely frustrating.",
                     " I have serious issues with this.",
                     " This needs significant improvement.",
+                    " I can't say enough about how much this bothered me.",
+                    " My negative feelings on this are very strong.",
+                    " I would not want to experience this again.",
+                    " There are real and serious problems here.",
                 ]
                 if not response.rstrip().endswith('.'):
                     response = response.rstrip() + '.'
@@ -8802,6 +9724,9 @@ class ComprehensiveResponseGenerator:
                 "I tried to be thoughtful about this. ",
                 "I want to be fair in my assessment. ",
                 "I considered different perspectives. ",
+                "I tried to give a balanced response. ",
+                "I thought carefully before answering. ",
+                "I wanted to be honest but also respectful. ",
             ]
             # Only prepend if response doesn't already start with a qualifier
             if not any(response.lower().startswith(q[:8].lower()) for q in _sd_qualifiers):
@@ -8884,21 +9809,47 @@ class ComprehensiveResponseGenerator:
 
             _topic = ' '.join(_topic_words[:2]) if _topic_words else 'the question'
 
+            # v1.0.8.0: Greatly expanded careless templates — 25 variants with more natural
+            # patterns that look like real inattentive survey responses
             careless_templates = [
+                # Ultra-short dismissive (most common for careless respondents)
                 f"{_topic} is ok i guess",
                 f"idk {_topic}",
                 f"{_topic} whatever",
                 f"meh {_topic}",
-                f"dont care about {_topic}",
                 f"{_topic} is fine",
                 f"sure {_topic}",
                 f"{_topic}",
+                f"dont care about {_topic}",
+                # Slightly more engaged careless (still low effort but acknowledges topic)
+                f"{_topic} its fine i guess",
+                f"i dont really have strong feelings about {_topic}",
+                f"{_topic} is what it is",
+                f"not much to say about {_topic}",
+                f"{_topic} doesnt really matter to me",
+                f"ya {_topic} sure",
+                f"lol {_topic}",
+                f"{_topic} no opinion really",
+                # Terse one-liners that sound like real disengaged participants
+                f"its ok",
+                f"fine",
+                f"no comment on {_topic}",
+                f"{_topic} is alright",
+                f"i guess {_topic} is ok",
+                f"dont know enough about {_topic}",
+                f"{_topic} seems fine to me",
+                f"nothing to add about {_topic}",
+                f"ehh {_topic}",
             ]
             return rng.choice(careless_templates)
         elif engagement < 0.3:
             # Very short version — keep first meaningful fragment
-            words = response.split()[:5]
-            return ' '.join(words).rstrip('.,!?') + '.'
+            words = response.split()[:7]
+            _short = ' '.join(words).rstrip('.,!?') + '.'
+            # v1.0.8.0: Lowercase to add inattentive feel
+            if rng.random() < 0.5:
+                _short = _short.lower()
+            return _short
         return response
 
     def _shorten(self, response: str, local_rng: random.Random = None) -> str:
@@ -9132,34 +10083,374 @@ class ComprehensiveResponseGenerator:
                 "negative": [" People are too quick to blame individuals.",
                              " We underestimate how much situations shape behavior."],
             },
+
+            # --- Clinical/Mental Health domains ---
+            StudyDomain.CLINICAL: {
+                "positive": [" I believe in getting support when you need it.",
+                             " Mental health awareness has come a long way."],
+                "negative": [" Mental health is still misunderstood by too many people.",
+                             " Getting help shouldn't be this difficult."],
+            },
+            StudyDomain.ANXIETY: {
+                "positive": [" I've found ways to manage my anxiety that actually work.",
+                             " Understanding anxiety has helped me deal with it better."],
+                "negative": [" Anxiety can make everything feel overwhelming.",
+                             " Living with anxiety is exhausting in ways others don't see."],
+            },
+            StudyDomain.DEPRESSION: {
+                "positive": [" Recovery is possible and that gives me hope.",
+                             " Talking openly about depression matters."],
+                "negative": [" Depression makes even simple things feel impossible.",
+                             " The stigma around depression is still a barrier to getting help."],
+            },
+            StudyDomain.COPING: {
+                "positive": [" Developing good coping strategies has been worth the effort.",
+                             " Everyone can build resilience with the right tools."],
+                "negative": [" Sometimes coping mechanisms aren't enough.",
+                             " It's hard to cope when the problems keep piling up."],
+            },
+            StudyDomain.STRESS: {
+                "positive": [" Some stress pushes me to perform better.",
+                             " I've gotten better at managing my stress over time."],
+                "negative": [" Chronic stress takes a serious physical and mental toll.",
+                             " The sources of stress in modern life never seem to let up."],
+            },
+
+            # --- Developmental domains ---
+            StudyDomain.DEVELOPMENTAL: {
+                "positive": [" Every stage of life brings new opportunities.",
+                             " Growth and change are natural and mostly positive."],
+                "negative": [" Life transitions are harder than people prepare you for.",
+                             " Not everyone gets the support they need during key stages."],
+            },
+            StudyDomain.PARENTING: {
+                "positive": [" Being a parent is challenging but deeply rewarding.",
+                             " Children teach you as much as you teach them."],
+                "negative": [" Parenting pressure is unrealistic and exhausting.",
+                             " There's too much judgment of how people raise their kids."],
+            },
+            StudyDomain.AGING: {
+                "positive": [" Age brings wisdom and perspective.", " Getting older has its own advantages."],
+                "negative": [" Aging comes with real losses that society ignores.",
+                             " The way older people are treated is often disrespectful."],
+            },
+
+            # --- Personality domains ---
+            StudyDomain.PERSONALITY: {
+                "positive": [" Understanding my personality helps me navigate the world.",
+                             " I'm comfortable with who I am."],
+                "negative": [" Some personality traits make life harder.",
+                             " It's frustrating when your natural tendencies work against you."],
+            },
+            StudyDomain.NARCISSISM: {
+                "positive": [" A healthy level of self-regard is important.",
+                             " Confidence isn't the same as arrogance."],
+                "negative": [" Dealing with narcissistic people is incredibly draining.",
+                             " Our culture rewards narcissistic behavior too much."],
+            },
+
+            # --- Sports domains ---
+            StudyDomain.SPORTS_PSYCHOLOGY: {
+                "positive": [" Sports teach discipline and resilience.",
+                             " Competition brings out my best effort."],
+                "negative": [" The pressure to perform can be mentally damaging.",
+                             " Sports culture has toxic elements that need addressing."],
+            },
+            StudyDomain.PERFORMANCE_ANXIETY: {
+                "positive": [" A little nervousness actually helps me perform better.",
+                             " I've learned to channel anxiety into focus."],
+                "negative": [" Performance anxiety can be paralyzing.",
+                             " The fear of failure sometimes holds me back."],
+            },
+            StudyDomain.TEAM_DYNAMICS: {
+                "positive": [" Good teamwork is incredibly satisfying.",
+                             " The whole is greater than the sum of its parts when a team clicks."],
+                "negative": [" Team conflict can undermine everything.",
+                             " Free riders on teams make it unfair for everyone else."],
+            },
+
+            # --- Legal domains ---
+            StudyDomain.LEGAL_PSYCHOLOGY: {
+                "positive": [" I believe in the principle of justice for all.",
+                             " The legal system, while imperfect, serves an important purpose."],
+                "negative": [" The justice system has serious equity problems.",
+                             " Legal outcomes depend too much on who can afford a good lawyer."],
+            },
+            StudyDomain.JURY_DECISION: {
+                "positive": [" Jury service is an important civic duty.",
+                             " Ordinary people can make fair legal judgments."],
+                "negative": [" Jurors are influenced by biases they don't even realize.",
+                             " The jury system has significant flaws."],
+            },
+            StudyDomain.PROCEDURAL_JUSTICE: {
+                "positive": [" Fair processes matter as much as fair outcomes.",
+                             " People deserve to have their voice heard in decisions that affect them."],
+                "negative": [" Procedures that look fair on paper aren't always fair in practice.",
+                             " Process fairness is meaningless if the outcome is predetermined."],
+            },
+
+            # --- Food/Nutrition domains ---
+            StudyDomain.FOOD_PSYCHOLOGY: {
+                "positive": [" Food is one of life's great pleasures.",
+                             " Making mindful food choices feels good."],
+                "negative": [" My relationship with food is complicated.",
+                             " Diet culture puts unhealthy pressure on people."],
+            },
+            StudyDomain.EATING_BEHAVIOR: {
+                "positive": [" I've found an eating pattern that works for me.",
+                             " Being thoughtful about what I eat has been beneficial."],
+                "negative": [" Eating habits are hard to change even when you want to.",
+                             " Emotional eating is a real struggle."],
+            },
+            StudyDomain.BODY_IMAGE: {
+                "positive": [" I've learned to appreciate my body for what it can do.",
+                             " Body positivity has helped my self-image."],
+                "negative": [" Body image issues affect so many people.",
+                             " Social media makes body image problems much worse."],
+            },
+
+            # --- Communication domains ---
+            StudyDomain.COMMUNICATION: {
+                "positive": [" Clear communication can solve most problems.",
+                             " I value honest and direct conversation."],
+                "negative": [" Miscommunication causes so many unnecessary conflicts.",
+                             " People don't listen enough."],
+            },
+            StudyDomain.PERSUASION: {
+                "positive": [" Good persuasion is about finding common ground.",
+                             " I respect well-crafted arguments even when I disagree."],
+                "negative": [" Manipulation disguised as persuasion is everywhere.",
+                             " I'm wary of techniques designed to change my mind without my awareness."],
+            },
+            StudyDomain.MEDIA_EFFECTS: {
+                "positive": [" Media can inform and educate when done well.",
+                             " I appreciate access to diverse perspectives through media."],
+                "negative": [" Media distortion of reality is a serious problem.",
+                             " People are too easily influenced by what they see on screens."],
+            },
+
+            # --- Relationship domains ---
+            StudyDomain.RELATIONSHIP: {
+                "positive": [" Good relationships are worth investing in.",
+                             " Connection with others is essential to wellbeing."],
+                "negative": [" Relationships can be a source of real pain.",
+                             " Past hurt makes it hard to open up to people."],
+            },
+            StudyDomain.ATTACHMENT: {
+                "positive": [" Secure connections have been healing for me.",
+                             " Feeling safe with someone makes all the difference."],
+                "negative": [" Attachment patterns from childhood are hard to change.",
+                             " Insecure attachment affects every relationship I have."],
+            },
+            StudyDomain.SOCIAL_SUPPORT: {
+                "positive": [" Having people who support you makes everything easier.",
+                             " I'm grateful for the support system I have."],
+                "negative": [" Not everyone has the support they need.",
+                             " Loneliness is a bigger problem than people acknowledge."],
+            },
+
+            # --- Cognitive domains ---
+            StudyDomain.COGNITIVE: {
+                "positive": [" I trust my ability to think things through.",
+                             " Careful reasoning usually leads to better outcomes."],
+                "negative": [" My own biases frustrate me sometimes.",
+                             " Clear thinking is harder than it should be."],
+            },
+            StudyDomain.DECISION_MAKING: {
+                "positive": [" I feel good about most decisions I make.",
+                             " Taking time to decide usually pays off."],
+                "negative": [" Decision paralysis is real and I struggle with it.",
+                             " I second-guess myself more than I should."],
+            },
+            StudyDomain.MEMORY: {
+                "positive": [" My memory serves me well in most situations.",
+                             " I value the experiences that have shaped my memories."],
+                "negative": [" Memory is less reliable than we think.",
+                             " I wish I could trust my recollections more."],
+            },
+
+            # --- Financial Psychology domains ---
+            StudyDomain.FINANCIAL_DECISION: {
+                "positive": [" I've made some good financial choices.",
+                             " Financial planning gives me a sense of control."],
+                "negative": [" Financial decisions keep me up at night.",
+                             " Money problems create stress in every area of life."],
+            },
+            StudyDomain.FINANCIAL_PSYCHOLOGY: {
+                "positive": [" Financial literacy has genuinely helped me.",
+                             " I feel more confident about money decisions now."],
+                "negative": [" The financial system isn't designed to help regular people.",
+                             " Money stress is constant and wearing."],
+            },
+
+            # --- Cross-Cultural domains ---
+            StudyDomain.CROSS_CULTURAL: {
+                "positive": [" Cultural diversity enriches everyone's experience.",
+                             " I appreciate learning about different ways of life."],
+                "negative": [" Cultural misunderstandings can be painful.",
+                             " Not all cultural differences are easy to bridge."],
+            },
+
+            # --- Positive Psychology domains ---
+            StudyDomain.POSITIVE_PSYCHOLOGY: {
+                "positive": [" Focusing on strengths really does make a difference.",
+                             " Gratitude practice has improved my outlook."],
+                "negative": [" Forced positivity can be harmful.",
+                             " You can't just think your way out of real problems."],
+            },
+            StudyDomain.GRATITUDE: {
+                "positive": [" Practicing gratitude has genuinely changed how I see things.",
+                             " I try to appreciate what I have."],
+                "negative": [" It's hard to feel grateful when things are genuinely bad.",
+                             " Gratitude can feel forced when circumstances are difficult."],
+            },
+            StudyDomain.RESILIENCE: {
+                "positive": [" Bouncing back from adversity has made me stronger.",
+                             " Resilience is a skill that can be developed."],
+                "negative": [" Not everyone has the resources to be resilient.",
+                             " The expectation to always bounce back is exhausting."],
+            },
+
+            # --- Gender/Sexuality domains ---
+            StudyDomain.GENDER_PSYCHOLOGY: {
+                "positive": [" Progress on gender equality is encouraging.",
+                             " People should be free to be themselves."],
+                "negative": [" Gender discrimination is still pervasive.",
+                             " Rigid gender expectations harm everyone."],
+            },
+
+            # --- Neuroscience domains ---
+            StudyDomain.COGNITIVE_LOAD: {
+                "positive": [" I manage mental demands pretty well.",
+                             " Working through complex tasks is satisfying."],
+                "negative": [" Mental overload leads to poor decisions.",
+                             " I can feel when my brain is at capacity."],
+            },
+            StudyDomain.IMPULSE_CONTROL: {
+                "positive": [" I've gotten better at managing my impulses.",
+                             " Self-control is worth developing."],
+                "negative": [" Impulse control is harder when you're stressed or tired.",
+                             " I sometimes act before thinking and regret it."],
+            },
+
+            # --- Human Factors domains ---
+            StudyDomain.USER_EXPERIENCE: {
+                "positive": [" Good design makes life easier.",
+                             " I appreciate things that are intuitive to use."],
+                "negative": [" Bad design is frustrating and wastes time.",
+                             " Too many things are designed without the user in mind."],
+            },
+            StudyDomain.SAFETY_BEHAVIOR: {
+                "positive": [" Being safety-conscious is just smart.",
+                             " Prevention is always better than dealing with consequences."],
+                "negative": [" Safety measures can't prevent everything.",
+                             " People don't take safety seriously until something goes wrong."],
+            },
+
+            # --- Innovation domains ---
+            StudyDomain.INNOVATION: {
+                "positive": [" New ideas drive progress.",
+                             " I'm excited by innovative approaches to problems."],
+                "negative": [" Not every innovation actually improves things.",
+                             " Change for its own sake isn't always good."],
+            },
+            StudyDomain.CREATIVITY: {
+                "positive": [" Creative thinking leads to the best solutions.",
+                             " I value originality and fresh perspectives."],
+                "negative": [" Creativity is undervalued in most settings.",
+                             " The pressure to be creative can stifle actual creativity."],
+            },
+
+            # --- Risk/Safety domains ---
+            StudyDomain.RISK_PERCEPTION: {
+                "positive": [" Understanding risks helps me make better choices.",
+                             " I'm reasonably comfortable with calculated risks."],
+                "negative": [" Some risks are genuinely frightening.",
+                             " People systematically misjudge how risky things are."],
+            },
+
+            # --- Social Media domains ---
+            StudyDomain.SOCIAL_MEDIA: {
+                "positive": [" Social media keeps me connected to people.",
+                             " Online platforms have genuine community value."],
+                "negative": [" Social media is designed to be addictive.",
+                             " The comparison culture online is toxic."],
+            },
+
+            # --- Negotiation domains ---
+            StudyDomain.NEGOTIATION: {
+                "positive": [" Good negotiation benefits everyone involved.",
+                             " I'm a fair negotiator and that gets results."],
+                "negative": [" Negotiations can feel adversarial and stressful.",
+                             " Power imbalances make fair negotiation nearly impossible."],
+            },
+
+            # --- Gambling domain ---
+            StudyDomain.GAMBLING: {
+                "positive": [" A little risk-taking can be fun in the right context.",
+                             " I know my limits when it comes to betting."],
+                "negative": [" Gambling can easily get out of control.",
+                             " The industry preys on people's vulnerabilities."],
+            },
+
+            # --- Remote Work domain ---
+            StudyDomain.REMOTE_WORK: {
+                "positive": [" Remote work has improved my quality of life.",
+                             " The flexibility of working from home is valuable."],
+                "negative": [" Working remotely can be isolating.",
+                             " The boundary between work and personal life disappears."],
+            },
+
+            # --- Burnout domain ---
+            StudyDomain.BURNOUT: {
+                "positive": [" Recognizing burnout early helps you address it.",
+                             " Setting boundaries has helped me avoid burning out."],
+                "negative": [" Burnout is real and workplaces don't take it seriously.",
+                             " The pace of modern work is unsustainable for most people."],
+            },
         }
 
-        # v1.0.3.9: More substantive general extensions that avoid generic meta-commentary
+        # v1.0.8.0: More substantive general extensions — EXPANDED with more variety
         general_extensions = {
             "very_positive": [
                 " I feel strongly about this and wanted to be clear.",
                 " This really matters to me personally.",
                 " I've thought about this a lot.",
+                " I'm genuinely enthusiastic about this.",
+                " I can't say enough good things about where this is headed.",
+                " My positive feelings here are very strong and very real.",
             ],
             "positive": [
                 " That's where I stand on this.",
                 " Those are my honest thoughts.",
                 " I tried to be clear about my views.",
+                " I feel good about where I land on this.",
+                " My experience has been positive and that shaped my answer.",
+                " I think my perspective is fair and grounded.",
             ],
             "neutral": [
                 " I could see arguments either way.",
                 " It's more nuanced than a simple answer.",
                 " I don't have a strong lean here.",
+                " I'm still sorting out how I feel about it.",
+                " There's merit in multiple perspectives on this.",
+                " I try to stay balanced when thinking about things like this.",
             ],
             "negative": [
                 " I think things need to change.",
                 " I wish the situation were different.",
                 " There are real problems here.",
+                " My concerns are genuine and based on what I've seen.",
+                " I can't pretend this is working when it clearly isn't.",
+                " Something needs to be done about this.",
             ],
             "very_negative": [
                 " This is genuinely concerning to me.",
                 " I feel strongly that something is wrong.",
                 " I couldn't hold back my frustration.",
+                " This is one of those things that really gets under my skin.",
+                " I have serious problems with this and I'm not going to sugarcoat it.",
+                " My negative feelings about this are deeply felt.",
             ],
         }
 

@@ -1,4 +1,39 @@
 
+## 2026-02-13 — v1.0.8.0
+### Massive OE Template Expansion — 20 Iterations of Comprehensive Improvements
+
+#### Iterations 1-5: Domain Vocabulary Explosion
+- **`_get_domain_vocabulary()`** expanded from ~15 to **40+ domain categories**: clinical/mental health, developmental/parenting, personality, sports/athletics, legal/forensic, food/nutrition, communication/persuasion, relationships/attachment, cross-cultural, positive psychology, gender/sexuality, cognitive, neuroscience, human factors/UX, financial psychology, gaming/entertainment, social media, decision science, innovation/creativity, risk/safety, negotiation/bargaining, trust/credibility, workplace behavior, AI ethics/alignment, health disparities
+- Each domain provides 8-15 specialized vocabulary words used in template composition
+
+#### Iterations 6-8: Extension, Personalization, and Question-Text Mining
+- **`_extend()`** expanded with **50+ new StudyDomain entries** covering clinical, developmental, personality, sports, legal, food, communication, relationship, cognitive, financial, cross-cultural, positive psychology, gender, neuroscience, human factors, innovation, risk, social media, negotiation, gambling, remote work, burnout domains
+- **`_personalize_for_question()`** enhanced with **8 new domain condition modifiers** (cognitive, sports, clinical, relationship, communication, food, developmental, technology) — all domain-gated
+- **Action verb detection** 15→33 patterns; **Object/target detection** 8→24 groups; **Key phrase patterns** 5→15
+
+#### Iterations 9-11: Careless Response Realism + Intent Detection
+- **`_make_careless()`** expanded from 8 to **25 templates** with engagement-aware casing
+- **Intent detection** expanded with compound phrasings
+- **Intensifiers** 4→8 per sentiment; **SD qualifiers** 3→6
+
+#### Iterations 12-14: TextResponseGenerator Template Banks (persona_library.py)
+- All 5 question-type template banks expanded: opinion, explanation, feeling, description, evaluation
+- All persona styles expanded: engaged, satisficer, extreme, careless, default
+- SD hedges 3→6; Follow-up thoughts 5→8 per sentiment
+
+#### Iterations 15-17: Preview System Sync (app.py)
+- Phrase patterns synced 4→11; phrase cap 60→150 chars
+- Question intent detection added (6 categories); intent-aware preview cores
+
+#### Iterations 18-20: Extensions, Codas, Final Polish
+- General extensions per sentiment 3→6; Codas per intent 3-4→5-7
+- All files compile-checked; template banks verified for balance
+
+#### Version Synchronization
+- Updated to v1.0.8.0 across all 11 version locations
+
+---
+
 ## 2026-02-12 — v1.0.6.8
 ### Critical Fixes
 - Enforced LLM-first open-ended generation gate in the Generate UI: when LLM providers are unavailable, generation is blocked unless the user either provides a key or explicitly allows one-run final fallback.

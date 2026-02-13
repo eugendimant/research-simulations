@@ -159,7 +159,7 @@ Based on recent LLM simulation research:
 """
 
 # Version identifier to help track deployed code
-__version__ = "1.0.4.9"  # v1.0.4.9: 6 new domain-specific personas (narrative, social comparison, positive psych, moral, digital, financial)
+__version__ = "1.0.8.0"  # v1.0.8.0: Massive OE template expansion (20 iterations)
 
 import hashlib
 import random
@@ -3694,7 +3694,7 @@ class TextResponseGenerator:
         ANSWERING the question.
         """
         return {
-            # v1.0.7.9: NEW — Opinion templates that actually express views
+            # v1.0.8.0: Opinion templates — EXPANDED with diverse perspectives
             'opinion_response': {
                 'engaged': [
                     "I think {topic} is really important and my views on it are pretty clear. I've thought about this a lot and I feel confident in where I stand.",
@@ -3705,6 +3705,10 @@ class TextResponseGenerator:
                     "{topic} matters to me and I think my position on it is well-reasoned. I've considered different angles.",
                     "I've formed my views on {topic} through a mix of experience and reflection. I feel pretty solid about where I land.",
                     "There's a lot to say about {topic} and I have real opinions on it. I tried to be honest about what I actually think.",
+                    "I've given {topic} a lot of thought over the years. My opinions have been tested and refined through real experience.",
+                    "{topic} comes up a lot in my life and I've developed a clear perspective. I feel I can back up my views with real examples.",
+                    "My position on {topic} isn't just off the top of my head. I've lived this and have strong views because of that.",
+                    "I pay attention to {topic} more than most people and that informs where I stand. I feel my view is well-grounded.",
                 ],
                 'satisficer': [
                     "{topic} is fine I guess.",
@@ -3713,12 +3717,16 @@ class TextResponseGenerator:
                     "Not much to say about {topic}.",
                     "My view on {topic} is pretty simple.",
                     "{topic} is whatever.",
+                    "Haven't thought about {topic} that much honestly.",
+                    "{topic} is not something I spend a lot of time on.",
                 ],
                 'extreme': [
                     "I feel VERY strongly about {topic} and I don't think there's room for debate here.",
                     "{topic} is absolutely something I have extreme views on. No middle ground for me.",
                     "I have zero doubt about where I stand on {topic}. My position is crystal clear.",
                     "There's no question in my mind about {topic}. I feel extremely strongly.",
+                    "When it comes to {topic}, I'm all in on my position. Anyone who disagrees hasn't thought it through.",
+                    "My views on {topic} couldn't be stronger. This is a hill I'll die on.",
                 ],
                 'careless': [
                     "{topic} idk",
@@ -3729,6 +3737,8 @@ class TextResponseGenerator:
                     "{topic} i guess",
                     "yeah {topic}",
                     "{topic} sure",
+                    "{topic} no opinion",
+                    "lol {topic}",
                 ],
                 'default': [
                     "I have views on {topic} and I tried to express them honestly. It's something I've thought about before.",
@@ -3737,9 +3747,13 @@ class TextResponseGenerator:
                     "When it comes to {topic}, I know where I stand. I answered based on that.",
                     "I shared my actual views on {topic}. Nothing more nothing less.",
                     "{topic} is something I have thoughts on and I tried to capture them accurately.",
+                    "I answered honestly about {topic}. My views come from personal experience.",
+                    "My thoughts on {topic} are based on how I actually see things day to day.",
+                    "I gave my genuine perspective on {topic}. It reflects how I really feel.",
+                    "{topic} is something I can weigh in on from personal experience.",
                 ],
             },
-            # v1.0.7.9: NEW — Explanation templates that give reasons
+            # v1.0.8.0: Explanation templates — EXPANDED
             'explanation_response': {
                 'engaged': [
                     "The reason I feel this way about {topic} is that my personal experiences have shaped my view. I've seen enough to know where I stand.",
@@ -3748,32 +3762,44 @@ class TextResponseGenerator:
                     "I can explain my position on {topic} — it comes down to what I believe is right based on what I've seen and experienced.",
                     "The way I see {topic}, there are clear reasons for my position. My past experience informs my thinking.",
                     "My rationale for how I responded about {topic} is straightforward. I went with what I genuinely believe.",
+                    "Several factors influenced my thinking about {topic}. I weighed different considerations and this is where I landed.",
+                    "I responded the way I did about {topic} because of specific things I've observed. Not just gut feeling but actual reasons.",
+                    "My explanation for where I stand on {topic} is rooted in things I've personally dealt with. Real situations shaped this view.",
+                    "There's a clear logic behind my views on {topic}. I can trace my reasoning back to specific experiences.",
                 ],
                 'satisficer': [
                     "Just how I feel about {topic}.",
                     "No big reason, {topic} is just my view.",
                     "Its just {topic}, went with my gut.",
                     "Thats just how I see {topic}.",
+                    "Idk hard to explain, just {topic}.",
+                    "No deep reason, thats just my take on {topic}.",
                 ],
                 'extreme': [
                     "The reason is obvious if you think about {topic} — I can't understand how anyone sees it differently.",
                     "My reasoning on {topic} is rock solid. I know exactly why I feel this way.",
                     "It's clear to me why {topic} matters so much. The evidence is overwhelming.",
+                    "My explanation is simple: {topic} is one of those things where the answer is obvious to anyone paying attention.",
+                    "I feel this way about {topic} because the facts are undeniable. There's really no other reasonable position.",
                 ],
                 'careless': [
                     "idk why, just {topic}",
                     "{topic} because",
                     "no reason really, {topic}",
                     "just because {topic}",
+                    "cant explain it {topic}",
+                    "{topic} dunno",
                 ],
                 'default': [
                     "My thinking on {topic} is based on my personal experience and values. That's the honest explanation.",
                     "I can explain my response to {topic} — it comes from how I actually see things.",
                     "The reason behind my views on {topic} is pretty straightforward. I went with my genuine perspective.",
                     "When it comes to {topic}, my reasoning is based on what I've actually experienced.",
+                    "I responded the way I did because {topic} connects to things I've lived through. That's the real reason.",
+                    "My position on {topic} makes sense when you consider my background and experience. That's where it comes from.",
                 ],
             },
-            # v1.0.7.9: NEW — Feeling/emotional reaction templates
+            # v1.0.8.0: Feeling/emotional reaction templates — EXPANDED
             'feeling_response': {
                 'engaged': [
                     "When I think about {topic}, I have a genuine emotional response. It's something that affects me on a personal level.",
@@ -3782,6 +3808,10 @@ class TextResponseGenerator:
                     "I have real feelings about {topic} that go beyond just an opinion. This touches something deeper for me.",
                     "{topic} evokes strong emotions for me because of my personal experiences. I didn't hold back.",
                     "How I feel about {topic} is complicated but genuine. I tried to capture the full range of my emotions.",
+                    "{topic} hits home for me in a way that's hard to explain unless you've been through it. The emotions are very real.",
+                    "I'm not usually this open about my feelings but {topic} genuinely moves me. I felt compelled to express that.",
+                    "There's an emotional weight to {topic} for me. It connects to things in my life that matter deeply.",
+                    "My reaction to {topic} was more emotional than I expected. It clearly taps into something meaningful for me.",
                 ],
                 'satisficer': [
                     "{topic} doesn't make me feel much either way.",
@@ -3807,60 +3837,82 @@ class TextResponseGenerator:
                     "I have genuine emotional reactions to {topic}. My answer reflects those feelings.",
                 ],
             },
-            # v1.0.7.9: NEW — Description templates
+            # v1.0.8.0: Description templates — EXPANDED
             'description_response': {
                 'engaged': [
                     "My experience with {topic} was something I remember clearly. I tried to describe what actually happened and how it went.",
                     "I can describe my interaction with {topic} in detail. There were specific things that stood out to me.",
                     "What happened with {topic} was memorable enough that I can give a real description. I paid attention throughout.",
                     "I observed several things about {topic} that I tried to capture. The details matter to me.",
+                    "Let me describe what stood out about {topic}. There were specific moments and details that I noticed and want to share.",
+                    "I remember {topic} pretty vividly. The details are fresh in my mind and I tried to be specific about what I observed.",
+                    "When it comes to describing {topic}, I can speak from direct experience. I noticed particular things that shaped my impression.",
+                    "My encounter with {topic} had several notable aspects. I tried to describe not just what happened but how it felt to be part of it.",
                 ],
                 'satisficer': [
                     "{topic} was fine. Normal.",
                     "Nothing much to describe about {topic}.",
                     "{topic}, it went as expected.",
+                    "Pretty standard experience with {topic}.",
+                    "{topic} was uneventful.",
                 ],
                 'extreme': [
                     "The experience with {topic} was absolutely remarkable — either amazingly good or terrible, hard to forget.",
                     "What happened with {topic} was extreme. There's no way to describe it as average.",
+                    "{topic} was one of the most intense experiences I can describe. Nothing about it was moderate.",
                 ],
                 'careless': [
                     "{topic} was ok",
                     "fine {topic}",
                     "normal {topic}",
+                    "{topic} nothing special",
                 ],
                 'default': [
                     "My experience with {topic} was what it was. I described it as honestly as I could.",
                     "I tried to give an accurate description of {topic} based on what I observed.",
                     "What I noticed about {topic} is what I shared. Tried to be accurate.",
+                    "I described {topic} based on what I actually saw and experienced. Nothing exaggerated.",
+                    "My description of {topic} reflects what actually happened from my perspective.",
+                    "I tried to be straightforward about {topic}. Just shared what I noticed.",
                 ],
             },
-            # v1.0.7.9: NEW — Evaluation/rating explanation templates
+            # v1.0.8.0: Evaluation/rating explanation templates — EXPANDED
             'evaluation_response': {
                 'engaged': [
                     "I evaluated {topic} carefully and my assessment is based on real criteria that matter to me. I tried to be fair and thorough.",
                     "My rating of {topic} reflects what I genuinely think. I considered the strengths and weaknesses before making my judgment.",
                     "I took the evaluation of {topic} seriously. My assessment is based on what I actually observed, not assumptions.",
                     "When assessing {topic}, I tried to be balanced but honest. Some aspects stood out more than others.",
+                    "I looked at {topic} from multiple angles before settling on my evaluation. There were strengths and weaknesses I tried to weigh fairly.",
+                    "My assessment of {topic} accounts for both the positives and negatives. I didn't just go with my first impression.",
+                    "I spent real time thinking about how to evaluate {topic}. My rating considers specific criteria that matter to me.",
+                    "Evaluating {topic} required me to think carefully about what standards I was applying. I tried to be consistent and fair.",
                 ],
                 'satisficer': [
                     "{topic} is average.",
                     "My rating of {topic} is middle of the road.",
                     "{topic} is ok, not great not bad.",
+                    "Can't rate {topic} too high or too low. Its in between.",
+                    "Average marks for {topic}.",
                 ],
                 'extreme': [
                     "My assessment of {topic} is extreme and I stand by it completely. The quality was either outstanding or awful.",
                     "I rated {topic} at the extreme end because that's where it deserves to be. No hedging.",
+                    "My evaluation of {topic} is at the far end of the scale and I don't think that's unfair at all.",
                 ],
                 'careless': [
                     "{topic} is fine whatever",
                     "idk {topic} is ok",
                     "{topic} average",
+                    "cant really evaluate {topic}",
                 ],
                 'default': [
                     "I evaluated {topic} based on my honest impressions. My rating reflects what I actually think.",
                     "My assessment of {topic} is genuine. I tried to be fair in my evaluation.",
                     "I rated {topic} based on my real experience with it.",
+                    "My evaluation of {topic} is straightforward. I went with my honest impression.",
+                    "I assessed {topic} based on what I know and have experienced. It's a genuine rating.",
+                    "I tried to be fair when evaluating {topic}. My scores reflect real opinions.",
                 ],
             },
             # LEGACY: task_summary kept for backward compatibility but improved
@@ -4439,12 +4491,15 @@ class TextResponseGenerator:
                     response += '.'
                 response += rng.choice(_emphatics)
 
-        # v1.0.5.0: Social desirability modulation — high SD personas add hedges/qualifiers
+        # v1.0.8.0: Social desirability modulation — EXPANDED hedges
         if _sd > 0.7 and rng.random() < 0.4:
             _sd_hedges = [
                 "I tried to be fair in my responses. ",
                 "I want to give a balanced perspective. ",
                 "I considered different viewpoints. ",
+                "I tried to be honest without being harsh. ",
+                "I wanted to give a thoughtful response. ",
+                "I tried to be respectful in how I answered. ",
             ]
             response = rng.choice(_sd_hedges) + response
 
@@ -4466,7 +4521,7 @@ class TextResponseGenerator:
                     response = response.rstrip('.')
                     response += f", especially regarding {_ent}."
 
-        # v1.0.3.9: Domain-neutral follow-up thoughts — no consumer language
+        # v1.0.8.0: Domain-neutral follow-up thoughts — EXPANDED
         followups = {
             'positive': [
                 " Overall I came away with a positive impression.",
@@ -4474,6 +4529,9 @@ class TextResponseGenerator:
                 " This left me feeling good about it.",
                 " I think this is heading in the right direction.",
                 " I'm genuinely supportive of where this is going.",
+                " This reinforced my positive outlook.",
+                " I'd be happy to see more of this kind of thing.",
+                " My positive feelings about this are pretty strong.",
             ],
             'negative': [
                 " Overall I wasn't that impressed.",
@@ -4481,6 +4539,9 @@ class TextResponseGenerator:
                 " I was hoping for something better honestly.",
                 " I think there are real problems here.",
                 " This is concerning to me.",
+                " I wish things were handled differently.",
+                " This confirmed some of my concerns.",
+                " I don't see this improving without real changes.",
             ],
             'neutral': [
                 " I don't have particularly strong feelings about it.",
@@ -4488,6 +4549,9 @@ class TextResponseGenerator:
                 " My feelings are mixed.",
                 " I can see both sides of this.",
                 " I'm still forming my opinion.",
+                " It's hard to commit to a strong position either way.",
+                " I'd need more information to feel strongly.",
+                " There are arguments on both sides that make sense to me.",
             ]
         }
 
