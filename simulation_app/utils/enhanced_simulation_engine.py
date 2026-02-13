@@ -45,7 +45,7 @@ This module is designed to run inside a `utils/` package (i.e., imported as
 """
 
 # Version identifier to help track deployed code
-__version__ = "1.0.8.2"  # v1.0.8.2: LLM stall fix, watchdog
+__version__ = "1.0.8.3"  # v1.0.8.3: OE narrative fix
 
 # =============================================================================
 # SCIENTIFIC FOUNDATIONS FOR SIMULATION
@@ -7626,41 +7626,99 @@ class EnhancedSimulationEngine:
             'however', 'therefore', 'moreover', 'furthermore', 'indeed',
             'certain', 'particular', 'specific', 'general', 'overall',
         }
-        # v1.0.5.0: Deep topic intelligence — 7-strategy semantic context extraction
+        # v1.0.8.3: Deep topic intelligence — 7-strategy semantic context extraction
         # Produces a structured understanding of what the question is ABOUT, who/what
         # entities are involved, and what kind of response the question expects.
         # This flows through all three generators (LLM, Comprehensive, TextResponse).
 
         # Strategy 1: Extract from ORIGINAL question context/text (not embedded string)
-        _qt_for_topic = question_context or _original_question_text or question_text or ""
+        # v1.0.8.3: Use question text FIRST for topic (it's the actual question asked),
+        # then context as supplementary. Context often has researcher instructions that
+        # pollute topic extraction (e.g., "Participants are asked to think about...").
+        _qt_for_topic = _original_question_text or question_text or ""
         # Strip common researcher framing prefixes
         _qt_for_topic = _ctx_re.sub(
             r'^(?:participants?\s+(?:are|were|will\s+be)\s+)',
             '', _qt_for_topic, flags=_ctx_re.IGNORECASE).strip()
+
+        # v1.0.8.3: Adjective modifiers that describe the topic but ARE NOT the topic.
+        # "your craziest conspiracy theory" → "conspiracy theory" not "craziest conspiracy"
+        # Grounded in: adjective-noun phrase parsing — superlatives, possessives, and
+        # evaluative adjectives that modify but don't constitute the core noun phrase.
+        _adj_modifiers = {
+            # Superlatives and ordinals
+            'favorite', 'craziest', 'wildest', 'deepest', 'biggest', 'worst',
+            'best', 'strongest', 'weirdest', 'strangest', 'funniest', 'scariest',
+            'most', 'least', 'first', 'last', 'recent', 'latest', 'current',
+            # Evaluative adjectives
+            'personal', 'private', 'secret', 'honest', 'real', 'true', 'genuine',
+            'crazy', 'wild', 'extreme', 'controversial', 'unpopular', 'important',
+            'interesting', 'memorable', 'notable', 'significant', 'relevant',
+            # Possessive/relational
+            'own', 'particular', 'specific', 'actual', 'main', 'primary',
+            # Emotional intensity modifiers
+            'deeply', 'strongly', 'absolutely', 'completely', 'totally', 'really',
+            # Question framing words (not topics themselves)
+            'related', 'following', 'given', 'certain', 'various',
+        }
         _qt_words = _ctx_re.findall(r'\b[a-zA-Z]{3,}\b', _qt_for_topic.lower())
-        _topic_words = [w for w in _qt_words if w not in _ctx_stop][:6]
+        _topic_words = [w for w in _qt_words if w not in _ctx_stop and w not in _adj_modifiers][:6]
+
+        # v1.0.8.3: Also extract from context as secondary source for enrichment
+        _context_topic_words: List[str] = []
+        if question_context:
+            _ctx_for_topic = _ctx_re.sub(
+                r'^(?:participants?\s+(?:are|were|will\s+be)\s+(?:asked\s+to\s+)?)',
+                '', question_context, flags=_ctx_re.IGNORECASE).strip()
+            _ctx_words = _ctx_re.findall(r'\b[a-zA-Z]{3,}\b', _ctx_for_topic.lower())
+            _context_topic_words = [w for w in _ctx_words
+                                    if w not in _ctx_stop and w not in _adj_modifiers][:6]
 
         # Strategy 2: Phrase-level extraction — find meaningful noun phrases
-        # v1.0.5.0: Expanded patterns + increased capture from 60 to 150 chars
+        # v1.0.8.3: Massively expanded patterns for narrative, creative, disclosure,
+        # and superlative question types (not just opinion/evaluation).
         _phrase_topic = ""
         _phrase_patterns = [
+            # v1.0.8.3: Superlative/creative capture — "your craziest/most X related to Y"
+            r'(?:your\s+(?:craziest|wildest|biggest|deepest|worst|best|strongest|weirdest|strangest|funniest|scariest|most\s+\w+|favorite))\s+(.+?)(?:\s+(?:related\s+to|about|regarding|concerning)\s+\w+|\.|$|\?)',
+            # v1.0.8.3: "Tell us X related to Y" — capture the core noun phrase
+            r'(?:tell\s+(?:us|me)\s+(?:your|about\s+your|a|about\s+a|about))\s+(.+?)(?:\.|$|\?)',
+            # v1.0.8.3: "Tell us something X" — capture disclosure type
+            r'(?:tell\s+(?:us|me)\s+something)\s+(.+?)(?:\.|$|\?)',
+            # v1.0.8.3: "Share X" / "Describe X"
+            r'(?:share|describe|write\s+about)\s+(?:a|an|your|the)?\s*(.+?)(?:\.|$|\?)',
+            # Original opinion/feeling patterns
             r'(?:feelings?|thoughts?|opinions?|views?|attitudes?|reactions?|impressions?)\s+(?:about|toward|towards|on|regarding|concerning)\s+(.+?)(?:\.|$|\?)',
             r'(?:describe|explain|tell\s+us|share)\s+(?:about|how\s+you\s+feel\s+about|your\s+views?\s+on)\s+(.+?)(?:\.|$|\?)',
             r'(?:how\s+do\s+you\s+feel\s+about)\s+(.+?)(?:\.|$|\?)',
             r'(?:what\s+do\s+you\s+think\s+(?:about|of))\s+(.+?)(?:\.|$|\?)',
             r'(?:what\s+(?:is|are)\s+your\s+(?:views?|thoughts?|opinions?)\s+(?:on|about))\s+(.+?)(?:\.|$|\?)',
-            # v1.0.5.0: New — capture "how [X] makes you feel" type questions
             r'(?:how\s+(?:does|did|would))\s+(.+?)\s+(?:make\s+you\s+feel|affect\s+you|influence)',
-            # v1.0.5.0: New — capture "why did you [choose/rate/respond]" questions
             r'(?:why\s+did\s+you\s+(?:choose|select|rate|respond|decide|prefer))\s+(.+?)(?:\.|$|\?)',
-            # v1.0.5.0: New — capture prepositional objects "your experience with X"
             r'(?:your\s+(?:experience|interaction|encounter)\s+with)\s+(.+?)(?:\.|$|\?)',
+            # v1.0.8.3: "What is your X" — personal attribute capture
+            r'(?:what\s+(?:is|are)\s+your)\s+(.+?)(?:\.|$|\?)',
         ]
-        for _pp in _phrase_patterns:
-            _pm = _ctx_re.search(_pp, _qt_for_topic, flags=_ctx_re.IGNORECASE)
-            if _pm:
-                _phrase_topic = _pm.group(1).strip()[:150]
+        # v1.0.8.3: Search BOTH question text AND context for phrases
+        _phrase_search_texts = [_qt_for_topic]
+        if question_context:
+            _phrase_search_texts.append(question_context)
+        for _search_text in _phrase_search_texts:
+            if _phrase_topic:
                 break
+            for _pp in _phrase_patterns:
+                _pm = _ctx_re.search(_pp, _search_text, flags=_ctx_re.IGNORECASE)
+                if _pm:
+                    _captured = _pm.group(1).strip()[:150]
+                    # v1.0.8.3: Clean captured phrase — remove trailing researcher instructions
+                    _captured = _ctx_re.sub(
+                        r'\s*[-–—]\s*(?:I\s+want|we\s+want|this\s+(?:will|should|helps?)|participants?).*$',
+                        '', _captured, flags=_ctx_re.IGNORECASE).strip()
+                    # Remove trailing articles/prepositions
+                    _captured = _ctx_re.sub(r'\s+(?:the|a|an|to|for|in|on|at|by|with)$', '', _captured).strip()
+                    if len(_captured) >= 3:
+                        _phrase_topic = _captured
+                        break
 
         # Strategy 3: Condition-aware topic enrichment
         # Extract meaningful words from condition name to enrich topic
@@ -8153,7 +8211,21 @@ class EnhancedSimulationEngine:
             'luck': 'luck beliefs and superstitious thinking',
             'superstition': 'superstitious beliefs and magical thinking',
             'conspiracy_theory': 'conspiracy thinking and epistemic mistrust',
+            'conspiracy': 'conspiracy beliefs and alternative explanations',
             'paranormal': 'paranormal beliefs and supernatural attitudes',
+            # v1.0.8.3: Expanded for narrative/creative/disclosure question types
+            'secret': 'personal secrets and self-disclosure',
+            'disclosure': 'personal disclosure and private information sharing',
+            'confession': 'confessions and personal admissions',
+            'family': 'family relationships and family knowledge',
+            'narrative': 'personal narratives and life stories',
+            'anecdote': 'personal anecdotes and memorable experiences',
+            'story': 'personal stories and lived experiences',
+            'belief': 'personal beliefs and conviction systems',
+            'theory': 'personal theories and explanatory beliefs',
+            'opinion': 'personal opinions and value judgments',
+            'experience': 'personal experiences and life events',
+            'memory': 'personal memories and recollections',
         }
         _domain_hint = ""
         # Step A: Check comprehensive domain vocabulary table
@@ -8207,11 +8279,36 @@ class EnhancedSimulationEngine:
         # v1.0.6.5: Derive proper nouns from extracted entities (fixes undefined _proper_nouns bug)
         _proper_nouns = {e.lower() for e in _entities}
 
-        # Strategy 6 (v1.0.5.0): Question intent classification
-        # Determines what KIND of response the question expects
+        # Strategy 6 (v1.0.8.3): Question intent classification — EXPANDED
+        # Determines what KIND of response the question expects.
+        # v1.0.8.3: Added narrative, creative, disclosure, and personal_story intents.
+        # These are FUNDAMENTALLY different from opinion — they need the participant
+        # to GENERATE CONTENT (a story, a theory, a secret) not just express a view.
         _question_intent = "opinion"  # default
-        _qt_lower = _qt_for_topic.lower()
-        if any(w in _qt_lower for w in ('why', 'explain', 'reason', 'because')):
+        _qt_lower = (_original_question_text or _qt_for_topic or "").lower()
+        _ctx_lower = (question_context or "").lower()
+        _both_lower = f"{_qt_lower} {_ctx_lower}"
+        # Check MOST SPECIFIC intents first, then fall back to broader categories
+        if any(w in _both_lower for w in ('conspiracy', 'theory', 'believe in', 'crazy belie',
+                                           'paranormal', 'supernatural', 'superstition')):
+            _question_intent = "creative_belief"
+        elif any(w in _both_lower for w in ('secret', 'only your family', 'nobody knows',
+                                             'never told', 'private', 'confession', 'confess',
+                                             'reveal', 'admit', 'embarrassing')):
+            _question_intent = "personal_disclosure"
+        elif any(w in _qt_lower for w in ('tell us your', 'share your', 'write about your',
+                                           'describe your')):
+            # "Tell us your X" = narrative generation, not opinion
+            if any(w in _both_lower for w in ('craziest', 'wildest', 'favorite', 'most',
+                                               'biggest', 'worst', 'best', 'funniest',
+                                               'scariest', 'strangest')):
+                _question_intent = "creative_narrative"
+            elif any(w in _both_lower for w in ('experience', 'story', 'time when',
+                                                 'moment', 'situation', 'incident')):
+                _question_intent = "personal_story"
+            else:
+                _question_intent = "description"
+        elif any(w in _qt_lower for w in ('why', 'explain', 'reason', 'because')):
             _question_intent = "explanation"
         elif any(w in _qt_lower for w in ('describe', 'tell us about', 'what happened')):
             _question_intent = "description"
@@ -8232,9 +8329,17 @@ class EnhancedSimulationEngine:
             _st_words = _ctx_re.findall(r'\b[a-zA-Z]{3,}\b', self.study_title.lower())
             _study_title_words = [w for w in _st_words if w not in _ctx_stop][:4]
 
-        # v1.0.5.5: Entity-first topic construction — prefer named entities
-        # (people, brands, places) as clean topic, limit to 2 content words max
-        # to avoid word-salad like "love hate Trump political".
+        # v1.0.8.3: Topic construction — phrase-first, then entities, then words.
+        # Enriches topic_words with context words for broader coverage.
+        if _context_topic_words:
+            # Merge context words into topic_words (deduplicated, context-first)
+            _seen = set(_topic_words)
+            for _cw in _context_topic_words:
+                if _cw not in _seen:
+                    _topic_words.append(_cw)
+                    _seen.add(_cw)
+            _topic_words = _topic_words[:8]  # Allow slightly more after merge
+
         if not topic or topic == "general":
             if _phrase_topic:
                 _parts = _phrase_topic.split()
@@ -8244,8 +8349,9 @@ class EnhancedSimulationEngine:
                 # Named entity is the cleanest topic: "Trump", "Biden", etc.
                 topic = _entities[0]
             elif _topic_words:
-                # Max 2 content words to avoid word-salad
-                topic = ' '.join(_topic_words[:2])
+                # v1.0.8.3: Allow up to 3 content words for richer topics
+                # e.g., "conspiracy theory politics" instead of "conspiracy theory"
+                topic = ' '.join(_topic_words[:3])
             elif _cond_topic_words:
                 topic = ' '.join(_cond_topic_words[:2])
             elif _domain_hint:

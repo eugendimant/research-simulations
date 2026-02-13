@@ -159,7 +159,7 @@ Based on recent LLM simulation research:
 """
 
 # Version identifier to help track deployed code
-__version__ = "1.0.8.2"  # v1.0.8.2: LLM stall fix
+__version__ = "1.0.8.3"  # v1.0.8.3: OE narrative fix
 
 import hashlib
 import random
@@ -3915,6 +3915,163 @@ class TextResponseGenerator:
                     "I tried to be fair when evaluating {topic}. My scores reflect real opinions.",
                 ],
             },
+            # v1.0.8.3: CREATIVE BELIEF templates — conspiracy theories, paranormal, superstitions
+            # These generate ACTUAL CONTENT (specific conspiracy theories / beliefs), not opinions about beliefs.
+            # Grounded in: Brotherton et al. (2013) Generic Conspiracist Beliefs Scale;
+            # Swami et al. (2011) Conspiracy Mentality; Douglas et al. (2017) psychological underpinnings.
+            'creative_belief_response': {
+                'engaged': [
+                    "Ok so I know this sounds crazy but I genuinely think the government has way more surveillance tech than they let on. Like there are patents for stuff that supposedly doesn't exist. I've gone down that rabbit hole and there's actually decent evidence if you look for it.",
+                    "My conspiracy theory is about big pharma. I think they deliberately suppress certain cheap remedies because there's no profit in curing people with generic drugs. A friend of mine worked in the industry and told me some things that really opened my eyes.",
+                    "I believe there's a lot more coordination between major media outlets than people realize. Not like a secret society exactly but more like they all get the same talking points and run with them. The stories that get buried are more telling than the ones they push.",
+                    "Honestly I think a lot of historical events were way more complex than what we're taught. The official stories are simplified to the point of being misleading. When you actually read declassified documents it paints a completely different picture.",
+                    "I'm convinced that social media algorithms are specifically designed to keep people addicted and angry. Not as a side effect but as the actual goal. Internal documents from these companies basically confirm it but nothing changes.",
+                    "My craziest one is that I think the food industry knowingly puts addictive compounds in processed food. The amount of sugar in everything is not an accident. They have scientists whose entire job is making food impossible to stop eating.",
+                    "I believe that most major political scandals are orchestrated distractions from actual policy changes happening behind the scenes. While everyone argues about the latest controversy, laws get passed that nobody reads or discusses.",
+                    "Here's mine: I think the education system is deliberately designed to produce compliant workers rather than critical thinkers. The way schools are structured — bells, rows, standardized tests — it's basically factory training.",
+                    "I genuinely believe there are technologies being suppressed because they'd disrupt too many industries. Energy tech specifically. Too many patents have been bought and shelved by major corporations.",
+                    "My conspiracy theory is that the housing market is manipulated by a handful of investment firms who deliberately restrict supply to keep prices high. The data actually supports this more than most people realize.",
+                ],
+                'satisficer': [
+                    "I guess the moon landing stuff is kind of interesting. Not sure I fully believe it but some of the photo evidence is weird.",
+                    "Idk maybe that the government hides UFO stuff. Seems possible.",
+                    "Something about how social media listens to your conversations. Happens too often to be coincidence.",
+                    "I think big companies definitely collude on prices. Not really that crazy I guess.",
+                    "Maybe that some elections have been tampered with. Wouldn't be surprised.",
+                ],
+                'extreme': [
+                    "I am 100% CERTAIN that the deep state is real and actively controlling politics behind the scenes. Anyone who denies it hasn't been paying attention. The evidence is OVERWHELMING if you actually look.",
+                    "Wake up people! The entire financial system is designed to keep ordinary people in debt. Central banks, Wall Street, all of it. This isn't even a conspiracy it's just how it works and they don't even hide it anymore!",
+                    "I KNOW for a FACT that major world events are planned. Not coincidences. Everything from economic crashes to political upheavals. There are people pulling strings and they've been doing it for decades.",
+                    "The media is COMPLETELY controlled. Every single major outlet. If you still trust mainstream news you are being manipulated and that's just the truth. Independent journalists who get too close to the truth get silenced.",
+                ],
+                'careless': [
+                    "illuminati or whatever",
+                    "idk aliens",
+                    "government stuff lol",
+                    "moon landing maybe fake idk",
+                    "the usual ones I guess",
+                ],
+                'default': [
+                    "I think there's probably some truth to the idea that large corporations have more influence over government policy than they should. It's not exactly a conspiracy theory since lobbying is legal, but the extent of it feels wrong.",
+                    "I've always thought it was suspicious how certain news stories dominate the cycle while other important stuff gets buried. Whether it's coordinated or just how incentives work, the effect is the same.",
+                    "My conspiracy-ish belief is that planned obsolescence is real. Companies definitely make products that break after a certain time so you have to buy new ones. Apple basically admitted to this with the battery thing.",
+                    "I think social media companies know exactly how harmful their products are for mental health and don't care because engagement equals profit. Not sure if that counts as conspiracy or just capitalism.",
+                    "I believe pharmaceutical companies have way too much influence over what doctors prescribe. The amount of money they spend on marketing to doctors is kind of crazy when you look at the numbers.",
+                    "I think most conspiracy theories have a kernel of truth that gets distorted. Like the government probably does keep some things secret, but it's more about incompetence than grand plans.",
+                ],
+            },
+            # v1.0.8.3: PERSONAL DISCLOSURE templates — secrets, private information, confessions
+            # Grounded in: Pennebaker (1997) Opening Up; Jourard (1971) Self-Disclosure;
+            # Cozby (1973) self-disclosure literature; Dindia & Allen (1992) meta-analysis.
+            'personal_disclosure_response': {
+                'engaged': [
+                    "Something my family knows that most people don't is that I struggled really badly with anxiety in my early twenties. I barely left the house for almost a year. I've gotten a lot better but it shaped who I am.",
+                    "My family knows I almost dropped out of college. I was one semester away from quitting because I felt completely lost about what I wanted to do with my life. My mom talked me into finishing and I'm glad she did.",
+                    "Nobody outside my family knows that I was adopted. My parents told me when I was twelve and it changed how I understood a lot of things about myself. I've never told friends because I don't want it to define me.",
+                    "Here's something personal: I have a learning disability that I've never told anyone at work about. My family helped me develop workarounds when I was young and most people have no idea.",
+                    "My family knows I went through a really dark period after a breakup where I basically stopped functioning. I called in sick to work for weeks. They were the ones who got me through it.",
+                    "Something only my family would know is that I secretly send money to a relative who's struggling. I don't talk about it because I don't want to embarrass them or make it weird.",
+                    "My family knows I considered joining the military instead of going to college. I was actually at the recruiting office. Changed my mind at the last minute and never told anyone else.",
+                    "Only my family knows about a medical scare I had a few years ago. I kept it completely private from friends and coworkers because I didn't want the attention or pity.",
+                    "Something personal is that my family went through bankruptcy when I was a teenager. We lost our house. It fundamentally changed my relationship with money and I still feel its effects.",
+                    "My family knows I was bullied pretty severely in middle school. I've never told my current friends because by the time I met them I'd become a very different person.",
+                ],
+                'satisficer': [
+                    "I guess my family knows I hate my job. I don't tell other people that.",
+                    "Something private I guess is that I failed a class in school once. Not a big deal but I never told friends.",
+                    "My family knows I don't like some of our relatives. That's about it.",
+                    "I have a tattoo in a hidden spot that only family has seen. It's not that exciting.",
+                    "My family knows about a dumb thing I did as a teenager. Rather not say what exactly.",
+                ],
+                'extreme': [
+                    "My family knows something about me that would SHOCK everyone I know. I completely reinvented myself when I moved cities. The person I am now is nothing like who I was before and that's very intentional.",
+                    "There's a family secret that I will take to my grave. It involves something that happened when I was young that would completely change how people see my family. I've never said a word to anyone.",
+                    "My family knows I have a side of me that I never show ANYONE else. It's not bad exactly, but it's so different from my public persona that people literally would not believe it.",
+                    "My family knows about a decision I made that I will NEVER regret even though everyone else would judge me for it. It was the hardest choice I've ever made and I'd do it again in a heartbeat.",
+                    "Only my family knows the REAL reason I left my last job. What I tell people is completely different from what actually happened and if the truth came out it would change how people see that whole situation.",
+                ],
+                'careless': [
+                    "idk family stuff",
+                    "nothing really comes to mind",
+                    "rather not say",
+                    "pass",
+                    "my family knows stuff I guess",
+                ],
+                'default': [
+                    "My family knows that I'm much more sensitive than I let on. At work and with friends I seem pretty easy-going but at home I actually worry about things a lot more than people would guess.",
+                    "Something my family knows is that I almost made a completely different career choice. I was accepted to a different program but switched last minute. Sometimes I wonder what would have happened.",
+                    "Only my family really knows how much I struggled with a health issue a few years back. I kept it private from everyone else because I didn't want to be treated differently.",
+                    "My family knows I'm not as confident as I seem. I put on a good front but inside I second-guess myself more than anyone would expect.",
+                    "Something personal that only my family would know is that I have a really emotional attachment to a specific place from my childhood. Going back there hits me harder than I'd ever admit to friends.",
+                    "My family knows I went through a period where I seriously questioned some major life decisions. It wasn't a crisis exactly but it was a tough time that I kept very private.",
+                ],
+            },
+            # v1.0.8.3: CREATIVE NARRATIVE templates — general narrative/story generation
+            # For "tell us your craziest/wildest/most memorable X" type questions.
+            # Grounded in: Green & Brock (2000) narrative transportation; Bruner (1991) narrative psychology.
+            'creative_narrative_response': {
+                'engaged': [
+                    "The craziest thing related to {topic} that I've experienced was completely unexpected. I was in a situation where everything I assumed turned out to be wrong. It really changed how I think about {topic} going forward.",
+                    "I have a wild story about {topic}. Without going into too many details, I witnessed something that most people would not believe. It happened a few years ago and I still think about it regularly.",
+                    "My most memorable experience with {topic} happened when I was least expecting it. The situation was so bizarre that I called someone immediately afterward just to have a witness to what I'd seen.",
+                    "When it comes to {topic}, I once had an experience that completely defied my expectations. I went in thinking one thing and came out with a completely different perspective. It was genuinely eye-opening.",
+                    "The wildest thing about {topic} in my life was a situation that escalated beyond anything I could have predicted. Looking back, the chain of events seems almost too perfect to be coincidental.",
+                    "I have a {topic} story that I rarely tell because people don't believe me. But it genuinely happened and it's one of those things that makes me question certain assumptions.",
+                    "My experience with {topic} took such an unexpected turn that I still bring it up years later. The contrast between what I expected and what actually happened was striking.",
+                    "Here's my {topic} story: I found myself in a situation where the normal rules didn't seem to apply. Everyone involved was as confused as I was. It was surreal honestly.",
+                ],
+                'satisficer': [
+                    "I don't have a super crazy {topic} story. Just normal stuff I guess.",
+                    "Nothing too wild about {topic} in my life. Pretty standard.",
+                    "I've seen some stuff related to {topic} but nothing that stands out.",
+                    "My experience with {topic} is pretty boring honestly. Nothing worth writing about.",
+                ],
+                'extreme': [
+                    "My {topic} experience was absolutely INSANE. I'm not exaggerating at all. What happened was so extreme that people literally don't believe me when I tell them.",
+                    "The craziest {topic} thing in my life was genuinely unbelievable. It was one of those once-in-a-lifetime situations that changes everything about how you see the world.",
+                    "I have a {topic} story that would blow your mind. The intensity of what happened was off the charts and I still feel the effects of it today.",
+                ],
+                'careless': [
+                    "idk nothing comes to mind about {topic}",
+                    "{topic} nothing special",
+                    "cant think of anything about {topic}",
+                    "dont really have a {topic} story",
+                ],
+                'default': [
+                    "I've had some interesting experiences related to {topic} over the years. Nothing too dramatic but a few things that made me think differently about it.",
+                    "When it comes to {topic}, I have a few stories that stand out. The most interesting one involved a situation that didn't go the way anyone expected.",
+                    "My most notable {topic} experience was when I realized that my assumptions were completely off. The reality was very different from what I'd imagined.",
+                    "I've encountered {topic} in ways that surprised me. One experience in particular sticks with me because it was so different from what I'd expected.",
+                    "I have a {topic} story from a few years back that I think about sometimes. It wasn't dramatic but it gave me a new perspective.",
+                ],
+            },
+            # v1.0.8.3: PERSONAL STORY templates — "tell us about a time when..."
+            'personal_story_response': {
+                'engaged': [
+                    "There was a time when {topic} came up in my life in a really unexpected way. I was dealing with a situation at work and it forced me to confront how I actually felt versus how I thought I should feel.",
+                    "I remember a specific experience with {topic} that stays with me. It happened during a difficult period in my life and the way it played out taught me something important about myself.",
+                    "My most significant experience with {topic} was when I had to make a real decision about it, not just think about it abstractly. The pressure of the situation made me see things differently.",
+                    "I have a personal story about {topic} from when I was younger. At the time I didn't fully understand what was happening but looking back now it makes a lot more sense.",
+                    "My experience with {topic} really came into focus during a conversation with someone close to me. They said something that made me realize I'd been thinking about it all wrong.",
+                ],
+                'satisficer': [
+                    "I had a thing related to {topic} once. It was ok.",
+                    "Something about {topic} happened a while back. Don't remember all the details.",
+                    "I guess I've dealt with {topic} before. Nothing major.",
+                ],
+                'careless': [
+                    "cant think of a {topic} story",
+                    "idk {topic}",
+                    "nothing about {topic} comes to mind",
+                ],
+                'default': [
+                    "I've had experiences with {topic} that shaped how I think about it. One situation in particular stands out because it was different from what I expected.",
+                    "There was a moment involving {topic} that I still think about. It wasn't dramatic but it changed my perspective.",
+                    "I've dealt with {topic} in my own life and it gave me a real understanding of what it means beyond just the abstract idea.",
+                    "My personal experience with {topic} taught me that the reality is more nuanced than I originally thought.",
+                ],
+            },
             # LEGACY: task_summary kept for backward compatibility but improved
             'task_summary': {
                 'engaged': [
@@ -4399,6 +4556,13 @@ class TextResponseGenerator:
             "description": "description_response",
             "evaluation": "evaluation_response",
             "prediction": "opinion_response",  # predictions use opinion-like templates
+            # v1.0.8.3: New content-generative intents
+            "creative_belief": "creative_belief_response",
+            "personal_disclosure": "personal_disclosure_response",
+            "creative_narrative": "creative_narrative_response",
+            "personal_story": "personal_story_response",
+            "recall": "personal_story_response",  # recall maps to personal story
+            "recommendation": "opinion_response",
         }
         # Try: explicit response_type → intent-based bank → task_summary fallback
         _effective_type = response_type

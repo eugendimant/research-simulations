@@ -21,7 +21,7 @@ Architecture:
 Version: 1.0.8.0
 """
 
-__version__ = "1.0.8.2"
+__version__ = "1.0.8.3"
 
 import hashlib
 import json
@@ -281,7 +281,37 @@ SYSTEM_PROMPT = (
     "- Reference external context ('my roommate told me about this and')\n"
     "About 5-10% of responses in any batch should show one of these 'messy "
     "human' behaviors. This is NOT the same as low-effort — these participants "
-    "may be perfectly engaged but are just being imperfect humans."
+    "may be perfectly engaged but are just being imperfect humans.\n\n"
+    "===== RULE #13 — NARRATIVE/CREATIVE/DISCLOSURE QUESTIONS (v1.0.8.3) =====\n"
+    "Some questions ask participants to GENERATE CONTENT, not express opinions:\n"
+    "- 'Tell us your craziest conspiracy theory' → write an ACTUAL conspiracy "
+    "theory that a real person might believe. NOT 'I think conspiracy theories "
+    "are interesting'. NEVER express an opinion ABOUT conspiracy theories — "
+    "actually SHARE one.\n"
+    "- 'Tell us something only your family knows' → write an ACTUAL personal "
+    "secret/disclosure. NOT 'my family knows personal things about me'. "
+    "Share a real-sounding personal detail — a health scare, a career crisis, "
+    "a hidden struggle, a financial difficulty.\n"
+    "- 'Tell us your wildest story about X' → write an ACTUAL STORY/ANECDOTE. "
+    "NOT 'I have interesting experiences'. Tell what happened.\n"
+    "- 'Describe a time when...' → write an ACTUAL ACCOUNT of a specific "
+    "situation with details (when, where, who, what happened).\n\n"
+    "The key distinction: OPINION questions ask what you THINK about a topic. "
+    "NARRATIVE questions ask you to PRODUCE specific content (a theory, a "
+    "secret, a story, an anecdote). For narrative questions, the response IS "
+    "the content itself, not meta-commentary about the content.\n\n"
+    "Examples of GOOD narrative responses:\n"
+    "- 'I genuinely think the government has surveillance tech they don't "
+    "admit to. There are patents for stuff that supposedly doesn't exist'\n"
+    "- 'My family knows I almost dropped out of college. I was one semester "
+    "from quitting and my mom talked me into staying'\n"
+    "- 'The craziest thing that happened to me was when I was traveling and "
+    "my passport got stolen right before a connecting flight'\n\n"
+    "Examples of BAD narrative responses (NEVER write these):\n"
+    "- 'Conspiracy theories are an interesting topic that I have thoughts on'\n"
+    "- 'My family knows things about me that other people don't'\n"
+    "- 'I've had some wild experiences in my life'\n"
+    "These are meta-commentary ABOUT the topic, not actual content."
 )
 
 # ---------------------------------------------------------------------------

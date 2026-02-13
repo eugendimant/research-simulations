@@ -63,7 +63,7 @@ association, impression, perception, feedback, comment, observation, general
 Version: 1.8.5 - Improved domain detection with weighted scoring and disambiguation
 """
 
-__version__ = "1.0.8.2"
+__version__ = "1.0.8.3"
 
 import random
 import re
@@ -8063,10 +8063,26 @@ class ComprehensiveResponseGenerator:
         # Use first key phrase as richer topic if available
         _rich_topic = _key_phrases[0] if _key_phrases else _topic
 
-        # ── Step 2: Detect question INTENT — v1.0.8.0 expanded patterns ──
+        # ── Step 2: Detect question INTENT — v1.0.8.3 expanded patterns ──
         _intent = "opinion"  # default
-        # Most specific patterns first
-        if any(w in _subj_lower for w in ('why did', 'why do', 'explain why', 'reason for',
+        # v1.0.8.3: Check for creative/narrative/disclosure intents FIRST — most specific
+        if any(w in _subj_lower for w in ('conspiracy', 'theory', 'believe in', 'crazy belie',
+                                           'paranormal', 'supernatural', 'superstition')):
+            _intent = "creative_belief"
+        elif any(w in _subj_lower for w in ('secret', 'only your family', 'nobody knows',
+                                             'never told', 'private', 'confession', 'confess',
+                                             'reveal', 'admit', 'embarrassing')):
+            _intent = "personal_disclosure"
+        elif any(w in _subj_lower for w in ('craziest', 'wildest', 'most memorable',
+                                             'favorite', 'scariest', 'strangest', 'funniest',
+                                             'most extreme', 'most interesting')):
+            _intent = "creative_narrative"
+        elif any(w in _subj_lower for w in ('tell us about a time', 'describe a time',
+                                             'share a story', 'personal experience',
+                                             'remember when', 'a situation where')):
+            _intent = "personal_story"
+        # Standard intents below — most specific first
+        elif any(w in _subj_lower for w in ('why did', 'why do', 'explain why', 'reason for',
                                             'reasoning behind', 'what made you', 'what led you',
                                             'what caused you', 'what motivated', 'what drove')):
             _intent = "causal_explanation"
@@ -8411,6 +8427,70 @@ class ComprehensiveResponseGenerator:
                     f"my moderate stance on {_topic} comes from seeing multiple perspectives",
                     f"the reason I'm neutral is that I haven't seen enough to be convinced either way about {_topic}",
                 ]
+
+        # ── INTENT: creative_belief (v1.0.8.3) ──
+        # "Tell us your conspiracy theory" → actual conspiracy theory content
+        elif _intent == "creative_belief":
+            _cores = [
+                "I genuinely think there's way more government surveillance than people realize. There are patents for technology that supposedly doesn't exist yet and that's suspicious",
+                "my theory is that big pharma deliberately suppresses cheap generic remedies because there's no money in curing people with $5 drugs",
+                "I believe most major media outlets coordinate their coverage. Not like a secret society but they all push the same narratives and bury the same stories",
+                "I think social media algorithms are specifically designed to make people angry and addicted. Not as a side effect but as the actual product",
+                "I'm convinced the food industry knowingly puts addictive compounds in processed food. The sugar content in everything is not accidental",
+                "I think most political scandals are coordinated distractions from actual policy changes happening behind the scenes",
+                "my belief is that certain energy technologies have been suppressed because they'd disrupt too many powerful industries",
+                "I genuinely believe the housing crisis is manufactured by investment firms who buy up supply to keep prices artificially high",
+                "I think the education system is designed to produce compliant workers not critical thinkers. The whole structure is basically factory conditioning",
+                "I believe there are way more backroom deals in politics than anyone admits. Lobbying is just legalized corruption",
+                "I'm pretty sure pharmaceutical companies have way too much influence over what doctors prescribe",
+                "my theory is that planned obsolescence is deliberately engineered. Companies make things break so you buy new ones",
+                "I think climate change data is being downplayed by corporations who profit from the status quo",
+                "I believe social media companies know their products destroy mental health and just don't care because engagement equals money",
+            ]
+
+        # ── INTENT: personal_disclosure (v1.0.8.3) ──
+        # "Tell us something only your family knows" → actual personal disclosure
+        elif _intent == "personal_disclosure":
+            _cores = [
+                "something my family knows is that I struggled badly with anxiety in my early twenties. I barely left the house for almost a year",
+                "my family knows I almost dropped out of college. I was one semester away from quitting because I felt completely lost",
+                "only my family knows about a medical scare I had a few years ago. I kept it completely private because I didn't want the attention",
+                "something personal is that my family went through serious financial trouble when I was a teenager. It changed my relationship with money forever",
+                "my family knows I'm much more sensitive than I let on. At work I seem easy-going but at home I worry about everything",
+                "only my family knows I considered a completely different career path. I was accepted somewhere else but switched last minute",
+                "my family knows I was bullied pretty severely growing up. By the time I met my current friends I'd completely reinvented myself",
+                "something only my family would know is that I have a learning difference I've never told anyone at work about",
+                "my family knows I went through a really rough patch after a major relationship ended. I basically stopped functioning for weeks",
+                "something personal is that I secretly help a family member who's struggling financially. I don't talk about it to anyone else",
+                "only my family knows about a promise I made years ago that I still keep. It's shaped a lot of my decisions without anyone realizing",
+                "my family knows I have a completely different side to my personality that I never show at work or with friends",
+            ]
+
+        # ── INTENT: creative_narrative (v1.0.8.3) ──
+        # "Tell us your craziest/wildest/most memorable X" → actual narrative
+        elif _intent == "creative_narrative":
+            _cores = [
+                f"the craziest thing about {_topic} that I've experienced was totally unexpected. Everything I assumed turned out wrong and it changed how I think",
+                f"I have a wild {_topic} story. I witnessed something most people wouldn't believe. It happened years ago and I still think about it",
+                f"my most memorable experience with {_topic} happened when I was least expecting it. The situation was so bizarre I had to tell someone immediately",
+                f"the wildest thing about {_topic} in my life escalated beyond anything I could've predicted. The chain of events seemed almost too perfect to be coincidental",
+                f"I have a {_topic} story I rarely tell because people don't believe me. But it genuinely happened and it makes me question certain assumptions",
+                f"my experience with {_topic} took such an unexpected turn that I still bring it up years later",
+                f"here's my {_topic} story: I found myself in a situation where normal rules didn't apply. Everyone involved was confused",
+                f"when it comes to {_topic} I once had an experience that completely defied my expectations",
+            ]
+
+        # ── INTENT: personal_story (v1.0.8.3) ──
+        # "Tell us about a time when..." → personal narrative
+        elif _intent == "personal_story":
+            _cores = [
+                f"there was a time when {_topic} came up in my life unexpectedly. I was dealing with a work situation and it forced me to confront how I actually felt",
+                f"I remember a specific experience with {_topic} that stays with me. It happened during a difficult period and taught me something important about myself",
+                f"my most significant experience with {_topic} was when I had to make a real decision about it, not just think abstractly",
+                f"I have a personal story about {_topic} from when I was younger. At the time I didn't understand but looking back it makes sense",
+                f"my experience with {_topic} really came into focus during a conversation with someone close to me. They said something that shifted my perspective",
+                f"there's a specific moment involving {_topic} that changed how I approach things. It wasn't dramatic but it was a turning point for me",
+            ]
 
         # ── INTENT: opinion (default) ──
         else:
