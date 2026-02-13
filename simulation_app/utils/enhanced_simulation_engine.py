@@ -45,7 +45,7 @@ This module is designed to run inside a `utils/` package (i.e., imported as
 """
 
 # Version identifier to help track deployed code
-__version__ = "1.0.7.5"  # v1.0.7.5: Fix version sync across all locations
+__version__ = "1.0.7.6"  # v1.0.7.6: Merge main + fix audit StringDtype detection
 
 # =============================================================================
 # SCIENTIFIC FOUNDATIONS FOR SIMULATION

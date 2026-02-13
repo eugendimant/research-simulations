@@ -45,7 +45,7 @@ def _safe_json(obj: Any) -> str:
 def _extract_open_ended_columns(df: pd.DataFrame) -> List[str]:
     return [
         c for c in df.columns
-        if df[c].dtype == object and c not in STANDARD_TEXT_EXCLUSIONS
+        if pd.api.types.is_string_dtype(df[c]) and c not in STANDARD_TEXT_EXCLUSIONS
     ]
 
 
