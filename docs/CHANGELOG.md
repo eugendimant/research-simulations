@@ -1,3 +1,68 @@
+
+## 2026-02-12 — v1.0.7.1
+### LLM-First Integrity + Quality Release
+- Removed permissive pre-run fallback UX path and kept template fallback disabled by default.
+- Added failure-time explicit one-time emergency fallback consent button after API-only failure.
+- Added post-run LLM integrity guard: OE runs in strict mode must show API calls/attempts.
+- Added LLM init error propagation (`llm_init_error`) from engine to metadata and report layers.
+- Updated report logic (Markdown + HTML) to show strict-mode/init-failure integrity warnings instead of ambiguous template messaging.
+- Expanded OE quality filtering and diagnostics for relevance/gibberish control.
+- Added detailed roadmap doc: `docs/software_10x_improvements.md`.
+
+### Human-Like Simulation Improvements
+- Added within-scale micro-dynamics: fatigue drift, low-consistency inertia, and occasional endpoint correction.
+- Preserved bounds and condition effect primacy while improving natural response trajectories.
+
+### Version Synchronization
+- Updated synchronized app/utils versions to v1.0.7.1.
+- Added OE completeness guarantee: visible open-ended questions are no longer blanked by optional-skip logic.
+- Added adaptive LLM batch fallback (20→10→5→1) to reduce failure sensitivity while preserving throughput.
+- Added Admin Dashboard provider quota/cost calculator and explicit note that batch size fallback protects generation completeness.
+- Improved final emergency fallback text to be contextual (question/condition-aware) instead of generic constant output.
+- Updated README provider-chain description to match current Google-first multi-provider order.
+
+
+## 2026-02-12 — v1.0.6.9
+### Critical LLM Reliability Fixes (3 iterations)
+- **Iteration 1:** Fixed LLM initialization regression in `EnhancedSimulationEngine` (`name 'os' is not defined`) by restoring `import os`.
+- **Iteration 2:** Reordered built-in provider chain to prioritize **Google AI Studio first** (Gemma, then Gemini), then Groq/Cerebras/Poe/OpenRouter.
+- **Iteration 3:** Added stronger diagnostics counters (`quality_rejections`) in LLM stats to improve admin visibility into response filtering.
+
+### Open-Ended Quality Improvements (baseline + 5 refinements)
+- Added topical token extraction from question+condition context.
+- Added low-quality/gibberish filtering for LLM batch outputs (generic stock phrases, low diversity, off-topic text).
+- Applied quality checks to pool-drawn responses as well, reducing stale generic text reuse.
+- Added explicit rejection tracking to make quality filtering observable in diagnostics.
+
+### Human-Like DV Behavior Improvements (5 implementation iterations)
+- Added item-position-aware fatigue drift toward midpoint for low-attention respondents on longer scales.
+- Added low-consistency streak inertia using participant-by-variable memory.
+- Added occasional endpoint self-correction for high-attention/non-extreme respondents.
+- Added per-item state plumbing (`_current_item_position`, `_current_item_total`) to support realistic within-scale dynamics.
+- Preserved strict bounds and treatment effects while adding micro-dynamics.
+
+### Documentation
+- Added `docs/llm_and_behavior_overhaul_plan.md` with:
+  - 3-iteration LLM fix plan,
+  - baseline+5 OE quality plan,
+  - detailed 20-step DV human-likeness roadmap,
+  - note on constrained Westwood (2025 PNAS) retrieval in this runtime.
+
+### Version Synchronization
+- Updated to v1.0.6.9 across synchronized app/utils files.
+
+
+## 2026-02-12 — v1.0.6.8
+### Critical Fixes
+- Enforced LLM-first open-ended generation gate in the Generate UI: when LLM providers are unavailable, generation is blocked unless the user either provides a key or explicitly allows one-run final fallback.
+- Added `allow_template_fallback` policy plumbing from app → simulation engine → LLM generator.
+- `LLMResponseGenerator` now raises a hard failure when all providers fail and fallback is disabled, preventing silent template substitution.
+- Fixed a major data-integrity bug where OE dedup logic accidentally mutated `CONDITION` and `_PERSONA` columns; dedup now scopes strictly to open-ended columns.
+- Added instructor report condition canonicalization to recover canonical condition labels from contaminated values when possible.
+
+### Version Synchronization
+- Updated to v1.0.6.8 across: app.py, utils/__init__.py, qsf_preview.py, response_library.py, README.md, enhanced_simulation_engine.py, llm_response_generator.py.
+
 # Agent Change Log
 
 ## 2026-02-12 — v1.0.5.9
