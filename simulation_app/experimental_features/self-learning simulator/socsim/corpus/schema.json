@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AtomicInsightUnit",
+  "type": "object",
+  "required": [
+    "id",
+    "title",
+    "source",
+    "tags",
+    "queries",
+    "added_at_utc",
+    "quality",
+    "bibliographic"
+  ],
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "title": {
+      "type": "string"
+    },
+    "source": {
+      "type": "object",
+      "required": [
+        "type",
+        "ref"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "doi",
+            "url"
+          ]
+        },
+        "ref": {
+          "type": "string"
+        }
+      }
+    },
+    "tags": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "queries": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "added_at_utc": {
+      "type": "string"
+    },
+    "quality": {
+      "type": "object",
+      "required": [
+        "status"
+      ],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "metadata_only",
+            "effect_extracted",
+            "conflict",
+            "deprecated"
+          ]
+        },
+        "notes": {
+          "type": "string"
+        }
+      }
+    },
+    "bibliographic": {
+      "type": "object"
+    }
+  }
+}

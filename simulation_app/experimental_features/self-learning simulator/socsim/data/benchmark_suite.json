@@ -1,0 +1,12 @@
+{
+  "cases": [
+    {
+      "name": "trust_identity_smoke",
+      "spec": "examples/spec_trust_identity.json",
+      "expected_moments": {
+        "act::invest:mean": 0.2
+      },
+      "tolerance": 0.7
+    }
+  ]
+}

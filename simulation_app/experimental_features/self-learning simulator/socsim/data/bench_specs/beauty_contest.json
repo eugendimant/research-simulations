@@ -1,0 +1,16 @@
+{
+  "game": {
+    "name": "beauty_contest",
+    "params": {
+      "p": 0.6666666666666666,
+      "low": 0,
+      "high": 100
+    }
+  },
+  "context": {
+    "stakes_level": "low"
+  },
+  "population": {
+    "n_agents": 6
+  }
+}

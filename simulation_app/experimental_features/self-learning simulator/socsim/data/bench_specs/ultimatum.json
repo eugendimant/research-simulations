@@ -1,0 +1,15 @@
+{
+  "game": {
+    "name": "ultimatum",
+    "params": {
+      "endowment": 10
+    }
+  },
+  "context": {
+    "endowment": 10,
+    "stakes_level": "low"
+  },
+  "population": {
+    "n_agents": 2
+  }
+}

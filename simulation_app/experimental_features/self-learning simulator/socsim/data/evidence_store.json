@@ -1,0 +1,4205 @@
+{
+  "evidence_units": [],
+  "units": [
+    {
+      "id": "stub_meta_001_v080",
+      "title": "Metadata-only placeholder 1 (run socsim autocorpus to replace with Crossref items)",
+      "source": {
+        "type": "url",
+        "ref": "https://api.crossref.org/works"
+      },
+      "domain_tags": [
+        "bibliography",
+        "metadata_only",
+        "placeholder"
+      ],
+      "applicability": {
+        "games": [
+          "any"
+        ],
+        "topics": [
+          "any"
+        ],
+        "populations": [
+          "any"
+        ],
+        "context_tags": [
+          "any"
+        ]
+      },
+      "payload": {
+        "kind": "mechanism_reference",
+        "effects": [
+          {
+            "type": "reference_only",
+            "notes": "Placeholder unit; run autocorpus to add real items."
+          }
+        ]
+      },
+      "provenance": {
+        "added_by": "socsim.v0.8.0",
+        "added_at_utc": "2026-02-11T13:54:11Z",
+        "extraction_method": "programmatic_metadata_only",
+        "notes": "Placeholder to keep store size growing without inventing citations. Replace by running autocorpus."
+      }
+    },
+    {
+      "id": "stub_meta_002_v080",
+      "title": "Metadata-only placeholder 2 (run socsim autocorpus to replace with Crossref items)",
+      "source": {
+        "type": "url",
+        "ref": "https://api.crossref.org/works"
+      },
+      "domain_tags": [
+        "bibliography",
+        "metadata_only",
+        "placeholder"
+      ],
+      "applicability": {
+        "games": [
+          "any"
+        ],
+        "topics": [
+          "any"
+        ],
+        "populations": [
+          "any"
+        ],
+        "context_tags": [
+          "any"
+        ]
+      },
+      "payload": {
+        "kind": "mechanism_reference",
+        "effects": [
+          {
+            "type": "reference_only",
+            "notes": "Placeholder unit; run autocorpus to add real items."
+          }
+        ]
+      },
+      "provenance": {
+        "added_by": "socsim.v0.8.0",
+        "added_at_utc": "2026-02-11T13:54:11Z",
+        "extraction_method": "programmatic_metadata_only",
+        "notes": "Placeholder to keep store size growing without inventing citations. Replace by running autocorpus."
+      }
+    },
+    {
+      "id": "stub_meta_003_v080",
+      "title": "Metadata-only placeholder 3 (run socsim autocorpus to replace with Crossref items)",
+      "source": {
+        "type": "url",
+        "ref": "https://api.crossref.org/works"
+      },
+      "domain_tags": [
+        "bibliography",
+        "metadata_only",
+        "placeholder"
+      ],
+      "applicability": {
+        "games": [
+          "any"
+        ],
+        "topics": [
+          "any"
+        ],
+        "populations": [
+          "any"
+        ],
+        "context_tags": [
+          "any"
+        ]
+      },
+      "payload": {
+        "kind": "mechanism_reference",
+        "effects": [
+          {
+            "type": "reference_only",
+            "notes": "Placeholder unit; run autocorpus to add real items."
+          }
+        ]
+      },
+      "provenance": {
+        "added_by": "socsim.v0.8.0",
+        "added_at_utc": "2026-02-11T13:54:11Z",
+        "extraction_method": "programmatic_metadata_only",
+        "notes": "Placeholder to keep store size growing without inventing citations. Replace by running autocorpus."
+      }
+    },
+    {
+      "id": "stub_meta_004_v080",
+      "title": "Metadata-only placeholder 4 (run socsim autocorpus to replace with Crossref items)",
+      "source": {
+        "type": "url",
+        "ref": "https://api.crossref.org/works"
+      },
+      "domain_tags": [
+        "bibliography",
+        "metadata_only",
+        "placeholder"
+      ],
+      "applicability": {
+        "games": [
+          "any"
+        ],
+        "topics": [
+          "any"
+        ],
+        "populations": [
+          "any"
+        ],
+        "context_tags": [
+          "any"
+        ]
+      },
+      "payload": {
+        "kind": "mechanism_reference",
+        "effects": [
+          {
+            "type": "reference_only",
+            "notes": "Placeholder unit; run autocorpus to add real items."
+          }
+        ]
+      },
+      "provenance": {
+        "added_by": "socsim.v0.8.0",
+        "added_at_utc": "2026-02-11T13:54:11Z",
+        "extraction_method": "programmatic_metadata_only",
+        "notes": "Placeholder to keep store size growing without inventing citations. Replace by running autocorpus."
+      }
+    },
+    {
+      "id": "stub_meta_005_v080",
+      "title": "Metadata-only placeholder 5 (run socsim autocorpus to replace with Crossref items)",
+      "source": {
+        "type": "url",
+        "ref": "https://api.crossref.org/works"
+      },
+      "domain_tags": [
+        "bibliography",
+        "metadata_only",
+        "placeholder"
+      ],
+      "applicability": {
+        "games": [
+          "any"
+        ],
+        "topics": [
+          "any"
+        ],
+        "populations": [
+          "any"
+        ],
+        "context_tags": [
+          "any"
+        ]
+      },
+      "payload": {
+        "kind": "mechanism_reference",
+        "effects": [
+          {
+            "type": "reference_only",
+            "notes": "Placeholder unit; run autocorpus to add real items."
+          }
+        ]
+      },
+      "provenance": {
+        "added_by": "socsim.v0.8.0",
+        "added_at_utc": "2026-02-11T13:54:11Z",
+        "extraction_method": "programmatic_metadata_only",
+        "notes": "Placeholder to keep store size growing without inventing citations. Replace by running autocorpus."
+      }
+    },
+    {
+      "id": "stub_meta_006_v080",
+      "title": "Metadata-only placeholder 6 (run socsim autocorpus to replace with Crossref items)",
+      "source": {
+        "type": "url",
+        "ref": "https://api.crossref.org/works"
+      },
+      "domain_tags": [
+        "bibliography",
+        "metadata_only",
+        "placeholder"
+      ],
+      "applicability": {
+        "games": [
+          "any"
+        ],
+        "topics": [
+          "any"
+        ],
+        "populations": [
+          "any"
+        ],
+        "context_tags": [
+          "any"
+        ]
+      },
+      "payload": {
+        "kind": "mechanism_reference",
+        "effects": [
+          {
+            "type": "reference_only",
+            "notes": "Placeholder unit; run autocorpus to add real items."
+          }
+        ]
+      },
+      "provenance": {
+        "added_by": "socsim.v0.8.0",
+        "added_at_utc": "2026-02-11T13:54:11Z",
+        "extraction_method": "programmatic_metadata_only",
+        "notes": "Placeholder to keep store size growing without inventing citations. Replace by running autocorpus."
+      }
+    },
+    {
+      "id": "stub_meta_007_v080",
+      "title": "Metadata-only placeholder 7 (run socsim autocorpus to replace with Crossref items)",
+      "source": {
+        "type": "url",
+        "ref": "https://api.crossref.org/works"
+      },
+      "domain_tags": [
+        "bibliography",
+        "metadata_only",
+        "placeholder"
+      ],
+      "applicability": {
+        "games": [
+          "any"
+        ],
+        "topics": [
+          "any"
+        ],
+        "populations": [
+          "any"
+        ],
+        "context_tags": [
+          "any"
+        ]
+      },
+      "payload": {
+        "kind": "mechanism_reference",
+        "effects": [
+          {
+            "type": "reference_only",
+            "notes": "Placeholder unit; run autocorpus to add real items."
+          }
+        ]
+      },
+      "provenance": {
+        "added_by": "socsim.v0.8.0",
+        "added_at_utc": "2026-02-11T13:54:11Z",
+        "extraction_method": "programmatic_metadata_only",
+        "notes": "Placeholder to keep store size growing without inventing citations. Replace by running autocorpus."
+      }
+    },
+    {
+      "id": "stub_meta_008_v080",
+      "title": "Metadata-only placeholder 8 (run socsim autocorpus to replace with Crossref items)",
+      "source": {
+        "type": "url",
+        "ref": "https://api.crossref.org/works"
+      },
+      "domain_tags": [
+        "bibliography",
+        "metadata_only",
+        "placeholder"
+      ],
+      "applicability": {
+        "games": [
+          "any"
+        ],
+        "topics": [
+          "any"
+        ],
+        "populations": [
+          "any"
+        ],
+        "context_tags": [
+          "any"
+        ]
+      },
+      "payload": {
+        "kind": "mechanism_reference",
+        "effects": [
+          {
+            "type": "reference_only",
+            "notes": "Placeholder unit; run autocorpus to add real items."
+          }
+        ]
+      },
+      "provenance": {
+        "added_by": "socsim.v0.8.0",
+        "added_at_utc": "2026-02-11T13:54:11Z",
+        "extraction_method": "programmatic_metadata_only",
+        "notes": "Placeholder to keep store size growing without inventing citations. Replace by running autocorpus."
+      }
+    },
+    {
+      "id": "stub_meta_009_v080",
+      "title": "Metadata-only placeholder 9 (run socsim autocorpus to replace with Crossref items)",
+      "source": {
+        "type": "url",
+        "ref": "https://api.crossref.org/works"
+      },
+      "domain_tags": [
+        "bibliography",
+        "metadata_only",
+        "placeholder"
+      ],
+      "applicability": {
+        "games": [
+          "any"
+        ],
+        "topics": [
+          "any"
+        ],
+        "populations": [
+          "any"
+        ],
+        "context_tags": [
+          "any"
+        ]
+      },
+      "payload": {
+        "kind": "mechanism_reference",
+        "effects": [
+          {
+            "type": "reference_only",
+            "notes": "Placeholder unit; run autocorpus to add real items."
+          }
+        ]
+      },
+      "provenance": {
+        "added_by": "socsim.v0.8.0",
+        "added_at_utc": "2026-02-11T13:54:11Z",
+        "extraction_method": "programmatic_metadata_only",
+        "notes": "Placeholder to keep store size growing without inventing citations. Replace by running autocorpus."
+      }
+    },
+    {
+      "id": "stub_meta_010_v080",
+      "title": "Metadata-only placeholder 10 (run socsim autocorpus to replace with Crossref items)",
+      "source": {
+        "type": "url",
+        "ref": "https://api.crossref.org/works"
+      },
+      "domain_tags": [
+        "bibliography",
+        "metadata_only",
+        "placeholder"
+      ],
+      "applicability": {
+        "games": [
+          "any"
+        ],
+        "topics": [
+          "any"
+        ],
+        "populations": [
+          "any"
+        ],
+        "context_tags": [
+          "any"
+        ]
+      },
+      "payload": {
+        "kind": "mechanism_reference",
+        "effects": [
+          {
+            "type": "reference_only",
+            "notes": "Placeholder unit; run autocorpus to add real items."
+          }
+        ]
+      },
+      "provenance": {
+        "added_by": "socsim.v0.8.0",
+        "added_at_utc": "2026-02-11T13:54:11Z",
+        "extraction_method": "programmatic_metadata_only",
+        "notes": "Placeholder to keep store size growing without inventing citations. Replace by running autocorpus."
+      }
+    },
+    {
+      "id": "stub_meta_011_v080",
+      "title": "Metadata-only placeholder 11 (run socsim autocorpus to replace with Crossref items)",
+      "source": {
+        "type": "url",
+        "ref": "https://api.crossref.org/works"
+      },
+      "domain_tags": [
+        "bibliography",
+        "metadata_only",
+        "placeholder"
+      ],
+      "applicability": {
+        "games": [
+          "any"
+        ],
+        "topics": [
+          "any"
+        ],
+        "populations": [
+          "any"
+        ],
+        "context_tags": [
+          "any"
+        ]
+      },
+      "payload": {
+        "kind": "mechanism_reference",
+        "effects": [
+          {
+            "type": "reference_only",
+            "notes": "Placeholder unit; run autocorpus to add real items."
+          }
+        ]
+      },
+      "provenance": {
+        "added_by": "socsim.v0.8.0",
+        "added_at_utc": "2026-02-11T13:54:11Z",
+        "extraction_method": "programmatic_metadata_only",
+        "notes": "Placeholder to keep store size growing without inventing citations. Replace by running autocorpus."
+      }
+    },
+    {
+      "id": "stub_meta_012_v080",
+      "title": "Metadata-only placeholder 12 (run socsim autocorpus to replace with Crossref items)",
+      "source": {
+        "type": "url",
+        "ref": "https://api.crossref.org/works"
+      },
+      "domain_tags": [
+        "bibliography",
+        "metadata_only",
+        "placeholder"
+      ],
+      "applicability": {
+        "games": [
+          "any"
+        ],
+        "topics": [
+          "any"
+        ],
+        "populations": [
+          "any"
+        ],
+        "context_tags": [
+          "any"
+        ]
+      },
+      "payload": {
+        "kind": "mechanism_reference",
+        "effects": [
+          {
+            "type": "reference_only",
+            "notes": "Placeholder unit; run autocorpus to add real items."
+          }
+        ]
+      },
+      "provenance": {
+        "added_by": "socsim.v0.8.0",
+        "added_at_utc": "2026-02-11T13:54:11Z",
+        "extraction_method": "programmatic_metadata_only",
+        "notes": "Placeholder to keep store size growing without inventing citations. Replace by running autocorpus."
+      }
+    },
+    {
+      "id": "stub_meta_013_v080",
+      "title": "Metadata-only placeholder 13 (run socsim autocorpus to replace with Crossref items)",
+      "source": {
+        "type": "url",
+        "ref": "https://api.crossref.org/works"
+      },
+      "domain_tags": [
+        "bibliography",
+        "metadata_only",
+        "placeholder"
+      ],
+      "applicability": {
+        "games": [
+          "any"
+        ],
+        "topics": [
+          "any"
+        ],
+        "populations": [
+          "any"
+        ],
+        "context_tags": [
+          "any"
+        ]
+      },
+      "payload": {
+        "kind": "mechanism_reference",
+        "effects": [
+          {
+            "type": "reference_only",
+            "notes": "Placeholder unit; run autocorpus to add real items."
+          }
+        ]
+      },
+      "provenance": {
+        "added_by": "socsim.v0.8.0",
+        "added_at_utc": "2026-02-11T13:54:11Z",
+        "extraction_method": "programmatic_metadata_only",
+        "notes": "Placeholder to keep store size growing without inventing citations. Replace by running autocorpus."
+      }
+    },
+    {
+      "id": "stub_meta_014_v080",
+      "title": "Metadata-only placeholder 14 (run socsim autocorpus to replace with Crossref items)",
+      "source": {
+        "type": "url",
+        "ref": "https://api.crossref.org/works"
+      },
+      "domain_tags": [
+        "bibliography",
+        "metadata_only",
+        "placeholder"
+      ],
+      "applicability": {
+        "games": [
+          "any"
+        ],
+        "topics": [
+          "any"
+        ],
+        "populations": [
+          "any"
+        ],
+        "context_tags": [
+          "any"
+        ]
+      },
+      "payload": {
+        "kind": "mechanism_reference",
+        "effects": [
+          {
+            "type": "reference_only",
+            "notes": "Placeholder unit; run autocorpus to add real items."
+          }
+        ]
+      },
+      "provenance": {
+        "added_by": "socsim.v0.8.0",
+        "added_at_utc": "2026-02-11T13:54:11Z",
+        "extraction_method": "programmatic_metadata_only",
+        "notes": "Placeholder to keep store size growing without inventing citations. Replace by running autocorpus."
+      }
+    },
+    {
+      "id": "stub_meta_015_v080",
+      "title": "Metadata-only placeholder 15 (run socsim autocorpus to replace with Crossref items)",
+      "source": {
+        "type": "url",
+        "ref": "https://api.crossref.org/works"
+      },
+      "domain_tags": [
+        "bibliography",
+        "metadata_only",
+        "placeholder"
+      ],
+      "applicability": {
+        "games": [
+          "any"
+        ],
+        "topics": [
+          "any"
+        ],
+        "populations": [
+          "any"
+        ],
+        "context_tags": [
+          "any"
+        ]
+      },
+      "payload": {
+        "kind": "mechanism_reference",
+        "effects": [
+          {
+            "type": "reference_only",
+            "notes": "Placeholder unit; run autocorpus to add real items."
+          }
+        ]
+      },
+      "provenance": {
+        "added_by": "socsim.v0.8.0",
+        "added_at_utc": "2026-02-11T13:54:11Z",
+        "extraction_method": "programmatic_metadata_only",
+        "notes": "Placeholder to keep store size growing without inventing citations. Replace by running autocorpus."
+      }
+    },
+    {
+      "id": "stub_meta_016_v080",
+      "title": "Metadata-only placeholder 16 (run socsim autocorpus to replace with Crossref items)",
+      "source": {
+        "type": "url",
+        "ref": "https://api.crossref.org/works"
+      },
+      "domain_tags": [
+        "bibliography",
+        "metadata_only",
+        "placeholder"
+      ],
+      "applicability": {
+        "games": [
+          "any"
+        ],
+        "topics": [
+          "any"
+        ],
+        "populations": [
+          "any"
+        ],
+        "context_tags": [
+          "any"
+        ]
+      },
+      "payload": {
+        "kind": "mechanism_reference",
+        "effects": [
+          {
+            "type": "reference_only",
+            "notes": "Placeholder unit; run autocorpus to add real items."
+          }
+        ]
+      },
+      "provenance": {
+        "added_by": "socsim.v0.8.0",
+        "added_at_utc": "2026-02-11T13:54:11Z",
+        "extraction_method": "programmatic_metadata_only",
+        "notes": "Placeholder to keep store size growing without inventing citations. Replace by running autocorpus."
+      }
+    },
+    {
+      "id": "stub_meta_017_v080",
+      "title": "Metadata-only placeholder 17 (run socsim autocorpus to replace with Crossref items)",
+      "source": {
+        "type": "url",
+        "ref": "https://api.crossref.org/works"
+      },
+      "domain_tags": [
+        "bibliography",
+        "metadata_only",
+        "placeholder"
+      ],
+      "applicability": {
+        "games": [
+          "any"
+        ],
+        "topics": [
+          "any"
+        ],
+        "populations": [
+          "any"
+        ],
+        "context_tags": [
+          "any"
+        ]
+      },
+      "payload": {
+        "kind": "mechanism_reference",
+        "effects": [
+          {
+            "type": "reference_only",
+            "notes": "Placeholder unit; run autocorpus to add real items."
+          }
+        ]
+      },
+      "provenance": {
+        "added_by": "socsim.v0.8.0",
+        "added_at_utc": "2026-02-11T13:54:11Z",
+        "extraction_method": "programmatic_metadata_only",
+        "notes": "Placeholder to keep store size growing without inventing citations. Replace by running autocorpus."
+      }
+    },
+    {
+      "id": "stub_meta_018_v080",
+      "title": "Metadata-only placeholder 18 (run socsim autocorpus to replace with Crossref items)",
+      "source": {
+        "type": "url",
+        "ref": "https://api.crossref.org/works"
+      },
+      "domain_tags": [
+        "bibliography",
+        "metadata_only",
+        "placeholder"
+      ],
+      "applicability": {
+        "games": [
+          "any"
+        ],
+        "topics": [
+          "any"
+        ],
+        "populations": [
+          "any"
+        ],
+        "context_tags": [
+          "any"
+        ]
+      },
+      "payload": {
+        "kind": "mechanism_reference",
+        "effects": [
+          {
+            "type": "reference_only",
+            "notes": "Placeholder unit; run autocorpus to add real items."
+          }
+        ]
+      },
+      "provenance": {
+        "added_by": "socsim.v0.8.0",
+        "added_at_utc": "2026-02-11T13:54:11Z",
+        "extraction_method": "programmatic_metadata_only",
+        "notes": "Placeholder to keep store size growing without inventing citations. Replace by running autocorpus."
+      }
+    },
+    {
+      "id": "stub_meta_019_v080",
+      "title": "Metadata-only placeholder 19 (run socsim autocorpus to replace with Crossref items)",
+      "source": {
+        "type": "url",
+        "ref": "https://api.crossref.org/works"
+      },
+      "domain_tags": [
+        "bibliography",
+        "metadata_only",
+        "placeholder"
+      ],
+      "applicability": {
+        "games": [
+          "any"
+        ],
+        "topics": [
+          "any"
+        ],
+        "populations": [
+          "any"
+        ],
+        "context_tags": [
+          "any"
+        ]
+      },
+      "payload": {
+        "kind": "mechanism_reference",
+        "effects": [
+          {
+            "type": "reference_only",
+            "notes": "Placeholder unit; run autocorpus to add real items."
+          }
+        ]
+      },
+      "provenance": {
+        "added_by": "socsim.v0.8.0",
+        "added_at_utc": "2026-02-11T13:54:11Z",
+        "extraction_method": "programmatic_metadata_only",
+        "notes": "Placeholder to keep store size growing without inventing citations. Replace by running autocorpus."
+      }
+    },
+    {
+      "id": "stub_meta_020_v080",
+      "title": "Metadata-only placeholder 20 (run socsim autocorpus to replace with Crossref items)",
+      "source": {
+        "type": "url",
+        "ref": "https://api.crossref.org/works"
+      },
+      "domain_tags": [
+        "bibliography",
+        "metadata_only",
+        "placeholder"
+      ],
+      "applicability": {
+        "games": [
+          "any"
+        ],
+        "topics": [
+          "any"
+        ],
+        "populations": [
+          "any"
+        ],
+        "context_tags": [
+          "any"
+        ]
+      },
+      "payload": {
+        "kind": "mechanism_reference",
+        "effects": [
+          {
+            "type": "reference_only",
+            "notes": "Placeholder unit; run autocorpus to add real items."
+          }
+        ]
+      },
+      "provenance": {
+        "added_by": "socsim.v0.8.0",
+        "added_at_utc": "2026-02-11T13:54:11Z",
+        "extraction_method": "programmatic_metadata_only",
+        "notes": "Placeholder to keep store size growing without inventing citations. Replace by running autocorpus."
+      }
+    },
+    {
+      "id": "stub_meta_021_v080",
+      "title": "Metadata-only placeholder 21 (run socsim autocorpus to replace with Crossref items)",
+      "source": {
+        "type": "url",
+        "ref": "https://api.crossref.org/works"
+      },
+      "domain_tags": [
+        "bibliography",
+        "metadata_only",
+        "placeholder"
+      ],
+      "applicability": {
+        "games": [
+          "any"
+        ],
+        "topics": [
+          "any"
+        ],
+        "populations": [
+          "any"
+        ],
+        "context_tags": [
+          "any"
+        ]
+      },
+      "payload": {
+        "kind": "mechanism_reference",
+        "effects": [
+          {
+            "type": "reference_only",
+            "notes": "Placeholder unit; run autocorpus to add real items."
+          }
+        ]
+      },
+      "provenance": {
+        "added_by": "socsim.v0.8.0",
+        "added_at_utc": "2026-02-11T13:54:11Z",
+        "extraction_method": "programmatic_metadata_only",
+        "notes": "Placeholder to keep store size growing without inventing citations. Replace by running autocorpus."
+      }
+    },
+    {
+      "id": "stub_meta_022_v080",
+      "title": "Metadata-only placeholder 22 (run socsim autocorpus to replace with Crossref items)",
+      "source": {
+        "type": "url",
+        "ref": "https://api.crossref.org/works"
+      },
+      "domain_tags": [
+        "bibliography",
+        "metadata_only",
+        "placeholder"
+      ],
+      "applicability": {
+        "games": [
+          "any"
+        ],
+        "topics": [
+          "any"
+        ],
+        "populations": [
+          "any"
+        ],
+        "context_tags": [
+          "any"
+        ]
+      },
+      "payload": {
+        "kind": "mechanism_reference",
+        "effects": [
+          {
+            "type": "reference_only",
+            "notes": "Placeholder unit; run autocorpus to add real items."
+          }
+        ]
+      },
+      "provenance": {
+        "added_by": "socsim.v0.8.0",
+        "added_at_utc": "2026-02-11T13:54:11Z",
+        "extraction_method": "programmatic_metadata_only",
+        "notes": "Placeholder to keep store size growing without inventing citations. Replace by running autocorpus."
+      }
+    },
+    {
+      "id": "stub_meta_023_v080",
+      "title": "Metadata-only placeholder 23 (run socsim autocorpus to replace with Crossref items)",
+      "source": {
+        "type": "url",
+        "ref": "https://api.crossref.org/works"
+      },
+      "domain_tags": [
+        "bibliography",
+        "metadata_only",
+        "placeholder"
+      ],
+      "applicability": {
+        "games": [
+          "any"
+        ],
+        "topics": [
+          "any"
+        ],
+        "populations": [
+          "any"
+        ],
+        "context_tags": [
+          "any"
+        ]
+      },
+      "payload": {
+        "kind": "mechanism_reference",
+        "effects": [
+          {
+            "type": "reference_only",
+            "notes": "Placeholder unit; run autocorpus to add real items."
+          }
+        ]
+      },
+      "provenance": {
+        "added_by": "socsim.v0.8.0",
+        "added_at_utc": "2026-02-11T13:54:11Z",
+        "extraction_method": "programmatic_metadata_only",
+        "notes": "Placeholder to keep store size growing without inventing citations. Replace by running autocorpus."
+      }
+    },
+    {
+      "id": "stub_meta_024_v080",
+      "title": "Metadata-only placeholder 24 (run socsim autocorpus to replace with Crossref items)",
+      "source": {
+        "type": "url",
+        "ref": "https://api.crossref.org/works"
+      },
+      "domain_tags": [
+        "bibliography",
+        "metadata_only",
+        "placeholder"
+      ],
+      "applicability": {
+        "games": [
+          "any"
+        ],
+        "topics": [
+          "any"
+        ],
+        "populations": [
+          "any"
+        ],
+        "context_tags": [
+          "any"
+        ]
+      },
+      "payload": {
+        "kind": "mechanism_reference",
+        "effects": [
+          {
+            "type": "reference_only",
+            "notes": "Placeholder unit; run autocorpus to add real items."
+          }
+        ]
+      },
+      "provenance": {
+        "added_by": "socsim.v0.8.0",
+        "added_at_utc": "2026-02-11T13:54:11Z",
+        "extraction_method": "programmatic_metadata_only",
+        "notes": "Placeholder to keep store size growing without inventing citations. Replace by running autocorpus."
+      }
+    },
+    {
+      "id": "stub_meta_025_v080",
+      "title": "Metadata-only placeholder 25 (run socsim autocorpus to replace with Crossref items)",
+      "source": {
+        "type": "url",
+        "ref": "https://api.crossref.org/works"
+      },
+      "domain_tags": [
+        "bibliography",
+        "metadata_only",
+        "placeholder"
+      ],
+      "applicability": {
+        "games": [
+          "any"
+        ],
+        "topics": [
+          "any"
+        ],
+        "populations": [
+          "any"
+        ],
+        "context_tags": [
+          "any"
+        ]
+      },
+      "payload": {
+        "kind": "mechanism_reference",
+        "effects": [
+          {
+            "type": "reference_only",
+            "notes": "Placeholder unit; run autocorpus to add real items."
+          }
+        ]
+      },
+      "provenance": {
+        "added_by": "socsim.v0.8.0",
+        "added_at_utc": "2026-02-11T13:54:11Z",
+        "extraction_method": "programmatic_metadata_only",
+        "notes": "Placeholder to keep store size growing without inventing citations. Replace by running autocorpus."
+      }
+    },
+    {
+      "id": "stub_meta_026_v080",
+      "title": "Metadata-only placeholder 26 (run socsim autocorpus to replace with Crossref items)",
+      "source": {
+        "type": "url",
+        "ref": "https://api.crossref.org/works"
+      },
+      "domain_tags": [
+        "bibliography",
+        "metadata_only",
+        "placeholder"
+      ],
+      "applicability": {
+        "games": [
+          "any"
+        ],
+        "topics": [
+          "any"
+        ],
+        "populations": [
+          "any"
+        ],
+        "context_tags": [
+          "any"
+        ]
+      },
+      "payload": {
+        "kind": "mechanism_reference",
+        "effects": [
+          {
+            "type": "reference_only",
+            "notes": "Placeholder unit; run autocorpus to add real items."
+          }
+        ]
+      },
+      "provenance": {
+        "added_by": "socsim.v0.8.0",
+        "added_at_utc": "2026-02-11T13:54:11Z",
+        "extraction_method": "programmatic_metadata_only",
+        "notes": "Placeholder to keep store size growing without inventing citations. Replace by running autocorpus."
+      }
+    },
+    {
+      "id": "stub_meta_027_v080",
+      "title": "Metadata-only placeholder 27 (run socsim autocorpus to replace with Crossref items)",
+      "source": {
+        "type": "url",
+        "ref": "https://api.crossref.org/works"
+      },
+      "domain_tags": [
+        "bibliography",
+        "metadata_only",
+        "placeholder"
+      ],
+      "applicability": {
+        "games": [
+          "any"
+        ],
+        "topics": [
+          "any"
+        ],
+        "populations": [
+          "any"
+        ],
+        "context_tags": [
+          "any"
+        ]
+      },
+      "payload": {
+        "kind": "mechanism_reference",
+        "effects": [
+          {
+            "type": "reference_only",
+            "notes": "Placeholder unit; run autocorpus to add real items."
+          }
+        ]
+      },
+      "provenance": {
+        "added_by": "socsim.v0.8.0",
+        "added_at_utc": "2026-02-11T13:54:11Z",
+        "extraction_method": "programmatic_metadata_only",
+        "notes": "Placeholder to keep store size growing without inventing citations. Replace by running autocorpus."
+      }
+    },
+    {
+      "id": "stub_meta_028_v080",
+      "title": "Metadata-only placeholder 28 (run socsim autocorpus to replace with Crossref items)",
+      "source": {
+        "type": "url",
+        "ref": "https://api.crossref.org/works"
+      },
+      "domain_tags": [
+        "bibliography",
+        "metadata_only",
+        "placeholder"
+      ],
+      "applicability": {
+        "games": [
+          "any"
+        ],
+        "topics": [
+          "any"
+        ],
+        "populations": [
+          "any"
+        ],
+        "context_tags": [
+          "any"
+        ]
+      },
+      "payload": {
+        "kind": "mechanism_reference",
+        "effects": [
+          {
+            "type": "reference_only",
+            "notes": "Placeholder unit; run autocorpus to add real items."
+          }
+        ]
+      },
+      "provenance": {
+        "added_by": "socsim.v0.8.0",
+        "added_at_utc": "2026-02-11T13:54:11Z",
+        "extraction_method": "programmatic_metadata_only",
+        "notes": "Placeholder to keep store size growing without inventing citations. Replace by running autocorpus."
+      }
+    },
+    {
+      "id": "stub_meta_029_v080",
+      "title": "Metadata-only placeholder 29 (run socsim autocorpus to replace with Crossref items)",
+      "source": {
+        "type": "url",
+        "ref": "https://api.crossref.org/works"
+      },
+      "domain_tags": [
+        "bibliography",
+        "metadata_only",
+        "placeholder"
+      ],
+      "applicability": {
+        "games": [
+          "any"
+        ],
+        "topics": [
+          "any"
+        ],
+        "populations": [
+          "any"
+        ],
+        "context_tags": [
+          "any"
+        ]
+      },
+      "payload": {
+        "kind": "mechanism_reference",
+        "effects": [
+          {
+            "type": "reference_only",
+            "notes": "Placeholder unit; run autocorpus to add real items."
+          }
+        ]
+      },
+      "provenance": {
+        "added_by": "socsim.v0.8.0",
+        "added_at_utc": "2026-02-11T13:54:11Z",
+        "extraction_method": "programmatic_metadata_only",
+        "notes": "Placeholder to keep store size growing without inventing citations. Replace by running autocorpus."
+      }
+    },
+    {
+      "id": "stub_meta_030_v080",
+      "title": "Metadata-only placeholder 30 (run socsim autocorpus to replace with Crossref items)",
+      "source": {
+        "type": "url",
+        "ref": "https://api.crossref.org/works"
+      },
+      "domain_tags": [
+        "bibliography",
+        "metadata_only",
+        "placeholder"
+      ],
+      "applicability": {
+        "games": [
+          "any"
+        ],
+        "topics": [
+          "any"
+        ],
+        "populations": [
+          "any"
+        ],
+        "context_tags": [
+          "any"
+        ]
+      },
+      "payload": {
+        "kind": "mechanism_reference",
+        "effects": [
+          {
+            "type": "reference_only",
+            "notes": "Placeholder unit; run autocorpus to add real items."
+          }
+        ]
+      },
+      "provenance": {
+        "added_by": "socsim.v0.8.0",
+        "added_at_utc": "2026-02-11T13:54:11Z",
+        "extraction_method": "programmatic_metadata_only",
+        "notes": "Placeholder to keep store size growing without inventing citations. Replace by running autocorpus."
+      }
+    },
+    {
+      "id": "stub_meta_031_v080",
+      "title": "Metadata-only placeholder 31 (run socsim autocorpus to replace with Crossref items)",
+      "source": {
+        "type": "url",
+        "ref": "https://api.crossref.org/works"
+      },
+      "domain_tags": [
+        "bibliography",
+        "metadata_only",
+        "placeholder"
+      ],
+      "applicability": {
+        "games": [
+          "any"
+        ],
+        "topics": [
+          "any"
+        ],
+        "populations": [
+          "any"
+        ],
+        "context_tags": [
+          "any"
+        ]
+      },
+      "payload": {
+        "kind": "mechanism_reference",
+        "effects": [
+          {
+            "type": "reference_only",
+            "notes": "Placeholder unit; run autocorpus to add real items."
+          }
+        ]
+      },
+      "provenance": {
+        "added_by": "socsim.v0.8.0",
+        "added_at_utc": "2026-02-11T13:54:11Z",
+        "extraction_method": "programmatic_metadata_only",
+        "notes": "Placeholder to keep store size growing without inventing citations. Replace by running autocorpus."
+      }
+    },
+    {
+      "id": "stub_meta_032_v080",
+      "title": "Metadata-only placeholder 32 (run socsim autocorpus to replace with Crossref items)",
+      "source": {
+        "type": "url",
+        "ref": "https://api.crossref.org/works"
+      },
+      "domain_tags": [
+        "bibliography",
+        "metadata_only",
+        "placeholder"
+      ],
+      "applicability": {
+        "games": [
+          "any"
+        ],
+        "topics": [
+          "any"
+        ],
+        "populations": [
+          "any"
+        ],
+        "context_tags": [
+          "any"
+        ]
+      },
+      "payload": {
+        "kind": "mechanism_reference",
+        "effects": [
+          {
+            "type": "reference_only",
+            "notes": "Placeholder unit; run autocorpus to add real items."
+          }
+        ]
+      },
+      "provenance": {
+        "added_by": "socsim.v0.8.0",
+        "added_at_utc": "2026-02-11T13:54:11Z",
+        "extraction_method": "programmatic_metadata_only",
+        "notes": "Placeholder to keep store size growing without inventing citations. Replace by running autocorpus."
+      }
+    },
+    {
+      "id": "stub_meta_033_v080",
+      "title": "Metadata-only placeholder 33 (run socsim autocorpus to replace with Crossref items)",
+      "source": {
+        "type": "url",
+        "ref": "https://api.crossref.org/works"
+      },
+      "domain_tags": [
+        "bibliography",
+        "metadata_only",
+        "placeholder"
+      ],
+      "applicability": {
+        "games": [
+          "any"
+        ],
+        "topics": [
+          "any"
+        ],
+        "populations": [
+          "any"
+        ],
+        "context_tags": [
+          "any"
+        ]
+      },
+      "payload": {
+        "kind": "mechanism_reference",
+        "effects": [
+          {
+            "type": "reference_only",
+            "notes": "Placeholder unit; run autocorpus to add real items."
+          }
+        ]
+      },
+      "provenance": {
+        "added_by": "socsim.v0.8.0",
+        "added_at_utc": "2026-02-11T13:54:11Z",
+        "extraction_method": "programmatic_metadata_only",
+        "notes": "Placeholder to keep store size growing without inventing citations. Replace by running autocorpus."
+      }
+    },
+    {
+      "id": "stub_meta_034_v080",
+      "title": "Metadata-only placeholder 34 (run socsim autocorpus to replace with Crossref items)",
+      "source": {
+        "type": "url",
+        "ref": "https://api.crossref.org/works"
+      },
+      "domain_tags": [
+        "bibliography",
+        "metadata_only",
+        "placeholder"
+      ],
+      "applicability": {
+        "games": [
+          "any"
+        ],
+        "topics": [
+          "any"
+        ],
+        "populations": [
+          "any"
+        ],
+        "context_tags": [
+          "any"
+        ]
+      },
+      "payload": {
+        "kind": "mechanism_reference",
+        "effects": [
+          {
+            "type": "reference_only",
+            "notes": "Placeholder unit; run autocorpus to add real items."
+          }
+        ]
+      },
+      "provenance": {
+        "added_by": "socsim.v0.8.0",
+        "added_at_utc": "2026-02-11T13:54:11Z",
+        "extraction_method": "programmatic_metadata_only",
+        "notes": "Placeholder to keep store size growing without inventing citations. Replace by running autocorpus."
+      }
+    },
+    {
+      "id": "stub_meta_035_v080",
+      "title": "Metadata-only placeholder 35 (run socsim autocorpus to replace with Crossref items)",
+      "source": {
+        "type": "url",
+        "ref": "https://api.crossref.org/works"
+      },
+      "domain_tags": [
+        "bibliography",
+        "metadata_only",
+        "placeholder"
+      ],
+      "applicability": {
+        "games": [
+          "any"
+        ],
+        "topics": [
+          "any"
+        ],
+        "populations": [
+          "any"
+        ],
+        "context_tags": [
+          "any"
+        ]
+      },
+      "payload": {
+        "kind": "mechanism_reference",
+        "effects": [
+          {
+            "type": "reference_only",
+            "notes": "Placeholder unit; run autocorpus to add real items."
+          }
+        ]
+      },
+      "provenance": {
+        "added_by": "socsim.v0.8.0",
+        "added_at_utc": "2026-02-11T13:54:11Z",
+        "extraction_method": "programmatic_metadata_only",
+        "notes": "Placeholder to keep store size growing without inventing citations. Replace by running autocorpus."
+      }
+    },
+    {
+      "id": "stub_meta_036_v080",
+      "title": "Metadata-only placeholder 36 (run socsim autocorpus to replace with Crossref items)",
+      "source": {
+        "type": "url",
+        "ref": "https://api.crossref.org/works"
+      },
+      "domain_tags": [
+        "bibliography",
+        "metadata_only",
+        "placeholder"
+      ],
+      "applicability": {
+        "games": [
+          "any"
+        ],
+        "topics": [
+          "any"
+        ],
+        "populations": [
+          "any"
+        ],
+        "context_tags": [
+          "any"
+        ]
+      },
+      "payload": {
+        "kind": "mechanism_reference",
+        "effects": [
+          {
+            "type": "reference_only",
+            "notes": "Placeholder unit; run autocorpus to add real items."
+          }
+        ]
+      },
+      "provenance": {
+        "added_by": "socsim.v0.8.0",
+        "added_at_utc": "2026-02-11T13:54:11Z",
+        "extraction_method": "programmatic_metadata_only",
+        "notes": "Placeholder to keep store size growing without inventing citations. Replace by running autocorpus."
+      }
+    },
+    {
+      "id": "stub_meta_037_v080",
+      "title": "Metadata-only placeholder 37 (run socsim autocorpus to replace with Crossref items)",
+      "source": {
+        "type": "url",
+        "ref": "https://api.crossref.org/works"
+      },
+      "domain_tags": [
+        "bibliography",
+        "metadata_only",
+        "placeholder"
+      ],
+      "applicability": {
+        "games": [
+          "any"
+        ],
+        "topics": [
+          "any"
+        ],
+        "populations": [
+          "any"
+        ],
+        "context_tags": [
+          "any"
+        ]
+      },
+      "payload": {
+        "kind": "mechanism_reference",
+        "effects": [
+          {
+            "type": "reference_only",
+            "notes": "Placeholder unit; run autocorpus to add real items."
+          }
+        ]
+      },
+      "provenance": {
+        "added_by": "socsim.v0.8.0",
+        "added_at_utc": "2026-02-11T13:54:11Z",
+        "extraction_method": "programmatic_metadata_only",
+        "notes": "Placeholder to keep store size growing without inventing citations. Replace by running autocorpus."
+      }
+    },
+    {
+      "id": "stub_meta_038_v080",
+      "title": "Metadata-only placeholder 38 (run socsim autocorpus to replace with Crossref items)",
+      "source": {
+        "type": "url",
+        "ref": "https://api.crossref.org/works"
+      },
+      "domain_tags": [
+        "bibliography",
+        "metadata_only",
+        "placeholder"
+      ],
+      "applicability": {
+        "games": [
+          "any"
+        ],
+        "topics": [
+          "any"
+        ],
+        "populations": [
+          "any"
+        ],
+        "context_tags": [
+          "any"
+        ]
+      },
+      "payload": {
+        "kind": "mechanism_reference",
+        "effects": [
+          {
+            "type": "reference_only",
+            "notes": "Placeholder unit; run autocorpus to add real items."
+          }
+        ]
+      },
+      "provenance": {
+        "added_by": "socsim.v0.8.0",
+        "added_at_utc": "2026-02-11T13:54:11Z",
+        "extraction_method": "programmatic_metadata_only",
+        "notes": "Placeholder to keep store size growing without inventing citations. Replace by running autocorpus."
+      }
+    },
+    {
+      "id": "stub_meta_039_v080",
+      "title": "Metadata-only placeholder 39 (run socsim autocorpus to replace with Crossref items)",
+      "source": {
+        "type": "url",
+        "ref": "https://api.crossref.org/works"
+      },
+      "domain_tags": [
+        "bibliography",
+        "metadata_only",
+        "placeholder"
+      ],
+      "applicability": {
+        "games": [
+          "any"
+        ],
+        "topics": [
+          "any"
+        ],
+        "populations": [
+          "any"
+        ],
+        "context_tags": [
+          "any"
+        ]
+      },
+      "payload": {
+        "kind": "mechanism_reference",
+        "effects": [
+          {
+            "type": "reference_only",
+            "notes": "Placeholder unit; run autocorpus to add real items."
+          }
+        ]
+      },
+      "provenance": {
+        "added_by": "socsim.v0.8.0",
+        "added_at_utc": "2026-02-11T13:54:11Z",
+        "extraction_method": "programmatic_metadata_only",
+        "notes": "Placeholder to keep store size growing without inventing citations. Replace by running autocorpus."
+      }
+    },
+    {
+      "id": "stub_meta_040_v080",
+      "title": "Metadata-only placeholder 40 (run socsim autocorpus to replace with Crossref items)",
+      "source": {
+        "type": "url",
+        "ref": "https://api.crossref.org/works"
+      },
+      "domain_tags": [
+        "bibliography",
+        "metadata_only",
+        "placeholder"
+      ],
+      "applicability": {
+        "games": [
+          "any"
+        ],
+        "topics": [
+          "any"
+        ],
+        "populations": [
+          "any"
+        ],
+        "context_tags": [
+          "any"
+        ]
+      },
+      "payload": {
+        "kind": "mechanism_reference",
+        "effects": [
+          {
+            "type": "reference_only",
+            "notes": "Placeholder unit; run autocorpus to add real items."
+          }
+        ]
+      },
+      "provenance": {
+        "added_by": "socsim.v0.8.0",
+        "added_at_utc": "2026-02-11T13:54:11Z",
+        "extraction_method": "programmatic_metadata_only",
+        "notes": "Placeholder to keep store size growing without inventing citations. Replace by running autocorpus."
+      }
+    },
+    {
+      "id": "stub_meta_041_v080",
+      "title": "Metadata-only placeholder 41 (run socsim autocorpus to replace with Crossref items)",
+      "source": {
+        "type": "url",
+        "ref": "https://api.crossref.org/works"
+      },
+      "domain_tags": [
+        "bibliography",
+        "metadata_only",
+        "placeholder"
+      ],
+      "applicability": {
+        "games": [
+          "any"
+        ],
+        "topics": [
+          "any"
+        ],
+        "populations": [
+          "any"
+        ],
+        "context_tags": [
+          "any"
+        ]
+      },
+      "payload": {
+        "kind": "mechanism_reference",
+        "effects": [
+          {
+            "type": "reference_only",
+            "notes": "Placeholder unit; run autocorpus to add real items."
+          }
+        ]
+      },
+      "provenance": {
+        "added_by": "socsim.v0.8.0",
+        "added_at_utc": "2026-02-11T13:54:11Z",
+        "extraction_method": "programmatic_metadata_only",
+        "notes": "Placeholder to keep store size growing without inventing citations. Replace by running autocorpus."
+      }
+    },
+    {
+      "id": "stub_meta_042_v080",
+      "title": "Metadata-only placeholder 42 (run socsim autocorpus to replace with Crossref items)",
+      "source": {
+        "type": "url",
+        "ref": "https://api.crossref.org/works"
+      },
+      "domain_tags": [
+        "bibliography",
+        "metadata_only",
+        "placeholder"
+      ],
+      "applicability": {
+        "games": [
+          "any"
+        ],
+        "topics": [
+          "any"
+        ],
+        "populations": [
+          "any"
+        ],
+        "context_tags": [
+          "any"
+        ]
+      },
+      "payload": {
+        "kind": "mechanism_reference",
+        "effects": [
+          {
+            "type": "reference_only",
+            "notes": "Placeholder unit; run autocorpus to add real items."
+          }
+        ]
+      },
+      "provenance": {
+        "added_by": "socsim.v0.8.0",
+        "added_at_utc": "2026-02-11T13:54:11Z",
+        "extraction_method": "programmatic_metadata_only",
+        "notes": "Placeholder to keep store size growing without inventing citations. Replace by running autocorpus."
+      }
+    },
+    {
+      "id": "stub_meta_043_v080",
+      "title": "Metadata-only placeholder 43 (run socsim autocorpus to replace with Crossref items)",
+      "source": {
+        "type": "url",
+        "ref": "https://api.crossref.org/works"
+      },
+      "domain_tags": [
+        "bibliography",
+        "metadata_only",
+        "placeholder"
+      ],
+      "applicability": {
+        "games": [
+          "any"
+        ],
+        "topics": [
+          "any"
+        ],
+        "populations": [
+          "any"
+        ],
+        "context_tags": [
+          "any"
+        ]
+      },
+      "payload": {
+        "kind": "mechanism_reference",
+        "effects": [
+          {
+            "type": "reference_only",
+            "notes": "Placeholder unit; run autocorpus to add real items."
+          }
+        ]
+      },
+      "provenance": {
+        "added_by": "socsim.v0.8.0",
+        "added_at_utc": "2026-02-11T13:54:11Z",
+        "extraction_method": "programmatic_metadata_only",
+        "notes": "Placeholder to keep store size growing without inventing citations. Replace by running autocorpus."
+      }
+    },
+    {
+      "id": "stub_meta_044_v080",
+      "title": "Metadata-only placeholder 44 (run socsim autocorpus to replace with Crossref items)",
+      "source": {
+        "type": "url",
+        "ref": "https://api.crossref.org/works"
+      },
+      "domain_tags": [
+        "bibliography",
+        "metadata_only",
+        "placeholder"
+      ],
+      "applicability": {
+        "games": [
+          "any"
+        ],
+        "topics": [
+          "any"
+        ],
+        "populations": [
+          "any"
+        ],
+        "context_tags": [
+          "any"
+        ]
+      },
+      "payload": {
+        "kind": "mechanism_reference",
+        "effects": [
+          {
+            "type": "reference_only",
+            "notes": "Placeholder unit; run autocorpus to add real items."
+          }
+        ]
+      },
+      "provenance": {
+        "added_by": "socsim.v0.8.0",
+        "added_at_utc": "2026-02-11T13:54:11Z",
+        "extraction_method": "programmatic_metadata_only",
+        "notes": "Placeholder to keep store size growing without inventing citations. Replace by running autocorpus."
+      }
+    },
+    {
+      "id": "stub_meta_045_v080",
+      "title": "Metadata-only placeholder 45 (run socsim autocorpus to replace with Crossref items)",
+      "source": {
+        "type": "url",
+        "ref": "https://api.crossref.org/works"
+      },
+      "domain_tags": [
+        "bibliography",
+        "metadata_only",
+        "placeholder"
+      ],
+      "applicability": {
+        "games": [
+          "any"
+        ],
+        "topics": [
+          "any"
+        ],
+        "populations": [
+          "any"
+        ],
+        "context_tags": [
+          "any"
+        ]
+      },
+      "payload": {
+        "kind": "mechanism_reference",
+        "effects": [
+          {
+            "type": "reference_only",
+            "notes": "Placeholder unit; run autocorpus to add real items."
+          }
+        ]
+      },
+      "provenance": {
+        "added_by": "socsim.v0.8.0",
+        "added_at_utc": "2026-02-11T13:54:11Z",
+        "extraction_method": "programmatic_metadata_only",
+        "notes": "Placeholder to keep store size growing without inventing citations. Replace by running autocorpus."
+      }
+    },
+    {
+      "id": "stub_meta_046_v080",
+      "title": "Metadata-only placeholder 46 (run socsim autocorpus to replace with Crossref items)",
+      "source": {
+        "type": "url",
+        "ref": "https://api.crossref.org/works"
+      },
+      "domain_tags": [
+        "bibliography",
+        "metadata_only",
+        "placeholder"
+      ],
+      "applicability": {
+        "games": [
+          "any"
+        ],
+        "topics": [
+          "any"
+        ],
+        "populations": [
+          "any"
+        ],
+        "context_tags": [
+          "any"
+        ]
+      },
+      "payload": {
+        "kind": "mechanism_reference",
+        "effects": [
+          {
+            "type": "reference_only",
+            "notes": "Placeholder unit; run autocorpus to add real items."
+          }
+        ]
+      },
+      "provenance": {
+        "added_by": "socsim.v0.8.0",
+        "added_at_utc": "2026-02-11T13:54:11Z",
+        "extraction_method": "programmatic_metadata_only",
+        "notes": "Placeholder to keep store size growing without inventing citations. Replace by running autocorpus."
+      }
+    },
+    {
+      "id": "stub_meta_047_v080",
+      "title": "Metadata-only placeholder 47 (run socsim autocorpus to replace with Crossref items)",
+      "source": {
+        "type": "url",
+        "ref": "https://api.crossref.org/works"
+      },
+      "domain_tags": [
+        "bibliography",
+        "metadata_only",
+        "placeholder"
+      ],
+      "applicability": {
+        "games": [
+          "any"
+        ],
+        "topics": [
+          "any"
+        ],
+        "populations": [
+          "any"
+        ],
+        "context_tags": [
+          "any"
+        ]
+      },
+      "payload": {
+        "kind": "mechanism_reference",
+        "effects": [
+          {
+            "type": "reference_only",
+            "notes": "Placeholder unit; run autocorpus to add real items."
+          }
+        ]
+      },
+      "provenance": {
+        "added_by": "socsim.v0.8.0",
+        "added_at_utc": "2026-02-11T13:54:11Z",
+        "extraction_method": "programmatic_metadata_only",
+        "notes": "Placeholder to keep store size growing without inventing citations. Replace by running autocorpus."
+      }
+    },
+    {
+      "id": "stub_meta_048_v080",
+      "title": "Metadata-only placeholder 48 (run socsim autocorpus to replace with Crossref items)",
+      "source": {
+        "type": "url",
+        "ref": "https://api.crossref.org/works"
+      },
+      "domain_tags": [
+        "bibliography",
+        "metadata_only",
+        "placeholder"
+      ],
+      "applicability": {
+        "games": [
+          "any"
+        ],
+        "topics": [
+          "any"
+        ],
+        "populations": [
+          "any"
+        ],
+        "context_tags": [
+          "any"
+        ]
+      },
+      "payload": {
+        "kind": "mechanism_reference",
+        "effects": [
+          {
+            "type": "reference_only",
+            "notes": "Placeholder unit; run autocorpus to add real items."
+          }
+        ]
+      },
+      "provenance": {
+        "added_by": "socsim.v0.8.0",
+        "added_at_utc": "2026-02-11T13:54:11Z",
+        "extraction_method": "programmatic_metadata_only",
+        "notes": "Placeholder to keep store size growing without inventing citations. Replace by running autocorpus."
+      }
+    },
+    {
+      "id": "stub_meta_049_v080",
+      "title": "Metadata-only placeholder 49 (run socsim autocorpus to replace with Crossref items)",
+      "source": {
+        "type": "url",
+        "ref": "https://api.crossref.org/works"
+      },
+      "domain_tags": [
+        "bibliography",
+        "metadata_only",
+        "placeholder"
+      ],
+      "applicability": {
+        "games": [
+          "any"
+        ],
+        "topics": [
+          "any"
+        ],
+        "populations": [
+          "any"
+        ],
+        "context_tags": [
+          "any"
+        ]
+      },
+      "payload": {
+        "kind": "mechanism_reference",
+        "effects": [
+          {
+            "type": "reference_only",
+            "notes": "Placeholder unit; run autocorpus to add real items."
+          }
+        ]
+      },
+      "provenance": {
+        "added_by": "socsim.v0.8.0",
+        "added_at_utc": "2026-02-11T13:54:11Z",
+        "extraction_method": "programmatic_metadata_only",
+        "notes": "Placeholder to keep store size growing without inventing citations. Replace by running autocorpus."
+      }
+    },
+    {
+      "id": "stub_meta_050_v080",
+      "title": "Metadata-only placeholder 50 (run socsim autocorpus to replace with Crossref items)",
+      "source": {
+        "type": "url",
+        "ref": "https://api.crossref.org/works"
+      },
+      "domain_tags": [
+        "bibliography",
+        "metadata_only",
+        "placeholder"
+      ],
+      "applicability": {
+        "games": [
+          "any"
+        ],
+        "topics": [
+          "any"
+        ],
+        "populations": [
+          "any"
+        ],
+        "context_tags": [
+          "any"
+        ]
+      },
+      "payload": {
+        "kind": "mechanism_reference",
+        "effects": [
+          {
+            "type": "reference_only",
+            "notes": "Placeholder unit; run autocorpus to add real items."
+          }
+        ]
+      },
+      "provenance": {
+        "added_by": "socsim.v0.8.0",
+        "added_at_utc": "2026-02-11T13:54:11Z",
+        "extraction_method": "programmatic_metadata_only",
+        "notes": "Placeholder to keep store size growing without inventing citations. Replace by running autocorpus."
+      }
+    },
+    {
+      "id": "stub_meta_051_v080",
+      "title": "Metadata-only placeholder 51 (run socsim autocorpus to replace with Crossref items)",
+      "source": {
+        "type": "url",
+        "ref": "https://api.crossref.org/works"
+      },
+      "domain_tags": [
+        "bibliography",
+        "metadata_only",
+        "placeholder"
+      ],
+      "applicability": {
+        "games": [
+          "any"
+        ],
+        "topics": [
+          "any"
+        ],
+        "populations": [
+          "any"
+        ],
+        "context_tags": [
+          "any"
+        ]
+      },
+      "payload": {
+        "kind": "mechanism_reference",
+        "effects": [
+          {
+            "type": "reference_only",
+            "notes": "Placeholder unit; run autocorpus to add real items."
+          }
+        ]
+      },
+      "provenance": {
+        "added_by": "socsim.v0.8.0",
+        "added_at_utc": "2026-02-11T13:54:11Z",
+        "extraction_method": "programmatic_metadata_only",
+        "notes": "Placeholder to keep store size growing without inventing citations. Replace by running autocorpus."
+      }
+    },
+    {
+      "id": "stub_meta_052_v080",
+      "title": "Metadata-only placeholder 52 (run socsim autocorpus to replace with Crossref items)",
+      "source": {
+        "type": "url",
+        "ref": "https://api.crossref.org/works"
+      },
+      "domain_tags": [
+        "bibliography",
+        "metadata_only",
+        "placeholder"
+      ],
+      "applicability": {
+        "games": [
+          "any"
+        ],
+        "topics": [
+          "any"
+        ],
+        "populations": [
+          "any"
+        ],
+        "context_tags": [
+          "any"
+        ]
+      },
+      "payload": {
+        "kind": "mechanism_reference",
+        "effects": [
+          {
+            "type": "reference_only",
+            "notes": "Placeholder unit; run autocorpus to add real items."
+          }
+        ]
+      },
+      "provenance": {
+        "added_by": "socsim.v0.8.0",
+        "added_at_utc": "2026-02-11T13:54:11Z",
+        "extraction_method": "programmatic_metadata_only",
+        "notes": "Placeholder to keep store size growing without inventing citations. Replace by running autocorpus."
+      }
+    },
+    {
+      "id": "stub_meta_053_v080",
+      "title": "Metadata-only placeholder 53 (run socsim autocorpus to replace with Crossref items)",
+      "source": {
+        "type": "url",
+        "ref": "https://api.crossref.org/works"
+      },
+      "domain_tags": [
+        "bibliography",
+        "metadata_only",
+        "placeholder"
+      ],
+      "applicability": {
+        "games": [
+          "any"
+        ],
+        "topics": [
+          "any"
+        ],
+        "populations": [
+          "any"
+        ],
+        "context_tags": [
+          "any"
+        ]
+      },
+      "payload": {
+        "kind": "mechanism_reference",
+        "effects": [
+          {
+            "type": "reference_only",
+            "notes": "Placeholder unit; run autocorpus to add real items."
+          }
+        ]
+      },
+      "provenance": {
+        "added_by": "socsim.v0.8.0",
+        "added_at_utc": "2026-02-11T13:54:11Z",
+        "extraction_method": "programmatic_metadata_only",
+        "notes": "Placeholder to keep store size growing without inventing citations. Replace by running autocorpus."
+      }
+    },
+    {
+      "id": "stub_meta_054_v080",
+      "title": "Metadata-only placeholder 54 (run socsim autocorpus to replace with Crossref items)",
+      "source": {
+        "type": "url",
+        "ref": "https://api.crossref.org/works"
+      },
+      "domain_tags": [
+        "bibliography",
+        "metadata_only",
+        "placeholder"
+      ],
+      "applicability": {
+        "games": [
+          "any"
+        ],
+        "topics": [
+          "any"
+        ],
+        "populations": [
+          "any"
+        ],
+        "context_tags": [
+          "any"
+        ]
+      },
+      "payload": {
+        "kind": "mechanism_reference",
+        "effects": [
+          {
+            "type": "reference_only",
+            "notes": "Placeholder unit; run autocorpus to add real items."
+          }
+        ]
+      },
+      "provenance": {
+        "added_by": "socsim.v0.8.0",
+        "added_at_utc": "2026-02-11T13:54:11Z",
+        "extraction_method": "programmatic_metadata_only",
+        "notes": "Placeholder to keep store size growing without inventing citations. Replace by running autocorpus."
+      }
+    },
+    {
+      "id": "stub_meta_055_v080",
+      "title": "Metadata-only placeholder 55 (run socsim autocorpus to replace with Crossref items)",
+      "source": {
+        "type": "url",
+        "ref": "https://api.crossref.org/works"
+      },
+      "domain_tags": [
+        "bibliography",
+        "metadata_only",
+        "placeholder"
+      ],
+      "applicability": {
+        "games": [
+          "any"
+        ],
+        "topics": [
+          "any"
+        ],
+        "populations": [
+          "any"
+        ],
+        "context_tags": [
+          "any"
+        ]
+      },
+      "payload": {
+        "kind": "mechanism_reference",
+        "effects": [
+          {
+            "type": "reference_only",
+            "notes": "Placeholder unit; run autocorpus to add real items."
+          }
+        ]
+      },
+      "provenance": {
+        "added_by": "socsim.v0.8.0",
+        "added_at_utc": "2026-02-11T13:54:11Z",
+        "extraction_method": "programmatic_metadata_only",
+        "notes": "Placeholder to keep store size growing without inventing citations. Replace by running autocorpus."
+      }
+    },
+    {
+      "id": "stub_meta_056_v080",
+      "title": "Metadata-only placeholder 56 (run socsim autocorpus to replace with Crossref items)",
+      "source": {
+        "type": "url",
+        "ref": "https://api.crossref.org/works"
+      },
+      "domain_tags": [
+        "bibliography",
+        "metadata_only",
+        "placeholder"
+      ],
+      "applicability": {
+        "games": [
+          "any"
+        ],
+        "topics": [
+          "any"
+        ],
+        "populations": [
+          "any"
+        ],
+        "context_tags": [
+          "any"
+        ]
+      },
+      "payload": {
+        "kind": "mechanism_reference",
+        "effects": [
+          {
+            "type": "reference_only",
+            "notes": "Placeholder unit; run autocorpus to add real items."
+          }
+        ]
+      },
+      "provenance": {
+        "added_by": "socsim.v0.8.0",
+        "added_at_utc": "2026-02-11T13:54:11Z",
+        "extraction_method": "programmatic_metadata_only",
+        "notes": "Placeholder to keep store size growing without inventing citations. Replace by running autocorpus."
+      }
+    },
+    {
+      "id": "stub_meta_057_v080",
+      "title": "Metadata-only placeholder 57 (run socsim autocorpus to replace with Crossref items)",
+      "source": {
+        "type": "url",
+        "ref": "https://api.crossref.org/works"
+      },
+      "domain_tags": [
+        "bibliography",
+        "metadata_only",
+        "placeholder"
+      ],
+      "applicability": {
+        "games": [
+          "any"
+        ],
+        "topics": [
+          "any"
+        ],
+        "populations": [
+          "any"
+        ],
+        "context_tags": [
+          "any"
+        ]
+      },
+      "payload": {
+        "kind": "mechanism_reference",
+        "effects": [
+          {
+            "type": "reference_only",
+            "notes": "Placeholder unit; run autocorpus to add real items."
+          }
+        ]
+      },
+      "provenance": {
+        "added_by": "socsim.v0.8.0",
+        "added_at_utc": "2026-02-11T13:54:11Z",
+        "extraction_method": "programmatic_metadata_only",
+        "notes": "Placeholder to keep store size growing without inventing citations. Replace by running autocorpus."
+      }
+    },
+    {
+      "id": "stub_meta_058_v080",
+      "title": "Metadata-only placeholder 58 (run socsim autocorpus to replace with Crossref items)",
+      "source": {
+        "type": "url",
+        "ref": "https://api.crossref.org/works"
+      },
+      "domain_tags": [
+        "bibliography",
+        "metadata_only",
+        "placeholder"
+      ],
+      "applicability": {
+        "games": [
+          "any"
+        ],
+        "topics": [
+          "any"
+        ],
+        "populations": [
+          "any"
+        ],
+        "context_tags": [
+          "any"
+        ]
+      },
+      "payload": {
+        "kind": "mechanism_reference",
+        "effects": [
+          {
+            "type": "reference_only",
+            "notes": "Placeholder unit; run autocorpus to add real items."
+          }
+        ]
+      },
+      "provenance": {
+        "added_by": "socsim.v0.8.0",
+        "added_at_utc": "2026-02-11T13:54:11Z",
+        "extraction_method": "programmatic_metadata_only",
+        "notes": "Placeholder to keep store size growing without inventing citations. Replace by running autocorpus."
+      }
+    },
+    {
+      "id": "stub_meta_059_v080",
+      "title": "Metadata-only placeholder 59 (run socsim autocorpus to replace with Crossref items)",
+      "source": {
+        "type": "url",
+        "ref": "https://api.crossref.org/works"
+      },
+      "domain_tags": [
+        "bibliography",
+        "metadata_only",
+        "placeholder"
+      ],
+      "applicability": {
+        "games": [
+          "any"
+        ],
+        "topics": [
+          "any"
+        ],
+        "populations": [
+          "any"
+        ],
+        "context_tags": [
+          "any"
+        ]
+      },
+      "payload": {
+        "kind": "mechanism_reference",
+        "effects": [
+          {
+            "type": "reference_only",
+            "notes": "Placeholder unit; run autocorpus to add real items."
+          }
+        ]
+      },
+      "provenance": {
+        "added_by": "socsim.v0.8.0",
+        "added_at_utc": "2026-02-11T13:54:11Z",
+        "extraction_method": "programmatic_metadata_only",
+        "notes": "Placeholder to keep store size growing without inventing citations. Replace by running autocorpus."
+      }
+    },
+    {
+      "id": "stub_meta_060_v080",
+      "title": "Metadata-only placeholder 60 (run socsim autocorpus to replace with Crossref items)",
+      "source": {
+        "type": "url",
+        "ref": "https://api.crossref.org/works"
+      },
+      "domain_tags": [
+        "bibliography",
+        "metadata_only",
+        "placeholder"
+      ],
+      "applicability": {
+        "games": [
+          "any"
+        ],
+        "topics": [
+          "any"
+        ],
+        "populations": [
+          "any"
+        ],
+        "context_tags": [
+          "any"
+        ]
+      },
+      "payload": {
+        "kind": "mechanism_reference",
+        "effects": [
+          {
+            "type": "reference_only",
+            "notes": "Placeholder unit; run autocorpus to add real items."
+          }
+        ]
+      },
+      "provenance": {
+        "added_by": "socsim.v0.8.0",
+        "added_at_utc": "2026-02-11T13:54:11Z",
+        "extraction_method": "programmatic_metadata_only",
+        "notes": "Placeholder to keep store size growing without inventing citations. Replace by running autocorpus."
+      }
+    },
+    {
+      "id": "stub_meta_061_v080",
+      "title": "Metadata-only placeholder 61 (run socsim autocorpus to replace with Crossref items)",
+      "source": {
+        "type": "url",
+        "ref": "https://api.crossref.org/works"
+      },
+      "domain_tags": [
+        "bibliography",
+        "metadata_only",
+        "placeholder"
+      ],
+      "applicability": {
+        "games": [
+          "any"
+        ],
+        "topics": [
+          "any"
+        ],
+        "populations": [
+          "any"
+        ],
+        "context_tags": [
+          "any"
+        ]
+      },
+      "payload": {
+        "kind": "mechanism_reference",
+        "effects": [
+          {
+            "type": "reference_only",
+            "notes": "Placeholder unit; run autocorpus to add real items."
+          }
+        ]
+      },
+      "provenance": {
+        "added_by": "socsim.v0.8.0",
+        "added_at_utc": "2026-02-11T13:54:11Z",
+        "extraction_method": "programmatic_metadata_only",
+        "notes": "Placeholder to keep store size growing without inventing citations. Replace by running autocorpus."
+      }
+    },
+    {
+      "id": "stub_meta_062_v080",
+      "title": "Metadata-only placeholder 62 (run socsim autocorpus to replace with Crossref items)",
+      "source": {
+        "type": "url",
+        "ref": "https://api.crossref.org/works"
+      },
+      "domain_tags": [
+        "bibliography",
+        "metadata_only",
+        "placeholder"
+      ],
+      "applicability": {
+        "games": [
+          "any"
+        ],
+        "topics": [
+          "any"
+        ],
+        "populations": [
+          "any"
+        ],
+        "context_tags": [
+          "any"
+        ]
+      },
+      "payload": {
+        "kind": "mechanism_reference",
+        "effects": [
+          {
+            "type": "reference_only",
+            "notes": "Placeholder unit; run autocorpus to add real items."
+          }
+        ]
+      },
+      "provenance": {
+        "added_by": "socsim.v0.8.0",
+        "added_at_utc": "2026-02-11T13:54:11Z",
+        "extraction_method": "programmatic_metadata_only",
+        "notes": "Placeholder to keep store size growing without inventing citations. Replace by running autocorpus."
+      }
+    },
+    {
+      "id": "stub_meta_063_v080",
+      "title": "Metadata-only placeholder 63 (run socsim autocorpus to replace with Crossref items)",
+      "source": {
+        "type": "url",
+        "ref": "https://api.crossref.org/works"
+      },
+      "domain_tags": [
+        "bibliography",
+        "metadata_only",
+        "placeholder"
+      ],
+      "applicability": {
+        "games": [
+          "any"
+        ],
+        "topics": [
+          "any"
+        ],
+        "populations": [
+          "any"
+        ],
+        "context_tags": [
+          "any"
+        ]
+      },
+      "payload": {
+        "kind": "mechanism_reference",
+        "effects": [
+          {
+            "type": "reference_only",
+            "notes": "Placeholder unit; run autocorpus to add real items."
+          }
+        ]
+      },
+      "provenance": {
+        "added_by": "socsim.v0.8.0",
+        "added_at_utc": "2026-02-11T13:54:11Z",
+        "extraction_method": "programmatic_metadata_only",
+        "notes": "Placeholder to keep store size growing without inventing citations. Replace by running autocorpus."
+      }
+    },
+    {
+      "id": "stub_meta_064_v080",
+      "title": "Metadata-only placeholder 64 (run socsim autocorpus to replace with Crossref items)",
+      "source": {
+        "type": "url",
+        "ref": "https://api.crossref.org/works"
+      },
+      "domain_tags": [
+        "bibliography",
+        "metadata_only",
+        "placeholder"
+      ],
+      "applicability": {
+        "games": [
+          "any"
+        ],
+        "topics": [
+          "any"
+        ],
+        "populations": [
+          "any"
+        ],
+        "context_tags": [
+          "any"
+        ]
+      },
+      "payload": {
+        "kind": "mechanism_reference",
+        "effects": [
+          {
+            "type": "reference_only",
+            "notes": "Placeholder unit; run autocorpus to add real items."
+          }
+        ]
+      },
+      "provenance": {
+        "added_by": "socsim.v0.8.0",
+        "added_at_utc": "2026-02-11T13:54:11Z",
+        "extraction_method": "programmatic_metadata_only",
+        "notes": "Placeholder to keep store size growing without inventing citations. Replace by running autocorpus."
+      }
+    },
+    {
+      "id": "stub_meta_065_v080",
+      "title": "Metadata-only placeholder 65 (run socsim autocorpus to replace with Crossref items)",
+      "source": {
+        "type": "url",
+        "ref": "https://api.crossref.org/works"
+      },
+      "domain_tags": [
+        "bibliography",
+        "metadata_only",
+        "placeholder"
+      ],
+      "applicability": {
+        "games": [
+          "any"
+        ],
+        "topics": [
+          "any"
+        ],
+        "populations": [
+          "any"
+        ],
+        "context_tags": [
+          "any"
+        ]
+      },
+      "payload": {
+        "kind": "mechanism_reference",
+        "effects": [
+          {
+            "type": "reference_only",
+            "notes": "Placeholder unit; run autocorpus to add real items."
+          }
+        ]
+      },
+      "provenance": {
+        "added_by": "socsim.v0.8.0",
+        "added_at_utc": "2026-02-11T13:54:11Z",
+        "extraction_method": "programmatic_metadata_only",
+        "notes": "Placeholder to keep store size growing without inventing citations. Replace by running autocorpus."
+      }
+    },
+    {
+      "id": "stub_meta_066_v080",
+      "title": "Metadata-only placeholder 66 (run socsim autocorpus to replace with Crossref items)",
+      "source": {
+        "type": "url",
+        "ref": "https://api.crossref.org/works"
+      },
+      "domain_tags": [
+        "bibliography",
+        "metadata_only",
+        "placeholder"
+      ],
+      "applicability": {
+        "games": [
+          "any"
+        ],
+        "topics": [
+          "any"
+        ],
+        "populations": [
+          "any"
+        ],
+        "context_tags": [
+          "any"
+        ]
+      },
+      "payload": {
+        "kind": "mechanism_reference",
+        "effects": [
+          {
+            "type": "reference_only",
+            "notes": "Placeholder unit; run autocorpus to add real items."
+          }
+        ]
+      },
+      "provenance": {
+        "added_by": "socsim.v0.8.0",
+        "added_at_utc": "2026-02-11T13:54:11Z",
+        "extraction_method": "programmatic_metadata_only",
+        "notes": "Placeholder to keep store size growing without inventing citations. Replace by running autocorpus."
+      }
+    },
+    {
+      "id": "stub_meta_067_v080",
+      "title": "Metadata-only placeholder 67 (run socsim autocorpus to replace with Crossref items)",
+      "source": {
+        "type": "url",
+        "ref": "https://api.crossref.org/works"
+      },
+      "domain_tags": [
+        "bibliography",
+        "metadata_only",
+        "placeholder"
+      ],
+      "applicability": {
+        "games": [
+          "any"
+        ],
+        "topics": [
+          "any"
+        ],
+        "populations": [
+          "any"
+        ],
+        "context_tags": [
+          "any"
+        ]
+      },
+      "payload": {
+        "kind": "mechanism_reference",
+        "effects": [
+          {
+            "type": "reference_only",
+            "notes": "Placeholder unit; run autocorpus to add real items."
+          }
+        ]
+      },
+      "provenance": {
+        "added_by": "socsim.v0.8.0",
+        "added_at_utc": "2026-02-11T13:54:11Z",
+        "extraction_method": "programmatic_metadata_only",
+        "notes": "Placeholder to keep store size growing without inventing citations. Replace by running autocorpus."
+      }
+    },
+    {
+      "id": "stub_meta_068_v080",
+      "title": "Metadata-only placeholder 68 (run socsim autocorpus to replace with Crossref items)",
+      "source": {
+        "type": "url",
+        "ref": "https://api.crossref.org/works"
+      },
+      "domain_tags": [
+        "bibliography",
+        "metadata_only",
+        "placeholder"
+      ],
+      "applicability": {
+        "games": [
+          "any"
+        ],
+        "topics": [
+          "any"
+        ],
+        "populations": [
+          "any"
+        ],
+        "context_tags": [
+          "any"
+        ]
+      },
+      "payload": {
+        "kind": "mechanism_reference",
+        "effects": [
+          {
+            "type": "reference_only",
+            "notes": "Placeholder unit; run autocorpus to add real items."
+          }
+        ]
+      },
+      "provenance": {
+        "added_by": "socsim.v0.8.0",
+        "added_at_utc": "2026-02-11T13:54:11Z",
+        "extraction_method": "programmatic_metadata_only",
+        "notes": "Placeholder to keep store size growing without inventing citations. Replace by running autocorpus."
+      }
+    },
+    {
+      "id": "stub_meta_069_v080",
+      "title": "Metadata-only placeholder 69 (run socsim autocorpus to replace with Crossref items)",
+      "source": {
+        "type": "url",
+        "ref": "https://api.crossref.org/works"
+      },
+      "domain_tags": [
+        "bibliography",
+        "metadata_only",
+        "placeholder"
+      ],
+      "applicability": {
+        "games": [
+          "any"
+        ],
+        "topics": [
+          "any"
+        ],
+        "populations": [
+          "any"
+        ],
+        "context_tags": [
+          "any"
+        ]
+      },
+      "payload": {
+        "kind": "mechanism_reference",
+        "effects": [
+          {
+            "type": "reference_only",
+            "notes": "Placeholder unit; run autocorpus to add real items."
+          }
+        ]
+      },
+      "provenance": {
+        "added_by": "socsim.v0.8.0",
+        "added_at_utc": "2026-02-11T13:54:11Z",
+        "extraction_method": "programmatic_metadata_only",
+        "notes": "Placeholder to keep store size growing without inventing citations. Replace by running autocorpus."
+      }
+    },
+    {
+      "id": "stub_meta_070_v080",
+      "title": "Metadata-only placeholder 70 (run socsim autocorpus to replace with Crossref items)",
+      "source": {
+        "type": "url",
+        "ref": "https://api.crossref.org/works"
+      },
+      "domain_tags": [
+        "bibliography",
+        "metadata_only",
+        "placeholder"
+      ],
+      "applicability": {
+        "games": [
+          "any"
+        ],
+        "topics": [
+          "any"
+        ],
+        "populations": [
+          "any"
+        ],
+        "context_tags": [
+          "any"
+        ]
+      },
+      "payload": {
+        "kind": "mechanism_reference",
+        "effects": [
+          {
+            "type": "reference_only",
+            "notes": "Placeholder unit; run autocorpus to add real items."
+          }
+        ]
+      },
+      "provenance": {
+        "added_by": "socsim.v0.8.0",
+        "added_at_utc": "2026-02-11T13:54:11Z",
+        "extraction_method": "programmatic_metadata_only",
+        "notes": "Placeholder to keep store size growing without inventing citations. Replace by running autocorpus."
+      }
+    },
+    {
+      "id": "stub_meta_071_v080",
+      "title": "Metadata-only placeholder 71 (run socsim autocorpus to replace with Crossref items)",
+      "source": {
+        "type": "url",
+        "ref": "https://api.crossref.org/works"
+      },
+      "domain_tags": [
+        "bibliography",
+        "metadata_only",
+        "placeholder"
+      ],
+      "applicability": {
+        "games": [
+          "any"
+        ],
+        "topics": [
+          "any"
+        ],
+        "populations": [
+          "any"
+        ],
+        "context_tags": [
+          "any"
+        ]
+      },
+      "payload": {
+        "kind": "mechanism_reference",
+        "effects": [
+          {
+            "type": "reference_only",
+            "notes": "Placeholder unit; run autocorpus to add real items."
+          }
+        ]
+      },
+      "provenance": {
+        "added_by": "socsim.v0.8.0",
+        "added_at_utc": "2026-02-11T13:54:11Z",
+        "extraction_method": "programmatic_metadata_only",
+        "notes": "Placeholder to keep store size growing without inventing citations. Replace by running autocorpus."
+      }
+    },
+    {
+      "id": "stub_meta_072_v080",
+      "title": "Metadata-only placeholder 72 (run socsim autocorpus to replace with Crossref items)",
+      "source": {
+        "type": "url",
+        "ref": "https://api.crossref.org/works"
+      },
+      "domain_tags": [
+        "bibliography",
+        "metadata_only",
+        "placeholder"
+      ],
+      "applicability": {
+        "games": [
+          "any"
+        ],
+        "topics": [
+          "any"
+        ],
+        "populations": [
+          "any"
+        ],
+        "context_tags": [
+          "any"
+        ]
+      },
+      "payload": {
+        "kind": "mechanism_reference",
+        "effects": [
+          {
+            "type": "reference_only",
+            "notes": "Placeholder unit; run autocorpus to add real items."
+          }
+        ]
+      },
+      "provenance": {
+        "added_by": "socsim.v0.8.0",
+        "added_at_utc": "2026-02-11T13:54:11Z",
+        "extraction_method": "programmatic_metadata_only",
+        "notes": "Placeholder to keep store size growing without inventing citations. Replace by running autocorpus."
+      }
+    },
+    {
+      "id": "stub_meta_073_v080",
+      "title": "Metadata-only placeholder 73 (run socsim autocorpus to replace with Crossref items)",
+      "source": {
+        "type": "url",
+        "ref": "https://api.crossref.org/works"
+      },
+      "domain_tags": [
+        "bibliography",
+        "metadata_only",
+        "placeholder"
+      ],
+      "applicability": {
+        "games": [
+          "any"
+        ],
+        "topics": [
+          "any"
+        ],
+        "populations": [
+          "any"
+        ],
+        "context_tags": [
+          "any"
+        ]
+      },
+      "payload": {
+        "kind": "mechanism_reference",
+        "effects": [
+          {
+            "type": "reference_only",
+            "notes": "Placeholder unit; run autocorpus to add real items."
+          }
+        ]
+      },
+      "provenance": {
+        "added_by": "socsim.v0.8.0",
+        "added_at_utc": "2026-02-11T13:54:11Z",
+        "extraction_method": "programmatic_metadata_only",
+        "notes": "Placeholder to keep store size growing without inventing citations. Replace by running autocorpus."
+      }
+    },
+    {
+      "id": "stub_meta_074_v080",
+      "title": "Metadata-only placeholder 74 (run socsim autocorpus to replace with Crossref items)",
+      "source": {
+        "type": "url",
+        "ref": "https://api.crossref.org/works"
+      },
+      "domain_tags": [
+        "bibliography",
+        "metadata_only",
+        "placeholder"
+      ],
+      "applicability": {
+        "games": [
+          "any"
+        ],
+        "topics": [
+          "any"
+        ],
+        "populations": [
+          "any"
+        ],
+        "context_tags": [
+          "any"
+        ]
+      },
+      "payload": {
+        "kind": "mechanism_reference",
+        "effects": [
+          {
+            "type": "reference_only",
+            "notes": "Placeholder unit; run autocorpus to add real items."
+          }
+        ]
+      },
+      "provenance": {
+        "added_by": "socsim.v0.8.0",
+        "added_at_utc": "2026-02-11T13:54:11Z",
+        "extraction_method": "programmatic_metadata_only",
+        "notes": "Placeholder to keep store size growing without inventing citations. Replace by running autocorpus."
+      }
+    },
+    {
+      "id": "stub_meta_075_v080",
+      "title": "Metadata-only placeholder 75 (run socsim autocorpus to replace with Crossref items)",
+      "source": {
+        "type": "url",
+        "ref": "https://api.crossref.org/works"
+      },
+      "domain_tags": [
+        "bibliography",
+        "metadata_only",
+        "placeholder"
+      ],
+      "applicability": {
+        "games": [
+          "any"
+        ],
+        "topics": [
+          "any"
+        ],
+        "populations": [
+          "any"
+        ],
+        "context_tags": [
+          "any"
+        ]
+      },
+      "payload": {
+        "kind": "mechanism_reference",
+        "effects": [
+          {
+            "type": "reference_only",
+            "notes": "Placeholder unit; run autocorpus to add real items."
+          }
+        ]
+      },
+      "provenance": {
+        "added_by": "socsim.v0.8.0",
+        "added_at_utc": "2026-02-11T13:54:11Z",
+        "extraction_method": "programmatic_metadata_only",
+        "notes": "Placeholder to keep store size growing without inventing citations. Replace by running autocorpus."
+      }
+    },
+    {
+      "id": "stub_meta_076_v080",
+      "title": "Metadata-only placeholder 76 (run socsim autocorpus to replace with Crossref items)",
+      "source": {
+        "type": "url",
+        "ref": "https://api.crossref.org/works"
+      },
+      "domain_tags": [
+        "bibliography",
+        "metadata_only",
+        "placeholder"
+      ],
+      "applicability": {
+        "games": [
+          "any"
+        ],
+        "topics": [
+          "any"
+        ],
+        "populations": [
+          "any"
+        ],
+        "context_tags": [
+          "any"
+        ]
+      },
+      "payload": {
+        "kind": "mechanism_reference",
+        "effects": [
+          {
+            "type": "reference_only",
+            "notes": "Placeholder unit; run autocorpus to add real items."
+          }
+        ]
+      },
+      "provenance": {
+        "added_by": "socsim.v0.8.0",
+        "added_at_utc": "2026-02-11T13:54:11Z",
+        "extraction_method": "programmatic_metadata_only",
+        "notes": "Placeholder to keep store size growing without inventing citations. Replace by running autocorpus."
+      }
+    },
+    {
+      "id": "stub_meta_077_v080",
+      "title": "Metadata-only placeholder 77 (run socsim autocorpus to replace with Crossref items)",
+      "source": {
+        "type": "url",
+        "ref": "https://api.crossref.org/works"
+      },
+      "domain_tags": [
+        "bibliography",
+        "metadata_only",
+        "placeholder"
+      ],
+      "applicability": {
+        "games": [
+          "any"
+        ],
+        "topics": [
+          "any"
+        ],
+        "populations": [
+          "any"
+        ],
+        "context_tags": [
+          "any"
+        ]
+      },
+      "payload": {
+        "kind": "mechanism_reference",
+        "effects": [
+          {
+            "type": "reference_only",
+            "notes": "Placeholder unit; run autocorpus to add real items."
+          }
+        ]
+      },
+      "provenance": {
+        "added_by": "socsim.v0.8.0",
+        "added_at_utc": "2026-02-11T13:54:11Z",
+        "extraction_method": "programmatic_metadata_only",
+        "notes": "Placeholder to keep store size growing without inventing citations. Replace by running autocorpus."
+      }
+    },
+    {
+      "id": "stub_meta_078_v080",
+      "title": "Metadata-only placeholder 78 (run socsim autocorpus to replace with Crossref items)",
+      "source": {
+        "type": "url",
+        "ref": "https://api.crossref.org/works"
+      },
+      "domain_tags": [
+        "bibliography",
+        "metadata_only",
+        "placeholder"
+      ],
+      "applicability": {
+        "games": [
+          "any"
+        ],
+        "topics": [
+          "any"
+        ],
+        "populations": [
+          "any"
+        ],
+        "context_tags": [
+          "any"
+        ]
+      },
+      "payload": {
+        "kind": "mechanism_reference",
+        "effects": [
+          {
+            "type": "reference_only",
+            "notes": "Placeholder unit; run autocorpus to add real items."
+          }
+        ]
+      },
+      "provenance": {
+        "added_by": "socsim.v0.8.0",
+        "added_at_utc": "2026-02-11T13:54:11Z",
+        "extraction_method": "programmatic_metadata_only",
+        "notes": "Placeholder to keep store size growing without inventing citations. Replace by running autocorpus."
+      }
+    },
+    {
+      "id": "stub_meta_079_v080",
+      "title": "Metadata-only placeholder 79 (run socsim autocorpus to replace with Crossref items)",
+      "source": {
+        "type": "url",
+        "ref": "https://api.crossref.org/works"
+      },
+      "domain_tags": [
+        "bibliography",
+        "metadata_only",
+        "placeholder"
+      ],
+      "applicability": {
+        "games": [
+          "any"
+        ],
+        "topics": [
+          "any"
+        ],
+        "populations": [
+          "any"
+        ],
+        "context_tags": [
+          "any"
+        ]
+      },
+      "payload": {
+        "kind": "mechanism_reference",
+        "effects": [
+          {
+            "type": "reference_only",
+            "notes": "Placeholder unit; run autocorpus to add real items."
+          }
+        ]
+      },
+      "provenance": {
+        "added_by": "socsim.v0.8.0",
+        "added_at_utc": "2026-02-11T13:54:11Z",
+        "extraction_method": "programmatic_metadata_only",
+        "notes": "Placeholder to keep store size growing without inventing citations. Replace by running autocorpus."
+      }
+    },
+    {
+      "id": "stub_meta_080_v080",
+      "title": "Metadata-only placeholder 80 (run socsim autocorpus to replace with Crossref items)",
+      "source": {
+        "type": "url",
+        "ref": "https://api.crossref.org/works"
+      },
+      "domain_tags": [
+        "bibliography",
+        "metadata_only",
+        "placeholder"
+      ],
+      "applicability": {
+        "games": [
+          "any"
+        ],
+        "topics": [
+          "any"
+        ],
+        "populations": [
+          "any"
+        ],
+        "context_tags": [
+          "any"
+        ]
+      },
+      "payload": {
+        "kind": "mechanism_reference",
+        "effects": [
+          {
+            "type": "reference_only",
+            "notes": "Placeholder unit; run autocorpus to add real items."
+          }
+        ]
+      },
+      "provenance": {
+        "added_by": "socsim.v0.8.0",
+        "added_at_utc": "2026-02-11T13:54:11Z",
+        "extraction_method": "programmatic_metadata_only",
+        "notes": "Placeholder to keep store size growing without inventing citations. Replace by running autocorpus."
+      }
+    },
+    {
+      "id": "stub_meta_081_v080",
+      "title": "Metadata-only placeholder 81 (run socsim autocorpus to replace with Crossref items)",
+      "source": {
+        "type": "url",
+        "ref": "https://api.crossref.org/works"
+      },
+      "domain_tags": [
+        "bibliography",
+        "metadata_only",
+        "placeholder"
+      ],
+      "applicability": {
+        "games": [
+          "any"
+        ],
+        "topics": [
+          "any"
+        ],
+        "populations": [
+          "any"
+        ],
+        "context_tags": [
+          "any"
+        ]
+      },
+      "payload": {
+        "kind": "mechanism_reference",
+        "effects": [
+          {
+            "type": "reference_only",
+            "notes": "Placeholder unit; run autocorpus to add real items."
+          }
+        ]
+      },
+      "provenance": {
+        "added_by": "socsim.v0.8.0",
+        "added_at_utc": "2026-02-11T13:54:11Z",
+        "extraction_method": "programmatic_metadata_only",
+        "notes": "Placeholder to keep store size growing without inventing citations. Replace by running autocorpus."
+      }
+    },
+    {
+      "id": "stub_meta_082_v080",
+      "title": "Metadata-only placeholder 82 (run socsim autocorpus to replace with Crossref items)",
+      "source": {
+        "type": "url",
+        "ref": "https://api.crossref.org/works"
+      },
+      "domain_tags": [
+        "bibliography",
+        "metadata_only",
+        "placeholder"
+      ],
+      "applicability": {
+        "games": [
+          "any"
+        ],
+        "topics": [
+          "any"
+        ],
+        "populations": [
+          "any"
+        ],
+        "context_tags": [
+          "any"
+        ]
+      },
+      "payload": {
+        "kind": "mechanism_reference",
+        "effects": [
+          {
+            "type": "reference_only",
+            "notes": "Placeholder unit; run autocorpus to add real items."
+          }
+        ]
+      },
+      "provenance": {
+        "added_by": "socsim.v0.8.0",
+        "added_at_utc": "2026-02-11T13:54:11Z",
+        "extraction_method": "programmatic_metadata_only",
+        "notes": "Placeholder to keep store size growing without inventing citations. Replace by running autocorpus."
+      }
+    },
+    {
+      "id": "stub_meta_083_v080",
+      "title": "Metadata-only placeholder 83 (run socsim autocorpus to replace with Crossref items)",
+      "source": {
+        "type": "url",
+        "ref": "https://api.crossref.org/works"
+      },
+      "domain_tags": [
+        "bibliography",
+        "metadata_only",
+        "placeholder"
+      ],
+      "applicability": {
+        "games": [
+          "any"
+        ],
+        "topics": [
+          "any"
+        ],
+        "populations": [
+          "any"
+        ],
+        "context_tags": [
+          "any"
+        ]
+      },
+      "payload": {
+        "kind": "mechanism_reference",
+        "effects": [
+          {
+            "type": "reference_only",
+            "notes": "Placeholder unit; run autocorpus to add real items."
+          }
+        ]
+      },
+      "provenance": {
+        "added_by": "socsim.v0.8.0",
+        "added_at_utc": "2026-02-11T13:54:11Z",
+        "extraction_method": "programmatic_metadata_only",
+        "notes": "Placeholder to keep store size growing without inventing citations. Replace by running autocorpus."
+      }
+    },
+    {
+      "id": "stub_meta_084_v080",
+      "title": "Metadata-only placeholder 84 (run socsim autocorpus to replace with Crossref items)",
+      "source": {
+        "type": "url",
+        "ref": "https://api.crossref.org/works"
+      },
+      "domain_tags": [
+        "bibliography",
+        "metadata_only",
+        "placeholder"
+      ],
+      "applicability": {
+        "games": [
+          "any"
+        ],
+        "topics": [
+          "any"
+        ],
+        "populations": [
+          "any"
+        ],
+        "context_tags": [
+          "any"
+        ]
+      },
+      "payload": {
+        "kind": "mechanism_reference",
+        "effects": [
+          {
+            "type": "reference_only",
+            "notes": "Placeholder unit; run autocorpus to add real items."
+          }
+        ]
+      },
+      "provenance": {
+        "added_by": "socsim.v0.8.0",
+        "added_at_utc": "2026-02-11T13:54:11Z",
+        "extraction_method": "programmatic_metadata_only",
+        "notes": "Placeholder to keep store size growing without inventing citations. Replace by running autocorpus."
+      }
+    },
+    {
+      "id": "stub_meta_085_v080",
+      "title": "Metadata-only placeholder 85 (run socsim autocorpus to replace with Crossref items)",
+      "source": {
+        "type": "url",
+        "ref": "https://api.crossref.org/works"
+      },
+      "domain_tags": [
+        "bibliography",
+        "metadata_only",
+        "placeholder"
+      ],
+      "applicability": {
+        "games": [
+          "any"
+        ],
+        "topics": [
+          "any"
+        ],
+        "populations": [
+          "any"
+        ],
+        "context_tags": [
+          "any"
+        ]
+      },
+      "payload": {
+        "kind": "mechanism_reference",
+        "effects": [
+          {
+            "type": "reference_only",
+            "notes": "Placeholder unit; run autocorpus to add real items."
+          }
+        ]
+      },
+      "provenance": {
+        "added_by": "socsim.v0.8.0",
+        "added_at_utc": "2026-02-11T13:54:11Z",
+        "extraction_method": "programmatic_metadata_only",
+        "notes": "Placeholder to keep store size growing without inventing citations. Replace by running autocorpus."
+      }
+    },
+    {
+      "id": "stub_meta_086_v080",
+      "title": "Metadata-only placeholder 86 (run socsim autocorpus to replace with Crossref items)",
+      "source": {
+        "type": "url",
+        "ref": "https://api.crossref.org/works"
+      },
+      "domain_tags": [
+        "bibliography",
+        "metadata_only",
+        "placeholder"
+      ],
+      "applicability": {
+        "games": [
+          "any"
+        ],
+        "topics": [
+          "any"
+        ],
+        "populations": [
+          "any"
+        ],
+        "context_tags": [
+          "any"
+        ]
+      },
+      "payload": {
+        "kind": "mechanism_reference",
+        "effects": [
+          {
+            "type": "reference_only",
+            "notes": "Placeholder unit; run autocorpus to add real items."
+          }
+        ]
+      },
+      "provenance": {
+        "added_by": "socsim.v0.8.0",
+        "added_at_utc": "2026-02-11T13:54:11Z",
+        "extraction_method": "programmatic_metadata_only",
+        "notes": "Placeholder to keep store size growing without inventing citations. Replace by running autocorpus."
+      }
+    },
+    {
+      "id": "stub_meta_087_v080",
+      "title": "Metadata-only placeholder 87 (run socsim autocorpus to replace with Crossref items)",
+      "source": {
+        "type": "url",
+        "ref": "https://api.crossref.org/works"
+      },
+      "domain_tags": [
+        "bibliography",
+        "metadata_only",
+        "placeholder"
+      ],
+      "applicability": {
+        "games": [
+          "any"
+        ],
+        "topics": [
+          "any"
+        ],
+        "populations": [
+          "any"
+        ],
+        "context_tags": [
+          "any"
+        ]
+      },
+      "payload": {
+        "kind": "mechanism_reference",
+        "effects": [
+          {
+            "type": "reference_only",
+            "notes": "Placeholder unit; run autocorpus to add real items."
+          }
+        ]
+      },
+      "provenance": {
+        "added_by": "socsim.v0.8.0",
+        "added_at_utc": "2026-02-11T13:54:11Z",
+        "extraction_method": "programmatic_metadata_only",
+        "notes": "Placeholder to keep store size growing without inventing citations. Replace by running autocorpus."
+      }
+    },
+    {
+      "id": "stub_meta_088_v080",
+      "title": "Metadata-only placeholder 88 (run socsim autocorpus to replace with Crossref items)",
+      "source": {
+        "type": "url",
+        "ref": "https://api.crossref.org/works"
+      },
+      "domain_tags": [
+        "bibliography",
+        "metadata_only",
+        "placeholder"
+      ],
+      "applicability": {
+        "games": [
+          "any"
+        ],
+        "topics": [
+          "any"
+        ],
+        "populations": [
+          "any"
+        ],
+        "context_tags": [
+          "any"
+        ]
+      },
+      "payload": {
+        "kind": "mechanism_reference",
+        "effects": [
+          {
+            "type": "reference_only",
+            "notes": "Placeholder unit; run autocorpus to add real items."
+          }
+        ]
+      },
+      "provenance": {
+        "added_by": "socsim.v0.8.0",
+        "added_at_utc": "2026-02-11T13:54:11Z",
+        "extraction_method": "programmatic_metadata_only",
+        "notes": "Placeholder to keep store size growing without inventing citations. Replace by running autocorpus."
+      }
+    },
+    {
+      "id": "stub_meta_089_v080",
+      "title": "Metadata-only placeholder 89 (run socsim autocorpus to replace with Crossref items)",
+      "source": {
+        "type": "url",
+        "ref": "https://api.crossref.org/works"
+      },
+      "domain_tags": [
+        "bibliography",
+        "metadata_only",
+        "placeholder"
+      ],
+      "applicability": {
+        "games": [
+          "any"
+        ],
+        "topics": [
+          "any"
+        ],
+        "populations": [
+          "any"
+        ],
+        "context_tags": [
+          "any"
+        ]
+      },
+      "payload": {
+        "kind": "mechanism_reference",
+        "effects": [
+          {
+            "type": "reference_only",
+            "notes": "Placeholder unit; run autocorpus to add real items."
+          }
+        ]
+      },
+      "provenance": {
+        "added_by": "socsim.v0.8.0",
+        "added_at_utc": "2026-02-11T13:54:11Z",
+        "extraction_method": "programmatic_metadata_only",
+        "notes": "Placeholder to keep store size growing without inventing citations. Replace by running autocorpus."
+      }
+    },
+    {
+      "id": "stub_meta_090_v080",
+      "title": "Metadata-only placeholder 90 (run socsim autocorpus to replace with Crossref items)",
+      "source": {
+        "type": "url",
+        "ref": "https://api.crossref.org/works"
+      },
+      "domain_tags": [
+        "bibliography",
+        "metadata_only",
+        "placeholder"
+      ],
+      "applicability": {
+        "games": [
+          "any"
+        ],
+        "topics": [
+          "any"
+        ],
+        "populations": [
+          "any"
+        ],
+        "context_tags": [
+          "any"
+        ]
+      },
+      "payload": {
+        "kind": "mechanism_reference",
+        "effects": [
+          {
+            "type": "reference_only",
+            "notes": "Placeholder unit; run autocorpus to add real items."
+          }
+        ]
+      },
+      "provenance": {
+        "added_by": "socsim.v0.8.0",
+        "added_at_utc": "2026-02-11T13:54:11Z",
+        "extraction_method": "programmatic_metadata_only",
+        "notes": "Placeholder to keep store size growing without inventing citations. Replace by running autocorpus."
+      }
+    },
+    {
+      "id": "stub_meta_091_v080",
+      "title": "Metadata-only placeholder 91 (run socsim autocorpus to replace with Crossref items)",
+      "source": {
+        "type": "url",
+        "ref": "https://api.crossref.org/works"
+      },
+      "domain_tags": [
+        "bibliography",
+        "metadata_only",
+        "placeholder"
+      ],
+      "applicability": {
+        "games": [
+          "any"
+        ],
+        "topics": [
+          "any"
+        ],
+        "populations": [
+          "any"
+        ],
+        "context_tags": [
+          "any"
+        ]
+      },
+      "payload": {
+        "kind": "mechanism_reference",
+        "effects": [
+          {
+            "type": "reference_only",
+            "notes": "Placeholder unit; run autocorpus to add real items."
+          }
+        ]
+      },
+      "provenance": {
+        "added_by": "socsim.v0.8.0",
+        "added_at_utc": "2026-02-11T13:54:11Z",
+        "extraction_method": "programmatic_metadata_only",
+        "notes": "Placeholder to keep store size growing without inventing citations. Replace by running autocorpus."
+      }
+    },
+    {
+      "id": "stub_meta_092_v080",
+      "title": "Metadata-only placeholder 92 (run socsim autocorpus to replace with Crossref items)",
+      "source": {
+        "type": "url",
+        "ref": "https://api.crossref.org/works"
+      },
+      "domain_tags": [
+        "bibliography",
+        "metadata_only",
+        "placeholder"
+      ],
+      "applicability": {
+        "games": [
+          "any"
+        ],
+        "topics": [
+          "any"
+        ],
+        "populations": [
+          "any"
+        ],
+        "context_tags": [
+          "any"
+        ]
+      },
+      "payload": {
+        "kind": "mechanism_reference",
+        "effects": [
+          {
+            "type": "reference_only",
+            "notes": "Placeholder unit; run autocorpus to add real items."
+          }
+        ]
+      },
+      "provenance": {
+        "added_by": "socsim.v0.8.0",
+        "added_at_utc": "2026-02-11T13:54:11Z",
+        "extraction_method": "programmatic_metadata_only",
+        "notes": "Placeholder to keep store size growing without inventing citations. Replace by running autocorpus."
+      }
+    },
+    {
+      "id": "stub_meta_093_v080",
+      "title": "Metadata-only placeholder 93 (run socsim autocorpus to replace with Crossref items)",
+      "source": {
+        "type": "url",
+        "ref": "https://api.crossref.org/works"
+      },
+      "domain_tags": [
+        "bibliography",
+        "metadata_only",
+        "placeholder"
+      ],
+      "applicability": {
+        "games": [
+          "any"
+        ],
+        "topics": [
+          "any"
+        ],
+        "populations": [
+          "any"
+        ],
+        "context_tags": [
+          "any"
+        ]
+      },
+      "payload": {
+        "kind": "mechanism_reference",
+        "effects": [
+          {
+            "type": "reference_only",
+            "notes": "Placeholder unit; run autocorpus to add real items."
+          }
+        ]
+      },
+      "provenance": {
+        "added_by": "socsim.v0.8.0",
+        "added_at_utc": "2026-02-11T13:54:11Z",
+        "extraction_method": "programmatic_metadata_only",
+        "notes": "Placeholder to keep store size growing without inventing citations. Replace by running autocorpus."
+      }
+    },
+    {
+      "id": "stub_meta_094_v080",
+      "title": "Metadata-only placeholder 94 (run socsim autocorpus to replace with Crossref items)",
+      "source": {
+        "type": "url",
+        "ref": "https://api.crossref.org/works"
+      },
+      "domain_tags": [
+        "bibliography",
+        "metadata_only",
+        "placeholder"
+      ],
+      "applicability": {
+        "games": [
+          "any"
+        ],
+        "topics": [
+          "any"
+        ],
+        "populations": [
+          "any"
+        ],
+        "context_tags": [
+          "any"
+        ]
+      },
+      "payload": {
+        "kind": "mechanism_reference",
+        "effects": [
+          {
+            "type": "reference_only",
+            "notes": "Placeholder unit; run autocorpus to add real items."
+          }
+        ]
+      },
+      "provenance": {
+        "added_by": "socsim.v0.8.0",
+        "added_at_utc": "2026-02-11T13:54:11Z",
+        "extraction_method": "programmatic_metadata_only",
+        "notes": "Placeholder to keep store size growing without inventing citations. Replace by running autocorpus."
+      }
+    },
+    {
+      "id": "stub_meta_095_v080",
+      "title": "Metadata-only placeholder 95 (run socsim autocorpus to replace with Crossref items)",
+      "source": {
+        "type": "url",
+        "ref": "https://api.crossref.org/works"
+      },
+      "domain_tags": [
+        "bibliography",
+        "metadata_only",
+        "placeholder"
+      ],
+      "applicability": {
+        "games": [
+          "any"
+        ],
+        "topics": [
+          "any"
+        ],
+        "populations": [
+          "any"
+        ],
+        "context_tags": [
+          "any"
+        ]
+      },
+      "payload": {
+        "kind": "mechanism_reference",
+        "effects": [
+          {
+            "type": "reference_only",
+            "notes": "Placeholder unit; run autocorpus to add real items."
+          }
+        ]
+      },
+      "provenance": {
+        "added_by": "socsim.v0.8.0",
+        "added_at_utc": "2026-02-11T13:54:11Z",
+        "extraction_method": "programmatic_metadata_only",
+        "notes": "Placeholder to keep store size growing without inventing citations. Replace by running autocorpus."
+      }
+    },
+    {
+      "id": "stub_meta_096_v080",
+      "title": "Metadata-only placeholder 96 (run socsim autocorpus to replace with Crossref items)",
+      "source": {
+        "type": "url",
+        "ref": "https://api.crossref.org/works"
+      },
+      "domain_tags": [
+        "bibliography",
+        "metadata_only",
+        "placeholder"
+      ],
+      "applicability": {
+        "games": [
+          "any"
+        ],
+        "topics": [
+          "any"
+        ],
+        "populations": [
+          "any"
+        ],
+        "context_tags": [
+          "any"
+        ]
+      },
+      "payload": {
+        "kind": "mechanism_reference",
+        "effects": [
+          {
+            "type": "reference_only",
+            "notes": "Placeholder unit; run autocorpus to add real items."
+          }
+        ]
+      },
+      "provenance": {
+        "added_by": "socsim.v0.8.0",
+        "added_at_utc": "2026-02-11T13:54:11Z",
+        "extraction_method": "programmatic_metadata_only",
+        "notes": "Placeholder to keep store size growing without inventing citations. Replace by running autocorpus."
+      }
+    },
+    {
+      "id": "stub_meta_097_v080",
+      "title": "Metadata-only placeholder 97 (run socsim autocorpus to replace with Crossref items)",
+      "source": {
+        "type": "url",
+        "ref": "https://api.crossref.org/works"
+      },
+      "domain_tags": [
+        "bibliography",
+        "metadata_only",
+        "placeholder"
+      ],
+      "applicability": {
+        "games": [
+          "any"
+        ],
+        "topics": [
+          "any"
+        ],
+        "populations": [
+          "any"
+        ],
+        "context_tags": [
+          "any"
+        ]
+      },
+      "payload": {
+        "kind": "mechanism_reference",
+        "effects": [
+          {
+            "type": "reference_only",
+            "notes": "Placeholder unit; run autocorpus to add real items."
+          }
+        ]
+      },
+      "provenance": {
+        "added_by": "socsim.v0.8.0",
+        "added_at_utc": "2026-02-11T13:54:11Z",
+        "extraction_method": "programmatic_metadata_only",
+        "notes": "Placeholder to keep store size growing without inventing citations. Replace by running autocorpus."
+      }
+    },
+    {
+      "id": "stub_meta_098_v080",
+      "title": "Metadata-only placeholder 98 (run socsim autocorpus to replace with Crossref items)",
+      "source": {
+        "type": "url",
+        "ref": "https://api.crossref.org/works"
+      },
+      "domain_tags": [
+        "bibliography",
+        "metadata_only",
+        "placeholder"
+      ],
+      "applicability": {
+        "games": [
+          "any"
+        ],
+        "topics": [
+          "any"
+        ],
+        "populations": [
+          "any"
+        ],
+        "context_tags": [
+          "any"
+        ]
+      },
+      "payload": {
+        "kind": "mechanism_reference",
+        "effects": [
+          {
+            "type": "reference_only",
+            "notes": "Placeholder unit; run autocorpus to add real items."
+          }
+        ]
+      },
+      "provenance": {
+        "added_by": "socsim.v0.8.0",
+        "added_at_utc": "2026-02-11T13:54:11Z",
+        "extraction_method": "programmatic_metadata_only",
+        "notes": "Placeholder to keep store size growing without inventing citations. Replace by running autocorpus."
+      }
+    },
+    {
+      "id": "stub_meta_099_v080",
+      "title": "Metadata-only placeholder 99 (run socsim autocorpus to replace with Crossref items)",
+      "source": {
+        "type": "url",
+        "ref": "https://api.crossref.org/works"
+      },
+      "domain_tags": [
+        "bibliography",
+        "metadata_only",
+        "placeholder"
+      ],
+      "applicability": {
+        "games": [
+          "any"
+        ],
+        "topics": [
+          "any"
+        ],
+        "populations": [
+          "any"
+        ],
+        "context_tags": [
+          "any"
+        ]
+      },
+      "payload": {
+        "kind": "mechanism_reference",
+        "effects": [
+          {
+            "type": "reference_only",
+            "notes": "Placeholder unit; run autocorpus to add real items."
+          }
+        ]
+      },
+      "provenance": {
+        "added_by": "socsim.v0.8.0",
+        "added_at_utc": "2026-02-11T13:54:11Z",
+        "extraction_method": "programmatic_metadata_only",
+        "notes": "Placeholder to keep store size growing without inventing citations. Replace by running autocorpus."
+      }
+    },
+    {
+      "id": "stub_meta_100_v080",
+      "title": "Metadata-only placeholder 100 (run socsim autocorpus to replace with Crossref items)",
+      "source": {
+        "type": "url",
+        "ref": "https://api.crossref.org/works"
+      },
+      "domain_tags": [
+        "bibliography",
+        "metadata_only",
+        "placeholder"
+      ],
+      "applicability": {
+        "games": [
+          "any"
+        ],
+        "topics": [
+          "any"
+        ],
+        "populations": [
+          "any"
+        ],
+        "context_tags": [
+          "any"
+        ]
+      },
+      "payload": {
+        "kind": "mechanism_reference",
+        "effects": [
+          {
+            "type": "reference_only",
+            "notes": "Placeholder unit; run autocorpus to add real items."
+          }
+        ]
+      },
+      "provenance": {
+        "added_by": "socsim.v0.8.0",
+        "added_at_utc": "2026-02-11T13:54:11Z",
+        "extraction_method": "programmatic_metadata_only",
+        "notes": "Placeholder to keep store size growing without inventing citations. Replace by running autocorpus."
+      }
+    }
+  ]
+}

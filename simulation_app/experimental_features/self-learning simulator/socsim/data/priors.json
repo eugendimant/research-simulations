@@ -1,0 +1,182 @@
+{
+  "fairness_alpha": {
+    "mean": 0.8,
+    "sd": 0.6,
+    "min": 0.0,
+    "max": 4.0
+  },
+  "fairness_beta": {
+    "mean": 0.4,
+    "sd": 0.4,
+    "min": 0.0,
+    "max": 4.0
+  },
+  "reciprocity_r": {
+    "mean": 0.7,
+    "sd": 0.5,
+    "min": 0.0,
+    "max": 4.0
+  },
+  "ingroup_bias": {
+    "mean": 0.2,
+    "sd": 0.3,
+    "min": -1.0,
+    "max": 2.0
+  },
+  "noise_lambda": {
+    "mean": 2.0,
+    "sd": 1.0,
+    "min": 0.2,
+    "max": 12.0
+  },
+  "condcoop_slope": {
+    "mean": 0.5,
+    "sd": 0.35,
+    "min": 0.0,
+    "max": 1.2
+  },
+  "baseline_prosocial": {
+    "mean": 0.0,
+    "sd": 0.6,
+    "min": -2.0,
+    "max": 2.0
+  },
+  "norm_weight": {
+    "mean": 0.6,
+    "sd": 0.6,
+    "min": 0.0,
+    "max": 4.0
+  },
+  "honesty_cost": {
+    "mean": 0.8,
+    "sd": 0.5,
+    "min": 0.0,
+    "max": 4.0
+  },
+  "risk_rho": {
+    "mean": 0.9,
+    "sd": 0.4,
+    "min": 0.1,
+    "max": 3.0
+  },
+  "present_bias_beta": {
+    "mean": 0.9,
+    "sd": 0.12,
+    "min": 0.3,
+    "max": 1.0
+  },
+  "discount_delta": {
+    "mean": 0.98,
+    "sd": 0.03,
+    "min": 0.8,
+    "max": 0.999
+  },
+  "likert_theta": {
+    "mean": 0.0,
+    "sd": 1.0,
+    "min": -4.0,
+    "max": 4.0
+  },
+  "strategic_tau": {
+    "mean": 1.0,
+    "sd": 0.6,
+    "min": 0.0,
+    "max": 4.0
+  },
+  "min_accept_share": {
+    "mean": 0.3,
+    "sd": 0.15,
+    "min": 0.0,
+    "max": 0.9
+  },
+  "belief_min_accept_share": {
+    "mean": 0.3,
+    "sd": 0.2,
+    "min": 0.0,
+    "max": 0.9
+  },
+  "belief_return_frac": {
+    "mean": 0.35,
+    "sd": 0.25,
+    "min": 0.0,
+    "max": 1.0
+  },
+  "trust_propensity": {
+    "mean": 0.5,
+    "sd": 0.3,
+    "min": 0.0,
+    "max": 1.0
+  },
+  "return_propensity": {
+    "mean": 0.45,
+    "sd": 0.3,
+    "min": 0.0,
+    "max": 1.0
+  },
+  "wage_generosity": {
+    "mean": 0.5,
+    "sd": 0.3,
+    "min": 0.0,
+    "max": 1.0
+  },
+  "effort_cost": {
+    "mean": 1.2,
+    "sd": 0.7,
+    "min": 0.1,
+    "max": 5.0
+  },
+  "gullibility": {
+    "mean": 0.5,
+    "sd": 0.3,
+    "min": 0.0,
+    "max": 1.0
+  },
+  "discount_factor": {
+    "mean": 0.985,
+    "sd": 0.02,
+    "min": 0.85,
+    "max": 0.999
+  },
+  "present_bias": {
+    "mean": 0.95,
+    "sd": 0.06,
+    "min": 0.5,
+    "max": 1.0
+  },
+  "strategic_depth": {
+    "mean": 1.0,
+    "sd": 0.8,
+    "min": 0.0,
+    "max": 4.0
+  },
+  "competitiveness": {
+    "mean": 0.0,
+    "sd": 1.0,
+    "min": -3.0,
+    "max": 3.0
+  },
+  "dishonesty": {
+    "mean": 0.0,
+    "sd": 1.0,
+    "min": -3.0,
+    "max": 3.0
+  },
+  "attitude": {
+    "mean": 0.0,
+    "sd": 1.0,
+    "min": -3.0,
+    "max": 3.0
+  },
+  "trust": {
+    "mean": 0.0,
+    "sd": 1.0,
+    "min": -3.0,
+    "max": 3.0
+  },
+  "risk_aversion": {
+    "mean": 0.2,
+    "sd": 0.8,
+    "min": -1.0,
+    "max": 3.0
+  }
+}

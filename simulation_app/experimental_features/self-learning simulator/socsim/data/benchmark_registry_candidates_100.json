@@ -1,0 +1,4 @@
+{
+  "version": "0.12.0",
+  "note": "Run `python -m socsim bench_bootstrap` to generate candidates via OpenAlex."
+}
