@@ -63,7 +63,7 @@ association, impression, perception, feedback, comment, observation, general
 Version: 1.8.5 - Improved domain detection with weighted scoring and disambiguation
 """
 
-__version__ = "1.0.8.4"
+__version__ = "1.0.8.5"
 
 import random
 import re
@@ -7055,6 +7055,7 @@ class ComprehensiveResponseGenerator:
             question_text=question_text,
             question_context=_effective_context,
             question_intent=question_intent,  # v1.0.8.4: Route by intent
+            question_name=question_name,  # v1.0.8.5: Last-resort topic extraction
         )
 
         # Personalize response based on question content (using local RNG)
@@ -7074,7 +7075,8 @@ class ComprehensiveResponseGenerator:
             response = self._make_careless(response, _effective_engagement, local_rng,
                                           question_text=question_text,
                                           question_context=_effective_context,
-                                          question_intent=question_intent)
+                                          question_intent=question_intent,
+                                          sentiment=sentiment)
 
         # Add variation (using local RNG)
         response = add_variation(response, persona_verbosity, persona_formality, local_rng)
@@ -7761,6 +7763,7 @@ class ComprehensiveResponseGenerator:
         question_text: str = "",
         question_context: str = "",
         question_intent: str = "",  # v1.0.8.4: Pre-computed intent
+        question_name: str = "",  # v1.0.8.5: For last-resort topic extraction
     ) -> str:
         """Get a template response for the given domain and sentiment.
 
@@ -7811,16 +7814,25 @@ class ComprehensiveResponseGenerator:
                     if sentiment_templates:
                         return rng.choice(sentiment_templates)
 
-        # v1.0.3.10: Last-resort fallback — NEVER return generic meta-commentary.
-        # Extract whatever topic words we can from question_text to stay on-topic.
-        _qt = question_text or question_context or ""
-        _fallback_words = re.findall(r'\b[a-zA-Z]{4,}\b', _qt.lower())
+        # v1.0.8.5: Last-resort fallback — multi-source topic extraction.
+        # Try question_text → question_context → question_name (variable name)
         _fallback_stop = {'this', 'that', 'about', 'what', 'your', 'please',
                           'describe', 'explain', 'question', 'context', 'study',
                           'topic', 'condition', 'here', 'there', 'well', 'like',
-                          'with', 'from', 'have', 'some', 'very', 'really'}
-        _fallback_topic = [w for w in _fallback_words if w not in _fallback_stop][:3]
-        _fb_phrase = ' '.join(_fallback_topic) if _fallback_topic else ""
+                          'with', 'from', 'have', 'some', 'very', 'really',
+                          'think', 'feel', 'answer', 'response', 'text', 'open'}
+        _fb_phrase = ""
+        for _src in [question_text, question_context, question_name]:
+            if not _src:
+                continue
+            # For question_name, split on underscores/camelCase first
+            _clean = re.sub(r'[_\-]+', ' ', _src) if _src == question_name else _src
+            _clean = re.sub(r'([a-z])([A-Z])', r'\1 \2', _clean)  # camelCase
+            _words = re.findall(r'\b[a-zA-Z]{3,}\b', _clean.lower())
+            _topic = [w for w in _words if w not in _fallback_stop][:3]
+            if _topic:
+                _fb_phrase = ' '.join(_topic)
+                break
         if _fb_phrase:
             _fb_templates = [
                 f"My honest take on {_fb_phrase} is based on my personal experience.",
@@ -7829,7 +7841,7 @@ class ComprehensiveResponseGenerator:
                 f"{_fb_phrase} is something I have real feelings about.",
             ]
             return rng.choice(_fb_templates)
-        return "I answered based on my honest feelings about this."
+        return "I answered based on my honest feelings about what was asked."
 
     def _extract_response_subject(self, question_text: str, question_context: str) -> str:
         """Extract the core subject/topic from question text and context.
@@ -7921,7 +7933,27 @@ class ComprehensiveResponseGenerator:
         }
         _all_words = re.findall(r'\b[a-zA-Z]{3,}\b', subject.lower())
 
-        # Entity detection (proper nouns, acronyms)
+        # Entity detection (proper nouns, acronyms, known lowercase entities)
+        # v1.0.8.5: Added lowercase entity detection for 80+ high-salience topics
+        _known_lowercase_entities = {
+            # Political figures & parties
+            'trump', 'biden', 'obama', 'clinton', 'sanders', 'desantis', 'pelosi',
+            'democrat', 'republican', 'conservative', 'liberal', 'progressive',
+            'brexit', 'nato', 'putin', 'zelensky',
+            # Tech & platforms
+            'facebook', 'instagram', 'twitter', 'tiktok', 'snapchat', 'reddit',
+            'google', 'amazon', 'apple', 'microsoft', 'tesla', 'uber', 'airbnb',
+            'chatgpt', 'openai', 'bitcoin', 'crypto', 'blockchain', 'metaverse',
+            # Health & science
+            'covid', 'coronavirus', 'vaccine', 'pfizer', 'moderna', 'fauci',
+            'cancer', 'diabetes', 'alzheimer', 'autism', 'adhd',
+            # Social & cultural
+            'blm', 'metoo', 'lgbtq', 'roe', 'wade', 'scotus', 'maga',
+            'woke', 'cancel', 'defund', 'antifa', 'qanon',
+            # Brands & products
+            'coca-cola', 'pepsi', 'nike', 'adidas', 'starbucks', 'walmart',
+            'netflix', 'spotify', 'disney', 'mcdonalds',
+        }
         _entities: list = []
         _cap_words = re.findall(r'(?<=[a-z]\s)([A-Z][a-zA-Z]{2,})', subject)
         _entities.extend(w for w in _cap_words if w.lower() not in _stop)
@@ -7931,6 +7963,10 @@ class ComprehensiveResponseGenerator:
         for _fw in _first_words:
             if _fw.lower() not in _stop and _fw not in _entities:
                 _entities.append(_fw)
+        # v1.0.8.5: Detect lowercase entities from known high-salience list
+        for _lw in _all_words:
+            if _lw in _known_lowercase_entities and _lw not in {e.lower() for e in _entities}:
+                _entities.append(_lw.capitalize())  # Capitalize for display
         _seen_e: set = set()
         _uniq_entities: list = []
         for _e in _entities:
@@ -7941,8 +7977,18 @@ class ComprehensiveResponseGenerator:
 
         _content = [w for w in _all_words if w not in _stop and w not in {e.lower() for e in _entities}][:6]
 
+        # v1.0.8.5: Negation-preserving bigram extraction — "not trusting" stays together
+        _negation_bigrams: list = []
+        _neg_words = {'not', 'no', 'never', 'lack', 'dis', 'un', 'without', 'anti'}
+        for _i in range(len(_all_words) - 1):
+            if _all_words[_i] in _neg_words and _all_words[_i + 1] not in _stop:
+                _negation_bigrams.append(f"{_all_words[_i]} {_all_words[_i + 1]}")
+
         # Build primary topic (2 words max for template insertion)
-        if _entities:
+        # v1.0.8.5: Negation bigrams get priority — semantic reversal prevention
+        if _negation_bigrams:
+            _topic = _negation_bigrams[0]
+        elif _entities:
             _topic = _entities[0]
         elif _content:
             _topic = ' '.join(_content[:2])
@@ -8066,6 +8112,12 @@ class ComprehensiveResponseGenerator:
             r'(?:imagine|suppose|consider)\s+(?:that|a situation where)\s+(.{3,80}?)(?:\.|$|\?|,)',
             r'(?:what would you do if|how would you react if)\s+(.{3,80}?)(?:\.|$|\?|,)',
             r'(?:what concerns you about|what excites you about|what worries you about)\s+(.{3,80}?)(?:\.|$|\?|,)',
+            # v1.0.8.5: Imperative question patterns — "Please share...", "Reflect on..."
+            r'(?:please\s+)?(?:share|reflect on|discuss|consider|think about)\s+(.{3,150}?)(?:\.|$|\?)',
+            r'(?:please\s+)?(?:write about|elaborate on|comment on)\s+(.{3,150}?)(?:\.|$|\?)',
+            # v1.0.8.5: Comparative patterns — "Compare X and Y", "Pros and cons of X"
+            r'(?:compare|contrast)\s+(.{3,150}?)(?:\.|$|\?)',
+            r'(?:pros and cons|advantages and disadvantages)\s+(?:of\s+)?(.{3,150}?)(?:\.|$|\?)',
         ]
         for _pp in _phrase_patterns:
             _pm = re.search(_pp, _subj_lower)
@@ -8145,6 +8197,16 @@ class ComprehensiveResponseGenerator:
                                               'what would you advise', 'how should',
                                               'tips for', 'best way to')):
             _intent = "recommendation"
+        # v1.0.8.5: New intents — comparison, recall
+        elif any(w in _subj_lower for w in ('compare', 'comparison', 'compared to', 'versus',
+                                              'differ', 'difference', 'similarities',
+                                              'better or worse', 'which is better',
+                                              'pros and cons', 'advantages and disadvantages')):
+            _intent = "comparison"
+        elif any(w in _subj_lower for w in ('remember', 'recall', 'what do you remember',
+                                              'what stuck with', 'looking back', 'in hindsight',
+                                              'what stands out', 'think back')):
+            _intent = "recall"
         elif _action:
             # If an action was detected, the question is likely asking about a decision
             _intent = "decision_explanation"
@@ -8587,6 +8649,80 @@ class ComprehensiveResponseGenerator:
                 f"there's a specific moment involving {_topic} that changed how I approach things. It wasn't dramatic but it was a turning point for me",
             ]
 
+        # ── INTENT: comparison (v1.0.8.5) ──
+        # "Compare X and Y" / "Pros and cons" → balanced comparative response
+        elif _intent == "comparison":
+            if sentiment in ('very_positive', 'positive'):
+                _cores = [
+                    f"when I compare {_topic} to the alternatives I think {_topic} comes out ahead",
+                    f"the main advantage of {_topic} is that it actually delivers on what it promises",
+                    f"compared to other options {_topic} is stronger in the areas that matter to me",
+                    f"I've weighed the pros and cons and {_topic} has more going for it",
+                    f"what sets {_topic} apart is the real impact I've seen compared to alternatives",
+                    f"there are trade-offs with anything but {_topic} wins in my comparison",
+                    f"I'd say {_topic} has clear advantages over the alternatives I've considered",
+                    f"the difference between {_topic} and the rest is noticeable in my experience",
+                ]
+            elif sentiment in ('very_negative', 'negative'):
+                _cores = [
+                    f"when I compare {_topic} to alternatives it falls short in important ways",
+                    f"the main disadvantage of {_topic} is that better options exist and people know it",
+                    f"compared to other options {_topic} is weaker in the areas that actually matter",
+                    f"I've weighed the pros and cons and {_topic} has too many downsides",
+                    f"what makes {_topic} worse is that the alternatives don't have the same problems",
+                    f"the comparison doesn't favor {_topic} in my experience",
+                    f"I'd say {_topic} has clear disadvantages compared to what else is out there",
+                    f"the difference between {_topic} and better options is pretty stark",
+                ]
+            else:
+                _cores = [
+                    f"when I compare {_topic} to alternatives there are genuine trade-offs either way",
+                    f"the pros and cons of {_topic} are pretty balanced honestly",
+                    f"compared to other options {_topic} has some strengths and some weaknesses",
+                    f"I've considered the alternatives and {_topic} isn't clearly better or worse",
+                    f"the comparison between {_topic} and other options depends on what you value",
+                    f"it's hard to say whether {_topic} is better or worse — there are valid points both ways",
+                    f"I see advantages and disadvantages of {_topic} compared to the alternatives",
+                    f"the trade-offs with {_topic} make it hard to give a definitive comparison",
+                ]
+
+        # ── INTENT: recall (v1.0.8.5) ──
+        # "What do you remember about X?" → memory-focused response
+        elif _intent == "recall":
+            if sentiment in ('very_positive', 'positive'):
+                _cores = [
+                    f"what I remember most about {_topic} is how good it felt at the time",
+                    f"looking back on {_topic} the thing that stands out is the positive impact",
+                    f"I recall {_topic} being a genuinely positive experience that stuck with me",
+                    f"when I think back to {_topic} what I remember most is feeling good about it",
+                    f"the main thing I remember about {_topic} is that it exceeded my expectations",
+                    f"in hindsight {_topic} was even better than I realized at the time",
+                    f"what sticks with me about {_topic} is how right it felt",
+                    f"looking back {_topic} is something I remember fondly",
+                ]
+            elif sentiment in ('very_negative', 'negative'):
+                _cores = [
+                    f"what I remember most about {_topic} is the frustration I felt",
+                    f"looking back on {_topic} what stands out is how problematic it was",
+                    f"I recall {_topic} being a negative experience that I haven't forgotten",
+                    f"when I think back to {_topic} the first thing that comes to mind is the problems",
+                    f"the main thing I remember about {_topic} is how disappointing it turned out",
+                    f"in hindsight {_topic} was even worse than I thought at the time",
+                    f"what sticks with me about {_topic} is the sense of frustration",
+                    f"looking back {_topic} is something I remember with some bitterness",
+                ]
+            else:
+                _cores = [
+                    f"what I remember about {_topic} is kind of mixed honestly",
+                    f"looking back on {_topic} I remember both good and bad parts",
+                    f"my memories of {_topic} are neither strongly positive nor negative",
+                    f"when I think back to {_topic} no single thing dominates my memory",
+                    f"I recall {_topic} being a fairly unremarkable experience overall",
+                    f"in hindsight {_topic} was about what I expected",
+                    f"what sticks with me about {_topic} is the ambiguity of it all",
+                    f"looking back {_topic} doesn't stir up strong feelings one way or another",
+                ]
+
         # ── INTENT: opinion (default) ──
         else:
             if sentiment in ('very_positive', 'positive'):
@@ -8759,6 +8895,16 @@ class ComprehensiveResponseGenerator:
                     " That's my honest recommendation.", " Take it or leave it, that's my advice.",
                     " Your situation might be different though.", " I hope that helps.",
                     " That's what I'd tell a friend.", " Do with that what you will.",
+                ],
+                "comparison": [
+                    " That's how I see the comparison.", " Your priorities might differ though.",
+                    " It really depends on what matters to you.", " That's my honest assessment of both sides.",
+                    " Not everyone would agree with my ranking.", " The tradeoffs are real.",
+                ],
+                "recall": [
+                    " That's what stuck with me.", " Memory is funny that way.",
+                    " I think that captures it.", " Time changes perspective, but that's what I recall.",
+                    " Those are the memories that stand out.", " Can't forget that even if I tried.",
                 ],
                 "opinion": [
                     " That's my honest take.", " I said what I said.",
@@ -9885,11 +10031,20 @@ class ComprehensiveResponseGenerator:
 
         # 3. v1.0.5.0: Enhanced intensity matching — probability scales with intensity
         # Extreme raters (high intensity) should sound emphatic more often
+        # v1.0.8.5: Use recall-specific intensifiers for recall intent (memories
+        # shouldn't get "I feel really strongly about this" — they should get
+        # "I remember this vividly")
+        _is_recall = question_intent == "recall"
         if _intensity > 0.5 and _mean is not None:
             # Scale probability with intensity: 0.5→25%, 0.7→45%, 0.9→65%
             _intensity_prob = 0.25 + (_intensity - 0.5) * 1.0
             if _mean >= 5.5 and local_rng.random() < _intensity_prob:
                 _pos_intensifiers = [
+                    " I remember this vividly and it was great.",
+                    " That memory really stayed with me in a good way.",
+                    " Looking back, this stands out as a genuinely positive experience.",
+                    " I can picture it clearly and it still makes me feel good.",
+                ] if _is_recall else [
                     " I feel really strongly about this.",
                     " This is something I care a lot about.",
                     " I'm genuinely enthusiastic about this.",
@@ -9904,6 +10059,11 @@ class ComprehensiveResponseGenerator:
                 response = response.rstrip() + local_rng.choice(_pos_intensifiers)
             elif _mean <= 2.5 and local_rng.random() < _intensity_prob:
                 _neg_intensifiers = [
+                    " That memory still bothers me when I think about it.",
+                    " Looking back, the frustration is still fresh.",
+                    " I remember it clearly and it still doesn't sit well.",
+                    " That experience left a lasting negative impression.",
+                ] if _is_recall else [
                     " I really didn't like this at all.",
                     " This was genuinely frustrating.",
                     " I have serious issues with this.",
@@ -9954,7 +10114,7 @@ class ComprehensiveResponseGenerator:
 
     def _make_careless(self, response: str, engagement: float, local_rng: random.Random = None,
                         question_text: str = "", question_context: str = "",
-                        question_intent: str = "") -> str:
+                        question_intent: str = "", sentiment: str = "neutral") -> str:
         """Transform response to reflect careless/disengaged responding.
 
         v1.0.3.8: Careless responses are now STILL ON-TOPIC. A careless
@@ -10083,39 +10243,76 @@ class ComprehensiveResponseGenerator:
                     "i dont have good advice for this",
                 ]
                 return rng.choice(careless_templates)
+            elif question_intent == "comparison":
+                careless_templates = [
+                    f"idk {_topic} is about the same as the rest",
+                    f"cant really tell the difference with {_topic}",
+                    f"{_topic} is whatever compared to other stuff",
+                    "theyre all pretty similar honestly",
+                    f"idk if {_topic} is better or worse",
+                    f"doesnt matter {_topic} or something else",
+                ]
+                return rng.choice(careless_templates)
+            elif question_intent == "recall":
+                careless_templates = [
+                    f"dont remember much about {_topic}",
+                    f"i forget about {_topic} honestly",
+                    f"idk something happened with {_topic}",
+                    "cant really remember",
+                    f"nothing stands out about {_topic}",
+                    f"{_topic} was forgettable honestly",
+                ]
+                return rng.choice(careless_templates)
 
-            # v1.0.8.0: Greatly expanded careless templates — 25 variants with more natural
-            # patterns that look like real inattentive survey responses
-            careless_templates = [
-                # Ultra-short dismissive (most common for careless respondents)
-                f"{_topic} is ok i guess",
-                f"idk {_topic}",
-                f"{_topic} whatever",
-                f"meh {_topic}",
-                f"{_topic} is fine",
-                f"sure {_topic}",
-                f"{_topic}",
-                f"dont care about {_topic}",
-                # Slightly more engaged careless (still low effort but acknowledges topic)
-                f"{_topic} its fine i guess",
-                f"i dont really have strong feelings about {_topic}",
-                f"{_topic} is what it is",
-                f"not much to say about {_topic}",
-                f"{_topic} doesnt really matter to me",
-                f"ya {_topic} sure",
-                f"lol {_topic}",
-                f"{_topic} no opinion really",
-                # Terse one-liners that sound like real disengaged participants
-                f"its ok",
-                f"fine",
-                f"no comment on {_topic}",
-                f"{_topic} is alright",
-                f"i guess {_topic} is ok",
-                f"dont know enough about {_topic}",
-                f"{_topic} seems fine to me",
-                f"nothing to add about {_topic}",
-                f"ehh {_topic}",
-            ]
+            # v1.0.8.5: Sentiment-aware careless templates — careless participants
+            # who rated positively still write short positive text, not neutral.
+            if sentiment in ('very_positive', 'positive'):
+                careless_templates = [
+                    f"{_topic} is good",
+                    f"yeah {_topic} is fine",
+                    f"i like {_topic}",
+                    f"{_topic} is ok yeah",
+                    f"good about {_topic}",
+                    f"{_topic} sure its good",
+                    f"ya {_topic} is alright",
+                    f"i support {_topic} i guess",
+                    f"{_topic} seems good to me",
+                    f"no complaints about {_topic}",
+                ]
+            elif sentiment in ('very_negative', 'negative'):
+                careless_templates = [
+                    f"dont like {_topic}",
+                    f"{_topic} is bad",
+                    f"not a fan of {_topic}",
+                    f"{_topic} sucks honestly",
+                    f"nah {_topic}",
+                    f"{_topic} is terrible",
+                    f"problems with {_topic}",
+                    f"not great about {_topic}",
+                    f"{_topic} needs to change",
+                    f"disappointed with {_topic}",
+                ]
+            else:
+                careless_templates = [
+                    f"{_topic} is ok i guess",
+                    f"idk {_topic}",
+                    f"{_topic} whatever",
+                    f"meh {_topic}",
+                    f"{_topic} is fine",
+                    f"sure {_topic}",
+                    f"{_topic}",
+                    f"dont care about {_topic}",
+                    f"{_topic} its fine i guess",
+                    f"i dont really have strong feelings about {_topic}",
+                    f"{_topic} is what it is",
+                    f"not much to say about {_topic}",
+                    f"{_topic} doesnt really matter to me",
+                    f"ya {_topic} sure",
+                    f"no comment on {_topic}",
+                    f"{_topic} is alright",
+                    f"i guess {_topic} is ok",
+                    f"nothing to add about {_topic}",
+                ]
             return rng.choice(careless_templates)
         elif engagement < 0.3:
             # Very short version — keep first meaningful fragment

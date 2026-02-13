@@ -159,7 +159,7 @@ Based on recent LLM simulation research:
 """
 
 # Version identifier to help track deployed code
-__version__ = "1.0.8.4"  # v1.0.8.4: OE pipeline hardening
+__version__ = "1.0.8.5"  # v1.0.8.5: 20 iterative improvements
 
 import hashlib
 import random
@@ -4565,6 +4565,8 @@ class TextResponseGenerator:
             # v1.0.8.4: Dedicated routing for recommendation and hypothetical
             "recommendation": "opinion_response",  # recommendations use opinion bank
             "hypothetical": "opinion_response",  # hypotheticals use opinion bank
+            # v1.0.8.5: Additional intent routing
+            "comparison": "evaluation_response",  # comparisons use evaluation templates
         }
         # Try: explicit response_type → intent-based bank → task_summary fallback
         _effective_type = response_type

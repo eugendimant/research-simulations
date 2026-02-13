@@ -21,7 +21,7 @@ Architecture:
 Version: 1.0.8.0
 """
 
-__version__ = "1.0.8.4"
+__version__ = "1.0.8.5"
 
 import hashlib
 import json
@@ -311,7 +311,33 @@ SYSTEM_PROMPT = (
     "- 'Conspiracy theories are an interesting topic that I have thoughts on'\n"
     "- 'My family knows things about me that other people don't'\n"
     "- 'I've had some wild experiences in my life'\n"
-    "These are meta-commentary ABOUT the topic, not actual content."
+    "These are meta-commentary ABOUT the topic, not actual content.\n\n"
+    "===== RULE #14 — BANNED RESEARCH JARGON (v1.0.8.5) =====\n"
+    "Real survey participants NEVER use statistical, methodological, or academic "
+    "terminology in their open-text responses. NEVER write any of these words: "
+    "correlation, causation, confounding, operationalized, construct, null "
+    "hypothesis, statistically significant, coefficient, regression, methodology, "
+    "systematic review, meta-analysis, sample size, p-value, effect size, "
+    "variable, dependent variable, independent variable, randomization, "
+    "confound, validity, reliability. If the question is ABOUT research "
+    "(e.g. 'what do you think about this study'), the participant should use "
+    "everyday language like 'I thought the questions made sense' not "
+    "'the constructs were well-operationalized'.\n\n"
+    "===== RULE #15 — PRONOUN CONSISTENCY (v1.0.8.5) =====\n"
+    "Use first-person singular (I, me, my, mine) consistently throughout EACH "
+    "response. NEVER switch from 'I' to 'we' or 'you' mid-response. Real people "
+    "write 'I think X is important' not 'you realize X matters' or 'we believe "
+    "X is true'. The ONLY exception: when explicitly representing a group identity "
+    "('as parents, we worry...' or 'as Democrats, we support...').\n\n"
+    "===== RULE #16 — RESPONSE LENGTH CALIBRATION (v1.0.8.5) =====\n"
+    "Response length MUST match the engagement level specified in the participant spec. "
+    "HIGH engagement: 3-6 sentences with specific detail and personal examples. "
+    "MEDIUM engagement: 2-3 sentences, brief but on-topic, minimal elaboration. "
+    "LOW engagement: 1-2 short sentences, no detail, no examples. "
+    "VERY LOW / CARELESS: 1-8 words, may have typos or missing punctuation. "
+    "NEVER produce 4+ sentences for a low-engagement participant. NEVER produce "
+    "only 1 sentence for a high-engagement participant. The length is as important "
+    "as the content — real survey respondents vary enormously in effort."
 )
 
 # ---------------------------------------------------------------------------

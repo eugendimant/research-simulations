@@ -45,7 +45,7 @@ This module is designed to run inside a `utils/` package (i.e., imported as
 """
 
 # Version identifier to help track deployed code
-__version__ = "1.0.8.4"  # v1.0.8.4: OE pipeline hardening
+__version__ = "1.0.8.5"  # v1.0.8.5: 20 iterative improvements
 
 # =============================================================================
 # SCIENTIFIC FOUNDATIONS FOR SIMULATION
@@ -7534,13 +7534,20 @@ class EnhancedSimulationEngine:
         elif any(w in _qt_early for w in ('recommend', 'suggest', 'advice', 'should',
                                            'tips for', 'best way to', 'what would you advise')):
             _early_intent = "recommendation"
+        # v1.0.8.5: Comparison and recall intents
+        elif any(w in _qt_early for w in ('compare', 'comparison', 'compared to', 'versus',
+                                           'pros and cons', 'advantages', 'better or worse')):
+            _early_intent = "comparison"
+        elif any(w in _qt_early for w in ('remember', 'recall', 'looking back', 'in hindsight',
+                                           'what stands out', 'think back')):
+            _early_intent = "recall"
         elif any(w in _qt_early for w in ('why', 'explain', 'reason', 'because')):
             _early_intent = "explanation"
         elif any(w in _qt_early for w in ('how do you feel', 'feelings', 'emotions', 'react')):
             _early_intent = "emotional_reaction"
         elif any(w in _qt_early for w in ('describe', 'tell us about', 'what happened')):
             _early_intent = "description"
-        elif any(w in _qt_early for w in ('evaluate', 'rate', 'assess', 'compare')):
+        elif any(w in _qt_early for w in ('evaluate', 'rate', 'assess')):
             _early_intent = "evaluation"
 
         # v1.4.9: Try LLM generator first (question-specific, persona-aligned)
@@ -8311,6 +8318,20 @@ class EnhancedSimulationEngine:
             r'(?:about|regarding|on|toward|towards|of)\s+([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)*)',
             _original_source)
         _entities.extend(_after_prep)
+        # v1.0.8.5: Heuristic 4 — Lowercase entity detection for high-salience topics
+        _known_lc_entities = {
+            'trump', 'biden', 'obama', 'clinton', 'sanders', 'desantis', 'pelosi',
+            'democrat', 'republican', 'brexit', 'nato', 'putin', 'zelensky',
+            'facebook', 'instagram', 'twitter', 'tiktok', 'reddit', 'google',
+            'amazon', 'tesla', 'chatgpt', 'openai', 'bitcoin', 'crypto',
+            'covid', 'coronavirus', 'vaccine', 'pfizer', 'moderna', 'fauci',
+            'blm', 'metoo', 'lgbtq', 'maga', 'qanon', 'antifa',
+            'netflix', 'spotify', 'disney', 'uber', 'airbnb',
+        }
+        _source_lower_words = _ctx_re.findall(r'\b[a-zA-Z]{3,}\b', _original_source.lower())
+        for _lw in _source_lower_words:
+            if _lw in _known_lc_entities and _lw not in {e.lower() for e in _entities}:
+                _entities.append(_lw.capitalize())
         # Deduplicate while preserving order
         _seen_ents: set = set()
         _unique_entities: list = []
