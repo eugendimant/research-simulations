@@ -201,6 +201,46 @@ def _clean_condition_name(condition: str) -> str:
     cleaned = re.sub(r'\s+', ' ', cleaned)
     return cleaned.strip()
 
+def _align_condition_values(df: pd.DataFrame, metadata_conditions: List[str]) -> pd.DataFrame:
+    """Canonicalize CONDITION values against known metadata conditions.
+
+    Handles accidental condition contamination like "Yeah AI x Utilitarian"
+    by mapping to the canonical suffix when unambiguous.
+    """
+    if "CONDITION" not in df.columns or not metadata_conditions:
+        return df
+
+    canon = [str(c).strip() for c in metadata_conditions if str(c).strip()]
+    if not canon:
+        return df
+
+    clean_to_canon = {_clean_condition_name(c).lower(): c for c in canon}
+    mapped: List[Any] = []
+    changes = 0
+
+    for raw in df["CONDITION"].astype(str):
+        raw_clean = _clean_condition_name(raw)
+        raw_low = raw_clean.lower()
+
+        if raw_low in clean_to_canon:
+            mapped.append(clean_to_canon[raw_low])
+            continue
+
+        matches = [c for c in canon if raw_low.endswith(_clean_condition_name(c).lower())]
+        if len(matches) == 1:
+            mapped.append(matches[0])
+            changes += 1
+        else:
+            mapped.append(raw)
+
+    if changes == 0:
+        return df
+
+    out = df.copy()
+    out["CONDITION"] = mapped
+    return out
+
+
 
 # ============================================================================
 # NUMPY-BASED STATISTICAL FUNCTIONS (fallbacks when scipy unavailable)
@@ -731,6 +771,8 @@ class InstructorReportGenerator:
             pool_size = llm_stats.get('pool_size', 0) if llm_stats else 0
             fallback_uses = llm_stats.get('fallback_uses', 0) if llm_stats else 0
             batch_failures = llm_stats.get('batch_failures', 0) if llm_stats else 0
+            allow_template_fallback = bool(llm_stats.get('allow_template_fallback', True)) if llm_stats else True
+            llm_init_error = str(metadata.get('llm_init_error', '') or '').strip()
 
             if pool_size > 0:
                 # AI-generated responses were actually produced and used
@@ -762,6 +804,17 @@ class InstructorReportGenerator:
                 lines.append("- Template responses are unique per participant with topic-appropriate content")
                 lines.append("- Response length and sentiment vary based on simulated persona")
                 lines.append("- Tip: Provide your own API key (Groq, Google AI, etc.) for AI-powered responses")
+            elif llm_init_error:
+                lines.append("**Generation approach:** LLM initialization failure (run integrity warning)")
+                lines.append("")
+                lines.append(f"- LLM generator failed to initialize: `{llm_init_error}`")
+                lines.append("- Open-ended responses did not run through API calls in this run")
+                lines.append("- This run should be treated as invalid for AI-based simulation")
+            elif not allow_template_fallback:
+                lines.append("**Generation approach:** LLM-first strict mode")
+                lines.append("")
+                lines.append("- Template fallback was disabled for this run")
+                lines.append("- No successful API outputs were recorded; rerun with valid API connectivity")
             else:
                 lines.append("**Generation approach:** Advanced Template Engine (225+ Research Domains)")
                 lines.append("")
@@ -2155,6 +2208,7 @@ class ComprehensiveInstructorReport:
         conditions = metadata.get("conditions", [])
         factors = metadata.get("factors", [])
         scales = metadata.get("scales", [])
+        df = _align_condition_values(df, [str(c) for c in conditions])
 
         lines.append(f"**Design type:** {metadata.get('design_type', 'Between-subjects')}")
         lines.append(f"**Number of conditions:** {len(conditions)}")
@@ -4579,6 +4633,8 @@ class ComprehensiveInstructorReport:
         pool_size_h = llm_stats_html.get('pool_size', 0) if llm_stats_html else 0
         fallback_h = llm_stats_html.get('fallback_uses', 0) if llm_stats_html else 0
         batch_failures_h = llm_stats_html.get('batch_failures', 0) if llm_stats_html else 0
+        allow_template_fallback_h = bool(llm_stats_html.get('allow_template_fallback', True)) if llm_stats_html else True
+        llm_init_error_h = str(metadata.get('llm_init_error', '') or '').strip()
         if oe_questions:
             html_parts.append("<h3 style='margin-top:20px;'>Response Generation Method</h3>")
             if pool_size_h > 0:
@@ -4602,6 +4658,13 @@ class ComprehensiveInstructorReport:
                     html_parts.append(f"<p>{batch_failures_h} batch failure(s) encountered across all providers.</p>")
                 html_parts.append("<p>All responses were generated using the built-in template engine.</p>")
                 html_parts.append("<p><em>Tip: Provide your own API key (Groq, Google AI, etc.) for AI-powered responses.</em></p>")
+            elif llm_init_error_h:
+                html_parts.append("<p><strong>Generation approach:</strong> LLM initialization failure (run integrity warning)</p>")
+                html_parts.append(f"<p>LLM generator failed to initialize: <code>{llm_init_error_h}</code></p>")
+                html_parts.append("<p>Open-ended responses did not run through API calls in this run.</p>")
+            elif not allow_template_fallback_h:
+                html_parts.append("<p><strong>Generation approach:</strong> LLM-first strict mode</p>")
+                html_parts.append("<p>Template fallback was disabled and no successful API output was recorded; rerun with valid API connectivity.</p>")
             else:
                 html_parts.append("<p><strong>Generation approach:</strong> Advanced Template Engine (225+ Research Domains)</p>")
                 html_parts.append("<p>Responses were generated using the built-in behavioral simulation engine covering 225+ research domains. Each response is unique per participant with topic-grounded content.</p>")
@@ -4627,6 +4690,7 @@ class ComprehensiveInstructorReport:
         n_clean = n_total - n_excluded
         exclusion_rate = (n_excluded / n_total * 100) if n_total > 0 else 0
         conditions = metadata.get("conditions", [])
+        df = _align_condition_values(df, [str(c) for c in conditions])
         # v1.0.6.3: Fallback — if metadata conditions don't match df, use df values
         if conditions and "CONDITION" in df.columns:
             _df_conds = df["CONDITION"].unique().tolist()
