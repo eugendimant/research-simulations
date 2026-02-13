@@ -10595,7 +10595,7 @@ if active_page == 3:
         st.session_state["generation_requested"] = False
         st.session_state["is_generating"] = True
         st.session_state["_generation_phase"] = 1
-        _navigate_to(3)
+        st.rerun()
 
     # Phase 2: Actually generate (progress UI is now visible)
     if is_generating and st.session_state.get("_generation_phase", 0) == 1:

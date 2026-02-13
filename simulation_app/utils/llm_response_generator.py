@@ -1703,9 +1703,9 @@ class LLMResponseGenerator:
     # Default batch size: 20 responses per API call (B: larger batches)
     DEFAULT_BATCH_SIZE = 20
     # Minimum pool per sentiment bucket (ensures diversity)
-    MIN_POOL_PER_BUCKET = 30
+    MIN_POOL_PER_BUCKET = 18
     # Maximum pool per sentiment bucket (avoid excessive API calls)
-    MAX_POOL_PER_BUCKET = 80
+    MAX_POOL_PER_BUCKET = 60
 
     def __init__(
         self,
@@ -1994,7 +1994,7 @@ class LLMResponseGenerator:
             import math
             target = max(
                 self.MIN_POOL_PER_BUCKET,
-                min(self.MAX_POOL_PER_BUCKET, int(math.sqrt(participants_per_bucket) * 3) + 10),
+                min(self.MAX_POOL_PER_BUCKET, int(math.sqrt(participants_per_bucket) * 2.4) + 8),
             )
             count_per_sentiment = target
 
