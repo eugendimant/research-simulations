@@ -1,0 +1,30 @@
+{
+  "game": {
+    "name": "stag_hunt",
+    "params": {
+      "HH": 2,
+      "SS": 5,
+      "HS": 2,
+      "SH": 0,
+      "belief_partner_S": 0.5
+    }
+  },
+  "topic": {
+    "name": "identity",
+    "tags": [
+      "coordination"
+    ],
+    "notes": "coordination with identity cues"
+  },
+  "population": {
+    "label": "adult_online",
+    "country": "US",
+    "sampling_frame": "online"
+  },
+  "context": {
+    "anonymity": true,
+    "group_salience": 1,
+    "ingroup_partner": 1,
+    "norm_salience": 0
+  }
+}

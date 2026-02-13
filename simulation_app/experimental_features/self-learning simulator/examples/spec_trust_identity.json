@@ -1,0 +1,26 @@
+{
+  "game": {
+    "name": "trust",
+    "params": {
+      "endowment": 10,
+      "multiplier": 3,
+      "step": 1
+    }
+  },
+  "topic": {
+    "name": "identity",
+    "tags": [
+      "ingroup",
+      "outgroup"
+    ],
+    "notes": "Trust game with ingroup framing"
+  },
+  "population": {
+    "label": "adult_online",
+    "country": "US"
+  },
+  "context": {
+    "ingroup_partner": 1,
+    "norm_salience": true
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "game": {
+    "name": "risk_holt_laury",
+    "params": {}
+  },
+  "topic": {
+    "name": "risk",
+    "tags": [
+      "risk",
+      "preferences"
+    ]
+  },
+  "population": {
+    "label": "adult_online"
+  },
+  "context": {
+    "tags": [
+      "any"
+    ]
+  }
+}

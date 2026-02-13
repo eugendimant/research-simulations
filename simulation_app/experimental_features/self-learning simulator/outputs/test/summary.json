@@ -1,0 +1,28 @@
+{
+  "n_rows": 20,
+  "game": "trust",
+  "topic": "identity",
+  "matched_evidence_ids": [],
+  "mean_shifts": {},
+  "extra_sd": {},
+  "action_means": {
+    "act::invest": 5.3,
+    "act::return": 3.2625,
+    "act::return_frac": 0.1625
+  },
+  "payoff_means": {
+    "pay::a": 7.9625,
+    "pay::b": 12.6375
+  },
+  "latent_class_counts": {
+    "fairness_minded": 7,
+    "self_interested": 15,
+    "reciprocator": 10,
+    "high_noise": 8
+  },
+  "coverage_report": {
+    "matched_units": 0,
+    "unique_sources": 0,
+    "matched_domain_tags": []
+  }
+}

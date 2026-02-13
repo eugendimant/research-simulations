@@ -1,0 +1,36 @@
+{
+  "id": "example_ultimatum_low_stakes_fairness_v1",
+  "scope": {
+    "games": [
+      "ultimatum"
+    ],
+    "topics": [
+      "baseline"
+    ],
+    "populations": [
+      "adult_online"
+    ]
+  },
+  "effect": {
+    "parameter": "min_offer_frac",
+    "mean": 0.3,
+    "sd": 0.1,
+    "direction": "increase_with_observability"
+  },
+  "moderators": [
+    {
+      "when": {
+        "context.observability": "high"
+      },
+      "delta_mean": 0.05
+    }
+  ],
+  "quality": {
+    "design": "example",
+    "risk_of_bias": "unknown"
+  },
+  "provenance": {
+    "note": "example-only placeholder; replace with real DOI/URL",
+    "verified": false
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "game": {
+    "name": "repeated_pd",
+    "params": {
+      "rounds": 10,
+      "T": 5,
+      "R": 3,
+      "P": 1,
+      "S": 0
+    }
+  },
+  "topic": {
+    "name": "cooperation",
+    "tags": [
+      "cooperation"
+    ]
+  },
+  "population": {
+    "name": "generic"
+  },
+  "context": {
+    "tags": [
+      "any"
+    ],
+    "ingroup_partner": 1
+  }
+}

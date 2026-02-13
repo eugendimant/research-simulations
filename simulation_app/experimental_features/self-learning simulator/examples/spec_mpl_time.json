@@ -1,0 +1,20 @@
+{
+  "game": {
+    "name": "mpl_time",
+    "params": {}
+  },
+  "topic": {
+    "name": "time",
+    "tags": [
+      "time_preferences"
+    ]
+  },
+  "population": {
+    "name": "generic"
+  },
+  "context": {
+    "tags": [
+      "any"
+    ]
+  }
+}

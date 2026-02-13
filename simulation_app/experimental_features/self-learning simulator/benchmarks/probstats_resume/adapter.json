@@ -1,0 +1,8 @@
+{
+  "format": "csv",
+  "dropna_cols": [],
+  "columns": {},
+  "add_columns": {
+    "__row__": 1.0
+  }
+}

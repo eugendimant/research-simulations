@@ -1,0 +1,20 @@
+{
+  "game": {
+    "name": "holt_laury",
+    "params": {}
+  },
+  "topic": {
+    "name": "risk",
+    "tags": [
+      "risk_preferences"
+    ]
+  },
+  "population": {
+    "name": "generic"
+  },
+  "context": {
+    "tags": [
+      "any"
+    ]
+  }
+}

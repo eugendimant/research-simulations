@@ -1,0 +1,25 @@
+[
+  {
+    "id": "mean_offer",
+    "kind": "mean",
+    "column": "offer"
+  },
+  {
+    "id": "q50_offer",
+    "kind": "quantile",
+    "column": "offer",
+    "q": 0.5
+  },
+  {
+    "id": "diff_offer",
+    "kind": "diff_in_means",
+    "column": "offer",
+    "treat": "treatment"
+  },
+  {
+    "id": "traj_offer",
+    "kind": "trajectory_mean",
+    "column": "offer",
+    "by": "round"
+  }
+]

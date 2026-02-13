@@ -1,0 +1,54 @@
+{
+  "game": {
+    "name": "time_mpl",
+    "params": {
+      "rows": [
+        {
+          "sooner": [
+            10,
+            0
+          ],
+          "later": [
+            11,
+            7
+          ]
+        },
+        {
+          "sooner": [
+            10,
+            0
+          ],
+          "later": [
+            12,
+            14
+          ]
+        },
+        {
+          "sooner": [
+            10,
+            0
+          ],
+          "later": [
+            14,
+            30
+          ]
+        }
+      ]
+    }
+  },
+  "topic": {
+    "name": "time",
+    "tags": [
+      "discounting"
+    ],
+    "notes": "time MPL"
+  },
+  "population": {
+    "label": "adult_online",
+    "country": "US"
+  },
+  "context": {
+    "anonymity": true,
+    "high_stakes": false
+  }
+}
