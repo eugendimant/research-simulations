@@ -45,7 +45,7 @@ This module is designed to run inside a `utils/` package (i.e., imported as
 """
 
 # Version identifier to help track deployed code
-__version__ = "1.0.7.7"  # v1.0.7.7: Safe importlib.reload on version mismatch
+__version__ = "1.0.7.8"  # v1.0.7.8: Add _backups/ to .gitignore
 
 # =============================================================================
 # SCIENTIFIC FOUNDATIONS FOR SIMULATION
