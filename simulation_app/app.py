@@ -32,6 +32,7 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import math
 import os
 import re
 import sys
@@ -53,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.0.7.2"
-BUILD_ID = "20260213-v10702-fix-oe-empty-fallback"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.0.6.8"
+BUILD_ID = "20260212-v10608-llm-first-hardening"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -92,26 +93,16 @@ try:
 except ImportError:
     _HAS_CORRELATION_MODULE = False
 
-# Verify correct version loaded — if stale, force a targeted reload
+# Verify expected utils version; do not hot-purge sys.modules at runtime.
+# Purging modules caused intermittent import KeyError on Streamlit Cloud with
+# concurrent sessions. We now surface a warning and rely on clean restarts /
+# deploy refreshes to load the matching utils package safely.
 if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION:
-    try:
-        # Purge stale utils sub-modules from sys.modules so fresh code is loaded
-        _stale_keys = [k for k in sys.modules if k == "utils" or k.startswith("utils.")]
-        for _k in _stale_keys:
-            del sys.modules[_k]
-        # Re-import with fresh code
-        import utils  # noqa: F811
-        from utils.group_management import GroupManager, APIKeyManager  # noqa: F811
-        from utils.qsf_preview import QSFPreviewParser, QSFPreviewResult  # noqa: F811
-        from utils.schema_validator import validate_schema  # noqa: F811
-        from utils.github_qsf_collector import collect_qsf_async, is_collection_enabled  # noqa: F811
-        from utils.instructor_report import InstructorReportGenerator, ComprehensiveInstructorReport  # noqa: F811
-        from utils.survey_builder import SurveyDescriptionParser, ParsedDesign, ParsedCondition, ParsedScale, KNOWN_SCALES, AVAILABLE_DOMAINS, generate_qsf_from_design  # noqa: F811
-        from utils.persona_library import PersonaLibrary, Persona  # noqa: F811
-        from utils.enhanced_simulation_engine import EnhancedSimulationEngine, EffectSizeSpec, ExclusionCriteria  # noqa: F811
-        from utils.condition_identifier import DesignAnalysisResult, VariableRole, analyze_qsf_design  # noqa: F811
-    except Exception:
-        st.warning(f"Utils version mismatch: expected {REQUIRED_UTILS_VERSION}, got {getattr(utils, '__version__', '?')}. Please restart the app.")
+    st.warning(
+        f"Utils version mismatch: expected {REQUIRED_UTILS_VERSION}, "
+        f"got {getattr(utils, '__version__', '?')}. "
+        "Please restart/redeploy the app to refresh imports."
+    )
 
 
 # -----------------------------
@@ -119,7 +110,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.0.7.2"  # v1.0.7.2: Fix empty OE responses when LLM APIs fail — bulletproof fallback chain
+APP_VERSION = "1.0.6.8"  # v1.0.6.8: LLM-first enforcement, explicit fallback consent, condition integrity fix
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -6885,6 +6876,48 @@ def _render_admin_dashboard() -> None:
             st.error(f"Could not load provider info: {_pe}")
             st.caption("Check that utils/llm_response_generator.py imports correctly.")
 
+        st.markdown("### Provider Quota & Cost Calculator")
+        st.caption("Estimate daily request/token demand to choose the best provider mix. Edit assumptions to match your real plan quotas.")
+        _qc1, _qc2, _qc3 = st.columns(3)
+        with _qc1:
+            _calc_participants = st.number_input("Participants per run", min_value=1, value=300, step=10, key="_quota_calc_n")
+            _calc_runs_per_day = st.number_input("Runs per day", min_value=1, value=1, step=1, key="_quota_calc_runs")
+        with _qc2:
+            _calc_oe_questions = st.number_input("Open-text questions per participant", min_value=1, value=2, step=1, key="_quota_calc_oe")
+            _calc_batch_size = st.number_input("Batch size assumption", min_value=1, value=20, step=1, key="_quota_calc_batch")
+        with _qc3:
+            _calc_prompt_tokens = st.number_input("Avg prompt tokens / response", min_value=1, value=220, step=10, key="_quota_calc_prompt")
+            _calc_completion_tokens = st.number_input("Avg completion tokens / response", min_value=1, value=95, step=5, key="_quota_calc_completion")
+
+        _daily_responses = int(_calc_participants * _calc_runs_per_day * _calc_oe_questions)
+        _daily_requests = int(math.ceil(_daily_responses / max(1, _calc_batch_size)))
+        _tokens_per_response = int(_calc_prompt_tokens + _calc_completion_tokens)
+        _daily_tokens = int(_daily_responses * _tokens_per_response)
+
+        _quota_rows = [
+            {"Provider": "Google AI Studio (Gemma high-volume)", "Daily request cap": 14400, "Daily token cap": 216_000_000},
+            {"Provider": "Google AI Studio (Gemini flash-lite)", "Daily request cap": 20, "Daily token cap": 5_000_000},
+            {"Provider": "Groq (free defaults)", "Daily request cap": 14400, "Daily token cap": 500_000},
+            {"Provider": "Cerebras", "Daily request cap": 1000, "Daily token cap": 1_000_000},
+            {"Provider": "Poe API", "Daily request cap": 3000, "Daily token cap": 1_500_000},
+            {"Provider": "OpenRouter", "Daily request cap": 1000, "Daily token cap": 1_000_000},
+        ]
+        _quota_view = []
+        for _row in _quota_rows:
+            _req_util = (_daily_requests / max(1, _row["Daily request cap"])) * 100
+            _tok_util = (_daily_tokens / max(1, _row["Daily token cap"])) * 100
+            _quota_view.append({
+                "Provider": _row["Provider"],
+                "Estimated requests/day": _daily_requests,
+                "Request cap/day": _row["Daily request cap"],
+                "Request utilization": f"{_req_util:.1f}%",
+                "Estimated tokens/day": _daily_tokens,
+                "Token cap/day": _row["Daily token cap"],
+                "Token utilization": f"{_tok_util:.1f}%",
+            })
+        st.dataframe(_quota_view, use_container_width=True, hide_index=True)
+        st.caption("Assumption check: default batch size is 20. Adaptive fallback now automatically retries smaller batches (10/5/1), so batch size will not block OE completion.")
+
     # ── Logout ────────────────────────────────────────────────────────
     st.markdown("---")
     if st.button("Logout", key="_admin_logout_btn"):
@@ -10259,6 +10292,7 @@ if active_page == 3:
                 st.session_state["_llm_connectivity_status"] = _llm_status
 
         if _llm_status.get("available"):
+            st.session_state["allow_template_fallback_once"] = False
             st.markdown(
                 '<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;'
                 'padding:12px 16px;margin-bottom:16px;">'
@@ -10277,14 +10311,18 @@ if active_page == 3:
             st.session_state["_admin_llm_exhaust_dialog_shown"] = _exhaust_shown_count + 1
 
             st.markdown(
-                '<div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:10px;'
-                'padding:16px 20px;margin-bottom:16px;">'
-                '<span style="font-size:1.1em;font-weight:600;color:#92400e;">'
-                'AI Open-Ended Response Generation</span><br>'
-                '<span style="color:#78350f;font-size:0.93em;">'
-                'The built-in AI language model service is currently not available '
-                '(services may be temporarily at capacity). You have two easy options:</span>'
-                '</div>',
+                '<div style="background:#fef2f2;border:2px solid #fca5a5;border-radius:10px;'
+                'padding:16px 20px;margin-bottom:16px;'>
+                '<span style="font-size:1.2em;font-weight:700;color:#991b1b;">'
+                'All Built-in AI Providers Are Currently Unavailable</span><br>'
+                '<span style="color:#b91c1c;font-size:0.95em;">'
+                'All 6 built-in AI services are currently unavailable. '
+                'The simulator remains in LLM-first mode.</span>'
+                '<ol style="color:#7f1d1d;font-size:0.9em;margin-top:8px;">'
+                '<li><strong>Provide your own API key</strong> (free or paid) — '
+                'AI-generated open-ended responses, highest quality</li>'
+                '<li><strong>Retry generation</strong> after providers recover.</li>'
+                '</ol></div>',
                 unsafe_allow_html=True,
             )
 
@@ -10388,6 +10426,29 @@ if active_page == 3:
                     unsafe_allow_html=True,
                 )
 
+            st.session_state["allow_template_fallback_once"] = False
+            st.info(
+                "LLM-first mode is active. Template fallback is disabled by default and only offered after an API-only run fails."
+            )
+
+            _has_user_key = bool((st.session_state.get("user_llm_api_key", "") or "").strip())
+            if not _has_user_key:
+                _allow_final_fallback = st.checkbox(
+                    "If AI providers remain unavailable, allow final template fallback for this run only",
+                    value=bool(st.session_state.get("allow_template_fallback_once", False)),
+                    key="allow_template_fallback_once_checkbox",
+                    help=(
+                        "Unchecked = generation is blocked until at least one LLM provider works. "
+                        "Checked = if all LLM calls fail, the final template fallback is allowed for this run."
+                    ),
+                )
+                st.session_state["allow_template_fallback_once"] = bool(_allow_final_fallback)
+                if not _allow_final_fallback:
+                    st.error("LLM-first mode is active: generation is blocked until an API key works or you explicitly allow the final fallback for this run.")
+            else:
+                st.session_state["allow_template_fallback_once"] = False
+
+
     is_generating = _is_generating  # Use the early-read variable
     has_generated = _has_generated
 
@@ -10479,7 +10540,16 @@ if active_page == 3:
             st.markdown(f"- {_pe}")
 
     # Button: disabled if not ready, generating, or already generated
-    can_generate = all_required_complete and not is_generating and not has_generated and not _preflight_errors
+    _llm_gate_block = False
+    if _has_open_ended:
+        _llm_cached = st.session_state.get("_llm_connectivity_status", {}) or {}
+        _llm_available_now = bool(_llm_cached.get("available"))
+        _allow_final_fallback = bool(st.session_state.get("allow_template_fallback_once", False))
+        _has_user_key = bool((st.session_state.get("user_llm_api_key", "") or "").strip())
+        if not _llm_available_now and not _allow_final_fallback and not _has_user_key:
+            _llm_gate_block = True
+
+    can_generate = all_required_complete and not is_generating and not has_generated and not _preflight_errors and not _llm_gate_block
 
     # v1.4.5: No generate button during generation — just show the progress + reset
     if is_generating:
@@ -10760,6 +10830,7 @@ if active_page == 3:
             correlation_matrix=_engine_corr_matrix,
             missing_data_rate=_engine_missing_rate,
             dropout_rate=_engine_dropout_rate,
+            allow_template_fallback=bool(st.session_state.get("allow_template_fallback_once", False)),
         )
 
         # v1.2.4: Show detected research domains
@@ -10806,6 +10877,17 @@ if active_page == 3:
             # Fix: engine metadata uses "sample_size", "conditions", "scales" —
             # not "n_participants", "conditions_used", "scales_used".
             _llm_run_stats = metadata.get('llm_stats', metadata.get('llm_response_stats', {}))
+
+            # Hard LLM-first integrity guard for OE runs.
+            # If fallback is disabled, we require actual API activity.
+            if open_ended_questions_for_engine and not bool(st.session_state.get("allow_template_fallback_once", False)):
+                _llm_calls_run = int(_llm_run_stats.get("llm_calls", 0) or 0)
+                _llm_attempts_run = int(_llm_run_stats.get("llm_attempts", 0) or 0)
+                if _llm_calls_run <= 0 and _llm_attempts_run <= 0:
+                    raise RuntimeError(
+                        "LLM-first integrity check failed: open-ended questions were configured but no API calls/attempts were recorded."
+                    )
+
             st.session_state["_last_llm_stats"] = _llm_run_stats
             _admin_history = st.session_state.get("_admin_sim_history", [])
             _admin_history.append({
@@ -11171,42 +11253,22 @@ if active_page == 3:
             error_tb = _tb.format_exc()
             error_str = str(e).lower()
 
-            # v1.0.7.0: Store error details for admin diagnostics
-            _admin_error_log = st.session_state.get("_admin_generation_errors", [])
-            _admin_error_log.append({
-                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                "error": str(e),
-                "error_type": type(e).__name__,
-                "traceback": error_tb[-500:],  # Last 500 chars
-            })
-            st.session_state["_admin_generation_errors"] = _admin_error_log[-20:]  # Keep last 20
-
-            # v1.0.7.0: Categorized, user-friendly error messages.
-            # LLM-related errors should NEVER scare users — the simulation still works.
-            _is_llm_error = any(kw in error_str for kw in [
-                "api", "auth", "401", "403", "429", "rate", "timeout",
-                "timed out", "connection", "llm", "provider", "groq",
-                "cerebras", "openai", "google", "openrouter", "poe",
-            ])
-
-            if _is_llm_error:
-                # LLM errors are NOT fatal — simulation should still work
-                progress_bar.progress(100, text="Simulation completed with notes.")
-                status_placeholder.warning("Simulation encountered an AI provider issue.")
-                st.markdown(
-                    '<div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;'
-                    'padding:14px 18px;margin-bottom:12px;">'
-                    '<span style="font-weight:600;color:#92400e;font-size:0.95em;">'
-                    'AI Language Model Note</span><br>'
-                    '<span style="color:#78350f;font-size:0.9em;">'
-                    'The built-in AI language model service was not reachable during this run. '
-                    'This happens occasionally when the free API services are at capacity.</span><br><br>'
-                    '<span style="color:#78350f;font-size:0.9em;">'
-                    '<strong>Your simulation still generated successfully</strong> using the built-in '
-                    'behavioral response engine (225+ research domains, 40 question types). '
-                    'For AI-powered responses, you can provide your own free API key and re-run.</span>'
-                    '</div>',
-                    unsafe_allow_html=True,
+            # Categorize the error for a more helpful user-facing message
+            if "api" in error_str or "auth" in error_str or "401" in error_str or "403" in error_str:
+                st.error(
+                    "**LLM API Error:** Could not connect to the AI provider. "
+                    "If you provided an API key, please verify it is correct and has not expired. "
+                    "If you do not allow fallback, generation is intentionally blocked until at least one LLM provider succeeds."
+                )
+                if st.button("Allow one-time emergency template fallback and retry", key="allow_emergency_template_once"):
+                    st.session_state["allow_template_fallback_once"] = True
+                    st.session_state["is_generating"] = True
+                    st.session_state["_generation_phase"] = 1
+                    _navigate_to(3)
+            elif "timeout" in error_str or "timed out" in error_str or "connection" in error_str:
+                st.error(
+                    "**Connection Timeout:** The AI provider did not respond in time. "
+                    "This is usually temporary. Please try again in a moment, or proceed without an API key."
                 )
             elif "memory" in error_str or "overflow" in error_str:
                 progress_bar.progress(100, text="Simulation failed.")
