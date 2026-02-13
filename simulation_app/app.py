@@ -32,6 +32,7 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import math
 import os
 import re
 import sys
@@ -6884,6 +6885,48 @@ def _render_admin_dashboard() -> None:
         except Exception as _pe:
             st.error(f"Could not load provider info: {_pe}")
             st.caption("Check that utils/llm_response_generator.py imports correctly.")
+
+        st.markdown("### Provider Quota & Cost Calculator")
+        st.caption("Estimate daily request/token demand to choose the best provider mix. Edit assumptions to match your real plan quotas.")
+        _qc1, _qc2, _qc3 = st.columns(3)
+        with _qc1:
+            _calc_participants = st.number_input("Participants per run", min_value=1, value=300, step=10, key="_quota_calc_n")
+            _calc_runs_per_day = st.number_input("Runs per day", min_value=1, value=1, step=1, key="_quota_calc_runs")
+        with _qc2:
+            _calc_oe_questions = st.number_input("Open-text questions per participant", min_value=1, value=2, step=1, key="_quota_calc_oe")
+            _calc_batch_size = st.number_input("Batch size assumption", min_value=1, value=20, step=1, key="_quota_calc_batch")
+        with _qc3:
+            _calc_prompt_tokens = st.number_input("Avg prompt tokens / response", min_value=1, value=220, step=10, key="_quota_calc_prompt")
+            _calc_completion_tokens = st.number_input("Avg completion tokens / response", min_value=1, value=95, step=5, key="_quota_calc_completion")
+
+        _daily_responses = int(_calc_participants * _calc_runs_per_day * _calc_oe_questions)
+        _daily_requests = int(math.ceil(_daily_responses / max(1, _calc_batch_size)))
+        _tokens_per_response = int(_calc_prompt_tokens + _calc_completion_tokens)
+        _daily_tokens = int(_daily_responses * _tokens_per_response)
+
+        _quota_rows = [
+            {"Provider": "Google AI Studio (Gemma high-volume)", "Daily request cap": 14400, "Daily token cap": 216_000_000},
+            {"Provider": "Google AI Studio (Gemini flash-lite)", "Daily request cap": 20, "Daily token cap": 5_000_000},
+            {"Provider": "Groq (free defaults)", "Daily request cap": 14400, "Daily token cap": 500_000},
+            {"Provider": "Cerebras", "Daily request cap": 1000, "Daily token cap": 1_000_000},
+            {"Provider": "Poe API", "Daily request cap": 3000, "Daily token cap": 1_500_000},
+            {"Provider": "OpenRouter", "Daily request cap": 1000, "Daily token cap": 1_000_000},
+        ]
+        _quota_view = []
+        for _row in _quota_rows:
+            _req_util = (_daily_requests / max(1, _row["Daily request cap"])) * 100
+            _tok_util = (_daily_tokens / max(1, _row["Daily token cap"])) * 100
+            _quota_view.append({
+                "Provider": _row["Provider"],
+                "Estimated requests/day": _daily_requests,
+                "Request cap/day": _row["Daily request cap"],
+                "Request utilization": f"{_req_util:.1f}%",
+                "Estimated tokens/day": _daily_tokens,
+                "Token cap/day": _row["Daily token cap"],
+                "Token utilization": f"{_tok_util:.1f}%",
+            })
+        st.dataframe(_quota_view, use_container_width=True, hide_index=True)
+        st.caption("Assumption check: default batch size is 20. Adaptive fallback now automatically retries smaller batches (10/5/1), so batch size will not block OE completion.")
 
     # ── Logout ────────────────────────────────────────────────────────
     st.markdown("---")

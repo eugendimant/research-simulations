@@ -9239,33 +9239,10 @@ class EnhancedSimulationEngine:
                             f"Their text should match this tone."
                         )
 
-                # v1.0.5.8: Realistic optional question skip-rate.
-                # Real survey data shows 15-35% non-response on optional OE questions.
-                # Careless/inattentive participants skip at higher rates. Engaged
-                # participants rarely skip. This prevents the tell-tale sign of
-                # "high open-ended compliance when optional" (all boxes filled).
-                # Scientific basis: Galesic & Bosnjak (2009): OE skip rates 20-40%.
-                _is_optional = q.get("optional", True)  # OE questions default to optional
-                _rng_skip = np.random.RandomState((p_seed + 55555) % (2**31))
-                _attention = _safe_trait_value(all_traits[i].get("attention_level"), 0.7)
-                # Base skip rate: 20% for typical participants
-                # Careless (attention < 0.4): 45% skip rate
-                # Satisficers (attention 0.4-0.6): 30% skip rate
-                # Engaged (attention > 0.8): 5% skip rate
-                if _is_optional and _attention < 0.4:
-                    _skip_prob = 0.45
-                elif _is_optional and _attention < 0.6:
-                    _skip_prob = 0.30
-                elif _is_optional and _attention < 0.8:
-                    _skip_prob = 0.15
-                elif _is_optional:
-                    _skip_prob = 0.05
-                else:
-                    _skip_prob = 0.0  # Required questions: never skip
-
-                if _skip_prob > 0 and _rng_skip.random() < _skip_prob:
-                    responses.append("")  # Realistic blank response
-                    continue
+                # v1.0.7.1: OE completeness guarantee.
+                # User requirement: visible open-ended questions must be fully populated.
+                # We therefore disable behavioral skip logic for OE generation and always
+                # produce a non-empty response (LLM first, then deterministic fallback).
 
                 # Generate response with enhanced uniqueness + behavioral context
                 # v1.0.7.0: Wrapped in try/except to guarantee simulation never hard-stops

@@ -269,8 +269,7 @@ SYSTEM_PROMPT = (
     "one AI writing 20 versions of the same response.\n\n"
     "===== RULE #12 — ANTI-DETECTION: REALISTIC NON-COMPLIANCE =====\n"
     "Real survey datasets are MESSY. Some participants:\n"
-    "- Leave optional text boxes completely BLANK (just '' or no response) — "
-    "this is realistic and expected for ~15-30% of optional questions\n"
+    "- Do not leave the response blank; always provide at least one concrete sentence tied to the question context\n"
     "- Answer a DIFFERENT question than what was asked ('what did you think "
     "of the price?' → 'the website was kinda confusing honestly')\n"
     "- Include irrelevant personal tangents ('speaking of which my dog did "
@@ -2329,27 +2328,36 @@ class LLMResponseGenerator:
         # 2. Try on-demand LLM batch (if pool was empty)
         # v1.0.5.7: Use property (triggers auto-recovery check) not raw field
         if self.is_llm_available:
-            specs = []
-            for _bi in range(self._batch_size):
-                _spec: Dict[str, Any] = {
-                    "verbosity": self._rng.uniform(0.1, 0.9),
-                    "formality": self._rng.uniform(0.1, 0.9),
-                    "engagement": self._rng.uniform(0.2, 0.95),
-                    "sentiment": sentiment,
-                }
-                # v1.0.5.5: Pass behavioral_profile to EVERY spec slot (not
-                # just slot 0) so ALL generated responses carry behavioral
-                # grounding.  Slot 0 gets exact persona params; others get
-                # random params but still carry the behavioral_profile for
-                # cross-correlation guidance in the prompt.
-                if _bi == 0 and behavioral_profile:
-                    _spec["verbosity"] = persona_verbosity
-                    _spec["formality"] = persona_formality
-                    _spec["engagement"] = _effective_engagement
-                if behavioral_profile:
-                    _spec["behavioral_profile"] = behavioral_profile
-                specs.append(_spec)
-            batch = self._generate_batch(question_text, condition, sentiment, specs)
+            batch = []
+            _target_batch_sizes = [self._batch_size, 10, 5, 1]
+            _seen_sizes = set()
+            for _batch_n in _target_batch_sizes:
+                if _batch_n in _seen_sizes or _batch_n <= 0:
+                    continue
+                _seen_sizes.add(_batch_n)
+                specs = []
+                for _bi in range(_batch_n):
+                    _spec: Dict[str, Any] = {
+                        "verbosity": self._rng.uniform(0.1, 0.9),
+                        "formality": self._rng.uniform(0.1, 0.9),
+                        "engagement": self._rng.uniform(0.2, 0.95),
+                        "sentiment": sentiment,
+                    }
+                    # v1.0.5.5: Pass behavioral_profile to EVERY spec slot (not
+                    # just slot 0) so ALL generated responses carry behavioral
+                    # grounding.  Slot 0 gets exact persona params; others get
+                    # random params but still carry the behavioral_profile for
+                    # cross-correlation guidance in the prompt.
+                    if _bi == 0 and behavioral_profile:
+                        _spec["verbosity"] = persona_verbosity
+                        _spec["formality"] = persona_formality
+                        _spec["engagement"] = _effective_engagement
+                    if behavioral_profile:
+                        _spec["behavioral_profile"] = behavioral_profile
+                    specs.append(_spec)
+                batch = self._generate_batch(question_text, condition, sentiment, specs)
+                if batch:
+                    break
             if batch:
                 self._pool.add(question_text, condition, sentiment, batch)
                 resp = self._pool.draw_with_replacement(
@@ -2379,7 +2387,7 @@ class LLMResponseGenerator:
 
         self._fallback_count += 1
         if self._fallback:
-            return self._fallback.generate(
+            _fallback_text = self._fallback.generate(
                 question_text=question_text,
                 sentiment=sentiment,
                 persona_verbosity=persona_verbosity,
@@ -2390,7 +2398,25 @@ class LLMResponseGenerator:
                 participant_seed=participant_seed,
                 behavioral_profile=behavioral_profile,
             )
-        return ""
+            if _fallback_text and _fallback_text.strip():
+                return _fallback_text
+        # Final non-empty guard for OE completeness even under cascading failures.
+        _topic_tokens = _extract_topic_tokens(question_text, condition)
+        _topic = " ".join(_topic_tokens[:2]).strip() or "this topic"
+        _fallback_rng = random.Random((participant_seed or 0) + len(question_text or "") + len(condition or ""))
+        _prefixes = {
+            "very_positive": ["I felt strongly positive about", "My reaction was clearly favorable toward"],
+            "positive": ["Overall I felt positive about", "I generally liked"],
+            "neutral": ["I had mixed thoughts about", "I was somewhat neutral on"],
+            "negative": ["I had concerns about", "I was mostly negative about"],
+            "very_negative": ["I reacted very negatively to", "I strongly disliked"],
+        }
+        _prefix = _fallback_rng.choice(_prefixes.get(sentiment, _prefixes["neutral"]))
+        _cond_clause = f" in the {condition} condition" if condition else ""
+        return (
+            f"{_prefix} {_topic}{_cond_clause}. "
+            "My view is based on the context shown, and I would need more concrete details to be fully certain."
+        )
 
     # ------------------------------------------------------------------
     # Deep persona variation (D) — makes each draw unique
