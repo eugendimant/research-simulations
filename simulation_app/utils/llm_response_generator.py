@@ -21,7 +21,7 @@ Architecture:
 Version: 1.0.8.0
 """
 
-__version__ = "1.0.8.5"
+__version__ = "1.0.8.6"
 
 import hashlib
 import json
@@ -337,7 +337,17 @@ SYSTEM_PROMPT = (
     "VERY LOW / CARELESS: 1-8 words, may have typos or missing punctuation. "
     "NEVER produce 4+ sentences for a low-engagement participant. NEVER produce "
     "only 1 sentence for a high-engagement participant. The length is as important "
-    "as the content — real survey respondents vary enormously in effort."
+    "as the content — real survey respondents vary enormously in effort.\n\n"
+    "===== RULE #17 — THEORY-GROUNDED BEHAVIORAL MECHANISMS (v1.0.8.6) =====\n"
+    "When behavioral theory guidance is provided in the prompt (e.g., 'BEHAVIORAL "
+    "THEORY: DICTATOR GAME WITH TAKING'), you MUST follow the causal mechanism "
+    "described. Per Manning & Horton (2025): writing like a real participant means "
+    "reasoning through the THEORY that drives behavior in this setting. Example: "
+    "a dictator game participant thinks about fairness vs. self-interest, not "
+    "about 'being a good survey participant'. Their text reflects the DECISION "
+    "mechanism (how much to keep/give/take) not the survey experience. When numeric "
+    "allocations are negative (taking), the text MUST reference and justify taking "
+    "from the other person."
 )
 
 # ---------------------------------------------------------------------------
@@ -930,6 +940,69 @@ def _build_batch_prompt(
         if _behavioral_cue:
             _condition_explanation += f"\n{_behavioral_cue}\n"
 
+    # v1.0.8.6: Theory-grounded behavioral mechanism guidance (Manning & Horton, 2025)
+    # Per "General Social Agents": prompts encoding causal mechanisms outperform
+    # persona labels by 3.4x. For economic game DVs, embed the theoretical
+    # mechanism that drives behavior rather than just persona descriptions.
+    _theory_guidance = ""
+    _study_lower = (study_title or "").lower() + " " + (study_description or "").lower()
+    _q_lower = question_text.lower()
+    _combined_lower = _study_lower + " " + _q_lower
+    if any(kw in _combined_lower for kw in ['dictator', 'allocat', 'giving', 'endow', 'split']):
+        _has_taking = any(kw in _combined_lower for kw in ['tak', 'steal', 'negative', '-100', 'minus'])
+        if _has_taking:
+            _theory_guidance = (
+                "\n╔══ BEHAVIORAL THEORY: DICTATOR GAME WITH TAKING ══╗\n"
+                "This is an allocation game where participants can GIVE or TAKE.\n"
+                "THEORETICAL BASIS (Fehr & Schmidt 1999; List 2007; Bardsley 2008):\n"
+                "When BOTH giving and taking are available, people fall into subgroups:\n"
+                "- ~35% are FAIR DIVIDERS: They allocate roughly equally (give 40-50%)\n"
+                "- ~25% are SELFISH: They give nothing (0) and take nothing\n"
+                "- ~20% are TAKERS: They TAKE from the other person (negative allocation)\n"
+                "- ~20% are MODERATE GIVERS: They give a small amount (10-25%)\n"
+                "CRITICAL: Some participants MUST write about TAKING from the other person.\n"
+                "When a participant's numeric allocation is negative, their text should\n"
+                "reflect and justify taking (e.g., 'I took some because everyone has to\n"
+                "look out for themselves', 'I figured the other person would understand').\n"
+                "╚═══════════════════════════════════════════════════════╝\n"
+            )
+        else:
+            _theory_guidance = (
+                "\n╔══ BEHAVIORAL THEORY: DICTATOR GAME ══╗\n"
+                "THEORETICAL BASIS (Engel 2011 meta-analysis; Fehr & Schmidt 1999):\n"
+                "Dictator game giving is bimodal, NOT normally distributed:\n"
+                "- Mode 1: ~36% give 0 (purely self-interested)\n"
+                "- Mode 2: ~17% give exactly 50% (fairness norm)\n"
+                "- The rest: scattered between 10-40% (partial giving)\n"
+                "Average giving ≈ 28% of endowment. Responses should reflect\n"
+                "the SPECIFIC amount this participant chose to give.\n"
+                "╚══════════════════════════════════════════╝\n"
+            )
+    elif any(kw in _combined_lower for kw in ['trust game', 'trust_game']):
+        _theory_guidance = (
+            "\n╔══ BEHAVIORAL THEORY: TRUST GAME ══╗\n"
+            "THEORETICAL BASIS (Berg et al. 1995; Johnson & Mislin 2011):\n"
+            "First movers send ~50% on average. Trustees return ~37% of amount received.\n"
+            "Trust reflects beliefs about others' reciprocity, not pure altruism.\n"
+            "╚══════════════════════════════════╝\n"
+        )
+    elif any(kw in _combined_lower for kw in ['ultimatum']):
+        _theory_guidance = (
+            "\n╔══ BEHAVIORAL THEORY: ULTIMATUM GAME ══╗\n"
+            "THEORETICAL BASIS (Güth et al. 1982; Oosterbeek et al. 2004):\n"
+            "Proposers offer 40-50%. Responders reject offers below ~20% (costly punishment).\n"
+            "Responses reflect BOTH self-interest AND fairness norm enforcement.\n"
+            "╚═════════════════════════════════════════╝\n"
+        )
+    elif any(kw in _combined_lower for kw in ['public good', 'contribution']):
+        _theory_guidance = (
+            "\n╔══ BEHAVIORAL THEORY: PUBLIC GOODS GAME ══╗\n"
+            "THEORETICAL BASIS (Ledyard 1995; Chaudhuri 2011):\n"
+            "Initial contributions ~40-60%, declining over rounds. ~25% free-ride (0).\n"
+            "Conditional cooperators (~50%) match others' contributions.\n"
+            "╚═══════════════════════════════════════════╝\n"
+        )
+
     # v1.8.3: Build question-type style guidance
     _qtype_guidance = _question_type_style_guidance(question_type)
 
@@ -966,6 +1039,7 @@ def _build_batch_prompt(
         f"{_condition_explanation}\n"
         f'Survey question: "{_q_display}"\n'
         f"{_question_context_block}\n"
+        f"{_theory_guidance}"
         f"{_qtype_guidance}\n\n"
         f"{_voice_guidance}"
         f"{_persona_condition_guidance}"

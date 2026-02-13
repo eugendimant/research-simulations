@@ -45,7 +45,7 @@ This module is designed to run inside a `utils/` package (i.e., imported as
 """
 
 # Version identifier to help track deployed code
-__version__ = "1.0.8.5"  # v1.0.8.5: 20 iterative improvements
+__version__ = "1.0.8.6"  # v1.0.8.6: Novel DV adaptation mechanism
 
 # =============================================================================
 # SCIENTIFIC FOUNDATIONS FOR SIMULATION
@@ -5984,8 +5984,35 @@ class EnhancedSimulationEngine:
             # Detect specific game type for precise calibration
             _full_ctx = var_lower + " " + condition_lower + " " + (
                 self.study_title or "").lower() + " " + (self.study_description or "").lower()
-            if 'dictator' in _full_ctx:
-                # Dictator game: mean giving ≈ 28% of endowment (Engel, 2011)
+            # v1.0.8.6: Detect game VARIANTS (taking, punishment, etc.)
+            _has_taking = any(kw in _full_ctx for kw in [
+                'tak', 'steal', 'subtract', 'remov', 'destroy', 'deduct',
+                'negative', 'punish', '-100', 'minus',
+            ])
+            _has_third_party = any(kw in _full_ctx for kw in [
+                'third party', 'third-party', 'bystander', 'observer',
+                'punishment', 'costly punish',
+            ])
+            if 'dictator' in _full_ctx and _has_taking:
+                # TAKING dictator game (e.g., -100 to +100):
+                # List (2007), Bardsley (2008): When taking is available,
+                # ~15-25% of participants take, mean giving drops to ~10-15%
+                # On bipolar scale: center should be at ~0.40 of range
+                # (positive side of zero but lower than standard dictator)
+                calibration['mean_adjustment'] = -0.10  # Shift below midpoint
+                calibration['positivity_bias'] = -0.10  # Reduce positivity further
+                calibration['variance_adjustment'] = 0.25  # Very high variance (takers + givers)
+                # Flag for subpopulation mixing (used in Step 4a)
+                calibration['_game_variant'] = 'dictator_taking'
+            elif 'dictator' in _full_ctx and _has_third_party:
+                # Third-party punishment dictator game:
+                # Fehr & Fischbacher (2004): Third parties punish ~60% of unfair offers
+                calibration['mean_adjustment'] = -0.15
+                calibration['positivity_bias'] = -0.05
+                calibration['variance_adjustment'] = 0.18
+                calibration['_game_variant'] = 'dictator_third_party'
+            elif 'dictator' in _full_ctx:
+                # Standard dictator game: mean giving ≈ 28% of endowment (Engel, 2011)
                 # On 0-100 scale, this means center should be ~28, not ~50
                 # Adjustment: shift from 0.5 (midpoint) down to ~0.28
                 calibration['mean_adjustment'] = -0.22
@@ -6355,6 +6382,95 @@ class EnhancedSimulationEngine:
 
         return calibration
 
+    def _detect_scale_geometry(
+        self,
+        scale_min: int,
+        scale_max: int,
+        variable_name: str = "",
+    ) -> Dict[str, Any]:
+        """Detect the geometric properties of a scale for bipolar/novel handling.
+
+        v1.0.8.6: NEW — Classifies scales to determine appropriate generation strategy.
+
+        Returns dict with:
+        - is_bipolar: True if scale spans negative-to-positive (e.g., -100 to +100)
+        - is_symmetric: True if scale is symmetric around zero (e.g., -3 to +3)
+        - midpoint: The conceptual neutral point of the scale
+        - is_novel_range: True if scale uses non-standard range (not 1-7, 0-100, etc.)
+        - is_economic_game_allocation: True if DV looks like an economic game allocation
+        - has_taking_option: True if negative values represent "taking" behavior
+        - bound_width: Wider [low, high] for tendency clipping (bipolar gets [0.02, 0.98])
+
+        Scientific basis:
+        - Schwarz et al. (1991): Numeric scale endpoints affect response meaning
+        - Krosnick & Fabrigar (1997): Scale format systematically influences data quality
+        - Engel (2011): Dictator game distributions are bimodal, not normal
+        """
+        result: Dict[str, Any] = {
+            'is_bipolar': False,
+            'is_symmetric': False,
+            'midpoint': (scale_min + scale_max) / 2.0,
+            'is_novel_range': False,
+            'is_economic_game_allocation': False,
+            'has_taking_option': False,
+            'bound_low': 0.08,   # default clipping bounds
+            'bound_high': 0.92,
+        }
+
+        scale_range = scale_max - scale_min
+
+        # ── Bipolar detection ──
+        # A scale is bipolar if it spans both negative and positive values
+        if scale_min < 0 and scale_max > 0:
+            result['is_bipolar'] = True
+            # Check symmetry (e.g., -100 to +100, -3 to +3)
+            if abs(abs(scale_min) - abs(scale_max)) <= 1:
+                result['is_symmetric'] = True
+                result['midpoint'] = 0.0
+            # Widen clipping bounds for bipolar scales — allow full range access
+            result['bound_low'] = 0.02
+            result['bound_high'] = 0.98
+
+        # ── Novel range detection ──
+        # Standard ranges: 1-5, 1-7, 1-9, 0-10, 0-100, 1-100
+        _standard_ranges = {
+            (1, 5), (1, 7), (1, 9), (1, 10), (1, 11),
+            (0, 10), (0, 100), (1, 100), (0, 6), (0, 4),
+        }
+        if (scale_min, scale_max) not in _standard_ranges:
+            # Allow small deviations (e.g., 0-101 ≈ standard)
+            _is_std = any(
+                abs(scale_min - sm) <= 1 and abs(scale_max - sx) <= 1
+                for sm, sx in _standard_ranges
+            )
+            if not _is_std:
+                result['is_novel_range'] = True
+
+        # ── Economic game allocation detection ──
+        _var_lower = variable_name.lower()
+        _study_ctx = ((self.study_title or "") + " " + (self.study_description or "")).lower()
+        _full_ctx = _var_lower + " " + _study_ctx
+        _econ_kws = ['dictator', 'allocat', 'give', 'giving', 'endow', 'split',
+                     'transfer', 'sent', 'offer', 'share', 'trust game',
+                     'ultimatum', 'public good', 'contribution', 'donate']
+        if any(kw in _full_ctx for kw in _econ_kws):
+            result['is_economic_game_allocation'] = True
+
+        # ── Taking option detection ──
+        # If the scale is bipolar AND it's an economic game, negative values = taking
+        _taking_kws = ['tak', 'steal', 'subtract', 'remov', 'reduc', 'negative',
+                       'punish', 'destroi', 'destroy', 'deduct']
+        if result['is_bipolar'] and (
+            result['is_economic_game_allocation'] or
+            any(kw in _full_ctx for kw in _taking_kws)
+        ):
+            result['has_taking_option'] = True
+            # For taking games, allow even wider bounds
+            result['bound_low'] = 0.01
+            result['bound_high'] = 0.99
+
+        return result
+
     def _get_scale_type_calibration(
         self,
         variable_name: str,
@@ -6400,10 +6516,18 @@ class EnhancedSimulationEngine:
             calibration['variance_multiplier'] = 1.0
             calibration['extremity_boost'] = 0.0
 
-        # ===== BIPOLAR SCALES (e.g., -3 to +3) =====
+        # ===== BIPOLAR SCALES (e.g., -3 to +3, -100 to +100) =====
+        # v1.0.8.6: Enhanced bipolar handling — wider variance, more spread
         elif scale_min < 0:
             calibration['central_tendency_reduction'] = -0.02  # Slight midpoint pull
-            calibration['variance_multiplier'] = 0.95
+            # Bipolar scales should show MORE variance (full range usage)
+            if scale_range >= 50:
+                # Wide bipolar (e.g., -100 to +100): very high variance
+                calibration['variance_multiplier'] = 1.30
+                calibration['extremity_boost'] = 0.08
+            else:
+                # Narrow bipolar (e.g., -3 to +3): moderate variance
+                calibration['variance_multiplier'] = 1.05
 
         # ===== WILLINGNESS TO PAY / NUMERIC ESTIMATES =====
         # Typically show positive skew and high variance
@@ -6520,6 +6644,15 @@ class EnhancedSimulationEngine:
         scale_calibration = self._get_scale_type_calibration(variable_name, scale_min, scale_max)
 
         # =====================================================================
+        # v1.0.8.6 STEP 2c: Scale geometry detection
+        # Classifies bipolar/novel/economic-game scales and sets appropriate
+        # clipping bounds. Critical for scales like -100 to +100 (taking DG).
+        # =====================================================================
+        _scale_geom = self._detect_scale_geometry(scale_min, scale_max, variable_name)
+        _bound_low = _scale_geom['bound_low']
+        _bound_high = _scale_geom['bound_high']
+
+        # =====================================================================
         # STEP 3: Get base response tendency
         # Calibrated from Krosnick (1991) optimizing vs satisficing
         # =====================================================================
@@ -6529,12 +6662,65 @@ class EnhancedSimulationEngine:
             base_tendency = modified_traits.get("scale_use_breadth", 0.58)
         base_tendency = _safe_trait_value(base_tendency, 0.58)
 
-        # Apply domain-specific adjustments
-        base_tendency += domain_calibration['mean_adjustment']
-        base_tendency += domain_calibration['positivity_bias']
+        # v1.0.8.6: For bipolar scales, START at the true midpoint (0.5 = zero)
+        # instead of the default positivity-biased 0.58. Positivity bias is a
+        # Likert-scale artifact (Diener et al., 1999) that doesn't apply to
+        # bipolar allocation scales where negative = taking.
+        if _scale_geom['is_bipolar']:
+            # Center at 0.5 (the zero point on bipolar scales)
+            base_tendency = 0.50 + (base_tendency - 0.58) * 0.5  # Dampen bias
+            # Still apply domain calibrations but with reduced positivity
+            base_tendency += domain_calibration['mean_adjustment']
+            base_tendency += domain_calibration['positivity_bias'] * 0.3  # Attenuate positivity
+        else:
+            # Apply domain-specific adjustments (standard unipolar behavior)
+            base_tendency += domain_calibration['mean_adjustment']
+            base_tendency += domain_calibration['positivity_bias']
         # Apply scale-type central tendency adjustment
         base_tendency += scale_calibration['central_tendency_reduction']
         base_tendency = float(np.clip(base_tendency, 0.05, 0.95))
+
+        # =====================================================================
+        # v1.0.8.6 STEP 3b: Subpopulation mixing for economic game variants
+        # When game variants introduce novel action spaces (e.g., taking),
+        # the population is NOT normally distributed — it consists of
+        # distinct behavioral types drawn from behavioral economics theory.
+        #
+        # SCIENTIFIC BASIS:
+        # List (2007): Introducing taking option reveals ~20% takers
+        # Bardsley (2008): Taking lowers mean giving to ~10-15%
+        # Engel (2011): Standard dictator is bimodal: mode at 0, mode at 50%
+        # Fehr & Schmidt (1999): Inequity aversion model predicts subpopulations
+        # =====================================================================
+        _game_variant = domain_calibration.get('_game_variant', '')
+        if _game_variant == 'dictator_taking' and _scale_geom['has_taking_option']:
+            # Subpopulation mixture for taking dictator game:
+            #   ~35% Fair dividers: give ~40-50% (tendency ≈ 0.70-0.75 on bipolar scale)
+            #   ~25% Selfish/zero: give 0 (tendency ≈ 0.50 = zero point)
+            #   ~20% Takers: take 10-40% (tendency ≈ 0.20-0.40)
+            #   ~20% Moderate givers: give ~10-25% (tendency ≈ 0.55-0.65)
+            _subpop_roll = rng.random()
+            if _subpop_roll < 0.35:
+                # Fair divider — give ~40-50%
+                base_tendency = 0.70 + rng.uniform(-0.05, 0.05)
+            elif _subpop_roll < 0.60:
+                # Selfish — give zero (or very close to it)
+                base_tendency = 0.50 + rng.uniform(-0.02, 0.02)
+            elif _subpop_roll < 0.80:
+                # TAKER — take 10-40% from the other person
+                base_tendency = 0.20 + rng.uniform(0.0, 0.15)
+            else:
+                # Moderate giver — give 10-25%
+                base_tendency = 0.55 + rng.uniform(0.0, 0.10)
+        elif _game_variant == 'dictator_third_party':
+            # Third-party punishment: most punish (60%), some don't (40%)
+            _subpop_roll = rng.random()
+            if _subpop_roll < 0.60:
+                # Punisher — allocate to punishment
+                base_tendency = 0.35 + rng.uniform(-0.10, 0.10)
+            else:
+                # Non-punisher — keep or give minimally
+                base_tendency = 0.55 + rng.uniform(-0.05, 0.10)
 
         # =====================================================================
         # STEP 4: Apply condition effect (Cohen's d based)
@@ -6752,7 +6938,8 @@ class EnhancedSimulationEngine:
             condition_effect *= _interaction_multiplier
 
         # Apply effect to tendency (normalized to 0-1 scale)
-        adjusted_tendency = float(np.clip(base_tendency + condition_effect, 0.08, 0.92))
+        # v1.0.8.6: Use dynamic bounds from scale geometry (wider for bipolar/novel)
+        adjusted_tendency = float(np.clip(base_tendency + condition_effect, _bound_low, _bound_high))
 
         # =====================================================================
         # STEP 4b: Apply cross-DV latent correlation effect
@@ -6782,7 +6969,7 @@ class EnhancedSimulationEngine:
             _latent_weight = 0.15 + (_consistency - 0.5) * 0.10 + (_attention - 0.5) * 0.06
             _latent_weight = float(np.clip(_latent_weight, 0.08, 0.22))
             _latent_effect = _latent_z * _latent_weight
-            adjusted_tendency = float(np.clip(adjusted_tendency + _latent_effect, 0.08, 0.92))
+            adjusted_tendency = float(np.clip(adjusted_tendency + _latent_effect, _bound_low, _bound_high))
 
         # =====================================================================
         # STEP 4c: Apply g-factor (general evaluation tendency)
@@ -6843,7 +7030,7 @@ class EnhancedSimulationEngine:
 
             _g_effect = _g_factor_z * _g_strength * _g_loading
             adjusted_tendency = float(np.clip(
-                adjusted_tendency + _g_effect, 0.08, 0.92
+                adjusted_tendency + _g_effect, _bound_low, _bound_high
             ))
 
         # =====================================================================
@@ -6865,8 +7052,12 @@ class EnhancedSimulationEngine:
                     # Weight increases with consistency: careless participants are less coherent
                     _coherence_weight = 0.05 + (_consistency - 0.5) * 0.06
                     _coherence_weight = float(np.clip(_coherence_weight, 0.02, 0.10))
+                    # v1.0.8.6: Stronger coherence pull for economic game DVs
+                    # A taker on one game should be selfish on another (Fehr & Schmidt 1999)
+                    if _scale_geom['is_economic_game_allocation']:
+                        _coherence_weight *= 1.5  # 50% stronger for game decisions
                     _pull = (_hist['running_mean'] - adjusted_tendency) * _coherence_weight
-                    adjusted_tendency = float(np.clip(adjusted_tendency + _pull, 0.08, 0.92))
+                    adjusted_tendency = float(np.clip(adjusted_tendency + _pull, _bound_low, _bound_high))
 
         # Calculate response center
         center = scale_min + (adjusted_tendency * scale_range)
@@ -6975,6 +7166,15 @@ class EnhancedSimulationEngine:
         sd *= scale_calibration['variance_multiplier']
         # Minimum SD to ensure realistic variation (floor at ~1.0)
         sd = max(sd, scale_range * 0.16)
+
+        # v1.0.8.6: Additional variance boost for novel/bipolar scales
+        # Novel scales (non-standard ranges) need more spread because participants
+        # are less anchored by familiar scale conventions. Bipolar scales with
+        # taking options need high variance to produce the bimodal distribution.
+        if _scale_geom['is_novel_range']:
+            sd *= 1.15  # 15% more variance for unfamiliar scales
+        if _scale_geom['has_taking_option']:
+            sd *= 1.20  # 20% more variance for taking games (bimodal shape)
 
         # Generate response from normal distribution
         response = float(rng.normal(center, sd))
@@ -7257,40 +7457,80 @@ class EnhancedSimulationEngine:
             _min_v, _max_v = float(min(vals)), float(max(vals))
             _range = _max_v - _min_v
 
-            # Intensity: how far from scale midpoint (assuming 1-7)
-            _midpoint = 4.0
-            profile['intensity'] = min(1.0, abs(_mean - _midpoint) / 3.0)
+            # v1.0.8.6: Detect scale range from actual response values
+            # If any response is negative, we're on a bipolar scale
+            _has_negative_vals = any(v < 0 for v in vals)
+            _inferred_max = max(abs(_min_v), abs(_max_v), 7.0)
+            _midpoint = 0.0 if _has_negative_vals else 4.0
+            _norm_divisor = _inferred_max if _has_negative_vals else 3.0
+
+            # Intensity: how far from scale midpoint
+            profile['intensity'] = min(1.0, abs(_mean - _midpoint) / max(_norm_divisor, 1.0))
 
             # Consistency: inverse of variability (low SD = high consistency)
-            profile['consistency_score'] = max(0.0, 1.0 - (_std / 3.0))
+            _sd_norm = _inferred_max / 2.33 if _has_negative_vals else 3.0  # scale-aware
+            profile['consistency_score'] = max(0.0, 1.0 - (_std / max(_sd_norm, 1.0)))
 
             # Straight-lining detection
             _unique_vals = len(set(int(v) for v in vals))
             profile['straight_lined'] = _unique_vals <= 2 and len(vals) >= 4
 
+            # v1.0.8.6: Flag negative response behavior (for taking games)
+            _neg_count = sum(1 for v in vals if v < 0)
+            profile['has_negative_responses'] = _neg_count > 0
+            profile['negative_response_fraction'] = _neg_count / len(vals) if vals else 0.0
+
             # Response pattern classification
-            if _mean >= 5.5:
-                profile['response_pattern'] = 'strongly_positive'
-            elif _mean >= 4.5:
-                profile['response_pattern'] = 'moderately_positive'
-            elif _mean <= 2.5:
-                profile['response_pattern'] = 'strongly_negative'
-            elif _mean <= 3.5:
-                profile['response_pattern'] = 'moderately_negative'
-            elif _std < 0.8:
-                profile['response_pattern'] = 'consistently_neutral'
+            # v1.0.8.6: Scale-aware thresholds for bipolar scales
+            if _has_negative_vals:
+                # Bipolar scale: classify around zero
+                if _mean > _inferred_max * 0.3:
+                    profile['response_pattern'] = 'strongly_positive'
+                elif _mean > _inferred_max * 0.1:
+                    profile['response_pattern'] = 'moderately_positive'
+                elif _mean < -_inferred_max * 0.3:
+                    profile['response_pattern'] = 'strongly_negative'
+                elif _mean < -_inferred_max * 0.1:
+                    profile['response_pattern'] = 'moderately_negative'
+                elif _std < _inferred_max * 0.15:
+                    profile['response_pattern'] = 'consistently_neutral'
+                else:
+                    profile['response_pattern'] = 'mixed_ambivalent'
             else:
-                profile['response_pattern'] = 'mixed_ambivalent'
+                if _mean >= 5.5:
+                    profile['response_pattern'] = 'strongly_positive'
+                elif _mean >= 4.5:
+                    profile['response_pattern'] = 'moderately_positive'
+                elif _mean <= 2.5:
+                    profile['response_pattern'] = 'strongly_negative'
+                elif _mean <= 3.5:
+                    profile['response_pattern'] = 'moderately_negative'
+                elif _std < 0.8:
+                    profile['response_pattern'] = 'consistently_neutral'
+                else:
+                    profile['response_pattern'] = 'mixed_ambivalent'
 
             # Build natural-language behavioral summary for LLM
-            _pattern_desc = {
-                'strongly_positive': f'rated items very positively (mean {_mean:.1f}/7)',
-                'moderately_positive': f'rated items somewhat positively (mean {_mean:.1f}/7)',
-                'strongly_negative': f'rated items very negatively (mean {_mean:.1f}/7)',
-                'moderately_negative': f'rated items somewhat negatively (mean {_mean:.1f}/7)',
-                'consistently_neutral': f'gave consistently moderate ratings (mean {_mean:.1f}/7, low variation)',
-                'mixed_ambivalent': f'gave mixed ratings (mean {_mean:.1f}/7, range {_min_v:.0f}-{_max_v:.0f})',
-            }
+            # v1.0.8.6: Scale-aware descriptions for bipolar scales
+            if _has_negative_vals:
+                _scale_desc = f"mean {_mean:.1f}, range {_min_v:.0f} to {_max_v:.0f}"
+                _pattern_desc = {
+                    'strongly_positive': f'allocated positively/gave generously ({_scale_desc})',
+                    'moderately_positive': f'gave moderate positive allocations ({_scale_desc})',
+                    'strongly_negative': f'took from others/allocated negatively ({_scale_desc})',
+                    'moderately_negative': f'made slightly negative allocations ({_scale_desc})',
+                    'consistently_neutral': f'allocated near zero consistently ({_scale_desc})',
+                    'mixed_ambivalent': f'gave mixed allocations ({_scale_desc})',
+                }
+            else:
+                _pattern_desc = {
+                    'strongly_positive': f'rated items very positively (mean {_mean:.1f}/7)',
+                    'moderately_positive': f'rated items somewhat positively (mean {_mean:.1f}/7)',
+                    'strongly_negative': f'rated items very negatively (mean {_mean:.1f}/7)',
+                    'moderately_negative': f'rated items somewhat negatively (mean {_mean:.1f}/7)',
+                    'consistently_neutral': f'gave consistently moderate ratings (mean {_mean:.1f}/7, low variation)',
+                    'mixed_ambivalent': f'gave mixed ratings (mean {_mean:.1f}/7, range {_min_v:.0f}-{_max_v:.0f})',
+                }
 
             _consistency_desc = ''
             if profile['straight_lined']:
@@ -7307,9 +7547,43 @@ class EnhancedSimulationEngine:
             elif _attn > 0.8:
                 _effort_desc = ' This participant was highly engaged and attentive.'
 
+            # v1.0.8.6: Theory-grounded behavioral strategy classification
+            # Per Manning & Horton (2025): Discrete agent types > continuous trait variation
+            # Classify this participant into a behavioral strategy based on their responses
+            _strategy = 'default'
+            if _has_negative_vals:
+                # Economic game with bipolar scale
+                if _mean < -_inferred_max * 0.1:
+                    _strategy = 'taker'
+                elif abs(_mean) < _inferred_max * 0.05:
+                    _strategy = 'selfish_zero'
+                elif _mean > _inferred_max * 0.35:
+                    _strategy = 'fair_divider'
+                else:
+                    _strategy = 'moderate_giver'
+            elif _mean >= 5.5:
+                _strategy = 'enthusiast'
+            elif _mean <= 2.5:
+                _strategy = 'critic'
+            elif _std < 0.5 and _mean > 3.0 and _mean < 5.0:
+                _strategy = 'satisficer'
+            profile['behavioral_strategy'] = _strategy
+
+            _strategy_desc = ''
+            _strategy_descs = {
+                'taker': ' Behavioral type: TAKER — this person took from others.',
+                'selfish_zero': ' Behavioral type: SELFISH — kept everything for themselves.',
+                'fair_divider': ' Behavioral type: FAIR DIVIDER — split approximately equally.',
+                'moderate_giver': ' Behavioral type: MODERATE GIVER — gave a small amount.',
+                'enthusiast': ' Behavioral type: ENTHUSIAST — consistently positive.',
+                'critic': ' Behavioral type: CRITIC — consistently negative.',
+                'satisficer': ' Behavioral type: SATISFICER — minimal effort, near midpoint.',
+            }
+            _strategy_desc = _strategy_descs.get(_strategy, '')
+
             profile['behavioral_summary'] = (
                 f"This participant {_pattern_desc.get(profile['response_pattern'], 'responded moderately')}."
-                f"{_consistency_desc}{_effort_desc}"
+                f"{_consistency_desc}{_effort_desc}{_strategy_desc}"
             )
         else:
             profile['intensity'] = 0.5

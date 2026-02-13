@@ -159,7 +159,7 @@ Based on recent LLM simulation research:
 """
 
 # Version identifier to help track deployed code
-__version__ = "1.0.8.5"  # v1.0.8.5: 20 iterative improvements
+__version__ = "1.0.8.6"  # v1.0.8.6: Novel DV adaptation mechanism
 
 import hashlib
 import random

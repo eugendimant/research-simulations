@@ -54,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.0.8.5"
-BUILD_ID = "20260213-v10850-20-iterative-improvements"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.0.8.6"
+BUILD_ID = "20260213-v10860-novel-dv-adaptation"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -118,7 +118,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.0.8.5"  # v1.0.8.5: 20 iterative improvements
+APP_VERSION = "1.0.8.6"  # v1.0.8.6: Novel DV adaptation mechanism
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -1187,12 +1187,35 @@ def _generate_preview_data(
         if _s_max <= _s_min:
             _s_max = _s_min + scale_points - 1
 
+        # v1.0.8.6: Detect bipolar scales for realistic preview distribution
+        _is_bipolar_preview = _s_min < 0 and _s_max > 0
+        _is_econ_preview = any(kw in (scale_name or '').lower() for kw in [
+            'dictator', 'allocat', 'giving', 'trust', 'ultimatum', 'endow',
+        ])
+
         if items == 1:
             # Single item
             var_name = scale_name.replace(' ', '_')
             values = []
             for row_idx in range(n_rows):
-                val = np.random.randint(_s_min, _s_max + 1)
+                if _is_bipolar_preview and _is_econ_preview:
+                    # v1.0.8.6: Realistic bipolar economic game preview
+                    # Show diverse subpopulations: some give, some keep, some take
+                    _preview_roll = np.random.random()
+                    if _preview_roll < 0.35:
+                        val = int(np.random.uniform(_s_max * 0.3, _s_max * 0.6))  # Giver
+                    elif _preview_roll < 0.55:
+                        val = int(np.random.uniform(-2, 2))  # Zero/selfish
+                    elif _preview_roll < 0.75:
+                        val = int(np.random.uniform(_s_min * 0.4, _s_min * 0.1))  # Taker
+                    else:
+                        val = int(np.random.uniform(_s_max * 0.05, _s_max * 0.25))  # Moderate giver
+                elif _is_bipolar_preview:
+                    # General bipolar: center near zero with full range spread
+                    val = int(np.random.normal(0, (_s_max - _s_min) / 4))
+                    val = max(_s_min, min(_s_max, val))
+                else:
+                    val = np.random.randint(_s_min, _s_max + 1)
                 # v1.0.1.3: Apply condition-aware shifts to preview data
                 # so researchers see realistic between-condition differences
                 if conditions:
@@ -1214,8 +1237,14 @@ def _generate_preview_data(
             item1_values = []
             mean_values = []
             for row_idx in range(n_rows):
-                val1 = np.random.randint(_s_min, _s_max + 1)
-                val_mean = np.random.uniform(_s_min, _s_max)
+                if _is_bipolar_preview:
+                    val1 = int(np.random.normal(0, (_s_max - _s_min) / 4))
+                    val1 = max(_s_min, min(_s_max, val1))
+                    val_mean = float(np.random.normal(0, (_s_max - _s_min) / 5))
+                    val_mean = max(float(_s_min), min(float(_s_max), val_mean))
+                else:
+                    val1 = np.random.randint(_s_min, _s_max + 1)
+                    val_mean = np.random.uniform(_s_min, _s_max)
                 # v1.0.1.3: Apply condition-aware shifts to preview data
                 # so researchers see realistic between-condition differences
                 if conditions:
