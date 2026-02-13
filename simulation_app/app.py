@@ -54,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.0.7.6"
-BUILD_ID = "20260213-v10706-merge-main-fix-audit-dtype"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.0.7.7"
+BUILD_ID = "20260213-v10707-safe-reload-version-mismatch"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -94,16 +94,23 @@ try:
 except ImportError:
     _HAS_CORRELATION_MODULE = False
 
-# Verify expected utils version; do not hot-purge sys.modules at runtime.
-# Purging modules caused intermittent import KeyError on Streamlit Cloud with
-# concurrent sessions. We now surface a warning and rely on clean restarts /
-# deploy refreshes to load the matching utils package safely.
+# Verify expected utils version.  If there is a mismatch (stale module cache
+# after deploy), attempt a single `importlib.reload()` to refresh the version.
+# This is SAFE for concurrent sessions — it re-executes the module code
+# in-place without purging sys.modules (which caused KeyError crashes in
+# v1.4.3.1).  Only warn if reload still doesn't resolve the mismatch.
+import importlib as _importlib
 if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION:
-    st.warning(
-        f"Utils version mismatch: expected {REQUIRED_UTILS_VERSION}, "
-        f"got {getattr(utils, '__version__', '?')}. "
-        "Please restart/redeploy the app to refresh imports."
-    )
+    try:
+        _importlib.reload(utils)
+    except Exception:
+        pass
+    if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION:
+        st.warning(
+            f"Utils version mismatch: expected {REQUIRED_UTILS_VERSION}, "
+            f"got {getattr(utils, '__version__', '?')}. "
+            "Please restart/redeploy the app to refresh imports."
+        )
 
 
 # -----------------------------
@@ -111,7 +118,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.0.7.6"  # v1.0.7.6: Merge main + fix audit StringDtype detection
+APP_VERSION = "1.0.7.7"  # v1.0.7.7: Safe importlib.reload on version mismatch
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
