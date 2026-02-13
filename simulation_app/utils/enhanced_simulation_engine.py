@@ -45,7 +45,7 @@ This module is designed to run inside a `utils/` package (i.e., imported as
 """
 
 # Version identifier to help track deployed code
-__version__ = "1.0.8.7"  # v1.0.8.7: Structured scientific knowledge base
+__version__ = "1.0.8.8"  # v1.0.8.8: Admin counter persistence fix
 
 # =============================================================================
 # SCIENTIFIC FOUNDATIONS FOR SIMULATION

@@ -54,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.0.8.7"
-BUILD_ID = "20260213-v10870-scientific-knowledge-base"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.0.8.8"
+BUILD_ID = "20260213-v10880-admin-counter-persist"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -118,7 +118,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.0.8.7"  # v1.0.8.7: Structured scientific knowledge base
+APP_VERSION = "1.0.8.8"  # v1.0.8.8: Admin counter persistence fix
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -6918,19 +6918,56 @@ _ADMIN_PERSIST_FILE = _ADMIN_PERSIST_DIR / "sim_history.json"
 
 
 def _save_admin_history() -> None:
-    """Persist admin simulation history to disk."""
+    """Persist admin simulation history to disk.
+
+    v1.0.8.8: Merge with existing disk data before writing to prevent
+    counter resets when a new session saves before loading old data.
+    """
     try:
         _ADMIN_PERSIST_DIR.mkdir(parents=True, exist_ok=True)
         _history = st.session_state.get("_admin_sim_history", [])
         _llm_stats = st.session_state.get("_last_llm_stats", {})
         _engine_log = st.session_state.get("_admin_engine_log", [])
+
+        # v1.0.8.8: Load existing disk data first and merge to prevent
+        # overwriting history from prior sessions.
+        _existing_disk: Dict[str, Any] = {}
+        try:
+            if _ADMIN_PERSIST_FILE.exists():
+                _existing_disk = json.loads(_ADMIN_PERSIST_FILE.read_text())
+        except Exception:
+            pass
+
+        # Merge simulation history: deduplicate by timestamp
+        _disk_history = _existing_disk.get("sim_history", [])
+        _existing_timestamps = {e.get("timestamp") for e in _history}
+        for _dh in _disk_history:
+            if _dh.get("timestamp") not in _existing_timestamps:
+                _history.insert(0, _dh)  # Prepend older entries
+                _existing_timestamps.add(_dh.get("timestamp"))
+        # Also update session state so subsequent saves stay consistent
+        st.session_state["_admin_sim_history"] = _history
+
+        # Merge cumulative counters: take max of session vs disk
+        _disk_exhaustions = _existing_disk.get("total_exhaustions", 0)
+        _disk_dialog = _existing_disk.get("dialog_shown", 0)
+        _disk_key_activations = _existing_disk.get("user_key_activations", 0)
+
+        _session_exhaustions = st.session_state.get("_admin_total_exhaustions", 0)
+        _session_dialog = st.session_state.get("_admin_llm_exhaust_dialog_shown", 0)
+        _session_key_activations = st.session_state.get("_admin_user_key_activations", 0)
+
+        _merged_exhaustions = max(_disk_exhaustions, _session_exhaustions)
+        _merged_dialog = max(_disk_dialog, _session_dialog)
+        _merged_key_activations = max(_disk_key_activations, _session_key_activations)
+
         _data = {
             "sim_history": _history,
             "last_llm_stats": _llm_stats,
             "engine_log": _engine_log,
-            "total_exhaustions": st.session_state.get("_admin_total_exhaustions", 0),
-            "dialog_shown": st.session_state.get("_admin_llm_exhaust_dialog_shown", 0),
-            "user_key_activations": st.session_state.get("_admin_user_key_activations", 0),
+            "total_exhaustions": _merged_exhaustions,
+            "dialog_shown": _merged_dialog,
+            "user_key_activations": _merged_key_activations,
         }
         _ADMIN_PERSIST_FILE.write_text(json.dumps(_data, default=str))
     except Exception:
@@ -6938,7 +6975,11 @@ def _save_admin_history() -> None:
 
 
 def _load_admin_history() -> None:
-    """Load persisted admin simulation history from disk into session state."""
+    """Load persisted admin simulation history from disk into session state.
+
+    v1.0.8.8: Now restores ALL cumulative counters (exhaustions, dialog_shown,
+    user_key_activations) — previously only restored exhaustions.
+    """
     if st.session_state.get("_admin_history_loaded"):
         return  # Already loaded this session
     try:
@@ -6960,10 +7001,18 @@ def _load_admin_history() -> None:
                 st.session_state["_last_llm_stats"] = _data.get("last_llm_stats", {})
             if not st.session_state.get("_admin_engine_log"):
                 st.session_state["_admin_engine_log"] = _data.get("engine_log", [])
-            # Restore cumulative counters
+            # v1.0.8.8: Restore ALL cumulative counters (not just exhaustions)
             _stored_exhaustions = _data.get("total_exhaustions", 0)
             _current_exhaustions = st.session_state.get("_admin_total_exhaustions", 0)
             st.session_state["_admin_total_exhaustions"] = max(_stored_exhaustions, _current_exhaustions)
+
+            _stored_dialog = _data.get("dialog_shown", 0)
+            _current_dialog = st.session_state.get("_admin_llm_exhaust_dialog_shown", 0)
+            st.session_state["_admin_llm_exhaust_dialog_shown"] = max(_stored_dialog, _current_dialog)
+
+            _stored_key_activations = _data.get("user_key_activations", 0)
+            _current_key_activations = st.session_state.get("_admin_user_key_activations", 0)
+            st.session_state["_admin_user_key_activations"] = max(_stored_key_activations, _current_key_activations)
     except Exception:
         pass  # File persistence is best-effort
     st.session_state["_admin_history_loaded"] = True
@@ -7636,10 +7685,22 @@ with st.sidebar:
 # v1.4.14: Pending reset handler — MUST run before ANY widgets render.
 # The "Start Over" button sets the flag; we clear state here so that
 # Streamlit widgets see empty session_state on this render cycle.
+# v1.0.8.8: Preserve admin tracking keys so counters survive "Start Over".
+_ADMIN_PRESERVE_KEYS = {
+    "active_page",
+    "_admin_sim_history",
+    "_admin_history_loaded",
+    "_admin_authenticated",
+    "_last_llm_stats",
+    "_admin_engine_log",
+    "_admin_total_exhaustions",
+    "_admin_llm_exhaust_dialog_shown",
+    "_admin_user_key_activations",
+    "_admin_generation_errors",
+}
 if st.session_state.pop("_pending_reset", False):
-    _keys_to_preserve = {"active_page"}
     for _k in list(st.session_state.keys()):
-        if _k not in _keys_to_preserve:
+        if _k not in _ADMIN_PRESERVE_KEYS:
             try:
                 del st.session_state[_k]
             except Exception:
@@ -7666,6 +7727,13 @@ if _pending_nav is not None:
 
 if "active_page" not in st.session_state:
     st.session_state["active_page"] = -1  # Landing page
+
+# v1.0.8.8: Load admin history early so counters are in session state
+# BEFORE any simulation runs.  Previously _load_admin_history() was only
+# called from _render_admin_dashboard(), meaning a simulation that ran
+# before visiting ?admin=1 would save to disk with only the current
+# session's data, overwriting all prior history.
+_load_admin_history()
 
 # ── v1.0.4.7: Admin dashboard — hidden page via ?admin=1 query param ──
 _admin_mode = False
