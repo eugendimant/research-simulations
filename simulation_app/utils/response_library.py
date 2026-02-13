@@ -63,7 +63,7 @@ association, impression, perception, feedback, comment, observation, general
 Version: 1.8.5 - Improved domain detection with weighted scoring and disambiguation
 """
 
-__version__ = "1.0.8.3"
+__version__ = "1.0.8.4"
 
 import random
 import re
@@ -6986,6 +6986,8 @@ class ComprehensiveResponseGenerator:
         question_name: str = "",
         participant_seed: int = 0,
         behavioral_profile: Optional[Dict[str, Any]] = None,
+        question_intent: str = "",  # v1.0.8.4: Pre-computed intent from engine
+        question_context: str = "",  # v1.0.8.4: Raw user-provided context
     ) -> str:
         """
         Generate a context-appropriate response to an open-ended question.
@@ -7043,12 +7045,16 @@ class ComprehensiveResponseGenerator:
             if len(_ctx_parts) > 1:
                 _embedded_context = _ctx_parts[1].split("\n")[0].strip()
 
+        # v1.0.8.4: Use raw question_context as fallback if embedded context is empty
+        _effective_context = _embedded_context or question_context
+
         # Get appropriate template (using local RNG) — now passes question
-        # text and context for context-grounded response generation
+        # text, context, AND pre-computed intent for routing
         response = self._get_template_response(
             domain, q_type, sentiment, local_rng,
             question_text=question_text,
-            question_context=_embedded_context,
+            question_context=_effective_context,
+            question_intent=question_intent,  # v1.0.8.4: Route by intent
         )
 
         # Personalize response based on question content (using local RNG)
@@ -7065,7 +7071,10 @@ class ComprehensiveResponseGenerator:
 
         # Handle disengaged/careless personas
         if _effective_engagement < 0.3:
-            response = self._make_careless(response, _effective_engagement, local_rng, question_text=question_text)
+            response = self._make_careless(response, _effective_engagement, local_rng,
+                                          question_text=question_text,
+                                          question_context=_effective_context,
+                                          question_intent=question_intent)
 
         # Add variation (using local RNG)
         response = add_variation(response, persona_verbosity, persona_formality, local_rng)
@@ -7080,7 +7089,8 @@ class ComprehensiveResponseGenerator:
         # numeric response pattern from the behavioral profile
         if behavioral_profile and isinstance(behavioral_profile, dict):
             response = self._enforce_behavioral_coherence(
-                response, behavioral_profile, sentiment, local_rng
+                response, behavioral_profile, sentiment, local_rng,
+                question_intent=question_intent,
             )
 
         # v1.0.5.5: Disabled _add_topic_context() — it added meta-commentary
@@ -7750,6 +7760,7 @@ class ComprehensiveResponseGenerator:
         local_rng: random.Random = None,
         question_text: str = "",
         question_context: str = "",
+        question_intent: str = "",  # v1.0.8.4: Pre-computed intent
     ) -> str:
         """Get a template response for the given domain and sentiment.
 
@@ -7767,7 +7778,8 @@ class ComprehensiveResponseGenerator:
         _subject = self._extract_response_subject(question_text, question_context)
         if _subject:
             return self._generate_context_grounded_response(
-                _subject, sentiment, q_type, domain, rng
+                _subject, sentiment, q_type, domain, rng,
+                override_intent=question_intent,  # v1.0.8.4: Use pre-computed intent
             )
 
         # v1.0.5.0: Try question-type-matched templates first, then fall back to explanation
@@ -7854,6 +7866,7 @@ class ComprehensiveResponseGenerator:
         q_type: QuestionType,
         domain: StudyDomain,
         rng: random.Random,
+        override_intent: str = "",  # v1.0.8.4: Pre-computed intent from engine
     ) -> str:
         """Generate a response grounded in the specific question subject.
 
@@ -8063,10 +8076,14 @@ class ComprehensiveResponseGenerator:
         # Use first key phrase as richer topic if available
         _rich_topic = _key_phrases[0] if _key_phrases else _topic
 
-        # ── Step 2: Detect question INTENT — v1.0.8.3 expanded patterns ──
+        # ── Step 2: Detect question INTENT — v1.0.8.4 with override ──
+        # v1.0.8.4: Use pre-computed intent from engine if available (avoids
+        # re-detection inconsistency between engine and ComprehensiveResponseGenerator)
         _intent = "opinion"  # default
+        if override_intent and override_intent != "opinion":
+            _intent = override_intent
         # v1.0.8.3: Check for creative/narrative/disclosure intents FIRST — most specific
-        if any(w in _subj_lower for w in ('conspiracy', 'theory', 'believe in', 'crazy belie',
+        elif any(w in _subj_lower for w in ('conspiracy', 'theory', 'believe in', 'crazy belie',
                                            'paranormal', 'supernatural', 'superstition')):
             _intent = "creative_belief"
         elif any(w in _subj_lower for w in ('secret', 'only your family', 'nobody knows',
@@ -8113,17 +8130,21 @@ class ComprehensiveResponseGenerator:
                                               'your stance', 'your position', 'where do you stand',
                                               'what is your take', 'how do you see')):
             _intent = "opinion"
+        elif any(w in _subj_lower for w in ('imagine if', 'suppose', 'hypothetically',
+                                              'what would happen', 'what if', 'if you were',
+                                              'what would you do if', 'in a scenario where')):
+            _intent = "hypothetical"
         elif any(w in _subj_lower for w in ('would you', 'will you', 'do you plan', 'how likely',
                                               'in the future', 'what would you do',
-                                              'imagine if', 'suppose', 'hypothetically',
-                                              'what would happen', 'what if', 'predict')):
+                                              'predict', 'expect', 'forecast')):
             _intent = "prediction"
         elif any(w in _subj_lower for w in ('how do you cope', 'how do you handle', 'how do you manage',
                                               'what do you do when', 'how do you deal')):
             _intent = "description"
         elif any(w in _subj_lower for w in ('recommend', 'advice', 'suggest', 'what should',
-                                              'what would you advise', 'how should')):
-            _intent = "prediction"
+                                              'what would you advise', 'how should',
+                                              'tips for', 'best way to')):
+            _intent = "recommendation"
         elif _action:
             # If an action was detected, the question is likely asking about a decision
             _intent = "decision_explanation"
@@ -8384,6 +8405,80 @@ class ComprehensiveResponseGenerator:
                     f"going forward it really depends on the circumstances with {_topic}",
                     f"I could go either way on {_topic} in the future",
                     f"I'd keep my options open regarding {_topic}",
+                ]
+
+        # ── INTENT: hypothetical (v1.0.8.4) ──
+        # "Imagine if..." / "What would you do if..." → scenario-based response
+        elif _intent == "hypothetical":
+            if sentiment in ('very_positive', 'positive'):
+                _cores = [
+                    f"if that happened with {_topic} I think I'd embrace it wholeheartedly",
+                    f"in that scenario I'd be pretty excited about {_topic}",
+                    f"honestly if that were the case with {_topic} I'd be all for it",
+                    f"I'd jump at the chance to engage positively with {_topic}",
+                    f"in that hypothetical I would lean into {_topic} with enthusiasm",
+                    f"if I imagine that scenario with {_topic} I see it going well",
+                    f"that situation would make me feel optimistic about {_topic}",
+                    f"I think in that case I'd support {_topic} even more than I already do",
+                ]
+            elif sentiment in ('very_negative', 'negative'):
+                _cores = [
+                    f"if that happened with {_topic} I'd be pretty worried honestly",
+                    f"in that scenario I'd probably try to distance myself from {_topic}",
+                    f"honestly if that were the case with {_topic} I'd be concerned",
+                    f"I'd be reluctant to go along with {_topic} in that situation",
+                    f"in that hypothetical I would have serious reservations about {_topic}",
+                    f"if I imagine that scenario with {_topic} I see real problems",
+                    f"that situation would make me more cautious about {_topic}",
+                    f"I think in that case I'd push back against {_topic}",
+                ]
+            else:
+                _cores = [
+                    f"if that happened with {_topic} I honestly don't know what I'd do",
+                    f"in that scenario I'd probably need time to figure out {_topic}",
+                    f"that's a tough one when it comes to {_topic}",
+                    f"I'd have to weigh the options carefully with {_topic}",
+                    f"in that hypothetical my response to {_topic} would depend on the details",
+                    f"if I imagine that scenario I'm genuinely torn about {_topic}",
+                    f"that situation would require a lot of thought about {_topic}",
+                    f"I think in that case I'd want more info before deciding on {_topic}",
+                ]
+
+        # ── INTENT: recommendation (v1.0.8.4) ──
+        # "What would you recommend?" / "What advice would you give?" → actionable suggestion
+        elif _intent == "recommendation":
+            if sentiment in ('very_positive', 'positive'):
+                _cores = [
+                    f"I'd definitely recommend engaging with {_topic}, it's been a positive experience",
+                    f"my advice would be to give {_topic} a real chance",
+                    f"I would suggest that people approach {_topic} with an open mind, it's worth it",
+                    f"I'd recommend {_topic} based on my own experience with it",
+                    f"I think the best approach to {_topic} is to dive in and embrace it",
+                    f"my recommendation is to take {_topic} seriously and invest in it",
+                    f"the best advice I can give about {_topic} is to stay positive and committed",
+                    f"I would tell anyone asking about {_topic} to go for it",
+                ]
+            elif sentiment in ('very_negative', 'negative'):
+                _cores = [
+                    f"I'd recommend being really careful with {_topic}",
+                    f"my advice would be to think twice before getting involved with {_topic}",
+                    f"I would suggest approaching {_topic} with serious caution",
+                    f"I'd recommend that people look at the downsides of {_topic} first",
+                    f"the best approach to {_topic} in my view is to be skeptical",
+                    f"my recommendation is to avoid {_topic} unless absolutely necessary",
+                    f"I'd tell anyone asking about {_topic} to do their research first",
+                    f"the advice I'd give about {_topic} is to lower your expectations",
+                ]
+            else:
+                _cores = [
+                    f"I'd recommend doing some research before committing to {_topic}",
+                    f"my advice is to consider both sides of {_topic} carefully",
+                    f"I would suggest keeping an open mind about {_topic} but being realistic",
+                    f"I'd recommend trying {_topic} on a small scale first to see how it goes",
+                    f"the best approach to {_topic} is probably to start slow and evaluate",
+                    f"my recommendation is to weigh your own priorities when it comes to {_topic}",
+                    f"I'd tell someone asking about {_topic} that it depends on their situation",
+                    f"the honest advice on {_topic} is that there's no one-size-fits-all answer",
                 ]
 
         # ── INTENT: explanation (general "why" without specific action) ──
@@ -8654,6 +8749,16 @@ class ComprehensiveResponseGenerator:
                     " That's my best guess.", " Time will tell if I'm right.",
                     " We'll see how it goes.", " That's what I expect anyway.",
                     " I could be wrong but that's where I'd put my money.",
+                ],
+                "hypothetical": [
+                    " But who knows, it's all hypothetical.", " Hard to say for certain.",
+                    " That's my honest reaction to the scenario.", " In reality it might go differently.",
+                    " I'd have to actually be in that situation to know for sure.",
+                ],
+                "recommendation": [
+                    " That's my honest recommendation.", " Take it or leave it, that's my advice.",
+                    " Your situation might be different though.", " I hope that helps.",
+                    " That's what I'd tell a friend.", " Do with that what you will.",
                 ],
                 "opinion": [
                     " That's my honest take.", " I said what I said.",
@@ -9681,6 +9786,7 @@ class ComprehensiveResponseGenerator:
         behavioral_profile: Dict[str, Any],
         sentiment: str,
         local_rng: random.Random,
+        question_intent: str = "",
     ) -> str:
         """Ensure open-text response is coherent with numeric behavioral data.
 
@@ -9691,6 +9797,12 @@ class ComprehensiveResponseGenerator:
         4. Social desirability modulation (high-SD adds qualifying hedges)
         5. Consistency-driven thematic coherence (consistent raters = consistent themes)
         6. Extremity-driven absolute language (extreme responders use strong words)
+
+        v1.0.8.4: Added question_intent parameter. For narrative/creative intents
+        (creative_belief, personal_disclosure, creative_narrative, personal_story),
+        sentiment polarity correction is SKIPPED because it would destroy the
+        generated content. A conspiracy theory doesn't need a "positive" lead-in
+        just because the participant rated other items positively.
 
         Scientific basis:
         - Krosnick (1999): Satisficing respondents show cross-method consistency
@@ -9722,6 +9834,13 @@ class ComprehensiveResponseGenerator:
                 response = ' '.join(words[:8])
             return response
 
+        # v1.0.8.4: Skip polarity correction for narrative/creative intents.
+        # A conspiracy theory or personal disclosure shouldn't be overridden with
+        # sentiment-correction phrases like "Overall I felt pretty positively about this."
+        _narrative_intents = {'creative_belief', 'personal_disclosure', 'creative_narrative',
+                              'personal_story', 'hypothetical'}
+        _skip_polarity = question_intent in _narrative_intents
+
         # 2. Expanded sentiment indicator lists for polarity correction
         _positive_indicators = [
             'good', 'great', 'like', 'liked', 'enjoy', 'enjoyed', 'positive',
@@ -9742,7 +9861,8 @@ class ComprehensiveResponseGenerator:
         _has_negative = any(w in _resp_lower for w in _negative_indicators)
 
         # Positive rater with negative-sounding text
-        if _pattern in ('strongly_positive', 'moderately_positive') and _mean is not None and _mean >= 5.0:
+        # v1.0.8.4: Skip for narrative intents — don't prepend sentiment to stories/theories
+        if not _skip_polarity and _pattern in ('strongly_positive', 'moderately_positive') and _mean is not None and _mean >= 5.0:
             if _has_negative and not _has_positive:
                 _positive_leads = [
                     "Overall I felt pretty positively about this. ",
@@ -9753,7 +9873,7 @@ class ComprehensiveResponseGenerator:
                 response = local_rng.choice(_positive_leads) + response
 
         # Negative rater with positive-sounding text
-        elif _pattern in ('strongly_negative', 'moderately_negative') and _mean is not None and _mean <= 3.0:
+        elif not _skip_polarity and _pattern in ('strongly_negative', 'moderately_negative') and _mean is not None and _mean <= 3.0:
             if _has_positive and not _has_negative:
                 _negative_leads = [
                     "Honestly I wasn't too happy about this. ",
@@ -9832,7 +9952,9 @@ class ComprehensiveResponseGenerator:
 
         return response
 
-    def _make_careless(self, response: str, engagement: float, local_rng: random.Random = None, question_text: str = "") -> str:
+    def _make_careless(self, response: str, engagement: float, local_rng: random.Random = None,
+                        question_text: str = "", question_context: str = "",
+                        question_intent: str = "") -> str:
         """Transform response to reflect careless/disengaged responding.
 
         v1.0.3.8: Careless responses are now STILL ON-TOPIC. A careless
@@ -9844,6 +9966,12 @@ class ComprehensiveResponseGenerator:
         topic extraction. If topic words can't be extracted from the
         response itself, we extract from the original question text.
         This eliminates the 'it' pronoun fallback entirely.
+
+        v1.0.8.4: Added question_context and question_intent parameters.
+        Context serves as secondary fallback after question_text for topic
+        extraction. Intent enables intent-specific careless templates —
+        careless respondents answering narrative/creative questions still
+        produce a SHORT version of that content type, not generic "idk".
         """
         rng = local_rng or random.Random()
 
@@ -9887,7 +10015,74 @@ class ComprehensiveResponseGenerator:
                 _qt_words = re.findall(r'\b[a-zA-Z]{4,}\b', question_text.lower())
                 _topic_words = [w for w in _qt_words if w not in _stop][:3]
 
+            # v1.0.8.4: If question_text didn't yield topic words, try question_context
+            if not _topic_words and question_context:
+                _ctx_words = re.findall(r'\b[a-zA-Z]{4,}\b', question_context.lower())
+                _topic_words = [w for w in _ctx_words if w not in _stop][:3]
+
             _topic = ' '.join(_topic_words[:2]) if _topic_words else 'the question'
+
+            # v1.0.8.4: Intent-specific careless templates for narrative/creative questions.
+            # Even careless respondents produce SHORT content matching the question type,
+            # not just generic "idk". A careless person answering "what's your conspiracy
+            # theory" writes "idk maybe government stuff" not "idk".
+            if question_intent == "creative_belief":
+                careless_templates = [
+                    "idk maybe the government is hiding stuff",
+                    "i think theres some conspiracy about big companies but idk details",
+                    f"something about {_topic} being rigged probably",
+                    "everything is a conspiracy if you think about it lol",
+                    f"{_topic} idk its all sketchy",
+                    "the usual stuff about politicians lying idk",
+                    f"i dont trust {_topic} but cant explain why really",
+                    "something something cover up idk",
+                ]
+                return rng.choice(careless_templates)
+            elif question_intent == "personal_disclosure":
+                careless_templates = [
+                    "i dont really want to share that stuff",
+                    "my family knows some things but whatever",
+                    f"idk something about {_topic} i guess",
+                    "theres stuff but id rather not say",
+                    "nothing that interesting honestly",
+                    "my family knows me better than most people i guess",
+                    "personal stuff that i dont talk about",
+                    "id rather keep it to myself tbh",
+                ]
+                return rng.choice(careless_templates)
+            elif question_intent in ("creative_narrative", "personal_story"):
+                careless_templates = [
+                    f"i have a {_topic} story but its not that interesting",
+                    f"something happened with {_topic} once idk",
+                    f"i dont remember much about {_topic}",
+                    f"{_topic} thing happened to me once whatever",
+                    "cant really think of anything specific",
+                    f"i guess there was this one time with {_topic}",
+                    f"nothing crazy about {_topic} in my life",
+                    "idk i dont have a good story for this",
+                ]
+                return rng.choice(careless_templates)
+            elif question_intent == "hypothetical":
+                careless_templates = [
+                    f"idk probably whatever about {_topic}",
+                    f"id just go with the flow on {_topic}",
+                    "i have no idea honestly",
+                    f"depends on {_topic} i guess",
+                    "hard to say",
+                    f"idk id figure out {_topic} when it happens",
+                    "whatever seemed right i guess",
+                ]
+                return rng.choice(careless_templates)
+            elif question_intent == "recommendation":
+                careless_templates = [
+                    f"idk just do whatever with {_topic}",
+                    f"id probably just go with {_topic}",
+                    "no real advice honestly",
+                    f"idk figure out {_topic} yourself i guess",
+                    f"whatever works for {_topic}",
+                    "i dont have good advice for this",
+                ]
+                return rng.choice(careless_templates)
 
             # v1.0.8.0: Greatly expanded careless templates — 25 variants with more natural
             # patterns that look like real inattentive survey responses

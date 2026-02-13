@@ -45,7 +45,7 @@ This module is designed to run inside a `utils/` package (i.e., imported as
 """
 
 # Version identifier to help track deployed code
-__version__ = "1.0.8.3"  # v1.0.8.3: OE narrative fix
+__version__ = "1.0.8.4"  # v1.0.8.4: OE pipeline hardening
 
 # =============================================================================
 # SCIENTIFIC FOUNDATIONS FOR SIMULATION
@@ -7500,6 +7500,49 @@ class EnhancedSimulationEngine:
         _consistency = _safe_trait_value(traits.get("response_consistency"), 0.6)
         _extremity = _safe_trait_value(traits.get("extremity"), 0.4)
 
+        # v1.0.8.4: Early question intent detection — computed BEFORE generator cascade
+        # so ALL generators (LLM, Comprehensive, TextResponse) can use it.
+        # This uses both the original question text and user-provided context.
+        _qt_early = (_original_question_text or question_text or "").lower()
+        _ctx_early = (question_context or "").lower()
+        _both_early = f"{_qt_early} {_ctx_early}"
+        _early_intent = "opinion"  # default
+        if any(w in _both_early for w in ('conspiracy', 'theory', 'believe in', 'crazy belie',
+                                           'paranormal', 'supernatural', 'superstition')):
+            _early_intent = "creative_belief"
+        elif any(w in _both_early for w in ('secret', 'only your family', 'nobody knows',
+                                             'never told', 'private', 'confession', 'confess',
+                                             'reveal', 'admit', 'embarrassing')):
+            _early_intent = "personal_disclosure"
+        elif any(w in _qt_early for w in ('tell us your', 'share your', 'write about your',
+                                           'describe your')):
+            if any(w in _both_early for w in ('craziest', 'wildest', 'favorite', 'most',
+                                               'biggest', 'worst', 'best', 'funniest',
+                                               'scariest', 'strangest')):
+                _early_intent = "creative_narrative"
+            elif any(w in _both_early for w in ('experience', 'story', 'time when',
+                                                 'moment', 'situation', 'incident')):
+                _early_intent = "personal_story"
+        elif any(w in _qt_early for w in ('hypothetical', 'if you were', 'imagine',
+                                           'suppose', 'what if', 'what would you',
+                                           'in a scenario', 'what would happen')):
+            _early_intent = "hypothetical"
+        elif any(w in _qt_early for w in ('predict', 'expect', 'future', 'will happen',
+                                           'forecast', 'what do you think will',
+                                           'how likely', 'do you plan')):
+            _early_intent = "prediction"
+        elif any(w in _qt_early for w in ('recommend', 'suggest', 'advice', 'should',
+                                           'tips for', 'best way to', 'what would you advise')):
+            _early_intent = "recommendation"
+        elif any(w in _qt_early for w in ('why', 'explain', 'reason', 'because')):
+            _early_intent = "explanation"
+        elif any(w in _qt_early for w in ('how do you feel', 'feelings', 'emotions', 'react')):
+            _early_intent = "emotional_reaction"
+        elif any(w in _qt_early for w in ('describe', 'tell us about', 'what happened')):
+            _early_intent = "description"
+        elif any(w in _qt_early for w in ('evaluate', 'rate', 'assess', 'compare')):
+            _early_intent = "evaluation"
+
         # v1.4.9: Try LLM generator first (question-specific, persona-aligned)
         if self.llm_generator is not None:
             try:
@@ -7543,6 +7586,8 @@ class EnhancedSimulationEngine:
                     question_name=unique_question_id,
                     participant_seed=participant_seed,
                     behavioral_profile=behavioral_profile,
+                    question_intent=_early_intent,  # v1.0.8.4: Pass intent for template routing
+                    question_context=question_context,  # v1.0.8.4: Pass raw context
                 )
                 if _comp_result and _comp_result.strip():
                     return _comp_result
@@ -8396,8 +8441,9 @@ class EnhancedSimulationEngine:
             "question_text": question_text,
             "study_domain": study_domain,
             "condition": condition,
-            # v1.0.5.0: Rich topic intelligence for all generators
-            "question_intent": _question_intent,
+            # v1.0.8.4: Use _early_intent (computed before cascade) for consistency
+            # with what ComprehensiveResponseGenerator receives
+            "question_intent": _early_intent,
             "entities": _entities,
             "topic_words": _topic_words,
             "domain_hint": _domain_hint,
