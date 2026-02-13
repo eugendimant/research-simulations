@@ -45,7 +45,7 @@ This module is designed to run inside a `utils/` package (i.e., imported as
 """
 
 # Version identifier to help track deployed code
-__version__ = "1.0.6.8"  # v1.0.6.8: LLM-first enforcement and OE dedup safety fixes
+__version__ = "1.0.7.5"  # v1.0.7.5: Fix version sync across all locations
 
 # =============================================================================
 # SCIENTIFIC FOUNDATIONS FOR SIMULATION
