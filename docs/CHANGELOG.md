@@ -1,4 +1,39 @@
 
+## 2026-02-13 — v1.0.8.1
+### Generation Method Chooser, Real-Time Progress Counter, SocSim Integration
+
+#### 4-Option Generation Method Chooser
+- **New pre-generation UI**: Users now choose their simulation method before clicking Generate
+- **Option 1: Built-in AI (Recommended)** — free LLM access via built-in API keys (Groq, Cerebras, Google AI, Poe, OpenRouter)
+- **Option 2: Your Own API Key** — user provides their own key with auto-detection for 6 providers and visual format validation
+- **Option 3: Built-in Template Engine** — 225+ domain templates, 58+ personas, 40 question types, no API needed
+- **Option 4: Experimental (SocSim)** — evidence-traceable behavioral simulation (Fehr-Schmidt models, IRT, 28 economic games)
+- Each option has an expandable "What does this do?" tooltip with detailed explanation
+- Visual selection highlighting with checkmark indicator
+
+#### Real-Time Progress Counter
+- Replaced static "This typically takes 15-45 seconds" message with live participant counter
+- Shows phase-specific updates: persona assignment, scale generation, OE preparation, participant simulation
+- Displays: current/total count, percentage, progress bar, elapsed time, estimated time remaining
+- SocSim enrichment phase has its own distinct progress indicator (red theme)
+- Completion message shows total time taken
+
+#### SocSim Experimental Engine Integration (v0.16)
+- **New module**: `utils/socsim_adapter.py` — bridges between main engine and SocSim
+- **Game DV detection**: Automatically detects economic game DVs (dictator, trust, ultimatum, public goods, PD, die roll, gift exchange, stag hunt, risk elicitation, beauty contest, bribery, common pool resource)
+- **Evidence-traceable simulation**: Uses Fehr-Schmidt inequity aversion, IRT-based survey responses, softmax choice with bounded rationality
+- **4 latent behavioral classes**: self-interested (30%), fairness-minded (25%), reciprocator (25%), high-noise (20%)
+- **Condition-aware**: Maps experimental conditions to SocSim topic tags and context features (ingroup/outgroup, anonymity, punishment, norms)
+- **Non-destructive enrichment**: Standard simulation runs first; SocSim enriches detected game DVs afterward
+- **Post-generation feedback**: Shows which DVs were enriched and which games were simulated
+
+#### API Key Handling Improvements
+- Visual format validation feedback when entering API keys (green checkmark + detected provider name)
+- Auto-detection for 6 provider key formats: Google AI (AIza...), Groq (gsk_...), Cerebras (csk-...), OpenRouter (sk-or-...), OpenAI (sk-...), Poe (poe-...)
+- Invalid format warning with red indicator
+
+---
+
 ## 2026-02-13 — v1.0.8.0
 ### Massive OE Template Expansion — 20 Iterations of Comprehensive Improvements
 

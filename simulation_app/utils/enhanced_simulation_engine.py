@@ -45,7 +45,7 @@ This module is designed to run inside a `utils/` package (i.e., imported as
 """
 
 # Version identifier to help track deployed code
-__version__ = "1.0.8.0"  # v1.0.8.0: Massive OE template expansion (20 iterations)
+__version__ = "1.0.8.1"  # v1.0.8.1: SocSim integration, progress callback
 
 # =============================================================================
 # SCIENTIFIC FOUNDATIONS FOR SIMULATION
@@ -2702,7 +2702,12 @@ class EnhancedSimulationEngine:
         dropout_rate: float = 0.0,  # 0.0 = none; 0.07 = 7% participant dropout
         missing_data_mechanism: str = "realistic",  # "none", "mcar", "realistic"
         allow_template_fallback: bool = True,
+        progress_callback: Optional[callable] = None,
+        # v1.0.8.1: SocSim experimental enrichment for economic game DVs
+        use_socsim_experimental: bool = False,
     ):
+        self.progress_callback = progress_callback
+        self.use_socsim_experimental = bool(use_socsim_experimental)
         self.study_title = str(study_title or "").strip()
         self.study_description = str(study_description or "").strip()
         self.sample_size = int(sample_size)
@@ -8748,8 +8753,17 @@ class EnhancedSimulationEngine:
             ]
         )
 
+        # v1.0.8.1: Progress callback for real-time UI updates
+        def _report_progress(phase: str, current: int, total: int) -> None:
+            if self.progress_callback:
+                try:
+                    self.progress_callback(phase, current, total)
+                except Exception:
+                    pass  # Never let callback errors break simulation
+
         assigned_personas: List[str] = []
         all_traits: List[Dict[str, float]] = []
+        _report_progress("personas", 0, n)
         for i in range(n):
             persona_name, persona = self._assign_persona(i)
             traits = self._generate_participant_traits(i, persona)
@@ -8838,7 +8852,9 @@ class EnhancedSimulationEngine:
 
         _used_column_prefixes: set = set()  # Track to prevent column collisions
 
+        _total_scales = len(self.scales)
         for scale_idx, scale in enumerate(self.scales):
+            _report_progress("scales", scale_idx, _total_scales)
             # EXTRACT with contract enforcement - fail loudly on missing keys
             scale_name_raw = str(scale.get("name", "")).strip()
             if not scale_name_raw:
@@ -9245,7 +9261,9 @@ class EnhancedSimulationEngine:
         # ONLY generate open-ended responses for questions actually in the QSF
         # Never create default/fake questions - this prevents fake variables like "Task_Summary"
         # v1.0.0: Use survey flow handler to determine question visibility per condition
-        for q in self.open_ended_questions:
+        _total_oe = len(self.open_ended_questions)
+        _report_progress("open_ended", 0, _total_oe)
+        for _oe_idx, q in enumerate(self.open_ended_questions):
             # v1.4.3: Use _clean_column_name for scientific column naming
             col_name = _clean_column_name(str(q.get("name", "Open_Response")))
 
@@ -9265,6 +9283,9 @@ class EnhancedSimulationEngine:
             col_hash = _stable_int_hash(col_name + q_text)  # Include question text for uniqueness
             responses: List[str] = []
             for i in range(n):
+                # v1.0.8.1: Report OE progress per participant (this is the slowest loop)
+                if i % max(1, n // 20) == 0:  # Report every ~5% of participants
+                    _report_progress("generating", i, n)
                 participant_condition = conditions.iloc[i]
 
                 # Check if this participant's condition allows them to see this question
@@ -9743,6 +9764,41 @@ class EnhancedSimulationEngine:
                 "per_scale_missing_rate": getattr(self, '_per_scale_missing_rate', {}),
             },
         }
+
+        # v1.0.8.1: SocSim experimental enrichment for economic game DVs
+        if self.use_socsim_experimental:
+            try:
+                from utils.socsim_adapter import detect_game_dvs, run_socsim_enrichment
+                _report_progress("socsim_enrichment", 0, 1)
+                game_dvs = detect_game_dvs(
+                    scales=self.scales,
+                    study_title=self.study_title,
+                    study_description=self.study_description,
+                    conditions=self.conditions,
+                )
+                if game_dvs:
+                    self._log(f"SocSim: Detected {len(game_dvs)} game DV(s): "
+                              f"{[d['game_name'] for d in game_dvs]}")
+                    df, socsim_meta = run_socsim_enrichment(
+                        df=df,
+                        game_dvs=game_dvs,
+                        conditions=self.conditions,
+                        study_title=self.study_title,
+                        study_description=self.study_description,
+                        sample_size=n,
+                        seed=self.seed,
+                        progress_callback=self.progress_callback,
+                    )
+                    metadata["socsim"] = socsim_meta
+                    self._log(f"SocSim enrichment complete: {len(socsim_meta.get('enriched_dvs', []))} DVs enriched")
+                else:
+                    self._log("SocSim: No game-theory DVs detected — running standard simulation only")
+                    metadata["socsim"] = {"socsim_used": False, "reason": "no_game_dvs_detected"}
+            except Exception as e:
+                self._log(f"SocSim enrichment failed (non-fatal): {e}")
+                metadata["socsim"] = {"socsim_used": False, "error": str(e)}
+
+        _report_progress("complete", n, n)
         return df, metadata
 
     def _check_generation_warnings(self, df: pd.DataFrame) -> List[str]:

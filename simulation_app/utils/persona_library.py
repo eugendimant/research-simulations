@@ -159,7 +159,7 @@ Based on recent LLM simulation research:
 """
 
 # Version identifier to help track deployed code
-__version__ = "1.0.8.0"  # v1.0.8.0: Massive OE template expansion (20 iterations)
+__version__ = "1.0.8.1"  # v1.0.8.1: Generation method chooser, SocSim integration
 
 import hashlib
 import random
