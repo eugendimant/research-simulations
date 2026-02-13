@@ -57,6 +57,18 @@ def _compute_issue_severity(issues: List[Dict[str, Any]]) -> str:
     return "ok"
 
 
+def _compute_quality_score(issues: List[Dict[str, Any]]) -> float:
+    """Return 0-100 quality score weighted by issue severity."""
+    score = 100.0
+    for issue in issues:
+        lvl = str(issue.get("level", "")).lower()
+        if lvl == "error":
+            score -= 20.0
+        elif lvl == "warning":
+            score -= 7.5
+    return max(0.0, round(score, 1))
+
+
 def _sha256_for_file(path: Path) -> str:
     hasher = hashlib.sha256()
     with path.open("rb") as f:
@@ -233,6 +245,7 @@ def audit_run_directory(run_dir: Path) -> Dict[str, Any]:
         "recommendations": recommendations,
         "severity": _compute_issue_severity(issues),
         "issue_count": len(issues),
+        "quality_score": _compute_quality_score(issues),
     }
     (run_dir / "Quality_Audit.json").write_text(_safe_json(audit), encoding="utf-8")
     return audit
@@ -243,6 +256,7 @@ def _collect_issue_trends(output_root: Path) -> Dict[str, Any]:
     """Aggregate issue frequency across all audited run folders."""
     issue_counts: Dict[str, int] = {}
     severity_counts: Dict[str, int] = {"error": 0, "warning": 0, "ok": 0}
+    quality_scores: List[float] = []
     audited_runs = 0
 
     for run_dir in sorted([p for p in output_root.iterdir() if p.is_dir() and not p.name.startswith(".")]):
@@ -257,17 +271,20 @@ def _collect_issue_trends(output_root: Path) -> Dict[str, Any]:
         sev = str(qa.get("severity", "")).lower()
         if sev in severity_counts:
             severity_counts[sev] += 1
+        quality_scores.append(float(qa.get("quality_score", _compute_quality_score(qa.get("issues", [])))))
         for issue in qa.get("issues", []):
             code = str(issue.get("code", "unknown")).strip() or "unknown"
             issue_counts[code] = issue_counts.get(code, 0) + 1
 
     top_issues = sorted(issue_counts.items(), key=lambda kv: (-kv[1], kv[0]))[:5]
+    avg_quality = round(sum(quality_scores) / len(quality_scores), 1) if quality_scores else 100.0
     return {
         "generated_at": datetime.now().isoformat(timespec="seconds"),
         "audited_run_count": audited_runs,
         "severity_counts": severity_counts,
         "issue_counts": issue_counts,
         "top_issues": [{"code": c, "count": n} for c, n in top_issues],
+        "avg_quality_score": avg_quality,
     }
 
 def audit_new_runs(
@@ -331,6 +348,7 @@ def audit_new_runs(
         "warning_count": warnings,
         "running_log_file": str(running_log_file),
         "top_issue_codes": [i["code"] for i in trends.get("top_issues", [])],
+        "avg_quality_score": trends.get("avg_quality_score", 100.0),
     }
     (output_root / "audit_summary.json").write_text(_safe_json(summary), encoding="utf-8")
 
@@ -341,4 +359,5 @@ def audit_new_runs(
         "error_count": errors,
         "warning_count": warnings,
         "top_issue_codes": summary["top_issue_codes"],
+        "avg_quality_score": summary["avg_quality_score"],
     }

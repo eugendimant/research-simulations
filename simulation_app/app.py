@@ -11285,6 +11285,7 @@ if active_page == 3:
         _dl_new_audits = _dl_run_audit.get("new_run_count", 0)
         _dl_audit_errors = _dl_run_audit.get("error_count", 0)
         _dl_audit_warnings = _dl_run_audit.get("warning_count", 0)
+        _dl_avg_quality = float(_dl_run_audit.get("avg_quality_score", 100.0) or 100.0)
         _dl_top_issues = _dl_run_audit.get("top_issue_codes", []) or []
         _dl_log_path = (_dl_meta or {}).get("run_improvement_log", "")
         if _dl_run_archive:
@@ -11293,6 +11294,7 @@ if active_page == 3:
             if _dl_new_audits:
                 st.caption(f"Automatic quality audit completed for {_dl_new_audits} new run(s).")
                 st.caption(f"Latest audit findings: errors={_dl_audit_errors}, warnings={_dl_audit_warnings}")
+                st.caption(f"Portfolio quality score (all audited runs): {_dl_avg_quality:.1f}/100")
             if _dl_top_issues:
                 st.caption(f"Top recurring issue codes: {', '.join(_dl_top_issues[:3])}")
 

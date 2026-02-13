@@ -73,6 +73,7 @@ def test_audit_new_runs_only_processes_new_directories(tmp_path: Path):
     assert (tmp_path / "audit_summary.json").exists()
     assert (tmp_path / "issue_trends.json").exists()
     assert first.get("top_issue_codes")
+    assert first.get("avg_quality_score") < 100
 
 
 def test_audit_flags_missing_manifest(tmp_path: Path):
@@ -133,3 +134,5 @@ def test_issue_trends_aggregate_multiple_runs(tmp_path: Path):
     assert result["new_run_count"] == 2
     assert trends["audited_run_count"] >= 2
     assert isinstance(trends["top_issues"], list)
+    assert "avg_quality_score" in trends
+    assert result.get("avg_quality_score") == trends["avg_quality_score"]
