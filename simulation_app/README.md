@@ -1,6 +1,6 @@
 # Behavioral Experiment Simulation Tool
 
-**Version 1.0.7.1** | A Streamlit application for generating realistic synthetic behavioral experiment data using theory-grounded persona-driven simulation.
+**Version 1.0.7.5** | A Streamlit application for generating realistic synthetic behavioral experiment data using theory-grounded persona-driven simulation.
 
 ## What This Tool Does
 
@@ -19,7 +19,7 @@
 - **Develop analysis scripts** on properly structured data
 - **Check pre-registration consistency** before data collection
 
-## Features (v1.0.7.1)
+## Features (v1.0.7.5)
 
 ### NEW: AI-Powered Open-Ended Responses with multi-provider failover (v1.4.10+)
 - **Zero-config AI**: open-ended responses are automatically AI-generated using built-in API keys — no setup needed

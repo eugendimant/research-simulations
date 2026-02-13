@@ -47,59 +47,50 @@ Never leave changes uncommitted. Never forget the PR link.
 
 ---
 
-## Version Management (CRITICAL - MUST BE AUTOMATED)
+## ABSOLUTE RULE: Version Synchronization — ALL 9 Locations, EVERY Commit
 
-**VERSION SYNCHRONIZATION IS MANDATORY AND MUST BE FULLY AUTOMATED**
+**THESE RULES CANNOT BE OVERRIDDEN UNDER ANY CIRCUMSTANCES.**
 
-When making ANY changes to the codebase, ALL version numbers must be updated together. This includes:
+**A version mismatch causes a VISIBLE ERROR BANNER for all users.** The app checks `REQUIRED_UTILS_VERSION == utils.__version__` at startup. If they differ by even one digit, users see a yellow warning bar. This is a critical UX failure that has happened repeatedly. **It MUST NEVER happen again.**
 
-### Files that MUST be updated together:
+### The 9 version locations — ALL must contain the EXACT SAME version string:
 
-1. **`simulation_app/app.py`**
-   - `REQUIRED_UTILS_VERSION` (line ~46) - MUST match utils `__version__`
-   - `APP_VERSION` (line ~100) - Main app version
-   - `BUILD_ID` (line ~47) - Change to force cache invalidation
+| # | File | Location | Current |
+|---|------|----------|---------|
+| 1 | `simulation_app/app.py` | `REQUIRED_UTILS_VERSION = "X.X.X.X"` (line ~56) | `1.0.7.3` |
+| 2 | `simulation_app/app.py` | `APP_VERSION = "X.X.X.X"` (line ~122) | `1.0.7.3` |
+| 3 | `simulation_app/app.py` | `BUILD_ID = "YYYYMMDD-vXXXXX-description"` (line ~57) | update every commit |
+| 4 | `simulation_app/utils/__init__.py` | `__version__ = "X.X.X.X"` (line ~68) | `1.0.7.3` |
+| 5 | `simulation_app/utils/__init__.py` | `Version: X.X.X.X` in docstring (line ~5) | `1.0.7.3` |
+| 6 | `simulation_app/utils/qsf_preview.py` | `__version__ = "X.X.X.X"` (line ~36) | `1.0.7.3` |
+| 7 | `simulation_app/utils/response_library.py` | `__version__ = "X.X.X.X"` (line ~66) | `1.0.7.3` |
+| 8 | `simulation_app/README.md` | `**Version X.X.X.X**` in header (line ~3) | `1.0.7.3` |
+| 9 | `simulation_app/README.md` | `## Features (vX.X.X.X)` section header (line ~22) | `1.0.7.3` |
 
-2. **`simulation_app/utils/__init__.py`**
-   - `__version__` - Package version (MUST match REQUIRED_UTILS_VERSION)
-   - Docstring `Version:` line - MUST match `__version__`
+### MANDATORY WORKFLOW — Do this BEFORE every commit:
 
-3. **`simulation_app/utils/qsf_preview.py`**
-   - `__version__` - Should match package version
+**Step 1: Determine the new version number.**
+- Increment the LAST digit by 1.
+- If it was 9, roll to 0 and increment the digit to its left.
+- Examples: `1.0.7.3` → `1.0.7.4`, `1.0.7.9` → `1.0.8.0`, `1.0.9.9` → `1.1.0.0`
+- **NEVER use two-digit segments** like `.10`, `.11`, `.12`. Each segment is a single digit 0-9.
 
-4. **`simulation_app/utils/response_library.py`**
-   - `__version__` - Should match package version
+**Step 2: Update ALL 9 locations with the SAME version string.**
+- Do NOT update some files and skip others.
+- Do NOT update `utils/__init__.py` without updating `REQUIRED_UTILS_VERSION` in `app.py`.
+- Do NOT update `app.py` without updating `utils/__init__.py`.
+- **The #1 failure mode is updating one file but not the other.** This causes the version mismatch error.
 
-5. **`simulation_app/README.md`**
-   - Version in header line
-   - `## Features (vX.X.X)` section header
+**Step 3: Update BUILD_ID** to force Streamlit cache invalidation.
+- Format: `"YYYYMMDD-vXXXXX-short-description"`
+- Example: `"20260213-v10703-version-sync-fix"`
 
-### Version Update Checklist (DO THIS EVERY TIME):
-
+**Step 4: Verify** by grepping for the old version — it should appear NOWHERE:
+```bash
+grep -r "OLD_VERSION" simulation_app/ --include="*.py" --include="*.md"
 ```
-[ ] REQUIRED_UTILS_VERSION in app.py
-[ ] APP_VERSION in app.py
-[ ] BUILD_ID in app.py
-[ ] __version__ in utils/__init__.py
-[ ] Version: X.X.X in utils/__init__.py docstring
-[ ] __version__ in utils/qsf_preview.py
-[ ] __version__ in utils/response_library.py
-[ ] Version in README.md header
-[ ] Features section header in README.md
-```
 
-### Version Numbering Scheme (CRITICAL)
-
-**Each version segment goes from 0 to 9 only. After 9, it rolls back to 0 and the digit to the left increments.**
-
-Examples:
-- `1.0.3.9` → next is `1.0.4.0` (NOT `1.0.3.10`)
-- `1.0.9.9` → next is `1.1.0.0`
-- `1.9.9.9` → next is `2.0.0.0`
-
-**NEVER use two-digit segments like `.10`, `.11`, `.12`.** Each segment is a single digit 0-9.
-
-### Why This Matters:
+### Why This Matters (User-Visible Error):
 
 The app performs a version check at startup:
 ```python
@@ -107,7 +98,11 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
     st.warning(f"Utils version mismatch: expected {REQUIRED_UTILS_VERSION}, got {utils.__version__}")
 ```
 
-If versions don't match, users see a warning and the app may behave unexpectedly due to Streamlit's module caching.
+When versions don't match, users see a **yellow warning banner** at the top of the app. This looks broken and unprofessional. Streamlit's module caching makes this worse — old versions can persist across deploys unless BUILD_ID changes.
+
+### CRITICAL — The #1 cause of version mismatch:
+
+**Updating `utils/__init__.py` `__version__` WITHOUT updating `REQUIRED_UTILS_VERSION` in `app.py` (or vice versa).** These two values are compared directly at startup. They MUST be identical. Every single time this error has occurred, it was because ONE of these was updated and the other was not. Treat them as a single atomic operation — never touch one without the other.
 
 ---
 
