@@ -5,22 +5,23 @@ Uses free LLM APIs (multi-provider with automatic failover) to generate
 realistic, question-specific, persona-aligned open-ended survey responses.
 
 Architecture:
-- Multi-provider: Groq (Llama 3.3 70B), Cerebras (Llama 3.3 70B),
-  Google AI Studio (Gemma 3 27B + Gemini 2.5 Flash Lite), Poe (GPT-4o-mini),
+- Multi-provider: Google AI Studio (Gemini 2.5 Flash Lite + Gemma 3 27B),
+  Groq (Llama 3.3 70B), Cerebras (Llama 3.3 70B), Poe (GPT-4o-mini),
   OpenRouter (Mistral Small 3.1) — with automatic key detection,
   per-provider rate limiting, and intelligent failover.
-  Llama 3.3 70B prioritized for natural language.
+  Google AI prioritized for reliability.
 - Large batch sizes: 20 responses per API call (within 32K context)
 - Smart pool scaling: calculates exact pool size needed from sample_size
 - Draw-with-replacement + deep variation: a pool of 50 base responses
   can serve 2,000+ participants with minimal repetition
 - Graceful fallback: if all LLM providers fail, silently falls back to
   the existing template-based ComprehensiveResponseGenerator
+- Never hard-stops: always walks user through options when APIs fail
 
-Version: 1.0.7.0
+Version: 1.0.7.5
 """
 
-__version__ = "1.0.7.0"
+__version__ = "1.0.7.5"
 
 import hashlib
 import json
@@ -107,11 +108,11 @@ _EB_GOOGLE_AI = [27, 19, 32, 59, 9, 35, 25, 20, 35, 17, 42, 107, 109, 106, 47, 6
 _DEFAULT_GOOGLE_AI_KEY = bytes(b ^ _XK for b in _EB_GOOGLE_AI).decode()
 
 # OpenRouter — free models (Mistral Small 3.1 24B — more generous rate limits than Llama free)
-_EB_OPENROUTER = [41, 49, 119, 53, 40, 119, 44, 107, 119, 63, 111, 62, 104, 63, 59,
-                  99, 111, 62, 57, 98, 59, 99, 105, 111, 59, 59, 104, 108, 98, 62,
-                  110, 63, 63, 57, 60, 99, 56, 60, 105, 104, 105, 105, 110, 104, 104,
-                  98, 56, 105, 111, 109, 110, 108, 105, 98, 59, 98, 63, 60, 57, 108,
-                  98, 110, 57, 59, 98, 107, 56, 107, 98, 107, 107, 107, 99]
+_EB_OPENROUTER = [41, 49, 119, 53, 40, 119, 44, 107, 119, 105, 110, 63, 105, 62, 107,
+                  111, 104, 98, 59, 56, 62, 104, 63, 59, 57, 56, 109, 105, 110, 63,
+                  105, 60, 59, 109, 56, 106, 57, 107, 63, 107, 63, 109, 104, 60, 62,
+                  63, 57, 62, 60, 62, 111, 104, 63, 57, 57, 111, 63, 59, 110, 63,
+                  105, 104, 109, 111, 105, 60, 111, 99, 107, 98, 110, 62, 107]
 _DEFAULT_OPENROUTER_KEY = bytes(b ^ _XK for b in _EB_OPENROUTER).decode()
 
 # Poe (poe.com) — OpenAI-compatible gateway, free tier 3,000 points/day
@@ -1016,7 +1017,7 @@ def _call_llm_api(
     user_prompt: str,
     temperature: float = 0.7,
     max_tokens: int = 4000,
-    timeout: int = 60,
+    timeout: int = 25,  # v1.0.7.1: Reduced from 60 → 25s for faster failover
 ) -> Optional[str]:
     """Call an OpenAI-compatible chat completion API.
 
@@ -1398,15 +1399,15 @@ def _clean_ai_artifacts(text: str) -> str:
     return text
 
 
-def _extract_topic_tokens(question_text: str, condition: str, study_title: str = "", study_description: str = "") -> List[str]:
+def _extract_topic_tokens(question_text: str, condition: str) -> List[str]:
     """Extract salient topical tokens to validate response relevance."""
-    raw = f"{question_text or ''} {condition or ''} {study_title or ''} {study_description or ''}".lower()
+    raw = f"{question_text or ''} {condition or ''}".lower()
     tokens = re.findall(r"\b[a-z][a-z0-9_'-]{2,}\b", raw)
     stop = {
         "about", "please", "share", "question", "response", "study", "condition",
         "participants", "participant", "think", "feel", "your", "with", "this",
         "that", "from", "into", "what", "when", "where", "which", "would",
-        "could", "should", "because", "explain", "tell", "politics", "related", "experiment", "measure",
+        "could", "should", "because", "explain", "tell", "politics", "related",
     }
     keep = [t.replace("_", " ") for t in tokens if t not in stop]
     # Preserve order + uniqueness
@@ -1551,6 +1552,7 @@ class _LLMProvider:
 
     v1.9.0: Improved resilience — higher failure threshold, retry with backoff,
     and soft-disable that allows periodic re-attempts.
+    v1.0.7.0: Added per-call diagnostic log for admin dashboard visibility.
     """
 
     def __init__(self, name: str, api_url: str, model: str, api_key: str,
@@ -1569,11 +1571,15 @@ class _LLMProvider:
         self._daily_call_count = 0
         self._daily_reset_time = time.time()
         self._consecutive_failures = 0
-        self._max_failures = 6
+        self._max_failures = 3  # v1.0.7.1: Reduced from 6 → 3 for faster failover
         self._total_failures = 0
         self._last_failure_time = 0.0
-        self._cooldown_seconds = 30.0
+        self._cooldown_seconds = 10.0  # v1.0.7.1: Reduced from 30 → 10s for faster recovery
         self._rate_limiter = _RateLimiter(max_rpm=max_rpm)
+        # v1.0.7.0: Per-call diagnostic log for admin dashboard
+        self._call_log: List[Dict[str, Any]] = []  # Last N call results
+        self._max_call_log = 50  # Keep last 50 entries per provider
+        self._last_error_message: str = ""  # Most recent error for diagnostics
 
     def call(self, system_prompt: str, user_prompt: str,
              temperature: float = 0.7, max_tokens: int = 4000) -> Optional[str]:
@@ -1606,10 +1612,11 @@ class _LLMProvider:
         # Per-provider rate limiting
         self._rate_limiter.wait_if_needed()
 
-        # Retry with fast-fail cadence to avoid multi-minute stalls.
+        # v1.0.7.1: Retry with backoff (up to 1 retry per call — reduced from 2)
+        # Total max sleep per provider: 1.5s (down from 4.5s)
         result = None
-        _attempt_timeouts = (20, 30)
-        for attempt, _timeout in enumerate(_attempt_timeouts):
+        _call_start = time.time()
+        for attempt in range(2):  # v1.0.7.1: 2 attempts (down from 3) — fail fast
             result = _call_llm_api(
                 self.api_url, self.api_key, self.model,
                 system_prompt, user_prompt, temperature, max_tokens,
@@ -1617,33 +1624,51 @@ class _LLMProvider:
             )
             if result is not None:
                 break
-            if attempt < len(_attempt_timeouts) - 1:
-                _backoff = 0.8 * (attempt + 1)
+            if attempt < 1:
+                _backoff = 1.5
                 logger.debug("Provider '%s' attempt %d failed, retrying in %.1fs...",
                              self.name, attempt + 1, _backoff)
                 time.sleep(_backoff)
 
+        _call_duration = time.time() - _call_start
         self.call_count += 1
         self._daily_call_count += 1
+
+        # v1.0.7.0: Log call result for admin diagnostics
+        _log_entry = {
+            "timestamp": time.time(),
+            "success": result is not None,
+            "duration_s": round(_call_duration, 2),
+            "retries": min(2, attempt) if result is None else attempt,
+        }
         if result is None:
             self._consecutive_failures += 1
             self._total_failures += 1
             self._last_failure_time = time.time()
+            self._last_error_message = f"Failed after {attempt + 1} attempts ({_call_duration:.1f}s)"
+            _log_entry["error"] = self._last_error_message
             if self._consecutive_failures >= self._max_failures:
                 self.available = False
-                self._cooldown_seconds = min(300.0, self._cooldown_seconds * 2)
+                self._cooldown_seconds = min(30.0, self._cooldown_seconds * 2)  # v1.0.7.1: Cap at 30s (down from 300s)
                 logger.info("Provider '%s' disabled after %d consecutive failures "
                             "(cooldown: %.0fs)",
                             self.name, self._consecutive_failures, self._cooldown_seconds)
+                _log_entry["disabled"] = True
         else:
             self._consecutive_failures = 0
+            self._last_error_message = ""
+
+        self._call_log.append(_log_entry)
+        if len(self._call_log) > self._max_call_log:
+            self._call_log = self._call_log[-self._max_call_log:]
+
         return result
 
     def reset(self) -> None:
         """Re-enable the provider (e.g., after rate-limit window expires)."""
         self.available = True
         self._consecutive_failures = 0
-        self._cooldown_seconds = 30.0
+        self._cooldown_seconds = 10.0  # v1.0.7.1: Match initial value (was 30.0)
 
 
 # ---------------------------------------------------------------------------
@@ -1704,14 +1729,12 @@ class LLMResponseGenerator:
         self._fallback_count = 0
         self._batch_failure_count = 0
         self._api_disabled_time: float = 0.0  # v1.0.5.7: When API was disabled
-        self._api_recovery_secs: float = 60.0  # v1.0.5.7: Auto-recover after this many seconds
+        self._api_recovery_secs: float = 20.0  # v1.0.7.1: Reduced from 60 → 20s for faster recovery
         # v1.0.5.8: Track provider exhaustion events for admin analytics
         self._provider_exhaustion_count: int = 0  # Times ALL providers failed in a batch
         self._user_key_activations: int = 0  # Times a user-provided key was activated mid-session
         self._exhaustion_timestamps: List[float] = []  # When each exhaustion occurred
         self._blocked_fallback_count: int = 0
-        self._quality_rejection_count: int = 0
-        self._prefill_timeout_count: int = 0
         # v1.0.5.8: Anti-detection — cross-participant response uniqueness tracker.
         # Stores normalized first-10-words of recent responses to detect and prevent
         # near-identical outputs across different participants.
@@ -1733,10 +1756,8 @@ class LLMResponseGenerator:
         # 4. Cerebras Llama 3.3 70B:          ~30 RPM, 1M tokens/day
         # 5. Poe GPT-4o-mini:                ~20 RPM, ~200 RPD (3K points/day free)
         # 6. OpenRouter Mistral Small 3.1:    varies by model
-        # NOTE: Llama 3.3 70B produces more natural, human-sounding responses
-        # than Gemini models which tend toward repetitive phrasing ("in terms of").
-        # v1.0.6.0: Reordered — Gemma (high-volume, 14.4K RPD) before Flash Lite
-        # (low-volume, 20 RPD); Poe (GPT-4o-mini, reliable) before OpenRouter.
+        # NOTE: Google AI moved to top because it's confirmed accessible and reliable.
+        # Groq/Cerebras sometimes have intermittent auth/rate issues.
         _builtin_providers = [
             ("google_ai_gemma", GOOGLE_AI_API_URL, GOOGLE_AI_MODEL_HIGHVOL,
              _DEFAULT_GOOGLE_AI_KEY, 25, 14400, 10),
@@ -1858,8 +1879,19 @@ class LLMResponseGenerator:
             "providers_available": sum(1 for p in self._providers if p.available and p.api_key),
             "providers_total": len(self._providers),
             "providers": {
-                p.name: {"calls": p.call_count, "attempts": p.attempt_count,
-                         "available": p.available}
+                p.name: {
+                    "calls": p.call_count,
+                    "attempts": p.attempt_count,
+                    "available": p.available,
+                    # v1.0.7.0: Enhanced diagnostics for admin dashboard
+                    "failures": p._total_failures,
+                    "consecutive_failures": p._consecutive_failures,
+                    "last_error": p._last_error_message,
+                    "rpd_used": p._daily_call_count,
+                    "rpd_limit": p.max_rpd,
+                    "model": p.model,
+                    "recent_calls": p._call_log[-10:],  # Last 10 calls
+                }
                 for p in self._providers
             },
             # v1.0.5.8: Failure analytics for admin dashboard
@@ -1871,8 +1903,6 @@ class LLMResponseGenerator:
             "batch_failures": self._batch_failure_count,
             "allow_template_fallback": self._allow_template_fallback,
             "blocked_fallbacks": self._blocked_fallback_count,
-            "quality_rejections": self._quality_rejection_count,
-            "prefill_timeouts": self._prefill_timeout_count,
         }
 
     @property
@@ -1888,9 +1918,15 @@ class LLMResponseGenerator:
             self._all_conditions = list(conditions)
 
     def reset_providers(self) -> None:
-        """Re-enable all providers (useful after rate-limit windows expire)."""
+        """Re-enable all providers (useful after rate-limit windows expire).
+
+        v1.0.7.1: Also resets batch failure count and API disabled time
+        so providers are truly fresh for the next generation attempt.
+        """
         for p in self._providers:
             p.reset()
+        self._batch_failure_count = 0
+        self._api_disabled_time = 0.0
         self._api_available = any(p.available and p.api_key for p in self._providers)
 
     @property
@@ -1930,15 +1966,20 @@ class LLMResponseGenerator:
         count_per_sentiment: int = 0,
         sample_size: int = 200,
         n_conditions: int = 2,
+        max_time: float = 30.0,  # v1.0.7.1: Wall-clock time budget (seconds)
     ) -> int:
         """Pre-generate a pool of LLM responses for a question+condition.
 
         Smart scaling (C): calculates optimal pool size from sample_size.
         With draw-with-replacement (D), we need far fewer base responses.
+
+        v1.0.7.1: Added max_time budget. Prefill aborts after max_time seconds
+        to prevent long waits. Remaining responses use template fallback.
         """
         # v1.0.5.7: Use property (triggers auto-recovery check)
         if not self.is_llm_available:
             return 0
+        _prefill_start = time.time()
 
         if sentiments is None:
             sentiments = ["very_positive", "positive", "neutral",
@@ -1958,19 +1999,21 @@ class LLMResponseGenerator:
             count_per_sentiment = target
 
         total = 0
-        max_retries_per_bucket = 4  # hard cap to keep runtime bounded
-        _prefill_budget_secs = max(20.0, float(os.environ.get("LLM_PREFILL_BUDGET_SECS", "120")))
-        _prefill_started = time.time()
-        _timed_out = False
+        max_retries_per_bucket = 3  # v1.0.7.1: Reduced from 10 → 3 (30s max wait)
         for sentiment in sentiments:
+            # v1.0.7.1: Wall-clock time budget check — abort if exceeded
+            if time.time() - _prefill_start >= max_time:
+                logger.info("Prefill time budget (%.0fs) exceeded after %d responses — "
+                            "remaining sentiments use template fallback",
+                            max_time, total)
+                break
             already_have = self._pool.available(question_text, condition, sentiment)
             needed = max(0, count_per_sentiment - already_have)
             retries = 0
             while needed > 0 and retries < max_retries_per_bucket:
-                if (time.time() - _prefill_started) >= _prefill_budget_secs:
-                    self._prefill_timeout_count += 1
-                    _timed_out = True
-                    logger.warning("Prefill budget exceeded (%.1fs) for question=%s condition=%s", _prefill_budget_secs, question_text[:40], condition[:40])
+                # v1.0.7.1: Also check time budget inside retry loop
+                if time.time() - _prefill_start >= max_time:
+                    logger.info("Prefill time budget exceeded mid-retry (sentiment=%s)", sentiment)
                     break
                 retries += 1
                 # Adaptive batch size: use active provider's max_batch_size if available
@@ -2069,7 +2112,7 @@ class LLMResponseGenerator:
             persona_specs=persona_specs,
             all_conditions=self._all_conditions or None,
         )
-        _topic_tokens = _extract_topic_tokens(question_text, condition, self._study_title, self._study_description)
+        _topic_tokens = _extract_topic_tokens(question_text, condition)
 
         # v1.0.6.0: Iterate directly over provider list for correct failover.
         # BUGFIX: Previous _get_active_provider() + tried-set pattern always
@@ -2116,21 +2159,31 @@ class LLMResponseGenerator:
         # v1.0.5.8: Track each provider exhaustion event for admin analytics
         self._provider_exhaustion_count += 1
         self._exhaustion_timestamps.append(time.time())
-        if self._batch_failure_count >= 12:
+        # v1.0.7.0: Log which providers were tried and why they failed
+        _tried_summary = []
+        for p in self._providers:
+            if p.api_key:
+                _status = "available" if p.available else f"cooldown({p._cooldown_seconds:.0f}s)"
+                _tried_summary.append(f"{p.name}:{_status}:fails={p._consecutive_failures}")
+        logger.info("All providers exhausted for batch %d: %s",
+                     self._batch_failure_count, " | ".join(_tried_summary))
+        # v1.0.7.1: Reduced threshold from 12 → 3 — fail fast, don't hang.
+        # After 3 batch failures, fall back to templates immediately.
+        # APIs auto-recover after 20s, so next generation attempt will retry them.
+        if self._batch_failure_count >= 3:
             self._api_available = False
-            self._api_disabled_time = time.time()  # v1.0.5.7: Record for auto-recovery
+            self._api_disabled_time = time.time()
             logger.warning("All %d LLM providers exhausted after %d batch failures — "
                            "falling back to templates (will auto-recover in %.0fs)",
                            len(self._providers), self._batch_failure_count,
                            self._api_recovery_secs)
         else:
-            # v1.0.5.7: Add random jitter to prevent thundering-herd when
-            # multiple sessions hit rate limits simultaneously.
-            _base = min(2.0 * self._batch_failure_count, 10.0)
-            _jitter = random.uniform(0, min(2.0, _base * 0.3))
+            # v1.0.7.1: Reduced max sleep from 10s → 5s, jitter from 2s → 1s
+            _base = min(2.0 * self._batch_failure_count, 5.0)
+            _jitter = random.uniform(0, min(1.0, _base * 0.3))
             _backoff_secs = _base + _jitter
             logger.info("Batch %d/%d failed, sleeping %.1fs (jitter %.1fs) before retry",
-                        self._batch_failure_count, 12, _backoff_secs, _jitter)
+                        self._batch_failure_count, 3, _backoff_secs, _jitter)
             time.sleep(_backoff_secs)
             self._reset_all_providers()
         return []
@@ -2224,7 +2277,7 @@ class LLMResponseGenerator:
         This is used to modulate deep variation so OE text matches quantitative data.
         """
         local_rng = random.Random(participant_seed)
-        _topic_tokens = _extract_topic_tokens(question_text, condition, self._study_title, self._study_description)
+        _topic_tokens = _extract_topic_tokens(question_text, condition)
 
         # v1.0.4.8: Adjust engagement based on behavioral profile
         _effective_engagement = persona_engagement
@@ -2349,7 +2402,7 @@ class LLMResponseGenerator:
             if _fallback_text and _fallback_text.strip():
                 return _fallback_text
         # Final non-empty guard for OE completeness even under cascading failures.
-        _topic_tokens = _extract_topic_tokens(question_text, condition, self._study_title, self._study_description)
+        _topic_tokens = _extract_topic_tokens(question_text, condition)
         _topic = " ".join(_topic_tokens[:2]).strip() or "this topic"
         _fallback_rng = random.Random((participant_seed or 0) + len(question_text or "") + len(condition or ""))
         _prefixes = {
@@ -2705,14 +2758,14 @@ class LLMResponseGenerator:
     # ------------------------------------------------------------------
     # Connectivity check (used by UI to show status)
     # ------------------------------------------------------------------
-    def check_connectivity(self, timeout: int = 15) -> Dict[str, Any]:
+    def check_connectivity(self, timeout: int = 8) -> Dict[str, Any]:
         """Quick connectivity test — loops through ALL providers.
 
         v1.9.0: Does NOT permanently disable providers during check.
         Tries each provider in order until one responds.
 
         Args:
-            timeout: Max seconds per individual provider check (default 15).
+            timeout: Max seconds per individual provider check (default 8, v1.0.7.1 reduced from 15).
 
         Returns dict with 'available', 'provider', 'error' keys.
         """
