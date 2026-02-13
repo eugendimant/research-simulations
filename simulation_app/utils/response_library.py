@@ -63,7 +63,7 @@ association, impression, perception, feedback, comment, observation, general
 Version: 1.8.5 - Improved domain detection with weighted scoring and disambiguation
 """
 
-__version__ = "1.0.7.8"
+__version__ = "1.0.7.9"
 
 import random
 import re
@@ -7373,81 +7373,198 @@ class ComprehensiveResponseGenerator:
 
         condition_lower = condition.lower() if condition else ""
         if condition_lower:
+            # v1.0.7.9: EXPANDED condition modifiers — more natural, more varied,
+            # with 4-6 alternatives per condition type instead of 2.
+
             # AI conditions — only in AI/consumer/tech contexts
             if 'ai' in condition_lower and 'no ai' not in condition_lower:
-                if (_is_consumer_domain or _is_ai_domain) and rng.random() < 0.3:
-                    ai_phrases = [
-                        " The AI aspect was interesting.",
-                        " Considering the AI involvement.",
-                    ]
-                    response += rng.choice(ai_phrases)
+                if (_is_consumer_domain or _is_ai_domain) and rng.random() < 0.35:
+                    response += rng.choice([
+                        " The AI recommendation influenced how I thought about this.",
+                        " Knowing AI was involved made me think differently.",
+                        " I considered the AI element when forming my opinion.",
+                        " The AI aspect is hard to ignore in situations like this.",
+                        " Whether or not the AI played a role affected my thinking.",
+                    ])
             elif 'hedonic' in condition_lower:
                 if _is_consumer_domain and rng.random() < 0.3:
-                    response += " The enjoyment factor was notable."
+                    response += rng.choice([
+                        " The enjoyment factor was a big part of it for me.",
+                        " How much pleasure I'd get from it mattered in my decision.",
+                        " The fun aspect is what really caught my attention.",
+                    ])
             elif 'utilitarian' in condition_lower:
                 if _is_consumer_domain and rng.random() < 0.3:
-                    response += " The practical aspects mattered."
+                    response += rng.choice([
+                        " Practicality was the main thing I considered.",
+                        " I focused on how useful and functional it would be.",
+                        " The practical benefits mattered most to me.",
+                    ])
 
-            # v1.0.4.4: Political condition modifiers
-            if _is_political_domain and rng.random() < 0.3:
+            # v1.0.7.9: Political condition modifiers — expanded
+            if _is_political_domain and rng.random() < 0.35:
                 if any(kw in condition_lower for kw in ['liberal', 'democrat', 'progressive', 'left']):
                     response += rng.choice([
-                        " As someone who leans progressive, this matters to me.",
-                        " From my perspective on the left, I feel strongly about this.",
+                        " As someone who leans progressive, this really matters to me.",
+                        " My left-leaning values definitely shaped this response.",
+                        " I think about these issues from a progressive perspective.",
+                        " Coming from where I do politically, I feel strongly about this.",
+                        " My Democratic values inform how I see this.",
                     ])
                 elif any(kw in condition_lower for kw in ['conservative', 'republican', 'right']):
                     response += rng.choice([
-                        " As someone who leans conservative, this matters to me.",
-                        " From my perspective on the right, I feel strongly about this.",
+                        " As someone who leans conservative, this really matters to me.",
+                        " My traditional values definitely shaped this response.",
+                        " I think about these issues from a conservative perspective.",
+                        " Coming from where I do politically, I feel strongly about this.",
+                        " My Republican values inform how I see this.",
+                    ])
+                elif any(kw in condition_lower for kw in ['trump']):
+                    if any(kw in condition_lower for kw in ['lover', 'supporter', 'pro']):
+                        response += rng.choice([
+                            " As a Trump supporter I feel pretty strongly about this.",
+                            " Supporting Trump is part of who I am and it shapes my views.",
+                            " My political beliefs align with Trump and that influences my answer.",
+                        ])
+                    elif any(kw in condition_lower for kw in ['hater', 'opponent', 'anti', 'against']):
+                        response += rng.choice([
+                            " I strongly oppose Trump and that affects how I see this.",
+                            " My opposition to Trump is deeply held and relevant here.",
+                            " Being anti-Trump is part of my political identity.",
+                        ])
+
+            # v1.0.7.9: Health condition modifiers — expanded
+            if _is_health_domain and rng.random() < 0.35:
+                if any(kw in condition_lower for kw in ['high risk', 'severe', 'threat', 'disease', 'danger']):
+                    response += rng.choice([
+                        " The health risks here really concern me.",
+                        " Given how serious the health implications are, I take this very seriously.",
+                        " Health threats like this make me think more carefully about my choices.",
+                        " The severity of the health issue definitely affected my response.",
+                    ])
+                elif any(kw in condition_lower for kw in ['prevention', 'wellness', 'healthy', 'benefit']):
+                    response += rng.choice([
+                        " Taking a preventive approach just makes sense to me.",
+                        " I'm always in favor of things that promote health and wellness.",
+                        " Health benefits are a strong motivator for me.",
+                        " Staying healthy is something I prioritize.",
+                    ])
+                elif any(kw in condition_lower for kw in ['vaccine', 'vaccin']):
+                    response += rng.choice([
+                        " My views on vaccination are part of how I think about this.",
+                        " The vaccine angle is important to how I responded.",
+                        " I have strong feelings about vaccines that shaped my answer.",
                     ])
 
-            # v1.0.4.4: Health condition modifiers
-            if _is_health_domain and rng.random() < 0.3:
-                if any(kw in condition_lower for kw in ['high risk', 'severe', 'threat', 'disease']):
+            # v1.0.7.9: Moral/ethical condition modifiers — expanded
+            if _is_moral_domain and rng.random() < 0.35:
+                if any(kw in condition_lower for kw in ['moral', 'ethical', 'right', 'virtue']):
                     response += rng.choice([
-                        " Health risks like this really concern me.",
-                        " Given the health implications, I take this seriously.",
+                        " My sense of right and wrong was front and center here.",
+                        " Ethical considerations weighed heavily in my thinking.",
+                        " I couldn't separate my moral values from my response.",
+                        " My conscience played a big role in how I answered.",
                     ])
-                elif any(kw in condition_lower for kw in ['prevention', 'wellness', 'healthy']):
+                elif any(kw in condition_lower for kw in ['harm', 'kill', 'sacrifice', 'dilemma']):
                     response += rng.choice([
-                        " Preventive approaches make sense to me.",
-                        " Staying healthy is important to me.",
-                    ])
-
-            # v1.0.4.4: Moral/ethical condition modifiers
-            if _is_moral_domain and rng.random() < 0.3:
-                if any(kw in condition_lower for kw in ['moral', 'ethical', 'right']):
-                    response += rng.choice([
-                        " From an ethical standpoint, I had clear thoughts.",
-                        " My moral intuitions were strong here.",
+                        " The idea of someone getting hurt made this really difficult.",
+                        " Situations involving harm force you to think about what you really value.",
+                        " I struggled with the tradeoffs involved in potential harm.",
                     ])
 
-            # v1.0.4.4: Intergroup condition modifiers
-            if _is_intergroup_domain and rng.random() < 0.3:
-                if any(kw in condition_lower for kw in ['ingroup', 'same', 'team', 'partner']):
+            # v1.0.7.9: Intergroup condition modifiers — expanded with identity markers
+            if (_is_intergroup_domain or _is_political_domain) and rng.random() < 0.40:
+                _is_ingroup = any(kw in condition_lower for kw in ['ingroup', 'same group', 'same team',
+                    'supporter supporter', 'lover lover', 'hater hater', 'democrat democrat',
+                    'republican republican'])
+                _is_outgroup = any(kw in condition_lower for kw in ['outgroup', 'different group',
+                    'opposing', 'other group', 'lover hater', 'hater lover',
+                    'supporter opponent', 'democrat republican', 'republican democrat'])
+
+                if _is_ingroup:
                     response += rng.choice([
-                        " Being with someone from my own group felt natural.",
-                        " Shared identity made this easier.",
+                        " Being paired with someone who shares my views felt comfortable.",
+                        " It's easier to interact with someone from your own group.",
+                        " Having shared values with the other person influenced my choice.",
+                        " I felt a natural connection because we're on the same side.",
+                        " When you share a background with someone it changes the dynamic.",
+                        " I was more generous because we see things the same way.",
                     ])
-                elif any(kw in condition_lower for kw in ['outgroup', 'different', 'opposing']):
+                elif _is_outgroup:
                     response += rng.choice([
-                        " Interacting with someone from a different group was challenging.",
-                        " Group differences definitely played a role here.",
+                        " Knowing the other person has different views than me affected my decision.",
+                        " It's harder to be open when you're dealing with someone from the other side.",
+                        " Group differences definitely played a role in how I responded.",
+                        " I was more cautious because we don't see eye to eye.",
+                        " Being matched with someone from a different group made me less trusting.",
+                        " The divide between our groups is hard to ignore in a situation like this.",
                     ])
 
-            # v1.0.4.4: Financial condition modifiers
-            if _is_financial_domain and rng.random() < 0.3:
-                if any(kw in condition_lower for kw in ['gain', 'profit', 'earn', 'high return']):
-                    response += " The potential financial upside influenced my thinking."
-                elif any(kw in condition_lower for kw in ['loss', 'risk', 'lose', 'penalty']):
-                    response += " The financial risk weighed heavily on my mind."
+            # v1.0.7.9: Financial condition modifiers — expanded
+            if _is_financial_domain and rng.random() < 0.35:
+                if any(kw in condition_lower for kw in ['gain', 'profit', 'earn', 'high return', 'bonus']):
+                    response += rng.choice([
+                        " The potential financial upside influenced my thinking.",
+                        " When there's money to be gained I tend to pay more attention.",
+                        " The possibility of profit shaped my decision-making.",
+                        " Financial incentives definitely played into my choice.",
+                    ])
+                elif any(kw in condition_lower for kw in ['loss', 'risk', 'lose', 'penalty', 'fine']):
+                    response += rng.choice([
+                        " The financial risk weighed heavily on my mind.",
+                        " The possibility of losing money made me more cautious.",
+                        " I'm pretty sensitive to financial losses and that showed here.",
+                        " When there's a chance of losing money I think more carefully.",
+                    ])
 
-            # v1.0.4.4: Environmental condition modifiers
-            if _is_environment_domain and rng.random() < 0.3:
-                if any(kw in condition_lower for kw in ['sustainable', 'green', 'eco']):
-                    response += " Sustainability matters to me in these decisions."
-                elif any(kw in condition_lower for kw in ['pollut', 'unsustainable', 'harm']):
-                    response += " The environmental impact bothers me."
+            # v1.0.7.9: Environmental condition modifiers — expanded
+            if _is_environment_domain and rng.random() < 0.35:
+                if any(kw in condition_lower for kw in ['sustainable', 'green', 'eco', 'renew']):
+                    response += rng.choice([
+                        " Sustainability is important to me in these kinds of decisions.",
+                        " The environmental angle made me think more carefully about this.",
+                        " Green options appeal to me on principle.",
+                    ])
+                elif any(kw in condition_lower for kw in ['pollut', 'unsustainable', 'harm', 'damage']):
+                    response += rng.choice([
+                        " The environmental damage aspect really bothers me.",
+                        " Knowing about the environmental harm affected my response.",
+                        " I can't ignore the environmental consequences.",
+                    ])
+
+            # v1.0.7.9: Education condition modifiers — NEW
+            if _is_education_domain and rng.random() < 0.3:
+                if any(kw in condition_lower for kw in ['online', 'remote', 'virtual', 'digital']):
+                    response += rng.choice([
+                        " The online format changes how I think about learning.",
+                        " Remote learning has its own set of challenges and benefits.",
+                        " The digital aspect influenced my perspective.",
+                    ])
+                elif any(kw in condition_lower for kw in ['in person', 'face to face', 'classroom', 'traditional']):
+                    response += rng.choice([
+                        " There's something about in-person learning that matters.",
+                        " The classroom setting affects the learning experience.",
+                        " Face-to-face interaction makes a difference.",
+                    ])
+
+            # v1.0.7.9: Treatment/control condition detection — NEW
+            # Generic treatment vs. control framing
+            if not any([_is_political_domain, _is_health_domain, _is_moral_domain,
+                        _is_intergroup_domain, _is_financial_domain, _is_environment_domain,
+                        _is_consumer_domain, _is_ai_domain, _is_education_domain]):
+                if any(kw in condition_lower for kw in ['treatment', 'experimental', 'intervention']):
+                    if rng.random() < 0.25:
+                        response += rng.choice([
+                            " The specific situation presented to me shaped how I responded.",
+                            " What I was shown definitely influenced my thinking.",
+                            " The particular scenario affected my response.",
+                        ])
+                elif any(kw in condition_lower for kw in ['control', 'baseline', 'neutral']):
+                    if rng.random() < 0.15:
+                        response += rng.choice([
+                            " I just responded based on my natural inclinations.",
+                            " I went with my default perspective on this.",
+                        ])
 
         return response
 
@@ -7560,14 +7677,24 @@ class ComprehensiveResponseGenerator:
     ) -> str:
         """Generate a response grounded in the specific question subject.
 
-        v1.0.3.8: This method produces responses that directly address the
-        question topic. Instead of generic "I feel strongly about my views",
-        it generates "I feel strongly about [actual topic]".
+        v1.0.7.9: MAJOR OVERHAUL — Question-intent-driven compositional system.
 
-        The response structure varies by sentiment, question type, and a
-        randomized template selection for natural diversity.
+        Previous versions (v1.0.3.8-v1.0.5.5) used a single set of opinion-statement
+        cores ("I feel good about {topic}") regardless of what the question actually
+        asked. This produced generic sentiment-about-topic responses that failed to
+        answer the question.
+
+        NEW ARCHITECTURE:
+        1. Extract rich context: topic, action verbs, objects, key phrases from question
+        2. Detect question intent with 8 categories (not just 5)
+        3. Select intent-specific core templates that ANSWER the question
+        4. Add domain-specific vocabulary to elaborations
+        5. Compose: opener + intent-matched core + domain-enriched elaboration + coda
+
+        This produces responses that read like actual survey answers, not generic
+        opinion statements.
         """
-        # v1.0.4.7: Unified stop word list — includes researcher-instruction vocabulary
+        # ── Step 1: Extract rich context from the subject/question text ──
         _stop = {
             'the', 'a', 'an', 'this', 'that', 'these', 'those', 'its', 'it',
             'they', 'them', 'their', 'we', 'our', 'you', 'your', 'he', 'she',
@@ -7595,29 +7722,22 @@ class ComprehensiveResponseGenerator:
             'response', 'responses', 'answer', 'answers', 'item', 'items',
             'much', 'more', 'most', 'very', 'really', 'just', 'also', 'please',
             'better', 'deeply', 'held', 'quite',
-            # v1.0.6.3: Additional stop words
             'here', 'there', 'well', 'like', 'even', 'still',
             'only', 'each', 'every', 'both', 'many', 'overall',
             'certain', 'particular', 'specific', 'general',
         }
         _all_words = re.findall(r'\b[a-zA-Z]{3,}\b', subject.lower())
-        # v1.0.6.4: GENERAL-PURPOSE entity detection via heuristics instead of
-        # hardcoded proper noun lists. Detects capitalized words, acronyms, and
-        # words after prepositions in the original (non-lowered) subject text.
-        # This works for ANY topic — not just pre-listed political/brand names.
-        _entities = []
-        # Heuristic 1: Capitalized words mid-sentence (proper nouns)
+
+        # Entity detection (proper nouns, acronyms)
+        _entities: list = []
         _cap_words = re.findall(r'(?<=[a-z]\s)([A-Z][a-zA-Z]{2,})', subject)
         _entities.extend(w for w in _cap_words if w.lower() not in _stop)
-        # Heuristic 2: ALL-CAPS acronyms (2-6 letters)
         _acronyms = re.findall(r'\b([A-Z]{2,6})\b', subject)
         _entities.extend(a for a in _acronyms if a.lower() not in _stop)
-        # Heuristic 3: First word if capitalized and > 3 chars (often the topic)
         _first_words = re.findall(r'^([A-Z][a-zA-Z]{3,})', subject.strip())
         for _fw in _first_words:
             if _fw.lower() not in _stop and _fw not in _entities:
                 _entities.append(_fw)
-        # Deduplicate
         _seen_e: set = set()
         _uniq_entities: list = []
         for _e in _entities:
@@ -7626,269 +7746,940 @@ class ComprehensiveResponseGenerator:
                 _uniq_entities.append(_e)
         _entities = _uniq_entities[:3]
 
-        _content = [w for w in _all_words if w not in _stop and w not in {e.lower() for e in _entities}][:4]
-        # Build topic: prefer entities (clean & recognizable), limit to 2 words max
+        _content = [w for w in _all_words if w not in _stop and w not in {e.lower() for e in _entities}][:6]
+
+        # Build primary topic (2 words max for template insertion)
         if _entities:
             _topic = _entities[0]
         elif _content:
             _topic = ' '.join(_content[:2])
         else:
             _topic = subject[:30].strip()
-        # Capitalize detected entities in topic
         _entity_lower = {e.lower() for e in _entities}
         _topic_parts = _topic.split()
         _topic_parts = [w.capitalize() if w.lower() in _entity_lower else w for w in _topic_parts]
         _topic = ' '.join(_topic_parts)
 
-        # Subject may contain the full context — use a shorter version for templates
-        _short_subj = subject[:80] if len(subject) > 80 else subject
-
-        # v1.0.5.0: Question-intent-aware templates — the response structure varies
-        # based on what the question is ASKING for (explanation, evaluation, emotional
-        # reaction, description, prediction, etc.) not just sentiment.
-        # Detect intent from subject/question text
+        # v1.0.7.9: Extract ACTION VERBS from the question (what was the participant doing?)
         _subj_lower = subject.lower()
-        _intent = "opinion"  # default
-        if any(w in _subj_lower for w in ('why', 'explain', 'reason')):
-            _intent = "explanation"
-        elif any(w in _subj_lower for w in ('describe', 'tell us about', 'what happened')):
-            _intent = "description"
-        elif any(w in _subj_lower for w in ('how do you feel', 'feelings', 'emotion', 'react')):
-            _intent = "emotional_reaction"
-        elif any(w in _subj_lower for w in ('evaluate', 'rate', 'assess', 'compare')):
-            _intent = "evaluation"
+        _action = ""
+        _action_patterns = [
+            (r'\b(gave|give|giving|donated|donating|split|splitting|shared|sharing)\b', 'gave'),
+            (r'\b(trusted|trusting|sent|sending)\b', 'trusted'),
+            (r'\b(chose|choose|choosing|picked|selected|decided)\b', 'chose'),
+            (r'\b(bought|buy|buying|purchased|purchasing)\b', 'chose'),
+            (r'\b(cooperated|cooperating|contributed|contributing)\b', 'cooperated'),
+            (r'\b(rejected|rejecting|refused|refusing|declined)\b', 'rejected'),
+            (r'\b(accepted|accepting|agreed|agreeing)\b', 'accepted'),
+            (r'\b(rated|rating|evaluated|evaluating|judged|judging)\b', 'rated'),
+            (r'\b(voted|voting|supported|supporting)\b', 'supported'),
+            (r'\b(lied|lying|cheated|cheating|deceived|deceiving)\b', 'lied'),
+            (r'\b(helped|helping|assisted|assisting)\b', 'helped'),
+            (r'\b(punished|punishing|sanctioned|sanctioning)\b', 'punished'),
+            (r'\b(forgave|forgiving|pardoned)\b', 'forgave'),
+            (r'\b(risked|risking|gambled|gambling|bet|betting)\b', 'risked'),
+            (r'\b(waited|waiting|delayed|delaying)\b', 'waited'),
+        ]
+        for _pat, _act_label in _action_patterns:
+            if re.search(_pat, _subj_lower):
+                _action = _act_label
+                break
 
-        # v1.0.5.5: COMPOSITIONAL template system — compose responses from modular
-        # opener + core + elaboration + coda parts.
-        # 25 openers × 30 cores × 25 elaborations × (presence/absence combos)
-        # = tens of thousands of unique combinations.
-        _openers = [
+        # v1.0.7.9: Extract OBJECT/TARGET from the question (who/what was it about?)
+        _target = ""
+        _target_patterns = [
+            (r'(?:the |your |their )?(other person|partner|opponent|stranger|recipient|receiver)', None),
+            (r'(?:the |your |their )?(other group|outgroup|ingroup|other team)', None),
+            (r'(?:the |your |their )?(product|brand|service|item|option)', None),
+            (r'(?:the |your |their )?(candidate|politician|leader|president)', None),
+            (r'(?:the |your |their )?(money|amount|endowment|offer|donation)', None),
+            (r'(?:the |your |their )?(decision|choice|outcome|result)', None),
+            (r'(?:the |your |their )?(community|society|group|team)', None),
+            (r'(?:the |your |their )?(risk|gamble|bet|investment)', None),
+        ]
+        for _tpat, _ in _target_patterns:
+            _tm = re.search(_tpat, _subj_lower)
+            if _tm:
+                _target = _tm.group(0).strip()
+                break
+
+        # v1.0.7.9: Extract KEY PHRASES — meaningful multi-word chunks from the question
+        _key_phrases: list = []
+        _phrase_patterns = [
+            r'(?:feelings?|thoughts?|opinions?|views?)\s+(?:about|toward|on|regarding)\s+(.{3,40}?)(?:\.|$|\?|,)',
+            r'(?:how|what)\s+(?:do you|did you)\s+(?:think|feel)\s+about\s+(.{3,40}?)(?:\.|$|\?|,)',
+            r'(?:why did you|why do you)\s+(.{3,40}?)(?:\.|$|\?|,)',
+            r'(?:describe|explain)\s+(?:your|how|why)\s+(.{3,40}?)(?:\.|$|\?|,)',
+            r'(?:what made you|what led you to)\s+(.{3,40}?)(?:\.|$|\?|,)',
+        ]
+        for _pp in _phrase_patterns:
+            _pm = re.search(_pp, _subj_lower)
+            if _pm:
+                _kp = _pm.group(1).strip().rstrip('.')
+                if len(_kp) > 3:
+                    _key_phrases.append(_kp)
+        # Use first key phrase as richer topic if available
+        _rich_topic = _key_phrases[0] if _key_phrases else _topic
+
+        # ── Step 2: Detect question INTENT with expanded categories ──
+        _intent = "opinion"  # default
+        if any(w in _subj_lower for w in ('why did', 'why do', 'explain why', 'reason for', 'reasoning behind', 'what made you')):
+            _intent = "causal_explanation"
+        elif any(w in _subj_lower for w in ('why', 'explain', 'reason', 'because', 'justify')):
+            _intent = "explanation"
+        elif any(w in _subj_lower for w in ('how do you feel', 'how did you feel', 'feelings about',
+                                              'your feelings', 'emotional', 'how does', 'how did it make')):
+            _intent = "emotional_reaction"
+        elif any(w in _subj_lower for w in ('describe', 'tell us about', 'what happened',
+                                              'walk us through', 'tell me about')):
+            _intent = "description"
+        elif any(w in _subj_lower for w in ('evaluate', 'rate', 'assess', 'compare', 'how would you rate',
+                                              'your assessment', 'your evaluation')):
+            _intent = "evaluation"
+        elif any(w in _subj_lower for w in ('what do you think', 'your opinion', 'your view',
+                                              'your thoughts', 'do you agree', 'do you believe')):
+            _intent = "opinion"
+        elif any(w in _subj_lower for w in ('would you', 'will you', 'do you plan', 'how likely',
+                                              'in the future', 'what would you do')):
+            _intent = "prediction"
+        elif _action:
+            # If an action was detected, the question is likely asking about a decision
+            _intent = "decision_explanation"
+
+        # ── Step 3: Detect domain for vocabulary enrichment ──
+        _dom_key = domain.value if hasattr(domain, 'value') else str(domain)
+        _domain_vocab = self._get_domain_vocabulary(_dom_key, _subj_lower)
+
+        # ── Step 4: Build INTENT-SPECIFIC core templates ──
+        # Each intent type produces structurally different responses that actually
+        # ANSWER the type of question being asked.
+
+        _openers_casual = [
             "Honestly", "I gotta say", "For me personally", "I mean",
             "To be real", "Look", "I'll be honest", "The way I see it",
-            "I have to say", "Thinking about it", "Being honest",
-            "In my view", "So basically", "Ok so", "Yeah so",
-            "Well", "Tbh", "I guess", "Like", "Idk but",
-            "Not gonna lie", "Real talk", "Here's the thing",
-            "So look", "I'd say",
+            "Thinking about it", "Being honest", "In my view", "So basically",
+            "Ok so", "Yeah so", "Well", "Tbh", "Not gonna lie",
+            "Real talk", "Here's the thing", "I'd say",
         ]
+        _openers_formal = [
+            "In my opinion", "I believe", "From my perspective",
+            "After consideration", "Reflecting on this",
+            "In my experience", "I would say", "To be frank",
+        ]
+        _openers = _openers_casual + _openers_formal
 
+        # ── INTENT: causal_explanation / decision_explanation ──
+        # "Why did you give $5?" → "I gave that amount because..."
+        if _intent in ("causal_explanation", "decision_explanation"):
+            if sentiment in ('very_positive', 'positive'):
+                _cores = [
+                    f"I chose to do that because {_rich_topic} felt like the right thing",
+                    f"my decision was based on wanting to do the right thing when it comes to {_topic}",
+                    f"I went with what I did because I believe in being fair about {_topic}",
+                    f"the reason was pretty straightforward, I genuinely care about {_topic}",
+                    f"I made that choice because {_topic} matters to me and I wanted to act on it",
+                    f"it came down to my values, {_topic} is something I take seriously",
+                    f"I decided that way because I felt good about {_topic} and wanted to show it",
+                    f"my reasoning was that {_topic} deserves a positive response",
+                    f"I acted the way I did because I have a favorable view of {_topic}",
+                    f"when I thought about {_topic} I felt like being generous with my response",
+                ]
+                if _action:
+                    _cores.extend([
+                        f"I {_action} that way because it felt right given how I see {_topic}",
+                        f"I {_action} based on my positive feelings about {_topic}",
+                        f"the reason I {_action} is that I genuinely believe in {_topic}",
+                    ])
+                if _target:
+                    _cores.extend([
+                        f"I considered {_target} and felt positively about {_topic} so I went with that",
+                        f"thinking about {_target} made me feel good about my decision on {_topic}",
+                    ])
+            elif sentiment in ('very_negative', 'negative'):
+                _cores = [
+                    f"I made that choice because I have real concerns about {_topic}",
+                    f"my decision was based on not being comfortable with {_topic}",
+                    f"I chose what I did because {_topic} doesn't sit right with me",
+                    f"the reason was that I don't trust {_topic} or how it's going",
+                    f"I went that way because {_topic} has been a negative experience for me",
+                    f"my reasoning came from frustration with {_topic}",
+                    f"I decided based on my skepticism about {_topic}",
+                    f"I acted cautiously because {_topic} makes me uneasy",
+                    f"my choice reflected my dissatisfaction with {_topic}",
+                    f"I was hesitant because of how I feel about {_topic}",
+                ]
+                if _action:
+                    _cores.extend([
+                        f"I {_action} that way because I'm not on board with {_topic}",
+                        f"the reason I {_action} is my negative experience with {_topic}",
+                        f"I {_action} based on my concerns about {_topic}",
+                    ])
+                if _target:
+                    _cores.extend([
+                        f"considering {_target} and my doubts about {_topic} I went with the cautious option",
+                        f"I wasn't confident about {_target} given my views on {_topic}",
+                    ])
+            else:  # neutral
+                _cores = [
+                    f"I made that choice without strong feelings about {_topic} either way",
+                    f"my decision was kind of in the middle because I see both sides of {_topic}",
+                    f"I went with what seemed reasonable given my mixed feelings on {_topic}",
+                    f"I wasn't sure what the right call was with {_topic} so I split the difference",
+                    f"there wasn't a strong pull either direction on {_topic} so I just went with my gut",
+                    f"my reasoning was pretty neutral, {_topic} doesn't make me feel strongly",
+                    f"I chose a moderate approach because {_topic} is complicated",
+                    f"I didn't overthink it, {_topic} is one of those things I'm on the fence about",
+                    f"I went with what felt natural since I don't have extreme views on {_topic}",
+                    f"my decision was a middle ground because {_topic} has good and bad parts",
+                ]
+                if _action:
+                    _cores.extend([
+                        f"I {_action} without a strong reason, {_topic} just doesn't move me much",
+                        f"I {_action} based on a gut feeling since I'm neutral on {_topic}",
+                    ])
+
+        # ── INTENT: emotional_reaction ──
+        # "How do you feel about X?" → "X makes me feel..."
+        elif _intent == "emotional_reaction":
+            if sentiment in ('very_positive', 'positive'):
+                _cores = [
+                    f"when I think about {_topic} I feel pretty good about it",
+                    f"{_topic} makes me feel hopeful and positive",
+                    f"my emotional reaction to {_topic} is mostly positive",
+                    f"I feel a sense of optimism when it comes to {_topic}",
+                    f"{_topic} genuinely makes me happy to think about",
+                    f"I get a warm feeling when I consider {_topic}",
+                    f"emotionally {_topic} resonates with me in a good way",
+                    f"my gut reaction to {_topic} is positive and I trust that feeling",
+                    f"I feel encouraged by {_topic} and what it represents",
+                    f"{_topic} gives me a sense of comfort and positivity",
+                ]
+            elif sentiment in ('very_negative', 'negative'):
+                _cores = [
+                    f"{_topic} honestly makes me feel anxious",
+                    f"my emotional reaction to {_topic} is frustration and concern",
+                    f"when I think about {_topic} I feel uneasy",
+                    f"{_topic} makes me feel worried about where things are headed",
+                    f"I feel a sense of disappointment when it comes to {_topic}",
+                    f"emotionally {_topic} hits me in a negative way",
+                    f"my gut reaction to {_topic} is not great",
+                    f"I feel frustrated when I think about {_topic}",
+                    f"{_topic} stirs up negative emotions for me",
+                    f"there's a sense of dread when I consider {_topic}",
+                ]
+            else:
+                _cores = [
+                    f"my feelings about {_topic} are honestly pretty mixed",
+                    f"I don't feel strongly one way or another about {_topic}",
+                    f"{_topic} doesn't stir up intense emotions for me",
+                    f"emotionally I'm kind of neutral on {_topic}",
+                    f"I feel ambivalent about {_topic} if I'm being honest",
+                    f"{_topic} doesn't really move me emotionally",
+                    f"my emotional response to {_topic} is muted",
+                    f"I feel a mix of things about {_topic} that sort of cancel out",
+                    f"some days {_topic} bothers me, other days I don't care",
+                    f"I'm emotionally detached from {_topic} for the most part",
+                ]
+
+        # ── INTENT: description ──
+        # "Describe your experience with X" → "My experience was..."
+        elif _intent == "description":
+            if sentiment in ('very_positive', 'positive'):
+                _cores = [
+                    f"my experience with {_topic} was generally positive",
+                    f"what stood out to me about {_topic} was how well it worked",
+                    f"when I engaged with {_topic} I found it to be a good experience overall",
+                    f"I'd describe {_topic} as something that went well for me",
+                    f"what I noticed about {_topic} was mostly positive things",
+                    f"the main thing about {_topic} is that it left a good impression",
+                    f"if I had to describe {_topic} I'd say it was a positive experience",
+                    f"my interaction with {_topic} was better than I expected",
+                    f"I'd characterize {_topic} as something worthwhile and positive",
+                    f"the whole thing with {_topic} was a good experience in my view",
+                ]
+            elif sentiment in ('very_negative', 'negative'):
+                _cores = [
+                    f"my experience with {_topic} was not great honestly",
+                    f"what stood out about {_topic} was the problems with it",
+                    f"when I dealt with {_topic} it was a frustrating experience",
+                    f"I'd describe {_topic} as something that didn't go well",
+                    f"the main thing about {_topic} is that it was disappointing",
+                    f"if I had to describe {_topic} I'd focus on the negatives",
+                    f"my interaction with {_topic} left me feeling let down",
+                    f"I'd characterize {_topic} as a negative experience overall",
+                    f"what I noticed about {_topic} was mostly issues and problems",
+                    f"the whole thing with {_topic} was frustrating to deal with",
+                ]
+            else:
+                _cores = [
+                    f"my experience with {_topic} was just okay, nothing special",
+                    f"what I noticed about {_topic} was a mix of good and bad",
+                    f"when I engaged with {_topic} it was pretty unremarkable",
+                    f"I'd describe {_topic} as average, had its moments",
+                    f"the main thing about {_topic} is that it was fine but not memorable",
+                    f"if I had to describe {_topic} I'd say it was middle of the road",
+                    f"my interaction with {_topic} was neither here nor there",
+                    f"I'd characterize {_topic} as a typical experience",
+                    f"what happened with {_topic} was pretty standard stuff",
+                    f"the whole thing with {_topic} was unremarkable but not bad",
+                ]
+
+        # ── INTENT: evaluation ──
+        # "How would you rate X?" → "I'd rate X as..."
+        elif _intent == "evaluation":
+            if sentiment in ('very_positive', 'positive'):
+                _cores = [
+                    f"I'd give {_topic} a favorable assessment overall",
+                    f"I rate {_topic} pretty highly based on what I've seen",
+                    f"my evaluation of {_topic} is positive",
+                    f"I think {_topic} measures up well against expectations",
+                    f"from what I can tell {_topic} is doing things right",
+                    f"I'd assess {_topic} as above average at least",
+                    f"comparing to what I expected {_topic} exceeds it",
+                    f"my honest evaluation is that {_topic} is good",
+                    f"I'd say {_topic} scores well on the things that matter",
+                    f"looking at it objectively {_topic} has more strengths than weaknesses",
+                ]
+            elif sentiment in ('very_negative', 'negative'):
+                _cores = [
+                    f"I'd give {_topic} a poor assessment overall",
+                    f"I rate {_topic} below average honestly",
+                    f"my evaluation of {_topic} is not favorable",
+                    f"I think {_topic} falls short of what it should be",
+                    f"from what I've seen {_topic} has serious issues",
+                    f"I'd assess {_topic} as needing major improvement",
+                    f"compared to what I expected {_topic} disappoints",
+                    f"my honest evaluation is that {_topic} isn't good enough",
+                    f"I'd say {_topic} fails on the things that matter most",
+                    f"looking at it objectively {_topic} has more problems than positives",
+                ]
+            else:
+                _cores = [
+                    f"I'd give {_topic} a mixed assessment",
+                    f"I rate {_topic} somewhere in the middle",
+                    f"my evaluation of {_topic} is neither great nor terrible",
+                    f"I think {_topic} has some strengths and some weaknesses",
+                    f"from what I can tell {_topic} is about average",
+                    f"I'd assess {_topic} as adequate but not outstanding",
+                    f"compared to what I expected {_topic} is about right",
+                    f"my honest evaluation is that {_topic} is just ok",
+                    f"I'd say {_topic} has room for improvement but isn't bad",
+                    f"looking at it objectively {_topic} is a mixed bag",
+                ]
+
+        # ── INTENT: prediction ──
+        # "Would you do this again?" / "How likely..." → "I would/wouldn't..."
+        elif _intent == "prediction":
+            if sentiment in ('very_positive', 'positive'):
+                _cores = [
+                    f"I would definitely engage with {_topic} again",
+                    f"I'm likely to continue being positive about {_topic} going forward",
+                    f"I can see myself being involved with {_topic} in the future",
+                    f"in the future I'd expect to support {_topic}",
+                    f"I'm optimistic about where {_topic} is going",
+                    f"I would make the same choice about {_topic} again",
+                    f"going forward I plan to stay engaged with {_topic}",
+                    f"I'd do the same thing again when it comes to {_topic}",
+                ]
+            elif sentiment in ('very_negative', 'negative'):
+                _cores = [
+                    f"I would probably avoid {_topic} in the future",
+                    f"I'm unlikely to engage with {_topic} again",
+                    f"going forward I'd be more cautious about {_topic}",
+                    f"I don't see myself supporting {_topic} in the future",
+                    f"I would make a different choice about {_topic} next time",
+                    f"in the future I'd probably steer clear of {_topic}",
+                    f"I'm pessimistic about where {_topic} is headed",
+                    f"I would not do the same thing again regarding {_topic}",
+                ]
+            else:
+                _cores = [
+                    f"I'm not sure what I'd do about {_topic} in the future",
+                    f"it depends on how {_topic} develops going forward",
+                    f"I might or might not engage with {_topic} again",
+                    f"my future involvement with {_topic} is uncertain",
+                    f"I'd have to think about {_topic} more before deciding",
+                    f"going forward it really depends on the circumstances with {_topic}",
+                    f"I could go either way on {_topic} in the future",
+                    f"I'd keep my options open regarding {_topic}",
+                ]
+
+        # ── INTENT: explanation (general "why" without specific action) ──
+        elif _intent == "explanation":
+            if sentiment in ('very_positive', 'positive'):
+                _cores = [
+                    f"the reason I feel this way is that {_topic} aligns with my values",
+                    f"I think it comes down to the fact that {_topic} is something I genuinely believe in",
+                    f"my reasoning is that {_topic} has consistently shown positive results",
+                    f"I'd explain my position by saying {_topic} just makes sense to me",
+                    f"the main reason is that my experiences with {_topic} have been positive",
+                    f"I feel this way because {_topic} represents something I care about",
+                    f"it's because {_topic} has earned my trust and support over time",
+                    f"the explanation is simple, {_topic} works and I've seen the evidence",
+                    f"my positive view of {_topic} comes from actual experience not just theory",
+                    f"I support {_topic} because the benefits outweigh any downsides I can see",
+                ]
+            elif sentiment in ('very_negative', 'negative'):
+                _cores = [
+                    f"the reason I feel this way is that {_topic} has let me down",
+                    f"my reasoning is based on real problems I've seen with {_topic}",
+                    f"I'd explain my position by pointing to the issues with {_topic}",
+                    f"the main reason is that {_topic} hasn't lived up to expectations",
+                    f"I feel this way because {_topic} causes more harm than good",
+                    f"it comes down to the fact that {_topic} doesn't deliver on its promises",
+                    f"my negative view of {_topic} is based on what I've actually observed",
+                    f"the explanation is that {_topic} keeps failing in ways that matter",
+                    f"I'm critical because {_topic} affects real people negatively",
+                    f"I oppose {_topic} because the evidence points to serious problems",
+                ]
+            else:
+                _cores = [
+                    f"the reason I'm undecided is that {_topic} has both good and bad aspects",
+                    f"I'd explain my position by saying {_topic} is genuinely complicated",
+                    f"my reasoning is that the evidence on {_topic} is mixed",
+                    f"the main reason I'm moderate is that {_topic} has real tradeoffs",
+                    f"I feel this way because {_topic} isn't black and white",
+                    f"it comes down to the fact that there are valid arguments about {_topic} on both sides",
+                    f"my views on {_topic} are nuanced because the reality is complex",
+                    f"I can't give a simple explanation because {_topic} genuinely has pros and cons",
+                    f"my moderate stance on {_topic} comes from seeing multiple perspectives",
+                    f"the reason I'm neutral is that I haven't seen enough to be convinced either way about {_topic}",
+                ]
+
+        # ── INTENT: opinion (default) ──
+        else:
+            if sentiment in ('very_positive', 'positive'):
+                _cores = [
+                    f"I feel good about {_topic} and where things are heading",
+                    f"{_topic} is something I support and believe in",
+                    f"I'm positive about {_topic} based on what I know",
+                    f"I think {_topic} is going in a good direction",
+                    f"my views on {_topic} are favorable for real reasons",
+                    f"{_topic} lines up with how I see things",
+                    f"there's a lot to appreciate about {_topic}",
+                    f"my experience with {_topic} has been positive",
+                    f"I believe {_topic} is on the right track",
+                    f"I genuinely believe in {_topic}",
+                    f"I keep coming back to how much I appreciate {_topic}",
+                    f"{_topic} just resonates with me",
+                    f"I've thought about {_topic} a lot and I'm still positive",
+                    f"there's something about {_topic} that just clicks for me",
+                    f"my feelings about {_topic} have only gotten more positive",
+                ]
+            elif sentiment in ('very_negative', 'negative'):
+                _cores = [
+                    f"I'm not happy about {_topic} and I think that's justified",
+                    f"{_topic} really concerns me on multiple levels",
+                    f"I'm critical of {_topic} and the direction it's going",
+                    f"{_topic} frustrates me because it could be so much better",
+                    f"there are real problems with {_topic} that need addressing",
+                    f"I have serious issues with {_topic}",
+                    f"{_topic} is headed the wrong way in my view",
+                    f"my experience with {_topic} has been largely negative",
+                    f"I wish {_topic} was handled differently",
+                    f"every time I think about {_topic} it bothers me more",
+                    f"I've lost faith in {_topic}",
+                    f"the more I learn about {_topic} the less I like it",
+                    f"{_topic} has let me down repeatedly",
+                    f"something is seriously wrong with {_topic}",
+                    f"I'm pretty fed up with {_topic} at this point",
+                ]
+            else:  # neutral
+                _cores = [
+                    f"I have mixed feelings about {_topic}",
+                    f"I can see both sides when it comes to {_topic}",
+                    f"{_topic} is complicated for me to have a strong view on",
+                    f"I'm somewhere in the middle on {_topic}",
+                    f"I've gone back and forth on {_topic} honestly",
+                    f"{_topic} has good and bad parts that kind of balance out",
+                    f"I'm still sorting out how I feel about {_topic}",
+                    f"there are valid points on both sides of {_topic}",
+                    f"my take on {_topic} is pretty balanced",
+                    f"{_topic} doesn't make me feel strongly one way or the other",
+                    f"I'm kinda neutral on {_topic}",
+                    f"some parts of {_topic} I like, some I don't",
+                    f"I think {_topic} is more complicated than people make it",
+                    f"I could be convinced either way about {_topic}",
+                    f"there's no easy answer when it comes to {_topic}",
+                ]
+
+        # ── Step 5: Build DOMAIN-ENRICHED elaborations ──
+        # Generic elaborations are used when domain-specific ones aren't available
         if sentiment in ('very_positive', 'positive'):
-            _cores = [
-                f"I feel good about {_topic}",
-                f"{_topic} is something I support",
-                f"I'm positive about {_topic}",
-                f"I think {_topic} is going in a good direction",
-                f"my views on {_topic} are favorable",
-                f"{_topic} lines up with how I see things",
-                f"I'm on board with {_topic}",
-                f"there's a lot to appreciate about {_topic}",
-                f"{_topic} works for me overall",
-                f"I'm fairly optimistic about {_topic}",
-                f"my experience with {_topic} has been positive",
-                f"I believe {_topic} is on the right track",
-                f"I care about {_topic} and I'm supportive",
-                f"{_topic} is something I feel strongly positive about",
-                f"I like where {_topic} is headed",
-                f"I'd say {_topic} is doing well",
-                f"I'm glad about {_topic}",
-                f"when I think about {_topic} I feel hopeful",
-                f"I've always been pretty supportive of {_topic}",
-                f"{_topic} makes me feel optimistic about things",
-                f"I genuinely believe in {_topic}",
-                f"my gut tells me {_topic} is the right call",
-                f"I keep coming back to how much I appreciate {_topic}",
-                f"{_topic} just resonates with me",
-                f"I'm behind {_topic} 100 percent",
-                f"people don't give {_topic} enough credit",
-                f"I've thought about {_topic} a lot and I'm still positive",
-                f"there's something about {_topic} that just clicks for me",
-                f"I trust the direction {_topic} is going",
-                f"my feelings about {_topic} have only gotten more positive",
-            ]
-            _elaborations = [
+            _generic_elabs = [
                 "It lines up with my values.",
                 "My own experiences back this up.",
                 "I've seen good things come from this.",
                 "I feel confident about where I stand.",
                 "It just makes sense to me.",
-                "I hope things keep going this way.",
-                "There's room to improve but I'm optimistic.",
                 "This really matters to me personally.",
                 "My opinion has gotten stronger over time.",
-                "I could go on but that captures it.",
-                "I think most people would agree if they thought about it.",
-                "I just gave my honest take.",
-                "I've talked to other people who feel the same.",
-                "It's one of those things where the more you think about it the more you see the good.",
                 "I know not everyone agrees but I'm firm on this.",
-                "This is based on what I've actually experienced not just what I've heard.",
-                "I feel like I've put real thought into this.",
-                "It gives me a good feeling when I consider the possibilities.",
-                "I don't say this lightly either.",
-                "Life experience has taught me to value this kind of thing.",
-                "I think history will prove this right.",
-                "My friends and family would probably agree with me here.",
+                "This is based on what I've actually experienced.",
+                "I've put real thought into this.",
+                "I don't say this lightly.",
+                "Life experience has taught me to value this.",
                 "I stand behind what I said.",
-                "Some things are worth being positive about and this is one.",
-                "I'm not naive about it but on balance I think it's good.",
             ]
         elif sentiment in ('very_negative', 'negative'):
-            _cores = [
-                f"I'm not happy about {_topic}",
-                f"{_topic} really concerns me",
-                f"I'm critical of {_topic}",
-                f"{_topic} frustrates me",
-                f"my views on {_topic} are negative",
-                f"I don't think {_topic} is working",
-                f"{_topic} is headed the wrong way",
-                f"I'm disappointed with {_topic}",
-                f"there are real problems with {_topic}",
-                f"I have serious issues with {_topic}",
-                f"{_topic} needs to change",
-                f"I'm uncomfortable with how {_topic} is going",
-                f"my experience with {_topic} has been bad",
-                f"I see major problems with {_topic}",
-                f"I wish {_topic} was handled differently",
-                f"{_topic} makes me uneasy",
-                f"every time I think about {_topic} it bothers me more",
-                f"I've lost faith in {_topic}",
-                f"{_topic} is failing people",
-                f"there's too much wrong with {_topic} to ignore",
-                f"I used to be more neutral about {_topic} but not anymore",
-                f"people should be more worried about {_topic}",
-                f"{_topic} has been getting worse not better",
-                f"I can't support {_topic} the way things are",
-                f"something is seriously wrong with {_topic}",
-                f"I'm pretty fed up with {_topic}",
-                f"the more I learn about {_topic} the less I like it",
-                f"I wouldn't recommend {_topic} to anyone right now",
-                f"{_topic} has let me down",
-                f"I thought {_topic} would be better than this",
-            ]
-            _elaborations = [
+            _generic_elabs = [
                 "There are problems people aren't addressing.",
                 "I've seen this go wrong firsthand.",
                 "Things really need to change.",
-                "I feel like nobody is listening.",
                 "This has been frustrating.",
-                "I keep hoping for improvement but nothing happens.",
-                "I wish I could be more positive.",
                 "My feelings have only gotten worse.",
                 "The situation is worse than people realize.",
                 "We can and should do better.",
-                "Not enough people are talking about this.",
                 "I've tried to stay open-minded but it's difficult.",
-                "It makes me angry when I really think about it.",
                 "I know others who feel the exact same way.",
                 "I don't think I'm being unreasonable here.",
-                "Every time I give it another chance I'm disappointed again.",
-                "The excuses don't hold up when you look at the facts.",
-                "I used to be more forgiving about this but not anymore.",
-                "My trust has been broken on this one.",
-                "Someone needs to take responsibility.",
                 "I feel strongly about this and I don't apologize for it.",
-                "I wouldn't be this critical if I didn't care.",
                 "It's affecting real people and that's not ok.",
-                "I think about this more than I probably should.",
                 "Something has got to give.",
             ]
-        else:  # neutral
-            _cores = [
-                f"I have mixed feelings about {_topic}",
-                f"I'm not strongly either way on {_topic}",
-                f"I can see both sides when it comes to {_topic}",
-                f"{_topic} is complicated for me",
-                f"I'm somewhere in the middle on {_topic}",
-                f"my feelings about {_topic} are moderate",
-                f"I don't have extreme views on {_topic}",
-                f"I've gone back and forth on {_topic}",
-                f"{_topic} has good and bad parts",
-                f"I'm still sorting out how I feel about {_topic}",
-                f"there are valid points on both sides of {_topic}",
-                f"I could see it going either way with {_topic}",
-                f"I understand why people disagree about {_topic}",
-                f"my take on {_topic} is pretty balanced",
-                f"I try to be fair about {_topic}",
-                f"{_topic} doesn't make me feel strongly one way or the other",
-                f"I'm kinda neutral on {_topic} honestly",
-                f"some parts of {_topic} I like, some I don't",
-                f"I think {_topic} is more complicated than people make it",
-                f"I haven't fully made up my mind about {_topic}",
-                f"I could be convinced either way about {_topic}",
-                f"my position on {_topic} keeps shifting",
-                f"{_topic} depends on so many factors for me",
-                f"I try not to jump to conclusions about {_topic}",
-                f"I get why {_topic} is controversial",
-                f"there's no easy answer when it comes to {_topic}",
-                f"I'm genuinely undecided about {_topic}",
-                f"if you asked me tomorrow I might give a different answer about {_topic}",
-                f"both sides have a point about {_topic}",
-                f"I'm not losing sleep over {_topic} one way or the other",
-            ]
-            _elaborations = [
+        else:
+            _generic_elabs = [
                 "I try to keep an open mind.",
                 "There are good arguments on both sides.",
                 "I just gave my honest take.",
                 "I'd need more info to feel strongly.",
                 "It depends on the specifics for me.",
-                "I've heard good points from different people.",
                 "I try not to be extreme about anything.",
                 "My views might shift as I learn more.",
                 "Nuance matters here.",
-                "Some days I lean one way, some days the other.",
                 "I just call it like I see it.",
                 "I don't feel the need to pick a side.",
-                "Maybe I just haven't thought about it enough.",
                 "I think the truth is somewhere in the middle.",
-                "People I respect disagree on this so I stay moderate.",
                 "I can't pretend to have all the answers.",
-                "I've changed my mind on this before and probably will again.",
                 "I try to be honest even when it's complicated.",
-                "The more I hear different perspectives the less sure I am.",
-                "I think being uncertain is ok sometimes.",
-                "I don't think anyone has this totally figured out.",
-                "My gut says one thing, my brain says another.",
-                "I'm comfortable sitting with the ambiguity.",
-                "I'd rather admit I'm unsure than pretend to know.",
-                "Life is too complicated for simple answers on this.",
             ]
 
-        # ── Compose response from parts ──
+        # Combine domain-specific and generic elaborations
+        _elaborations = _domain_vocab.get('elaborations_' + ('pos' if sentiment in ('very_positive', 'positive') else 'neg' if sentiment in ('very_negative', 'negative') else 'neu'), [])
+        _elaborations = list(_elaborations) + _generic_elabs  # domain-specific first for higher selection probability
+
+        # ── Step 6: Compose response from parts ──
         core = rng.choice(_cores)
-        # 55% chance to add opener
-        if rng.random() < 0.55:
+        # 50% chance to add opener
+        if rng.random() < 0.50:
             opener = rng.choice(_openers)
             response = f"{opener}, {core}."
         else:
             response = f"{core[0].upper()}{core[1:]}."
-        # 50% chance to add elaboration
-        if rng.random() < 0.50:
+        # 55% chance to add elaboration
+        if rng.random() < 0.55:
             elab = rng.choice(_elaborations)
             response += f" {elab}"
-        # 15% chance to add intent-specific coda
-        if rng.random() < 0.15:
-            if _intent == "explanation":
-                response += rng.choice([
-                    " That's my reasoning.",
-                    " That's where I'm coming from.",
-                    " I think that explains it.",
-                    " Make of that what you will.",
-                ])
-            elif _intent == "emotional_reaction":
-                response += rng.choice([
-                    " That's just how it makes me feel.",
-                    " Hard to put into words exactly.",
-                    " I feel strongly about it.",
-                    " Can't help how I feel.",
-                ])
-            elif _intent == "evaluation":
-                response += rng.choice([
-                    " That's my honest assessment.",
-                    " Take it for what it's worth.",
-                    " That's how I'd rate it.",
-                    " I stand by that evaluation.",
-                ])
+        # 20% chance to add intent-specific coda
+        if rng.random() < 0.20:
+            _codas = {
+                "causal_explanation": [
+                    " That's basically why.", " That's my reasoning.", " That's what it came down to.",
+                    " So yeah, that's why.", " Make of that what you will.",
+                ],
+                "decision_explanation": [
+                    " That's why I made that choice.", " Looking back I'd probably do the same.",
+                    " That's the honest reason.", " So that's what drove my decision.",
+                ],
+                "emotional_reaction": [
+                    " That's just how it makes me feel.", " Can't really help how I feel about it.",
+                    " Hard to put into words exactly.", " I feel strongly about it.",
+                    " Those are my honest emotions on it.",
+                ],
+                "description": [
+                    " That's basically what happened.", " That's how I'd sum it up.",
+                    " That captures my experience.", " That's the gist of it.",
+                ],
+                "evaluation": [
+                    " That's my honest assessment.", " Take it for what it's worth.",
+                    " That's how I'd rate it.", " I stand by that evaluation.",
+                ],
+                "explanation": [
+                    " That's where I'm coming from.", " I think that explains it.",
+                    " That's my reasoning in a nutshell.", " So that's why I think this way.",
+                ],
+                "prediction": [
+                    " That's my best guess.", " Time will tell if I'm right.",
+                    " We'll see how it goes.", " That's what I expect anyway.",
+                ],
+                "opinion": [
+                    " That's my honest take.", " I said what I said.",
+                    " Take it or leave it.", " That's where I stand.",
+                ],
+            }
+            _intent_codas = _codas.get(_intent, _codas["opinion"])
+            response += rng.choice(_intent_codas)
         return response
+
+    def _get_domain_vocabulary(self, domain_key: str, subject_lower: str) -> Dict[str, list]:
+        """Return domain-specific vocabulary for enriching elaborations.
+
+        v1.0.7.9: NEW METHOD — Provides domain-specific sentence fragments that
+        make elaborations sound like they come from someone who actually participated
+        in that type of study, not just expressed generic opinions.
+
+        Returns dict with keys: elaborations_pos, elaborations_neg, elaborations_neu
+        """
+        _vocab: Dict[str, list] = {}
+
+        # ── Economic games vocabulary ──
+        _econ_game_domains = {'dictator_game', 'trust_game', 'ultimatum_game', 'public_goods',
+                              'prisoners_dilemma', 'cooperation', 'fairness'}
+        _is_econ = domain_key in _econ_game_domains or any(
+            w in subject_lower for w in ('dictator', 'trust game', 'ultimatum', 'public good',
+                                          'prisoner', 'cooperat', 'split', 'endow'))
+        if _is_econ:
+            _is_dictator = 'dictator' in subject_lower or domain_key == 'dictator_game'
+            _is_trust = 'trust' in subject_lower or domain_key == 'trust_game'
+            _is_ultimatum = 'ultimatum' in subject_lower or domain_key == 'ultimatum_game'
+            _is_public = 'public' in subject_lower or domain_key == 'public_goods'
+
+            if _is_dictator:
+                _vocab['elaborations_pos'] = [
+                    "I believe sharing is the right thing to do even with strangers.",
+                    "Fairness matters to me so I wanted to split things more evenly.",
+                    "I'd want someone to be generous with me so I tried to do the same.",
+                    "Keeping everything felt wrong even if the rules allowed it.",
+                    "My upbringing taught me to share when I can.",
+                    "I think about how the other person would feel getting nothing.",
+                ]
+                _vocab['elaborations_neg'] = [
+                    "I don't know this person so I don't feel obligated to give much.",
+                    "The rules said I could keep it so I did what made sense for me.",
+                    "I look out for my own interests first, that's just practical.",
+                    "Why give money to a complete stranger when you don't have to?",
+                    "I earned the right to decide how it gets split.",
+                    "Generosity has limits especially with people I'll never meet again.",
+                ]
+                _vocab['elaborations_neu'] = [
+                    "I just picked something in the middle without thinking too hard.",
+                    "I didn't want to seem greedy or too generous so I went moderate.",
+                    "I split things the way I thought most people probably would.",
+                    "No strong feelings about the amount, just went with what felt normal.",
+                    "I gave a bit but kept a bit too, seemed reasonable.",
+                ]
+            elif _is_trust:
+                _vocab['elaborations_pos'] = [
+                    "I think showing trust brings out the best in people.",
+                    "You have to give people a chance to prove they're trustworthy.",
+                    "My experience is that trust usually gets reciprocated.",
+                    "Starting with trust is better than starting with suspicion.",
+                    "I'd rather risk being taken advantage of than be cynical.",
+                ]
+                _vocab['elaborations_neg'] = [
+                    "I've been burned before so I'm careful about trusting strangers.",
+                    "Trust needs to be earned and this person hasn't earned it.",
+                    "The rational thing is to protect yourself when you don't know someone.",
+                    "People are unpredictable so I played it safe.",
+                    "I kept more because I wasn't confident they'd send anything back.",
+                ]
+                _vocab['elaborations_neu'] = [
+                    "I sent some but not too much, a moderate level of trust.",
+                    "I hedged my bets since I wasn't sure what they'd do.",
+                    "Seemed smart to trust a little but not go all in.",
+                    "I went with an amount I could afford to lose if they didn't return it.",
+                ]
+            elif _is_ultimatum:
+                _vocab['elaborations_pos'] = [
+                    "Fair offers deserve to be accepted.",
+                    "I believe in rewarding people who are reasonable.",
+                    "The split was fair enough and that matters to me.",
+                    "Getting something is always better than getting nothing out of spite.",
+                    "I accepted because the other person was being decent about it.",
+                ]
+                _vocab['elaborations_neg'] = [
+                    "The offer was insultingly low and I'd rather reject on principle.",
+                    "I refused because accepting would reward greedy behavior.",
+                    "Sometimes you have to sacrifice money to send a message about fairness.",
+                    "I'm not going to accept crumbs while someone else takes most of it.",
+                    "Punishing unfair offers is how you keep people honest.",
+                ]
+                _vocab['elaborations_neu'] = [
+                    "The offer was borderline so I could have gone either way.",
+                    "I thought about rejecting but decided it wasn't worth it.",
+                    "Not the best offer but not offensive either.",
+                    "I accepted without strong feelings about the fairness of it.",
+                ]
+            elif _is_public:
+                _vocab['elaborations_pos'] = [
+                    "If everyone contributes then everyone benefits.",
+                    "I believe in doing my part for the group.",
+                    "Contributing to the common good is the right thing.",
+                    "Free riding goes against my values even if it would pay off.",
+                    "I trust that cooperation produces better outcomes for everyone.",
+                ]
+                _vocab['elaborations_neg'] = [
+                    "Why contribute when others might free ride off my effort?",
+                    "I can't control what others do so I protected my own share.",
+                    "The returns on contributing aren't guaranteed so I was cautious.",
+                    "I've seen group efforts fail before so I held back.",
+                    "Looking out for myself seemed like the smart play here.",
+                ]
+                _vocab['elaborations_neu'] = [
+                    "I contributed a bit but kept some for myself, seemed fair.",
+                    "I wasn't sure what others would do so I split the difference.",
+                    "A moderate contribution felt right given the uncertainty.",
+                    "I went with what I thought an average person would do.",
+                ]
+            else:
+                # Generic economic game elaborations
+                _vocab['elaborations_pos'] = [
+                    "I tried to be fair in how I approached this.",
+                    "My choice reflected my belief in treating people decently.",
+                    "I wanted to do the right thing in this situation.",
+                ]
+                _vocab['elaborations_neg'] = [
+                    "I made the choice that was best for me personally.",
+                    "Self-interest is rational when you don't know the other person.",
+                    "I was strategic about my decision.",
+                ]
+                _vocab['elaborations_neu'] = [
+                    "I went with what seemed like a moderate choice.",
+                    "I didn't overthink it, just picked something reasonable.",
+                ]
+
+        # ── Political vocabulary ──
+        elif domain_key in ('political', 'polarization', 'partisanship', 'voting', 'policy_attitudes') or \
+                any(w in subject_lower for w in ('politic', 'democrat', 'republican', 'liberal', 'conservative',
+                                                   'trump', 'biden', 'partisan', 'election', 'vote', 'policy')):
+            _vocab['elaborations_pos'] = [
+                "My political values are deeply held and this aligns with them.",
+                "I think the country would be better off if more people felt this way.",
+                "This reflects what I believe about how government should work.",
+                "My views come from caring about the direction of the country.",
+                "This isn't just politics to me, it's about real people's lives.",
+                "I've always felt strongly about this and nothing has changed that.",
+            ]
+            _vocab['elaborations_neg'] = [
+                "The political situation in this country genuinely worries me.",
+                "I think we're heading in a dangerous direction politically.",
+                "People on the other side just don't understand what's at stake.",
+                "I'm frustrated because nothing seems to change no matter who's in charge.",
+                "The political divide feels personal and it's hard to ignore.",
+                "I wish politicians actually cared about regular people.",
+            ]
+            _vocab['elaborations_neu'] = [
+                "I try not to get too caught up in political tribalism.",
+                "I can see merit in arguments from different political perspectives.",
+                "I don't think either side has all the answers.",
+                "Politics is so polarized right now that being moderate feels lonely.",
+                "I'd rather evaluate issues individually than follow a party line.",
+                "I think most people are reasonable but the extremes get all the attention.",
+            ]
+
+        # ── Health/medical vocabulary ──
+        elif domain_key in ('health', 'medical_decision', 'wellbeing', 'vaccination', 'stress') or \
+                any(w in subject_lower for w in ('health', 'medical', 'vaccine', 'treatment', 'illness',
+                                                   'wellbeing', 'mental health', 'doctor', 'patient')):
+            _vocab['elaborations_pos'] = [
+                "Taking care of my health is a priority for me.",
+                "I trust medical professionals to guide these decisions.",
+                "Good health is everything and I'm grateful for mine.",
+                "I believe in being proactive about health rather than reactive.",
+                "My positive health experiences reinforce my approach.",
+            ]
+            _vocab['elaborations_neg'] = [
+                "Health concerns can be really stressful and overwhelming.",
+                "I've had negative experiences that make me cautious about health decisions.",
+                "The healthcare system doesn't always work for regular people.",
+                "I worry about health outcomes and that affects how I think about this.",
+                "Health anxiety is real and it impacts my daily life.",
+            ]
+            _vocab['elaborations_neu'] = [
+                "Health is important but I try not to obsess over it.",
+                "I do what I can but I'm not extreme about health choices.",
+                "I follow basic health advice without going overboard.",
+                "Health decisions are personal and there's no one right answer.",
+            ]
+
+        # ── Consumer/product vocabulary ──
+        elif domain_key in ('consumer', 'brand', 'purchase_intent', 'product_evaluation',
+                            'advertising', 'brand_loyalty', 'service_quality') or \
+                any(w in subject_lower for w in ('product', 'brand', 'purchase', 'buy', 'shop',
+                                                   'consumer', 'price', 'quality', 'advertis')):
+            _vocab['elaborations_pos'] = [
+                "Quality matters to me and this delivers on that.",
+                "I can see myself coming back to this brand.",
+                "The value for what you get is genuinely good.",
+                "It met my expectations and then some.",
+                "I'd recommend this to someone looking for something like it.",
+            ]
+            _vocab['elaborations_neg'] = [
+                "There are better options out there for the same price.",
+                "The quality doesn't match what they're charging.",
+                "I expected more based on the marketing.",
+                "I wouldn't waste my money on this again.",
+                "It just doesn't deliver on what it promises.",
+            ]
+            _vocab['elaborations_neu'] = [
+                "It's fine for what it is, nothing more nothing less.",
+                "I'd consider alternatives before committing again.",
+                "Average product, average experience.",
+                "It does the job but nothing stands out about it.",
+            ]
+
+        # ── Moral/ethical vocabulary ──
+        elif domain_key in ('moral_judgment', 'moral_dilemma', 'ethics') or \
+                any(w in subject_lower for w in ('moral', 'ethic', 'right wrong', 'dilemma', 'justice')):
+            _vocab['elaborations_pos'] = [
+                "My moral compass tells me this is the right thing.",
+                "I try to act in a way I'd be proud of.",
+                "Ethics matter and I think this reflects good values.",
+                "Doing the right thing isn't always easy but it's important.",
+            ]
+            _vocab['elaborations_neg'] = [
+                "This crosses a line for me ethically.",
+                "I can't support something I believe is morally wrong.",
+                "My conscience tells me this isn't right.",
+                "Some things are just wrong regardless of the consequences.",
+            ]
+            _vocab['elaborations_neu'] = [
+                "Moral questions like this are genuinely difficult.",
+                "I can see the ethical arguments on both sides.",
+                "This is one of those situations where there's no clear right answer.",
+                "My moral intuition is conflicted on this one.",
+            ]
+
+        # ── Intergroup/identity vocabulary ──
+        elif domain_key in ('intergroup', 'identity', 'stereotype', 'prejudice') or \
+                any(w in subject_lower for w in ('outgroup', 'ingroup', 'intergroup', 'discriminat',
+                                                   'prejudice', 'stereotype', 'racial', 'ethnic')):
+            _vocab['elaborations_pos'] = [
+                "I try to treat everyone as individuals regardless of their group.",
+                "People deserve to be judged on their own merits.",
+                "I believe we have more in common than what divides us.",
+                "Group membership shouldn't determine how you treat someone.",
+            ]
+            _vocab['elaborations_neg'] = [
+                "I'd be lying if I said group differences didn't affect my thinking.",
+                "It's hard to trust people when there's a clear group divide.",
+                "I'm wary when dealing with people from different backgrounds.",
+                "Past experiences with certain groups have shaped my views.",
+            ]
+            _vocab['elaborations_neu'] = [
+                "I try not to let group membership affect my judgment but it's not easy.",
+                "I'm aware of my biases and try to account for them.",
+                "Group dynamics are complicated and I don't pretend to have it figured out.",
+                "Sometimes group differences matter, sometimes they don't.",
+            ]
+
+        # ── Technology/AI vocabulary ──
+        elif domain_key in ('ai_attitudes', 'privacy', 'automation', 'algorithm_aversion', 'social_media') or \
+                any(w in subject_lower for w in ('artificial intelligence', 'algorithm', 'automat',
+                                                   'privacy', 'data', 'technology', 'robot', 'machine')):
+            _vocab['elaborations_pos'] = [
+                "Technology generally makes things better when used responsibly.",
+                "I'm optimistic about how tech can improve our lives.",
+                "Innovation is important even if it's sometimes uncomfortable.",
+                "I trust that the benefits of technology outweigh the risks.",
+            ]
+            _vocab['elaborations_neg'] = [
+                "Technology is moving faster than our ability to control it.",
+                "I worry about the unintended consequences of all this tech.",
+                "Privacy erosion is a real concern that doesn't get enough attention.",
+                "Just because we can build something doesn't mean we should.",
+            ]
+            _vocab['elaborations_neu'] = [
+                "Technology is a tool and it depends on how people use it.",
+                "I see both the promise and the risk in current tech trends.",
+                "I'm neither a technophobe nor a tech evangelist.",
+                "It's too early to know if this technology is net positive or negative.",
+            ]
+
+        # ── Environment/sustainability vocabulary ──
+        elif domain_key in ('environmental', 'sustainability') or \
+                any(w in subject_lower for w in ('climate', 'environment', 'sustain', 'pollution',
+                                                   'green', 'carbon', 'ecology')):
+            _vocab['elaborations_pos'] = [
+                "We owe it to future generations to protect the environment.",
+                "Climate change is real and we need to act now.",
+                "Small individual choices add up when everyone participates.",
+                "Sustainability isn't just idealism, it's practical.",
+            ]
+            _vocab['elaborations_neg'] = [
+                "Environmental regulations often hurt working people.",
+                "I think climate concerns are sometimes used to push agendas.",
+                "Individual actions don't matter when corporations are the real polluters.",
+                "Economic growth shouldn't be sacrificed for environmental goals.",
+            ]
+            _vocab['elaborations_neu'] = [
+                "I try to be reasonable about environmental issues without going extreme.",
+                "I care about the environment but I also care about practical realities.",
+                "It's a balance between economic needs and environmental protection.",
+                "I do what I can but I'm realistic about my impact.",
+            ]
+
+        # ── Workplace/organizational vocabulary ──
+        elif domain_key in ('workplace', 'leadership', 'teamwork', 'motivation') or \
+                any(w in subject_lower for w in ('work', 'job', 'boss', 'manager', 'team',
+                                                   'employee', 'office', 'career', 'colleague')):
+            _vocab['elaborations_pos'] = [
+                "A good work environment makes a huge difference in quality of life.",
+                "I feel valued and that motivates me to do my best.",
+                "The people I work with make the job worthwhile.",
+                "When management is competent, everything runs better.",
+            ]
+            _vocab['elaborations_neg'] = [
+                "Work stress takes a real toll on your wellbeing.",
+                "Management decisions often make no sense to the people doing the actual work.",
+                "It's hard to stay motivated when you feel undervalued.",
+                "Workplace issues affect your whole life, not just 9 to 5.",
+            ]
+            _vocab['elaborations_neu'] = [
+                "Work is work, some days are good and some aren't.",
+                "Most workplaces have the same basic problems.",
+                "I try to keep a healthy perspective about my job.",
+                "It's neither the best nor the worst work situation I've been in.",
+            ]
+
+        # ── Risk/decision vocabulary ──
+        elif domain_key in ('risk_preference', 'loss_aversion', 'framing_effects', 'anchoring',
+                            'sunk_cost', 'financial_decision', 'time_preference') or \
+                any(w in subject_lower for w in ('risk', 'gamble', 'loss', 'gain', 'invest', 'chance',
+                                                   'probability', 'certain', 'uncertain')):
+            _vocab['elaborations_pos'] = [
+                "Sometimes you have to take a chance to get ahead.",
+                "Calculated risks have paid off for me in the past.",
+                "I'm comfortable with uncertainty when the upside is worth it.",
+                "Playing it too safe means missing out on opportunities.",
+            ]
+            _vocab['elaborations_neg'] = [
+                "I've learned that protecting what you have is smarter than chasing more.",
+                "Losses hurt more than gains feel good, that's just human nature.",
+                "I prefer certainty because I've been burned by taking risks before.",
+                "The downside risk outweighs any potential upside in my mind.",
+            ]
+            _vocab['elaborations_neu'] = [
+                "It depends on the specific risk and what's at stake.",
+                "I try to be rational about risks rather than going with emotion.",
+                "Some risks are worth taking and some aren't, you have to evaluate each one.",
+                "I'm neither a risk-taker nor completely risk-averse.",
+            ]
+
+        # ── Education/learning vocabulary ──
+        elif domain_key in ('learning', 'online_learning') or \
+                any(w in subject_lower for w in ('learn', 'educat', 'school', 'teach', 'student',
+                                                   'class', 'course', 'academic')):
+            _vocab['elaborations_pos'] = [
+                "Education is one of the most important things you can invest in.",
+                "Good learning experiences stick with you for life.",
+                "I value opportunities to grow and learn new things.",
+                "When teaching is done well it can be transformative.",
+            ]
+            _vocab['elaborations_neg'] = [
+                "The education system has real problems that need fixing.",
+                "Not all learning experiences are created equal.",
+                "I've had frustrating experiences that made me question the system.",
+                "Education often fails to prepare people for the real world.",
+            ]
+            _vocab['elaborations_neu'] = [
+                "Education is important but the system is imperfect.",
+                "Some aspects of learning work well and others don't.",
+                "I have mixed feelings about my educational experiences.",
+                "There's always room for improvement in how we teach and learn.",
+            ]
+
+        return _vocab
 
     def _enforce_behavioral_coherence(
         self,
