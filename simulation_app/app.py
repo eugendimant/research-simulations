@@ -54,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.0.8.1"
-BUILD_ID = "20260213-v10801-gen-method-chooser-socsim"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.0.8.3"
+BUILD_ID = "20260213-v10830-oe-narrative-fix"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -118,7 +118,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.0.8.1"  # v1.0.8.1: Generation method chooser, real-time progress, SocSim integration
+APP_VERSION = "1.0.8.3"  # v1.0.8.3: OE narrative fix
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -10423,291 +10423,210 @@ if active_page == 3:
         elif not _has_open_ended:
             _llm_status = {"available": True, "provider": "not_needed"}
 
-        # --- Generation Method Selection ---
-        st.markdown(
-            '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;'
-            'padding:16px 20px;margin-bottom:16px;">'
-            '<span style="font-size:1.15em;font-weight:700;color:#1e293b;">'
-            'How should the data be generated?</span></div>',
-            unsafe_allow_html=True,
-        )
-
+        # --- v1.0.8.3: Generation Method Selection (clean radio design) ---
         _gen_method_key = "generation_method"
         _current_method = st.session_state.get(_gen_method_key, "free_llm")
 
-        # v1.0.8.1: 4-option generation method chooser with info tooltips
-        _method_col1, _method_col2 = st.columns(2)
+        # Method descriptions — short, user-friendly, no jargon
+        _method_options = {
+            "free_llm": "Built-in AI (recommended)",
+            "own_api": "Your own API key",
+            "template": "Built-in template engine",
+            "experimental": "Adaptive behavioral engine (beta)",
+        }
+        _method_subtitles = {
+            "free_llm": "AI-generated open-ended responses via free built-in providers",
+            "own_api": "Use your own key for unlimited, fast AI generation",
+            "template": "Instant generation, no internet needed — 225+ research domains",
+            "experimental": "Analyzes your study design and applies domain-specific behavioral models",
+        }
 
-        with _method_col1:
-            _m1_border = "border:2px solid #22c55e;background:#f0fdf4;" if _current_method == "free_llm" else "border:1px solid #e2e8f0;background:#ffffff;"
-            _m1_check = ' <span style="color:#22c55e;font-size:1.1em;">&#10003;</span>' if _current_method == "free_llm" else ""
+        # Render as styled radio-style cards — single column, compact
+        st.markdown(
+            '<div style="margin-bottom:4px;">'
+            '<span style="font-size:0.95em;font-weight:600;color:#475569;">'
+            'Generation method</span></div>',
+            unsafe_allow_html=True,
+        )
+
+        for _mk, _ml in _method_options.items():
+            _is_sel = _current_method == _mk
+            if _is_sel:
+                _card_style = (
+                    "background:#f0fdf4;border:2px solid #22c55e;border-radius:8px;"
+                    "padding:10px 14px;margin-bottom:4px;cursor:default;"
+                )
+                _dot = '<span style="color:#22c55e;font-size:1.05em;margin-right:8px;">&#9679;</span>'
+                _label_style = "font-weight:600;color:#166534;font-size:0.92em;"
+                _sub_style = "color:#15803d;font-size:0.8em;margin-left:22px;display:block;margin-top:1px;"
+            else:
+                _card_style = (
+                    "background:#ffffff;border:1px solid #e2e8f0;border-radius:8px;"
+                    "padding:10px 14px;margin-bottom:4px;cursor:pointer;"
+                )
+                _dot = '<span style="color:#cbd5e1;font-size:1.05em;margin-right:8px;">&#9675;</span>'
+                _label_style = "font-weight:500;color:#334155;font-size:0.92em;"
+                _sub_style = "color:#94a3b8;font-size:0.8em;margin-left:22px;display:block;margin-top:1px;"
+
+            # Beta badge for experimental only
+            _badge = ""
+            if _mk == "experimental":
+                _badge = (
+                    ' <span style="background:#eff6ff;color:#3b82f6;font-size:0.65em;'
+                    'border-radius:3px;padding:1px 5px;margin-left:4px;font-weight:600;'
+                    'vertical-align:middle;">BETA</span>'
+                )
+
             st.markdown(
-                f'<div style="{_m1_border}border-radius:10px;padding:14px;margin-bottom:6px;">'
-                f'<span style="font-weight:700;color:#166534;font-size:0.95em;">'
-                f'Option 1: Built-in AI{_m1_check}</span>'
-                f'<span style="background:#dcfce7;color:#166534;font-size:0.7em;border-radius:4px;'
-                f'padding:2px 6px;margin-left:6px;font-weight:600;">Recommended</span></div>',
+                f'<div style="{_card_style}">'
+                f'{_dot}<span style="{_label_style}">{_ml}{_badge}</span>'
+                f'<span style="{_sub_style}">{_method_subtitles[_mk]}</span>'
+                f'</div>',
                 unsafe_allow_html=True,
             )
-            if st.button("Use built-in AI", key="gen_method_free_llm", use_container_width=True):
-                st.session_state[_gen_method_key] = "free_llm"
-                st.session_state["allow_template_fallback_once"] = False
-                st.session_state["_use_socsim_experimental"] = False
-                st.rerun()
-            with st.expander("What does this do?", expanded=False):
-                st.markdown(
-                    "**Free AI-powered generation** using built-in API access to multiple LLM providers "
-                    "(Groq Llama 3.3 70B, Cerebras, Google AI Gemini, OpenRouter, Poe).\n\n"
-                    "- **Quality:** Highest — each open-ended response is individually generated by an AI model\n"
-                    "- **Speed:** Moderate — depends on provider availability (typically 1-3 min)\n"
-                    "- **Availability:** May be temporarily unavailable if daily free limits are reached\n"
-                    "- **Fallback:** If AI is unavailable, falls back to template engine automatically\n\n"
-                    "*Best for: most users who want realistic AI-generated text responses*"
-                )
-
-        with _method_col2:
-            _m2_border = "border:2px solid #22c55e;background:#f0fdf4;" if _current_method == "own_api" else "border:1px solid #e2e8f0;background:#ffffff;"
-            _m2_check = ' <span style="color:#22c55e;font-size:1.1em;">&#10003;</span>' if _current_method == "own_api" else ""
-            st.markdown(
-                f'<div style="{_m2_border}border-radius:10px;padding:14px;margin-bottom:6px;">'
-                f'<span style="font-weight:700;color:#0369a1;font-size:0.95em;">'
-                f'Option 2: Your Own API Key{_m2_check}</span></div>',
-                unsafe_allow_html=True,
-            )
-            if st.button("Use my own key", key="gen_method_own_api", use_container_width=True):
-                st.session_state[_gen_method_key] = "own_api"
-                st.session_state["allow_template_fallback_once"] = False
-                st.session_state["_use_socsim_experimental"] = False
-                st.rerun()
-            with st.expander("What does this do?", expanded=False):
-                st.markdown(
-                    "**Use your own API key** from any supported LLM provider for unlimited, "
-                    "fast AI-generated responses.\n\n"
-                    "- **Quality:** Highest — same AI quality as Option 1\n"
-                    "- **Speed:** Fastest — no shared rate limits\n"
-                    "- **Cost:** Free keys available from Groq, Google AI, Cerebras. "
-                    "Paid providers (OpenAI) cost ~$0.10-0.15 per 1M tokens\n"
-                    "- **Privacy:** Your key is XOR-encrypted in memory for this session only. "
-                    "Never saved to disk, never logged, transmitted only over HTTPS\n\n"
-                    "*Best for: power users, large sample sizes, or when built-in AI is unavailable*"
-                )
-
-        _method_col3, _method_col4 = st.columns(2)
-
-        with _method_col3:
-            _m3_border = "border:2px solid #22c55e;background:#f0fdf4;" if _current_method == "template" else "border:1px solid #e2e8f0;background:#ffffff;"
-            _m3_check = ' <span style="color:#22c55e;font-size:1.1em;">&#10003;</span>' if _current_method == "template" else ""
-            st.markdown(
-                f'<div style="{_m3_border}border-radius:10px;padding:14px;margin-bottom:6px;">'
-                f'<span style="font-weight:700;color:#7c3aed;font-size:0.95em;">'
-                f'Option 3: Built-in Template Engine{_m3_check}</span></div>',
-                unsafe_allow_html=True,
-            )
-            if st.button("Use template engine", key="gen_method_template", use_container_width=True):
-                st.session_state[_gen_method_key] = "template"
-                st.session_state["allow_template_fallback_once"] = True
-                st.session_state["_use_socsim_experimental"] = False
-                st.rerun()
-            with st.expander("What does this do?", expanded=False):
-                st.markdown(
-                    "**Template-based behavioral simulation** — no API calls, no internet needed. "
-                    "Uses a comprehensive built-in response generation system.\n\n"
-                    "- **225+ research domain** vocabularies (behavioral economics, social psychology, "
-                    "political science, health, consumer, organizational, etc.)\n"
-                    "- **58+ behavioral personas** (engaged, satisficer, extreme, careless, etc.) "
-                    "with domain-specific trait variations\n"
-                    "- **40 question types** (opinion, explanation, evaluation, prediction, etc.)\n"
-                    "- **Quality:** Good — domain-relevant and persona-consistent text, "
-                    "but less natural than AI-generated\n"
-                    "- **Speed:** Very fast (seconds, not minutes)\n"
-                    "- **Reliability:** Always available, fully deterministic\n\n"
-                    "*Best for: offline use, quick iterations, or when AI responses aren't needed*"
-                )
-
-        with _method_col4:
-            _m4_border = "border:2px solid #22c55e;background:#f0fdf4;" if _current_method == "experimental" else "border:1px solid #e2e8f0;background:#ffffff;"
-            _m4_check = ' <span style="color:#22c55e;font-size:1.1em;">&#10003;</span>' if _current_method == "experimental" else ""
-            st.markdown(
-                f'<div style="{_m4_border}border-radius:10px;padding:14px;margin-bottom:6px;">'
-                f'<span style="font-weight:700;color:#dc2626;font-size:0.95em;">'
-                f'Option 4: Experimental (SocSim){_m4_check}</span>'
-                f'<span style="background:#fef2f2;color:#dc2626;font-size:0.65em;border-radius:4px;'
-                f'padding:2px 5px;margin-left:6px;font-weight:600;">BETA</span></div>',
-                unsafe_allow_html=True,
-            )
-            if st.button("Use experimental engine", key="gen_method_experimental", use_container_width=True):
-                st.session_state[_gen_method_key] = "experimental"
-                st.session_state["allow_template_fallback_once"] = True
-                st.session_state["_use_socsim_experimental"] = True
-                st.rerun()
-            with st.expander("What does this do?", expanded=False):
-                st.markdown(
-                    "**SocSim v0.16** — an evidence-traceable behavioral simulation engine "
-                    "that uses structural economic models to generate game-theory data.\n\n"
-                    "**How it works:** Standard simulation runs normally (generating all numeric + "
-                    "text responses). Then, for any detected economic game DVs (dictator, trust, "
-                    "ultimatum, public goods, etc.), SocSim enriches the data using:\n\n"
-                    "- **Fehr-Schmidt inequity aversion** utility models\n"
-                    "- **IRT / Graded Response Model** for survey items\n"
-                    "- **Softmax (logit) choice** with bounded rationality\n"
-                    "- **4 latent classes** (self-interested, fairness-minded, reciprocator, noisy)\n"
-                    "- **28 economic games** with published parameter priors\n"
-                    "- **Evidence store** with quality-weighted citations (Bareinboim & Pearl 2016)\n\n"
-                    "**Supported games:** Dictator, Trust, Ultimatum, Public Goods, Prisoner's Dilemma, "
-                    "Die Roll, Gift Exchange, Stag Hunt, Holt-Laury Risk, Beauty Contest, and more.\n\n"
-                    "*Best for: behavioral economics studies with established economic game paradigms. "
-                    "Beta feature — under active development.*"
-                )
-
-        # --- Method-specific configuration ---
-        if _current_method == "own_api":
-            with st.expander("Enter your API key", expanded=True):
-                st.markdown(
-                    "**Get a free key in 30 seconds** from any of these providers:\n\n"
-                    "| Provider | Free Tier | Sign Up |\n"
-                    "|----------|-----------|--------|\n"
-                    "| **Google AI Studio** (recommended) | Free Gemini | [aistudio.google.com](https://aistudio.google.com) |\n"
-                    "| **Groq** | 14,400 req/day | [console.groq.com](https://console.groq.com) |\n"
-                    "| **Cerebras** | 1M tokens/day | [cloud.cerebras.ai](https://cloud.cerebras.ai) |\n"
-                    "| **OpenRouter** | Free models | [openrouter.ai](https://openrouter.ai) |\n"
-                    "| **Poe** | 3K points/day | [poe.com/api_key](https://poe.com/api_key) |\n"
-                    "| **OpenAI** | Paid (~$0.15/1M tokens) | [platform.openai.com](https://platform.openai.com) |\n"
-                )
-
-                _provider_options = [
-                    "Auto-detect from key (recommended)",
-                    "Google AI (Gemini Flash) — Free",
-                    "Groq (Llama 3.3 70B) — Free",
-                    "Cerebras (Llama 3.3 70B) — Free",
-                    "Poe (GPT-4o-mini) — Free tier",
-                    "OpenRouter (Mistral) — Free tier",
-                    "OpenAI (GPT-4o-mini)",
-                ]
-                _selected_provider = st.selectbox(
-                    "Provider / Model",
-                    options=_provider_options,
-                    index=0,
-                    key="user_llm_provider_select",
-                    help="Select your provider or leave on auto-detect.",
-                )
-
-                _existing_encrypted = st.session_state.get("_user_llm_key_encrypted", "")
-                _existing_plain = _decrypt_api_key(_existing_encrypted) if _existing_encrypted else ""
-                _user_key_input = st.text_input(
-                    "API Key",
-                    value=_existing_plain,
-                    type="password",
-                    key="user_llm_key_input",
-                    placeholder="Paste your key here (e.g., AIza..., gsk_..., csk-..., sk-or-...)",
-                )
-
-                if _user_key_input != _existing_plain:
-                    if _user_key_input.strip():
-                        st.session_state["_user_llm_key_encrypted"] = _encrypt_api_key(_user_key_input.strip())
-                        os.environ["LLM_API_KEY"] = _user_key_input.strip()
-                        _user_key_count = st.session_state.get("_admin_user_key_activations", 0)
-                        st.session_state["_admin_user_key_activations"] = _user_key_count + 1
-                    else:
-                        st.session_state["_user_llm_key_encrypted"] = ""
-                        if "LLM_API_KEY" in os.environ:
-                            del os.environ["LLM_API_KEY"]
-                    st.session_state["user_llm_api_key"] = _user_key_input.strip() if _user_key_input else ""
-                    st.session_state["_user_llm_provider_choice"] = _selected_provider
-                    st.session_state["_llm_connectivity_status"] = None
+            # Invisible Streamlit button overlaying each card for click handling
+            if not _is_sel:
+                if st.button(f"Select {_ml}", key=f"gen_method_{_mk}", use_container_width=True,
+                             type="secondary"):
+                    st.session_state[_gen_method_key] = _mk
+                    st.session_state["allow_template_fallback_once"] = _mk in ("template", "experimental")
+                    st.session_state["_use_socsim_experimental"] = (_mk == "experimental")
+                    if _mk in ("free_llm", "own_api"):
+                        st.session_state["_use_socsim_experimental"] = False
                     st.rerun()
 
-                # v1.0.8.1: Visual key format validation feedback
-                _key_val = (_user_key_input or "").strip()
-                if _key_val:
-                    _detected_provider = "Unknown"
-                    _key_valid_format = False
-                    if _key_val.startswith("AIza"):
-                        _detected_provider = "Google AI Studio (Gemini)"
-                        _key_valid_format = len(_key_val) >= 30
-                    elif _key_val.startswith("gsk_"):
-                        _detected_provider = "Groq"
-                        _key_valid_format = len(_key_val) >= 20
-                    elif _key_val.startswith("csk-"):
-                        _detected_provider = "Cerebras"
-                        _key_valid_format = len(_key_val) >= 20
-                    elif _key_val.startswith("sk-or-"):
-                        _detected_provider = "OpenRouter"
-                        _key_valid_format = len(_key_val) >= 20
-                    elif _key_val.startswith("sk-"):
-                        _detected_provider = "OpenAI"
-                        _key_valid_format = len(_key_val) >= 20
-                    elif _key_val.startswith("poe-"):
-                        _detected_provider = "Poe"
-                        _key_valid_format = len(_key_val) >= 10
-                    else:
-                        _key_valid_format = len(_key_val) >= 10
+        # --- Contextual detail panel for selected method ---
+        if _current_method == "own_api":
+            st.markdown("")  # spacing
+            st.markdown(
+                "**Get a free key in 30 seconds** from any of these providers:"
+            )
+            st.markdown(
+                "| Provider | Free Tier | Sign Up |\n"
+                "|----------|-----------|--------|\n"
+                "| **Google AI Studio** | Free Gemini | [aistudio.google.com](https://aistudio.google.com) |\n"
+                "| **Groq** | 14,400 req/day | [console.groq.com](https://console.groq.com) |\n"
+                "| **Cerebras** | 1M tokens/day | [cloud.cerebras.ai](https://cloud.cerebras.ai) |\n"
+                "| **OpenRouter** | Free models | [openrouter.ai](https://openrouter.ai) |\n"
+                "| **Poe** | 3K points/day | [poe.com/api_key](https://poe.com/api_key) |\n"
+                "| **OpenAI** | Paid (~$0.15/1M tokens) | [platform.openai.com](https://platform.openai.com) |\n"
+            )
 
-                    if _key_valid_format:
-                        st.markdown(
-                            f'<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:6px;'
-                            f'padding:8px 12px;margin:6px 0;">'
-                            f'<span style="color:#166534;font-size:0.85em;">'
-                            f'&#10003; Detected provider: <strong>{_detected_provider}</strong></span></div>',
-                            unsafe_allow_html=True,
-                        )
-                    else:
-                        st.markdown(
-                            f'<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:6px;'
-                            f'padding:8px 12px;margin:6px 0;">'
-                            f'<span style="color:#dc2626;font-size:0.85em;">'
-                            f'Key format not recognized. Please check your key.</span></div>',
-                            unsafe_allow_html=True,
-                        )
+            _provider_options = [
+                "Auto-detect from key (recommended)",
+                "Google AI (Gemini Flash) — Free",
+                "Groq (Llama 3.3 70B) — Free",
+                "Cerebras (Llama 3.3 70B) — Free",
+                "Poe (GPT-4o-mini) — Free tier",
+                "OpenRouter (Mistral) — Free tier",
+                "OpenAI (GPT-4o-mini)",
+            ]
+            _selected_provider = st.selectbox(
+                "Provider / Model",
+                options=_provider_options,
+                index=0,
+                key="user_llm_provider_select",
+                help="Select your provider or leave on auto-detect.",
+            )
 
-                st.markdown(
-                    '<span style="color:#6b7280;font-size:0.75em;">'
-                    'Your key is XOR-encrypted in memory for this session only. '
-                    'Never saved to disk, never logged, transmitted only '
-                    'to the selected provider\'s API over HTTPS.</span>',
-                    unsafe_allow_html=True,
-                )
+            _existing_encrypted = st.session_state.get("_user_llm_key_encrypted", "")
+            _existing_plain = _decrypt_api_key(_existing_encrypted) if _existing_encrypted else ""
+            _user_key_input = st.text_input(
+                "API Key",
+                value=_existing_plain,
+                type="password",
+                key="user_llm_key_input",
+                placeholder="Paste your key here (e.g., AIza..., gsk_..., csk-..., sk-or-...)",
+            )
+
+            if _user_key_input != _existing_plain:
+                if _user_key_input.strip():
+                    st.session_state["_user_llm_key_encrypted"] = _encrypt_api_key(_user_key_input.strip())
+                    os.environ["LLM_API_KEY"] = _user_key_input.strip()
+                    _user_key_count = st.session_state.get("_admin_user_key_activations", 0)
+                    st.session_state["_admin_user_key_activations"] = _user_key_count + 1
+                else:
+                    st.session_state["_user_llm_key_encrypted"] = ""
+                    if "LLM_API_KEY" in os.environ:
+                        del os.environ["LLM_API_KEY"]
+                st.session_state["user_llm_api_key"] = _user_key_input.strip() if _user_key_input else ""
+                st.session_state["_user_llm_provider_choice"] = _selected_provider
+                st.session_state["_llm_connectivity_status"] = None
+                st.rerun()
+
+            # Visual key format validation
+            _key_val = (_user_key_input or "").strip()
+            if _key_val:
+                _detected_provider = "Unknown"
+                _key_valid_format = False
+                if _key_val.startswith("AIza"):
+                    _detected_provider = "Google AI Studio (Gemini)"
+                    _key_valid_format = len(_key_val) >= 30
+                elif _key_val.startswith("gsk_"):
+                    _detected_provider = "Groq"
+                    _key_valid_format = len(_key_val) >= 20
+                elif _key_val.startswith("csk-"):
+                    _detected_provider = "Cerebras"
+                    _key_valid_format = len(_key_val) >= 20
+                elif _key_val.startswith("sk-or-"):
+                    _detected_provider = "OpenRouter"
+                    _key_valid_format = len(_key_val) >= 20
+                elif _key_val.startswith("sk-"):
+                    _detected_provider = "OpenAI"
+                    _key_valid_format = len(_key_val) >= 20
+                elif _key_val.startswith("poe-"):
+                    _detected_provider = "Poe"
+                    _key_valid_format = len(_key_val) >= 10
+                else:
+                    _key_valid_format = len(_key_val) >= 10
+
+                if _key_valid_format:
+                    st.markdown(
+                        f'<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:6px;'
+                        f'padding:8px 12px;margin:6px 0;">'
+                        f'<span style="color:#166534;font-size:0.85em;">'
+                        f'&#10003; Detected: <strong>{_detected_provider}</strong></span></div>',
+                        unsafe_allow_html=True,
+                    )
+                else:
+                    st.markdown(
+                        f'<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:6px;'
+                        f'padding:8px 12px;margin:6px 0;">'
+                        f'<span style="color:#dc2626;font-size:0.85em;">'
+                        f'Key format not recognized. Please check your key.</span></div>',
+                        unsafe_allow_html=True,
+                    )
+
+            st.markdown(
+                '<span style="color:#94a3b8;font-size:0.72em;">'
+                'Encrypted in memory for this session only. Never saved to disk or logged.</span>',
+                unsafe_allow_html=True,
+            )
 
         elif _current_method == "free_llm":
             _llm_avail = _llm_status.get("available", False) if _llm_status else False
-            if _llm_avail:
+            if not _llm_avail and _has_open_ended:
                 st.markdown(
-                    '<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;'
-                    'padding:12px 16px;margin-bottom:8px;">'
-                    '<span style="font-size:1em;font-weight:600;color:#166534;">'
-                    'AI-Powered Responses: Active</span><br>'
-                    '<span style="color:#15803d;font-size:0.85em;">'
-                    'Open-ended responses will be generated by an AI language model.</span></div>',
+                    '<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:6px;'
+                    'padding:8px 12px;margin-top:4px;">'
+                    '<span style="color:#92400e;font-size:0.83em;">'
+                    'Built-in AI may be temporarily unavailable. '
+                    'If generation stalls, switch to "Your own API key" or "Template engine".'
+                    '</span></div>',
                     unsafe_allow_html=True,
                 )
-            else:
-                st.warning(
-                    "Built-in AI providers are currently unavailable. "
-                    "Consider using Option 2 (your own key) or Option 3 (template engine)."
-                )
-
-        elif _current_method == "template":
-            st.markdown(
-                '<div style="background:#faf5ff;border:1px solid #e9d5ff;border-radius:8px;'
-                'padding:12px 16px;margin-bottom:8px;">'
-                '<span style="font-size:1em;font-weight:600;color:#7c3aed;">'
-                'Template Engine: Active</span><br>'
-                '<span style="color:#6d28d9;font-size:0.85em;">'
-                'Open-ended responses will be generated using the built-in template system with '
-                '225+ domain vocabularies, 58+ personas, and 40+ question-type handlers.</span></div>',
-                unsafe_allow_html=True,
-            )
 
         elif _current_method == "experimental":
+            # Soft informational panel — no red, no jargon
             st.markdown(
-                '<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;'
-                'padding:12px 16px;margin-bottom:8px;">'
-                '<span style="font-size:1em;font-weight:600;color:#dc2626;">'
-                'Experimental Engine (SocSim v0.16): Beta</span><br>'
-                '<span style="color:#b91c1c;font-size:0.85em;">'
-                'Uses evidence-traceable behavioral simulation with Fehr-Schmidt utility models, '
-                'IRT-based survey responses, and causal graph interventions. '
-                'Supports 25+ economic games (dictator, trust, ultimatum, public goods, etc.). '
-                'Standard simulation runs normally; SocSim enriches game-theory DVs when applicable.</span></div>',
+                '<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;'
+                'padding:10px 14px;margin-top:4px;">'
+                '<span style="color:#1e40af;font-size:0.83em;">'
+                'The adaptive engine reads your study design — conditions, scales, open-ended questions, '
+                'and context — then applies published behavioral models calibrated to your research domain. '
+                'It supports 25+ experimental paradigms (economic games, social dilemmas, risk tasks, etc.) '
+                'and uses latent behavioral classes to generate realistic individual differences.'
+                '</span></div>',
                 unsafe_allow_html=True,
             )
 
@@ -11103,6 +11022,12 @@ if active_page == 3:
         _progress_counter_placeholder = st.empty()
         _progress_start_time = __import__('time').time()
 
+        # v1.0.8.2: Stall detection state for watchdog mechanism
+        _last_progress_time = [__import__('time').time()]  # mutable ref for closure
+        _last_progress_phase = ["init"]
+        _stall_warning_shown = [False]
+        _stall_threshold_secs = 45.0  # Show warning after 45s without progress
+
         def _fmt_elapsed(seconds: float) -> str:
             """Format elapsed time as human-readable string."""
             s = int(seconds)
@@ -11122,8 +11047,21 @@ if active_page == 3:
         def _live_progress_callback(phase: str, current: int, total: int) -> None:
             """Update the live progress counter in the UI."""
             try:
-                _elapsed = __import__('time').time() - _progress_start_time
+                _now = __import__('time').time()
+                _elapsed = _now - _progress_start_time
                 _elapsed_str = _fmt_elapsed(_elapsed)
+
+                # v1.0.8.2: Update stall detection state
+                _last_progress_time[0] = _now
+                _last_progress_phase[0] = phase
+
+                # v1.0.8.2: Detect stalls — if elapsed > threshold and still on
+                # a phase that shouldn't take long, show a slow-generation warning
+                if _elapsed > _stall_threshold_secs and not _stall_warning_shown[0]:
+                    if phase in ("personas", "scales", "open_ended"):
+                        # These phases shouldn't take >45s — likely stuck on LLM prefill
+                        _stall_warning_shown[0] = True
+
                 if phase == "personas":
                     _progress_counter_placeholder.markdown(
                         f'<div style="text-align:center;padding:10px;background:#f0f9ff;border-radius:8px;margin:8px 0;">'
@@ -11144,16 +11082,35 @@ if active_page == 3:
                         unsafe_allow_html=True,
                     )
                 elif phase == "open_ended":
+                    # v1.0.8.2: Show AI provider connection status during prefill
+                    _oe_extra = ""
+                    if _elapsed > 30:
+                        _oe_extra = (
+                            '<br><span style="color:#78350f;font-size:0.8em;">'
+                            'Connecting to AI providers... This may take a moment if providers are busy.</span>'
+                        )
                     _progress_counter_placeholder.markdown(
                         f'<div style="text-align:center;padding:10px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;margin:8px 0;">'
                         f'<span style="font-size:1.1em;color:#92400e;">'
                         f'Preparing open-ended response generation...'
-                        f' ({_elapsed_str} elapsed)</span></div>',
+                        f' ({_elapsed_str} elapsed)</span>{_oe_extra}</div>',
                         unsafe_allow_html=True,
                     )
                 elif phase == "generating":
                     _pct = int((current / max(1, total)) * 100)
                     _eta_str = _est_remaining(_elapsed, current, total) if current > 2 else ""
+                    # v1.0.8.2: Detect slow generation and show inline warning
+                    _slow_warning = ""
+                    if _elapsed > 120 and _pct < 50 and not _stall_warning_shown[0]:
+                        _stall_warning_shown[0] = True
+                        _slow_warning = (
+                            '<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:6px;'
+                            'padding:8px 12px;margin-top:8px;">'
+                            '<span style="color:#92400e;font-size:0.8em;">'
+                            'Generation is slower than expected. LLM providers may be rate-limited. '
+                            'On your next run, consider using <strong>Your own API key</strong> (free from Groq/Google) '
+                            'or the <strong>Template engine</strong> for faster results.</span></div>'
+                        )
                     _progress_counter_placeholder.markdown(
                         f'<div style="text-align:center;padding:14px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;margin:8px 0;">'
                         f'<span style="font-size:1.4em;font-weight:700;color:#166534;">'
@@ -11162,20 +11119,20 @@ if active_page == 3:
                         f'<span style="color:#15803d;font-size:0.9em;">{_pct}% complete &middot; {_elapsed_str} elapsed{_eta_str}</span>'
                         f'<div style="background:#dcfce7;border-radius:4px;height:10px;margin-top:10px;">'
                         f'<div style="background:#22c55e;width:{_pct}%;height:100%;border-radius:4px;'
-                        f'transition:width 0.3s;"></div></div></div>',
+                        f'transition:width 0.3s;"></div></div>{_slow_warning}</div>',
                         unsafe_allow_html=True,
                     )
                 elif phase == "socsim_enrichment":
                     _pct_s = int((current / max(1, total)) * 100) if total > 0 else 0
                     _eta_s = _est_remaining(_elapsed, current, total) if current > 0 else ""
                     _progress_counter_placeholder.markdown(
-                        f'<div style="text-align:center;padding:12px;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;margin:8px 0;">'
-                        f'<span style="font-size:1.1em;font-weight:600;color:#dc2626;">'
-                        f'SocSim Enrichment: {current} of {total} game&times;condition tasks</span><br>'
-                        f'<span style="color:#b91c1c;font-size:0.85em;">'
-                        f'Applying Fehr-Schmidt utility models &middot; {_pct_s}% &middot; {_elapsed_str} elapsed{_eta_s}</span>'
-                        f'<div style="background:#fecaca;border-radius:4px;height:6px;margin-top:8px;">'
-                        f'<div style="background:#dc2626;width:{_pct_s}%;height:100%;border-radius:4px;'
+                        f'<div style="text-align:center;padding:12px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;margin:8px 0;">'
+                        f'<span style="font-size:1.1em;font-weight:600;color:#1e40af;">'
+                        f'Applying behavioral models: {current} of {total} tasks</span><br>'
+                        f'<span style="color:#3b82f6;font-size:0.85em;">'
+                        f'Enriching experimental paradigm DVs &middot; {_pct_s}% &middot; {_elapsed_str} elapsed{_eta_s}</span>'
+                        f'<div style="background:#bfdbfe;border-radius:4px;height:6px;margin-top:8px;">'
+                        f'<div style="background:#3b82f6;width:{_pct_s}%;height:100%;border-radius:4px;'
                         f'transition:width 0.3s;"></div></div></div>',
                         unsafe_allow_html=True,
                     )
@@ -11255,9 +11212,68 @@ if active_page == 3:
                 progress_bar.progress(25, text="Step 2/5 — Generating participant responses...")
                 df, metadata = engine.generate()
 
+            _gen_total_time = __import__('time').time() - _progress_start_time
+
             # v1.4.9: Inject LLM stats into metadata for the instructor report
             if hasattr(engine, 'llm_generator') and engine.llm_generator is not None:
                 metadata['llm_stats'] = engine.llm_generator.stats
+
+            # v1.0.8.2: Post-generation LLM health diagnostic — detect issues and
+            # show actionable notification for the user to switch methods if needed.
+            if _gen_has_oe and hasattr(engine, 'llm_generator') and engine.llm_generator is not None:
+                _post_llm_stats = engine.llm_generator.stats
+                _post_pool_size = int(_post_llm_stats.get("pool_size", 0))
+                _post_llm_calls = int(_post_llm_stats.get("llm_calls", 0))
+                _post_fallback_uses = int(_post_llm_stats.get("fallback_uses", 0))
+                _post_exhaustions = int(_post_llm_stats.get("provider_exhaustions", 0))
+                _post_total_responses = _post_pool_size + _post_fallback_uses
+
+                # Detect specific issues
+                _llm_had_issues = False
+                _issue_messages: List[str] = []
+
+                if _post_llm_calls == 0 and _post_pool_size == 0:
+                    _llm_had_issues = True
+                    _issue_messages.append(
+                        "No AI-generated responses were produced. All LLM providers may be "
+                        "temporarily unavailable or rate-limited."
+                    )
+                elif _post_exhaustions > 0 and _post_fallback_uses > _post_pool_size:
+                    _llm_had_issues = True
+                    _issue_messages.append(
+                        f"LLM providers were exhausted {_post_exhaustions} time(s). "
+                        f"Most responses ({_post_fallback_uses}) used the template engine instead of AI."
+                    )
+                elif _gen_total_time > 180 and _post_pool_size > 0:
+                    _llm_had_issues = True
+                    _issue_messages.append(
+                        f"Generation took {_fmt_elapsed(_gen_total_time)} — longer than expected. "
+                        f"LLM providers may be experiencing high latency."
+                    )
+
+                if _llm_had_issues:
+                    _switch_html = (
+                        '<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:10px;'
+                        'padding:16px 20px;margin:12px 0;">'
+                        '<span style="font-size:1.05em;font-weight:700;color:#92400e;">'
+                        'LLM Generation Issues Detected</span><br>'
+                        '<span style="color:#78350f;font-size:0.9em;">'
+                    )
+                    for _msg in _issue_messages:
+                        _switch_html += f'{_msg}<br>'
+                    _switch_html += (
+                        '<br><strong>Recommendations:</strong><br>'
+                        '&bull; <strong>Your own API key</strong> — get a free key from '
+                        '<a href="https://console.groq.com" target="_blank">Groq</a> or '
+                        '<a href="https://aistudio.google.com" target="_blank">Google AI</a> '
+                        'for unlimited, fast AI responses<br>'
+                        '&bull; <strong>Template engine</strong> — instant generation '
+                        'using 225+ domain templates (no API needed)<br>'
+                        '&bull; <strong>Try again later</strong> — built-in free API access '
+                        'refreshes daily'
+                        '</span></div>'
+                    )
+                    st.markdown(_switch_html, unsafe_allow_html=True)
 
             # v1.0.8.1: Show SocSim enrichment results
             _socsim_meta = metadata.get("socsim", {})
@@ -11266,9 +11282,8 @@ if active_page == 3:
                 _games_list = list({d["game"] for d in _enriched_dvs})
                 _n_enriched = len(_enriched_dvs)
                 st.success(
-                    f"**SocSim Enrichment Applied** — {_n_enriched} game DV(s) enriched "
-                    f"using Fehr-Schmidt utility models: {', '.join(_games_list)}. "
-                    f"Evidence-traceable behavioral simulation (SocSim v0.16)."
+                    f"**Behavioral Model Enrichment** — {_n_enriched} game DV(s) enriched "
+                    f"with domain-specific behavioral models: {', '.join(_games_list)}."
                 )
                 if _socsim_meta.get("errors"):
                     for _serr in _socsim_meta["errors"]:

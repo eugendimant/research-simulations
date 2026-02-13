@@ -5,11 +5,11 @@ Detects economic game DVs in the study design, maps them to socsim ExperimentSpe
 runs socsim simulation, and enriches the main DataFrame with evidence-traceable
 behavioral data grounded in Fehr-Schmidt utility models.
 
-v1.0.8.1 — Initial integration as experimental feature.
+v1.0.8.3 — OE narrative fix.
 """
 from __future__ import annotations
 
-__version__ = "1.0.8.1"
+__version__ = "1.0.8.3"
 
 import json
 import logging

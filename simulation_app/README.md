@@ -1,6 +1,6 @@
 # Behavioral Experiment Simulation Tool
 
-**Version 1.0.8.1** | A Streamlit application for generating realistic synthetic behavioral experiment data using theory-grounded persona-driven simulation.
+**Version 1.0.8.3** | A Streamlit application for generating realistic synthetic behavioral experiment data using theory-grounded persona-driven simulation.
 
 ## What This Tool Does
 
@@ -19,27 +19,26 @@
 - **Develop analysis scripts** on properly structured data
 - **Check pre-registration consistency** before data collection
 
-## Features (v1.0.8.1)
+## Features (v1.0.8.3)
 
-### NEW: Generation Method Chooser (v1.0.8.1)
-- **4 simulation methods** to choose from before generation:
+### Generation Method Chooser
+- **4 simulation methods** — clean, compact selection:
   - **Built-in AI** (Recommended) — free LLM access via Groq, Cerebras, Google AI, Poe, OpenRouter
   - **Your Own API Key** — bring your own key with auto-detection and format validation
   - **Built-in Template Engine** — 225+ domain templates, 58+ personas, no API needed
-  - **Experimental SocSim** (Beta) — Fehr-Schmidt utility models, IRT, 28 economic games
-- Each method has an expandable "What does this do?" information panel
+  - **Adaptive Behavioral Engine** (Beta) — analyzes your study design and applies domain-specific behavioral models
+- LLM stall detection with method-switch recommendations (v1.0.8.2)
 
-### NEW: Real-Time Progress Counter (v1.0.8.1)
+### Real-Time Progress Counter
 - **Live participant counter** replaces static time estimates
 - Phase-specific updates: persona assignment, scales, open-ended, participant simulation
 - Shows: current/total count, percentage, progress bar, elapsed time, ETA
 
-### NEW: SocSim Experimental Engine (v1.0.8.1, Beta)
-- **Evidence-traceable behavioral simulation** for economic game paradigms
-- **28 games supported**: dictator, trust, ultimatum, public goods, prisoner's dilemma, die roll, gift exchange, stag hunt, Holt-Laury risk, beauty contest, and more
-- **Fehr-Schmidt inequity aversion** utility models with published parameter priors
-- **4 latent behavioral classes**: self-interested, fairness-minded, reciprocator, high-noise
-- **Auto-detection**: automatically identifies economic game DVs in your study design
+### Adaptive Behavioral Engine (Beta)
+- Reads your study design (conditions, scales, open-ended questions, context) and applies published behavioral models
+- **25+ experimental paradigms** supported: economic games, social dilemmas, risk tasks, and more
+- **Latent behavioral classes** for realistic individual differences
+- **Auto-detection**: automatically identifies paradigm-relevant DVs in your study design
 
 ### NEW: AI-Powered Open-Ended Responses with multi-provider failover (v1.4.10+)
 - **Zero-config AI**: open-ended responses are automatically AI-generated using built-in API keys — no setup needed
