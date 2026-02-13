@@ -2,6 +2,7 @@ import pytest
 import simulation_app.utils.llm_response_generator as llm_mod
 
 from simulation_app.utils.enhanced_simulation_engine import EnhancedSimulationEngine
+from simulation_app.utils.persona_library import TextResponseGenerator
 from simulation_app.utils.llm_response_generator import (
     LLMResponseGenerator,
     _is_low_quality_response,
@@ -172,3 +173,25 @@ def test_engine_emits_progress_callback_during_generate():
     assert events
     assert events[-1][0] == 10
     assert events[-1][1] == 10
+
+
+def test_template_generator_repairs_offtopic_outputs():
+    gen = TextResponseGenerator()
+    context = {
+        "topic": "trust in AI pricing",
+        "question_text": "How did AI pricing affect your trust in the product?",
+        "condition": "AI high transparency",
+        "study_title": "Consumer AI Pricing",
+        "behavioral_summary": "rated items moderately positive",
+    }
+    traits = {"attention_level": 0.8, "verbosity": 0.5, "formality": 0.4}
+
+    repaired = gen._repair_low_quality_response("interesting experience", context, "engaged")
+    assert "trust" in repaired.lower() or "pricing" in repaired.lower() or "ai" in repaired.lower()
+    assert len(repaired.split()) >= 10
+
+
+def test_template_quality_gate_flags_generic_text():
+    gen = TextResponseGenerator()
+    bad = "Response about this topic. Interesting experience."
+    assert gen._is_low_quality_template_output(bad, ["trust", "pricing"])

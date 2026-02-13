@@ -4118,6 +4118,83 @@ class TextResponseGenerator:
         self._used_responses.add(response)
         return response
 
+
+    def _extract_relevance_tokens(self, context: Dict[str, str]) -> List[str]:
+        """Extract key content tokens from question/context for relevance checks."""
+        import re
+        raw_parts = [
+            str(context.get("question_text", "")),
+            str(context.get("question_context_raw", "")),
+            str(context.get("entities", "")),
+            str(context.get("topic", "")),
+            str(context.get("condition", "")),
+            str(context.get("study_title", "")),
+        ]
+        raw = " ".join(raw_parts).lower()
+        tokens = re.findall(r"\b[a-z][a-z0-9_'-]{2,}\b", raw)
+        stop = {
+            "about", "question", "response", "study", "condition", "please", "share",
+            "this", "that", "with", "from", "your", "what", "when", "where", "which",
+            "would", "could", "should", "because", "into", "over", "under", "participant",
+        }
+        out = []
+        seen = set()
+        for t in tokens:
+            if t in stop:
+                continue
+            if t not in seen:
+                out.append(t)
+                seen.add(t)
+        return out[:8]
+
+    def _repair_low_quality_response(self, response: str, context: Dict[str, str], persona_style: str) -> str:
+        """Deterministic repair to enforce relevance and non-gibberish fallback output."""
+        topic = str(context.get("topic", "this topic")).strip() or "this topic"
+        condition = str(context.get("condition", "")).strip()
+        behavioral_summary = str(context.get("behavioral_summary", "")).strip()
+        anchor = f"My view on {topic} is"
+        if condition:
+            anchor += f" in the {condition} condition"
+        anchor += ":"
+
+        tone_prefix = {
+            "careless": "Honestly",
+            "satisficer": "Overall",
+            "engaged": "After thinking about it",
+            "extreme": "I feel strongly that",
+        }.get(persona_style, "From my perspective")
+
+        summary_bit = ""
+        if behavioral_summary:
+            summary_bit = f" {behavioral_summary.strip().rstrip('.')}."
+
+        repaired = f"{tone_prefix}, {anchor} {response.strip()}".strip()
+        if len(repaired.split()) < 12:
+            repaired += f" I based this on the question details and my reaction to {topic}."
+        repaired += summary_bit
+        return repaired.strip()
+
+    def _is_low_quality_template_output(self, response: str, relevance_tokens: List[str]) -> bool:
+        import re
+        text = (response or "").strip()
+        if len(text) < 18:
+            return True
+        words = re.findall(r"\b\w+\b", text.lower())
+        if len(words) < 7:
+            return True
+        if len(set(words)) / max(1, len(words)) < 0.30 and len(words) >= 10:
+            return True
+        bad_markers = (
+            "response about", "interesting experience", "this captures it",
+            "favorite conspiracy", "100 percent", "in my estimation",
+        )
+        lower = text.lower()
+        if any(m in lower for m in bad_markers):
+            return True
+        if relevance_tokens and not any(tok in lower for tok in relevance_tokens[:5]):
+            return True
+        return False
+
     def generate_response(
         self,
         response_type: str,
@@ -4143,6 +4220,7 @@ class TextResponseGenerator:
             Generated text response with natural variation, guaranteed unique within dataset
         """
         rng = random.Random(seed)
+        _relevance_tokens = self._extract_relevance_tokens(context)
 
         # v1.0.5.0: Enhanced behavioral-profile-driven style selection
         # Uses full trait vector and behavioral pattern for precise style matching
@@ -4311,6 +4389,10 @@ class TextResponseGenerator:
                     response += f" {reasoning}"
                 except KeyError:
                     pass
+
+        # Template-quality gate: enforce relevance and repair gibberish/off-topic outputs
+        if self._is_low_quality_template_output(response, _relevance_tokens):
+            response = self._repair_low_quality_response(response, context, persona_style)
 
         # Ensure response is unique within this dataset
         response = self._make_response_unique(response.strip(), rng, context=context)
