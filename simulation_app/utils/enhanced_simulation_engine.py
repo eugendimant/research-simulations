@@ -7519,13 +7519,16 @@ class EnhancedSimulationEngine:
                 self._log(f"WARNING: LLM generation failed, falling back: {_llm_gen_err}")
 
         # Try to use comprehensive response generator if available
+        # v1.0.7.2: Don't blindly return — check if result is non-empty first.
+        # Previously, an empty return from comprehensive_generator would skip the
+        # text_generator fallback entirely, leaving responses blank.
         if self.comprehensive_generator is not None:
             try:
                 base_name = str(question_spec.get("name", ""))
                 var_name = str(question_spec.get("variable_name", ""))
                 q_type = str(question_spec.get("type", ""))
                 unique_question_id = f"{base_name}|{var_name}|{q_type}|{question_text[:100]}"
-                return self.comprehensive_generator.generate(
+                _comp_result = self.comprehensive_generator.generate(
                     question_text=question_text or response_type,
                     sentiment=sentiment,
                     persona_verbosity=verbosity,
@@ -7536,6 +7539,11 @@ class EnhancedSimulationEngine:
                     participant_seed=participant_seed,
                     behavioral_profile=behavioral_profile,
                 )
+                if _comp_result and _comp_result.strip():
+                    return _comp_result
+                # v1.0.7.2: Empty result — fall through to text_generator
+                logger.debug("ComprehensiveResponseGenerator returned empty for '%s', falling through to text_generator",
+                             question_text[:80] if question_text else "unknown")
             except Exception as _comp_gen_err:
                 # v1.0.5.7: Log at WARNING (not debug) so failures are visible
                 logger.warning("ComprehensiveResponseGenerator error for '%s': %s",
@@ -8368,9 +8376,78 @@ class EnhancedSimulationEngine:
         question_hash_stable = sum(ord(c) * (i + 1) * 31 for i, c in enumerate(unique_id[:200]))
         unique_fallback_seed = (participant_seed + question_hash_stable) % (2**31)
 
-        return self.text_generator.generate_response(
-            response_type, style, context, traits, unique_fallback_seed
-        )
+        # v1.0.7.2: Wrap text_generator in try/except — if even the last-resort
+        # generator fails, produce a hardcoded topic-aware response rather than
+        # propagating the exception to the outer handler (which sets "").
+        try:
+            _text_result = self.text_generator.generate_response(
+                response_type, style, context, traits, unique_fallback_seed
+            )
+            if _text_result and _text_result.strip():
+                return _text_result
+        except Exception as _txt_gen_err:
+            logger.warning("TextResponseGenerator error: %s", _txt_gen_err)
+
+        # v1.0.7.2: ABSOLUTE LAST RESORT — generate a minimal topic-aware response
+        # so that the OE column is NEVER empty when a participant should have answered.
+        return self._last_resort_oe_response(question_text, _original_question_text, sentiment, participant_seed)
+
+    def _last_resort_oe_response(
+        self,
+        question_text: str,
+        original_question_text: str,
+        sentiment: str,
+        participant_seed: int,
+    ) -> str:
+        """Generate a minimal topic-aware OE response when ALL generators have failed.
+
+        v1.0.7.2: This is the absolute last resort. It extracts topic words from
+        the question text and produces a short, on-topic response. This method
+        must NEVER raise an exception and must NEVER return an empty string.
+        """
+        import re as _lr_re
+        _rng = np.random.RandomState(participant_seed % (2**31))
+
+        # Extract topic words from original question text (before context embedding)
+        _source = original_question_text or question_text or ""
+        _words = _lr_re.findall(r'\b[a-zA-Z]{4,}\b', _source.lower())
+        _stop = {
+            'this', 'that', 'about', 'what', 'your', 'please', 'describe',
+            'explain', 'question', 'context', 'study', 'topic', 'condition',
+            'think', 'feel', 'have', 'some', 'with', 'from', 'very', 'really',
+            'would', 'could', 'should', 'tell', 'share', 'much', 'many',
+            'they', 'them', 'their', 'been', 'being', 'were', 'also',
+        }
+        _topic_words = [w for w in _words if w not in _stop][:3]
+        _topic = ' '.join(_topic_words) if _topic_words else 'what was asked'
+
+        # Sentiment-aligned minimal responses
+        if sentiment in ('very_positive', 'positive'):
+            _templates = [
+                f"I feel positively about {_topic}.",
+                f"I have good feelings about {_topic}.",
+                f"{_topic} is something I view favorably.",
+                f"My thoughts on {_topic} are generally positive.",
+                f"I think {_topic} is important and I feel good about it.",
+            ]
+        elif sentiment in ('very_negative', 'negative'):
+            _templates = [
+                f"I have concerns about {_topic}.",
+                f"My feelings about {_topic} are not very positive.",
+                f"{_topic} is something I feel negatively about.",
+                f"I'm not too happy about {_topic} honestly.",
+                f"I think {_topic} needs more thought, I'm not satisfied.",
+            ]
+        else:
+            _templates = [
+                f"I have mixed feelings about {_topic}.",
+                f"{_topic} is something I've thought about.",
+                f"I shared my honest thoughts about {_topic}.",
+                f"My views on {_topic} are somewhere in the middle.",
+                f"I considered {_topic} and gave my genuine opinion.",
+            ]
+
+        return str(_templates[int(_rng.randint(0, len(_templates)))])
 
     def _generate_demographics(self, n: int) -> pd.DataFrame:
         rng = np.random.RandomState(self.seed + 1000)
@@ -9213,31 +9290,40 @@ class EnhancedSimulationEngine:
                 response_mean = float(np.mean(_clean_resp)) if _clean_resp else None
 
                 # v1.0.4.8: Build full behavioral profile for OE-numeric consistency
-                _beh_profile = self._build_behavioral_profile(
-                    persona, all_traits[i], response_vals, response_mean,
-                    participant_condition,
-                )
+                # v1.0.7.2: Wrap in try/except — profile enrichment must never
+                # crash the loop and leave remaining participants with no response.
+                try:
+                    _beh_profile = self._build_behavioral_profile(
+                        persona, all_traits[i], response_vals, response_mean,
+                        participant_condition,
+                    )
+                except Exception as _bp_err:
+                    logger.warning("Behavioral profile build failed for participant %d: %s", i + 1, _bp_err)
+                    _beh_profile = {'response_mean': response_mean, 'persona_name': 'Default'}
 
                 # v1.0.5.7: Inject cross-response voice memory into profile.
                 # Now always available (pre-initialized before OE loop).
                 # First OE question gets tone from numeric ratings; subsequent
                 # questions also get prior response excerpts for consistency.
-                if i in _participant_voice_memory:
-                    _voice = _participant_voice_memory[i]
-                    _beh_profile['prior_responses'] = _voice.get('responses', [])
-                    _beh_profile['established_tone'] = _voice.get('tone', '')
-                    if _voice.get('last_response'):
-                        _beh_profile['voice_consistency_hint'] = (
-                            f"This participant previously wrote: \"{_voice['last_response'][:80]}...\" "
-                            f"Their tone was {_voice.get('tone', 'neutral')}. "
-                            f"Maintain consistent voice and personality across questions."
-                        )
-                    elif _voice.get('tone'):
-                        # First OE question: hint from numeric pattern only
-                        _beh_profile['voice_consistency_hint'] = (
-                            f"Based on their numeric ratings, this participant's tone is {_voice['tone']}. "
-                            f"Their text should match this tone."
-                        )
+                try:
+                    if i in _participant_voice_memory:
+                        _voice = _participant_voice_memory[i]
+                        _beh_profile['prior_responses'] = _voice.get('responses', [])
+                        _beh_profile['established_tone'] = _voice.get('tone', '')
+                        if _voice.get('last_response'):
+                            _beh_profile['voice_consistency_hint'] = (
+                                f"This participant previously wrote: \"{_voice['last_response'][:80]}...\" "
+                                f"Their tone was {_voice.get('tone', 'neutral')}. "
+                                f"Maintain consistent voice and personality across questions."
+                            )
+                        elif _voice.get('tone'):
+                            # First OE question: hint from numeric pattern only
+                            _beh_profile['voice_consistency_hint'] = (
+                                f"Based on their numeric ratings, this participant's tone is {_voice['tone']}. "
+                                f"Their text should match this tone."
+                            )
+                except Exception as _vm_err:
+                    logger.debug("Voice memory injection failed for participant %d: %s", i + 1, _vm_err)
 
                 # v1.0.7.1: OE completeness guarantee.
                 # User requirement: visible open-ended questions must be fully populated.
@@ -9247,6 +9333,7 @@ class EnhancedSimulationEngine:
                 # Generate response with enhanced uniqueness + behavioral context
                 # v1.0.7.0: Wrapped in try/except to guarantee simulation never hard-stops
                 # from OE generation failures (LLM or template errors).
+                # v1.0.7.2: On failure, use _last_resort_oe_response instead of empty string.
                 try:
                     text = self._generate_open_response(
                         q,
@@ -9261,6 +9348,24 @@ class EnhancedSimulationEngine:
                 except Exception as _oe_err:
                     logger.warning("OE response generation failed for participant %d: %s", i + 1, _oe_err)
                     _text_str = ""
+
+                # v1.0.7.2: NEVER leave OE response empty when participant should have answered.
+                # If all generators failed or returned empty, use the absolute last-resort.
+                if not _text_str.strip():
+                    try:
+                        _sentiment_for_lr = "neutral"
+                        if response_mean is not None:
+                            if response_mean >= 4.5:
+                                _sentiment_for_lr = "positive"
+                            elif response_mean <= 3.5:
+                                _sentiment_for_lr = "negative"
+                        _text_str = self._last_resort_oe_response(
+                            q_text, q_text, _sentiment_for_lr, p_seed
+                        )
+                    except Exception as _lr_err:
+                        logger.error("Even last-resort OE generation failed for participant %d: %s", i + 1, _lr_err)
+                        _text_str = "I shared my honest thoughts on this."
+
                 responses.append(_text_str)
 
                 # v1.0.5.0: Update voice memory for this participant
