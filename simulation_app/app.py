@@ -10461,6 +10461,19 @@ if active_page == 3:
 
     # v1.4.5: Show prominent animated progress indicator IMMEDIATELY when generating
     # (design summary is hidden above, so this is the first thing users see)
+    _eta_msg = "Most runs finish in about 45-120 seconds."
+    try:
+        _eta_n = int(st.session_state.get("sample_size", 200) or 200)
+        _eta_oe = len(st.session_state.get("confirmed_open_ended", []) or [])
+        _eta_factor = max(1.0, (_eta_n / 200.0) * max(1, _eta_oe))
+        _eta_low = int(max(30, 25 * _eta_factor))
+        _eta_high = int(max(90, 70 * _eta_factor))
+        _eta_msg = (
+            f"Estimated runtime: {_eta_low}-{_eta_high} seconds "
+            f"for your current sample size/open-text load."
+        )
+    except Exception:
+        pass
     if is_generating:
         with status_placeholder.container():
             st.markdown("""
@@ -10506,10 +10519,10 @@ if active_page == 3:
             <div class="progress-container">
                 <div class="progress-spinner"></div>
                 <h2 class="progress-title">Generating Your Dataset...</h2>
-                <p class="progress-subtitle">Creating realistic behavioral data. This typically takes 10-30 seconds.</p>
+                <p class="progress-subtitle">Creating realistic behavioral data. __ETA_MESSAGE__</p>
                 <p class="progress-subtitle" style="margin-top: 10px; font-size: 14px;">Please don't close or refresh this page.</p>
             </div>
-            """, unsafe_allow_html=True)
+            """.replace("__ETA_MESSAGE__", _eta_msg), unsafe_allow_html=True)
 
     if has_generated:
         # v1.0.6.7: Generation warnings stored for display in quality report expander

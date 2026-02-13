@@ -1620,6 +1620,7 @@ class _LLMProvider:
             result = _call_llm_api(
                 self.api_url, self.api_key, self.model,
                 system_prompt, user_prompt, temperature, max_tokens,
+                timeout=_timeout,
             )
             if result is not None:
                 break
@@ -2085,8 +2086,8 @@ class LLMResponseGenerator:
                 else:
                     break  # Provider failed
             # v1.0.5.7: Use property for auto-recovery check
-            if not self.is_llm_available:
-                break  # Don't try remaining sentiments if all providers down
+            if _timed_out or not self.is_llm_available:
+                break  # Don't try remaining sentiments if budget exhausted/providers down
 
         return total
 
