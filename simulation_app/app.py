@@ -93,26 +93,16 @@ try:
 except ImportError:
     _HAS_CORRELATION_MODULE = False
 
-# Verify correct version loaded — if stale, force a targeted reload
+# Verify expected utils version; do not hot-purge sys.modules at runtime.
+# Purging modules caused intermittent import KeyError on Streamlit Cloud with
+# concurrent sessions. We now surface a warning and rely on clean restarts /
+# deploy refreshes to load the matching utils package safely.
 if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION:
-    try:
-        # Purge stale utils sub-modules from sys.modules so fresh code is loaded
-        _stale_keys = [k for k in sys.modules if k == "utils" or k.startswith("utils.")]
-        for _k in _stale_keys:
-            del sys.modules[_k]
-        # Re-import with fresh code
-        import utils  # noqa: F811
-        from utils.group_management import GroupManager, APIKeyManager  # noqa: F811
-        from utils.qsf_preview import QSFPreviewParser, QSFPreviewResult  # noqa: F811
-        from utils.schema_validator import validate_schema  # noqa: F811
-        from utils.github_qsf_collector import collect_qsf_async, is_collection_enabled  # noqa: F811
-        from utils.instructor_report import InstructorReportGenerator, ComprehensiveInstructorReport  # noqa: F811
-        from utils.survey_builder import SurveyDescriptionParser, ParsedDesign, ParsedCondition, ParsedScale, KNOWN_SCALES, AVAILABLE_DOMAINS, generate_qsf_from_design  # noqa: F811
-        from utils.persona_library import PersonaLibrary, Persona  # noqa: F811
-        from utils.enhanced_simulation_engine import EnhancedSimulationEngine, EffectSizeSpec, ExclusionCriteria  # noqa: F811
-        from utils.condition_identifier import DesignAnalysisResult, VariableRole, analyze_qsf_design  # noqa: F811
-    except Exception:
-        st.warning(f"Utils version mismatch: expected {REQUIRED_UTILS_VERSION}, got {getattr(utils, '__version__', '?')}. Please restart the app.")
+    st.warning(
+        f"Utils version mismatch: expected {REQUIRED_UTILS_VERSION}, "
+        f"got {getattr(utils, '__version__', '?')}. "
+        "Please restart/redeploy the app to refresh imports."
+    )
 
 
 # -----------------------------
