@@ -45,7 +45,7 @@ This module is designed to run inside a `utils/` package (i.e., imported as
 """
 
 # Version identifier to help track deployed code
-__version__ = "1.0.8.1"  # v1.0.8.1: SocSim integration, progress callback
+__version__ = "1.0.8.2"  # v1.0.8.2: LLM stall fix, watchdog
 
 # =============================================================================
 # SCIENTIFIC FOUNDATIONS FOR SIMULATION

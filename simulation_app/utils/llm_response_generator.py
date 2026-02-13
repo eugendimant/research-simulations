@@ -21,7 +21,7 @@ Architecture:
 Version: 1.0.8.0
 """
 
-__version__ = "1.0.8.1"
+__version__ = "1.0.8.2"
 
 import hashlib
 import json
@@ -341,7 +341,13 @@ class _RateLimiter:
         self._timestamps = [t for t in self._timestamps if now - t < 60]
         if len(self._timestamps) >= self._max_rpm:
             sleep_for = 60.0 - (now - self._timestamps[0]) + 0.5
+            # v1.0.8.2: Cap rate-limit sleep to 15s to prevent long hangs.
+            # If we'd need to wait >15s, skip this provider instead.
+            if sleep_for > 15.0:
+                logger.info("Rate limiter: would sleep %.1fs, capped at skip", sleep_for)
+                return  # Don't append timestamp — let caller fail and try next provider
             if sleep_for > 0:
+                logger.debug("Rate limiter: sleeping %.1fs", sleep_for)
                 time.sleep(sleep_for)
         self._timestamps.append(time.time())
 
@@ -1582,7 +1588,8 @@ class _LLMProvider:
         self._last_error_message: str = ""  # Most recent error for diagnostics
 
     def call(self, system_prompt: str, user_prompt: str,
-             temperature: float = 0.7, max_tokens: int = 4000) -> Optional[str]:
+             temperature: float = 0.7, max_tokens: int = 4000,
+             timeout: int = 25) -> Optional[str]:
         if not self.api_key:
             return None
 
@@ -1620,7 +1627,7 @@ class _LLMProvider:
             result = _call_llm_api(
                 self.api_url, self.api_key, self.model,
                 system_prompt, user_prompt, temperature, max_tokens,
-                timeout=_timeout,
+                timeout=timeout,
             )
             if result is not None:
                 break
@@ -1728,6 +1735,7 @@ class LLMResponseGenerator:
         self._pool = _ResponsePool()
         self._fallback_count = 0
         self._batch_failure_count = 0
+        self._quality_rejection_count: int = 0  # v1.0.8.2: Track low-quality response rejections
         self._api_disabled_time: float = 0.0  # v1.0.5.7: When API was disabled
         self._api_recovery_secs: float = 20.0  # v1.0.7.1: Reduced from 60 → 20s for faster recovery
         # v1.0.5.8: Track provider exhaustion events for admin analytics
@@ -2086,7 +2094,8 @@ class LLMResponseGenerator:
                 else:
                     break  # Provider failed
             # v1.0.5.7: Use property for auto-recovery check
-            if _timed_out or not self.is_llm_available:
+            # v1.0.8.2: Check time budget (was referencing undefined _timed_out)
+            if (time.time() - _prefill_start >= max_time) or not self.is_llm_available:
                 break  # Don't try remaining sentiments if budget exhausted/providers down
 
         return total
@@ -2126,9 +2135,11 @@ class LLMResponseGenerator:
 
             # Adaptive max_tokens: reduce for TPM-constrained providers (e.g. Gemma 3 27B: 15K TPM)
             _max_tokens = 4000
+            _call_timeout = 20  # v1.0.8.2: Per-provider timeout (seconds)
             if "gemma" in provider.model.lower():
                 _max_tokens = 2500  # ~3K prompt + 2.5K response ≈ 5.5K < 15K TPM
-            raw = provider.call(SYSTEM_PROMPT, prompt, max_tokens=_max_tokens)
+            raw = provider.call(SYSTEM_PROMPT, prompt, max_tokens=_max_tokens,
+                                timeout=_call_timeout)
 
             if raw is not None:
                 responses = _parse_json_responses(raw, len(persona_specs))
@@ -2178,12 +2189,12 @@ class LLMResponseGenerator:
                            len(self._providers), self._batch_failure_count,
                            self._api_recovery_secs)
         else:
-            # v1.0.7.1: Reduced max sleep from 10s → 5s, jitter from 2s → 1s
-            _base = min(2.0 * self._batch_failure_count, 5.0)
-            _jitter = random.uniform(0, min(1.0, _base * 0.3))
+            # v1.0.8.2: Reduced max sleep from 5s → 2s to prevent UI hangs
+            _base = min(1.0 * self._batch_failure_count, 2.0)
+            _jitter = random.uniform(0, 0.5)
             _backoff_secs = _base + _jitter
-            logger.info("Batch %d/%d failed, sleeping %.1fs (jitter %.1fs) before retry",
-                        self._batch_failure_count, 3, _backoff_secs, _jitter)
+            logger.info("Batch %d/%d failed, sleeping %.1fs before retry",
+                        self._batch_failure_count, 3, _backoff_secs)
             time.sleep(_backoff_secs)
             self._reset_all_providers()
         return []
