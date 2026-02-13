@@ -80,6 +80,7 @@ from utils.condition_identifier import (
     VariableRole,
     analyze_qsf_design,
 )
+from utils.simulation_run_audit import persist_simulation_run, audit_new_runs
 import utils
 
 # v1.8.8.0: Correlation matrix for cross-DV correlations
@@ -115,6 +116,9 @@ APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
 BASE_STORAGE.mkdir(parents=True, exist_ok=True)
+SIM_RUNS_ROOT = BASE_STORAGE / "simulation_runs"
+SIM_RUN_AUDIT_STATE_FILE = SIM_RUNS_ROOT / ".run_audit_state.json"
+SIM_RUN_IMPROVEMENT_LOG = SIM_RUNS_ROOT / "continuous_improvement_log.txt"
 
 
 # ---------------------------------------------------------------------------
@@ -11155,6 +11159,36 @@ if active_page == 3:
                 prereg_summary = f"# Preregistration Summary\n\n## Primary Outcomes\n{prereg_outcomes}\n\n## Independent Variables\n{prereg_iv}"
                 files["Source_Files/Preregistration_Summary.txt"] = prereg_summary.encode("utf-8")
 
+            # v1.0.7.3: Persist each run in its own folder + audit newly created runs.
+            run_archive_dir = None
+            run_audit_summary: Dict[str, Any] = {}
+            try:
+                run_archive_dir = persist_simulation_run(
+                    output_root=SIM_RUNS_ROOT,
+                    df=df,
+                    metadata=metadata,
+                    instructor_report_md=instructor_report,
+                    engine_log=st.session_state.get("_admin_engine_log", []),
+                    validation_results=validation_results,
+                )
+                run_audit_summary = audit_new_runs(
+                    output_root=SIM_RUNS_ROOT,
+                    state_file=SIM_RUN_AUDIT_STATE_FILE,
+                    running_log_file=SIM_RUN_IMPROVEMENT_LOG,
+                )
+            except Exception as archive_err:
+                _log(f"Run archive/audit workflow failed: {archive_err}", level="warning")
+                run_audit_summary = {
+                    "new_run_count": 0,
+                    "audits": [],
+                    "error": str(archive_err),
+                }
+
+            if run_archive_dir is not None:
+                metadata["run_archive_path"] = str(run_archive_dir)
+            metadata["run_audit_summary"] = run_audit_summary
+            metadata["run_improvement_log"] = str(SIM_RUN_IMPROVEMENT_LOG)
+
             zip_bytes = _bytes_to_zip(files)
 
             st.session_state["last_df"] = df
@@ -11384,6 +11418,24 @@ if active_page == 3:
                 "<div style='margin:4px 0 8px 0;'>" + " ".join(_gen_badges) + "</div>",
                 unsafe_allow_html=True,
             )
+
+        _dl_run_archive = (_dl_meta or {}).get("run_archive_path", "")
+        _dl_run_audit = (_dl_meta or {}).get("run_audit_summary", {}) or {}
+        _dl_new_audits = _dl_run_audit.get("new_run_count", 0)
+        _dl_audit_errors = _dl_run_audit.get("error_count", 0)
+        _dl_audit_warnings = _dl_run_audit.get("warning_count", 0)
+        _dl_avg_quality = float(_dl_run_audit.get("avg_quality_score", 100.0) or 100.0)
+        _dl_top_issues = _dl_run_audit.get("top_issue_codes", []) or []
+        _dl_log_path = (_dl_meta or {}).get("run_improvement_log", "")
+        if _dl_run_archive:
+            st.caption(f"Run archive folder: `{_dl_run_archive}`")
+            st.caption(f"Continuous improvement log: `{_dl_log_path}`")
+            if _dl_new_audits:
+                st.caption(f"Automatic quality audit completed for {_dl_new_audits} new run(s).")
+                st.caption(f"Latest audit findings: errors={_dl_audit_errors}, warnings={_dl_audit_warnings}")
+                st.caption(f"Portfolio quality score (all audited runs): {_dl_avg_quality:.1f}/100")
+            if _dl_top_issues:
+                st.caption(f"Top recurring issue codes: {', '.join(_dl_top_issues[:3])}")
 
         st.download_button(
             "Download ZIP (CSV + metadata + analysis scripts)",
