@@ -30,6 +30,7 @@ from .beauty_contest import BeautyContest
 from .common_pool_resource import CommonPoolResource
 from .tullock_contest import TullockContest
 from .bribery_game import BriberyGame
+from .money_request_11_20 import MoneyRequest1120
 
 
 _REGISTRY: Dict[str, Type[Game]] = {
@@ -71,6 +72,9 @@ _REGISTRY: Dict[str, Type[Game]] = {
     "common_pool_resource": CommonPoolResource,
     "tullock_contest": TullockContest,
     "bribery_game": BriberyGame,
+
+    # parameterised game families
+    "money_request_11_20": MoneyRequest1120,
 }
 
 # Public alias for backwards compatibility

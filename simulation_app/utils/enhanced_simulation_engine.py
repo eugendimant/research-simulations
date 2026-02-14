@@ -45,7 +45,7 @@ This module is designed to run inside a `utils/` package (i.e., imported as
 """
 
 # Version identifier to help track deployed code
-__version__ = "1.0.8.8"  # v1.0.8.8: Admin counter persistence fix
+__version__ = "1.0.8.9"  # v1.0.8.9: SocSim strategy models, agent backends, optimization infrastructure
 
 # =============================================================================
 # SCIENTIFIC FOUNDATIONS FOR SIMULATION

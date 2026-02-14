@@ -33,7 +33,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 # Version identifier to help track deployed code
-__version__ = "1.0.8.8"  # v1.0.8.8: Admin counter persistence fix
+__version__ = "1.0.8.9"  # v1.0.8.9: SocSim strategy models, agent backends, optimization infrastructure
 
 
 # ============================================================================

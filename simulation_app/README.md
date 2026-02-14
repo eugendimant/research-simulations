@@ -1,6 +1,6 @@
 # Behavioral Experiment Simulation Tool
 
-**Version 1.0.8.8** | A Streamlit application for generating realistic synthetic behavioral experiment data using theory-grounded persona-driven simulation.
+**Version 1.0.8.9** | A Streamlit application for generating realistic synthetic behavioral experiment data using theory-grounded persona-driven simulation.
 
 ## What This Tool Does
 
@@ -19,7 +19,7 @@
 - **Develop analysis scripts** on properly structured data
 - **Check pre-registration consistency** before data collection
 
-## Features (v1.0.8.8)
+## Features (v1.0.8.9)
 
 ### Generation Method Chooser
 - **4 simulation methods** — clean, compact selection:
