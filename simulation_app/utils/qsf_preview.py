@@ -33,7 +33,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 # Version identifier to help track deployed code
-__version__ = "1.0.9.2"  # v1.0.9.2: OE response quality overhaul, report differentiation, API tracking fix
+__version__ = "1.0.9.7"  # v1.0.9.7: Expand META_ANALYTIC_DB from 54 to 187 entries across 16 research domains
 
 
 # ============================================================================

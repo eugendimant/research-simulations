@@ -63,7 +63,7 @@ association, impression, perception, feedback, comment, observation, general
 Version: 1.8.5 - Improved domain detection with weighted scoring and disambiguation
 """
 
-__version__ = "1.0.9.2"
+__version__ = "1.0.9.7"
 
 import random
 import re
@@ -2793,39 +2793,39 @@ DOMAIN_TEMPLATES: Dict[str, Dict[str, Dict[str, List[str]]]] = {
     "social_media": {
         "explanation": {
             "very_positive": [
-                "Social media enriches my life.",
-                "I love staying connected online.",
-                "Social media provides great value.",
-                "I'm very active on social media.",
-                "Social platforms are important to me.",
+                "Social media has genuinely enriched my life by connecting me with communities I never would have found otherwise.",
+                "I love how social media lets me stay in touch with friends and family spread across the world.",
+                "Online platforms have given me access to diverse perspectives and ideas that broadened my worldview.",
+                "I find social media to be a powerful tool for staying informed, sharing experiences, and building real relationships.",
+                "Social media has opened doors for me professionally and personally in ways I deeply appreciate.",
             ],
             "positive": [
-                "I find social media useful.",
-                "Social media helps me stay connected.",
-                "I enjoy social media moderately.",
-                "It's a good way to stay informed.",
-                "Social media has benefits.",
+                "I find social media useful for keeping up with friends and staying informed about things I care about.",
+                "Social media helps me maintain connections that would otherwise fade, which I value.",
+                "I enjoy scrolling through my feeds and seeing what people are up to, though I try to be mindful about it.",
+                "Online platforms are a good way to discover new interests, follow news, and stay connected.",
+                "Social media has more benefits than drawbacks in my experience, as long as I manage my time on it.",
             ],
             "neutral": [
-                "I have mixed feelings about social media.",
-                "Social media has pros and cons.",
-                "I use it but don't love it.",
-                "I'm indifferent about social media.",
-                "It's just part of life now.",
+                "I have genuinely mixed feelings about social media because I see both the benefits and the downsides.",
+                "Social media is something I use out of habit more than enthusiasm at this point.",
+                "I can see how social media connects people, but I also notice how it can make me feel worse sometimes.",
+                "I'm pretty indifferent about social media and just use it when it's convenient.",
+                "Social media is just part of modern life now, and I neither love nor hate it.",
             ],
             "negative": [
-                "Social media is often negative.",
-                "I try to limit my social media use.",
-                "Social media can be harmful.",
-                "I have concerns about social media.",
-                "I'm reducing my social media time.",
+                "I find social media more draining than enriching, and I've been trying to cut back.",
+                "Scrolling through social media often leaves me feeling worse than before I started.",
+                "I have real concerns about how social media affects attention spans, mental health, and real-world relationships.",
+                "Social media platforms are designed to be addictive, and I resent how much time they take from me.",
+                "I've noticed social media making me more anxious and more prone to comparing myself to others.",
             ],
             "very_negative": [
-                "Social media is toxic.",
-                "I strongly dislike social media.",
-                "Social media damages society.",
-                "I've quit or limited social media.",
-                "Social platforms are harmful.",
+                "Social media is genuinely toxic and I believe it's damaging our ability to communicate and relate to each other.",
+                "I've significantly cut back on social media because of how negatively it was affecting my mental health.",
+                "The spread of misinformation, outrage, and performative behavior on social media is deeply harmful to society.",
+                "I strongly dislike how social media platforms exploit our attention and manipulate our emotions for profit.",
+                "Social media has made people lonelier, angrier, and more divided, and I try to avoid it as much as possible.",
             ],
         },
     },
@@ -3045,39 +3045,39 @@ DOMAIN_TEMPLATES: Dict[str, Dict[str, Dict[str, List[str]]]] = {
     "financial_decision": {
         "explanation": {
             "very_positive": [
-                "I made a careful, well-reasoned financial choice.",
-                "I analyzed the options thoroughly.",
-                "I feel confident about this financial decision.",
-                "This was a sound financial choice.",
-                "I considered all relevant factors.",
+                "I feel very confident about this financial decision because I did my research and weighed all the options carefully.",
+                "I made a thorough analysis of the costs, benefits, and risks before committing, and I feel good about it.",
+                "This financial choice aligns perfectly with my long-term goals and risk tolerance.",
+                "I consulted multiple sources and crunched the numbers, so I'm genuinely satisfied with my decision.",
+                "I believe this was the smartest financial move I could have made given the circumstances.",
             ],
             "positive": [
-                "I think this was a good financial decision.",
-                "I weighed the costs and benefits.",
-                "I made a reasonable financial choice.",
-                "I'm satisfied with my decision.",
-                "I considered the financial implications.",
+                "I think this was a solid financial decision, even if I didn't analyze every possible angle.",
+                "I weighed the main costs and benefits and feel reasonably good about where I ended up.",
+                "My financial choice seems sound based on what I know, though nothing is ever certain with money.",
+                "I'm satisfied with this decision because it balanced my financial security with my goals.",
+                "I considered the financial implications carefully enough to feel comfortable moving forward.",
             ],
             "neutral": [
-                "I'm not sure if this was the best choice.",
-                "Financial decisions are always uncertain.",
-                "I made what seemed reasonable at the time.",
-                "I have mixed feelings about this.",
-                "Time will tell if it was the right choice.",
+                "I'm honestly not sure if this was the best financial choice, but it seemed reasonable at the time.",
+                "Financial decisions always involve uncertainty, and I could see this going either way.",
+                "I made what felt like a middle-ground financial decision without overthinking or underthinking it.",
+                "I have mixed feelings about this financial choice because the trade-offs weren't clear-cut.",
+                "Time will tell whether this was a wise financial move or not, and I'm okay with that uncertainty.",
             ],
             "negative": [
-                "I have some regrets about this decision.",
-                "I might have chosen differently.",
-                "This wasn't my best financial decision.",
-                "I didn't fully consider all options.",
-                "I'm somewhat uncertain about this choice.",
+                "Looking back, I have some regrets about this financial decision and wish I had explored more options.",
+                "I feel like I let emotional impulses drive this financial choice rather than careful analysis.",
+                "This wasn't my best financial moment, and I realize I didn't fully consider the risks.",
+                "I'm somewhat worried about the financial consequences of this decision and wish I could undo it.",
+                "I probably should have been more patient and done more research before making this financial commitment.",
             ],
             "very_negative": [
-                "I regret this financial decision.",
-                "This was probably a mistake.",
-                "I should have been more careful.",
-                "I'm disappointed with my choice.",
-                "I didn't make a good financial decision.",
+                "I deeply regret this financial decision and it has caused me significant stress and worry.",
+                "This was a serious financial mistake that I should have avoided, and the consequences are real.",
+                "I feel terrible about this choice because I ignored warning signs and acted impulsively with my money.",
+                "This financial decision has set me back considerably and I'm angry at myself for making it.",
+                "I made a very poor financial judgment and I'm now dealing with the fallout.",
             ],
         },
     },
@@ -3106,11 +3106,41 @@ DOMAIN_TEMPLATES: Dict[str, Dict[str, Dict[str, List[str]]]] = {
 
     "cognitive_load": {
         "explanation": {
-            "very_positive": ["The task was easy to process mentally.", "I had plenty of mental capacity to handle this.", "The cognitive demands were manageable.", "My mind handled the complexity well.", "I felt mentally sharp and capable."],
-            "positive": ["The mental demands were reasonable.", "I managed the cognitive load adequately.", "The task wasn't too mentally taxing.", "I had sufficient mental resources.", "The processing was fairly smooth."],
-            "neutral": ["The mental demands were average.", "The cognitive load was neither high nor low.", "I had typical mental engagement.", "The processing was unremarkable.", "Standard mental effort was required."],
-            "negative": ["The task was mentally demanding.", "I felt cognitive strain.", "My mental resources were stretched.", "The complexity was challenging.", "I struggled with the mental load."],
-            "very_negative": ["I was cognitively overwhelmed.", "The mental demands were excessive.", "I couldn't process everything.", "My mind was overloaded.", "The cognitive burden was too high."],
+            "very_positive": [
+                "The task was straightforward and I had plenty of mental capacity to handle everything being asked of me.",
+                "I found the cognitive demands perfectly manageable and was able to think clearly throughout the entire task.",
+                "My mind handled the complexity well and I felt focused and sharp the whole time.",
+                "I didn't feel mentally strained at all, and the information was presented in a way that was easy to process.",
+                "I felt mentally capable and engaged, without any sense of being overwhelmed by the task requirements.",
+            ],
+            "positive": [
+                "The mental demands were reasonable and I managed to process everything without too much effort.",
+                "I handled the cognitive load adequately, even if there were moments that required closer attention.",
+                "The task wasn't too mentally taxing overall, and I had sufficient mental resources to do it well.",
+                "I was able to keep track of the important information and the processing was fairly smooth.",
+                "The cognitive demands were within my comfort zone, though I needed to concentrate at some points.",
+            ],
+            "neutral": [
+                "The mental demands felt average to me, neither too easy nor particularly overwhelming.",
+                "I had a typical level of mental engagement with the task and didn't notice it being especially hard or easy.",
+                "The cognitive load was somewhere in the middle, requiring moderate effort to process everything.",
+                "I wasn't sure whether the task was mentally demanding or not because it felt fairly standard.",
+                "My mental effort was about what I'd expect for a task like this, nothing unusual in either direction.",
+            ],
+            "negative": [
+                "The task was more mentally demanding than I expected and I could feel my concentration fading.",
+                "I felt cognitive strain trying to hold multiple pieces of information in mind simultaneously.",
+                "My mental resources were stretched thin and I'm not confident I processed everything accurately.",
+                "The complexity of the task was genuinely challenging and I had to re-read things multiple times.",
+                "I struggled with the mental load because there was too much to keep track of at once.",
+            ],
+            "very_negative": [
+                "I was cognitively overwhelmed by the demands of this task and couldn't keep up.",
+                "The mental demands were excessive and I felt like my brain simply shut down at certain points.",
+                "I couldn't process everything being asked of me because the cognitive burden was just too high.",
+                "My mind was completely overloaded and I'm sure my responses suffered as a result.",
+                "The sheer amount of information and complexity made this task mentally exhausting and frustrating.",
+            ],
         },
     },
 
@@ -3128,21 +3158,81 @@ DOMAIN_TEMPLATES: Dict[str, Dict[str, Dict[str, List[str]]]] = {
 
     "performance_anxiety": {
         "explanation": {
-            "very_positive": ["I perform well under pressure.", "Anxiety doesn't affect my performance.", "I thrive in high-pressure situations.", "Competition energizes me.", "I channel nervous energy productively."],
-            "positive": ["I manage performance pressure reasonably well.", "Some anxiety is motivating for me.", "I usually perform adequately under pressure.", "I've learned to cope with performance stress.", "Anxiety affects me minimally."],
-            "neutral": ["Pressure affects me sometimes, sometimes not.", "My response to performance anxiety varies.", "I have average ability to handle pressure.", "Performance situations are hit or miss.", "Anxiety has mixed effects on my performance."],
-            "negative": ["Performance pressure often affects me negatively.", "I struggle with anxiety in competitive situations.", "Pressure tends to hurt my performance.", "I get nervous before important events.", "Performance anxiety is challenging for me."],
-            "very_negative": ["Performance anxiety significantly impairs me.", "I struggle greatly under pressure.", "Competition triggers intense anxiety.", "I often choke in important moments.", "Performance situations are very stressful."],
+            "very_positive": [
+                "I genuinely thrive under pressure and find that high-stakes situations bring out my best performance.",
+                "Anxiety doesn't affect my performance because I've learned to channel nervous energy into focus and preparation.",
+                "Competition energizes me rather than paralyzing me, and I actually feel more alive in pressure situations.",
+                "I perform well when it counts because I've developed mental strategies for staying calm and focused.",
+                "I've come to welcome performance pressure as something that sharpens my abilities rather than undermining them.",
+            ],
+            "positive": [
+                "I manage performance pressure reasonably well, though I still feel butterflies before important moments.",
+                "Some anxiety actually motivates me to prepare more thoroughly, so it works in my favor most of the time.",
+                "I usually perform adequately under pressure even though I might not feel totally calm inside.",
+                "I've learned to cope with performance stress through practice and experience, and it's gotten easier over time.",
+                "Anxiety affects me minimally during actual performance, even if I worry beforehand.",
+            ],
+            "neutral": [
+                "Pressure affects me differently depending on the situation, with some contexts being worse than others.",
+                "My response to performance anxiety is inconsistent and I can't always predict how I'll handle it.",
+                "I have average ability to handle pressure compared to most people, neither thriving nor crumbling.",
+                "Performance situations are genuinely hit or miss for me, and preparation doesn't always determine the outcome.",
+                "Anxiety has mixed effects on my performance, sometimes helping and sometimes getting in the way.",
+            ],
+            "negative": [
+                "Performance pressure often affects me negatively, and I notice my skills degrading when the stakes are high.",
+                "I struggle with anxiety in competitive or evaluative situations, which is frustrating because I know my abilities.",
+                "Pressure tends to hurt my performance because I start overthinking and second-guessing myself.",
+                "I get quite nervous before important events and that nervousness carries into my actual performance.",
+                "Performance anxiety is a real challenge for me and it has cost me opportunities I was otherwise qualified for.",
+            ],
+            "very_negative": [
+                "Performance anxiety significantly impairs my abilities and I've missed out on a lot because of it.",
+                "I struggle greatly under pressure and the physical symptoms of anxiety make it almost impossible to focus.",
+                "Competition triggers intense anxiety that I can't control, no matter how much I prepare.",
+                "I often choke in important moments because the fear of failure becomes a self-fulfilling prophecy.",
+                "Performance situations are so stressful for me that I sometimes avoid them entirely to protect myself.",
+            ],
         },
     },
 
     "team_dynamics": {
         "explanation": {
-            "very_positive": ["Our team works together excellently.", "Team chemistry is outstanding.", "Collaboration within the team is strong.", "We support each other effectively.", "Team dynamics enhance our performance."],
-            "positive": ["Our team generally works well together.", "Team dynamics are positive.", "We collaborate effectively most of the time.", "Team members support each other.", "The group functions reasonably well."],
-            "neutral": ["Team dynamics are average.", "We work together adequately.", "Collaboration is neither strong nor weak.", "Team functioning is typical.", "Our group dynamics are unremarkable."],
-            "negative": ["Team dynamics could be improved.", "There are some conflicts within the team.", "Collaboration is sometimes difficult.", "Team chemistry has issues.", "Group functioning has challenges."],
-            "very_negative": ["Team dynamics are problematic.", "There's significant conflict in the group.", "Collaboration is very difficult.", "Team chemistry is poor.", "The team functions poorly."],
+            "very_positive": [
+                "Our team works together excellently and there's a genuine sense of trust and mutual respect among members.",
+                "The chemistry within our team is outstanding and we bring out the best in each other's work.",
+                "Collaboration flows naturally because everyone contributes their strengths and communicates openly.",
+                "I feel genuinely supported by my team members and we hold each other accountable in a positive way.",
+                "Team dynamics are a real source of motivation for me and I look forward to working with this group.",
+            ],
+            "positive": [
+                "Our team generally works well together, even though we sometimes disagree on approaches.",
+                "The group dynamics are mostly positive and I feel comfortable sharing ideas with the team.",
+                "We collaborate effectively most of the time and people pull their weight.",
+                "Team members generally support each other and communication is decent.",
+                "I'm reasonably satisfied with how our team functions and the results we produce together.",
+            ],
+            "neutral": [
+                "Our team dynamics are fairly average, with some people contributing more than others.",
+                "We work together adequately but I wouldn't describe our collaboration as exceptional or terrible.",
+                "The group functions at a typical level, with occasional friction but nothing unusual.",
+                "Team chemistry is neither strong nor weak, and we get the job done without much drama.",
+                "Our dynamics are unremarkable, which I suppose is better than being dysfunctional.",
+            ],
+            "negative": [
+                "Team dynamics could definitely be improved because there are some underlying tensions that affect our work.",
+                "There are conflicts within the team that make collaboration harder than it should be.",
+                "Communication within our group is lacking and people sometimes work at cross-purposes.",
+                "I feel like some team members don't pull their weight, which breeds resentment.",
+                "The group has chemistry issues that make meetings and shared projects more stressful than they need to be.",
+            ],
+            "very_negative": [
+                "Team dynamics are genuinely problematic and the conflict within our group makes productive work very difficult.",
+                "There's significant interpersonal tension that has eroded trust and morale on the team.",
+                "Collaboration feels almost impossible because people are defensive, competitive, or disengaged.",
+                "Team chemistry is poor and I dread having to work with this group on shared tasks.",
+                "The team functions so poorly that I think we'd actually be more productive working separately.",
+            ],
         },
     },
 
@@ -3150,11 +3240,41 @@ DOMAIN_TEMPLATES: Dict[str, Dict[str, Dict[str, List[str]]]] = {
 
     "legal_psychology": {
         "explanation": {
-            "very_positive": ["The legal system worked fairly in this case.", "Justice was served appropriately.", "I trust the legal process.", "The procedures were handled correctly.", "The outcome was just and fair."],
-            "positive": ["The legal system generally worked well.", "Justice was mostly served.", "I have reasonable trust in the process.", "Procedures were adequate.", "The outcome was acceptable."],
-            "neutral": ["I have mixed views on the legal process.", "The system worked as expected.", "My trust in the legal process is average.", "Procedures were standard.", "The outcome was neither good nor bad."],
-            "negative": ["The legal process had some problems.", "Justice wasn't fully served.", "I have concerns about the process.", "Procedures could have been better.", "The outcome was somewhat unfair."],
-            "very_negative": ["The legal system failed.", "Justice was not served.", "I distrust the legal process.", "Procedures were mishandled.", "The outcome was unjust."],
+            "very_positive": [
+                "The legal system worked fairly in this case and I feel confident that due process was followed properly.",
+                "Justice was served appropriately and the outcome reflects a careful consideration of all the evidence.",
+                "I trust the legal process because it gave everyone involved a fair chance to be heard.",
+                "The procedures were handled correctly and transparently, which makes me feel the system works.",
+                "I came away from this believing that the legal system can deliver just outcomes when it functions properly.",
+            ],
+            "positive": [
+                "The legal system generally worked well here, even if there were minor imperfections in the process.",
+                "Justice was mostly served and the outcome seems reasonable given the circumstances.",
+                "I have reasonable trust in the legal process based on how this case was handled.",
+                "The procedures were adequate and the people involved seemed to take their roles seriously.",
+                "Overall the outcome was acceptable and I feel the key issues were addressed.",
+            ],
+            "neutral": [
+                "I have mixed views on how the legal process worked in this case because there were both strengths and weaknesses.",
+                "The system worked as expected, which means it was neither inspiring nor particularly disappointing.",
+                "My trust in the legal process is average after seeing how things played out here.",
+                "The procedures followed standard protocol, but that doesn't necessarily mean the outcome was fair.",
+                "I'm not sure whether the legal process produced the right result or not because it's genuinely complicated.",
+            ],
+            "negative": [
+                "The legal process had some real problems that undermine my confidence in the fairness of the outcome.",
+                "I don't think justice was fully served because important factors seemed to be overlooked or downplayed.",
+                "I have concerns about how the process was conducted, particularly regarding who got to be heard and who didn't.",
+                "The procedures could have been handled much better, and the gaps affected the quality of the outcome.",
+                "The outcome struck me as somewhat unfair and I'm left wondering if the system really works for everyone.",
+            ],
+            "very_negative": [
+                "The legal system fundamentally failed in this case and I'm deeply troubled by what happened.",
+                "Justice was not served and the outcome feels like a miscarriage of the principles the system claims to uphold.",
+                "I have lost trust in the legal process after seeing how poorly the procedures were handled.",
+                "The proceedings were mishandled in ways that directly affected the fairness of the result.",
+                "The outcome was unjust and it reinforces my belief that the legal system doesn't work equally for everyone.",
+            ],
         },
     },
 
@@ -3182,11 +3302,41 @@ DOMAIN_TEMPLATES: Dict[str, Dict[str, Dict[str, List[str]]]] = {
 
     "food_psychology": {
         "explanation": {
-            "very_positive": ["I have a healthy relationship with food.", "Eating brings me joy without guilt.", "I make nutritious choices naturally.", "Food is a positive part of my life.", "I enjoy eating mindfully."],
-            "positive": ["My relationship with food is generally good.", "I usually make healthy choices.", "Eating is mostly enjoyable.", "I have reasonable eating habits.", "Food is generally positive for me."],
-            "neutral": ["My relationship with food is average.", "Eating is neither particularly enjoyable nor stressful.", "My food choices are mixed.", "I don't think much about food.", "My eating habits are typical."],
-            "negative": ["I sometimes struggle with food choices.", "Eating can be stressful.", "My relationship with food has challenges.", "I make unhealthy choices sometimes.", "Food can be a source of stress."],
-            "very_negative": ["I have a difficult relationship with food.", "Eating causes significant stress.", "I struggle with food choices.", "My eating habits are problematic.", "Food is a major challenge for me."],
+            "very_positive": [
+                "I have a genuinely healthy and joyful relationship with food that I've cultivated over time.",
+                "Eating brings me pleasure without guilt, and I feel I've found a good balance between enjoyment and nutrition.",
+                "I make nutritious choices naturally because I've learned to listen to what my body actually needs.",
+                "Food is a wonderful and positive part of my life that connects me with culture, creativity, and other people.",
+                "I enjoy eating mindfully and appreciate the flavors, textures, and social aspects of meals.",
+            ],
+            "positive": [
+                "My relationship with food is generally healthy, though I have occasional indulgences that I don't stress about.",
+                "I usually make reasonably healthy food choices and feel good about my overall dietary patterns.",
+                "Eating is mostly an enjoyable experience for me and I don't overthink my food decisions.",
+                "I have reasonable eating habits and I try to balance nutrition with the pleasure of eating.",
+                "Food is a generally positive part of my life, even though I'm not perfect about my choices.",
+            ],
+            "neutral": [
+                "My relationship with food is pretty average and I don't spend a lot of energy thinking about eating patterns.",
+                "Eating is neither particularly enjoyable nor stressful for me, it's just something I do.",
+                "My food choices are mixed between healthy and unhealthy, depending on my mood and what's available.",
+                "I don't have strong feelings about food in general and my habits are fairly typical.",
+                "My relationship with food is unremarkable and I eat without much deliberation most of the time.",
+            ],
+            "negative": [
+                "I sometimes struggle with food choices and feel guilty about what I eat more often than I'd like.",
+                "Eating can be stressful for me because I'm caught between wanting to enjoy food and worrying about health.",
+                "My relationship with food has its challenges, including emotional eating and inconsistent habits.",
+                "I make unhealthy food choices more often than I should and I'm not happy about my eating patterns.",
+                "Food has become a source of stress and internal conflict for me rather than something purely enjoyable.",
+            ],
+            "very_negative": [
+                "I have a genuinely difficult relationship with food that affects my daily life and emotional wellbeing.",
+                "Eating causes me significant stress and anxiety, and I often feel out of control around food.",
+                "I struggle deeply with food choices and my eating patterns have become a source of real distress.",
+                "My eating habits are problematic and I feel trapped in cycles that I can't seem to break.",
+                "Food is one of the biggest challenges in my life and it affects my self-esteem, social life, and health.",
+            ],
         },
     },
 
@@ -3202,11 +3352,41 @@ DOMAIN_TEMPLATES: Dict[str, Dict[str, Dict[str, List[str]]]] = {
 
     "body_image": {
         "explanation": {
-            "very_positive": ["I'm very satisfied with my body.", "I have a positive body image.", "I feel comfortable in my appearance.", "I appreciate my body.", "I feel confident about how I look."],
-            "positive": ["I'm generally satisfied with my body.", "My body image is mostly positive.", "I feel reasonably comfortable with my appearance.", "I accept my body.", "I feel decent about how I look."],
-            "neutral": ["I have mixed feelings about my body.", "My body image is neither positive nor negative.", "I don't think much about my appearance.", "I have average body satisfaction.", "My feelings about my body are neutral."],
-            "negative": ["I'm somewhat dissatisfied with my body.", "My body image has challenges.", "I feel uncomfortable with some aspects of my appearance.", "Body satisfaction is difficult.", "I'm critical of how I look."],
-            "very_negative": ["I'm very dissatisfied with my body.", "I have a negative body image.", "I feel very uncomfortable with my appearance.", "I dislike my body.", "Body image causes significant distress."],
+            "very_positive": [
+                "I feel genuinely comfortable and confident in my own skin most days.",
+                "I appreciate what my body can do for me rather than fixating on how it looks.",
+                "I have worked hard to build a positive relationship with my body and it shows in how I carry myself.",
+                "My body image is something I feel good about because I focus on health rather than appearance standards.",
+                "I look in the mirror and feel proud of who I am, imperfections and all.",
+            ],
+            "positive": [
+                "I'm generally satisfied with my body, though some days are better than others.",
+                "I try to focus on what my body can do rather than how it compares to ideals.",
+                "My body image is mostly positive and I don't spend too much energy worrying about appearance.",
+                "I accept my body for what it is and that acceptance has grown over time.",
+                "I feel reasonably comfortable with my appearance in most situations.",
+            ],
+            "neutral": [
+                "I have mixed feelings about my body depending on the day and context.",
+                "My body image is neither strongly positive nor negative, just kind of there.",
+                "I don't spend a lot of time thinking about my appearance one way or another.",
+                "Some aspects of my body I'm fine with, others I'm less sure about.",
+                "I have average body satisfaction and it doesn't dominate my thinking.",
+            ],
+            "negative": [
+                "I'm somewhat dissatisfied with my body and it affects my confidence in social settings.",
+                "I find myself comparing my appearance to others more than I'd like to admit.",
+                "There are specific aspects of my appearance that bother me and I think about them often.",
+                "I feel uncomfortable with how I look in certain situations, like at the beach or in photos.",
+                "My body image struggles have gotten in the way of enjoying activities I used to like.",
+            ],
+            "very_negative": [
+                "I feel deeply unhappy with my body and it affects my daily life and mood.",
+                "I avoid mirrors, photos, and social situations because of how I feel about my appearance.",
+                "My negative body image has caused me real distress and impacts my self-worth.",
+                "I constantly compare myself to others and always feel like I come up short.",
+                "Body image concerns dominate my thoughts more than I want to admit and it's exhausting.",
+            ],
         },
     },
 
@@ -3214,11 +3394,41 @@ DOMAIN_TEMPLATES: Dict[str, Dict[str, Dict[str, List[str]]]] = {
 
     "user_experience": {
         "explanation": {
-            "very_positive": ["The interface was intuitive and easy to use.", "I had an excellent user experience.", "Everything worked exactly as expected.", "The design made my task effortless.", "I would highly recommend this experience."],
-            "positive": ["The interface was reasonably easy to use.", "The user experience was good.", "Most things worked as expected.", "The design was helpful.", "I had a positive experience overall."],
-            "neutral": ["The interface was average.", "The user experience was neither good nor bad.", "Some things worked, some didn't.", "The design was adequate.", "My experience was unremarkable."],
-            "negative": ["The interface was somewhat confusing.", "The user experience could be improved.", "Several things didn't work as expected.", "The design hindered my task.", "I had a frustrating experience."],
-            "very_negative": ["The interface was very confusing.", "The user experience was poor.", "Nothing worked as expected.", "The design made my task impossible.", "I would not recommend this."],
+            "very_positive": [
+                "The interface was intuitive and I was able to accomplish everything I needed without any confusion or hesitation.",
+                "I had an excellent user experience because the design anticipated my needs and made every step feel natural.",
+                "Everything worked exactly as I expected and the flow from one step to the next was seamless.",
+                "The design made my task genuinely effortless, and I appreciated the attention to detail in the layout and interactions.",
+                "I would highly recommend this experience to others because it was polished, responsive, and easy to navigate.",
+            ],
+            "positive": [
+                "The interface was reasonably easy to use and I was able to figure out most features without help.",
+                "The user experience was good overall, with just a few minor things that could be slightly better.",
+                "Most things worked as I expected them to, and the overall design was clean and helpful.",
+                "I had a positive experience and the design choices generally made sense for what I was trying to do.",
+                "The interface was well-organized and I didn't encounter any major obstacles completing my task.",
+            ],
+            "neutral": [
+                "The interface was average and neither particularly impressive nor problematic to use.",
+                "The user experience was mixed, with some aspects working smoothly and others requiring extra effort.",
+                "Some features worked well and others felt clunky, so my overall impression is fairly neutral.",
+                "The design was adequate for getting things done, but nothing about the experience stood out to me.",
+                "My experience was unremarkable, which I suppose means it didn't get in my way too much.",
+            ],
+            "negative": [
+                "The interface was somewhat confusing and I had to spend extra time figuring out how to do basic things.",
+                "The user experience could be significantly improved because several interactions felt unintuitive.",
+                "I found the design frustrating at times because it didn't match my expectations for how things should work.",
+                "Several features didn't behave as I expected, which slowed me down and created unnecessary friction.",
+                "I had a somewhat frustrating experience because the interface seemed to work against me rather than with me.",
+            ],
+            "very_negative": [
+                "The interface was very confusing and I struggled to complete even simple tasks without getting lost.",
+                "The user experience was genuinely poor, with confusing navigation, unresponsive elements, and unclear labels.",
+                "Nothing worked the way I expected it to and the design made my task far harder than it should have been.",
+                "The design actively hindered my ability to accomplish what I came to do and I felt frustrated throughout.",
+                "I would not recommend this to anyone because the experience was confusing, slow, and poorly designed.",
+            ],
         },
     },
 
@@ -3246,11 +3456,41 @@ DOMAIN_TEMPLATES: Dict[str, Dict[str, Dict[str, List[str]]]] = {
 
     "cross_cultural": {
         "explanation": {
-            "very_positive": ["I embrace cultural diversity.", "Cross-cultural experiences enrich my life.", "I adapt well to different cultures.", "I value learning from other cultures.", "Cultural differences fascinate me."],
-            "positive": ["I appreciate cultural diversity.", "Cross-cultural experiences are valuable.", "I adapt reasonably well to different cultures.", "I'm interested in other cultures.", "Cultural differences are interesting."],
-            "neutral": ["I have average interest in cultural diversity.", "Cross-cultural experiences are neither important nor unimportant.", "I adapt somewhat to different cultures.", "Culture is just one factor.", "I'm neutral about cultural differences."],
-            "negative": ["Cultural differences can be challenging.", "Cross-cultural experiences are sometimes difficult.", "I struggle to adapt to different cultures.", "I prefer my own culture.", "Cultural differences are confusing."],
-            "very_negative": ["Cultural differences are very challenging.", "Cross-cultural experiences are stressful.", "I can't adapt to different cultures.", "I strongly prefer my own culture.", "Cultural differences are problematic."],
+            "very_positive": [
+                "I genuinely embrace cultural diversity and find that cross-cultural interactions make my life richer and more interesting.",
+                "Learning about different cultural perspectives has been one of the most rewarding aspects of my personal growth.",
+                "I adapt well to different cultures because I approach differences with curiosity rather than judgment.",
+                "Cross-cultural experiences have taught me that there are many valid ways to live and think about the world.",
+                "Cultural differences fascinate me and I actively seek out opportunities to engage with people from different backgrounds.",
+            ],
+            "positive": [
+                "I appreciate cultural diversity and try to be respectful and open when encountering different customs and values.",
+                "Cross-cultural experiences are valuable to me, even when they push me outside my comfort zone.",
+                "I adapt reasonably well to different cultures, though I recognize I still have biases to work through.",
+                "I'm interested in learning about other cultures and believe it makes me a more well-rounded person.",
+                "Cultural differences are interesting to me and I generally see them as enriching rather than threatening.",
+            ],
+            "neutral": [
+                "I have mixed feelings about cultural diversity because while it's enriching, it can also be confusing or challenging.",
+                "Cross-cultural experiences are neither particularly important nor unimportant to me personally.",
+                "I adapt somewhat to different cultures but don't go out of my way to seek cross-cultural interactions.",
+                "Culture is just one of many factors that shape people, and I don't think about it constantly.",
+                "I'm fairly neutral about cultural differences and take them as they come without strong reactions.",
+            ],
+            "negative": [
+                "Cultural differences can be genuinely challenging to navigate, and I sometimes feel lost or uncomfortable.",
+                "I find cross-cultural interactions difficult because I'm never sure if I'm doing or saying the right thing.",
+                "I struggle to adapt to unfamiliar cultural contexts and tend to prefer environments I'm familiar with.",
+                "I lean toward preferring my own cultural context because it feels more natural and less stressful.",
+                "Cultural differences sometimes create misunderstandings that I find frustrating and hard to resolve.",
+            ],
+            "very_negative": [
+                "Cultural differences are very challenging for me and cross-cultural situations make me genuinely uncomfortable.",
+                "I find cross-cultural experiences stressful because the expectations and norms feel unpredictable.",
+                "I struggle significantly to adapt to different cultures and often feel like an outsider.",
+                "I strongly prefer staying within my own cultural context where I understand how things work.",
+                "Cultural differences have caused me real problems in communication and relationships, and I find them overwhelming.",
+            ],
         },
     },
 
@@ -3268,21 +3508,81 @@ DOMAIN_TEMPLATES: Dict[str, Dict[str, Dict[str, List[str]]]] = {
 
     "gratitude": {
         "explanation": {
-            "very_positive": ["I feel deeply grateful.", "I appreciate so many things in my life.", "Gratitude is central to my wellbeing.", "I regularly count my blessings.", "I'm thankful for what I have."],
-            "positive": ["I feel grateful.", "I appreciate good things in my life.", "Gratitude is important to me.", "I often feel thankful.", "I recognize my blessings."],
-            "neutral": ["I feel average gratitude.", "I sometimes appreciate things.", "Gratitude isn't particularly prominent.", "I occasionally feel thankful.", "I'm somewhat aware of blessings."],
-            "negative": ["I struggle to feel grateful.", "I don't appreciate things as much as I should.", "Gratitude is difficult for me.", "I rarely feel thankful.", "I focus more on what's missing."],
-            "very_negative": ["I feel very little gratitude.", "I don't appreciate what I have.", "Gratitude is foreign to me.", "I never feel thankful.", "I only see what's lacking."],
+            "very_positive": [
+                "I feel deeply grateful for the people, opportunities, and experiences that fill my life.",
+                "Gratitude is genuinely central to my wellbeing, and I make a conscious effort to appreciate what I have.",
+                "I regularly count my blessings and that practice has made me a happier and more content person.",
+                "I appreciate so many things in my life, from my relationships to my health to simple daily pleasures.",
+                "I'm truly thankful for what I have and I try to express that appreciation to the people around me.",
+            ],
+            "positive": [
+                "I feel grateful for the good things in my life and try to keep perspective on what matters.",
+                "Gratitude is important to me and I notice the positive aspects of my life more often than not.",
+                "I often feel thankful for the people who support me and the opportunities I've had.",
+                "I recognize my blessings and try not to take the good things in my life for granted.",
+                "I appreciate the positive aspects of my life, even though I don't always stop to acknowledge them.",
+            ],
+            "neutral": [
+                "My sense of gratitude is fairly average and depends on what's happening in my life at any given time.",
+                "I sometimes appreciate the good things in my life but I don't actively practice gratitude.",
+                "Gratitude isn't particularly prominent in my daily thinking, though I do feel thankful occasionally.",
+                "I have a mixed relationship with gratitude because while I know I should be thankful, I also see what's lacking.",
+                "I'm somewhat aware of my blessings but I wouldn't say gratitude is a defining feature of my personality.",
+            ],
+            "negative": [
+                "I struggle to feel grateful because I tend to focus on what's wrong or missing in my life.",
+                "I know I should appreciate what I have more, but gratitude doesn't come naturally to me.",
+                "Gratitude is genuinely difficult for me, especially when I'm going through hard times.",
+                "I rarely feel thankful because my attention is drawn to problems and challenges rather than blessings.",
+                "I focus more on what's missing in my life than on what I have, which I realize isn't healthy.",
+            ],
+            "very_negative": [
+                "I feel very little gratitude because my life circumstances make it hard to see the positive.",
+                "I don't appreciate what I have because I'm too consumed by stress, disappointment, and unmet needs.",
+                "Gratitude feels foreign to me and I genuinely struggle to find things to be thankful for.",
+                "I almost never feel thankful because it seems like things are always going wrong for me.",
+                "I can only see what's lacking in my life and gratitude seems like something other, luckier people feel.",
+            ],
         },
     },
 
     "resilience": {
         "explanation": {
-            "very_positive": ["I bounce back quickly from setbacks.", "Adversity makes me stronger.", "I'm highly resilient.", "I overcome challenges effectively.", "Setbacks don't keep me down."],
-            "positive": ["I recover reasonably well from setbacks.", "I can handle adversity.", "I'm fairly resilient.", "I cope with challenges.", "I manage to overcome difficulties."],
-            "neutral": ["My resilience is average.", "I sometimes recover, sometimes struggle.", "Adversity has mixed effects on me.", "I have typical coping ability.", "Setbacks affect me moderately."],
-            "negative": ["I struggle to bounce back from setbacks.", "Adversity is difficult for me.", "My resilience could be better.", "I have trouble coping.", "Setbacks affect me significantly."],
-            "very_negative": ["I have great difficulty recovering from setbacks.", "Adversity overwhelms me.", "I have low resilience.", "I can't cope with challenges.", "Setbacks devastate me."],
+            "very_positive": [
+                "I bounce back from setbacks quickly because I've learned that failure is just a stepping stone to growth.",
+                "Adversity genuinely makes me stronger and more resourceful, and I've seen that pattern repeatedly in my life.",
+                "I'm highly resilient because I've developed strong coping strategies and a support network I can rely on.",
+                "When challenges come my way, I feel energized to overcome them rather than defeated by them.",
+                "I've been through enough tough times to know that I can handle almost anything life throws at me.",
+            ],
+            "positive": [
+                "I recover reasonably well from setbacks, though it sometimes takes me a little while to regain my footing.",
+                "I can handle adversity when it comes, and I usually find a way through even when things feel hard.",
+                "I'm fairly resilient in most situations, and I try to learn from difficult experiences.",
+                "I cope with challenges by leaning on the strategies that have worked for me before.",
+                "Setbacks affect me but don't derail me for long because I know things eventually improve.",
+            ],
+            "neutral": [
+                "My resilience really depends on the type and severity of the setback I'm dealing with.",
+                "Sometimes I handle adversity well, and other times I really struggle to get back on track.",
+                "I have an average ability to cope with challenges and I wouldn't describe myself as especially tough or fragile.",
+                "My recovery from setbacks is mixed because some hit harder than others depending on the circumstances.",
+                "I'm not sure how resilient I really am because I haven't been tested in ways that push me to my limits.",
+            ],
+            "negative": [
+                "I struggle to bounce back from setbacks and tend to dwell on what went wrong for a long time.",
+                "Adversity takes a real toll on me emotionally and it's hard for me to find the motivation to keep going.",
+                "My resilience could definitely be better because I tend to get stuck in negative thought patterns after failures.",
+                "I have trouble coping with major challenges and often feel overwhelmed when things go wrong.",
+                "Setbacks affect me significantly and it takes me longer than most people to recover.",
+            ],
+            "very_negative": [
+                "I have great difficulty recovering from setbacks and sometimes feel like giving up entirely.",
+                "Adversity overwhelms me completely and I often feel paralyzed when faced with serious challenges.",
+                "I have very low resilience and even small setbacks can send me into a spiral.",
+                "I feel unable to cope with challenges and often don't know how to pick myself back up.",
+                "Setbacks devastate me and leave lasting emotional scars that make future challenges even harder.",
+            ],
         },
     },
 
@@ -3300,11 +3600,41 @@ DOMAIN_TEMPLATES: Dict[str, Dict[str, Dict[str, List[str]]]] = {
 
     "gender_roles": {
         "explanation": {
-            "very_positive": ["I embrace flexible gender roles.", "Traditional roles don't define me.", "I believe in gender equality.", "People should choose their own roles.", "Gender shouldn't limit anyone."],
-            "positive": ["I support flexible gender roles.", "Traditional roles aren't essential.", "I lean toward gender equality.", "Roles should be chosen individually.", "Gender shouldn't be limiting."],
-            "neutral": ["I have mixed views on gender roles.", "Some traditional roles make sense.", "I'm moderate on gender equality.", "Context matters for roles.", "Gender role views vary."],
-            "negative": ["I lean toward traditional gender roles.", "Some distinctions are natural.", "Complete equality isn't realistic.", "Biology influences roles.", "Traditional patterns have value."],
-            "very_negative": ["I believe in traditional gender roles.", "Men and women have different roles.", "Traditional distinctions are important.", "Biology determines roles.", "Traditional patterns should continue."],
+            "very_positive": [
+                "I strongly embrace flexible gender roles and believe everyone should be free to define their own path regardless of gender.",
+                "Traditional gender roles don't define me, and I think society benefits when people can contribute based on their strengths rather than their gender.",
+                "I believe deeply in gender equality because I've seen how restrictive expectations hurt people of all genders.",
+                "People should absolutely choose their own roles in life, and gender shouldn't be a limiting factor in any domain.",
+                "Gender shouldn't limit anyone's aspirations, career choices, or how they express themselves in relationships.",
+            ],
+            "positive": [
+                "I support flexible gender roles and think society is moving in the right direction on this issue.",
+                "Traditional roles aren't essential to a good life, and I think people should have the freedom to choose differently.",
+                "I lean toward gender equality in most contexts, even though I recognize change can be gradual.",
+                "I believe roles in families and workplaces should be chosen based on individual preferences, not gender expectations.",
+                "Gender shouldn't be a primary factor in determining what people can do or how they're treated.",
+            ],
+            "neutral": [
+                "I have mixed views on gender roles because I can see arguments for both traditional and progressive approaches.",
+                "Some traditional gender role distinctions seem to work for some people, while others find them constraining.",
+                "I'm moderate on gender equality issues and think the right approach depends on the specific context.",
+                "I think context matters a lot when discussing gender roles, and blanket statements in either direction feel too simplistic.",
+                "My views on gender roles vary depending on the specific issue and I don't identify strongly with either camp.",
+            ],
+            "negative": [
+                "I lean toward traditional gender roles because I think they reflect some real differences that shouldn't be ignored.",
+                "I believe some gender distinctions are natural and trying to eliminate all of them creates its own problems.",
+                "I'm skeptical that complete gender equality is achievable or even desirable in all domains.",
+                "I think biological differences between genders have real implications for social roles that we shouldn't dismiss.",
+                "Traditional patterns in gender roles have existed for good reasons and I think we're too quick to discard them.",
+            ],
+            "very_negative": [
+                "I believe strongly in traditional gender roles because I think they provide structure and stability that benefits families.",
+                "Men and women have fundamentally different strengths and roles, and I think society works best when those are respected.",
+                "Traditional gender distinctions are important to me and I worry about what happens when they're eroded.",
+                "I believe biology plays a major role in determining appropriate roles for men and women in society.",
+                "I think traditional gender role patterns should be maintained because departing from them has caused many social problems.",
+            ],
         },
     },
 
@@ -3312,11 +3642,41 @@ DOMAIN_TEMPLATES: Dict[str, Dict[str, Dict[str, List[str]]]] = {
 
     "attachment": {
         "explanation": {
-            "very_positive": ["I feel securely attached in relationships.", "I'm comfortable with intimacy.", "I trust my partners completely.", "Close relationships are natural for me.", "I have healthy attachment patterns."],
-            "positive": ["I have mostly secure attachments.", "I'm fairly comfortable with intimacy.", "I generally trust my partners.", "Close relationships are important.", "My attachment style is healthy."],
-            "neutral": ["My attachment style varies.", "Intimacy is sometimes comfortable, sometimes not.", "I have mixed trust levels.", "Relationships have ups and downs.", "My attachment patterns are typical."],
-            "negative": ["I sometimes struggle with attachment.", "Intimacy can be uncomfortable.", "I have trust issues at times.", "Close relationships are challenging.", "My attachment style has challenges."],
-            "very_negative": ["I have significant attachment difficulties.", "Intimacy is very uncomfortable.", "I struggle greatly with trust.", "Close relationships are very hard.", "My attachment patterns are problematic."],
+            "very_positive": [
+                "I feel securely attached in my close relationships and find it easy to depend on others and let them depend on me.",
+                "I'm very comfortable with emotional intimacy and closeness, and I don't worry much about being abandoned.",
+                "I trust my partners deeply because I've learned that vulnerability is a strength in close relationships.",
+                "Close relationships come naturally to me, and I feel confident that the people I love will be there when I need them.",
+                "I have a healthy attachment style where I can be independent while also valuing deep emotional bonds.",
+            ],
+            "positive": [
+                "I have mostly secure attachment patterns, though I occasionally have moments of doubt in close relationships.",
+                "I'm fairly comfortable with intimacy and closeness, even if it took me some time to get there.",
+                "I generally trust the people I'm close to, though I'm aware that trust needs to be maintained.",
+                "Close relationships are important to me and I feel I can navigate them reasonably well.",
+                "My attachment patterns are pretty healthy overall, and I feel lucky about that.",
+            ],
+            "neutral": [
+                "My attachment style really depends on the relationship and the person I'm with.",
+                "Sometimes I crave closeness and other times I need space, and that balance shifts a lot.",
+                "I have mixed feelings about depending on others because it feels risky but also necessary.",
+                "Intimacy is comfortable in some relationships but anxiety-provoking in others for me.",
+                "My attachment patterns are kind of average, with both secure and insecure tendencies.",
+            ],
+            "negative": [
+                "I sometimes struggle with attachment because I worry about getting too close or being rejected.",
+                "Emotional intimacy can feel uncomfortable for me, and I tend to pull back when things get too intense.",
+                "I have trust issues in relationships that make it hard to fully open up to people.",
+                "Close relationships are challenging because I often feel anxious about whether the other person really cares.",
+                "I notice patterns in my attachment style that create problems in my relationships.",
+            ],
+            "very_negative": [
+                "I have significant difficulty with attachment and find close relationships to be a major source of anxiety.",
+                "Emotional intimacy feels threatening to me, and I often push people away before they can hurt me.",
+                "I struggle greatly with trusting others, which makes real closeness nearly impossible.",
+                "My attachment patterns have caused repeated problems in my relationships and I feel stuck in them.",
+                "Close relationships are extremely difficult for me because I'm constantly worried about abandonment or loss of independence.",
+            ],
         },
     },
 
@@ -3521,11 +3881,41 @@ DOMAIN_TEMPLATES: Dict[str, Dict[str, Dict[str, List[str]]]] = {
     # SELF-REGULATION
     "self_control": {
         "explanation": {
-            "very_positive": ["I have excellent self-control.", "I'm very disciplined in my choices.", "Resisting temptation is easy for me.", "I consistently make good decisions.", "Self-regulation is a strength of mine."],
-            "positive": ["I have reasonably good self-control.", "I usually resist temptation.", "I'm fairly disciplined.", "I make good choices most of the time.", "My self-control is adequate."],
-            "neutral": ["My self-control is average.", "Sometimes I'm disciplined, sometimes not.", "I have mixed results with self-control.", "It depends on the situation.", "I'm neither strong nor weak in this area."],
-            "negative": ["I struggle with self-control.", "Resisting temptation is difficult.", "I often give in to impulses.", "My discipline could be better.", "Self-regulation is challenging for me."],
-            "very_negative": ["I have very poor self-control.", "I almost always give in to temptation.", "Discipline is extremely hard for me.", "I frequently make impulsive choices.", "Self-control is a major weakness."],
+            "very_positive": [
+                "I have excellent self-control and can resist temptation even when the short-term payoff is really appealing.",
+                "I'm very disciplined in my choices and I attribute a lot of my success to being able to delay gratification.",
+                "Resisting temptation comes relatively easy to me because I always keep my long-term goals in focus.",
+                "I consistently make deliberate decisions rather than impulsive ones, and I'm proud of that discipline.",
+                "Self-regulation is genuinely a strength of mine, whether it's diet, spending, or time management.",
+            ],
+            "positive": [
+                "I have reasonably good self-control, though I'm not immune to giving in occasionally.",
+                "I usually resist temptation by reminding myself of the bigger picture and what matters more.",
+                "I'm fairly disciplined in most areas of my life, even if I slip up sometimes.",
+                "I make good choices most of the time by pausing before acting on impulse.",
+                "My self-control is adequate and I generally don't regret decisions I make in the moment.",
+            ],
+            "neutral": [
+                "My self-control is honestly pretty average, and it really depends on the domain and my energy levels.",
+                "Sometimes I'm very disciplined and other times I completely give in to impulse, with no clear pattern.",
+                "I have mixed results with self-control depending on whether the temptation is food, spending, or something else.",
+                "My ability to resist temptation varies so much that I can't say I'm either strong or weak in this area.",
+                "I'm somewhere in the middle with self-control, doing okay in some areas and struggling in others.",
+            ],
+            "negative": [
+                "I struggle with self-control more than I'd like to admit, especially with things like snacking or procrastinating.",
+                "Resisting temptation is genuinely difficult for me, and I often give in even when I know better.",
+                "I frequently act on impulse and regret the decision later, which is a frustrating pattern.",
+                "My discipline could be a lot better, and I often wonder why self-control seems easier for other people.",
+                "Self-regulation is challenging for me and it affects multiple areas of my life.",
+            ],
+            "very_negative": [
+                "I have very poor self-control and it has caused real problems in my finances, health, and relationships.",
+                "I almost always give in to temptation and feel powerless to stop myself in the moment.",
+                "Discipline is extremely hard for me and I've tried many strategies that just don't seem to work.",
+                "I frequently make impulsive choices that I deeply regret, but I can't seem to break the cycle.",
+                "Self-control is one of my biggest weaknesses and it's something I feel genuinely ashamed about.",
+            ],
         },
     },
 
@@ -3543,11 +3933,41 @@ DOMAIN_TEMPLATES: Dict[str, Dict[str, Dict[str, List[str]]]] = {
     # EMOTION REGULATION
     "emotion_regulation": {
         "explanation": {
-            "very_positive": ["I manage my emotions very effectively.", "I have excellent emotional control.", "I rarely get overwhelmed by feelings.", "I can regulate my emotions well.", "Emotional stability is a strength."],
-            "positive": ["I generally manage emotions well.", "I have decent emotional control.", "I can usually regulate my feelings.", "I cope with emotions reasonably.", "My emotional regulation is good."],
-            "neutral": ["My emotion regulation is average.", "Sometimes I manage well, sometimes not.", "I have typical emotional control.", "My coping varies by situation.", "I'm neither great nor poor at this."],
-            "negative": ["I struggle to regulate emotions.", "My feelings often overwhelm me.", "Emotional control is difficult.", "I have trouble managing feelings.", "My emotion regulation needs work."],
-            "very_negative": ["I have very poor emotion regulation.", "I'm frequently overwhelmed by feelings.", "Emotional control is extremely hard.", "My emotions control me.", "I struggle greatly with this."],
+            "very_positive": [
+                "I manage my emotions very effectively by using strategies like reappraisal and mindfulness that I've practiced over time.",
+                "I have excellent emotional control and can stay calm under pressure without suppressing how I actually feel.",
+                "I rarely get overwhelmed by my feelings because I've learned to acknowledge emotions without letting them dictate my actions.",
+                "I can regulate my emotions well, even in stressful situations, and I think that's one of my strongest personal qualities.",
+                "Emotional stability comes naturally to me and I'm able to maintain a balanced perspective even when things get intense.",
+            ],
+            "positive": [
+                "I generally manage my emotions well, though particularly stressful days can still throw me off balance.",
+                "I have decent emotional control and can usually prevent my feelings from driving impulsive decisions.",
+                "I can usually regulate my feelings by taking a step back and thinking through the situation rationally.",
+                "I cope with emotional challenges reasonably well and have some strategies that work for me.",
+                "My emotional regulation is good overall, even though I still have room for improvement in certain areas.",
+            ],
+            "neutral": [
+                "My emotion regulation is honestly pretty average, with good days and bad days in roughly equal measure.",
+                "Sometimes I manage my feelings well and other times they get the better of me, depending on the situation.",
+                "I have typical emotional control for someone my age and don't stand out as especially regulated or dysregulated.",
+                "My ability to cope with strong emotions varies a lot depending on what's going on in my life.",
+                "I'm neither great nor poor at managing my emotions, and it really just depends on the context.",
+            ],
+            "negative": [
+                "I struggle to regulate my emotions, especially when I'm stressed, tired, or feeling overwhelmed.",
+                "My feelings often overwhelm me before I can think clearly about what's actually going on.",
+                "Emotional control is genuinely difficult for me and I frequently react in ways I later regret.",
+                "I have trouble managing strong feelings like anger, sadness, or anxiety once they take hold.",
+                "My emotion regulation definitely needs work because I'm often at the mercy of my moods.",
+            ],
+            "very_negative": [
+                "I have very poor emotion regulation and my feelings frequently spiral out of control.",
+                "I'm almost always overwhelmed by strong emotions and don't know how to bring myself back to baseline.",
+                "Emotional control is extremely hard for me and it affects my relationships, work, and daily functioning.",
+                "My emotions essentially control me rather than the other way around, and it causes real problems.",
+                "I struggle greatly with managing my feelings and it's one of the biggest challenges in my life.",
+            ],
         },
     },
 
@@ -3819,6 +4239,295 @@ DOMAIN_TEMPLATES: Dict[str, Dict[str, Dict[str, List[str]]]] = {
                 "Digital detox culture is mostly a privilege for people who can afford to disconnect from their obligations.",
                 "The moral panic about phones resembles past panics about television and radio that turned out to be overblown.",
                 "I'm skeptical that individual digital wellbeing practices can solve problems created by addictive design choices.",
+            ],
+        },
+    },
+
+    # ========== NEW DOMAINS (v1.0.9.3) ==========
+
+    # NOSTALGIA
+    "nostalgia": {
+        "explanation": {
+            "very_positive": [
+                "I love revisiting memories from my past because they remind me of who I am and where I came from.",
+                "Nostalgia fills me with warmth and gratitude for the experiences and people that shaped my life.",
+                "Looking back on meaningful moments from my past brings me genuine joy and a sense of connection to my younger self.",
+                "I cherish nostalgic memories because they give me a sense of continuity and meaning in my life.",
+                "Thinking about the past makes me deeply appreciate the relationships and experiences I've been lucky to have.",
+            ],
+            "positive": [
+                "I enjoy looking back on fond memories, even though I know things have changed since then.",
+                "Nostalgia generally feels pleasant to me and reminds me of good times and important people.",
+                "Revisiting memories from my past usually puts me in a positive mood and gives me perspective.",
+                "I find comfort in nostalgic thoughts because they remind me of simpler or happier times.",
+                "Looking back on my past is mostly a positive experience that helps me appreciate my journey.",
+            ],
+            "neutral": [
+                "I have mixed feelings about nostalgia because while some memories are pleasant, others are bittersweet.",
+                "Looking back on the past doesn't strongly affect me one way or another most of the time.",
+                "Nostalgia is something I experience occasionally but it doesn't play a major role in my emotional life.",
+                "I'm fairly neutral about revisiting old memories because the past is the past to me.",
+                "Sometimes nostalgia feels good and sometimes it just makes me aware of how much has changed.",
+            ],
+            "negative": [
+                "Nostalgia often makes me sad because it reminds me of things I've lost or can never get back.",
+                "Looking back on the past tends to make me feel worse rather than better about where I am now.",
+                "I find nostalgic memories bittersweet at best, and they usually leave me feeling a sense of loss.",
+                "Revisiting the past is emotionally difficult because it highlights what's changed for the worse.",
+                "I try to avoid nostalgia because dwelling on the past prevents me from focusing on the present.",
+            ],
+            "very_negative": [
+                "Nostalgia is genuinely painful for me because it brings up memories of people and times I've lost forever.",
+                "Looking back on the past fills me with deep sadness and regret about how things turned out.",
+                "I find nostalgic thoughts overwhelming because they remind me of everything that went wrong or slipped away.",
+                "The past was so much better than my present that thinking about it only makes my current situation feel worse.",
+                "I strongly avoid nostalgic thinking because it sends me into a spiral of sadness and longing for what's gone.",
+            ],
+        },
+    },
+
+    # FORGIVENESS
+    "forgiveness": {
+        "explanation": {
+            "very_positive": [
+                "I believe deeply in forgiveness because holding grudges only hurts the person who was wronged.",
+                "I find it relatively easy to forgive others because I understand that everyone makes mistakes.",
+                "Forgiveness is central to my approach to relationships, and I've seen how it heals both parties.",
+                "I've experienced the freedom that comes with letting go of resentment and I try to practice forgiveness actively.",
+                "I believe that forgiving someone doesn't mean condoning what they did, but it frees me from carrying anger.",
+            ],
+            "positive": [
+                "I generally try to forgive others because I know it's better for my own mental health and relationships.",
+                "Forgiveness doesn't come instantly for me, but I usually get there eventually with time and reflection.",
+                "I think forgiveness is important, even though some situations take longer to work through than others.",
+                "I lean toward forgiveness in most situations because I don't want bitterness to define my life.",
+                "I believe in giving people second chances when they seem genuinely sorry for what they did.",
+            ],
+            "neutral": [
+                "My ability to forgive really depends on the severity of what happened and whether the person is truly sorry.",
+                "I have mixed feelings about forgiveness because some things feel forgivable and others genuinely don't.",
+                "I'm not sure where I stand on forgiveness because it seems like the right thing to do but it's incredibly hard sometimes.",
+                "Forgiveness is complicated for me and I don't think there's a universal rule about when to forgive.",
+                "I can forgive some things easily but other transgressions feel like they cross a line that's hard to come back from.",
+            ],
+            "negative": [
+                "I find forgiveness very difficult, especially when someone has deeply hurt me or violated my trust.",
+                "I tend to hold onto grievances longer than I probably should because letting go feels like excusing bad behavior.",
+                "Forgiveness doesn't come naturally to me and I often struggle with resentment long after the event.",
+                "I'm skeptical of the pressure to forgive because some actions don't deserve forgiveness in my view.",
+                "I have trouble forgiving because I worry that it signals to the other person that what they did was acceptable.",
+            ],
+            "very_negative": [
+                "I find it nearly impossible to forgive people who have seriously wronged me, and I don't think I should have to.",
+                "Forgiveness feels like letting someone off the hook for real harm, and I refuse to do that.",
+                "I hold onto resentment because the pain that was caused to me was real and forgiving would dishonor that.",
+                "I strongly resist the idea that I owe forgiveness to people who deliberately hurt me.",
+                "Some things are simply unforgivable and I reject the notion that forgiveness is always the right path.",
+            ],
+        },
+    },
+
+    # GRATITUDE EXPERIENCE
+    "gratitude_experience": {
+        "explanation": {
+            "very_positive": [
+                "I feel an overwhelming sense of thankfulness when I reflect on the meaningful experiences in my life.",
+                "Practicing gratitude has genuinely transformed my outlook and I feel deeply appreciative every day.",
+                "I experience gratitude intensely and it brings me a profound sense of contentment and connection.",
+                "I'm deeply thankful for the kindness others have shown me and the opportunities I've been given.",
+                "Gratitude comes naturally to me and it enhances almost every aspect of my emotional life.",
+            ],
+            "positive": [
+                "I generally feel appreciative of the good things in my life and try to acknowledge them regularly.",
+                "Gratitude is something I experience often, especially when I take a moment to reflect on what I have.",
+                "I feel thankful for my relationships, health, and opportunities, even when other things are challenging.",
+                "Practicing gratitude has been helpful for my wellbeing and I try to make it a regular habit.",
+                "I experience genuine appreciation for the positive aspects of my life more often than not.",
+            ],
+            "neutral": [
+                "My experience of gratitude is fairly average and depends a lot on my current mood and circumstances.",
+                "I feel appreciative sometimes, but gratitude isn't something I actively cultivate or think about much.",
+                "I have mixed experiences with gratitude, feeling thankful in some moments and indifferent in others.",
+                "I understand the value of gratitude but I wouldn't say it's a prominent emotion in my daily experience.",
+                "My gratitude experience is inconsistent and varies quite a bit depending on what's going on in my life.",
+            ],
+            "negative": [
+                "I find it difficult to feel genuinely grateful because my focus tends to drift toward what's wrong or missing.",
+                "Gratitude feels forced when I try to practice it, like I'm going through the motions without real feeling.",
+                "I struggle with feeling appreciative because the challenges in my life overshadow the good things.",
+                "The idea of gratitude sometimes feels dismissive of the real difficulties I'm experiencing.",
+                "I rarely experience spontaneous feelings of gratitude and have to work hard to notice the positives.",
+            ],
+            "very_negative": [
+                "I almost never feel grateful and the concept feels hollow given what I've been through.",
+                "Gratitude feels impossible when your circumstances are genuinely difficult and no amount of reframing changes that.",
+                "I resent being told to feel grateful because it minimizes the very real struggles I face every day.",
+                "My experience with gratitude is essentially nonexistent because I can't seem to find much to be thankful for.",
+                "I feel angry when people suggest gratitude as a solution because it doesn't address the root causes of my unhappiness.",
+            ],
+        },
+    },
+
+    # SLEEP QUALITY
+    "sleep_quality": {
+        "explanation": {
+            "very_positive": [
+                "I consistently sleep well and wake up feeling rested and ready to tackle the day.",
+                "My sleep quality is excellent and I credit it with helping me function at my best mentally and physically.",
+                "I fall asleep easily, stay asleep through the night, and feel genuinely refreshed every morning.",
+                "I've established a sleep routine that works perfectly for me and I rarely have trouble sleeping.",
+                "Good sleep is one of the foundations of my wellbeing and I'm fortunate that it comes naturally to me.",
+            ],
+            "positive": [
+                "I generally sleep well and most nights I feel reasonably rested when I wake up.",
+                "My sleep quality is pretty good, with occasional nights that aren't as restful as I'd like.",
+                "I usually fall asleep within a reasonable time and get enough rest to function well during the day.",
+                "Sleep is mostly a positive experience for me, even if I have the occasional restless night.",
+                "I feel fairly well-rested most of the time, which helps me maintain my energy and focus.",
+            ],
+            "neutral": [
+                "My sleep quality is average, with some nights being better than others and no strong pattern.",
+                "I wouldn't describe my sleep as particularly good or bad, it's just kind of there.",
+                "Some nights I sleep great and others I toss and turn, and I'm not sure what makes the difference.",
+                "My sleep is inconsistent and I don't feel strongly about it one way or another.",
+                "I get through most days fine but I wouldn't say I feel fully rested on a regular basis either.",
+            ],
+            "negative": [
+                "My sleep quality is poor and it affects my mood, energy, and ability to concentrate during the day.",
+                "I frequently have trouble falling asleep or staying asleep, which leaves me feeling drained.",
+                "I wake up feeling tired more often than not, and it's starting to take a toll on my daily life.",
+                "Sleep has become a source of frustration because I can never seem to get enough quality rest.",
+                "I lie awake many nights with racing thoughts and the lack of sleep makes everything harder.",
+            ],
+            "very_negative": [
+                "My sleep quality is terrible and chronic insomnia has become one of the biggest problems in my life.",
+                "I dread going to bed because I know I'll spend hours lying awake, exhausted but unable to fall asleep.",
+                "The lack of quality sleep has seriously damaged my health, relationships, and ability to function.",
+                "I'm constantly exhausted because I can never get a full night of uninterrupted, restful sleep.",
+                "Sleep deprivation has become a vicious cycle that affects everything in my life and I feel desperate for relief.",
+            ],
+        },
+    },
+
+    # CLIMATE CHANGE
+    "climate_change": {
+        "explanation": {
+            "very_positive": [
+                "I'm deeply committed to addressing climate change and believe we have both the technology and moral obligation to act now.",
+                "Climate change is the defining challenge of our generation and I'm optimistic that collective action can make a real difference.",
+                "I take personal responsibility for my environmental footprint and advocate strongly for systemic changes to reduce emissions.",
+                "I believe the science on climate change is clear and compelling, and we need to listen to the experts and act urgently.",
+                "I feel hopeful about climate solutions like renewable energy and sustainable practices that are already making progress.",
+            ],
+            "positive": [
+                "I take climate change seriously and try to make environmentally conscious choices in my daily life.",
+                "I believe we should be doing more to address climate change, even though the scale of the problem feels daunting.",
+                "I'm concerned about the effects of climate change on future generations and support policies that address it.",
+                "I think the evidence for human-caused climate change is strong and we have a responsibility to respond.",
+                "I care about sustainability and make reasonable efforts to reduce my environmental impact.",
+            ],
+            "neutral": [
+                "I have mixed feelings about climate change because while the science seems concerning, the solutions feel complex.",
+                "I'm somewhere in the middle on climate change policy because I see both the environmental and economic concerns.",
+                "I think climate change is real but I'm not sure how much individuals can actually do about it.",
+                "I care about the environment to some extent but climate change isn't the issue I feel most passionate about.",
+                "I accept that the climate is changing but I'm uncertain about the best way to respond to the problem.",
+            ],
+            "negative": [
+                "I'm skeptical about the urgency of climate change claims and think the economic costs of action are being ignored.",
+                "I think climate change concerns are often exaggerated and the proposed solutions would hurt ordinary people the most.",
+                "I disagree with many climate policies because they seem to prioritize environmental goals over economic reality.",
+                "I'm not convinced that drastic climate action is necessary or that the predictions are as certain as claimed.",
+                "Climate change activism feels more like political ideology than genuine science to me.",
+            ],
+            "very_negative": [
+                "I believe climate change fears are greatly exaggerated and the push for climate action is driven by political agendas.",
+                "I strongly oppose most climate change policies because they destroy jobs and raise costs without meaningful environmental benefit.",
+                "I think the climate change narrative is used to control people and restrict economic freedom.",
+                "I reject the idea that humans are primarily responsible for climate change and I'm tired of the alarmism.",
+                "Climate change activism has become a religion that doesn't tolerate dissent, and I refuse to buy into the hysteria.",
+            ],
+        },
+    },
+
+    # ARTIFICIAL INTELLIGENCE
+    "artificial_intelligence": {
+        "explanation": {
+            "very_positive": [
+                "I'm genuinely excited about artificial intelligence and believe it has the potential to solve some of humanity's biggest challenges.",
+                "AI technology is one of the most promising developments in human history, and I'm optimistic about its applications in healthcare, science, and education.",
+                "I embrace AI tools in my daily life and work because they make me more productive and open up new possibilities.",
+                "I believe artificial intelligence will create more opportunities than it eliminates and I'm excited to see where it goes.",
+                "AI represents a transformative leap in human capability and I think the benefits far outweigh the risks if we develop it responsibly.",
+            ],
+            "positive": [
+                "I generally view artificial intelligence positively and think it has useful applications in many areas of life.",
+                "AI technology has impressed me with what it can do, even though I think we need to be thoughtful about how we use it.",
+                "I'm moderately optimistic about AI because I've seen it help people be more efficient and solve complex problems.",
+                "I believe AI can be a force for good as long as we maintain human oversight and address bias concerns.",
+                "I find artificial intelligence tools helpful in my work and I'm open to seeing how the technology continues to develop.",
+            ],
+            "neutral": [
+                "I have mixed feelings about artificial intelligence because I can see both the tremendous potential and the real risks.",
+                "AI is interesting technology but I'm not sure whether the long-term effects will be mostly positive or negative.",
+                "I think the conversation about AI is important but I don't feel strongly optimistic or pessimistic about it.",
+                "My views on artificial intelligence are fairly balanced because there are legitimate arguments on both sides.",
+                "I use some AI tools but I also have questions about privacy, job displacement, and accountability that keep me from fully embracing it.",
+            ],
+            "negative": [
+                "I'm concerned about artificial intelligence because I think the rush to deploy it is outpacing our ability to manage the risks.",
+                "AI technology worries me because of its potential to eliminate jobs, invade privacy, and concentrate power in fewer hands.",
+                "I'm skeptical about the hype around artificial intelligence and think the downsides are being seriously underestimated.",
+                "I have real concerns about AI bias, lack of transparency, and the erosion of human decision-making in critical areas.",
+                "Artificial intelligence makes me uncomfortable because I don't fully understand how it works and I don't trust the companies building it.",
+            ],
+            "very_negative": [
+                "I believe artificial intelligence poses serious dangers to employment, privacy, democracy, and human autonomy.",
+                "AI technology deeply concerns me because I think we are creating systems we cannot control or fully understand.",
+                "I'm strongly opposed to the unchecked development of artificial intelligence because the risks are existential.",
+                "I think AI is being used to exploit and manipulate people while the companies profiting from it avoid accountability.",
+                "Artificial intelligence represents a threat to what makes us human, and I believe we should be far more cautious about its development.",
+            ],
+        },
+    },
+
+    # REMOTE WORK
+    "remote_work": {
+        "explanation": {
+            "very_positive": [
+                "Working remotely has been genuinely transformative for my quality of life, productivity, and work-life balance.",
+                "I love working from home because it eliminates commuting, gives me flexibility, and lets me create my ideal work environment.",
+                "Remote work has made me more productive because I can focus without the distractions and politics of an office.",
+                "I feel strongly that remote work should be a permanent option because it benefits both employees and employers.",
+                "Working remotely has improved my health, relationships, and job satisfaction in ways I didn't expect.",
+            ],
+            "positive": [
+                "I generally enjoy remote work because of the flexibility it provides, even though it has some challenges.",
+                "Working from home has been a mostly positive experience that I'd prefer to continue over going back to an office full-time.",
+                "I appreciate the work-life balance that remote work offers, though I do miss some aspects of in-person collaboration.",
+                "Remote work suits my personality and working style well, and I feel I perform better with the autonomy it provides.",
+                "I'm satisfied with remote work arrangements and think they should be widely available for jobs that can support them.",
+            ],
+            "neutral": [
+                "I have genuinely mixed feelings about remote work because I see real benefits and real drawbacks.",
+                "Some days I love working from home and other days I miss the structure and social aspects of an office.",
+                "Remote work is fine for certain tasks but I think some types of collaboration genuinely require being in person.",
+                "I don't feel strongly about remote versus in-office work because both have their advantages depending on the situation.",
+                "My experience with remote work has been average, with productivity gains offset by isolation and boundary issues.",
+            ],
+            "negative": [
+                "I find remote work isolating and struggle with the lack of social interaction and clear boundaries between work and home.",
+                "Working from home has been challenging for me because I need the structure and accountability of an office environment.",
+                "I miss the spontaneous collaboration and casual social connections that come with working alongside colleagues.",
+                "Remote work has blurred the lines between my professional and personal life in ways that aren't healthy for me.",
+                "I've noticed my mental health and motivation declining since switching to remote work, and I'd prefer to go back to the office.",
+            ],
+            "very_negative": [
+                "Remote work has been terrible for me and has significantly worsened my mental health, productivity, and sense of connection.",
+                "I feel deeply isolated and disconnected working from home, and it has affected both my work performance and personal life.",
+                "Working remotely has destroyed the work-life boundaries I used to have and I feel like I'm always on the clock.",
+                "I strongly believe remote work is harmful for team cohesion, company culture, and most people's wellbeing.",
+                "I desperately want to return to in-person work because remote work has made me lonely, unmotivated, and professionally stagnant.",
             ],
         },
     },
@@ -10656,6 +11365,45 @@ class ComprehensiveResponseGenerator:
                     _idx = _modified.lower().find(_hedge)
                     _modified = _modified[:_idx] + _absolute + _modified[_idx + len(_hedge):]
                     break  # Only replace one to avoid over-correction
+            response = _modified
+
+        # 6. v1.0.9.3: Low-engagement shortening — moderately disengaged responders
+        # produce shorter, less elaborated text (but not as extreme as straight-liners)
+        _attention = _traits.get('attention_level', 0.5)
+        if _attention < 0.35 and not _straight:
+            sentences = re.split(r'(?<=[.!?])\s+', response)
+            if len(sentences) > 2:
+                response = ' '.join(sentences[:2])
+            words = response.split()
+            if len(words) > 20:
+                response = ' '.join(words[:16]) + '.'
+
+        # 7. v1.0.9.3: Consistency-driven response anchoring
+        # When consistency is low, inject uncertainty markers at ~30% rate
+        if _consistency < 0.35 and local_rng.random() < 0.30:
+            _uncertainty_markers = [
+                "I'm not entirely sure but ",
+                "It's hard to say exactly, but ",
+                "I go back and forth on this, but ",
+                "My feelings are mixed, but ",
+            ]
+            if not any(response.lower().startswith(m[:12].lower()) for m in _uncertainty_markers):
+                response = local_rng.choice(_uncertainty_markers) + response[0].lower() + response[1:]
+
+        # 8. v1.0.9.3: Formality adjustment for high-formality personas
+        _formality = _traits.get('formality', 0.5)
+        if _formality > 0.75 and local_rng.random() < 0.35:
+            _casual_to_formal = {
+                "don't": "do not", "can't": "cannot", "won't": "will not",
+                "shouldn't": "should not", "couldn't": "could not",
+                "it's": "it is", "that's": "that is",
+            }
+            _modified = response
+            for _cas, _form in _casual_to_formal.items():
+                if _cas in _modified.lower():
+                    _idx = _modified.lower().find(_cas)
+                    _modified = _modified[:_idx] + _form + _modified[_idx + len(_cas):]
+                    break
             response = _modified
 
         return response

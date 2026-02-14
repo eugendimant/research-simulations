@@ -159,7 +159,7 @@ Based on recent LLM simulation research:
 """
 
 # Version identifier to help track deployed code
-__version__ = "1.0.9.2"  # v1.0.9.2: OE response quality overhaul, report differentiation, API tracking fix
+__version__ = "1.0.9.4"  # v1.0.9.4: Expand STEP 3 condition trait modifiers + GAME_CALIBRATIONS expansion
 
 import hashlib
 import random
@@ -2346,6 +2346,354 @@ class PersonaLibrary:
             },
             applicable_domains=['behavioral_economics', 'financial_psychology', 'consumer_behavior',
                                 'investment', 'risk', 'judgment', 'decision_making']
+        )
+
+        # ================================================================
+        # v1.0.9.3: EXPANDED DOMAIN-SPECIFIC PERSONAS (15 new archetypes)
+        # ================================================================
+
+        personas['nostalgic_reminiscer'] = Persona(
+            name="Nostalgic Reminiscer",
+            category="positive_psychology",
+            description="Draws heavily on past experiences. Rose-tinted retrospection, "
+                       "warm engagement with memory-related content.",
+            weight=0.07,
+            traits={
+                'attention_level': PersonaTrait('attention_level', 0.72, 0.08, 'Moderate-high'),
+                'response_consistency': PersonaTrait('response_consistency', 0.65, 0.10, 'Moderate'),
+                'scale_use_breadth': PersonaTrait('scale_use_breadth', 0.55, 0.10, 'Moderate'),
+                'acquiescence': PersonaTrait('acquiescence', 0.58, 0.08, 'Moderate-high'),
+                'social_desirability': PersonaTrait('social_desirability', 0.55, 0.10, 'Moderate'),
+                'reading_speed': PersonaTrait('reading_speed', 0.55, 0.10, 'Moderate'),
+                'response_tendency': PersonaTrait('response_tendency', 0.65, 0.08, 'Positive-leaning'),
+                'extremity': PersonaTrait('extremity', 0.50, 0.10, 'Moderate'),
+                'engagement': PersonaTrait('engagement', 0.75, 0.08, 'High when memories triggered'),
+            },
+            text_style={'verbosity': 'moderate_high', 'detail_level': 'narrative', 'coherence': 'high',
+                        'sentiment_alignment': 'warm'},
+            applicable_domains=['nostalgia', 'memory', 'positive_psychology', 'consumer_behavior',
+                                'advertising', 'wellbeing']
+        )
+
+        personas['sleep_deprived_responder'] = Persona(
+            name="Sleep-Deprived Responder",
+            category="health",
+            description="Responding under fatigue conditions. Reduced attention, "
+                       "more impulsive, lower consistency, minimal effort.",
+            weight=0.06,
+            traits={
+                'attention_level': PersonaTrait('attention_level', 0.35, 0.12, 'Low — fatigue impairs'),
+                'response_consistency': PersonaTrait('response_consistency', 0.40, 0.12, 'Low'),
+                'scale_use_breadth': PersonaTrait('scale_use_breadth', 0.45, 0.10, 'Narrow'),
+                'acquiescence': PersonaTrait('acquiescence', 0.60, 0.10, 'Moderate-high'),
+                'social_desirability': PersonaTrait('social_desirability', 0.35, 0.10, 'Low'),
+                'reading_speed': PersonaTrait('reading_speed', 0.30, 0.10, 'Slow'),
+                'response_tendency': PersonaTrait('response_tendency', 0.45, 0.10, 'Slightly negative'),
+                'extremity': PersonaTrait('extremity', 0.55, 0.12, 'Moderate'),
+                'engagement': PersonaTrait('engagement', 0.30, 0.10, 'Low'),
+            },
+            text_style={'verbosity': 'low', 'detail_level': 'minimal', 'coherence': 'low',
+                        'sentiment_alignment': 'negative_leaning'},
+            applicable_domains=['health', 'sleep', 'cognitive', 'workplace', 'clinical']
+        )
+
+        personas['social_media_heavy_user'] = Persona(
+            name="Social Media Heavy User",
+            category="technology",
+            description="High digital engagement. Quick informal responses, "
+                       "comparison-oriented, polarized opinion expression.",
+            weight=0.08,
+            traits={
+                'attention_level': PersonaTrait('attention_level', 0.55, 0.12, 'Moderate — short span'),
+                'response_consistency': PersonaTrait('response_consistency', 0.50, 0.10, 'Moderate'),
+                'scale_use_breadth': PersonaTrait('scale_use_breadth', 0.70, 0.08, 'Wide — expressive'),
+                'acquiescence': PersonaTrait('acquiescence', 0.55, 0.10, 'Moderate'),
+                'social_desirability': PersonaTrait('social_desirability', 0.65, 0.10, 'High — curates image'),
+                'reading_speed': PersonaTrait('reading_speed', 0.75, 0.08, 'Fast — skimming'),
+                'response_tendency': PersonaTrait('response_tendency', 0.58, 0.10, 'Slightly positive'),
+                'extremity': PersonaTrait('extremity', 0.62, 0.10, 'Moderate-high'),
+                'engagement': PersonaTrait('engagement', 0.65, 0.10, 'Moderate-high'),
+            },
+            text_style={'verbosity': 'moderate', 'detail_level': 'casual', 'coherence': 'moderate',
+                        'sentiment_alignment': 'expressive'},
+            applicable_domains=['social_media', 'technology', 'digital_wellbeing', 'communication',
+                                'cyberbullying', 'online_behavior']
+        )
+
+        personas['eco_anxious'] = Persona(
+            name="Eco-Anxious Individual",
+            category="environmental",
+            description="High environmental concern and climate anxiety. "
+                       "Engaged but emotionally distressed about environmental issues.",
+            weight=0.06,
+            traits={
+                'attention_level': PersonaTrait('attention_level', 0.80, 0.08, 'High — vigilant'),
+                'response_consistency': PersonaTrait('response_consistency', 0.72, 0.08, 'High'),
+                'scale_use_breadth': PersonaTrait('scale_use_breadth', 0.65, 0.10, 'Moderate-wide'),
+                'acquiescence': PersonaTrait('acquiescence', 0.40, 0.10, 'Low — critical'),
+                'social_desirability': PersonaTrait('social_desirability', 0.55, 0.10, 'Moderate'),
+                'reading_speed': PersonaTrait('reading_speed', 0.60, 0.10, 'Moderate'),
+                'response_tendency': PersonaTrait('response_tendency', 0.35, 0.10, 'Negative — pessimistic'),
+                'extremity': PersonaTrait('extremity', 0.68, 0.10, 'High'),
+                'engagement': PersonaTrait('engagement', 0.82, 0.08, 'Very high'),
+            },
+            text_style={'verbosity': 'high', 'detail_level': 'passionate', 'coherence': 'high',
+                        'sentiment_alignment': 'concerned'},
+            applicable_domains=['environmental', 'climate_change', 'sustainability', 'green_behavior',
+                                'policy', 'activism']
+        )
+
+        personas['body_image_sensitive'] = Persona(
+            name="Body Image Sensitive",
+            category="health",
+            description="Heightened sensitivity to body-related stimuli. "
+                       "Social comparison tendency, appearance-focused.",
+            weight=0.06,
+            traits={
+                'attention_level': PersonaTrait('attention_level', 0.70, 0.10, 'Moderate-high'),
+                'response_consistency': PersonaTrait('response_consistency', 0.55, 0.10, 'Moderate'),
+                'scale_use_breadth': PersonaTrait('scale_use_breadth', 0.60, 0.10, 'Moderate'),
+                'acquiescence': PersonaTrait('acquiescence', 0.45, 0.10, 'Low-moderate'),
+                'social_desirability': PersonaTrait('social_desirability', 0.70, 0.08, 'High'),
+                'reading_speed': PersonaTrait('reading_speed', 0.55, 0.10, 'Moderate'),
+                'response_tendency': PersonaTrait('response_tendency', 0.42, 0.10, 'Slightly negative'),
+                'extremity': PersonaTrait('extremity', 0.58, 0.10, 'Moderate-high'),
+                'engagement': PersonaTrait('engagement', 0.72, 0.08, 'High'),
+            },
+            text_style={'verbosity': 'moderate', 'detail_level': 'personal', 'coherence': 'moderate',
+                        'sentiment_alignment': 'self_critical'},
+            applicable_domains=['body_image', 'eating_disorders', 'health', 'social_comparison',
+                                'self_esteem', 'media_effects']
+        )
+
+        personas['remote_worker_adapted'] = Persona(
+            name="Adapted Remote Worker",
+            category="organizational",
+            description="Experienced with remote/hybrid work. Values autonomy, "
+                       "tech-comfortable, boundary management focus.",
+            weight=0.07,
+            traits={
+                'attention_level': PersonaTrait('attention_level', 0.68, 0.10, 'Moderate-high'),
+                'response_consistency': PersonaTrait('response_consistency', 0.70, 0.08, 'High'),
+                'scale_use_breadth': PersonaTrait('scale_use_breadth', 0.60, 0.10, 'Moderate'),
+                'acquiescence': PersonaTrait('acquiescence', 0.48, 0.10, 'Moderate'),
+                'social_desirability': PersonaTrait('social_desirability', 0.50, 0.10, 'Moderate'),
+                'reading_speed': PersonaTrait('reading_speed', 0.65, 0.08, 'Moderate-fast'),
+                'response_tendency': PersonaTrait('response_tendency', 0.58, 0.10, 'Slightly positive'),
+                'extremity': PersonaTrait('extremity', 0.42, 0.10, 'Moderate — nuanced'),
+                'engagement': PersonaTrait('engagement', 0.72, 0.08, 'High for work topics'),
+            },
+            text_style={'verbosity': 'moderate', 'detail_level': 'practical', 'coherence': 'high',
+                        'sentiment_alignment': 'balanced'},
+            applicable_domains=['organizational', 'remote_work', 'technology', 'workplace',
+                                'work_life_balance', 'virtual_teams']
+        )
+
+        personas['grudge_holder'] = Persona(
+            name="Grudge Holder",
+            category="social_psychology",
+            description="Low forgiveness, high rumination. Holds onto perceived wrongs, "
+                       "justice-focused, retaliatory impulses.",
+            weight=0.06,
+            traits={
+                'attention_level': PersonaTrait('attention_level', 0.75, 0.08, 'High — vigilant'),
+                'response_consistency': PersonaTrait('response_consistency', 0.78, 0.08, 'High'),
+                'scale_use_breadth': PersonaTrait('scale_use_breadth', 0.55, 0.10, 'Moderate-narrow'),
+                'acquiescence': PersonaTrait('acquiescence', 0.30, 0.08, 'Low — oppositional'),
+                'social_desirability': PersonaTrait('social_desirability', 0.40, 0.10, 'Low-moderate'),
+                'reading_speed': PersonaTrait('reading_speed', 0.55, 0.10, 'Moderate'),
+                'response_tendency': PersonaTrait('response_tendency', 0.35, 0.10, 'Negative'),
+                'extremity': PersonaTrait('extremity', 0.72, 0.08, 'High'),
+                'engagement': PersonaTrait('engagement', 0.78, 0.08, 'High — emotionally invested'),
+            },
+            text_style={'verbosity': 'moderate_high', 'detail_level': 'emotional', 'coherence': 'high',
+                        'sentiment_alignment': 'negative'},
+            applicable_domains=['forgiveness', 'conflict', 'justice', 'interpersonal',
+                                'moral_psychology', 'aggression']
+        )
+
+        personas['impulsive_spender'] = Persona(
+            name="Impulsive Spender",
+            category="economics",
+            description="Low self-control in financial contexts. Present-biased, "
+                       "emotional purchasing, low financial literacy.",
+            weight=0.06,
+            traits={
+                'attention_level': PersonaTrait('attention_level', 0.45, 0.12, 'Low-moderate'),
+                'response_consistency': PersonaTrait('response_consistency', 0.42, 0.12, 'Low'),
+                'scale_use_breadth': PersonaTrait('scale_use_breadth', 0.65, 0.10, 'Moderate-wide'),
+                'acquiescence': PersonaTrait('acquiescence', 0.60, 0.08, 'Moderate-high'),
+                'social_desirability': PersonaTrait('social_desirability', 0.55, 0.10, 'Moderate'),
+                'reading_speed': PersonaTrait('reading_speed', 0.70, 0.10, 'Fast'),
+                'response_tendency': PersonaTrait('response_tendency', 0.60, 0.10, 'Positive'),
+                'extremity': PersonaTrait('extremity', 0.60, 0.10, 'Moderate-high'),
+                'engagement': PersonaTrait('engagement', 0.55, 0.10, 'Moderate'),
+            },
+            text_style={'verbosity': 'moderate', 'detail_level': 'casual', 'coherence': 'moderate',
+                        'sentiment_alignment': 'impulsive'},
+            applicable_domains=['financial', 'consumer_behavior', 'behavioral_economics',
+                                'self_control', 'decision_making']
+        )
+
+        personas['mindful_responder'] = Persona(
+            name="Mindful Responder",
+            category="positive_psychology",
+            description="High dispositional mindfulness. Present-focused, "
+                       "non-judgmental, deliberate in responses.",
+            weight=0.06,
+            traits={
+                'attention_level': PersonaTrait('attention_level', 0.88, 0.06, 'Very high'),
+                'response_consistency': PersonaTrait('response_consistency', 0.75, 0.08, 'High'),
+                'scale_use_breadth': PersonaTrait('scale_use_breadth', 0.60, 0.10, 'Moderate'),
+                'acquiescence': PersonaTrait('acquiescence', 0.45, 0.08, 'Low-moderate'),
+                'social_desirability': PersonaTrait('social_desirability', 0.40, 0.08, 'Low'),
+                'reading_speed': PersonaTrait('reading_speed', 0.45, 0.10, 'Slow — careful'),
+                'response_tendency': PersonaTrait('response_tendency', 0.55, 0.08, 'Neutral-positive'),
+                'extremity': PersonaTrait('extremity', 0.28, 0.08, 'Low'),
+                'engagement': PersonaTrait('engagement', 0.80, 0.08, 'High'),
+            },
+            text_style={'verbosity': 'moderate', 'detail_level': 'reflective', 'coherence': 'very_high',
+                        'sentiment_alignment': 'measured'},
+            applicable_domains=['mindfulness', 'meditation', 'wellbeing', 'stress', 'clinical',
+                                'positive_psychology', 'health']
+        )
+
+        personas['conspiracy_thinker'] = Persona(
+            name="Conspiracy-Prone Thinker",
+            category="cognitive",
+            description="High conspiracy mentality. Distrusts authorities, "
+                       "sees hidden connections, low institutional trust.",
+            weight=0.05,
+            traits={
+                'attention_level': PersonaTrait('attention_level', 0.72, 0.10, 'High — hypervigilant'),
+                'response_consistency': PersonaTrait('response_consistency', 0.68, 0.10, 'Moderate-high'),
+                'scale_use_breadth': PersonaTrait('scale_use_breadth', 0.60, 0.10, 'Moderate'),
+                'acquiescence': PersonaTrait('acquiescence', 0.30, 0.10, 'Low — distrusts assertions'),
+                'social_desirability': PersonaTrait('social_desirability', 0.35, 0.12, 'Low'),
+                'reading_speed': PersonaTrait('reading_speed', 0.60, 0.10, 'Moderate'),
+                'response_tendency': PersonaTrait('response_tendency', 0.35, 0.12, 'Negative — distrustful'),
+                'extremity': PersonaTrait('extremity', 0.72, 0.08, 'High'),
+                'engagement': PersonaTrait('engagement', 0.78, 0.08, 'High'),
+            },
+            text_style={'verbosity': 'high', 'detail_level': 'elaborate', 'coherence': 'moderate',
+                        'sentiment_alignment': 'skeptical'},
+            applicable_domains=['conspiracy', 'misinformation', 'trust', 'political',
+                                'media_literacy', 'paranormal']
+        )
+
+        personas['chronically_grateful'] = Persona(
+            name="Chronically Grateful Person",
+            category="positive_psychology",
+            description="Dispositionally high gratitude. Positive attributional style, "
+                       "pro-social orientation, high wellbeing.",
+            weight=0.06,
+            traits={
+                'attention_level': PersonaTrait('attention_level', 0.72, 0.08, 'Moderate-high'),
+                'response_consistency': PersonaTrait('response_consistency', 0.70, 0.08, 'High'),
+                'scale_use_breadth': PersonaTrait('scale_use_breadth', 0.55, 0.10, 'Moderate'),
+                'acquiescence': PersonaTrait('acquiescence', 0.65, 0.08, 'High — positive bias'),
+                'social_desirability': PersonaTrait('social_desirability', 0.58, 0.10, 'Moderate-high'),
+                'reading_speed': PersonaTrait('reading_speed', 0.55, 0.10, 'Moderate'),
+                'response_tendency': PersonaTrait('response_tendency', 0.72, 0.08, 'Strongly positive'),
+                'extremity': PersonaTrait('extremity', 0.45, 0.10, 'Moderate'),
+                'engagement': PersonaTrait('engagement', 0.75, 0.08, 'High'),
+            },
+            text_style={'verbosity': 'moderate_high', 'detail_level': 'appreciative', 'coherence': 'high',
+                        'sentiment_alignment': 'positive'},
+            applicable_domains=['gratitude', 'positive_psychology', 'wellbeing', 'prosocial',
+                                'interpersonal', 'health']
+        )
+
+        personas['chronic_pain_responder'] = Persona(
+            name="Chronic Pain Responder",
+            category="clinical",
+            description="Dealing with chronic pain/illness. Fatigue-prone, "
+                       "variable engagement, health-focused attention.",
+            weight=0.05,
+            traits={
+                'attention_level': PersonaTrait('attention_level', 0.50, 0.12, 'Variable'),
+                'response_consistency': PersonaTrait('response_consistency', 0.55, 0.12, 'Moderate'),
+                'scale_use_breadth': PersonaTrait('scale_use_breadth', 0.55, 0.10, 'Moderate'),
+                'acquiescence': PersonaTrait('acquiescence', 0.48, 0.10, 'Moderate'),
+                'social_desirability': PersonaTrait('social_desirability', 0.45, 0.10, 'Moderate'),
+                'reading_speed': PersonaTrait('reading_speed', 0.45, 0.12, 'Slow-moderate'),
+                'response_tendency': PersonaTrait('response_tendency', 0.38, 0.12, 'Negative-leaning'),
+                'extremity': PersonaTrait('extremity', 0.55, 0.10, 'Moderate'),
+                'engagement': PersonaTrait('engagement', 0.55, 0.12, 'Variable'),
+            },
+            text_style={'verbosity': 'low_moderate', 'detail_level': 'health_focused', 'coherence': 'moderate',
+                        'sentiment_alignment': 'pain_aware'},
+            applicable_domains=['clinical', 'health', 'pain', 'chronic_illness', 'wellbeing',
+                                'quality_of_life']
+        )
+
+        personas['deep_learner'] = Persona(
+            name="Deep Learner",
+            category="educational",
+            description="Deep learning approach. Intrinsically motivated, "
+                       "seeks understanding, relates ideas across contexts.",
+            weight=0.06,
+            traits={
+                'attention_level': PersonaTrait('attention_level', 0.85, 0.06, 'Very high'),
+                'response_consistency': PersonaTrait('response_consistency', 0.75, 0.08, 'High'),
+                'scale_use_breadth': PersonaTrait('scale_use_breadth', 0.65, 0.10, 'Moderate-wide'),
+                'acquiescence': PersonaTrait('acquiescence', 0.40, 0.08, 'Low — critical thinker'),
+                'social_desirability': PersonaTrait('social_desirability', 0.42, 0.10, 'Low-moderate'),
+                'reading_speed': PersonaTrait('reading_speed', 0.45, 0.10, 'Slow — careful'),
+                'response_tendency': PersonaTrait('response_tendency', 0.58, 0.08, 'Slightly positive'),
+                'extremity': PersonaTrait('extremity', 0.35, 0.10, 'Low — nuanced'),
+                'engagement': PersonaTrait('engagement', 0.85, 0.06, 'Very high'),
+                'need_for_cognition': PersonaTrait('need_for_cognition', 0.82, 0.08, 'Very high'),
+            },
+            text_style={'verbosity': 'high', 'detail_level': 'analytical', 'coherence': 'very_high',
+                        'sentiment_alignment': 'thoughtful'},
+            applicable_domains=['education', 'learning', 'academic', 'cognitive', 'motivation',
+                                'self_regulation']
+        )
+
+        personas['surface_learner'] = Persona(
+            name="Surface Learner",
+            category="educational",
+            description="Surface learning approach. Extrinsically motivated, "
+                       "strategic effort allocation, minimal engagement.",
+            weight=0.07,
+            traits={
+                'attention_level': PersonaTrait('attention_level', 0.45, 0.12, 'Low-moderate'),
+                'response_consistency': PersonaTrait('response_consistency', 0.48, 0.10, 'Moderate-low'),
+                'scale_use_breadth': PersonaTrait('scale_use_breadth', 0.45, 0.10, 'Narrow'),
+                'acquiescence': PersonaTrait('acquiescence', 0.60, 0.08, 'Moderate-high'),
+                'social_desirability': PersonaTrait('social_desirability', 0.55, 0.10, 'Moderate'),
+                'reading_speed': PersonaTrait('reading_speed', 0.72, 0.08, 'Fast — skims'),
+                'response_tendency': PersonaTrait('response_tendency', 0.52, 0.10, 'Neutral'),
+                'extremity': PersonaTrait('extremity', 0.40, 0.10, 'Low-moderate'),
+                'engagement': PersonaTrait('engagement', 0.38, 0.10, 'Low'),
+            },
+            text_style={'verbosity': 'low', 'detail_level': 'minimal', 'coherence': 'moderate',
+                        'sentiment_alignment': 'neutral'},
+            applicable_domains=['education', 'learning', 'academic', 'motivation', 'assessment']
+        )
+
+        personas['secure_relationship'] = Persona(
+            name="Secure Relationship Partner",
+            category="social_psychology",
+            description="Secure attachment style. Comfortable with closeness, "
+                       "balanced view of self and others.",
+            weight=0.07,
+            traits={
+                'attention_level': PersonaTrait('attention_level', 0.72, 0.08, 'Moderate-high'),
+                'response_consistency': PersonaTrait('response_consistency', 0.75, 0.08, 'High'),
+                'scale_use_breadth': PersonaTrait('scale_use_breadth', 0.60, 0.10, 'Moderate'),
+                'acquiescence': PersonaTrait('acquiescence', 0.52, 0.08, 'Moderate'),
+                'social_desirability': PersonaTrait('social_desirability', 0.48, 0.10, 'Moderate'),
+                'reading_speed': PersonaTrait('reading_speed', 0.58, 0.10, 'Moderate'),
+                'response_tendency': PersonaTrait('response_tendency', 0.62, 0.08, 'Positive'),
+                'extremity': PersonaTrait('extremity', 0.38, 0.10, 'Low-moderate'),
+                'engagement': PersonaTrait('engagement', 0.72, 0.08, 'High'),
+            },
+            text_style={'verbosity': 'moderate', 'detail_level': 'balanced', 'coherence': 'high',
+                        'sentiment_alignment': 'warm'},
+            applicable_domains=['attachment', 'relationships', 'interpersonal', 'social_psychology',
+                                'family', 'intimacy']
         )
 
         return personas
