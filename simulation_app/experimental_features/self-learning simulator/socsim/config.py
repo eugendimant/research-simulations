@@ -89,6 +89,54 @@ class SocSimConfig:
             return BackendMode.LOCAL_LLM
         return BackendMode.OFFLINE
 
+    def validate(self) -> list[str]:
+        """Validate config consistency. Returns list of warnings (empty = OK).
+
+        Checks for contradictory settings like REMOTE mode + OFFLINE_ONLY policy.
+        """
+        warnings: list[str] = []
+
+        # Remote mode requires opt-in remote policy
+        if self.backend_mode == BackendMode.REMOTE_LLM:
+            if self.cost_policy != CostPolicy.OPT_IN_REMOTE:
+                warnings.append(
+                    f"backend_mode=REMOTE_LLM but cost_policy={self.cost_policy.value}. "
+                    f"Remote calls will be blocked. Set cost_policy=opt_in_remote."
+                )
+            if not self.remote_llm_enabled:
+                warnings.append(
+                    "backend_mode=REMOTE_LLM but remote_llm_enabled=False. "
+                    "Set SOCSIM_REMOTE_LLM_ENABLED=true."
+                )
+            if not self.allow_network_calls:
+                warnings.append(
+                    "backend_mode=REMOTE_LLM but allow_network_calls=False. "
+                    "Set SOCSIM_ALLOW_NETWORK=true."
+                )
+
+        # Remote enabled but policy blocks it
+        if self.remote_llm_enabled and self.cost_policy == CostPolicy.OFFLINE_ONLY:
+            warnings.append(
+                "remote_llm_enabled=True but cost_policy=OFFLINE_ONLY. "
+                "Remote calls will be blocked."
+            )
+
+        # Local LLM mode but no providers configured
+        if self.backend_mode == BackendMode.LOCAL_LLM:
+            has_local = (
+                self.ollama_host
+                or self.llama_cpp_server_url
+                or self.vllm_url
+                or self.use_transformers_local
+            )
+            if not has_local:
+                warnings.append(
+                    "backend_mode=LOCAL_LLM but no local providers configured. "
+                    "Will fall back to offline."
+                )
+
+        return warnings
+
     def to_manifest_dict(self) -> dict:
         """Produce a dict suitable for inclusion in run manifests."""
         return {
@@ -98,6 +146,7 @@ class SocSimConfig:
             "allow_network_calls": self.allow_network_calls,
             "remote_llm_enabled": self.remote_llm_enabled,
             "local_llm_model": self.local_llm_model,
+            "validation_warnings": self.validate(),
         }
 
 

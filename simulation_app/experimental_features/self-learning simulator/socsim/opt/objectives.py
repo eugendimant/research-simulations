@@ -90,6 +90,48 @@ def invalid_rate_penalty(invalid_rate: float, penalty_weight: float = 10.0) -> f
     return penalty_weight * invalid_rate
 
 
+def effect_size_error(
+    predicted_means: Dict[str, float],
+    predicted_sds: Dict[str, float],
+    target_d: float,
+    condition_a: str,
+    condition_b: str,
+) -> float:
+    """Compute error between simulated and target Cohen's d effect size.
+
+    Parameters
+    ----------
+    predicted_means : dict
+        {condition_name: mean_value} from simulation.
+    predicted_sds : dict
+        {condition_name: sd_value} from simulation.
+    target_d : float
+        Published meta-analytic effect size (Cohen's d).
+    condition_a, condition_b : str
+        The two conditions to compare.
+
+    Returns
+    -------
+    float
+        Absolute error: |simulated_d - target_d|.
+    """
+    if condition_a not in predicted_means or condition_b not in predicted_means:
+        return float("inf")
+
+    m_a = predicted_means[condition_a]
+    m_b = predicted_means[condition_b]
+    sd_a = predicted_sds.get(condition_a, 1.0)
+    sd_b = predicted_sds.get(condition_b, 1.0)
+
+    # Pooled SD
+    pooled_sd = np.sqrt(0.5 * (sd_a ** 2 + sd_b ** 2))
+    if pooled_sd < 1e-9:
+        return float("inf")
+
+    simulated_d = (m_a - m_b) / pooled_sd
+    return abs(simulated_d - target_d)
+
+
 @dataclass
 class ObjectiveFunction:
     """Composite objective combining multiple metrics.

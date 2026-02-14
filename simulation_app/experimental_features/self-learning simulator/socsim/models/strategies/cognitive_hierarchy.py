@@ -62,12 +62,22 @@ class CognitiveHierarchyStrategy(Strategy):
         weights = _poisson_weights(tau, self._max_k)
 
         # Build level-by-level distributions
-        # Level-0: uniform
-        levels = [np.ones(n) / n]
-
+        # Level-0: persona-conditioned (Camerer et al. 2004 note L0 heterogeneity
+        # improves fit — prosocial L0 agents lean generous, selfish L0 lean selfish)
         vals = self._action_values(state)
         noise_lambda = float(persona.params.get("noise_lambda", 1.0))
         prosoc = float(persona.params.get("prosociality", 0.0))
+        endow = float(state.game_params.get("endowment", 10.0))
+
+        if abs(prosoc) > 0.1 and any(v != 0.0 for v in vals):
+            l0_utils = np.array([prosoc * v / (endow + 1e-9) for v in vals])
+            l0_z = 0.5 * (l0_utils - np.max(l0_utils))
+            level0 = np.exp(l0_z)
+            level0 /= level0.sum() + 1e-12
+        else:
+            level0 = np.ones(n) / n
+
+        levels = [level0]
 
         for k in range(1, self._max_k + 1):
             # Expected distribution of opponents at levels < k
@@ -84,9 +94,12 @@ class CognitiveHierarchyStrategy(Strategy):
                 opponent_dist += w_lower[j] * levels[j]
 
             # Best-respond to opponent_dist with noise
+            # Utility: own payoff + prosocial weighting of opponent payoff
             utilities = np.zeros(n, dtype=float)
             for i, v in enumerate(vals):
-                utilities[i] = prosoc * v + noise_lambda * k * 0.1
+                pi_self = endow - v if v <= endow else endow
+                pi_other = v
+                utilities[i] = pi_self + prosoc * pi_other * 0.15
             lam = noise_lambda * (1 + k * 0.5)
             z = lam * (utilities - np.max(utilities))
             probs = np.exp(z)

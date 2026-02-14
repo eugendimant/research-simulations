@@ -68,11 +68,55 @@ def generate_precommit_manifest(
     return manifest
 
 
-def load_precommit_manifest(path: Path) -> Dict[str, Any]:
-    """Load and validate a precommit manifest."""
+def load_precommit_manifest(path: Path, verify_integrity: bool = True) -> Dict[str, Any]:
+    """Load and validate a precommit manifest.
+
+    Parameters
+    ----------
+    path : Path
+        Path to manifest JSON file.
+    verify_integrity : bool
+        If True, verify the manifest hash for tampering detection.
+
+    Returns
+    -------
+    dict
+        Validated manifest data.
+
+    Raises
+    ------
+    ValueError
+        If manifest is invalid or integrity check fails.
+    """
     data = json.loads(path.read_text(encoding="utf-8"))
+
+    # Required keys validation
     if "specs" not in data:
         raise ValueError("Invalid manifest: missing 'specs' key")
+    if not isinstance(data["specs"], list):
+        raise ValueError("Invalid manifest: 'specs' must be a list")
+    if len(data["specs"]) == 0:
+        raise ValueError("Invalid manifest: 'specs' is empty")
+
+    # Validate each spec has required fields
+    for i, spec in enumerate(data["specs"]):
+        if "game_name" not in spec:
+            raise ValueError(f"Invalid manifest: spec[{i}] missing 'game_name'")
+        if "params" not in spec:
+            raise ValueError(f"Invalid manifest: spec[{i}] missing 'params'")
+
+    # Integrity verification
+    if verify_integrity and "manifest_hash" in data:
+        stored_hash = data.pop("manifest_hash")
+        recomputed_str = json.dumps(data, sort_keys=True, ensure_ascii=True)
+        recomputed_hash = hashlib.sha256(recomputed_str.encode()).hexdigest()
+        data["manifest_hash"] = stored_hash  # restore for caller
+        if recomputed_hash != stored_hash:
+            raise ValueError(
+                f"Manifest integrity check failed: expected {stored_hash[:16]}..., "
+                f"got {recomputed_hash[:16]}... — file may have been modified."
+            )
+
     return data
 
 

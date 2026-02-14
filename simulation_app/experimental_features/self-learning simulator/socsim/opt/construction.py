@@ -76,18 +76,25 @@ class ConstructionOptimizer:
         self.rng = np.random.default_rng(seed)
 
     def optimize(self) -> ConstructionResult:
-        """Run bounded optimization."""
+        """Run bounded optimization with convergence checking.
+
+        Uses bounded random search with:
+        - Exponential step size decay on non-improvement
+        - Random restarts every 60 evaluations
+        - Early stopping when no improvement for 50 consecutive evaluations
+        """
         if self.objective is None:
             raise ValueError("objective_fn must be set")
 
         dim = len(self.bounds)
-        # Initialise at defaults
         current = np.array([b.default for b in self.bounds])
         best = current.copy()
         best_params = self._to_dict(best)
         best_score = self.objective(best_params)
         history = [best_score]
         n_eval = 1
+        no_improve_count = 0
+        convergence_patience = 50  # stop after 50 evals without improvement
 
         step_sizes = np.array([(b.hi - b.lo) * 0.1 for b in self.bounds])
 
@@ -110,15 +117,22 @@ class ConstructionOptimizer:
                 best_score = score
                 best_params = params
                 current = candidate
+                no_improve_count = 0
             else:
-                step_sizes *= 0.998  # slow shrink
+                step_sizes *= 0.995  # decay step size
+                no_improve_count += 1
 
-            # Random restart
+            # Early stopping on convergence
+            if no_improve_count >= convergence_patience:
+                break
+
+            # Random restart to escape local minima
             if n_eval % 60 == 0:
                 current = np.array([
                     self.rng.uniform(b.lo, b.hi) for b in self.bounds
                 ])
                 step_sizes = np.array([(b.hi - b.lo) * 0.05 for b in self.bounds])
+                no_improve_count = 0  # reset patience after restart
 
         return ConstructionResult(
             best_params=best_params,

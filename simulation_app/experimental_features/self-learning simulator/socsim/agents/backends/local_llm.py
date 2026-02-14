@@ -131,7 +131,7 @@ class LocalLLMBackend(AgentBackend):
             headers={"Content-Type": "application/json"},
             method="POST",
         )
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        with urllib.request.urlopen(req, timeout=60) as resp:
             data = json.loads(resp.read())
         return data.get("message", {}).get("content", "")
 
@@ -149,12 +149,27 @@ class LocalLLMBackend(AgentBackend):
             headers={"Content-Type": "application/json"},
             method="POST",
         )
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        with urllib.request.urlopen(req, timeout=60) as resp:
             data = json.loads(resp.read())
         choices = data.get("choices", [])
         if choices:
             return choices[0].get("message", {}).get("content", "")
         return ""
+
+    @staticmethod
+    def _retry_call(fn, max_retries: int = 3, base_delay: float = 1.0):
+        """Retry a callable with exponential backoff on transient errors."""
+        last_err = None
+        for attempt in range(max_retries):
+            try:
+                return fn()
+            except Exception as e:
+                last_err = e
+                if attempt < max_retries - 1:
+                    delay = base_delay * (2 ** attempt)
+                    logger.debug("Retry %d/%d after %.1fs: %s", attempt + 1, max_retries, delay, e)
+                    time.sleep(delay)
+        raise last_err  # type: ignore[misc]
 
     # ------------------------------------------------------------------
     def sample_action(
@@ -198,13 +213,13 @@ class LocalLLMBackend(AgentBackend):
         prompt = self._build_action_prompt(state, persona, action_names)
 
         try:
-            raw = self._call_local([
+            raw = self._retry_call(lambda: self._call_local([
                 {"role": "system", "content": "You are simulating a participant in a behavioral experiment. Respond with ONLY a JSON object."},
                 {"role": "user", "content": prompt},
-            ], temperature=0.3)
+            ], temperature=0.3))
             return self._parse_distribution(raw, action_names)
         except Exception as e:
-            logger.warning(f"Local LLM action failed: {e}")
+            logger.warning("Local LLM action failed after retries: %s", e)
             if self._fallback:
                 return self._fallback.action_distribution(state, persona)
             n = len(action_names) or 1

@@ -116,12 +116,57 @@ REASON_BANKS: Dict[str, List[str]] = {
     ],
 }
 
-# Careless/low-effort templates
+# Careless/low-effort templates — ALL must reference {topic}
+# Real careless participants still write about the topic (Meade & Craig 2012)
 CARELESS_TEMPLATES = [
     "{topic} idk", "idk about {topic}", "{topic} is fine i guess",
     "{topic} ok", "whatever about {topic}", "{topic} sure",
-    "idk", "fine", "ok whatever", "sure",
+    "{topic} doesnt matter", "i dont care about {topic}", "{topic} is ok i guess",
+    "not sure about {topic}", "{topic} whatever", "eh {topic}",
 ]
+
+# Game-specific reason banks for economic games
+GAME_REASON_BANKS: Dict[str, List[str]] = {
+    "dictator": [
+        "I wanted to be fair in splitting the money",
+        "keeping more felt like the right call for me",
+        "I thought about what would be fair to both of us",
+        "I gave what I felt comfortable with",
+        "splitting money is about more than just maximizing",
+        "I considered what the other person might need",
+    ],
+    "trust": [
+        "trusting someone is risky but can pay off",
+        "I wanted to show good faith",
+        "you have to give trust to get trust back",
+        "I was cautious because I don't know the other person",
+        "sending more could lead to a better outcome for both",
+        "I held back because the other person might not return anything",
+    ],
+    "public_goods": [
+        "contributing helps the whole group",
+        "I didn't want to be the one who free rides",
+        "if everyone contributes we all benefit more",
+        "I contributed less because others might not pull their weight",
+        "group outcomes depend on everyone doing their part",
+        "I balanced what's good for me with what's good for the group",
+    ],
+    "ultimatum": [
+        "the offer seemed fair enough to accept",
+        "rejecting means nobody gets anything",
+        "I wouldn't accept an unfair split on principle",
+        "fairness matters more than getting something rather than nothing",
+        "I tried to make an offer that would be accepted",
+        "low offers feel insulting even if some money is better than none",
+    ],
+    "prisoners_dilemma": [
+        "cooperating is better if the other person does too",
+        "I couldn't be sure the other person wouldn't defect",
+        "the temptation to defect is strong but cooperation is better long term",
+        "I chose based on what I thought the other person would do",
+        "mutual cooperation is the best outcome for everyone",
+    ],
+}
 
 
 # ---------------------------------------------------------------------------
@@ -225,7 +270,8 @@ class OfflineTextRealizer:
 
         # Elaboration (based on verbosity)
         if verbosity > 0.4:
-            reason_bank = self._select_reason_bank(persona)
+            game_name = prompt_spec.get("game_name", "")
+            reason_bank = self._select_reason_bank(persona, game_name=game_name)
             reason = str(rng.choice(reason_bank))
             template = str(rng.choice(ELABORATION_TEMPLATES))
             parts.append(template.format(reason=reason))
@@ -258,10 +304,19 @@ class OfflineTextRealizer:
         return response
 
     def _careless_response(self, topic: str, rng: np.random.Generator) -> str:
+        # All careless templates require a topic — never use bare "this"
+        effective_topic = topic or "the questions asked"
         template = str(rng.choice(CARELESS_TEMPLATES))
-        return template.format(topic=topic or "this")
+        return template.format(topic=effective_topic)
 
-    def _select_reason_bank(self, persona: Persona) -> List[str]:
+    def _select_reason_bank(
+        self, persona: Persona, game_name: str = "",
+    ) -> List[str]:
+        """Select reason bank based on persona traits and game context."""
+        # Game-specific banks take priority when available
+        if game_name and game_name in GAME_REASON_BANKS:
+            return GAME_REASON_BANKS[game_name]
+
         prosoc = float(persona.params.get("prosociality", 0.0))
         norm_w = float(persona.params.get("norm_weight", 0.0))
         depth = float(persona.params.get("strategic_depth", 0.0))
@@ -316,6 +371,9 @@ class OfflineTextRealizer:
             "would", "could", "should", "much", "many", "more", "than",
             "the", "and", "for", "are", "was", "were", "how", "why",
             "you", "they", "them", "their", "will", "been", "being",
+            "opinion", "important", "believe", "agree", "disagree",
+            "following", "answer", "response", "rate", "scale",
+            "degree", "extent", "which", "whether", "does", "did",
         }
         text = f"{question} {context}".lower()
         words = re.findall(r"\b[a-z]{3,}\b", text)
