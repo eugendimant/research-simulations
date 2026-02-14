@@ -63,7 +63,7 @@ association, impression, perception, feedback, comment, observation, general
 Version: 1.8.5 - Improved domain detection with weighted scoring and disambiguation
 """
 
-__version__ = "1.1.0.2"
+__version__ = "1.1.0.3"
 
 import random
 import re
@@ -7110,7 +7110,7 @@ def _fallback_domain_detection(text: str) -> StudyDomain:
 # RESPONSE VARIATIONS AND MODIFIERS
 # ============================================================================
 
-# v1.1.0.2: Overhauled phrase banks to remove telltale academic patterns.
+# v1.1.0.3: Overhauled phrase banks to remove telltale academic patterns.
 # Real survey respondents do NOT write "From my perspective," or "Furthermore,".
 # All phrases must sound like they were typed quickly in a text box.
 HEDGING_PHRASES = [
@@ -7140,7 +7140,7 @@ FORMAL_MODIFIERS = [
 def add_variation(response: str, persona_verbosity: float, persona_formality: float, local_rng: random.Random = None) -> str:
     """Add lightweight natural variation without telltale patterns.
 
-    v1.1.0.2: OVERHAULED — removed all academic-sounding append phrases
+    v1.1.0.3: OVERHAULED — removed all academic-sounding append phrases
     ("This aligns with what I've read", "From what I understand, this is a
     common perspective", etc.) that no real survey respondent ever writes.
     Now only applies: hedging for uncertain personas, casual filler for
@@ -7200,7 +7200,7 @@ class ComprehensiveResponseGenerator:
     _used_sentences: set = set()
     _session_id: int = 0
 
-    # v1.1.0.2: Sentence starters cleaned — removed academic patterns
+    # v1.1.0.3: Sentence starters cleaned — removed academic patterns
     # ("Upon consideration,", "In my estimation,", "My position is that").
     # Real survey respondents use simple, direct openings.
     SENTENCE_STARTERS = [
@@ -7214,7 +7214,7 @@ class ComprehensiveResponseGenerator:
         "I've always thought ", "my gut says ",
     ]
 
-    # v1.1.0.2: Transition phrases cleaned of academic-essay patterns.
+    # v1.1.0.3: Transition phrases cleaned of academic-essay patterns.
     # Real survey respondents write "and", "but", "also" — NOT "Furthermore,"
     # "Consequently,", "What's particularly relevant is".
     TRANSITION_PHRASES = [
@@ -10734,6 +10734,16 @@ class ComprehensiveResponseGenerator:
         _sd = _traits.get('social_desirability', 0.3)
         _intensity = behavioral_profile.get('intensity', 0.5) if behavioral_profile else 0.5
 
+        # --- v1.1.0.3: Ultra-short handler for very low engagement ------
+        # ~15-20% of real survey responses are 1-5 words. Disengaged personas
+        # should produce these directly without running the full archetype
+        # pipeline (which always produces multi-sentence text).
+        _is_straight_lined = behavioral_profile.get('straight_lined', False) if behavioral_profile else False
+        if (_engagement < 0.2 or _is_straight_lined) and rng.random() < 0.6:
+            return self._build_ultra_short(topic, sentiment, _formality, rng)
+        if _engagement < 0.35 and _verbosity < 0.3 and rng.random() < 0.35:
+            return self._build_ultra_short(topic, sentiment, _formality, rng)
+
         # --- Extract question words to mirror in response ---------------
         _q_mirror_words: List[str] = []
         _q_source = question_context or question_text or ""
@@ -10846,7 +10856,14 @@ class ComprehensiveResponseGenerator:
             if _qual:
                 _response += ". " + _qual
 
-        # --- v1.1.0.2: Naturalize topic references -----------------------
+        # --- v1.1.0.3: Trait-driven text modulation -----------------------
+        # Apply persona trait effects that go beyond archetype selection.
+        # These make each simulated persona acoustically distinct.
+        _response = self._apply_trait_modulation(
+            _response, _traits, behavioral_profile or {}, rng,
+        )
+
+        # --- v1.1.0.3: Naturalize topic references -----------------------
         # Replace repeated "{topic}" mentions with pronouns and implicit refs.
         # Real humans don't say "trust" 4 times in 2 sentences.
         _response = self._naturalize_topic_references(_response, topic, rng)
@@ -10855,6 +10872,10 @@ class ComprehensiveResponseGenerator:
         _response = self._apply_natural_polish(
             _response, _formality, _engagement, _extremity, _verbosity, rng,
         )
+
+        # --- v1.1.0.3: Sentence-length variety enforcement ----------------
+        # Real responses have high within-response variance in sentence length.
+        _response = self._enforce_sentence_length_variety(_response, rng)
 
         # Ensure ends with period
         _response = _response.strip()
@@ -10867,11 +10888,219 @@ class ComprehensiveResponseGenerator:
 
         return _response
 
+    # ── Ultra-short response templates (v1.1.0.3) ───────────────────
+    # Real survey data shows 15-20% of OE responses are 1-5 words.
+    # These bypass the full archetype pipeline for disengaged participants.
+
+    def _build_ultra_short(self, topic: str, sentiment: str,
+                           formality: float, rng: random.Random) -> str:
+        """Generate a 1-5 word response for disengaged/careless participants.
+
+        v1.1.0.3: Real OE data has a heavy left tail — many responses are
+        extremely short.  Straight-liners and low-engagement participants
+        produce terse, often incomplete responses.  This method generates
+        those directly rather than shortening full responses.
+        """
+        _t = topic
+        # Extract a short topic word (max 2 words)
+        _tw = ' '.join(_t.split()[:2]).lower().strip()
+        if not _tw or _tw in ('this', 'that', 'it'):
+            _tw = 'it'
+
+        if sentiment in ('very_positive', 'positive'):
+            _pool = [
+                f"{_tw} is fine", f"good", f"yeah {_tw} is good",
+                f"I like {_tw}", f"{_tw} works", f"fine",
+                f"its good", f"ok yeah", f"makes sense",
+                f"I agree", f"yeah", f"sure",
+                f"{_tw} is ok", f"im for it", f"positive",
+                f"sounds good", f"yep", f"thumbs up",
+            ]
+        elif sentiment in ('very_negative', 'negative'):
+            _pool = [
+                f"{_tw} is bad", f"not great", f"no thanks",
+                f"dont like {_tw}", f"nah", f"not really",
+                f"disagree", f"nope", f"meh",
+                f"{_tw} sucks", f"not a fan", f"hard pass",
+                f"terrible", f"I dont like it", f"no",
+                f"not good", f"bad idea", f"against it",
+            ]
+        else:
+            _pool = [
+                f"{_tw} is ok I guess", f"idk", f"neutral",
+                f"no opinion", f"dont care", f"whatever",
+                f"maybe", f"could go either way", f"meh",
+                f"not sure", f"50/50", f"depends",
+                f"no strong feelings", f"eh", f"unsure",
+                f"I guess", f"kinda neutral", f"fine either way",
+            ]
+
+        _resp = rng.choice(_pool)
+        # Very casual: sometimes no capitalization, no period
+        if formality < 0.4 and rng.random() < 0.7:
+            _resp = _resp.lower()
+        return _resp
+
+    # ── Sentence-length enforcement (v1.1.0.3) ────────────────────
+    def _enforce_sentence_length_variety(self, text: str,
+                                          rng: random.Random) -> str:
+        """Ensure sentences within a response vary in length.
+
+        v1.1.0.3: Real responses have HIGH variance in sentence length
+        within a single response.  Someone might write "Yeah." followed
+        by a 20-word sentence followed by "Exactly."  Template-generated
+        text tends to produce sentences of similar length.  This method
+        breaks that uniformity.
+        """
+        _sentences = re.split(r'(?<=[.!?])\s+', text.strip())
+        if len(_sentences) < 2:
+            return text
+
+        _lengths = [len(s.split()) for s in _sentences]
+        _mean_len = sum(_lengths) / len(_lengths) if _lengths else 0
+
+        # If sentences are too uniform (all within 3 words of each other),
+        # either truncate a long one or fragment a short one
+        _range = max(_lengths) - min(_lengths) if _lengths else 0
+        if _range < 4 and len(_sentences) >= 2 and rng.random() < 0.4:
+            # Pick a random sentence and either shorten or fragment it
+            _idx = rng.randint(0, len(_sentences) - 1)
+            _words = _sentences[_idx].split()
+            if len(_words) > 6 and rng.random() < 0.5:
+                # Truncate to a fragment
+                _cut = rng.randint(2, 4)
+                _sentences[_idx] = ' '.join(_words[:_cut]) + '.'
+            elif len(_words) > 8:
+                # Split into two sentences
+                _mid = len(_words) // 2
+                _sentences[_idx] = ' '.join(_words[:_mid]) + '. ' + \
+                    ' '.join(_words[_mid:])[0].upper() + ' '.join(_words[_mid:])[1:]
+
+        return ' '.join(_sentences)
+
+    # ── Trait modulation data (v1.1.0.3) ─────────────────────────────
+    _SD_HEDGES = [
+        "or at least that's how I see it",
+        "I could be wrong about this though",
+        "but that's just my take",
+        "I realize others might feel differently",
+        "not that my opinion is the only valid one",
+        "I try to be fair about it",
+        "if that makes sense",
+    ]
+    _ACQUIESCENCE_PREFIXES = [
+        "yeah I think ", "I'd agree that ", "that makes sense, ",
+        "sure, ", "I mean yeah ", "right so ",
+    ]
+    _ACQUIESCENCE_SUFFIXES = [
+        " which makes sense", " and I think that's fair",
+        " and I agree with that", " which I get",
+    ]
+
+    def _apply_trait_modulation(
+        self,
+        text: str,
+        traits: Dict[str, float],
+        behavioral_profile: Dict[str, Any],
+        rng: random.Random,
+    ) -> str:
+        """Apply persona trait effects beyond archetype selection.
+
+        v1.1.0.3: Makes each simulated persona acoustically distinct by
+        modulating text based on previously unused trait dimensions:
+        - Social desirability → qualifying hedges and diplomatic language
+        - Acquiescence → agreement-forward phrasing and deferential tone
+        - Reading speed → sentence length and fragment frequency
+        - Consistency → anaphoric repetition / thematic anchoring
+
+        Scientific basis:
+        - Paulhus (2002): High-SD manifests as qualifying language
+        - Krosnick (1991): Acquiescence bias shows as agreement-forward responses
+        - Tourangeau et al. (2000): Cognitive processing speed affects response elaboration
+        """
+        if not text or not traits:
+            return text
+
+        _sd = traits.get('social_desirability', 0.3)
+        _acq = traits.get('acquiescence', 0.5)
+        _speed = traits.get('reading_speed', 0.5)  # proxy for cognitive speed
+        _consistency = traits.get('consistency', 0.5)
+
+        # ── 1. SOCIAL DESIRABILITY HEDGING ────────────────────────────
+        # High-SD personas add qualifying/diplomatic hedges (Paulhus 2002)
+        if _sd > 0.65 and rng.random() < (_sd - 0.35):
+            _hedge = rng.choice(self._SD_HEDGES)
+            # Add at end of first sentence or at end of response
+            _sentences = text.split('. ')
+            if len(_sentences) >= 2 and rng.random() < 0.5:
+                _sentences[0] = _sentences[0].rstrip('.') + ', ' + _hedge
+                text = '. '.join(_sentences)
+            else:
+                text = text.rstrip('.!?') + ', ' + _hedge
+
+        # ── 2. ACQUIESCENCE BIAS ──────────────────────────────────────
+        # High-acquiescence personas use agreement-forward language
+        if _acq > 0.65 and rng.random() < (_acq - 0.4):
+            if rng.random() < 0.6:
+                # Prefix: start with agreement
+                _prefix = rng.choice(self._ACQUIESCENCE_PREFIXES)
+                if text and text[0].isupper():
+                    text = _prefix + text[0].lower() + text[1:]
+                else:
+                    text = _prefix + text
+            else:
+                # Suffix: end with agreement
+                _suffix = rng.choice(self._ACQUIESCENCE_SUFFIXES)
+                text = text.rstrip('.!?') + _suffix
+
+        # ── 3. READING SPEED → SENTENCE COMPLEXITY ────────────────────
+        # Fast readers (high reading_speed) produce shorter, choppier sentences.
+        # Slow/careful readers produce longer, more elaborated sentences.
+        if _speed > 0.75 and rng.random() < 0.35:
+            # Fast: break a long sentence into two short ones
+            _words = text.split()
+            if len(_words) > 12:
+                _mid = len(_words) // 2
+                # Find a natural break point near the middle
+                for _offset in range(3):
+                    for _try_pos in [_mid + _offset, _mid - _offset]:
+                        if 0 < _try_pos < len(_words) and _words[_try_pos].lower() in (
+                            'and', 'but', 'so', 'because', 'since', 'which', 'that', 'when',
+                        ):
+                            _words[_try_pos] = '. ' + _words[_try_pos].capitalize()
+                            text = ' '.join(_words)
+                            break
+                    else:
+                        continue
+                    break
+        elif _speed < 0.3 and rng.random() < 0.25:
+            # Slow: merge two short sentences into one with a connector
+            _sentences = text.split('. ')
+            if len(_sentences) >= 2 and len(_sentences[0].split()) < 10:
+                _connectors = [' and ', ' because ', ' since ', ', and also ']
+                _sentences[0] = _sentences[0].rstrip('.') + rng.choice(_connectors) + \
+                    _sentences[1][0].lower() + _sentences[1][1:] if len(_sentences[1]) > 1 else _sentences[0]
+                _sentences.pop(1)
+                text = '. '.join(_sentences)
+
+        # ── 4. CONSISTENCY → THEMATIC ANCHORING ───────────────────────
+        # High-consistency personas reinforce their main point
+        if _consistency > 0.7 and rng.random() < 0.20:
+            _anchors = [
+                " and I've felt this way for a long time",
+                " and I'm pretty consistent on this",
+                " and that hasn't changed",
+                " which is what I've always thought",
+            ]
+            text = text.rstrip('.!?') + rng.choice(_anchors)
+
+        return text
+
     def _naturalize_topic_references(self, text: str, topic: str,
                                       rng: random.Random) -> str:
         """Replace repeated topic noun phrases with natural alternatives.
 
-        v1.1.0.2: TOPIC INTEGRATION OVERHAUL.  Real humans mention a topic
+        v1.1.0.3: TOPIC INTEGRATION OVERHAUL.  Real humans mention a topic
         once by name, then switch to "it", "this", "that", "the whole thing",
         or just drop it entirely.  Having the same noun phrase appear 3+ times
         in a short response is a dead giveaway of template generation.
@@ -10932,7 +11161,7 @@ class ComprehensiveResponseGenerator:
                         condition: str, rng: random.Random) -> str:
         """Build a short personal anecdote with concrete, domain-aware details.
 
-        v1.1.0.2: Anecdotes now include specific plausible scenarios rather
+        v1.1.0.3: Anecdotes now include specific plausible scenarios rather
         than generic "I had a good/bad experience with {topic}" patterns.
         """
         _t = topic
@@ -11352,7 +11581,7 @@ class ComprehensiveResponseGenerator:
             _pos += f", especially regarding {_mirror}"
         return _pos
 
-    # ── Concrete detail banks for domain-specific reasoning (v1.1.0.2) ──
+    # ── Concrete detail banks for domain-specific reasoning (v1.1.0.3) ──
     # Real survey respondents cite specific experiences, situations, and
     # examples — not generic "I've had good experiences with {topic}".
     # These banks provide plausible concrete details per domain.
@@ -11364,6 +11593,11 @@ class ComprehensiveResponseGenerator:
                 "I read an article about it last week that really made the case well",
                 "the local elections showed it can actually work in practice",
                 "even my coworkers who are on the other side politically see the logic",
+                "I saw a town hall meeting where people from both parties worked together",
+                "my neighbor who votes differently actually changed my mind on one thing",
+                "there was a segment on the news that actually presented it fairly for once",
+                "I talked to my dad about it and even he came around a little",
+                "a professor I had in college predicted exactly this and was right",
             ],
             'negative': [
                 "just look at how divided my own family has gotten over it",
@@ -11371,12 +11605,19 @@ class ComprehensiveResponseGenerator:
                 "a friend of mine lost a job opportunity because of how polarized things are",
                 "social media makes it so much worse, every thread is a fight",
                 "I can't even bring it up at work without someone getting upset",
+                "I unfollowed like half my friends on Facebook because of the arguments",
+                "my sister and I didn't talk for two months after the last election",
+                "the hypocrisy I see from both sides honestly makes me sick",
+                "I used to be more engaged but the toxicity drove me away",
+                "every holiday dinner turns into a debate now and it's exhausting",
             ],
             'neutral': [
                 "my friend group is split right down the middle on it",
                 "the last few elections have made me question both sides honestly",
                 "I've read compelling arguments from different perspectives",
                 "everyone I talk to has a completely different take on it",
+                "I keep switching who I agree with depending on the specific issue",
+                "my roommate and I cancel each other's votes out every election basically",
             ],
         },
         'economic_games': {
@@ -11385,17 +11626,112 @@ class ComprehensiveResponseGenerator:
                 "I thought about what I'd want if I were on the other end",
                 "keeping everything seemed like it would bother me afterward",
                 "I figured a reasonable offer would get accepted and we'd both be better off",
+                "I've always been taught that sharing is the right thing",
+                "I'd feel guilty keeping it all even if nobody would know",
+                "my parents raised me to be fair and that just kicked in",
+                "I figured being generous might come back around eventually",
             ],
             'negative': [
                 "I didn't know this person so why would I give away what I earned",
                 "the rules said I could keep it all, so taking more just made sense",
                 "giving money to a stranger with no guarantee felt like a bad deal",
                 "I've been burned being too generous before so I played it safe",
+                "nobody ever gives me free money so I wasn't about to either",
+                "I'm a college student, I need every dollar I can get honestly",
+                "the rational thing to do is maximize your own outcome, full stop",
+                "I figured the other person would do the same to me",
             ],
             'neutral': [
                 "I just went with what seemed like a normal amount, nothing fancy",
                 "I didn't want to overthink it so I picked somewhere in the middle",
                 "I figured most people would do something similar",
+                "I went back and forth for a minute and then just picked a number",
+                "it felt weird to keep everything but also weird to give half away",
+            ],
+        },
+        # Game-subtype details — chosen when game type is detected
+        'dictator_game': {
+            'positive': [
+                "I decided to give a decent chunk because hoarding it felt selfish",
+                "I thought about the other person sitting there getting nothing and I couldn't do that",
+                "splitting it close to even seemed like what a decent person would do",
+                "I gave more than half actually because I wanted to be generous",
+                "the allocation was my chance to show what kind of person I am",
+            ],
+            'negative': [
+                "I kept most of it because there were no consequences for doing so",
+                "the other person has no say in it so I looked out for myself",
+                "I gave a token amount just to not feel completely terrible about it",
+                "why would I split money with someone I'll never interact with again",
+                "my allocation reflected what I think is rational, not sentimental",
+            ],
+            'neutral': [
+                "I gave about a third which seemed like a reasonable middle ground",
+                "I didn't want to keep everything but I also didn't want to give half",
+                "the amount I chose was what felt normal without overthinking",
+            ],
+        },
+        'trust_game': {
+            'positive': [
+                "I sent a good amount because I believe people return the favor",
+                "investing in trust seemed like the smart play in the long run",
+                "I trusted them to reciprocate and I think most people would",
+                "I wanted to signal that I'm someone worth cooperating with",
+                "sending money was a leap of faith but the potential payoff was worth it",
+            ],
+            'negative': [
+                "I didn't send much because there's no guarantee of getting anything back",
+                "trusting a stranger with my money just isn't something I do",
+                "the risk of them keeping everything was too high for my comfort",
+                "I held back because I've been taken advantage of before in similar situations",
+                "the strategic move was to minimize my exposure to loss",
+            ],
+            'neutral': [
+                "I sent a moderate amount to test the waters without risking too much",
+                "I split the difference between trusting fully and not trusting at all",
+                "I wanted to show some trust without being reckless about it",
+            ],
+        },
+        'ultimatum_game': {
+            'positive': [
+                "the offer was fair enough that accepting was the obvious choice",
+                "I proposed a fair split because lowball offers get rejected and then nobody wins",
+                "I accepted because getting something beats getting nothing out of pride",
+                "I made a generous offer because I want both of us to walk away happy",
+                "strategic fairness just makes more sense than trying to exploit someone",
+            ],
+            'negative': [
+                "the offer was so low it felt disrespectful so I rejected it",
+                "I'd rather get nothing than accept an insulting offer on principle",
+                "I tried to keep as much as possible because why not push my luck",
+                "unfair proposals deserve to be punished even if it costs me",
+                "I rejected because accepting teaches them that lowballing works",
+            ],
+            'neutral': [
+                "the offer was right around what I expected so it was an easy decision",
+                "I proposed something in the middle range, not too greedy not too generous",
+                "I went with what seemed standard for this kind of thing",
+            ],
+        },
+        'public_goods': {
+            'positive': [
+                "I contributed a lot because the group does better when everyone pitches in",
+                "free-riding felt wrong even though nobody would know",
+                "I put in my share because that's how cooperation is supposed to work",
+                "if everyone contributes the multiplier makes it worth it for all of us",
+                "I believe in doing my part for the common good even with strangers",
+            ],
+            'negative': [
+                "why contribute when others will carry the group anyway",
+                "I kept my money because I figured others would contribute enough",
+                "the incentive to free-ride is just too strong when contributions are anonymous",
+                "I've seen group projects fail because of freeriders and I'm not gonna be the sucker",
+                "rational self-interest says contribute less and benefit from others' contributions",
+            ],
+            'neutral': [
+                "I contributed about half, not nothing but not everything either",
+                "I matched what I guessed others would put in, seemed fair",
+                "group decisions are tricky so I went with a middle-of-the-road contribution",
             ],
         },
         'health': {
@@ -11404,17 +11740,27 @@ class ComprehensiveResponseGenerator:
                 "I know someone who made a similar health change and it transformed their life",
                 "the research I've seen on it is pretty convincing to me",
                 "I noticed a real difference in how I felt within a few weeks",
+                "my fitness improved noticeably after I started taking it seriously",
+                "a friend who's a nurse told me the science behind it and I was sold",
+                "I've been tracking my numbers and the improvement is measurable",
+                "my grandmother swore by something similar and she lived to 94",
             ],
             'negative': [
                 "a family member had a really bad experience with something similar",
                 "I've dealt with side effects before and it made me more cautious",
                 "the costs are just too high for what you actually get",
                 "my own experience with the healthcare system hasn't been great",
+                "my insurance wouldn't even cover it which tells you something",
+                "I read about the side effects and decided it wasn't worth the risk",
+                "I know three people who tried it and none of them stuck with it",
+                "the pharmaceutical industry profits too much for me to trust them fully",
             ],
             'neutral': [
                 "I've seen it work for some people and not for others",
                 "my doctor said it depends on the individual which is frustrating",
                 "I want to believe the research but it's hard to know what to trust",
+                "I'm waiting for more long-term studies before I make up my mind",
+                "my partner thinks one thing and my doctor thinks another so who knows",
             ],
         },
         'consumer': {
@@ -11423,17 +11769,27 @@ class ComprehensiveResponseGenerator:
                 "my friend recommended it and they were right, it's solid",
                 "compared to what I was using before this is a huge improvement",
                 "for the price point you really can't beat the quality",
+                "I checked the reviews before buying and they were accurate",
+                "I've already recommended it to like three people",
+                "the build quality is noticeably better than the competitors",
+                "I was skeptical at first but after a month I'm converted",
             ],
             'negative': [
                 "it broke within a month which was incredibly frustrating",
                 "I found something better for half the price online",
                 "the reviews were way too positive for what you actually get",
                 "customer service was useless when I had an issue with it",
+                "I returned it the same week, it was that disappointing",
+                "my old one lasted three years and this one barely lasted three months",
+                "they clearly cut corners on the materials to hit that price point",
+                "I wish I'd read more reviews before I bought it",
             ],
             'neutral': [
                 "it does what it's supposed to do, nothing more nothing less",
                 "I'd probably try a different brand next time just to compare",
                 "the quality is fine but nothing really stands out about it",
+                "for the price I paid I guess it's acceptable",
+                "it's not something I think about much honestly, it just works",
             ],
         },
         'trust': {
@@ -11441,16 +11797,26 @@ class ComprehensiveResponseGenerator:
                 "I've found that when you give people a chance they usually come through",
                 "my experience is that trust builds on itself, once you start it grows",
                 "I know it's a risk but I'd rather trust than be suspicious all the time",
+                "my best friendships are all built on mutual trust and vulnerability",
+                "I lent money to a friend once and they paid me back the next day",
+                "I've had good experiences trusting strangers, maybe I'm just lucky",
+                "my coworker trusted me with something personal and it deepened our bond",
             ],
             'negative': [
                 "I've been lied to enough times to know better than to trust blindly",
                 "in my experience people will take advantage if given the opportunity",
                 "I learned the hard way that you need to verify before you trust",
+                "I had a roommate who stole from me so yeah my trust is low",
+                "an ex-friend spread my personal business around and that changed me",
+                "I trusted a business partner once and got completely screwed over",
+                "online you literally can't trust anyone, I've been scammed twice",
             ],
             'neutral': [
                 "trust is something I give cautiously and it has to be earned",
                 "some people are trustworthy and some aren't, that's just reality",
                 "I trust in some contexts but not others, it depends on the stakes",
+                "I'm not paranoid but I'm not naive either, somewhere in between",
+                "it really depends on whether I've interacted with them before",
             ],
         },
         'social': {
@@ -11458,16 +11824,26 @@ class ComprehensiveResponseGenerator:
                 "I've been part of groups where cooperation really paid off for everyone",
                 "when my community came together on something similar the results were amazing",
                 "I've seen how the right group dynamic can change people for the better",
+                "my volleyball team is a great example of how teamwork actually works",
+                "I organized a neighborhood cleanup and the turnout blew me away",
+                "my study group in college was the reason I passed organic chemistry",
+                "I've seen strangers help each other during emergencies and it restores my faith",
             ],
             'negative': [
                 "I've been in groups where one person ruined it for everyone else",
                 "people say they'll cooperate but then do their own thing when it matters",
                 "social pressure makes people agree to things they don't actually support",
+                "every group project in school was me doing 80% of the work",
+                "I tried to start a community garden and nobody else showed up after week one",
+                "people are great at promising to help and terrible at following through",
+                "I left a club because the drama was worse than middle school",
             ],
             'neutral': [
                 "group dynamics are unpredictable, I've seen it go both ways",
                 "some people are team players and some aren't, you can't always tell",
                 "my experience in groups is hit or miss honestly",
+                "it really depends on who's in the group and what the goal is",
+                "some of my best and worst experiences have been in group settings",
             ],
         },
         'moral': {
@@ -11475,16 +11851,264 @@ class ComprehensiveResponseGenerator:
                 "I was raised to believe in doing the right thing even when it's hard",
                 "I think about how my choices affect other people, not just myself",
                 "there are some lines I just won't cross regardless of the consequences",
+                "my parents always said your character is what you do when nobody's watching",
+                "I once returned a wallet with $200 in it because it was the right thing",
+                "I'd rather lose money than compromise what I believe is right",
+                "I volunteer at a shelter on weekends because I feel a responsibility to help",
             ],
             'negative': [
                 "people love to talk about ethics but rarely follow through in practice",
                 "I've seen supposedly moral people do terrible things when nobody was watching",
                 "the system doesn't reward doing the right thing so why bother sometimes",
+                "I watched a coworker lie to get a promotion and nothing happened to them",
+                "corporations talk about values but their actions tell a different story",
+                "it's easy to be moral when it costs you nothing, the real test is sacrifice",
+                "I used to believe people were mostly good but experience has proven otherwise",
             ],
             'neutral': [
                 "ethics gets complicated when you think about real-world tradeoffs",
                 "what's right in one situation might not be in another, it depends",
                 "I try to do the right thing but I don't pretend it's always clear",
+                "moral questions rarely have clean answers, that's what makes them hard",
+                "I think most people are trying their best with imperfect information",
+            ],
+        },
+        'education': {
+            'positive': [
+                "I had a teacher in high school who genuinely changed how I think",
+                "the best class I ever took made me excited to learn for the first time",
+                "I learn better when I can actually discuss things instead of just listening",
+                "studying abroad opened my eyes to how differently people approach problems",
+                "tutoring other students honestly helped me understand the material better too",
+            ],
+            'negative': [
+                "the education system failed me in a lot of ways growing up",
+                "I had a professor who clearly didn't care and it killed my motivation",
+                "standardized testing never measured what I was actually good at",
+                "I spent four years in college and half the classes were a waste of time",
+                "the cost of education is insane for what you actually get out of it",
+            ],
+            'neutral': [
+                "school was fine for me, some good teachers some bad ones",
+                "I learned more from life experience than from any classroom honestly",
+                "education matters but it's not the only path to success",
+                "some subjects I loved and some I just survived, pretty normal I think",
+            ],
+        },
+        'technology': {
+            'positive': [
+                "my phone basically runs my life and I'm honestly okay with that",
+                "technology made it possible for me to work from home which saved my sanity",
+                "I can video call my grandparents across the country and that's amazing",
+                "apps have made managing my finances so much easier",
+                "I found my current job through LinkedIn so I can't complain about tech",
+            ],
+            'negative': [
+                "I spend way too much time on my phone and I know it",
+                "social media has made my anxiety noticeably worse",
+                "every app wants my data and I'm tired of being the product",
+                "my kid is on screens constantly and I worry about what that's doing",
+                "technology was supposed to save time but I'm busier than ever",
+            ],
+            'neutral': [
+                "technology is great until it breaks and then you realize how dependent you are",
+                "I use it because I have to but I'm not excited about where it's going",
+                "some tech improvements are genuinely helpful and some are just gimmicks",
+                "I'm somewhere between early adopter and technophobe honestly",
+            ],
+        },
+        'environment': {
+            'positive': [
+                "I started composting last year and it's surprisingly satisfying",
+                "switching to public transit saved me money and reduced my guilt",
+                "I've seen my neighborhood get greener since they planted those trees",
+                "my local farmer's market is proof that sustainable food can work",
+                "my company started a recycling program and people actually use it",
+            ],
+            'negative': [
+                "I try to recycle but honestly I think corporations are the real problem",
+                "the cost of going green is just not realistic for most people",
+                "I watched a documentary about ocean pollution and it was depressing",
+                "every time I read about climate change I feel more helpless",
+                "the people making the rules fly private jets so why should I give up straws",
+            ],
+            'neutral': [
+                "I do what I can but I know it's a drop in the bucket",
+                "the environment is important but I have more pressing concerns day to day",
+                "I'm not a denier but I'm also not sure what individual action really does",
+                "it's a huge problem that requires systemic change, not just personal choices",
+            ],
+        },
+        'workplace': {
+            'positive': [
+                "my current boss actually listens to feedback which is rare",
+                "I got promoted last year because someone finally noticed my work",
+                "the team I'm on now is the best group I've ever worked with",
+                "flexible hours changed my quality of life more than a raise would",
+                "my mentor at work gave me advice that completely shifted my career trajectory",
+            ],
+            'negative': [
+                "I've had managers who take credit for their employees' work",
+                "the office politics at my last job drove me to quit",
+                "I watched qualified people get passed over for promotions because of who they knew",
+                "burnout is treated like a personal failure when it's usually a management failure",
+                "I worked 60-hour weeks for a year and got the same raise as everyone else",
+            ],
+            'neutral': [
+                "work is work, some days are good and some days I count the hours",
+                "my job pays the bills but it's not my passion, and that's okay",
+                "I've had good jobs and bad jobs and the difference is usually the people",
+                "the workplace has changed a lot and I'm still figuring out how I feel about it",
+            ],
+        },
+        'identity': {
+            'positive': [
+                "I'm proud of where I come from and how it shaped who I am",
+                "finding a community of people like me was life-changing honestly",
+                "I feel more confident now that I've accepted all parts of myself",
+                "representation matters and seeing people like me succeed gives me hope",
+                "my cultural background gives me a perspective that others find valuable",
+            ],
+            'negative': [
+                "I've been judged for my identity more times than I can count",
+                "people make assumptions about me before I even open my mouth",
+                "I had to hide parts of myself growing up and that leaves a mark",
+                "stereotypes about my group are exhausting to deal with constantly",
+                "I've been passed over for opportunities because of who I am not what I can do",
+            ],
+            'neutral': [
+                "identity is complicated and I'm still figuring out what it means to me",
+                "I don't think about it every day but it definitely shapes my experience",
+                "some aspects of my identity matter more in certain contexts than others",
+                "I'm more than just one label but I understand why people categorize",
+            ],
+        },
+        'risk': {
+            'positive': [
+                "I took a risk on a new job and it was the best decision I ever made",
+                "sometimes you have to bet on yourself and it pays off",
+                "I invested early in something everyone said was a bad idea and it worked out",
+                "the biggest gains in my life came from taking calculated risks",
+                "I moved to a new city knowing nobody and it turned out great",
+            ],
+            'negative': [
+                "I took a gamble once and lost badly, that taught me to be cautious",
+                "I've seen people lose everything by being too risky with money",
+                "the downside of risk is something people don't talk about enough",
+                "I'd rather have a guaranteed smaller gain than risk losing it all",
+                "a family member's risky investment wiped out their retirement savings",
+            ],
+            'neutral': [
+                "I'm not a big risk taker but I'm not completely risk-averse either",
+                "it depends on what's at stake, small risks sure, big ones probably not",
+                "I calculate the odds before making any risky decision",
+                "some risks are worth it and some aren't, you have to know the difference",
+            ],
+        },
+        'fairness': {
+            'positive': [
+                "I was raised to treat everyone equally regardless of circumstances",
+                "I've seen fair treatment change someone's entire outlook on life",
+                "when I coach my kid's team I make sure everyone gets equal playing time",
+                "the fairest boss I ever had earned more loyalty than any other",
+                "I split everything equally when I'm in charge because it's the principle",
+            ],
+            'negative': [
+                "life isn't fair and pretending it is just makes it worse",
+                "I've watched people game the system while honest people get nothing",
+                "the concept of fairness is nice but implementation always favors someone",
+                "my own experience has shown me that merit doesn't always win",
+                "equal treatment sounds good but some people need more support than others",
+            ],
+            'neutral': [
+                "fairness means different things to different people and that's the problem",
+                "I try to be fair but I know my own biases sometimes get in the way",
+                "the fair thing to do isn't always the same as the equal thing to do",
+                "I think about fairness a lot but rarely feel like I get it perfectly right",
+            ],
+        },
+        'persuasion': {
+            'positive': [
+                "I read the argument and honestly it changed how I think about the issue",
+                "the evidence presented was pretty convincing to me",
+                "I appreciate when someone takes the time to make a well-reasoned case",
+                "I was on the fence before but the logic made sense",
+                "a good argument can absolutely change my mind if the facts are there",
+            ],
+            'negative': [
+                "I could see right through the manipulation and it was insulting",
+                "the argument had so many holes I'm surprised anyone falls for it",
+                "being told what to think usually makes me want to do the opposite",
+                "I'm skeptical of anyone trying too hard to convince me of something",
+                "the whole thing felt like propaganda wrapped up in nice language",
+            ],
+            'neutral': [
+                "the argument had some good points but also some I disagreed with",
+                "I need more time to decide if I actually buy it or not",
+                "some parts were convincing and other parts felt like a stretch",
+                "I'm not sure whether I was persuaded or just worn down honestly",
+            ],
+        },
+        'ai': {
+            'positive': [
+                "I use AI tools at work every day and my productivity has doubled",
+                "my kid's school is using AI tutoring and their grades have improved",
+                "AI caught a medical condition my doctor missed so I'm a believer",
+                "the AI recommendations on my streaming service are genuinely better than my own choices",
+            ],
+            'negative': [
+                "I got replaced by an AI tool at my last job so I'm not exactly a fan",
+                "AI makes so many mistakes that people just blindly trust",
+                "the thought of AI making decisions about my life terrifies me",
+                "I've seen AI-generated misinformation fool people I know personally",
+                "my concern is that nobody is really thinking about what happens when it goes wrong",
+            ],
+            'neutral': [
+                "AI is a tool and like any tool it depends on who's using it",
+                "I'm cautiously optimistic but also cautiously worried about AI",
+                "some AI applications are amazing and some are terrifying, hard to generalize",
+                "I don't fully understand how it works so I'm reserving judgment",
+            ],
+        },
+        'relationship': {
+            'positive': [
+                "my partner and I have been together for years and communication is everything",
+                "I learned that being vulnerable actually makes relationships stronger",
+                "the best relationship advice I got was to listen more than you talk",
+                "my closest friendships are the ones where we can be completely honest",
+            ],
+            'negative': [
+                "I went through a bad breakup and it took me years to trust again",
+                "I've had friendships end over really petty things and it still bothers me",
+                "people I thought would be there for me disappeared when things got hard",
+                "relationships are exhausting when you're the only one putting in effort",
+            ],
+            'neutral': [
+                "relationships take work and sometimes I have the energy and sometimes I don't",
+                "I've had amazing relationships and terrible ones, luck plays a big role",
+                "every relationship teaches you something even if it ends badly",
+                "I'm still figuring out what a healthy relationship even looks like",
+            ],
+        },
+        'financial': {
+            'positive': [
+                "I started budgeting two years ago and my stress levels dropped immediately",
+                "investing small amounts early on has really paid off for me",
+                "I paid off my student loans last year and the relief was incredible",
+                "my parents taught me about money young and I'm grateful for that",
+            ],
+            'negative': [
+                "I'm living paycheck to paycheck and there's no safety net",
+                "I made a bad investment based on a friend's advice and lost a lot",
+                "the cost of everything has gone up but my salary hasn't kept pace",
+                "financial stress affects literally every other area of my life",
+                "I have more debt than savings and I'm in my thirties, it's scary",
+            ],
+            'neutral': [
+                "I'm not great with money but I'm not terrible either",
+                "finances are something I think about but try not to stress over",
+                "I'm doing okay financially but I know one emergency could change that",
+                "money management is a skill nobody taught me so I'm learning as I go",
             ],
         },
     }
@@ -11501,7 +12125,7 @@ class ComprehensiveResponseGenerator:
     ) -> str:
         """Build a reasoning clause with concrete, domain-specific details.
 
-        v1.1.0.2: CONCRETE DETAIL INJECTION.  Instead of generic reasoning
+        v1.1.0.3: CONCRETE DETAIL INJECTION.  Instead of generic reasoning
         like "my experience has been positive", this now injects specific,
         plausible personal experiences that make responses sound like they
         come from a real person with real memories.
@@ -11516,19 +12140,41 @@ class ComprehensiveResponseGenerator:
             'dictator_game': 'economic_games', 'trust_game': 'trust',
             'ultimatum_game': 'economic_games', 'public_goods': 'economic_games',
             'prisoners_dilemma': 'economic_games', 'cooperation': 'social',
-            'fairness': 'economic_games', 'risk_preference': 'economic_games',
+            'fairness': 'fairness', 'risk_preference': 'risk',
             'polarization': 'political', 'partisanship': 'political',
             'voting': 'political', 'policy_attitudes': 'political',
             'product_evaluation': 'consumer', 'brand_loyalty': 'consumer',
             'purchase_intent': 'consumer', 'advertising': 'consumer',
             'medical_decision': 'health', 'wellbeing': 'health',
             'vaccination': 'health', 'stress': 'health',
-            'intergroup': 'social', 'identity': 'social',
+            'intergroup': 'social', 'identity': 'identity',
             'norms': 'social', 'conformity': 'social',
             'moral_judgment': 'moral', 'ethics': 'moral',
+            'education': 'education', 'learning': 'education',
+            'technology': 'technology', 'ai_attitudes': 'ai',
+            'automation': 'ai', 'environment': 'environment',
+            'climate': 'environment', 'sustainability': 'environment',
+            'workplace': 'workplace', 'leadership': 'workplace',
+            'job_satisfaction': 'workplace', 'motivation': 'workplace',
+            'persuasion': 'persuasion', 'credibility': 'persuasion',
+            'risk': 'risk', 'gambling': 'risk',
+            'attachment': 'relationship', 'intimacy': 'relationship',
+            'financial_decision': 'financial', 'investment': 'financial',
         }
         # Detect domain from domain_key or topic words
+        # v1.1.0.3: Game-subtype detection — dictator/trust/ultimatum/PGG get
+        # their own detail banks for domain-specific vocabulary
         _det_domain = _domain_map.get(domain_key, '')
+        if _det_domain == 'economic_games' or not _det_domain:
+            _tl_game = (topic + ' ' + (condition or '') + ' ' + domain_key).lower()
+            if 'dictator' in _tl_game:
+                _det_domain = 'dictator_game'
+            elif 'ultimatum' in _tl_game:
+                _det_domain = 'ultimatum_game'
+            elif 'public good' in _tl_game or 'public_good' in _tl_game:
+                _det_domain = 'public_goods'
+            elif 'trust game' in _tl_game or 'trust_game' in _tl_game:
+                _det_domain = 'trust_game'
         if not _det_domain:
             _tl = (topic + ' ' + (condition or '')).lower()
             if any(w in _tl for w in ('politic', 'trump', 'biden', 'democrat', 'republican', 'vote', 'election', 'partisan')):
@@ -11543,8 +12189,30 @@ class ComprehensiveResponseGenerator:
                 _det_domain = 'trust'
             elif any(w in _tl for w in ('group', 'team', 'social', 'communit', 'belong')):
                 _det_domain = 'social'
-            elif any(w in _tl for w in ('moral', 'ethic', 'right', 'wrong', 'fairness', 'justice')):
+            elif any(w in _tl for w in ('moral', 'ethic', 'right', 'wrong', 'justice')):
                 _det_domain = 'moral'
+            elif any(w in _tl for w in ('fair', 'equal', 'equit', 'deserv', 'merit')):
+                _det_domain = 'fairness'
+            elif any(w in _tl for w in ('educat', 'learn', 'school', 'teach', 'student', 'college', 'universit')):
+                _det_domain = 'education'
+            elif any(w in _tl for w in ('technolog', 'digital', 'internet', 'app', 'software', 'computer')):
+                _det_domain = 'technology'
+            elif any(w in _tl for w in ('ai', 'artificial', 'automat', 'robot', 'algorithm', 'machine learn')):
+                _det_domain = 'ai'
+            elif any(w in _tl for w in ('environ', 'climate', 'green', 'sustain', 'pollut', 'recycle')):
+                _det_domain = 'environment'
+            elif any(w in _tl for w in ('work', 'job', 'employ', 'boss', 'manag', 'office', 'career')):
+                _det_domain = 'workplace'
+            elif any(w in _tl for w in ('identit', 'race', 'gender', 'cultur', 'ethnic', 'divers')):
+                _det_domain = 'identity'
+            elif any(w in _tl for w in ('risk', 'gambl', 'chance', 'uncertain', 'bet', 'odds')):
+                _det_domain = 'risk'
+            elif any(w in _tl for w in ('persuad', 'convinc', 'argument', 'messag', 'credib', 'propag')):
+                _det_domain = 'persuasion'
+            elif any(w in _tl for w in ('relat', 'partner', 'dating', 'marriage', 'friend', 'love')):
+                _det_domain = 'relationship'
+            elif any(w in _tl for w in ('financ', 'money', 'invest', 'debt', 'saving', 'budget', 'income')):
+                _det_domain = 'financial'
 
         _bank = self._CONCRETE_DETAILS.get(_det_domain, {})
         _details = _bank.get(_sent_key, [])
@@ -11661,7 +12329,106 @@ class ComprehensiveResponseGenerator:
         ]
         return rng.choice(_qualifiers)
 
-    # ── Typo simulation data (v1.1.0.2) ───────────────────────────────
+    # ── Verbal tic system (v1.1.0.3) ──────────────────────────────────
+    # Real humans have consistent verbal tics — one person peppers in "honestly",
+    # another says "like" constantly, another starts with "I mean".  Each
+    # participant gets one assigned tic that appears 1-3 times in their response.
+    _VERBAL_TIC_POOLS = [
+        # Each sub-list is a tic "family" — one is assigned per participant
+        ["honestly", "honestly ", "honestly,"],
+        ["like", "like ", "like,"],
+        ["basically", "basically ", "basically,"],
+        ["I mean", "I mean ", "I mean,"],
+        ["you know", "you know ", "you know,"],
+        ["just", "just ", "I just"],
+        ["literally", "literally ", "I literally"],
+        ["actually", "actually ", "actually,"],
+        ["right", "right ", "right,"],
+        ["anyway", "anyway ", "anyway,"],
+    ]
+
+    # Synonym rotation to prevent vocabulary monotony across participants
+    _SYNONYM_ROTATIONS = {
+        'good': ['decent', 'solid', 'fine', 'nice', 'great', 'positive', 'alright'],
+        'bad': ['terrible', 'awful', 'poor', 'negative', 'rough', 'not great', 'lousy'],
+        'think': ['believe', 'feel', 'reckon', 'figure', 'guess', 'say'],
+        'important': ['big deal', 'significant', 'key', 'a priority', 'crucial', 'major'],
+        'agree': ['go along with', 'support', 'back', 'see the point of', 'get behind'],
+        'disagree': ['push back on', 'have issues with', 'take issue with', 'question'],
+        'really': ['genuinely', 'truly', 'seriously', 'honestly', 'definitely'],
+        'problem': ['issue', 'concern', 'trouble', 'challenge', 'difficulty'],
+        'experience': ['time with', 'history with', 'dealings with', 'run-ins with'],
+    }
+
+    def _apply_verbal_tic(self, text: str, participant_seed: int,
+                          formality: float, rng: random.Random) -> str:
+        """Assign and apply a consistent verbal tic for this participant.
+
+        v1.1.0.3: Real people have distinctive filler words that repeat
+        in their speech.  The "honestly" person says it 2-3 times.  The
+        "like" person sprinkles it throughout.  This makes each participant
+        sound like a unique individual rather than a template.
+        """
+        if formality > 0.6:
+            return text  # Formal writers don't use verbal tics
+
+        # Deterministically assign a tic family based on participant seed
+        _tic_idx = participant_seed % len(self._VERBAL_TIC_POOLS)
+        _tic_family = self._VERBAL_TIC_POOLS[_tic_idx]
+        _tic = _tic_family[0]  # Primary tic word
+
+        # Count existing occurrences
+        _existing = text.lower().count(_tic.lower().strip())
+        if _existing >= 2:
+            return text  # Already has this tic naturally
+
+        # Insert 1-2 times at natural positions
+        _n_insert = rng.randint(1, 2) - _existing
+        if _n_insert <= 0:
+            return text
+
+        _words = text.split()
+        if len(_words) < 5:
+            return text
+
+        for _ in range(_n_insert):
+            if len(_words) < 5:
+                break
+            # Insert at a natural position (after 2nd-5th word, or after a comma)
+            _candidates = []
+            for i in range(2, min(len(_words) - 1, max(6, len(_words) // 2))):
+                if _words[i - 1].endswith(',') or _words[i - 1].endswith('.') or i in (2, 3, 4):
+                    _candidates.append(i)
+            if _candidates:
+                _pos = rng.choice(_candidates)
+                _words.insert(_pos, _tic_family[rng.randint(0, len(_tic_family) - 1)].strip() + ',')
+
+        return ' '.join(_words)
+
+    def _apply_synonym_rotation(self, text: str, participant_seed: int,
+                                 rng: random.Random) -> str:
+        """Rotate common words to synonyms based on participant identity.
+
+        v1.1.0.3: Prevents vocabulary monotony across participants.
+        Each participant deterministically maps common words to specific
+        synonyms, so Participant A always says "decent" where Participant B
+        says "solid" and Participant C says "fine".
+        """
+        _local_rng = random.Random(participant_seed + 9999)
+        for _word, _synonyms in self._SYNONYM_ROTATIONS.items():
+            if _word in text.lower() and _local_rng.random() < 0.3:
+                # Pick a deterministic synonym for this participant
+                _syn = _synonyms[participant_seed % len(_synonyms)]
+                # Replace first occurrence only (preserve case)
+                _idx = text.lower().find(_word)
+                if _idx >= 0:
+                    _orig = text[_idx:_idx + len(_word)]
+                    if _orig[0].isupper():
+                        _syn = _syn[0].upper() + _syn[1:]
+                    text = text[:_idx] + _syn + text[_idx + len(_word):]
+        return text
+
+    # ── Typo simulation data (v1.1.0.3) ───────────────────────────────
     # Based on QWERTY keyboard adjacency.  Only applied to casual personas.
     _ADJACENT_KEYS = {
         'a': 'sq', 'b': 'vn', 'c': 'xv', 'd': 'sf', 'e': 'wr', 'f': 'dg',
@@ -11689,7 +12456,7 @@ class ComprehensiveResponseGenerator:
     ) -> str:
         """Apply natural imperfections to make text sound typed by a real person.
 
-        v1.1.0.2: NATURAL IMPERFECTION ENGINE.  Real survey responses contain:
+        v1.1.0.3: NATURAL IMPERFECTION ENGINE.  Real survey responses contain:
         - Typos and misspellings (especially in casual, fast typing)
         - Missing apostrophes ("dont", "cant")
         - Comma splices and run-on sentences
@@ -11812,6 +12579,17 @@ class ComprehensiveResponseGenerator:
                 _pos = rng.randint(1, len(_words) - 2)
                 _words[_pos] = _words[_pos] + ' '  # extra space
                 text = ' '.join(_words)
+
+        # ── 11. VERBAL TICS (per-participant filler words) ────────────
+        # v1.1.0.3: Assign a consistent verbal tic per participant
+        _seed_val = hash(text[:20]) if text else 0  # Deterministic from content
+        if formality < 0.55 and rng.random() < 0.35:
+            text = self._apply_verbal_tic(text, _seed_val, formality, rng)
+
+        # ── 12. SYNONYM ROTATION (cross-participant diversity) ────────
+        # v1.1.0.3: Rotate common words to prevent vocabulary monotony
+        if rng.random() < 0.40:
+            text = self._apply_synonym_rotation(text, _seed_val, rng)
 
         return text
 

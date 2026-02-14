@@ -33,7 +33,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 # Version identifier to help track deployed code
-__version__ = "1.1.0.2"  # v1.1.0.2: Structural diversity engine for non-LLM OE response generation
+__version__ = "1.1.0.3"  # v1.1.0.3: Structural diversity engine for non-LLM OE response generation
 
 
 # ============================================================================

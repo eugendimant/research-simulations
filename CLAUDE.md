@@ -356,6 +356,8 @@ https://claude.ai/code/[session-id]
 - **v1.0.4.6**: Pipeline quality — domain-aware routing across all 5 major methods, effect stacking guard, persona pool validation
 - **v1.0.4.8**: Behavioral coherence — OE-numeric consistency, `_build_behavioral_profile()`, LLM prompt behavioral hints, cross-correlation enforcement
 - **v1.0.5.0**: OE realism — 7-strategy topic extraction, full 7-trait persona integration, 6-check coherence enforcement, participant voice memory
+- **v1.1.0.2**: 5x non-LLM OE realism — 8 structural archetypes, domain-specific concrete detail banks (7 domains), natural imperfection engine (10 error types), topic naturalization (pronoun substitution), telltale phrase removal from all phrase banks
+- **v1.1.0.3**: 5x non-LLM OE realism round 2 — expanded concrete detail banks (20 domains, 200+ details), trait-driven text modulation (SD hedging, acquiescence, reading speed, consistency), ultra-short response handler, sentence-length variety enforcement, game-subtype vocabulary (dictator/trust/ultimatum/PGG), verbal tic system (10 filler patterns), synonym rotation for cross-participant diversity
 
 ### Next Targets (v1.0.6.x)
 1. Narrative transportation domain (Green & Brock 2000)
