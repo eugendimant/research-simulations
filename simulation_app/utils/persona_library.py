@@ -159,7 +159,7 @@ Based on recent LLM simulation research:
 """
 
 # Version identifier to help track deployed code
-__version__ = "1.0.9.1"  # v1.0.9.1: UX redesign, engine improvements, additional context flow
+__version__ = "1.0.9.2"  # v1.0.9.2: OE response quality overhaul, report differentiation, API tracking fix
 
 import hashlib
 import random
@@ -4485,6 +4485,138 @@ class TextResponseGenerator:
         self._used_responses.add(response)
         return response
 
+    # ===================================================================
+    # v1.0.9.2: ADAPTIVE COMPOSITIONAL BUILDER FOR FALLBACK GENERATOR
+    # ===================================================================
+    # When the ComprehensiveResponseGenerator isn't available, this builder
+    # creates natural-sounding responses from atomic parts, informed by the
+    # full behavioral profile.  Key improvement over template selection:
+    # responses directly address the question and sound like real people.
+    # ===================================================================
+
+    def _build_adaptive_fallback_response(
+        self,
+        context: Dict[str, str],
+        traits: Dict[str, float],
+        persona_style: str,
+        rng: random.Random,
+    ) -> str:
+        """Build a human-like response compositionally for the fallback generator.
+
+        Uses the full behavioral context (topic, intent, sentiment, condition,
+        behavioral_summary) to construct a response that directly addresses
+        the question.  Falls back gracefully if context is thin.
+        """
+        _topic = context.get("topic", "this")
+        _intent = context.get("question_intent", "opinion")
+        _sentiment = context.get("sentiment", "neutral")
+        _condition = context.get("condition_framing", "")
+        _pattern = context.get("response_pattern", "")
+        _straight = context.get("straight_lined") == "true"
+
+        try:
+            _formality = float(traits.get('formality', 0.5))
+        except (ValueError, TypeError):
+            _formality = 0.5
+        try:
+            _verbosity = float(traits.get('verbosity', 0.5))
+        except (ValueError, TypeError):
+            _verbosity = 0.5
+
+        # Straight-liners get minimal responses
+        if _straight:
+            _careless = [
+                f"{_topic} idk", f"{_topic} whatever", f"meh {_topic}",
+                f"fine", f"{_topic} sure", f"idk about {_topic}",
+            ]
+            return rng.choice(_careless)
+
+        # --- Build position statement based on sentiment & intent ------
+        if _sentiment in ('very_positive', 'positive'):
+            _positions = [
+                f"I feel pretty positively about {_topic}",
+                f"My take on {_topic} is generally good",
+                f"I support {_topic} for the most part",
+                f"When it comes to {_topic} I'm on board",
+                f"{_topic} is something I believe in",
+            ]
+        elif _sentiment in ('very_negative', 'negative'):
+            _positions = [
+                f"I have real concerns about {_topic}",
+                f"My view on {_topic} is pretty negative",
+                f"I'm not a fan of {_topic}",
+                f"When it comes to {_topic} I have serious doubts",
+                f"{_topic} is something that worries me",
+            ]
+        else:
+            _positions = [
+                f"I'm somewhere in the middle on {_topic}",
+                f"My feelings about {_topic} are mixed",
+                f"I can see both sides of {_topic}",
+                f"{_topic} is complicated and I don't have a strong take",
+                f"I haven't fully made up my mind about {_topic}",
+            ]
+
+        _response = rng.choice(_positions)
+
+        # --- Add reasoning for engaged personas (40-70% chance) --------
+        if persona_style in ('engaged', 'extreme') and rng.random() < 0.6:
+            if _sentiment in ('very_positive', 'positive'):
+                _reasons = [
+                    f" because my experience has been positive",
+                    f" based on what I've personally seen",
+                    f" and the evidence supports that view",
+                    f" and it's based on real outcomes I've observed",
+                ]
+            elif _sentiment in ('very_negative', 'negative'):
+                _reasons = [
+                    f" and I've seen real problems with it",
+                    f" based on negative experiences I've had",
+                    f" because the downsides are hard to ignore",
+                    f" and the evidence points to real issues",
+                ]
+            else:
+                _reasons = [
+                    f" because there are valid arguments either way",
+                    f" and the evidence is genuinely mixed",
+                    f" because context matters a lot here",
+                    f" and it depends on who you ask",
+                ]
+            _response += rng.choice(_reasons)
+
+        # --- Add elaboration for verbose personas (40% chance) ---------
+        if _verbosity > 0.5 and rng.random() < 0.4:
+            _elaborations = [
+                ". I've thought about this a fair amount and my views are pretty settled.",
+                ". This is one of those topics where personal experience really shapes your opinion.",
+                ". I know not everyone agrees but that's where I stand.",
+                ". The more I've learned about it the more certain I've become.",
+            ]
+            if not _response.endswith('.'):
+                _response += '.'
+            _response += rng.choice(_elaborations)
+
+        # --- Apply contractions for informal personas ------------------
+        if _formality < 0.5:
+            _contractions = {
+                'I am ': "I'm ", 'I have ': "I've ", 'do not ': "don't ",
+                'is not ': "isn't ", 'it is ': "it's ", 'that is ': "that's ",
+                'cannot ': "can't ", 'I would ': "I'd ", 'will not ': "won't ",
+            }
+            for _full, _short in _contractions.items():
+                if _full.lower() in _response.lower():
+                    _idx = _response.lower().find(_full.lower())
+                    _response = _response[:_idx] + _short + _response[_idx + len(_full):]
+
+        # Ensure ends with period
+        _response = _response.strip()
+        if _response and _response[-1] not in '.!?':
+            _response += '.'
+        if _response:
+            _response = _response[0].upper() + _response[1:]
+
+        return _response
+
     def generate_response(
         self,
         response_type: str,
@@ -4603,12 +4735,34 @@ class TextResponseGenerator:
         if not style_templates:
             style_templates = ["Response about {topic}."]
 
-        # Shuffle templates to increase variety across participants
-        shuffled_templates = style_templates.copy()
-        rng.shuffle(shuffled_templates)
+        # v1.0.9.2: PRIMARY PATH — Try adaptive compositional builder first.
+        # This produces more natural responses than template substitution.
+        _topic = context.get("topic", "")
+        if _topic and len(_topic) > 2:
+            try:
+                response = self._build_adaptive_fallback_response(
+                    context=context, traits=traits,
+                    persona_style=persona_style, rng=rng,
+                )
+                if response and len(response.strip()) >= 10:
+                    # Skip template path — adaptive builder succeeded
+                    # Jump directly to behavioral coherence checks below
+                    pass
+                else:
+                    response = ""
+            except Exception:
+                response = ""
+        else:
+            response = ""
 
-        # Generate main response
-        response = self._combine_templates(shuffled_templates, context, traits, rng)
+        # FALLBACK: Template path if adaptive builder returned empty
+        if not response:
+            # Shuffle templates to increase variety across participants
+            shuffled_templates = style_templates.copy()
+            rng.shuffle(shuffled_templates)
+
+            # Generate main response
+            response = self._combine_templates(shuffled_templates, context, traits, rng)
 
         # Add natural variation
         response = self._add_natural_variation(response, traits, rng)

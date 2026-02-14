@@ -45,7 +45,7 @@ This module is designed to run inside a `utils/` package (i.e., imported as
 """
 
 # Version identifier to help track deployed code
-__version__ = "1.0.9.1"  # v1.0.9.1: UX redesign, engine improvements, additional context flow
+__version__ = "1.0.9.2"  # v1.0.9.2: OE response quality overhaul, report differentiation, API tracking fix
 
 # =============================================================================
 # SCIENTIFIC FOUNDATIONS FOR SIMULATION

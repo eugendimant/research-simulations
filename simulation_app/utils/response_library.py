@@ -63,7 +63,7 @@ association, impression, perception, feedback, comment, observation, general
 Version: 1.8.5 - Improved domain detection with weighted scoring and disambiguation
 """
 
-__version__ = "1.0.9.1"
+__version__ = "1.0.9.2"
 
 import random
 import re
@@ -7048,18 +7048,42 @@ class ComprehensiveResponseGenerator:
         # v1.0.8.4: Use raw question_context as fallback if embedded context is empty
         _effective_context = _embedded_context or question_context
 
-        # Get appropriate template (using local RNG) — now passes question
-        # text, context, AND pre-computed intent for routing
-        response = self._get_template_response(
-            domain, q_type, sentiment, local_rng,
-            question_text=question_text,
-            question_context=_effective_context,
-            question_intent=question_intent,  # v1.0.8.4: Route by intent
-            question_name=question_name,  # v1.0.8.5: Last-resort topic extraction
-        )
+        # v1.0.9.2: PRIMARY PATH — Adaptive compositional builder.
+        # Try to build a response compositionally from atomic parts.
+        # This produces dramatically more natural text than template selection.
+        # Falls back to template path if adaptive builder returns empty.
+        _subject = self._extract_response_subject(question_text, _effective_context)
+        _domain_key = domain.value if hasattr(domain, 'value') else str(domain)
 
-        # Personalize response based on question content (using local RNG)
-        response = self._personalize_for_question(response, question_text, question_keywords, condition, local_rng)
+        response = ""
+        if _subject or question_text:
+            _adaptive_topic = _subject or question_text[:80]
+            try:
+                response = self._build_adaptive_response(
+                    topic=_adaptive_topic,
+                    sentiment=sentiment,
+                    question_intent=question_intent or "opinion",
+                    question_text=question_text,
+                    question_context=_effective_context,
+                    condition=condition,
+                    domain_key=_domain_key,
+                    behavioral_profile=behavioral_profile or {},
+                    rng=local_rng,
+                )
+            except Exception:
+                response = ""
+
+        # FALLBACK: Template path if adaptive builder returned empty
+        if not response or len(response.strip()) < 10:
+            response = self._get_template_response(
+                domain, q_type, sentiment, local_rng,
+                question_text=question_text,
+                question_context=_effective_context,
+                question_intent=question_intent,
+                question_name=question_name,
+            )
+            # Personalize template response
+            response = self._personalize_for_question(response, question_text, question_keywords, condition, local_rng)
 
         # v1.0.4.8: Override engagement if behavioral profile indicates straight-lining
         _effective_engagement = persona_engagement
@@ -9925,6 +9949,530 @@ class ComprehensiveResponseGenerator:
             ]
 
         return _vocab
+
+    # ===================================================================
+    # v1.0.9.2: ADAPTIVE COMPOSITIONAL RESPONSE BUILDER
+    # ===================================================================
+    # Replaces fixed-template selection with a multi-component builder
+    # that constructs natural-sounding responses from atomic parts.
+    # Components: [opener?] + [position] + [reasoning?] + [elaboration?] + [qualifier?]
+    # Each component is independently selected based on sentiment, intent,
+    # topic, and persona traits.  This produces dramatically more natural
+    # and varied text than selecting from a fixed template bank.
+    # ===================================================================
+
+    # --- Natural language fillers and hedges by persona style --------
+    _NL_FILLERS_CASUAL = [
+        "honestly ", "I mean ", "like ", "tbh ", "look ", "idk but ",
+        "so basically ", "for real ", "ngl ", "okay so ",
+    ]
+    _NL_FILLERS_MODERATE = [
+        "honestly ", "I think ", "in my view ", "from what I can tell ",
+        "speaking personally ", "I have to say ", "the way I see it ",
+    ]
+    _NL_FILLERS_FORMAL = [
+        "in my considered opinion ", "from my perspective ",
+        "upon reflection ", "after careful thought ",
+        "I would argue that ", "it seems to me that ",
+    ]
+    _HEDGES = [
+        "I guess", "probably", "maybe", "kind of", "sort of",
+        "I suppose", "in a way", "more or less",
+    ]
+    _INTENSIFIERS = [
+        "really", "absolutely", "definitely", "strongly",
+        "completely", "deeply", "truly", "without a doubt",
+    ]
+    _CONNECTORS_CASUAL = [
+        ". And ", ". Plus ", ". Also ", ", and ", " — ",
+        ". Like ", ". I think ", ". But yeah ",
+    ]
+    _CONNECTORS_MODERATE = [
+        ". Additionally, ", ". Moreover, ", ". That said, ",
+        ". On top of that, ", ". I also think ", ". At the same time, ",
+    ]
+    _SELF_CORRECTIONS = [
+        " — well, actually ", " — or rather, ", " — I mean ",
+        ", well, ", ", or at least that's how I see it",
+    ]
+
+    def _build_adaptive_response(
+        self,
+        topic: str,
+        sentiment: str,
+        question_intent: str,
+        question_text: str,
+        question_context: str,
+        condition: str,
+        domain_key: str,
+        behavioral_profile: Dict[str, Any],
+        rng: random.Random,
+    ) -> str:
+        """Build a human-like response compositionally from atomic parts.
+
+        v1.0.9.2: Core of the 10x OE improvement.  Instead of selecting
+        from fixed templates, this method CONSTRUCTS responses by:
+        1. Extracting what the question is actually asking
+        2. Selecting an opening style matched to the persona
+        3. Building a position statement that ANSWERS the question
+        4. Adding reasoning that references specific aspects of the topic
+        5. Optionally adding elaboration, qualifiers, or personal anecdotes
+        6. Applying natural language variation (fillers, hedges, contractions)
+
+        The key insight: real survey responses directly address the question
+        asked, reference the specific topic, and vary enormously in structure.
+        Templates produce predictable "I feel [sentiment] about [topic]"
+        patterns that are immediately recognizable as generated.
+        """
+        if not topic:
+            topic = "this"
+
+        _traits = behavioral_profile.get('trait_profile', {}) if behavioral_profile else {}
+        _verbosity = _traits.get('verbosity', 0.5)
+        _formality = _traits.get('formality', 0.5)
+        _engagement = _traits.get('attention', 0.5)
+        _extremity = _traits.get('extremity', 0.4)
+        _sd = _traits.get('social_desirability', 0.3)
+        _intensity = behavioral_profile.get('intensity', 0.5) if behavioral_profile else 0.5
+
+        # --- Extract question words to mirror in response ---------------
+        _q_mirror_words: List[str] = []
+        _q_source = question_context or question_text or ""
+        if _q_source:
+            _qw = re.findall(r'\b[a-zA-Z]{4,}\b', _q_source.lower())
+            _mirror_stop = {
+                'what', 'your', 'about', 'please', 'describe', 'explain',
+                'think', 'feel', 'would', 'could', 'should', 'question',
+                'answer', 'response', 'study', 'survey', 'participant',
+                'have', 'does', 'this', 'that', 'with', 'from', 'more',
+                'most', 'very', 'really', 'some', 'much', 'many', 'just',
+            }
+            _q_mirror_words = [w for w in _qw if w not in _mirror_stop][:4]
+
+        # --- Determine formality tier -----------------------------------
+        if _formality > 0.7:
+            _filler_bank = self._NL_FILLERS_FORMAL
+            _connector_bank = self._CONNECTORS_MODERATE
+        elif _formality < 0.3:
+            _filler_bank = self._NL_FILLERS_CASUAL
+            _connector_bank = self._CONNECTORS_CASUAL
+        else:
+            _filler_bank = self._NL_FILLERS_MODERATE
+            _connector_bank = self._CONNECTORS_MODERATE
+
+        # === COMPONENT 1: OPENER (30-70% chance depending on engagement) ===
+        _opener = ""
+        if rng.random() < (0.3 + _engagement * 0.4):
+            if _formality < 0.35 and rng.random() < 0.4:
+                _opener = rng.choice(self._NL_FILLERS_CASUAL)
+            elif rng.random() < 0.5:
+                _opener = rng.choice(_filler_bank)
+
+        # === COMPONENT 2: POSITION STATEMENT (required) =================
+        # This is the core answer.  It must DIRECTLY address the question.
+        _position = self._build_position(
+            topic, sentiment, question_intent, _q_mirror_words,
+            _extremity, _intensity, condition, rng,
+        )
+
+        # === COMPONENT 3: REASONING (50-90% chance for engaged) =========
+        _reasoning = ""
+        _want_reasoning = rng.random() < (0.4 + _engagement * 0.5)
+        if _want_reasoning and _verbosity > 0.25:
+            _reasoning = self._build_reasoning(
+                topic, sentiment, question_intent, domain_key,
+                _q_mirror_words, condition, rng,
+            )
+
+        # === COMPONENT 4: ELABORATION (30-60% for verbose personas) =====
+        _elaboration = ""
+        if _verbosity > 0.5 and rng.random() < (_verbosity * 0.6):
+            _elaboration = self._build_elaboration(
+                topic, sentiment, domain_key, _q_mirror_words, rng,
+            )
+
+        # === COMPONENT 5: QUALIFIER (20-40% for high-SD personas) =======
+        _qualifier = ""
+        if _sd > 0.5 and rng.random() < (_sd * 0.4):
+            _qualifier = self._build_qualifier(topic, sentiment, rng)
+
+        # === ASSEMBLE ==================================================
+        parts = [_opener + _position]
+        if _reasoning:
+            _conn = rng.choice(_connector_bank) if rng.random() < 0.6 else ". "
+            parts.append(_conn.lstrip('. ') + _reasoning if parts[0].endswith(('.', '!', '?')) else _conn + _reasoning)
+        if _elaboration:
+            parts.append(". " + _elaboration)
+        if _qualifier:
+            parts.append(". " + _qualifier)
+
+        _response = ''.join(parts)
+
+        # --- Natural language polish ------------------------------------
+        _response = self._apply_natural_polish(
+            _response, _formality, _engagement, _extremity, _verbosity, rng,
+        )
+
+        # Ensure ends with period
+        _response = _response.strip()
+        if _response and _response[-1] not in '.!?':
+            _response += '.'
+
+        # Capitalize first letter
+        if _response:
+            _response = _response[0].upper() + _response[1:]
+
+        return _response
+
+    def _build_position(
+        self,
+        topic: str,
+        sentiment: str,
+        intent: str,
+        mirror_words: List[str],
+        extremity: float,
+        intensity: float,
+        condition: str,
+        rng: random.Random,
+    ) -> str:
+        """Build the core position statement that directly answers the question."""
+        _t = topic
+        # Use a mirror word if available to echo the question
+        _mirror = rng.choice(mirror_words) if mirror_words and rng.random() < 0.4 else ""
+
+        # Strength modulator
+        if extremity > 0.7 or intensity > 0.7:
+            _str_pos = ["strongly believe", "am completely convinced", "feel very strongly", "have no doubt"]
+            _str_neg = ["really can't stand", "strongly disagree with", "am very opposed to", "feel strongly against"]
+        elif extremity < 0.3:
+            _str_pos = ["kind of like", "somewhat agree with", "lean toward supporting", "mildly feel good about"]
+            _str_neg = ["am a bit skeptical of", "have some concerns about", "am not fully on board with", "have mixed feelings about"]
+        else:
+            _str_pos = ["support", "am in favor of", "feel positively about", "believe in"]
+            _str_neg = ["have issues with", "disagree with", "am concerned about", "am critical of"]
+
+        _pos_opinion = rng.choice(_str_pos)
+        _neg_opinion = rng.choice(_str_neg)
+
+        # Build intent-specific positions
+        if intent == "opinion":
+            if sentiment in ('very_positive', 'positive'):
+                candidates = [
+                    f"I {_pos_opinion} {_t}",
+                    f"my take on {_t} is positive",
+                    f"when it comes to {_t} I'm on board",
+                    f"{_t} is something I {_pos_opinion.replace('am ', '').replace('feel ', 'feel ')}",
+                ]
+            elif sentiment in ('very_negative', 'negative'):
+                candidates = [
+                    f"I {_neg_opinion} {_t}",
+                    f"my take on {_t} is pretty negative",
+                    f"when it comes to {_t} I'm not a fan",
+                    f"{_t} is something I {_neg_opinion.replace('am ', '').replace('have ', 'have ')}",
+                ]
+            else:
+                candidates = [
+                    f"I have mixed feelings about {_t}",
+                    f"my views on {_t} are somewhere in the middle",
+                    f"I can see both sides when it comes to {_t}",
+                    f"{_t} is complicated and I'm not fully decided",
+                ]
+        elif intent in ("explanation", "reasoning"):
+            if sentiment in ('very_positive', 'positive'):
+                candidates = [
+                    f"the reason I feel good about {_t} is pretty straightforward",
+                    f"I {_pos_opinion} {_t} because of what I've experienced",
+                    f"my positive view on {_t} comes from personal experience",
+                ]
+            elif sentiment in ('very_negative', 'negative'):
+                candidates = [
+                    f"I {_neg_opinion} {_t} and I can explain why",
+                    f"my problems with {_t} are based on what I've actually seen",
+                    f"the reason I'm negative on {_t} is concrete",
+                ]
+            else:
+                candidates = [
+                    f"my reasoning about {_t} is that it's a trade-off",
+                    f"I see arguments on both sides of {_t}",
+                    f"the nuance with {_t} is what makes it hard to have a strong take",
+                ]
+        elif intent == "emotional_reaction":
+            if sentiment in ('very_positive', 'positive'):
+                candidates = [
+                    f"{_t} makes me feel pretty good honestly",
+                    f"I get a positive feeling when I think about {_t}",
+                    f"emotionally I'm drawn to {_t}",
+                ]
+            elif sentiment in ('very_negative', 'negative'):
+                candidates = [
+                    f"{_t} genuinely frustrates me",
+                    f"thinking about {_t} makes me upset",
+                    f"emotionally {_t} brings up negative feelings for me",
+                ]
+            else:
+                candidates = [
+                    f"I don't have a strong emotional reaction to {_t}",
+                    f"{_t} doesn't really stir up strong feelings for me",
+                    f"emotionally I'm pretty neutral about {_t}",
+                ]
+        elif intent == "description":
+            candidates = [
+                f"my experience with {_t} has been {rng.choice(['interesting', 'notable', 'fairly typical', 'worth describing'])}",
+                f"when I think about {_t} what comes to mind is my own experience",
+                f"I can describe my relationship with {_t} pretty directly",
+            ]
+        elif intent == "evaluation":
+            if sentiment in ('very_positive', 'positive'):
+                candidates = [
+                    f"I'd rate {_t} positively overall",
+                    f"my evaluation of {_t} is favorable",
+                    f"looking at {_t} objectively I think it's good",
+                ]
+            elif sentiment in ('very_negative', 'negative'):
+                candidates = [
+                    f"my assessment of {_t} is not great",
+                    f"I'd evaluate {_t} negatively based on what I know",
+                    f"looking at {_t} critically there are real problems",
+                ]
+            else:
+                candidates = [
+                    f"my evaluation of {_t} is mixed",
+                    f"I'd give {_t} a moderate rating",
+                    f"looking at {_t} I see strengths and weaknesses",
+                ]
+        elif intent == "prediction":
+            if sentiment in ('very_positive', 'positive'):
+                candidates = [
+                    f"I think {_t} will turn out well",
+                    f"my prediction for {_t} is optimistic",
+                    f"I'm hopeful about where {_t} is headed",
+                ]
+            elif sentiment in ('very_negative', 'negative'):
+                candidates = [
+                    f"I'm not optimistic about {_t}",
+                    f"my prediction is that {_t} won't end well",
+                    f"I expect {_t} to go poorly",
+                ]
+            else:
+                candidates = [
+                    f"it's hard to predict what will happen with {_t}",
+                    f"I think {_t} could go either way",
+                    f"my prediction for {_t} is uncertain",
+                ]
+        elif intent == "recall":
+            candidates = [
+                f"what I remember about {_t} is specific",
+                f"I can recall my experience with {_t} pretty clearly",
+                f"thinking back on {_t} a few things stand out",
+            ]
+        else:
+            # Generic fallback covers remaining intents
+            if sentiment in ('very_positive', 'positive'):
+                candidates = [
+                    f"I {_pos_opinion} {_t}",
+                    f"my view on {_t} is positive",
+                    f"I'm generally in favor of {_t}",
+                ]
+            elif sentiment in ('very_negative', 'negative'):
+                candidates = [
+                    f"I {_neg_opinion} {_t}",
+                    f"my view on {_t} is negative",
+                    f"I'm generally against {_t}",
+                ]
+            else:
+                candidates = [
+                    f"I'm neutral on {_t}",
+                    f"my thoughts on {_t} are middle-of-the-road",
+                    f"I don't have strong feelings about {_t} either way",
+                ]
+
+        _pos = rng.choice(candidates)
+        # Inject a mirror word reference occasionally
+        if _mirror and _mirror.lower() not in _pos.lower() and rng.random() < 0.3:
+            _pos += f", especially regarding {_mirror}"
+        return _pos
+
+    def _build_reasoning(
+        self,
+        topic: str,
+        sentiment: str,
+        intent: str,
+        domain_key: str,
+        mirror_words: List[str],
+        condition: str,
+        rng: random.Random,
+    ) -> str:
+        """Build a reasoning clause that supports the position."""
+        _t = topic
+        # General reasoning patterns
+        if sentiment in ('very_positive', 'positive'):
+            _reasons = [
+                f"from what I've seen {_t} actually delivers on what people expect",
+                f"my experience has been consistently positive with {_t}",
+                f"the evidence I've encountered supports a favorable view of {_t}",
+                f"I've personally benefited from {_t} in ways that matter",
+                f"people I trust have had good experiences with {_t}",
+                f"when I look at the bigger picture {_t} is a net positive",
+                f"the results speak for themselves when it comes to {_t}",
+                f"what convinced me about {_t} was seeing the real-world impact",
+            ]
+        elif sentiment in ('very_negative', 'negative'):
+            _reasons = [
+                f"from what I've seen {_t} doesn't live up to the hype",
+                f"my experience with {_t} has left me disappointed",
+                f"the problems with {_t} are hard to ignore",
+                f"I've seen real harm come from {_t}",
+                f"people I know have had bad experiences with {_t}",
+                f"the pattern I see with {_t} is consistently negative",
+                f"the costs outweigh the benefits when it comes to {_t}",
+                f"what turned me against {_t} was seeing the actual consequences",
+            ]
+        else:
+            _reasons = [
+                f"there are legitimate arguments on both sides of {_t}",
+                f"my experience with {_t} hasn't pushed me strongly either way",
+                f"the complexity of {_t} makes it hard to take a firm position",
+                f"I think reasonable people can disagree about {_t}",
+                f"the data on {_t} is genuinely mixed from what I've seen",
+                f"it depends on which aspect of {_t} you're looking at",
+                f"context matters a lot when evaluating {_t}",
+            ]
+
+        _reason = rng.choice(_reasons)
+
+        # Condition-aware extension (15% chance)
+        if condition and rng.random() < 0.15:
+            _cond_words = re.findall(r'\b[a-zA-Z]{4,}\b', condition.lower())
+            _cond_stop = {'control', 'treatment', 'condition', 'group', 'neutral',
+                          'baseline', 'default', 'standard'}
+            _cond_content = [w for w in _cond_words if w not in _cond_stop][:2]
+            if _cond_content:
+                _cond_phrase = ' '.join(_cond_content)
+                _reason += f" and thinking about {_cond_phrase} specifically reinforces that"
+
+        return _reason
+
+    def _build_elaboration(
+        self,
+        topic: str,
+        sentiment: str,
+        domain_key: str,
+        mirror_words: List[str],
+        rng: random.Random,
+    ) -> str:
+        """Build an elaboration that adds depth."""
+        _t = topic
+        # First try domain-specific vocab
+        _vocab = self._get_domain_vocabulary(domain_key, _t)
+        if sentiment in ('very_positive', 'positive') and _vocab.get('elaborations_pos'):
+            return rng.choice(_vocab['elaborations_pos'])
+        elif sentiment in ('very_negative', 'negative') and _vocab.get('elaborations_neg'):
+            return rng.choice(_vocab['elaborations_neg'])
+        elif _vocab.get('elaborations_neu'):
+            return rng.choice(_vocab['elaborations_neu'])
+
+        # Generic elaborations
+        if sentiment in ('very_positive', 'positive'):
+            _elabs = [
+                "It's one of those things that has genuinely earned my support over time.",
+                "I've talked to other people who feel the same way and it confirms what I already thought.",
+                "The more I learn about it the more convinced I become.",
+                "It might not be perfect but the positives far outweigh the negatives.",
+            ]
+        elif sentiment in ('very_negative', 'negative'):
+            _elabs = [
+                "I don't think enough people realize how problematic this really is.",
+                "Every time I hear more about it my concerns grow.",
+                "I wish I could be more positive but the issues are too significant to ignore.",
+                "People who support this haven't seen what I've seen.",
+            ]
+        else:
+            _elabs = [
+                "I try to stay informed and make up my own mind rather than just following what others say.",
+                "The nuance gets lost in most conversations about this unfortunately.",
+                "I think more people are in the middle on this than the discourse suggests.",
+                "It's one of those things where your personal experience really shapes your view.",
+            ]
+        return rng.choice(_elabs)
+
+    def _build_qualifier(
+        self, topic: str, sentiment: str, rng: random.Random,
+    ) -> str:
+        """Build a qualifying statement (typically from high-SD personas)."""
+        _qualifiers = [
+            "I realize not everyone will agree with me on this and that's okay",
+            "I tried to be fair and consider other viewpoints before forming my opinion",
+            "I'm open to changing my mind if I see compelling evidence",
+            "I know my perspective is just one of many",
+            "I don't claim to have all the answers here",
+            "Obviously my experience might not be representative of everyone's",
+            "I want to be careful not to overgeneralize from my own experience",
+        ]
+        return rng.choice(_qualifiers)
+
+    def _apply_natural_polish(
+        self,
+        text: str,
+        formality: float,
+        engagement: float,
+        extremity: float,
+        verbosity: float,
+        rng: random.Random,
+    ) -> str:
+        """Apply natural language variation to make text sound human.
+
+        Includes: contractions, self-corrections, filler words,
+        sentence fragments, varied punctuation.
+        """
+        if not text:
+            return text
+
+        # --- Contractions (more likely for informal personas) -----------
+        if formality < 0.6 and rng.random() < (0.7 - formality):
+            _contractions = {
+                'I am ': "I'm ", 'I have ': "I've ", 'I will ': "I'll ",
+                'I would ': "I'd ", 'do not ': "don't ", 'does not ': "doesn't ",
+                'did not ': "didn't ", 'is not ': "isn't ", 'are not ': "aren't ",
+                'was not ': "wasn't ", 'were not ': "weren't ",
+                'cannot ': "can't ", 'could not ': "couldn't ",
+                'would not ': "wouldn't ", 'should not ': "shouldn't ",
+                'it is ': "it's ", 'that is ': "that's ",
+                'there is ': "there's ", 'they are ': "they're ",
+                'we are ': "we're ", ' will not ': " won't ",
+            }
+            for _full, _short in _contractions.items():
+                if _full.lower() in text.lower():
+                    _idx = text.lower().find(_full.lower())
+                    text = text[:_idx] + _short + text[_idx + len(_full):]
+
+        # --- Self-correction (5-15% for moderate engagement) -----------
+        if 0.3 < engagement < 0.8 and rng.random() < 0.10:
+            sentences = text.split('. ')
+            if len(sentences) >= 2:
+                _insert_at = rng.randint(0, len(sentences) - 2)
+                _correction = rng.choice(self._SELF_CORRECTIONS)
+                sentences[_insert_at] = sentences[_insert_at] + _correction
+                text = '. '.join(sentences)
+
+        # --- Trailing thoughts for verbose personas --------------------
+        if verbosity > 0.7 and rng.random() < 0.25:
+            _trails = [
+                " but I could go on about this",
+                " and there's more I could say",
+                " though I'll leave it at that for now",
+                " but that's the main point",
+                " if that makes sense",
+            ]
+            text = text.rstrip('.')
+            text += rng.choice(_trails)
+
+        # --- Remove overly formal punctuation for casual personas ------
+        if formality < 0.3:
+            text = text.replace('; ', ', ')
+            if rng.random() < 0.3:
+                text = text.replace('. ', ', ', 1)  # Run-on once
+
+        return text
 
     def _enforce_behavioral_coherence(
         self,
