@@ -1,108 +1,244 @@
 # Claude Code Development Guidelines
 
+## GOVERNING PROTOCOL: Simulator Agent Protocol
+
+**Every code task on this project follows: Analyze → Research → Plan → Implement → Validate → Deliver. No exceptions.**
+
+Before writing ANY code, read and follow the full protocol and its reference documents:
+
+- `simulation_app/skills/SKILL.md` — **Master protocol** (complexity assessment, iteration loops, quality gates, delivery checklist)
+- `simulation_app/skills/detailed-protocol.md` — Complexity worked examples, git conflict resolution, error handling standards
+- `simulation_app/skills/response-generation-pipeline.md` — Subject profile generation, sequential item processing, item-type-specific prompting, context window management
+- `simulation_app/skills/template-system.md` — Template architecture, cross-correlation encoding, response library management, variation functions
+- `simulation_app/skills/continuous-learning.md` — Auto-archive protocol, train/test calibration, quality tracking, prompt evolution, regression prevention
+- `simulation_app/skills/human-likeness-checklist.md` — Comprehensive checklist for simulation realism audits
+
+**The protocol is NOT optional.** Even for trivial tasks, complete Step 0 (problem statement + complexity classification + edge cases + success criteria) before touching code. For COMPLEX tasks, all 5 iteration loops are mandatory.
+
+### Quick Reference: Complexity Levels
+
+| Level | Criteria | Iteration Loops |
+|-------|----------|-----------------|
+| **TRIVIAL** | Single-file, <20 lines, no new dependencies | 1 |
+| **MODERATE** | Multi-file or logic change, clear requirements | 3 |
+| **COMPLEX** | Cross-module, new features, architectural decisions | 5 |
+| **RESEARCH_NEEDED** | Ambiguous requirements, unknown APIs | **STOP. Ask first.** |
+
+Always present the classification to the user for confirmation before proceeding.
+
+---
+
 ## Key Terminology
 
-- **Persona Pipeline**: domain detection → persona filtering → weight adjustment → assignment → trait generation → response generation. Full chain in `enhanced_simulation_engine.py`.
-- **Admin Dashboard**: `?admin=1`, password "Dimant_Admin" (SHA-256 hashed).
+### Persona Pipeline
+The full system for generating realistic participant behavior: domain detection → persona filtering → weight adjustment → assignment → trait generation → response generation. Refers to the complete chain from `detected_domains` through persona selection (`_CONDITION_PERSONA_AFFINITIES`, `_ADJACENT_DOMAINS`) to the 10-step simulation pipeline in `enhanced_simulation_engine.py`.
 
----
-
-## ABSOLUTE RULE: Page Layout — Next at Top, Scroll at Bottom
-
-**THESE RULES CANNOT BE OVERRIDDEN UNDER ANY CIRCUMSTANCES.**
-
-- Every wizard page (0, 1, 2, 3) MUST have `↑ Back to top` at the very bottom. NEVER delete it.
-- NEVER place "Next"/"Continue" buttons at the bottom. They go at the TOP, under the stepper.
-- Stepper (1-2-3-4) is visual-only (not clickable). Navigation via visible "Continue to..." button at top.
-- Button only appears when all required fields on the current step are complete.
-
----
-
-## MANDATORY: PR Link After Every Change
-
-Every response with code changes MUST end with:
-```
-## PR Link
-**https://github.com/eugendimant/research-simulations/pull/new/claude/[branch-name]**
-```
+### Admin Dashboard
+Hidden password-protected diagnostics page at `?admin=1`. Shows LLM provider stats, simulation history, session state explorer, system info. Password: "Dimant_Admin" (SHA-256 hashed, updated v1.0.4.8).
 
 ---
 
 ## ABSOLUTE RULE: Version Synchronization — ALL 9 Locations, EVERY Commit
 
-**A version mismatch causes a VISIBLE ERROR BANNER for all users.**
+**A version mismatch causes a VISIBLE ERROR BANNER for all users.** The app checks `REQUIRED_UTILS_VERSION == utils.__version__` at startup. If they differ by even one digit, users see a yellow warning bar. **It MUST NEVER happen again.**
 
-### The 9 locations (ALL must match):
+### The 9 version locations — ALL must contain the EXACT SAME version string:
 
 | # | File | Location |
 |---|------|----------|
-| 1 | `simulation_app/app.py` | `REQUIRED_UTILS_VERSION = "X.X.X.X"` |
-| 2 | `simulation_app/app.py` | `APP_VERSION = "X.X.X.X"` |
-| 3 | `simulation_app/app.py` | `BUILD_ID = "YYYYMMDD-vXXXXX-description"` |
-| 4 | `simulation_app/utils/__init__.py` | `__version__ = "X.X.X.X"` |
-| 5 | `simulation_app/utils/__init__.py` | `Version: X.X.X.X` in docstring |
-| 6 | `simulation_app/utils/qsf_preview.py` | `__version__ = "X.X.X.X"` |
-| 7 | `simulation_app/utils/response_library.py` | `__version__ = "X.X.X.X"` |
-| 8 | `simulation_app/README.md` | `**Version X.X.X.X**` in header |
-| 9 | `simulation_app/README.md` | `## Features (vX.X.X.X)` |
+| 1 | `simulation_app/app.py` | `REQUIRED_UTILS_VERSION = "X.X.X.X"` (line ~56) |
+| 2 | `simulation_app/app.py` | `APP_VERSION = "X.X.X.X"` (line ~122) |
+| 3 | `simulation_app/app.py` | `BUILD_ID = "YYYYMMDD-vXXXXX-description"` (line ~57) |
+| 4 | `simulation_app/utils/__init__.py` | `__version__ = "X.X.X.X"` (line ~68) |
+| 5 | `simulation_app/utils/__init__.py` | `Version: X.X.X.X` in docstring (line ~5) |
+| 6 | `simulation_app/utils/qsf_preview.py` | `__version__ = "X.X.X.X"` (line ~36) |
+| 7 | `simulation_app/utils/response_library.py` | `__version__ = "X.X.X.X"` (line ~66) |
+| 8 | `simulation_app/README.md` | `**Version X.X.X.X**` in header (line ~3) |
+| 9 | `simulation_app/README.md` | `## Features (vX.X.X.X)` section header (line ~22) |
 
-Also update: `llm_response_generator.py`, `scientific_knowledge_base.py`, `socsim_adapter.py` `__version__`.
+### MANDATORY WORKFLOW — Do this BEFORE every commit:
 
-### Workflow BEFORE every commit:
+**Step 1: Determine the new version number.**
+- Increment the LAST digit by 1. If it was 9, roll to 0 and increment the digit to its left.
+- Examples: `1.0.7.3` → `1.0.7.4`, `1.0.7.9` → `1.0.8.0`, `1.0.9.9` → `1.1.0.0`
+- **NEVER use two-digit segments** like `.10`, `.11`. Each segment is a single digit 0-9.
 
-1. **Increment** the LAST digit. If 9, roll to 0 and increment left. Each segment is 0-9 (NEVER `.10`).
-2. **Update ALL locations** with the SAME version. The #1 failure is updating one file but not the other.
-3. **Update BUILD_ID**: `"YYYYMMDD-vXXXXX-short-description"`
-4. **Verify**: `grep -r "OLD_VERSION" simulation_app/ --include="*.py" --include="*.md"` — should return nothing.
+**Step 2: Update ALL 9 locations with the SAME version string.** Never touch one file without the other. The #1 failure mode is updating `utils/__init__.py` without updating `REQUIRED_UTILS_VERSION` in `app.py` (or vice versa). Treat them as a single atomic operation.
 
-The app uses `importlib.reload(utils)` for stale cache recovery. Warning only appears on genuine code mismatch.
+**Step 3: Update BUILD_ID** to force Streamlit cache invalidation. Format: `"YYYYMMDD-vXXXXX-short-description"`
+
+**Step 4: Verify** — grep for the old version; it should appear NOWHERE:
+```bash
+grep -r "OLD_VERSION" simulation_app/ --include="*.py" --include="*.md"
+```
+
+### Stale Module Cache Recovery (v1.0.7.7)
+The app uses `importlib.reload(utils)` as a safe self-healing mechanism when a mismatch is detected. Warning only appears if reload fails — meaning it's a genuine code-level inconsistency.
+
+**Failed approaches (DO NOT retry):** `sys.modules` purge (caused KeyError crashes with concurrent sessions), warning-only (users saw banner after every deploy).
+
+---
+
+## ABSOLUTE RULE: Page Layout — Next at Top, Scroll at Bottom
+
+- **"Continue to..." button**: TOP of page only, right under the stepper (1-2-3-4). Never at the bottom.
+- **"↑ Back to top" scroll link**: EVERY page, ALWAYS at the very bottom. NEVER delete it.
+- The stepper bar is visual-only (not clickable). Navigation happens via the visible button.
+- Navigation buttons appear only when all required fields on the current step are complete.
+
+---
+
+## MANDATORY: PR Link After Every Change
+
+**EVERY response that involves code changes MUST end with a working, mergeable PR link.**
+
+```
+## PR Link
+**https://github.com/eugendimant/research-simulations/pull/new/claude/[branch-name]**
+```
+
+Never leave changes uncommitted. Never forget the PR link.
 
 ---
 
 ## Code Quality Standards
 
 ### Before Every Commit:
-1. `python3 -m py_compile <file>` on ALL modified Python files
-2. Verify version numbers synchronized
-3. Run: `python3 -m pytest tests/test_e2e.py -v --tb=short`
-4. No syntax errors or import failures
+1. Run `python3 -m py_compile <file>` on ALL modified Python files
+2. Verify version numbers are synchronized (all 9 locations)
+3. Run tests: `python3 -m pytest tests/test_e2e.py -v --tb=short`
+4. Test the app loads without version mismatch warning
+5. Ensure no syntax errors or import failures
 
 ### Code Style:
-- Type hints, docstrings for public functions, follow existing patterns
-- Defensive `get()` for dict access, handle edge cases
-- Log errors with `_log()` or `logger.debug()`
+- Type hints for function parameters and returns
+- Docstrings for all public functions
+- Follow existing code patterns
+- Keep functions focused and single-purpose
+- Use `get()` for dict access; handle empty lists, None values, missing keys
 
 ---
 
-## Behavioral Data Simulation Requirements
+## Science-Informed Behavioral Realism (CRITICAL)
 
-### Trash/Unused Block Handling
-- `EXCLUDED_BLOCK_NAMES` (200+ patterns) + `EXCLUDED_BLOCK_PATTERNS` (regex) in qsf_preview.py
-- Trash blocks must NEVER appear as conditions
+**ALL simulated behavioral data MUST be consistent with established scientific findings.**
 
-### Condition Detection
-- Sources: block names, embedded data, BlockRandomizer
-- Never include: trash, admin, structural, or quality control blocks
+### Effect Detection Pipeline: `_get_automatic_condition_effect()`
 
-### DV Detection (`_detect_scales()`)
-- 6 types: matrix, numbered items, Likert, sliders, single-item, numeric inputs
-- Flag `detected_from_qsf: True`
+Runs in this order:
+1. **STEP 0 — Relational/Matching Condition Parsing** (fires FIRST): Detects WHO is matched with WHOM. Political identity detection, ingroup (+0.30) vs outgroup (-0.35 to -0.40). Sets `_handled_by_relational = True` to skip Step 1. Economic game DVs amplify by 1.3×.
+2. **STEP 1 — Simple valence keywords** (ONLY if STEP 0 didn't handle): "positive", "negative", "reward", "punishment". Note: 'lover' and 'hater' are EXCLUDED (identity markers, not valence).
+3. **STEP 2 — Domain-specific semantic effects** (14+ domains): Each domain has keyword→effect mappings grounded in literature.
+4. **STEP 3 — Condition trait modifiers**: Political identity → increased extremity/consistency. Outgroup → negative acquiescence bias.
+5. **STEP 4 — Domain-aware effect magnitude scaling**: Political + economic game: 1.6×. Political only: 1.3×. Economic game only: 1.2×.
 
-### Factorial Design
-- `_render_factorial_design_table()` for visual setup
-- Cross conditions: Factor1_Level × Factor2_Level
-- Persist factorial state across navigation
+### Economic Game DV Calibration
+- **Dictator game**: mean ~28% (Engel 2011 meta-analysis)
+- **Trust game**: baseline ~50% (Berg et al. 1995)
+- **Ultimatum game**: offers ~40-50%
+- **Public goods game**: contributions ~40-60%
 
-### State Persistence
-- `_save_step_state()` before navigation, `_restore_step_state()` at step start
-- Persist: conditions, factors, scales, factorial config, sample/effect sizes
+### Anti-Patterns for Behavioral Realism
+1. Using simple valence keywords for identity conditions
+2. Equal effects across ingroup/outgroup — intergroup studies MUST show discrimination
+3. Generic 50% baselines for economic games
+4. Ignoring domain when scaling effects
+5. Treating condition labels literally instead of parsing relational meaning
 
-### Behavioral Realism
-- Effect pipeline: STEP 0 (relational parsing) → STEP 1 (valence) → STEP 2 (domain effects) → STEP 3 (trait modifiers) → STEP 4 (magnitude scaling)
-- 'lover'/'hater' are identity markers NOT valence keywords
-- Economic game baselines: dictator ~28% (Engel 2011), trust ~50%, ultimatum ~40-50%
-- Political + economic game: 1.6× effect multiplier (Dimant 2024)
-- Intergroup studies MUST show discrimination effects
+---
+
+## Open-Text Response Generation Architecture
+
+### Two Separate Systems:
+1. **Preview** (`_get_sample_text_response()` in app.py): 5-row preview
+2. **Full generation** (`_generate_open_response()` in enhanced_simulation_engine.py): Three-level cascade
+
+### Three-Level Cascade:
+1. **LLM Generator** (llm_response_generator.py): Free LLM APIs (Groq → Cerebras → Gemini → Gemma → OpenRouter → Poe)
+2. **ComprehensiveResponseGenerator** (response_library.py): Template-based + Markov chain
+3. **TextResponseGenerator** (persona_library.py): Basic template fallback
+
+### Key Principle: NO response should EVER be off-topic
+- High quality: Detailed, specific, directly addresses question topic
+- Medium: Brief but still about the topic
+- Low: Very short but topic-relevant ("trump is ok i guess")
+- Very low: Gibberish but topic words when possible
+- Careless: Short and lazy, but STILL about the actual topic
+
+### Topic Extraction Fallback Chain (every level must extract topic):
+1. `question_context` (user-provided on Design page)
+2. `question_text` (the actual question)
+3. `question_name` / variable name
+4. `study_domain`
+5. **Last resort**: `"the questions asked"` — NEVER `"this topic"`, `"it"`, `"this"`, or bare pronouns
+
+### Stop-word pattern (used across all files):
+```python
+_stop = {'this', 'that', 'about', 'what', 'your', 'please', 'describe',
+         'explain', 'question', 'context', 'study', 'topic', 'condition',
+         'think', 'feel', 'have', 'some', 'with', 'from', 'very', 'really'}
+```
+
+### Behavioral Coherence Pipeline (v1.0.4.8+)
+Every simulated participant is ONE person. Their numeric responses and open-text must tell a coherent story. `_build_behavioral_profile()` computes response_pattern, intensity, consistency_score, straight_lined flag from numeric responses. This profile flows through all three generator levels. Straight-liners get truncated responses; positive-raters don't get negative text; extreme raters get intensifier phrases.
+
+### Cross-Response Consistency (v1.0.5.0+)
+`_participant_voice_memory` tracks each participant's established tone and prior response excerpts across multiple OE questions. Same participant sounds the same across all their OE answers.
+
+---
+
+## Streamlit DOM & Navigation (Hard-Won Lessons)
+
+### What Works:
+- **Visible `st.button()` at top of each page** — simplest, most reliable. No JS, no iframes.
+- **`st.container()` as deferred-render placeholder** — create at top, populate at bottom after widgets set state.
+- **Read widget keys directly** — `st.session_state.get(widget_key)` gives CURRENT value, unlike shadow keys.
+
+### What NEVER Works (DO NOT retry):
+- `st.markdown('<div class="X">')` does NOT wrap subsequent widgets — creates empty styled elements
+- `window.parent.location.href = ...` in iframe JS — destroys WebSocket, loses ALL session state
+- Hidden buttons + MutationObserver — container shows as gray bar, buttons leak
+- CSS wrapper hiding — Streamlit renders buttons as siblings, not children
+- `sys.modules` purge for version cache — KeyError crashes with concurrent sessions
+
+### Builder vs QSF path divergence:
+- Builder sets `_skip_qsf_design = True`, skips QSF widgets. Readiness criteria MUST differ per path.
+- NEVER assume both paths use the same session_state keys.
+
+### Execution order gotcha:
+- Widgets below set state AFTER code above reads it. Fix: `st.container()` placeholder at top, fill at bottom.
+
+---
+
+## Trash/Unused Block Handling
+
+- `EXCLUDED_BLOCK_NAMES` contains 200+ patterns
+- `EXCLUDED_BLOCK_PATTERNS` contains regex patterns
+- `_is_excluded_block_name()` checks both
+- **Be aggressive with exclusions** — better to exclude too much than pollute conditions
+- Common patterns to exclude: `trash_`, `unused_`, `old_`, `test_`, `copy_`, consent, demographics, debrief, attention_check
+
+---
+
+## DV Detection: `_detect_scales()` (6 types)
+
+1. Matrix scales (multi-item Likert)
+2. Numbered items (Scale_1, Scale_2)
+3. Likert scales (grouped single-choice)
+4. Sliders (visual analog)
+5. Single-item DVs (standalone ratings)
+6. Numeric inputs (WTP, quantities)
+
+Always include `detected_from_qsf: True` flag.
+
+---
+
+## State Persistence
+
+- `_save_step_state()` before navigation
+- `_restore_step_state()` at step start
+- `persist_keys` defines what survives navigation
+- Must persist: conditions, factors, confirmed scales/DVs, factorial config, sample/effect size
 
 ---
 
@@ -124,23 +260,71 @@ research-simulations/
 │   │   ├── group_management.py
 │   │   ├── schema_validator.py
 │   │   └── condition_identifier.py
-│   ├── example_files/            # QSF training data
+│   ├── skills/                   # Simulator Agent Protocol
+│   │   ├── SKILL.md              # Master protocol
+│   │   ├── detailed-protocol.md
+│   │   ├── continuous-learning.md
+│   │   ├── human-likeness-checklist.md
+│   │   ├── response-generation-pipeline.md
+│   │   └── template-system.md
+│   ├── example_files/
 │   └── README.md
 ├── tests/
-│   ├── conftest.py               # Path setup (no sys.path needed in tests)
-│   └── test_e2e.py               # Main E2E suite
+│   ├── conftest.py               # Shared path setup & fixtures
+│   ├── test_e2e.py               # Main E2E pytest suite
+│   └── ...
 ├── docs/
+│   ├── papers/
 │   ├── CHANGELOG.md
-│   └── DEVELOPMENT_REFERENCE.md  # Historical learnings & completed plans
-└── CLAUDE.md                     # This file
+│   └── *.md
+├── CLAUDE.md                     # THIS FILE
+├── AGENTS.md
+└── MEMORY.md
 ```
+
+---
+
+## Anti-Patterns (Comprehensive — DO NOT violate)
+
+### Code & Architecture
+1. Big-bang rewrites → break into iterations
+2. Forgetting version sync → always use the 9-location checklist
+3. Assuming state persists → explicitly save and restore
+4. Skipping validation → users find edge cases you missed
+5. Suppressing exceptions silently (`except Exception: pass`) → always log at minimum
+
+### Streamlit-Specific
+6. `st.markdown('<div>')` as wrapper → use `st.container()`
+7. `window.parent.location.href` in iframe → destroys session
+8. Hidden buttons with JS wiring → use visible `st.button()`
+9. "Next" buttons at bottom → only at top under stepper
+10. Reading session_state at top for values set below → deferred container pattern
+11. Removing scroll buttons when editing → NEVER remove "Back to top"
+12. Assuming QSF and builder paths share state keys → they don't
+
+### Open-Text Generation
+13. Generic/hardcoded response banks → use question_text, context, condition, study_title
+14. Off-topic careless responses ("fine", "ok") → even careless participants write about the TOPIC
+15. Consumer/product language defaults ("item", "product") → extract meaningful topics
+16. Bare pronouns ('it', 'this') as fallback → multi-level fallback chain
+17. Survey meta-commentary ("The survey was well-designed") → responses about the TOPIC, not the survey
+18. `{stimulus}` placeholder → use `{topic}` universally
+19. Domain-blind extensions → check domain before applying specialization
+20. Only auditing primary code paths → generic responses hide in FALLBACK paths
+
+### Behavioral Realism
+21. Using valence keywords for identity conditions → parse relational meaning
+22. Equal effects across ingroup/outgroup → MUST show discrimination
+23. Generic 50% baselines → use published baselines per game type
+24. Ignoring domain for effect scaling → political > consumer effect sizes
+25. Treating condition labels literally → parse WHO is matched with WHOM
 
 ---
 
 ## Commit Message Format
 
 ```
-vX.X.X.X: Brief description
+vX.X.X.X: Brief description of changes
 
 - Specific change 1
 - Specific change 2
@@ -150,57 +334,54 @@ https://claude.ai/code/[session-id]
 
 ---
 
-## Streamlit Key Patterns
+## Git Workflow
 
-- `st.markdown('<div>')` does NOT wrap widgets. Use `st.container()`.
-- NEVER use `window.parent.location.href` — destroys session state.
-- Navigation: visible `st.button()` at top of each page. No hidden buttons, no JS wiring.
-- Execution order fix: use `st.container()` placeholder at top, fill at bottom.
-- Builder vs QSF paths have different state keys. Always check which is active.
+```
+1. git fetch origin && git pull origin main
+2. git checkout -b feature/<descriptive-name>
+3. Commit atomically with precise messages
+4. Before push: git fetch origin main && git rebase origin/main
+5. IF conflicts: resolve ALL yourself, re-test, then continue rebase
+6. Push ONLY if all tests pass
+```
 
----
-
-## Anti-Patterns (DO NOT)
-
-1. Big-bang rewrites — use focused iterations
-2. Update one version location without the others
-3. Assume state persists without explicit save/restore
-4. Trust QSF block names without trash filtering
-5. Use `st.markdown('<div>')` as wrapper
-6. Put "Next" at bottom of page
-7. Generate off-topic careless responses ("fine" instead of "trump is ok i guess")
-8. Use bare pronouns ('it', 'this') as topic fallbacks
-9. Write survey meta-commentary in templates ("the study was interesting")
-10. Use `{stimulus}` placeholder — use `{topic}` universally
-11. Apply consumer/product modifiers to political/health domains
-12. Suppress exceptions silently — always `logger.debug()`
-13. Only audit primary code paths — generic responses hide in FALLBACK paths
+**Files to never touch** (unless explicitly required): README.md, CHANGELOG.md, LICENSE, .gitignore, MEMORY.md.
 
 ---
 
-## OE Response Architecture (Current v1.1.0.2)
+## Improvement History & Current State
 
-### Three-level cascade:
-1. **LLM Generator** (llm_response_generator.py): Free APIs (Groq → Cerebras → Google AI → OpenRouter → Poe)
-2. **ComprehensiveResponseGenerator** (response_library.py): 8 structural archetypes, domain-specific concrete details, natural imperfections, topic naturalization
-3. **TextResponseGenerator** (persona_library.py): Basic template fallback
+### Completed Milestones
+- **v1.0.4.5**: Simulation realism — 18 STEP 2 domains, 52+ personas, reverse-item engagement failure, SD domain sensitivity
+- **v1.0.4.6**: Pipeline quality — domain-aware routing across all 5 major methods, effect stacking guard, persona pool validation
+- **v1.0.4.8**: Behavioral coherence — OE-numeric consistency, `_build_behavioral_profile()`, LLM prompt behavioral hints, cross-correlation enforcement
+- **v1.0.5.0**: OE realism — 7-strategy topic extraction, full 7-trait persona integration, 6-check coherence enforcement, participant voice memory
 
-### Key principles:
-- NO response should EVER be off-topic
-- Every response quality level (high→careless) stays on-topic
-- Topic fallback: question_context → question_text → question_name → study_domain → "the questions asked"
-- One person, one voice: numeric ratings and OE text must be coherent
-- `_build_behavioral_profile()` computes 7-dimensional trait vector per participant
-- `_enforce_behavioral_coherence()` validates text-numeric consistency
+### Next Targets (v1.0.6.x)
+1. Narrative transportation domain (Green & Brock 2000)
+2. Scale type detection expansion (matrix, forced choice, semantic differential)
+3. LLM response validation layer (off-topic detection, meta-commentary screening)
+4. Authority/NFC persona-level interaction in STEP 3
 
-### Non-LLM response archetypes (v1.0.9.8+):
-direct_answer | story_first | reasoning_first | rhetorical | concession | stream | list_style | emotional_burst
-- Selected by persona formality × engagement traits
-- Concrete domain-specific details (political, economic games, health, consumer, trust, social, moral)
-- Natural imperfections: typos, missing apostrophes, comma splices, fragments, missing periods
+### Business Roadmap
+Phase 1 (Foundation): User accounts + persistent workspaces + billing infrastructure
+Phase 2 (Revenue): Paid tiers + REST API + Python SDK + template marketplace
+Phase 3 (Scale): LMS integration (Canvas LTI) + Enterprise SSO + R SDK
 
 ---
 
-## Deep Reference
+## Scientific References Embedded in Code
 
-For historical improvement plans, completed iterations, scientific references, business brainstorm, and detailed architecture documentation, see: `docs/DEVELOPMENT_REFERENCE.md`
+| Topic | Reference | Value |
+|-------|-----------|-------|
+| Intergroup discrimination | Iyengar & Westwood (2015) | Political partisans discriminate in economic games |
+| Dictator game baseline | Engel (2011) meta-analysis | Mean giving ~28% |
+| Political polarization | Dimant (2024) | d ≈ 0.6-0.9 |
+| Intergroup cooperation | Balliet et al. (2014) | Ingroup favoritism |
+| Racial discrimination | Fershtman & Gneezy (2001) | Ethnic discrimination in trust/dictator |
+| Reverse item failure | Woods (2006) | 10-15% ignore directionality |
+| Acquiescence × reverse | Weijters et al. (2010) | +0.5 point error inflation |
+| SD domain sensitivity | Nederhof (1985 meta) | d = 0.25-0.75 for sensitive topics |
+| Extremity style | Greenleaf (1992) | Response style calibrations |
+| SD manifestation | Paulhus (2002) | Impression management vs self-deception |
+| Rating-text consistency | Krosnick (1999); Podsakoff et al. (2003) | OE must match numeric |
