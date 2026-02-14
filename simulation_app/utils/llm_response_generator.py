@@ -21,7 +21,7 @@ Architecture:
 Version: 1.0.8.0
 """
 
-__version__ = "1.0.9.1"
+__version__ = "1.0.9.2"
 
 import hashlib
 import json
@@ -1812,6 +1812,7 @@ class _LLMProvider:
         self.available = True
         self.call_count = 0
         self.attempt_count = 0  # v1.0.6.3: Tracks ALL attempts including early-return-blocked
+        self.http_request_count = 0  # v1.0.9.2: Tracks only actual HTTP requests made
         self._daily_call_count = 0
         self._daily_reset_time = time.time()
         self._consecutive_failures = 0
@@ -1856,6 +1857,9 @@ class _LLMProvider:
 
         # Per-provider rate limiting
         self._rate_limiter.wait_if_needed()
+
+        # v1.0.9.2: Track actual HTTP requests (past all guards)
+        self.http_request_count += 1
 
         # v1.0.7.1: Retry with backoff (up to 1 retry per call — reduced from 2)
         # Total max sleep per provider: 1.5s (down from 4.5s)
@@ -2116,9 +2120,11 @@ class LLMResponseGenerator:
     def stats(self) -> Dict[str, Any]:
         total_calls = sum(p.call_count for p in self._providers)
         total_attempts = sum(p.attempt_count for p in self._providers)
+        total_http_requests = sum(p.http_request_count for p in self._providers)
         return {
             "llm_calls": total_calls,
             "llm_attempts": total_attempts,  # v1.0.6.3: Includes blocked/early-return calls
+            "llm_http_requests": total_http_requests,  # v1.0.9.2: Only actual HTTP requests
             "fallback_uses": self._fallback_count,
             "pool_size": self._pool.total_responses,
             "active_provider": self.active_provider_name,
@@ -2128,6 +2134,7 @@ class LLMResponseGenerator:
                 p.name: {
                     "calls": p.call_count,
                     "attempts": p.attempt_count,
+                    "http_requests": p.http_request_count,  # v1.0.9.2
                     "available": p.available,
                     # v1.0.7.0: Enhanced diagnostics for admin dashboard
                     "failures": p._total_failures,

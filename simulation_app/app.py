@@ -54,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.0.9.1"
-BUILD_ID = "20260214-v10901-ux-redesign-engine-improvements"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.0.9.2"
+BUILD_ID = "20260214-v10902-oe-improvements-report-fixes"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -118,7 +118,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.0.9.1"  # v1.0.9.1: UX redesign, engine improvements, additional context flow
+APP_VERSION = "1.0.9.2"  # v1.0.9.2: OE response quality overhaul, report differentiation, API tracking fix
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -7102,6 +7102,21 @@ def _render_admin_dashboard() -> None:
             st.markdown(f"**Response Pool Size (cumulative):** {_cum_pool}")
             st.markdown(f"**Template Fallbacks (cumulative):** {_cum_fallbacks}")
 
+            # v1.0.9.2: Show HTTP requests (actual) vs provider probes (inflated)
+            _cum_http = 0
+            _cum_attempts = 0
+            for _hist_entry in _sim_history:
+                _hls = _hist_entry.get("llm_stats", {})
+                _cum_http += _hls.get("llm_http_requests", _hls.get("llm_calls", 0))
+                _cum_attempts += _hls.get("llm_attempts", 0)
+            if _cum_http == 0 and _current_llm_stats:
+                _cum_http = _current_llm_stats.get("llm_http_requests", _current_llm_stats.get("llm_calls", 0))
+                _cum_attempts = _current_llm_stats.get("llm_attempts", 0)
+            if _cum_http > 0 or _cum_attempts > 0:
+                st.markdown(f"**Actual HTTP Requests (cumulative):** {_cum_http}")
+                if _cum_attempts > _cum_http:
+                    st.caption(f"Provider probes (incl. rate-limited/blocked): {_cum_attempts}")
+
             # Provider breakdown from most recent simulation
             _providers = _current_llm_stats.get("providers", {})
             if _providers:
@@ -7110,7 +7125,9 @@ def _render_admin_dashboard() -> None:
                 for _pname, _pinfo in _providers.items():
                     _prov_data.append({
                         "Provider": _pname,
+                        "HTTP Requests": _pinfo.get("http_requests", _pinfo.get("calls", 0)),
                         "Calls": _pinfo.get("calls", 0),
+                        "Failures": _pinfo.get("failures", 0),
                         "Available": "Yes" if _pinfo.get("available", False) else "No",
                     })
                 if _prov_data:
@@ -10947,10 +10964,10 @@ if active_page == 3:
                 "tag_color": "#F59E0B",
                 "subtitle": "No internet required",
                 "details": [
-                    "225+ research domain templates with Markov chain text generation",
+                    "225+ research domain templates with compositional response generation",
                     "Works completely offline — no API calls, no rate limits, instant results",
                     "Domain-specific response banks calibrated to published norms (Engel 2011, Berg 1995)",
-                    "Best for: quick iterations, offline use, or when AI providers are unavailable",
+                    "Strongest for numeric/behavioral data; for highest-quality open-text, use Built-in AI or Your API Key",
                 ],
             },
             {
@@ -10968,8 +10985,7 @@ if active_page == 3:
                     "trust/cooperation, risk, moral judgment, stereotype threat, and more",
                     "Published effect size calibration: dictator game (Engel 2011), intergroup discrimination "
                     "(Iyengar & Westwood 2015), political polarization (Dimant 2024)",
-                    "Cross-DV coherence: participants who rate high on trust also write trusting open-text responses",
-                    "Latent behavioral classes generate realistic individual differences and response patterns",
+                    "Strongest for numeric/behavioral data realism; for highest-quality open-text, use Built-in AI or Your API Key",
                 ],
             },
         ]
@@ -11760,6 +11776,19 @@ if active_page == 3:
             # v1.4.9: Inject LLM stats into metadata for the instructor report
             if hasattr(engine, 'llm_generator') and engine.llm_generator is not None:
                 metadata['llm_stats'] = engine.llm_generator.stats
+
+            # v1.0.9.2: Pass user-selected generation method to metadata for
+            # accurate instructor report differentiation.
+            _user_gen_method = st.session_state.get("generation_method", "free_llm")
+            _gen_method_labels = {
+                "free_llm": "Built-in AI (Free LLM Providers)",
+                "own_api": "User API Key (LLM)",
+                "template": "Template Engine (Offline)",
+                "experimental": "Adaptive Behavioral Engine (Beta)",
+            }
+            metadata['generation_method'] = _user_gen_method
+            metadata['generation_method_label'] = _gen_method_labels.get(
+                _user_gen_method, _user_gen_method)
 
             # v1.0.8.2: Post-generation LLM health diagnostic — detect issues and
             # show actionable notification for the user to switch methods if needed.
