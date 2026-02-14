@@ -3106,11 +3106,41 @@ DOMAIN_TEMPLATES: Dict[str, Dict[str, Dict[str, List[str]]]] = {
 
     "cognitive_load": {
         "explanation": {
-            "very_positive": ["The task was easy to process mentally.", "I had plenty of mental capacity to handle this.", "The cognitive demands were manageable.", "My mind handled the complexity well.", "I felt mentally sharp and capable."],
-            "positive": ["The mental demands were reasonable.", "I managed the cognitive load adequately.", "The task wasn't too mentally taxing.", "I had sufficient mental resources.", "The processing was fairly smooth."],
-            "neutral": ["The mental demands were average.", "The cognitive load was neither high nor low.", "I had typical mental engagement.", "The processing was unremarkable.", "Standard mental effort was required."],
-            "negative": ["The task was mentally demanding.", "I felt cognitive strain.", "My mental resources were stretched.", "The complexity was challenging.", "I struggled with the mental load."],
-            "very_negative": ["I was cognitively overwhelmed.", "The mental demands were excessive.", "I couldn't process everything.", "My mind was overloaded.", "The cognitive burden was too high."],
+            "very_positive": [
+                "The task was straightforward and I had plenty of mental capacity to handle everything being asked of me.",
+                "I found the cognitive demands perfectly manageable and was able to think clearly throughout the entire task.",
+                "My mind handled the complexity well and I felt focused and sharp the whole time.",
+                "I didn't feel mentally strained at all, and the information was presented in a way that was easy to process.",
+                "I felt mentally capable and engaged, without any sense of being overwhelmed by the task requirements.",
+            ],
+            "positive": [
+                "The mental demands were reasonable and I managed to process everything without too much effort.",
+                "I handled the cognitive load adequately, even if there were moments that required closer attention.",
+                "The task wasn't too mentally taxing overall, and I had sufficient mental resources to do it well.",
+                "I was able to keep track of the important information and the processing was fairly smooth.",
+                "The cognitive demands were within my comfort zone, though I needed to concentrate at some points.",
+            ],
+            "neutral": [
+                "The mental demands felt average to me, neither too easy nor particularly overwhelming.",
+                "I had a typical level of mental engagement with the task and didn't notice it being especially hard or easy.",
+                "The cognitive load was somewhere in the middle, requiring moderate effort to process everything.",
+                "I wasn't sure whether the task was mentally demanding or not because it felt fairly standard.",
+                "My mental effort was about what I'd expect for a task like this, nothing unusual in either direction.",
+            ],
+            "negative": [
+                "The task was more mentally demanding than I expected and I could feel my concentration fading.",
+                "I felt cognitive strain trying to hold multiple pieces of information in mind simultaneously.",
+                "My mental resources were stretched thin and I'm not confident I processed everything accurately.",
+                "The complexity of the task was genuinely challenging and I had to re-read things multiple times.",
+                "I struggled with the mental load because there was too much to keep track of at once.",
+            ],
+            "very_negative": [
+                "I was cognitively overwhelmed by the demands of this task and couldn't keep up.",
+                "The mental demands were excessive and I felt like my brain simply shut down at certain points.",
+                "I couldn't process everything being asked of me because the cognitive burden was just too high.",
+                "My mind was completely overloaded and I'm sure my responses suffered as a result.",
+                "The sheer amount of information and complexity made this task mentally exhausting and frustrating.",
+            ],
         },
     },
 
@@ -3128,21 +3158,81 @@ DOMAIN_TEMPLATES: Dict[str, Dict[str, Dict[str, List[str]]]] = {
 
     "performance_anxiety": {
         "explanation": {
-            "very_positive": ["I perform well under pressure.", "Anxiety doesn't affect my performance.", "I thrive in high-pressure situations.", "Competition energizes me.", "I channel nervous energy productively."],
-            "positive": ["I manage performance pressure reasonably well.", "Some anxiety is motivating for me.", "I usually perform adequately under pressure.", "I've learned to cope with performance stress.", "Anxiety affects me minimally."],
-            "neutral": ["Pressure affects me sometimes, sometimes not.", "My response to performance anxiety varies.", "I have average ability to handle pressure.", "Performance situations are hit or miss.", "Anxiety has mixed effects on my performance."],
-            "negative": ["Performance pressure often affects me negatively.", "I struggle with anxiety in competitive situations.", "Pressure tends to hurt my performance.", "I get nervous before important events.", "Performance anxiety is challenging for me."],
-            "very_negative": ["Performance anxiety significantly impairs me.", "I struggle greatly under pressure.", "Competition triggers intense anxiety.", "I often choke in important moments.", "Performance situations are very stressful."],
+            "very_positive": [
+                "I genuinely thrive under pressure and find that high-stakes situations bring out my best performance.",
+                "Anxiety doesn't affect my performance because I've learned to channel nervous energy into focus and preparation.",
+                "Competition energizes me rather than paralyzing me, and I actually feel more alive in pressure situations.",
+                "I perform well when it counts because I've developed mental strategies for staying calm and focused.",
+                "I've come to welcome performance pressure as something that sharpens my abilities rather than undermining them.",
+            ],
+            "positive": [
+                "I manage performance pressure reasonably well, though I still feel butterflies before important moments.",
+                "Some anxiety actually motivates me to prepare more thoroughly, so it works in my favor most of the time.",
+                "I usually perform adequately under pressure even though I might not feel totally calm inside.",
+                "I've learned to cope with performance stress through practice and experience, and it's gotten easier over time.",
+                "Anxiety affects me minimally during actual performance, even if I worry beforehand.",
+            ],
+            "neutral": [
+                "Pressure affects me differently depending on the situation, with some contexts being worse than others.",
+                "My response to performance anxiety is inconsistent and I can't always predict how I'll handle it.",
+                "I have average ability to handle pressure compared to most people, neither thriving nor crumbling.",
+                "Performance situations are genuinely hit or miss for me, and preparation doesn't always determine the outcome.",
+                "Anxiety has mixed effects on my performance, sometimes helping and sometimes getting in the way.",
+            ],
+            "negative": [
+                "Performance pressure often affects me negatively, and I notice my skills degrading when the stakes are high.",
+                "I struggle with anxiety in competitive or evaluative situations, which is frustrating because I know my abilities.",
+                "Pressure tends to hurt my performance because I start overthinking and second-guessing myself.",
+                "I get quite nervous before important events and that nervousness carries into my actual performance.",
+                "Performance anxiety is a real challenge for me and it has cost me opportunities I was otherwise qualified for.",
+            ],
+            "very_negative": [
+                "Performance anxiety significantly impairs my abilities and I've missed out on a lot because of it.",
+                "I struggle greatly under pressure and the physical symptoms of anxiety make it almost impossible to focus.",
+                "Competition triggers intense anxiety that I can't control, no matter how much I prepare.",
+                "I often choke in important moments because the fear of failure becomes a self-fulfilling prophecy.",
+                "Performance situations are so stressful for me that I sometimes avoid them entirely to protect myself.",
+            ],
         },
     },
 
     "team_dynamics": {
         "explanation": {
-            "very_positive": ["Our team works together excellently.", "Team chemistry is outstanding.", "Collaboration within the team is strong.", "We support each other effectively.", "Team dynamics enhance our performance."],
-            "positive": ["Our team generally works well together.", "Team dynamics are positive.", "We collaborate effectively most of the time.", "Team members support each other.", "The group functions reasonably well."],
-            "neutral": ["Team dynamics are average.", "We work together adequately.", "Collaboration is neither strong nor weak.", "Team functioning is typical.", "Our group dynamics are unremarkable."],
-            "negative": ["Team dynamics could be improved.", "There are some conflicts within the team.", "Collaboration is sometimes difficult.", "Team chemistry has issues.", "Group functioning has challenges."],
-            "very_negative": ["Team dynamics are problematic.", "There's significant conflict in the group.", "Collaboration is very difficult.", "Team chemistry is poor.", "The team functions poorly."],
+            "very_positive": [
+                "Our team works together excellently and there's a genuine sense of trust and mutual respect among members.",
+                "The chemistry within our team is outstanding and we bring out the best in each other's work.",
+                "Collaboration flows naturally because everyone contributes their strengths and communicates openly.",
+                "I feel genuinely supported by my team members and we hold each other accountable in a positive way.",
+                "Team dynamics are a real source of motivation for me and I look forward to working with this group.",
+            ],
+            "positive": [
+                "Our team generally works well together, even though we sometimes disagree on approaches.",
+                "The group dynamics are mostly positive and I feel comfortable sharing ideas with the team.",
+                "We collaborate effectively most of the time and people pull their weight.",
+                "Team members generally support each other and communication is decent.",
+                "I'm reasonably satisfied with how our team functions and the results we produce together.",
+            ],
+            "neutral": [
+                "Our team dynamics are fairly average, with some people contributing more than others.",
+                "We work together adequately but I wouldn't describe our collaboration as exceptional or terrible.",
+                "The group functions at a typical level, with occasional friction but nothing unusual.",
+                "Team chemistry is neither strong nor weak, and we get the job done without much drama.",
+                "Our dynamics are unremarkable, which I suppose is better than being dysfunctional.",
+            ],
+            "negative": [
+                "Team dynamics could definitely be improved because there are some underlying tensions that affect our work.",
+                "There are conflicts within the team that make collaboration harder than it should be.",
+                "Communication within our group is lacking and people sometimes work at cross-purposes.",
+                "I feel like some team members don't pull their weight, which breeds resentment.",
+                "The group has chemistry issues that make meetings and shared projects more stressful than they need to be.",
+            ],
+            "very_negative": [
+                "Team dynamics are genuinely problematic and the conflict within our group makes productive work very difficult.",
+                "There's significant interpersonal tension that has eroded trust and morale on the team.",
+                "Collaboration feels almost impossible because people are defensive, competitive, or disengaged.",
+                "Team chemistry is poor and I dread having to work with this group on shared tasks.",
+                "The team functions so poorly that I think we'd actually be more productive working separately.",
+            ],
         },
     },
 
@@ -3611,11 +3701,41 @@ DOMAIN_TEMPLATES: Dict[str, Dict[str, Dict[str, List[str]]]] = {
     # SELF-REGULATION
     "self_control": {
         "explanation": {
-            "very_positive": ["I have excellent self-control.", "I'm very disciplined in my choices.", "Resisting temptation is easy for me.", "I consistently make good decisions.", "Self-regulation is a strength of mine."],
-            "positive": ["I have reasonably good self-control.", "I usually resist temptation.", "I'm fairly disciplined.", "I make good choices most of the time.", "My self-control is adequate."],
-            "neutral": ["My self-control is average.", "Sometimes I'm disciplined, sometimes not.", "I have mixed results with self-control.", "It depends on the situation.", "I'm neither strong nor weak in this area."],
-            "negative": ["I struggle with self-control.", "Resisting temptation is difficult.", "I often give in to impulses.", "My discipline could be better.", "Self-regulation is challenging for me."],
-            "very_negative": ["I have very poor self-control.", "I almost always give in to temptation.", "Discipline is extremely hard for me.", "I frequently make impulsive choices.", "Self-control is a major weakness."],
+            "very_positive": [
+                "I have excellent self-control and can resist temptation even when the short-term payoff is really appealing.",
+                "I'm very disciplined in my choices and I attribute a lot of my success to being able to delay gratification.",
+                "Resisting temptation comes relatively easy to me because I always keep my long-term goals in focus.",
+                "I consistently make deliberate decisions rather than impulsive ones, and I'm proud of that discipline.",
+                "Self-regulation is genuinely a strength of mine, whether it's diet, spending, or time management.",
+            ],
+            "positive": [
+                "I have reasonably good self-control, though I'm not immune to giving in occasionally.",
+                "I usually resist temptation by reminding myself of the bigger picture and what matters more.",
+                "I'm fairly disciplined in most areas of my life, even if I slip up sometimes.",
+                "I make good choices most of the time by pausing before acting on impulse.",
+                "My self-control is adequate and I generally don't regret decisions I make in the moment.",
+            ],
+            "neutral": [
+                "My self-control is honestly pretty average, and it really depends on the domain and my energy levels.",
+                "Sometimes I'm very disciplined and other times I completely give in to impulse, with no clear pattern.",
+                "I have mixed results with self-control depending on whether the temptation is food, spending, or something else.",
+                "My ability to resist temptation varies so much that I can't say I'm either strong or weak in this area.",
+                "I'm somewhere in the middle with self-control, doing okay in some areas and struggling in others.",
+            ],
+            "negative": [
+                "I struggle with self-control more than I'd like to admit, especially with things like snacking or procrastinating.",
+                "Resisting temptation is genuinely difficult for me, and I often give in even when I know better.",
+                "I frequently act on impulse and regret the decision later, which is a frustrating pattern.",
+                "My discipline could be a lot better, and I often wonder why self-control seems easier for other people.",
+                "Self-regulation is challenging for me and it affects multiple areas of my life.",
+            ],
+            "very_negative": [
+                "I have very poor self-control and it has caused real problems in my finances, health, and relationships.",
+                "I almost always give in to temptation and feel powerless to stop myself in the moment.",
+                "Discipline is extremely hard for me and I've tried many strategies that just don't seem to work.",
+                "I frequently make impulsive choices that I deeply regret, but I can't seem to break the cycle.",
+                "Self-control is one of my biggest weaknesses and it's something I feel genuinely ashamed about.",
+            ],
         },
     },
 
@@ -3633,11 +3753,41 @@ DOMAIN_TEMPLATES: Dict[str, Dict[str, Dict[str, List[str]]]] = {
     # EMOTION REGULATION
     "emotion_regulation": {
         "explanation": {
-            "very_positive": ["I manage my emotions very effectively.", "I have excellent emotional control.", "I rarely get overwhelmed by feelings.", "I can regulate my emotions well.", "Emotional stability is a strength."],
-            "positive": ["I generally manage emotions well.", "I have decent emotional control.", "I can usually regulate my feelings.", "I cope with emotions reasonably.", "My emotional regulation is good."],
-            "neutral": ["My emotion regulation is average.", "Sometimes I manage well, sometimes not.", "I have typical emotional control.", "My coping varies by situation.", "I'm neither great nor poor at this."],
-            "negative": ["I struggle to regulate emotions.", "My feelings often overwhelm me.", "Emotional control is difficult.", "I have trouble managing feelings.", "My emotion regulation needs work."],
-            "very_negative": ["I have very poor emotion regulation.", "I'm frequently overwhelmed by feelings.", "Emotional control is extremely hard.", "My emotions control me.", "I struggle greatly with this."],
+            "very_positive": [
+                "I manage my emotions very effectively by using strategies like reappraisal and mindfulness that I've practiced over time.",
+                "I have excellent emotional control and can stay calm under pressure without suppressing how I actually feel.",
+                "I rarely get overwhelmed by my feelings because I've learned to acknowledge emotions without letting them dictate my actions.",
+                "I can regulate my emotions well, even in stressful situations, and I think that's one of my strongest personal qualities.",
+                "Emotional stability comes naturally to me and I'm able to maintain a balanced perspective even when things get intense.",
+            ],
+            "positive": [
+                "I generally manage my emotions well, though particularly stressful days can still throw me off balance.",
+                "I have decent emotional control and can usually prevent my feelings from driving impulsive decisions.",
+                "I can usually regulate my feelings by taking a step back and thinking through the situation rationally.",
+                "I cope with emotional challenges reasonably well and have some strategies that work for me.",
+                "My emotional regulation is good overall, even though I still have room for improvement in certain areas.",
+            ],
+            "neutral": [
+                "My emotion regulation is honestly pretty average, with good days and bad days in roughly equal measure.",
+                "Sometimes I manage my feelings well and other times they get the better of me, depending on the situation.",
+                "I have typical emotional control for someone my age and don't stand out as especially regulated or dysregulated.",
+                "My ability to cope with strong emotions varies a lot depending on what's going on in my life.",
+                "I'm neither great nor poor at managing my emotions, and it really just depends on the context.",
+            ],
+            "negative": [
+                "I struggle to regulate my emotions, especially when I'm stressed, tired, or feeling overwhelmed.",
+                "My feelings often overwhelm me before I can think clearly about what's actually going on.",
+                "Emotional control is genuinely difficult for me and I frequently react in ways I later regret.",
+                "I have trouble managing strong feelings like anger, sadness, or anxiety once they take hold.",
+                "My emotion regulation definitely needs work because I'm often at the mercy of my moods.",
+            ],
+            "very_negative": [
+                "I have very poor emotion regulation and my feelings frequently spiral out of control.",
+                "I'm almost always overwhelmed by strong emotions and don't know how to bring myself back to baseline.",
+                "Emotional control is extremely hard for me and it affects my relationships, work, and daily functioning.",
+                "My emotions essentially control me rather than the other way around, and it causes real problems.",
+                "I struggle greatly with managing my feelings and it's one of the biggest challenges in my life.",
+            ],
         },
     },
 
@@ -10746,6 +10896,45 @@ class ComprehensiveResponseGenerator:
                     _idx = _modified.lower().find(_hedge)
                     _modified = _modified[:_idx] + _absolute + _modified[_idx + len(_hedge):]
                     break  # Only replace one to avoid over-correction
+            response = _modified
+
+        # 6. v1.0.9.3: Low-engagement shortening — moderately disengaged responders
+        # produce shorter, less elaborated text (but not as extreme as straight-liners)
+        _attention = _traits.get('attention_level', 0.5)
+        if _attention < 0.35 and not _straight:
+            sentences = re.split(r'(?<=[.!?])\s+', response)
+            if len(sentences) > 2:
+                response = ' '.join(sentences[:2])
+            words = response.split()
+            if len(words) > 20:
+                response = ' '.join(words[:16]) + '.'
+
+        # 7. v1.0.9.3: Consistency-driven response anchoring
+        # When consistency is low, inject uncertainty markers at ~30% rate
+        if _consistency < 0.35 and local_rng.random() < 0.30:
+            _uncertainty_markers = [
+                "I'm not entirely sure but ",
+                "It's hard to say exactly, but ",
+                "I go back and forth on this, but ",
+                "My feelings are mixed, but ",
+            ]
+            if not any(response.lower().startswith(m[:12].lower()) for m in _uncertainty_markers):
+                response = local_rng.choice(_uncertainty_markers) + response[0].lower() + response[1:]
+
+        # 8. v1.0.9.3: Formality adjustment for high-formality personas
+        _formality = _traits.get('formality', 0.5)
+        if _formality > 0.75 and local_rng.random() < 0.35:
+            _casual_to_formal = {
+                "don't": "do not", "can't": "cannot", "won't": "will not",
+                "shouldn't": "should not", "couldn't": "could not",
+                "it's": "it is", "that's": "that is",
+            }
+            _modified = response
+            for _cas, _form in _casual_to_formal.items():
+                if _cas in _modified.lower():
+                    _idx = _modified.lower().find(_cas)
+                    _modified = _modified[:_idx] + _form + _modified[_idx + len(_cas):]
+                    break
             response = _modified
 
         return response
