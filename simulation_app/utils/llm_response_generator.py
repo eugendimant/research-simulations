@@ -21,7 +21,7 @@ Architecture:
 Version: 1.0.8.0
 """
 
-__version__ = "1.0.9.7"
+__version__ = "1.1.0.2"
 
 import hashlib
 import json
@@ -412,7 +412,123 @@ _TYPO_MAP = {
     "about": ["abuot", "abut"],
     "people": ["ppl", "poeple"],
     "something": ["somethng", "smth"],
+    "probably": ["prolly", "probly", "prob"],
+    "different": ["diffrent", "diferent"],
+    "going": ["goin", "gona"],
+    "before": ["befor", "b4"],
+    "through": ["thru", "thorugh"],
+    "important": ["importnat", "importent"],
+    "definitely": ["definately", "defintely", "def"],
+    "experience": ["experiance", "expirience"],
+    "believe": ["beleive", "belive"],
+    "especially": ["espcially", "especialy"],
+    "actually": ["acutally", "actualy"],
+    "interesting": ["intresting", "intersting"],
+    "government": ["goverment", "governmnt"],
+    "everything": ["evrything", "everthing"],
+    "opinion": ["oppinion", "opinon"],
+    "decision": ["desicion", "decison"],
+    "situation": ["situtation", "situaton"],
+    "literally": ["litterly", "literaly"],
+    "honestly": ["honeslty", "honesty"],
+    "together": ["togther", "togehter"],
+    "understand": ["undersand", "undrestand"],
+    "between": ["bewteen", "betwen"],
+    "enough": ["enought", "enuf"],
+    "obviously": ["obivously", "obviosly"],
+    "whether": ["wether", "wheather"],
+    "already": ["alredy", "allready"],
+    "another": ["anohter", "anoter"],
+    "nothing": ["nothign", "nothin"],
+    "question": ["quesiton", "questoin"],
+    "anything": ["anythign", "anythin"],
 }
+
+# v1.1.0.2: QWERTY-based adjacent key map for realistic typos
+_QWERTY_ADJACENT = {
+    'a': 'sq', 'b': 'vn', 'c': 'xv', 'd': 'sf', 'e': 'wr', 'f': 'dg',
+    'g': 'fh', 'h': 'gj', 'i': 'uo', 'j': 'hk', 'k': 'jl', 'l': 'k',
+    'm': 'n', 'n': 'bm', 'o': 'ip', 'p': 'o', 'q': 'w', 'r': 'et',
+    's': 'ad', 't': 'ry', 'u': 'yi', 'v': 'cb', 'w': 'qe', 'x': 'zc',
+    'y': 'tu', 'z': 'x',
+}
+
+# v1.1.0.2: Common autocorrect failures
+_AUTOCORRECT_ERRORS = {
+    "fuck": "duck", "shit": "shot", "hell": "he'll",
+    "were": "we're", "well": "we'll", "ill": "I'll",
+    "its": "it's", "cant": "can't", "dont": "don't",
+    "were": "where", "there": "their", "your": "you're",
+}
+
+# v1.1.0.2: Phone typing artifacts — missing spaces, double taps
+_PHONE_ARTIFACTS = [
+    ("i ", "I "),       # Autocapitalize 'I' sometimes fails
+    (". ", "."),         # Missing space after period
+    ("  ", " "),         # Double space (phone space-bar overshoot)
+]
+
+# v1.1.0.2: Disfluency patterns — realistic speech-like interruptions
+_FALSE_STARTS = [
+    "I thought— well actually ",
+    "wait no, what I mean is ",
+    "ok so— actually ",
+    "sorry let me rephrase, ",
+    "I was gonna say— ",
+    "hmm actually ",
+    "well— ok so ",
+]
+
+_SELF_CORRECTIONS = [
+    ", well not {0} exactly, more like {1}",
+    ", or actually more like {1}",
+    "— wait I mean {1}",
+    ", well {1} is more accurate",
+    ", actually scratch that, {1}",
+]
+
+# Adjective pairs for self-correction (original → corrected)
+_CORRECTION_PAIRS = [
+    ("bad", "disappointing"), ("good", "decent"), ("great", "pretty good"),
+    ("terrible", "not great"), ("amazing", "really good"), ("boring", "just meh"),
+    ("interesting", "kind of cool"), ("confusing", "unclear"), ("nice", "alright"),
+    ("perfect", "close to what I wanted"), ("awful", "not what I hoped for"),
+    ("weird", "unexpected"), ("wrong", "off"), ("hard", "tricky"),
+]
+
+_PARENTHETICAL_ASIDES = [
+    " (if that makes sense)",
+    " (idk how to explain it)",
+    " (at least thats how I see it)",
+    " (not sure if thats normal)",
+    " (lol)",
+    " (sorry for rambling)",
+    " (I know right)",
+    " (or something like that)",
+    " (just my opinion though)",
+    " (no offense)",
+    " (if you know what I mean)",
+    " (but what do I know)",
+]
+
+_TRAILING_OFF = [
+    "...",
+    ".. idk",
+    " or something",
+    " but yeah",
+    " but whatever",
+    " anyway",
+    "—",
+    " I guess",
+    " or whatever",
+]
+
+# v1.1.0.2: Verbal tics — per-participant consistent filler patterns
+_VERBAL_TICS = [
+    "honestly", "basically", "literally", "like", "I mean",
+    "you know", "right", "actually", "so", "just",
+    "obviously", "clearly", "definitely", "apparently", "I guess",
+]
 
 
 # ---------------------------------------------------------------------------
@@ -1582,6 +1698,46 @@ _BANNED_PHRASES: List[Tuple[str, str]] = [
     ("juxtaposition", "contrast"),
     ("the implications of", "what it means for"),
     ("I value ", "I care about "),
+    # v1.1.0.2: Additional anti-detection banned phrases
+    ("it's crucial to", "you gotta"),
+    ("It's crucial to", "You gotta"),
+    ("a pivotal role", "a big part"),
+    ("it underscores", "it shows"),
+    ("It underscores", "It shows"),
+    ("nuanced perspective", "different take"),
+    ("I wholeheartedly agree", "I totally agree"),
+    ("I was pleasantly surprised", "I was surprised"),
+    ("it struck me that", "I noticed"),
+    ("It struck me that", "I noticed"),
+    ("it dawned on me", "I realized"),
+    ("It dawned on me", "I realized"),
+    ("I was taken aback", "it caught me off guard"),
+    ("a profound impact", "a big effect"),
+    ("I would posit that", "I think"),
+    ("I would contend that", "I think"),
+    ("it bears mentioning", "also"),
+    ("It bears mentioning", "Also"),
+    ("I feel compelled to", "I have to"),
+    ("in my humble opinion", "imo"),
+    ("In my humble opinion", "Imo"),
+    ("having said that", "but"),
+    ("Having said that", "But"),
+    ("that being said", "but"),
+    ("That being said", "But"),
+    ("at the end of the day", "honestly"),
+    ("At the end of the day", "Honestly"),
+    ("it goes without saying", "obviously"),
+    ("all things considered", "overall"),
+    ("I can't help but feel", "I feel"),
+    ("I can't help but think", "I think"),
+    ("shed light on", "showed"),
+    ("food for thought", "something to think about"),
+    ("a testament to", "proof of"),
+    ("I was struck by", "I noticed"),
+    ("I was intrigued by", "I was curious about"),
+    ("it left me pondering", "it made me think"),
+    ("a compelling argument", "a good point"),
+    ("it's safe to say", "I think"),
 ]
 
 # Regex patterns for more complex replacements
@@ -1607,6 +1763,24 @@ _BANNED_PATTERNS: List[Tuple[str, str]] = [
     (r'\bto sum up\b', 'basically'),
     (r'\bIn conclusion\b', 'So basically'),
     (r'\bin conclusion\b', 'so basically'),
+    # v1.1.0.2: Structural pattern detection — break essay-like patterns
+    (r'\bOn (?:the )?one hand[,.].*?[Oo]n the other hand\b', ''),  # Kill balanced argument structure
+    (r'\bFirst(?:ly)?[,.].*?Second(?:ly)?[,.].*?(?:Third(?:ly)?|Finally)\b', ''),  # Kill enumeration
+    (r'\bTo (?:begin|start) with\b', ''),
+    (r'\bIn (?:light|view) of\b', 'because of'),
+    (r'\bit(?:\'s| is) (?:evident|apparent|clear) that\b', ''),
+    (r'\bI (?:am|was) of the (?:opinion|belief|view)\b', 'I think'),
+    (r'\bspeaks? volumes\b', 'says a lot'),
+    (r'\b(?:raise|raises) (?:important|critical|key) questions?\b', 'makes you wonder'),
+    (r'\bserve(?:s|d)? as a (?:reminder|testament)\b', 'reminds me'),
+    (r'\bfoster(?:s|ing|ed)? a sense of\b', 'creating'),
+    (r'\bplays? a (?:vital|crucial|key|pivotal) role\b', 'matters a lot'),
+    (r'\bI was deeply moved\b', 'it got to me'),
+    (r'\bprovide(?:s|d)? (?:valuable )?insight\b', 'helps you see'),
+    (r'\bwithout a doubt\b', 'for sure'),
+    (r'\bit is (?:imperative|essential|crucial) (?:that|to)\b', 'you really gotta'),
+    (r'\bIn today\'s (?:world|society|day and age)\b', 'these days'),
+    (r'\bin today\'s (?:world|society|day and age)\b', 'these days'),
 ]
 
 

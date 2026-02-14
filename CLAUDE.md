@@ -250,12 +250,13 @@ research-simulations/
 │   ├── app.py                    # Streamlit entry point
 │   ├── utils/
 │   │   ├── __init__.py
-│   │   ├── enhanced_simulation_engine.py
-│   │   ├── instructor_report.py
-│   │   ├── qsf_preview.py
+│   │   ├── enhanced_simulation_engine.py  # 10-step simulation pipeline
+│   │   ├── response_library.py            # ComprehensiveResponseGenerator (non-LLM OE)
+│   │   ├── persona_library.py             # TextResponseGenerator (fallback OE)
+│   │   ├── llm_response_generator.py      # LLM-based OE generation
+│   │   ├── qsf_preview.py                # QSF parsing & DV detection
 │   │   ├── survey_builder.py
-│   │   ├── response_library.py
-│   │   ├── persona_library.py
+│   │   ├── instructor_report.py
 │   │   ├── group_management.py
 │   │   ├── schema_validator.py
 │   │   └── condition_identifier.py
@@ -327,12 +328,9 @@ vX.X.X.X: Brief description of changes
 
 - Specific change 1
 - Specific change 2
-- Specific change 3
 
 https://claude.ai/code/[session-id]
 ```
-
-Always include the Claude session link for traceability.
 
 ---
 
