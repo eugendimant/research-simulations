@@ -5139,6 +5139,554 @@ class EnhancedSimulationEngine:
             semantic_effect -= 0.10
 
         # =====================================================================
+        # DOMAIN 24: NOSTALGIA MANIPULATIONS (v1.0.7.4)
+        # Wildschut et al. (2006): Nostalgia increases positive affect, social
+        # connectedness, self-continuity, and meaning in life.
+        # Sedikides et al. (2015 meta): Nostalgia d = 0.20-0.35 on wellbeing.
+        # Routledge et al. (2011): Nostalgia buffers existential threat.
+        # =====================================================================
+
+        # Nostalgia induction (Wildschut et al., 2006)
+        if _any_word_in(['nostalgic', 'nostalgia prime', 'nostalgia condition',
+                         'nostalgic memory', 'sentimental'], condition_lower):
+            semantic_effect += 0.20  # Positive affect, connectedness
+        elif _any_word_in(['contemporary', 'modern', 'present-focused',
+                           'current event'], condition_lower):
+            semantic_effect -= 0.05
+
+        # Past/memory orientation (Routledge et al., 2011)
+        if _any_word_in(['past memory', 'remember the past', 'childhood',
+                         'old days', 'reminiscence'], condition_lower):
+            semantic_effect += 0.12
+        elif _any_word_in(['future focus', 'forward looking', 'plan ahead'], condition_lower):
+            semantic_effect -= 0.08
+
+        # Personal vs historical nostalgia (Batcho, 2013)
+        if _any_word_in(['personal nostalgia', 'own past', 'autobiographical'], condition_lower):
+            semantic_effect += 0.18  # Personal nostalgia stronger
+        elif _any_word_in(['historical nostalgia', 'collective past', 'era nostalgia'], condition_lower):
+            semantic_effect += 0.10
+
+        # =====================================================================
+        # DOMAIN 25: FORGIVENESS MANIPULATIONS (v1.0.7.4)
+        # Fehr et al. (2010 meta): Forgiveness interventions d = 0.56.
+        # McCullough et al. (2000): Empathy mediates forgiveness.
+        # Worthington (2006): REACH model of forgiveness.
+        # =====================================================================
+
+        # Forgiveness induction (Fehr et al., 2010)
+        if _any_word_in(['forgive', 'forgiveness', 'forgiveness prime',
+                         'letting go', 'pardon'], condition_lower):
+            semantic_effect += 0.18
+        elif _any_word_in(['grudge', 'revenge', 'vengeance',
+                           'hold grudge', 'unforgiven'], condition_lower):
+            semantic_effect -= 0.22
+
+        # Reconciliation vs retaliation (McCullough et al., 2001)
+        if _any_word_in(['reconcil', 'restore relationship', 'make amends',
+                         'apology accepted'], condition_lower):
+            semantic_effect += 0.15
+        elif _any_word_in(['punish', 'retaliat', 'get even',
+                           'retributive', 'payback'], condition_lower):
+            semantic_effect -= 0.18
+
+        # Transgression severity (Fincham et al., 2006)
+        if _any_word_in(['minor offense', 'small transgression', 'slight'], condition_lower):
+            semantic_effect += 0.08  # Easier to forgive
+        elif _any_word_in(['severe offense', 'betrayal', 'major transgression'], condition_lower):
+            semantic_effect -= 0.20  # Harder to forgive
+
+        # =====================================================================
+        # DOMAIN 26: GRATITUDE DEPTH MANIPULATIONS (v1.0.7.4)
+        # Wood et al. (2010 meta): Gratitude -> wellbeing r = 0.30-0.50.
+        # Algoe (2012): Find-Remind-Bind theory of gratitude.
+        # Ma et al. (2017 meta): Gratitude interventions d = 0.31.
+        # Note: Basic gratitude induction is in Domain 21. This covers
+        # deeper gratitude constructs and entitlement contrasts.
+        # =====================================================================
+
+        # Grateful disposition priming (Wood et al., 2010)
+        if _any_word_in(['grateful disposition', 'trait gratitude',
+                         'grateful person', 'appreciation mindset'], condition_lower):
+            semantic_effect += 0.22
+        elif _any_word_in(['entitled', 'entitlement', 'deserve more',
+                           'owed', 'demanding'], condition_lower):
+            semantic_effect -= 0.15
+
+        # Benefactor-focused gratitude (Algoe et al., 2008)
+        if _any_word_in(['thank benefactor', 'gratitude letter',
+                         'grateful to person', 'benefactor appreciation'], condition_lower):
+            semantic_effect += 0.18
+        elif _any_word_in(['ungrateful', 'unappreciated', 'taken for granted',
+                           'ingratitude'], condition_lower):
+            semantic_effect -= 0.12
+
+        # Material vs experiential gratitude (Emmons, 2007)
+        if _any_word_in(['experiential gratitude', 'grateful for experience'], condition_lower):
+            semantic_effect += 0.16  # Experiential gratitude more lasting
+        elif _any_word_in(['material gratitude', 'grateful for possession'], condition_lower):
+            semantic_effect += 0.10
+
+        # =====================================================================
+        # DOMAIN 27: GROWTH MINDSET & IMPLICIT THEORIES (v1.0.7.4)
+        # Sisk et al. (2018 meta): Growth mindset intervention d = 0.08.
+        # Yeager et al. (2019, Nature): Targeted interventions d = 0.10.
+        # Dweck (2006): Implicit theories of intelligence framework.
+        # Note: Basic growth/fixed is in Domain 13. This covers deeper
+        # mindset constructs and effort/ability attributions.
+        # =====================================================================
+
+        # Mindset intervention (Yeager et al., 2019)
+        if _any_word_in(['growth mindset intervention', 'malleable intelligence',
+                         'brain grows', 'neuroplasticity message'], condition_lower):
+            semantic_effect += 0.10  # Small but real for targeted populations
+        elif _any_word_in(['fixed mindset induction', 'innate ability',
+                           'born with it', 'genetic talent'], condition_lower):
+            semantic_effect -= 0.08
+
+        # Effort vs talent attribution (Mueller & Dweck, 1998)
+        if _any_word_in(['effort praise', 'hard work', 'improvement',
+                         'practice makes', 'learning process'], condition_lower):
+            semantic_effect += 0.12
+        elif _any_word_in(['talent praise', 'natural ability', 'gifted',
+                           'born smart', 'innate talent'], condition_lower):
+            semantic_effect -= 0.05
+
+        # Failure mindset framing (Haimovitz & Dweck, 2016)
+        if _any_word_in(['failure is learning', 'growth from failure',
+                         'productive failure'], condition_lower):
+            semantic_effect += 0.14
+        elif _any_word_in(['failure is bad', 'avoid failure',
+                           'failure means inability'], condition_lower):
+            semantic_effect -= 0.10
+
+        # =====================================================================
+        # DOMAIN 28: SELF-AFFIRMATION MANIPULATIONS (v1.0.7.4)
+        # McQueen & Klein (2006 meta): Self-affirmation d = 0.17.
+        # Cohen & Sherman (2014): Self-affirmation reduces defensiveness.
+        # Steele (1988): Self-affirmation theory -- affirming core values
+        # buffers threat and reduces defensive processing.
+        # =====================================================================
+
+        # Values affirmation (Cohen et al., 2006)
+        if _any_word_in(['values affirmation', 'self affirm', 'affirm values',
+                         'important values', 'core values essay'], condition_lower):
+            semantic_effect += 0.18
+        elif _any_word_in(['no affirmation', 'control essay',
+                           'unimportant values', 'neutral writing'], condition_lower):
+            semantic_effect -= 0.03
+
+        # Self-affirmation under threat (Sherman & Cohen, 2006)
+        if _any_word_in(['affirm under threat', 'affirmed and threatened',
+                         'buffered threat'], condition_lower):
+            semantic_effect += 0.15  # Affirmation buffers threat
+        elif _any_word_in(['threat no affirm', 'self threat', 'ego threat',
+                           'identity threat', 'unaffirmed threat'], condition_lower):
+            semantic_effect -= 0.12
+
+        # Spontaneous self-affirmation (Pietersma & Dijkstra, 2012)
+        if _any_word_in(['spontaneous affirm', 'self-generated affirm',
+                         'reflect on strengths'], condition_lower):
+            semantic_effect += 0.12
+        elif _any_word_in(['other-affirm', 'affirm other person',
+                           'other strengths'], condition_lower):
+            semantic_effect += 0.05
+
+        # =====================================================================
+        # DOMAIN 29: AUTONOMY & SELF-DETERMINATION (v1.0.7.4)
+        # Deci & Ryan (2000): Self-Determination Theory -- autonomy, competence,
+        # and relatedness as basic psychological needs.
+        # Patall et al. (2008 meta): Choice d = 0.19 on intrinsic motivation.
+        # Moller et al. (2006): Autonomy support vs. control.
+        # =====================================================================
+
+        # Autonomy/choice manipulation (Patall et al., 2008)
+        if _any_word_in(['autonomy', 'free choice', 'autonomy support',
+                         'self-directed', 'choose freely'], condition_lower):
+            semantic_effect += 0.20
+        elif _any_word_in(['controlled', 'coerced', 'no choice',
+                           'forced', 'externally controlled'], condition_lower):
+            semantic_effect -= 0.18
+
+        # Competence feedback (Vallerand & Reid, 1984)
+        if _any_word_in(['competence', 'mastery', 'skill feedback',
+                         'positive competence', 'you are capable'], condition_lower):
+            semantic_effect += 0.15
+        elif _any_word_in(['incompetence', 'failure feedback',
+                           'negative competence', 'you failed'], condition_lower):
+            semantic_effect -= 0.15
+
+        # Relatedness/belonging (Baumeister & Leary, 1995)
+        if _any_word_in(['relatedness', 'belonging', 'socially connected',
+                         'included', 'part of group'], condition_lower):
+            semantic_effect += 0.12
+        elif _any_word_in(['excluded', 'ostracized', 'rejected',
+                           'socially isolated'], condition_lower):
+            semantic_effect -= 0.18
+
+        # Autonomy-supportive vs controlling language (Vansteenkiste et al., 2004)
+        if _any_word_in(['autonomy language', 'you may', 'consider trying',
+                         'you could'], condition_lower):
+            semantic_effect += 0.10
+        elif _any_word_in(['controlling language', 'you must', 'you should',
+                           'you have to'], condition_lower):
+            semantic_effect -= 0.10
+
+        # =====================================================================
+        # DOMAIN 30: SCARCITY & RESOURCE MANIPULATIONS (v1.0.7.4)
+        # Shah et al. (2012): Scarcity captures attention but impairs executive
+        # function ("tunneling"). Mullainathan & Shafir (2013): Scarcity mindset.
+        # Cialdini (2009): Scarcity as persuasion principle.
+        # Note: Resource scarcity x status is in Domain 18. This covers
+        # broader scarcity/abundance constructs.
+        # =====================================================================
+
+        # Scarcity induction (Shah et al., 2012)
+        if _any_word_in(['scarcity', 'scarce', 'limited supply',
+                         'running out', 'few remaining'], condition_lower):
+            semantic_effect -= 0.15  # Tunneling, urgency
+        elif _any_word_in(['abundance', 'abundant', 'plentiful',
+                           'unlimited supply', 'surplus'], condition_lower):
+            semantic_effect += 0.10
+
+        # Cognitive tunneling (Mullainathan & Shafir, 2013)
+        if _any_word_in(['tunneling', 'bandwidth tax', 'cognitive load scarcity',
+                         'scarcity mindset'], condition_lower):
+            semantic_effect -= 0.12
+        elif _any_word_in(['slack', 'mental bandwidth', 'cognitive surplus',
+                           'abundance mindset'], condition_lower):
+            semantic_effect += 0.08
+
+        # Time scarcity vs money scarcity (Hershfield et al., 2016)
+        if _any_word_in(['time scarcity', 'time poor', 'rushed'], condition_lower):
+            semantic_effect -= 0.14
+        elif _any_word_in(['time rich', 'time affluent', 'unhurried'], condition_lower):
+            semantic_effect += 0.08
+
+        # Persuasive scarcity (Cialdini, 2009)
+        if _any_word_in(['limited edition', 'exclusive offer', 'only a few left',
+                         'deadline offer'], condition_lower):
+            semantic_effect += 0.12  # Persuasion via scarcity
+        elif _any_word_in(['always available', 'no deadline', 'unlimited offer'], condition_lower):
+            semantic_effect -= 0.02
+
+        # =====================================================================
+        # DOMAIN 31: SLEEP & FATIGUE MANIPULATIONS (v1.0.7.4)
+        # Lim & Dinges (2010 meta): Sleep deprivation impairs attention d = 0.80,
+        # working memory d = 0.55, and mood d = 0.50.
+        # Killgore (2010): Sleep deprivation impairs moral judgment.
+        # Walker (2017): Sleep loss increases emotional reactivity.
+        # =====================================================================
+
+        # Sleep deprivation (Lim & Dinges, 2010)
+        if _any_word_in(['sleep deprived', 'sleep deprivation', 'no sleep',
+                         'sleep restricted', 'stayed awake'], condition_lower):
+            semantic_effect -= 0.20  # Significant cognitive impairment
+        elif _any_word_in(['well rested', 'full sleep', 'sleep sufficient',
+                           'good sleep', 'rested'], condition_lower):
+            semantic_effect += 0.12
+
+        # Fatigue induction (Baumeister et al., 1998; ego depletion)
+        if _any_word_in(['fatigued', 'exhausted', 'depleted',
+                         'ego depleted', 'mentally tired'], condition_lower):
+            semantic_effect -= 0.15
+        elif _any_word_in(['refreshed', 'energized', 'alert',
+                           'well-rested', 'fully awake'], condition_lower):
+            semantic_effect += 0.10
+
+        # Insomnia simulation (Fortier-Brochu et al., 2012)
+        if _any_word_in(['insomnia', 'poor sleep quality',
+                         'sleep disrupted', 'broken sleep'], condition_lower):
+            semantic_effect -= 0.15
+        elif _any_word_in(['sleep quality', 'restful sleep',
+                           'sleep hygiene'], condition_lower):
+            semantic_effect += 0.08
+
+        # Circadian mismatch (Goldstein et al., 2007)
+        if _any_word_in(['circadian mismatch', 'off-peak', 'wrong time of day'], condition_lower):
+            semantic_effect -= 0.10
+        elif _any_word_in(['circadian match', 'optimal time', 'peak time'], condition_lower):
+            semantic_effect += 0.08
+
+        # =====================================================================
+        # DOMAIN 32: MUSIC & MOOD INDUCTION (v1.0.7.4)
+        # Juslin & Vastfjall (2008): 6 mechanisms of musical emotion induction.
+        # Eerola & Vuoskoski (2013): Discrete emotions from music.
+        # Vastfjall (2002): Emotion induction via music more ecologically valid
+        # than Velten method. Note: Basic music is in Domain 14. This covers
+        # specific mood induction via music characteristics.
+        # =====================================================================
+
+        # Happy/upbeat music induction (Eerola & Vuoskoski, 2013)
+        if _any_word_in(['happy music', 'upbeat music', 'joyful music',
+                         'major key', 'fast tempo music'], condition_lower):
+            semantic_effect += 0.15
+        elif _any_word_in(['sad music', 'melancholy music', 'minor key',
+                           'slow tempo music', 'somber music'], condition_lower):
+            semantic_effect -= 0.12
+
+        # No music control (Vastfjall, 2002)
+        if _any_word_in(['no music condition', 'silence control',
+                         'quiet condition'], condition_lower):
+            semantic_effect += 0.0  # Neutral baseline
+
+        # Arousing music (Husain et al., 2002; Mozart effect reframed)
+        if _any_word_in(['arousing music', 'energizing music',
+                         'high tempo', 'stimulating music'], condition_lower):
+            semantic_effect += 0.10
+        elif _any_word_in(['calming music', 'relaxing music',
+                           'slow music', 'ambient music'], condition_lower):
+            semantic_effect += 0.05  # Both positive, arousing more so
+
+        # Music familiarity (van den Bosch et al., 2013)
+        if _any_word_in(['familiar music', 'preferred music', 'chosen music'], condition_lower):
+            semantic_effect += 0.12
+        elif _any_word_in(['unfamiliar music', 'random music', 'assigned music'], condition_lower):
+            semantic_effect += 0.03
+
+        # =====================================================================
+        # DOMAIN 33: NATURE & ENVIRONMENT EXPOSURE (v1.0.7.4)
+        # Bratman et al. (2019): Nature and mental health review.
+        # Kaplan (1995): Attention Restoration Theory -- nature restores
+        # directed attention. Ulrich (1984): Stress Reduction Theory.
+        # Note: Basic nature exposure is in Domain 14. This covers deeper
+        # nature vs urban and virtual nature constructs.
+        # =====================================================================
+
+        # Nature immersion (Bratman et al., 2015)
+        if _any_word_in(['nature walk', 'outdoor nature', 'green space walk',
+                         'forest bathing', 'park walk'], condition_lower):
+            semantic_effect += 0.18
+        elif _any_word_in(['urban walk', 'city walk', 'street walk',
+                           'traffic area'], condition_lower):
+            semantic_effect -= 0.08
+
+        # Virtual nature (White et al., 2018)
+        if _any_word_in(['virtual nature', 'nature video', 'nature images',
+                         'nature sounds', 'nature vr'], condition_lower):
+            semantic_effect += 0.10  # Weaker than real nature
+        elif _any_word_in(['office', 'indoor', 'windowless',
+                           'artificial light', 'cubicle'], condition_lower):
+            semantic_effect -= 0.05
+
+        # Biophilic design (Kellert, 2008)
+        if _any_word_in(['biophilic', 'plant in room', 'natural materials',
+                         'green view', 'window view nature'], condition_lower):
+            semantic_effect += 0.12
+        elif _any_word_in(['sterile environment', 'concrete room',
+                           'no window', 'artificial environment'], condition_lower):
+            semantic_effect -= 0.08
+
+        # Nature restoration (Kaplan, 1995; Attention Restoration Theory)
+        if _any_word_in(['restorative environment', 'attention restoration',
+                         'soft fascination'], condition_lower):
+            semantic_effect += 0.15
+        elif _any_word_in(['demanding environment', 'directed attention fatigue',
+                           'cognitive overload'], condition_lower):
+            semantic_effect -= 0.10
+
+        # =====================================================================
+        # DOMAIN 34: FOOD, HUNGER & CONSUMPTION (v1.0.7.4)
+        # Xu et al. (2015): Hunger increases acquisitive behavior.
+        # Danziger et al. (2011): Judges grant more parole after eating.
+        # Gal & Liu (2011): Hunger -> more favorable product evaluations.
+        # Bushman et al. (2014): Low glucose -> aggression in couples.
+        # =====================================================================
+
+        # Hunger manipulation (Xu et al., 2015)
+        if _any_word_in(['hungry', 'fasting', 'food deprived',
+                         'empty stomach', 'skipped meal'], condition_lower):
+            semantic_effect -= 0.12  # Acquisitive, less patient
+        elif _any_word_in(['satiated', 'fed', 'full stomach',
+                           'after meal', 'well fed'], condition_lower):
+            semantic_effect += 0.05
+
+        # Food cue exposure (Fedoroff et al., 1997)
+        if _any_word_in(['food cue', 'food image', 'food aroma',
+                         'appetizing', 'food exposure'], condition_lower):
+            semantic_effect += 0.08
+        elif _any_word_in(['no food cue', 'neutral cue', 'non-food'], condition_lower):
+            semantic_effect -= 0.02
+
+        # Diet/restriction (Herman & Polivy, 1980; restrained eating)
+        if _any_word_in(['diet', 'restrict', 'restrained eating',
+                         'calorie counting', 'food restriction'], condition_lower):
+            semantic_effect -= 0.10  # Cognitive load from restraint
+        elif _any_word_in(['unrestricted', 'eat freely', 'intuitive eating'], condition_lower):
+            semantic_effect += 0.05
+
+        # Glucose depletion (Gailliot et al., 2007)
+        if _any_word_in(['glucose depleted', 'low blood sugar',
+                         'no glucose', 'sugar free'], condition_lower):
+            semantic_effect -= 0.12
+        elif _any_word_in(['glucose drink', 'sugar drink', 'glucose boost'], condition_lower):
+            semantic_effect += 0.08
+
+        # =====================================================================
+        # DOMAIN 35: PAIN & PHYSICAL DISCOMFORT (v1.0.7.4)
+        # Bastian et al. (2014): Pain increases prosocial behavior and bonding.
+        # Borsook & MacDonald (2010): Pain and social exclusion share neural
+        # pathways. Eisenberger (2012): Social and physical pain overlap.
+        # Franklin et al. (2013): Pain tolerance individual differences.
+        # =====================================================================
+
+        # Pain induction (Bastian et al., 2014)
+        if _any_word_in(['pain', 'discomfort', 'painful stimulus',
+                         'pain condition', 'physical pain'], condition_lower):
+            semantic_effect -= 0.18  # Negative valence
+        elif _any_word_in(['comfort', 'relief', 'pain free',
+                           'no pain', 'comfortable'], condition_lower):
+            semantic_effect += 0.15
+
+        # Cold pressor task (Mitchell et al., 2004)
+        if _any_word_in(['cold pressor', 'ice water', 'cold water hand',
+                         'cold pain'], condition_lower):
+            semantic_effect -= 0.15
+        elif _any_word_in(['warm water', 'comfortable temperature',
+                           'neutral water'], condition_lower):
+            semantic_effect += 0.05
+
+        # Shared pain bonding (Bastian et al., 2014)
+        if _any_word_in(['shared pain', 'pain together', 'group pain',
+                         'collective suffering'], condition_lower):
+            semantic_effect += 0.10  # Shared pain -> bonding
+        elif _any_word_in(['pain alone', 'individual pain', 'solo suffering'], condition_lower):
+            semantic_effect -= 0.08
+
+        # Warmth/physical comfort (Bargh & Shalev, 2012)
+        if _any_word_in(['warm comfortable', 'cozy', 'warm environment',
+                         'heated room'], condition_lower):
+            semantic_effect += 0.08
+        elif _any_word_in(['cold room', 'uncomfortable temperature',
+                           'chilly', 'cold environment'], condition_lower):
+            semantic_effect -= 0.08
+
+        # =====================================================================
+        # DOMAIN 36: COLOR & VISUAL PROCESSING (v1.0.7.4)
+        # Elliot & Maier (2014): Color-in-context theory.
+        # Mehta & Zhu (2009): Red -> avoidance/detail; Blue -> approach/creativity.
+        # Labrecque & Milne (2012): Color effects on brand perception.
+        # Note: Basic color is in Domain 14. This covers deeper color
+        # associations and brightness/contrast effects.
+        # =====================================================================
+
+        # Red vs blue context effects (Mehta & Zhu, 2009)
+        if _any_word_in(['red stimulus', 'warm color', 'red environment',
+                         'red label'], condition_lower):
+            semantic_effect += 0.08  # Arousal, attention
+        elif _any_word_in(['blue stimulus', 'cool color', 'blue environment',
+                           'blue label'], condition_lower):
+            semantic_effect -= 0.05  # Calm, creative
+
+        # Brightness effects (Steidle & Werth, 2013)
+        if _any_word_in(['bright', 'well lit', 'high brightness',
+                         'brightly illuminated'], condition_lower):
+            semantic_effect += 0.10  # Clarity, positive judgment
+        elif _any_word_in(['dark', 'dim', 'low brightness',
+                           'poorly lit'], condition_lower):
+            semantic_effect -= 0.08  # Ambiguity, risk
+
+        # Green color (Lichtenfeld et al., 2012)
+        if _any_word_in(['green color', 'green stimulus', 'green environment'], condition_lower):
+            semantic_effect += 0.06  # Creativity boost
+        elif _any_word_in(['grey color', 'gray stimulus', 'neutral color'], condition_lower):
+            semantic_effect += 0.0  # Neutral
+
+        # Color saturation (Wilms & Oberfeld, 2018)
+        if _any_word_in(['saturated color', 'vivid color', 'high saturation'], condition_lower):
+            semantic_effect += 0.08  # More arousing
+        elif _any_word_in(['desaturated', 'muted color', 'low saturation',
+                           'pastel'], condition_lower):
+            semantic_effect -= 0.03  # Calming
+
+        # =====================================================================
+        # DOMAIN 37: LANGUAGE & FRAMING EFFECTS (v1.0.7.4)
+        # Fausey & Boroditsky (2011): Linguistic framing affects attribution.
+        # Tversky & Kahneman (1981): Framing effects on decision-making.
+        # Keysar et al. (2012): Foreign language effect reduces emotional bias.
+        # Pennebaker (2011): Pronoun use predicts psychological states.
+        # =====================================================================
+
+        # Active vs passive framing (Fausey & Boroditsky, 2011)
+        if _any_word_in(['active voice', 'active frame', 'agentive',
+                         'he broke', 'she caused'], condition_lower):
+            semantic_effect += 0.08  # More blame/responsibility
+        elif _any_word_in(['passive voice', 'passive frame',
+                           'it broke', 'accident happened'], condition_lower):
+            semantic_effect -= 0.05  # Less blame/responsibility
+
+        # First-person vs third-person (Kross & Ayduk, 2011)
+        if _any_word_in(['first person', 'i perspective', 'self-immersed',
+                         'my experience'], condition_lower):
+            semantic_effect += 0.10  # Greater emotional intensity
+        elif _any_word_in(['third person', 'observer perspective',
+                           'self-distanced', 'they perspective'], condition_lower):
+            semantic_effect -= 0.03  # More rational processing
+
+        # Foreign language effect (Keysar et al., 2012; Costa et al., 2014)
+        if _any_word_in(['foreign language', 'second language', 'non-native',
+                         'l2 framing'], condition_lower):
+            semantic_effect += 0.05  # More utilitarian/rational decisions
+        elif _any_word_in(['native language', 'first language', 'mother tongue',
+                           'l1 framing'], condition_lower):
+            semantic_effect += 0.02  # Stronger emotional response
+
+        # Gain vs loss framing (Tversky & Kahneman, 1981)
+        if _any_word_in(['gain frame', 'save lives', 'positive frame',
+                         'benefit frame'], condition_lower):
+            semantic_effect += 0.15
+        elif _any_word_in(['loss frame', 'people die', 'negative frame',
+                           'risk frame'], condition_lower):
+            semantic_effect -= 0.12
+
+        # Concrete vs abstract language (Semin & Fiedler, 1988; LCM)
+        if _any_word_in(['concrete language', 'specific description',
+                         'descriptive action'], condition_lower):
+            semantic_effect += 0.06
+        elif _any_word_in(['abstract language', 'trait description',
+                           'dispositional label'], condition_lower):
+            semantic_effect -= 0.04
+
+        # =====================================================================
+        # DOMAIN 38: SOCIAL STATUS & INEQUALITY (v1.0.7.4)
+        # Piff et al. (2010): Lower class -> more prosocial; higher class -> less.
+        # Kraus et al. (2012): Social class affects social cognition.
+        # Stephens et al. (2012): Cultural mismatch in institutions.
+        # Note: Basic status is in Domain 18. This covers class-specific
+        # and inequality-focused manipulations.
+        # =====================================================================
+
+        # High vs low SES priming (Piff et al., 2010)
+        if _any_word_in(['high status', 'wealthy prime', 'upper class prime',
+                         'high ses', 'rich condition'], condition_lower):
+            semantic_effect -= 0.12  # Less prosocial, more entitled
+        elif _any_word_in(['low status', 'poor prime', 'lower class prime',
+                           'low ses', 'disadvantaged condition'], condition_lower):
+            semantic_effect += 0.10  # More prosocial, communal
+
+        # Inequality salience (Cote et al., 2015)
+        if _any_word_in(['inequality', 'wealth gap', 'economic disparity',
+                         'unequal distribution'], condition_lower):
+            semantic_effect -= 0.15  # Negative affect, fairness concerns
+        elif _any_word_in(['equal status', 'equality', 'egalitarian',
+                           'fair distribution'], condition_lower):
+            semantic_effect += 0.05
+
+        # Status threat (Scheepers & Ellemers, 2005)
+        if _any_word_in(['status threat', 'losing status', 'status decline',
+                         'downward mobility'], condition_lower):
+            semantic_effect -= 0.15
+        elif _any_word_in(['status secure', 'stable position', 'status confirmed'], condition_lower):
+            semantic_effect += 0.08
+
+        # Meritocracy belief (Ledgerwood et al., 2011)
+        if _any_word_in(['meritocracy prime', 'earned success', 'hard work pays'], condition_lower):
+            semantic_effect += 0.10
+        elif _any_word_in(['systemic barriers', 'unearned privilege',
+                           'structural inequality'], condition_lower):
+            semantic_effect -= 0.10
+
+        # =====================================================================
         # v1.0.4.6: DOMAIN-AWARE EFFECT STACKING GUARD
         #
         # After all STEP 2 domains have been checked, apply two safeguards:

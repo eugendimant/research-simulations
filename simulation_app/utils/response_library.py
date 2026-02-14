@@ -63,7 +63,7 @@ association, impression, perception, feedback, comment, observation, general
 Version: 1.8.5 - Improved domain detection with weighted scoring and disambiguation
 """
 
-__version__ = "1.0.9.4"
+__version__ = "1.0.9.5"
 
 import random
 import re
@@ -3240,11 +3240,41 @@ DOMAIN_TEMPLATES: Dict[str, Dict[str, Dict[str, List[str]]]] = {
 
     "legal_psychology": {
         "explanation": {
-            "very_positive": ["The legal system worked fairly in this case.", "Justice was served appropriately.", "I trust the legal process.", "The procedures were handled correctly.", "The outcome was just and fair."],
-            "positive": ["The legal system generally worked well.", "Justice was mostly served.", "I have reasonable trust in the process.", "Procedures were adequate.", "The outcome was acceptable."],
-            "neutral": ["I have mixed views on the legal process.", "The system worked as expected.", "My trust in the legal process is average.", "Procedures were standard.", "The outcome was neither good nor bad."],
-            "negative": ["The legal process had some problems.", "Justice wasn't fully served.", "I have concerns about the process.", "Procedures could have been better.", "The outcome was somewhat unfair."],
-            "very_negative": ["The legal system failed.", "Justice was not served.", "I distrust the legal process.", "Procedures were mishandled.", "The outcome was unjust."],
+            "very_positive": [
+                "The legal system worked fairly in this case and I feel confident that due process was followed properly.",
+                "Justice was served appropriately and the outcome reflects a careful consideration of all the evidence.",
+                "I trust the legal process because it gave everyone involved a fair chance to be heard.",
+                "The procedures were handled correctly and transparently, which makes me feel the system works.",
+                "I came away from this believing that the legal system can deliver just outcomes when it functions properly.",
+            ],
+            "positive": [
+                "The legal system generally worked well here, even if there were minor imperfections in the process.",
+                "Justice was mostly served and the outcome seems reasonable given the circumstances.",
+                "I have reasonable trust in the legal process based on how this case was handled.",
+                "The procedures were adequate and the people involved seemed to take their roles seriously.",
+                "Overall the outcome was acceptable and I feel the key issues were addressed.",
+            ],
+            "neutral": [
+                "I have mixed views on how the legal process worked in this case because there were both strengths and weaknesses.",
+                "The system worked as expected, which means it was neither inspiring nor particularly disappointing.",
+                "My trust in the legal process is average after seeing how things played out here.",
+                "The procedures followed standard protocol, but that doesn't necessarily mean the outcome was fair.",
+                "I'm not sure whether the legal process produced the right result or not because it's genuinely complicated.",
+            ],
+            "negative": [
+                "The legal process had some real problems that undermine my confidence in the fairness of the outcome.",
+                "I don't think justice was fully served because important factors seemed to be overlooked or downplayed.",
+                "I have concerns about how the process was conducted, particularly regarding who got to be heard and who didn't.",
+                "The procedures could have been handled much better, and the gaps affected the quality of the outcome.",
+                "The outcome struck me as somewhat unfair and I'm left wondering if the system really works for everyone.",
+            ],
+            "very_negative": [
+                "The legal system fundamentally failed in this case and I'm deeply troubled by what happened.",
+                "Justice was not served and the outcome feels like a miscarriage of the principles the system claims to uphold.",
+                "I have lost trust in the legal process after seeing how poorly the procedures were handled.",
+                "The proceedings were mishandled in ways that directly affected the fairness of the result.",
+                "The outcome was unjust and it reinforces my belief that the legal system doesn't work equally for everyone.",
+            ],
         },
     },
 
@@ -3272,11 +3302,41 @@ DOMAIN_TEMPLATES: Dict[str, Dict[str, Dict[str, List[str]]]] = {
 
     "food_psychology": {
         "explanation": {
-            "very_positive": ["I have a healthy relationship with food.", "Eating brings me joy without guilt.", "I make nutritious choices naturally.", "Food is a positive part of my life.", "I enjoy eating mindfully."],
-            "positive": ["My relationship with food is generally good.", "I usually make healthy choices.", "Eating is mostly enjoyable.", "I have reasonable eating habits.", "Food is generally positive for me."],
-            "neutral": ["My relationship with food is average.", "Eating is neither particularly enjoyable nor stressful.", "My food choices are mixed.", "I don't think much about food.", "My eating habits are typical."],
-            "negative": ["I sometimes struggle with food choices.", "Eating can be stressful.", "My relationship with food has challenges.", "I make unhealthy choices sometimes.", "Food can be a source of stress."],
-            "very_negative": ["I have a difficult relationship with food.", "Eating causes significant stress.", "I struggle with food choices.", "My eating habits are problematic.", "Food is a major challenge for me."],
+            "very_positive": [
+                "I have a genuinely healthy and joyful relationship with food that I've cultivated over time.",
+                "Eating brings me pleasure without guilt, and I feel I've found a good balance between enjoyment and nutrition.",
+                "I make nutritious choices naturally because I've learned to listen to what my body actually needs.",
+                "Food is a wonderful and positive part of my life that connects me with culture, creativity, and other people.",
+                "I enjoy eating mindfully and appreciate the flavors, textures, and social aspects of meals.",
+            ],
+            "positive": [
+                "My relationship with food is generally healthy, though I have occasional indulgences that I don't stress about.",
+                "I usually make reasonably healthy food choices and feel good about my overall dietary patterns.",
+                "Eating is mostly an enjoyable experience for me and I don't overthink my food decisions.",
+                "I have reasonable eating habits and I try to balance nutrition with the pleasure of eating.",
+                "Food is a generally positive part of my life, even though I'm not perfect about my choices.",
+            ],
+            "neutral": [
+                "My relationship with food is pretty average and I don't spend a lot of energy thinking about eating patterns.",
+                "Eating is neither particularly enjoyable nor stressful for me, it's just something I do.",
+                "My food choices are mixed between healthy and unhealthy, depending on my mood and what's available.",
+                "I don't have strong feelings about food in general and my habits are fairly typical.",
+                "My relationship with food is unremarkable and I eat without much deliberation most of the time.",
+            ],
+            "negative": [
+                "I sometimes struggle with food choices and feel guilty about what I eat more often than I'd like.",
+                "Eating can be stressful for me because I'm caught between wanting to enjoy food and worrying about health.",
+                "My relationship with food has its challenges, including emotional eating and inconsistent habits.",
+                "I make unhealthy food choices more often than I should and I'm not happy about my eating patterns.",
+                "Food has become a source of stress and internal conflict for me rather than something purely enjoyable.",
+            ],
+            "very_negative": [
+                "I have a genuinely difficult relationship with food that affects my daily life and emotional wellbeing.",
+                "Eating causes me significant stress and anxiety, and I often feel out of control around food.",
+                "I struggle deeply with food choices and my eating patterns have become a source of real distress.",
+                "My eating habits are problematic and I feel trapped in cycles that I can't seem to break.",
+                "Food is one of the biggest challenges in my life and it affects my self-esteem, social life, and health.",
+            ],
         },
     },
 
@@ -3334,11 +3394,41 @@ DOMAIN_TEMPLATES: Dict[str, Dict[str, Dict[str, List[str]]]] = {
 
     "user_experience": {
         "explanation": {
-            "very_positive": ["The interface was intuitive and easy to use.", "I had an excellent user experience.", "Everything worked exactly as expected.", "The design made my task effortless.", "I would highly recommend this experience."],
-            "positive": ["The interface was reasonably easy to use.", "The user experience was good.", "Most things worked as expected.", "The design was helpful.", "I had a positive experience overall."],
-            "neutral": ["The interface was average.", "The user experience was neither good nor bad.", "Some things worked, some didn't.", "The design was adequate.", "My experience was unremarkable."],
-            "negative": ["The interface was somewhat confusing.", "The user experience could be improved.", "Several things didn't work as expected.", "The design hindered my task.", "I had a frustrating experience."],
-            "very_negative": ["The interface was very confusing.", "The user experience was poor.", "Nothing worked as expected.", "The design made my task impossible.", "I would not recommend this."],
+            "very_positive": [
+                "The interface was intuitive and I was able to accomplish everything I needed without any confusion or hesitation.",
+                "I had an excellent user experience because the design anticipated my needs and made every step feel natural.",
+                "Everything worked exactly as I expected and the flow from one step to the next was seamless.",
+                "The design made my task genuinely effortless, and I appreciated the attention to detail in the layout and interactions.",
+                "I would highly recommend this experience to others because it was polished, responsive, and easy to navigate.",
+            ],
+            "positive": [
+                "The interface was reasonably easy to use and I was able to figure out most features without help.",
+                "The user experience was good overall, with just a few minor things that could be slightly better.",
+                "Most things worked as I expected them to, and the overall design was clean and helpful.",
+                "I had a positive experience and the design choices generally made sense for what I was trying to do.",
+                "The interface was well-organized and I didn't encounter any major obstacles completing my task.",
+            ],
+            "neutral": [
+                "The interface was average and neither particularly impressive nor problematic to use.",
+                "The user experience was mixed, with some aspects working smoothly and others requiring extra effort.",
+                "Some features worked well and others felt clunky, so my overall impression is fairly neutral.",
+                "The design was adequate for getting things done, but nothing about the experience stood out to me.",
+                "My experience was unremarkable, which I suppose means it didn't get in my way too much.",
+            ],
+            "negative": [
+                "The interface was somewhat confusing and I had to spend extra time figuring out how to do basic things.",
+                "The user experience could be significantly improved because several interactions felt unintuitive.",
+                "I found the design frustrating at times because it didn't match my expectations for how things should work.",
+                "Several features didn't behave as I expected, which slowed me down and created unnecessary friction.",
+                "I had a somewhat frustrating experience because the interface seemed to work against me rather than with me.",
+            ],
+            "very_negative": [
+                "The interface was very confusing and I struggled to complete even simple tasks without getting lost.",
+                "The user experience was genuinely poor, with confusing navigation, unresponsive elements, and unclear labels.",
+                "Nothing worked the way I expected it to and the design made my task far harder than it should have been.",
+                "The design actively hindered my ability to accomplish what I came to do and I felt frustrated throughout.",
+                "I would not recommend this to anyone because the experience was confusing, slow, and poorly designed.",
+            ],
         },
     },
 
@@ -3366,11 +3456,41 @@ DOMAIN_TEMPLATES: Dict[str, Dict[str, Dict[str, List[str]]]] = {
 
     "cross_cultural": {
         "explanation": {
-            "very_positive": ["I embrace cultural diversity.", "Cross-cultural experiences enrich my life.", "I adapt well to different cultures.", "I value learning from other cultures.", "Cultural differences fascinate me."],
-            "positive": ["I appreciate cultural diversity.", "Cross-cultural experiences are valuable.", "I adapt reasonably well to different cultures.", "I'm interested in other cultures.", "Cultural differences are interesting."],
-            "neutral": ["I have average interest in cultural diversity.", "Cross-cultural experiences are neither important nor unimportant.", "I adapt somewhat to different cultures.", "Culture is just one factor.", "I'm neutral about cultural differences."],
-            "negative": ["Cultural differences can be challenging.", "Cross-cultural experiences are sometimes difficult.", "I struggle to adapt to different cultures.", "I prefer my own culture.", "Cultural differences are confusing."],
-            "very_negative": ["Cultural differences are very challenging.", "Cross-cultural experiences are stressful.", "I can't adapt to different cultures.", "I strongly prefer my own culture.", "Cultural differences are problematic."],
+            "very_positive": [
+                "I genuinely embrace cultural diversity and find that cross-cultural interactions make my life richer and more interesting.",
+                "Learning about different cultural perspectives has been one of the most rewarding aspects of my personal growth.",
+                "I adapt well to different cultures because I approach differences with curiosity rather than judgment.",
+                "Cross-cultural experiences have taught me that there are many valid ways to live and think about the world.",
+                "Cultural differences fascinate me and I actively seek out opportunities to engage with people from different backgrounds.",
+            ],
+            "positive": [
+                "I appreciate cultural diversity and try to be respectful and open when encountering different customs and values.",
+                "Cross-cultural experiences are valuable to me, even when they push me outside my comfort zone.",
+                "I adapt reasonably well to different cultures, though I recognize I still have biases to work through.",
+                "I'm interested in learning about other cultures and believe it makes me a more well-rounded person.",
+                "Cultural differences are interesting to me and I generally see them as enriching rather than threatening.",
+            ],
+            "neutral": [
+                "I have mixed feelings about cultural diversity because while it's enriching, it can also be confusing or challenging.",
+                "Cross-cultural experiences are neither particularly important nor unimportant to me personally.",
+                "I adapt somewhat to different cultures but don't go out of my way to seek cross-cultural interactions.",
+                "Culture is just one of many factors that shape people, and I don't think about it constantly.",
+                "I'm fairly neutral about cultural differences and take them as they come without strong reactions.",
+            ],
+            "negative": [
+                "Cultural differences can be genuinely challenging to navigate, and I sometimes feel lost or uncomfortable.",
+                "I find cross-cultural interactions difficult because I'm never sure if I'm doing or saying the right thing.",
+                "I struggle to adapt to unfamiliar cultural contexts and tend to prefer environments I'm familiar with.",
+                "I lean toward preferring my own cultural context because it feels more natural and less stressful.",
+                "Cultural differences sometimes create misunderstandings that I find frustrating and hard to resolve.",
+            ],
+            "very_negative": [
+                "Cultural differences are very challenging for me and cross-cultural situations make me genuinely uncomfortable.",
+                "I find cross-cultural experiences stressful because the expectations and norms feel unpredictable.",
+                "I struggle significantly to adapt to different cultures and often feel like an outsider.",
+                "I strongly prefer staying within my own cultural context where I understand how things work.",
+                "Cultural differences have caused me real problems in communication and relationships, and I find them overwhelming.",
+            ],
         },
     },
 
@@ -3388,11 +3508,41 @@ DOMAIN_TEMPLATES: Dict[str, Dict[str, Dict[str, List[str]]]] = {
 
     "gratitude": {
         "explanation": {
-            "very_positive": ["I feel deeply grateful.", "I appreciate so many things in my life.", "Gratitude is central to my wellbeing.", "I regularly count my blessings.", "I'm thankful for what I have."],
-            "positive": ["I feel grateful.", "I appreciate good things in my life.", "Gratitude is important to me.", "I often feel thankful.", "I recognize my blessings."],
-            "neutral": ["I feel average gratitude.", "I sometimes appreciate things.", "Gratitude isn't particularly prominent.", "I occasionally feel thankful.", "I'm somewhat aware of blessings."],
-            "negative": ["I struggle to feel grateful.", "I don't appreciate things as much as I should.", "Gratitude is difficult for me.", "I rarely feel thankful.", "I focus more on what's missing."],
-            "very_negative": ["I feel very little gratitude.", "I don't appreciate what I have.", "Gratitude is foreign to me.", "I never feel thankful.", "I only see what's lacking."],
+            "very_positive": [
+                "I feel deeply grateful for the people, opportunities, and experiences that fill my life.",
+                "Gratitude is genuinely central to my wellbeing, and I make a conscious effort to appreciate what I have.",
+                "I regularly count my blessings and that practice has made me a happier and more content person.",
+                "I appreciate so many things in my life, from my relationships to my health to simple daily pleasures.",
+                "I'm truly thankful for what I have and I try to express that appreciation to the people around me.",
+            ],
+            "positive": [
+                "I feel grateful for the good things in my life and try to keep perspective on what matters.",
+                "Gratitude is important to me and I notice the positive aspects of my life more often than not.",
+                "I often feel thankful for the people who support me and the opportunities I've had.",
+                "I recognize my blessings and try not to take the good things in my life for granted.",
+                "I appreciate the positive aspects of my life, even though I don't always stop to acknowledge them.",
+            ],
+            "neutral": [
+                "My sense of gratitude is fairly average and depends on what's happening in my life at any given time.",
+                "I sometimes appreciate the good things in my life but I don't actively practice gratitude.",
+                "Gratitude isn't particularly prominent in my daily thinking, though I do feel thankful occasionally.",
+                "I have a mixed relationship with gratitude because while I know I should be thankful, I also see what's lacking.",
+                "I'm somewhat aware of my blessings but I wouldn't say gratitude is a defining feature of my personality.",
+            ],
+            "negative": [
+                "I struggle to feel grateful because I tend to focus on what's wrong or missing in my life.",
+                "I know I should appreciate what I have more, but gratitude doesn't come naturally to me.",
+                "Gratitude is genuinely difficult for me, especially when I'm going through hard times.",
+                "I rarely feel thankful because my attention is drawn to problems and challenges rather than blessings.",
+                "I focus more on what's missing in my life than on what I have, which I realize isn't healthy.",
+            ],
+            "very_negative": [
+                "I feel very little gratitude because my life circumstances make it hard to see the positive.",
+                "I don't appreciate what I have because I'm too consumed by stress, disappointment, and unmet needs.",
+                "Gratitude feels foreign to me and I genuinely struggle to find things to be thankful for.",
+                "I almost never feel thankful because it seems like things are always going wrong for me.",
+                "I can only see what's lacking in my life and gratitude seems like something other, luckier people feel.",
+            ],
         },
     },
 
@@ -3450,11 +3600,41 @@ DOMAIN_TEMPLATES: Dict[str, Dict[str, Dict[str, List[str]]]] = {
 
     "gender_roles": {
         "explanation": {
-            "very_positive": ["I embrace flexible gender roles.", "Traditional roles don't define me.", "I believe in gender equality.", "People should choose their own roles.", "Gender shouldn't limit anyone."],
-            "positive": ["I support flexible gender roles.", "Traditional roles aren't essential.", "I lean toward gender equality.", "Roles should be chosen individually.", "Gender shouldn't be limiting."],
-            "neutral": ["I have mixed views on gender roles.", "Some traditional roles make sense.", "I'm moderate on gender equality.", "Context matters for roles.", "Gender role views vary."],
-            "negative": ["I lean toward traditional gender roles.", "Some distinctions are natural.", "Complete equality isn't realistic.", "Biology influences roles.", "Traditional patterns have value."],
-            "very_negative": ["I believe in traditional gender roles.", "Men and women have different roles.", "Traditional distinctions are important.", "Biology determines roles.", "Traditional patterns should continue."],
+            "very_positive": [
+                "I strongly embrace flexible gender roles and believe everyone should be free to define their own path regardless of gender.",
+                "Traditional gender roles don't define me, and I think society benefits when people can contribute based on their strengths rather than their gender.",
+                "I believe deeply in gender equality because I've seen how restrictive expectations hurt people of all genders.",
+                "People should absolutely choose their own roles in life, and gender shouldn't be a limiting factor in any domain.",
+                "Gender shouldn't limit anyone's aspirations, career choices, or how they express themselves in relationships.",
+            ],
+            "positive": [
+                "I support flexible gender roles and think society is moving in the right direction on this issue.",
+                "Traditional roles aren't essential to a good life, and I think people should have the freedom to choose differently.",
+                "I lean toward gender equality in most contexts, even though I recognize change can be gradual.",
+                "I believe roles in families and workplaces should be chosen based on individual preferences, not gender expectations.",
+                "Gender shouldn't be a primary factor in determining what people can do or how they're treated.",
+            ],
+            "neutral": [
+                "I have mixed views on gender roles because I can see arguments for both traditional and progressive approaches.",
+                "Some traditional gender role distinctions seem to work for some people, while others find them constraining.",
+                "I'm moderate on gender equality issues and think the right approach depends on the specific context.",
+                "I think context matters a lot when discussing gender roles, and blanket statements in either direction feel too simplistic.",
+                "My views on gender roles vary depending on the specific issue and I don't identify strongly with either camp.",
+            ],
+            "negative": [
+                "I lean toward traditional gender roles because I think they reflect some real differences that shouldn't be ignored.",
+                "I believe some gender distinctions are natural and trying to eliminate all of them creates its own problems.",
+                "I'm skeptical that complete gender equality is achievable or even desirable in all domains.",
+                "I think biological differences between genders have real implications for social roles that we shouldn't dismiss.",
+                "Traditional patterns in gender roles have existed for good reasons and I think we're too quick to discard them.",
+            ],
+            "very_negative": [
+                "I believe strongly in traditional gender roles because I think they provide structure and stability that benefits families.",
+                "Men and women have fundamentally different strengths and roles, and I think society works best when those are respected.",
+                "Traditional gender distinctions are important to me and I worry about what happens when they're eroded.",
+                "I believe biology plays a major role in determining appropriate roles for men and women in society.",
+                "I think traditional gender role patterns should be maintained because departing from them has caused many social problems.",
+            ],
         },
     },
 
