@@ -159,7 +159,7 @@ Based on recent LLM simulation research:
 """
 
 # Version identifier to help track deployed code
-__version__ = "1.0.9.0"  # v1.0.9.0: SocSim 10-iteration improvement — 12 strategies, calibration, game families
+__version__ = "1.0.9.1"  # v1.0.9.1: UX redesign, engine improvements, additional context flow
 
 import hashlib
 import random
