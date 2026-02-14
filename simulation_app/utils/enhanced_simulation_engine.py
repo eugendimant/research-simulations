@@ -45,7 +45,7 @@ This module is designed to run inside a `utils/` package (i.e., imported as
 """
 
 # Version identifier to help track deployed code
-__version__ = "1.0.9.0"  # v1.0.9.0: SocSim 10-iteration improvement — 12 strategies, calibration, game families
+__version__ = "1.0.9.1"  # v1.0.9.1: UX redesign, engine improvements, additional context flow
 
 # =============================================================================
 # SCIENTIFIC FOUNDATIONS FOR SIMULATION
@@ -7826,6 +7826,10 @@ class EnhancedSimulationEngine:
             # v1.0.1.2: Include condition in context for tighter prompt grounding
             if condition:
                 question_text += f"\nCondition: {condition}"
+            # v1.0.9.1: Include additional simulation context if provided
+            _add_ctx = self.study_context.get("additional_context", "")
+            if _add_ctx:
+                question_text += f"\nAdditional context: {_add_ctx[:200]}"
         elif question_text and " " not in question_text.strip():
             # v1.4.11: If question_text looks like a variable name (no spaces),
             # build a richer question from study context so LLM/template can
@@ -9925,6 +9929,11 @@ class EnhancedSimulationEngine:
                 except Exception as _bp_err:
                     logger.warning("Behavioral profile build failed for participant %d: %s", i + 1, _bp_err)
                     _beh_profile = {'response_mean': response_mean, 'persona_name': 'Default'}
+
+                # v1.0.9.1: Pass additional simulation context to generators
+                _add_ctx = self.study_context.get("additional_context", "")
+                if _add_ctx:
+                    _beh_profile['additional_context'] = _add_ctx
 
                 # v1.0.5.7: Inject cross-response voice memory into profile.
                 # Now always available (pre-initialized before OE loop).

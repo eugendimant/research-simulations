@@ -21,7 +21,7 @@ Architecture:
 Version: 1.0.8.0
 """
 
-__version__ = "1.0.9.0"
+__version__ = "1.0.9.1"
 
 import hashlib
 import json
@@ -347,7 +347,30 @@ SYSTEM_PROMPT = (
     "about 'being a good survey participant'. Their text reflects the DECISION "
     "mechanism (how much to keep/give/take) not the survey experience. When numeric "
     "allocations are negative (taking), the text MUST reference and justify taking "
-    "from the other person."
+    "from the other person.\n\n"
+    "===== RULE #18 — ADDITIONAL CONTEXT INTEGRATION (v1.0.9.1) =====\n"
+    "When an ADDITIONAL STUDY CONTEXT block is provided from the researcher, "
+    "it contains critical information about the study setting, participant "
+    "population, or special instructions. Use this to ground responses in "
+    "the specific population (e.g., MTurk workers, students, clinical patients) "
+    "and setting (e.g., online survey, lab experiment). This makes responses "
+    "sound like they come from THAT specific population, not generic participants.\n\n"
+    "===== RULE #19 — CULTURAL & DEMOGRAPHIC AUTHENTICITY (v1.0.9.1) =====\n"
+    "When age_group or education demographics are specified, make writing style "
+    "match. An 18-year-old writes differently from a 55-year-old. A college "
+    "student uses different vocabulary than someone with a GED. Young people: "
+    "more slang, abbreviations, pop culture references. Older: more complete "
+    "sentences, formal-ish, life experience references. Education shapes "
+    "vocabulary complexity, not opinion quality — poorly educated people can "
+    "have strong, articulate opinions expressed in simple words.\n\n"
+    "===== RULE #20 — AVOID MONOTONIC SENTIMENT EXPRESSION (v1.0.9.1) =====\n"
+    "Even very positive or very negative raters don't express pure one-note "
+    "sentiment. A very positive rater might say 'I loved it, though the survey "
+    "was kinda long lol' — mixing positive content evaluation with a mild side "
+    "complaint. A very negative rater might say 'I mean the idea was fine but "
+    "the execution was terrible' — acknowledging something positive before their "
+    "main criticism. Real opinions have TEXTURE, not monotone. About 30% of "
+    "responses should include a minor counter-sentiment element for realism."
 )
 
 # ---------------------------------------------------------------------------
@@ -1002,6 +1025,63 @@ def _build_batch_prompt(
             "Conditional cooperators (~50%) match others' contributions.\n"
             "╚═══════════════════════════════════════════╝\n"
         )
+    # v1.0.9.1: Expanded paradigm recognizers (Iteration 1-3)
+    elif any(kw in _combined_lower for kw in ['prisoner', 'dilemma', 'cooperat', 'defect']):
+        _theory_guidance = (
+            "\n╔══ BEHAVIORAL THEORY: PRISONER'S DILEMMA / COOPERATION ══╗\n"
+            "THEORETICAL BASIS (Axelrod 1984; Rand et al. 2014):\n"
+            "~50-60% cooperate in one-shot PD. Cooperation is intuitive (fast decisions\n"
+            "= more cooperation). Repeated play: tit-for-tat dominates. Responses\n"
+            "reflect tension between self-interest and mutual benefit.\n"
+            "╚══════════════════════════════════════════════════════════╝\n"
+        )
+    elif any(kw in _combined_lower for kw in ['moral', 'trolley', 'dilemma', 'ethical']):
+        if 'trolley' in _combined_lower or 'dilemma' in _combined_lower:
+            _theory_guidance = (
+                "\n╔══ BEHAVIORAL THEORY: MORAL DILEMMA ══╗\n"
+                "THEORETICAL BASIS (Greene et al. 2001; Cushman 2013):\n"
+                "~30% choose utilitarian (maximize total welfare), ~70% deontological\n"
+                "(avoid directly harming). Personal dilemmas evoke stronger emotional\n"
+                "responses than impersonal ones. Responses should reflect moral\n"
+                "reasoning and emotional conflict.\n"
+                "╚═════════════════════════════════════════╝\n"
+            )
+    elif any(kw in _combined_lower for kw in ['risk', 'gamble', 'lottery', 'probabilit']):
+        _theory_guidance = (
+            "\n╔══ BEHAVIORAL THEORY: RISK DECISION ══╗\n"
+            "THEORETICAL BASIS (Kahneman & Tversky 1979; Holt & Laury 2002):\n"
+            "Most people are risk-averse for gains, risk-seeking for losses.\n"
+            "~65% are risk-averse. Certainty effect: disproportionate weight\n"
+            "on guaranteed outcomes. Loss aversion ~2:1 ratio.\n"
+            "╚═════════════════════════════════════════╝\n"
+        )
+    elif any(kw in _combined_lower for kw in ['negotiat', 'bargain']):
+        _theory_guidance = (
+            "\n╔══ BEHAVIORAL THEORY: NEGOTIATION ══╗\n"
+            "THEORETICAL BASIS (Nash 1950; Raiffa 1982):\n"
+            "Anchoring effects dominate opening offers. First offers strongly predict\n"
+            "outcomes. BATNA awareness varies. Integrative vs. distributive styles\n"
+            "produce different response patterns and emotional tone.\n"
+            "╚══════════════════════════════════════╝\n"
+        )
+    elif any(kw in _combined_lower for kw in ['stereotype', 'threat', 'diagnostic']):
+        _theory_guidance = (
+            "\n╔══ BEHAVIORAL THEORY: STEREOTYPE THREAT ══╗\n"
+            "THEORETICAL BASIS (Steele & Aronson 1995; Nguyen & Ryan 2008):\n"
+            "Diagnostic framing reduces performance (d ≈ 0.26). Threatened\n"
+            "individuals show anxiety, effort justification, and domain\n"
+            "disidentification. Non-diagnostic framing removes the threat.\n"
+            "╚══════════════════════════════════════════════╝\n"
+        )
+    elif any(kw in _combined_lower for kw in ['punish', 'sanction', 'norm enforce', 'third party']):
+        _theory_guidance = (
+            "\n╔══ BEHAVIORAL THEORY: PUNISHMENT / NORM ENFORCEMENT ══╗\n"
+            "THEORETICAL BASIS (Fehr & Gächter 2002; Henrich et al. 2006):\n"
+            "~60% of people are willing to pay costs to punish defectors.\n"
+            "Altruistic punishment increases cooperation. Third-party punishers\n"
+            "are less harsh than second-party (~30% vs ~60% punishment rate).\n"
+            "╚═══════════════════════════════════════════════════════╝\n"
+        )
 
     # v1.8.3: Build question-type style guidance
     _qtype_guidance = _question_type_style_guidance(question_type)
@@ -1032,6 +1112,21 @@ def _build_batch_prompt(
             "their personality and engagement level.\n"
         )
 
+    # v1.0.9.1: Pass additional simulation context from user if available
+    _additional_context_block = ""
+    for spec in persona_specs:
+        _beh = spec.get("behavioral_profile", {})
+        if isinstance(_beh, dict):
+            _add_ctx = _beh.get("additional_context", "")
+            if _add_ctx:
+                _additional_context_block = (
+                    f"\n╔══ ADDITIONAL STUDY CONTEXT (from researcher) ══╗\n"
+                    f"{_add_ctx[:400]}\n"
+                    f"Use this context to make responses more realistic and grounded.\n"
+                    f"╚════════════════════════════════════════════════╝\n"
+                )
+                break  # Same context for all specs
+
     prompt = (
         f'Study: "{study_title}"\n'
         f"Study description: {study_description[:800]}\n"
@@ -1039,6 +1134,7 @@ def _build_batch_prompt(
         f"{_condition_explanation}\n"
         f'Survey question: "{_q_display}"\n'
         f"{_question_context_block}\n"
+        f"{_additional_context_block}"
         f"{_theory_guidance}"
         f"{_qtype_guidance}\n\n"
         f"{_voice_guidance}"
@@ -1135,6 +1231,18 @@ def _build_batch_prompt(
         f"the whole thing was kind of'), a tangent ('speaking of which'), "
         f"a slight misunderstanding of the question, or text-speak mixed "
         f"with normal writing. Real datasets are NOT clean.\n\n"
+        f"13. SENTIMENT TEXTURE — Even strongly positive/negative raters "
+        f"include minor counter-sentiment elements ~30% of the time. "
+        f"A positive rater: 'loved the idea even though parts were confusing'. "
+        f"A negative rater: 'I get what they were going for but it missed'. "
+        f"Pure monotone sentiment (ALL positive or ALL negative words) "
+        f"is a telltale sign of AI generation. Mix in texture.\n\n"
+        f"14. POPULATION GROUNDING — If additional study context mentions "
+        f"a specific population (students, MTurk workers, patients, etc.), "
+        f"write as if the participant IS from that population. MTurk workers "
+        f"are experienced survey takers — they write efficiently, sometimes "
+        f"meta-aware. Students reference campus life. Patients reference "
+        f"health experiences. Match the population's voice.\n\n"
         f"Return ONLY a JSON array of {n} strings (one per participant), "
         f"no other text:\n"
         f'["response 1", "response 2", ...]'

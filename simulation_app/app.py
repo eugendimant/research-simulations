@@ -54,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.0.9.0"
-BUILD_ID = "20260214-v10900-socsim-10-iterations"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.0.9.1"
+BUILD_ID = "20260214-v10901-ux-redesign-engine-improvements"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -118,7 +118,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.0.9.0"  # v1.0.9.0: SocSim 10-iteration improvement — 12 strategies, calibration, game families
+APP_VERSION = "1.0.9.1"  # v1.0.9.1: UX redesign, engine improvements, additional context flow
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -9736,11 +9736,13 @@ if active_page == 2:
         if _oe_removal_notice:
             st.info(_oe_removal_notice)
 
+        # v1.0.9.1: Keep expander open after add/remove so user doesn't lose context
+        _oe_expander_open = st.session_state.pop("_oe_keep_expanded", False) or False
         with st.expander(
             f"Review & edit open-ended questions ({_oe_count_display}) — {_ctx_pre_count}/{_oe_count_display} have context"
             if _oe_count_display > 0
             else "Add open-ended questions (optional)",
-            expanded=False,
+            expanded=_oe_expander_open,
         ):
 
             # Initialize open-ended state
@@ -9850,8 +9852,7 @@ if active_page == 2:
                         st.session_state.pop(f"{_prefix}{oe_version}_{_ci}", None)
                 st.session_state["confirmed_open_ended"] = updated_open_ended
                 st.session_state["_oe_version"] = oe_version + 1
-                # v1.0.1.4: Use st.rerun() instead of _navigate_to(2) to avoid
-                # closing the expander and scrolling to top on removal
+                st.session_state["_oe_keep_expanded"] = True  # v1.0.9.1: Keep expander open
                 st.rerun()
 
             # v1.0.1.4: Action buttons row — Add + Remove All
@@ -9868,6 +9869,7 @@ if active_page == 2:
                     confirmed_open_ended.append(new_oe)
                     st.session_state["confirmed_open_ended"] = confirmed_open_ended
                     st.session_state["_oe_version"] = oe_version + 1
+                    st.session_state["_oe_keep_expanded"] = True  # v1.0.9.1: Keep expander open
                     st.rerun()
             with _oe_btn_col2:
                 if confirmed_open_ended and len(confirmed_open_ended) > 1:
@@ -9880,6 +9882,7 @@ if active_page == 2:
                         st.session_state["confirmed_open_ended"] = []
                         st.session_state["_oe_version"] = oe_version + 1
                         st.session_state["_oe_removal_notice"] = f"Removed all {_n_removed} open-ended questions."
+                        st.session_state["_oe_keep_expanded"] = True  # v1.0.9.1: Keep expander open
                         st.rerun()
 
             # Only update confirmed_open_ended if there were actual changes
@@ -9938,45 +9941,118 @@ if active_page == 2:
         else:
             st.session_state["open_ended_confirmed"] = True  # Nothing to confirm
 
-        # ── Attention & Manipulation Checks (collapsed) ──────────────
+        # ── Attention & Manipulation Checks (editable) ──────────────
         preview = st.session_state.get("qsf_preview")
-        detected_attention = preview.attention_checks if preview and hasattr(preview, 'attention_checks') else []
+        _raw_attention = preview.attention_checks if preview and hasattr(preview, 'attention_checks') else []
         detected_manipulation = []
         enhanced_analysis = st.session_state.get("enhanced_analysis")
         if enhanced_analysis and hasattr(enhanced_analysis, 'manipulation_checks'):
             detected_manipulation = enhanced_analysis.manipulation_checks
 
-        _attn_count = len(detected_attention)
-        _manip_count = len(detected_manipulation)
-        _checks_label = f"Attention & manipulation checks ({_attn_count + _manip_count} detected)" if (_attn_count + _manip_count) > 0 else "Attention & manipulation checks"
+        # v1.0.9.1: Editable attention/manipulation check lists with add/remove
+        _checks_version = st.session_state.get("_checks_version", 0)
+        if "confirmed_attention_checks" not in st.session_state:
+            st.session_state["confirmed_attention_checks"] = list(_raw_attention)
+        if "confirmed_manipulation_checks" not in st.session_state:
+            st.session_state["confirmed_manipulation_checks"] = list(detected_manipulation)
+
+        _confirmed_attn = st.session_state.get("confirmed_attention_checks", [])
+        _confirmed_manip = st.session_state.get("confirmed_manipulation_checks", [])
+        _attn_count = len(_confirmed_attn)
+        _manip_count = len(_confirmed_manip)
+
+        # Show removal notice outside expander
+        _check_removal_notice = st.session_state.pop("_check_removal_notice", None)
+        if _check_removal_notice:
+            st.info(_check_removal_notice)
+
+        _checks_label = f"Attention & manipulation checks ({_attn_count + _manip_count})" if (_attn_count + _manip_count) > 0 else "Attention & manipulation checks (none yet)"
         with st.expander(_checks_label, expanded=False):
             col_attn, col_manip = st.columns(2)
+
+            # --- Attention Checks column ---
             with col_attn:
                 st.markdown("**Attention Checks**")
-                if detected_attention:
-                    for check in detected_attention[:5]:
-                        st.caption(f"\u2713 {check[:50]}{'...' if len(str(check)) > 50 else ''}")
+                if _confirmed_attn:
+                    _attn_to_remove: list = []
+                    for _ai, _acheck in enumerate(_confirmed_attn):
+                        _ac1, _ac2 = st.columns([5, 1])
+                        with _ac1:
+                            st.caption(f"{_acheck[:60]}{'...' if len(str(_acheck)) > 60 else ''}")
+                        with _ac2:
+                            if st.button("✕", key=f"rm_attn_v{_checks_version}_{_ai}", help="Remove this check"):
+                                _attn_to_remove.append(_ai)
+                    if _attn_to_remove:
+                        _new_attn = [c for _j, c in enumerate(_confirmed_attn) if _j not in _attn_to_remove]
+                        st.session_state["confirmed_attention_checks"] = _new_attn
+                        st.session_state["_checks_version"] = _checks_version + 1
+                        st.session_state["_check_removal_notice"] = f"Removed {len(_attn_to_remove)} attention check(s)."
+                        st.rerun()
                 else:
-                    st.caption("None detected")
-                manual_attention = st.text_area(
-                    "Add attention checks (one per line)",
-                    key="manual_attention_checks",
-                    height=80,
-                    placeholder="Q15_Attention"
+                    st.caption("None yet — add below")
+
+                _add_attn_name = st.text_input(
+                    "Add attention check",
+                    key=f"add_attn_input_v{_checks_version}",
+                    placeholder="e.g., Q15_Attention",
+                    label_visibility="collapsed",
                 )
+                if st.button("+ Add", key=f"add_attn_btn_v{_checks_version}"):
+                    if _add_attn_name.strip():
+                        _confirmed_attn.append(_add_attn_name.strip())
+                        st.session_state["confirmed_attention_checks"] = _confirmed_attn
+                        st.session_state["_checks_version"] = _checks_version + 1
+                        st.rerun()
+
+            # --- Manipulation Checks column ---
             with col_manip:
                 st.markdown("**Manipulation Checks**")
-                if detected_manipulation:
-                    for check in detected_manipulation[:5]:
-                        st.caption(f"\u2713 {check[:50]}{'...' if len(str(check)) > 50 else ''}")
+                if _confirmed_manip:
+                    _manip_to_remove: list = []
+                    for _mi, _mcheck in enumerate(_confirmed_manip):
+                        _mc1, _mc2 = st.columns([5, 1])
+                        with _mc1:
+                            st.caption(f"{_mcheck[:60]}{'...' if len(str(_mcheck)) > 60 else ''}")
+                        with _mc2:
+                            if st.button("✕", key=f"rm_manip_v{_checks_version}_{_mi}", help="Remove this check"):
+                                _manip_to_remove.append(_mi)
+                    if _manip_to_remove:
+                        _new_manip = [c for _j, c in enumerate(_confirmed_manip) if _j not in _manip_to_remove]
+                        st.session_state["confirmed_manipulation_checks"] = _new_manip
+                        st.session_state["_checks_version"] = _checks_version + 1
+                        st.session_state["_check_removal_notice"] = f"Removed {len(_manip_to_remove)} manipulation check(s)."
+                        st.rerun()
                 else:
-                    st.caption("None detected (optional)")
-                manual_manipulation = st.text_area(
-                    "Add manipulation checks (one per line)",
-                    key="manual_manipulation_checks",
-                    height=80,
-                    placeholder="Q20_ManipCheck"
+                    st.caption("None yet (optional) — add below")
+
+                _add_manip_name = st.text_input(
+                    "Add manipulation check",
+                    key=f"add_manip_input_v{_checks_version}",
+                    placeholder="e.g., Q20_ManipCheck",
+                    label_visibility="collapsed",
                 )
+                if st.button("+ Add", key=f"add_manip_btn_v{_checks_version}"):
+                    if _add_manip_name.strip():
+                        _confirmed_manip.append(_add_manip_name.strip())
+                        st.session_state["confirmed_manipulation_checks"] = _confirmed_manip
+                        st.session_state["_checks_version"] = _checks_version + 1
+                        st.rerun()
+
+            # Context input for simulation
+            st.markdown("---")
+            st.markdown("**Simulation context** *(optional)*")
+            st.caption("Add any additional context the simulation should consider (e.g., study setting, participant population, special instructions).")
+            _sim_context_existing = st.session_state.get("simulation_additional_context", "")
+            _sim_context = st.text_area(
+                "Additional context for simulation",
+                value=_sim_context_existing,
+                key=f"sim_context_input_v{_checks_version}",
+                height=80,
+                placeholder="e.g., 'Participants are US-based MTurk workers reading a political news article before completing the survey'",
+                label_visibility="collapsed",
+            )
+            if _sim_context != _sim_context_existing:
+                st.session_state["simulation_additional_context"] = _sim_context
 
         # ── Design Summary ──────────────────────────────────────────────
         st.markdown("")
@@ -10791,9 +10867,9 @@ if active_page == 3:
     st.markdown("")
 
     # =================================================================
-    # v1.0.8.1: GENERATION METHOD CHOOSER
-    # Users choose how they want data simulated BEFORE clicking Generate.
-    # 4 options with info icons explaining what each does.
+    # v1.0.9.1: GENERATION METHOD CHOOSER — Redesigned
+    # Clean card-based layout with inline details under each option.
+    # Matches landing page visual language (feature cards style).
     # =================================================================
     _has_open_ended = bool(st.session_state.get("inferred_design", {}).get("open_ended_questions", []))
     if not _has_open_ended:
@@ -10817,81 +10893,163 @@ if active_page == 3:
         elif not _has_open_ended:
             _llm_status = {"available": True, "provider": "not_needed"}
 
-        # --- v1.0.8.3: Generation Method Selection (clean radio design) ---
         _gen_method_key = "generation_method"
         _current_method = st.session_state.get(_gen_method_key, "free_llm")
 
-        # Method descriptions — short, user-friendly, no jargon
-        _method_options = {
-            "free_llm": "Built-in AI (recommended)",
-            "own_api": "Your own API key",
-            "template": "Built-in template engine",
-            "experimental": "Adaptive behavioral engine (beta)",
-        }
-        _method_subtitles = {
-            "free_llm": "AI-generated open-ended responses via free built-in providers",
-            "own_api": "Use your own key for unlimited, fast AI generation",
-            "template": "Instant generation, no internet needed — 225+ research domains",
-            "experimental": "Analyzes your study design and applies domain-specific behavioral models",
-        }
-
-        # Render as styled radio-style cards — single column, compact
         st.markdown(
-            '<div style="margin-bottom:4px;">'
-            '<span style="font-size:0.95em;font-weight:600;color:#475569;">'
-            'Generation method</span></div>',
+            '<div style="margin-bottom:8px;">'
+            '<span style="font-size:0.95em;font-weight:600;color:#1F2937;">'
+            'Generation Method</span>'
+            '<span style="font-size:0.78em;color:#6B7280;margin-left:8px;">'
+            'Choose how open-ended and numeric data are generated</span>'
+            '</div>',
             unsafe_allow_html=True,
         )
 
-        for _mk, _ml in _method_options.items():
-            _is_sel = _current_method == _mk
-            if _is_sel:
-                _card_style = (
-                    "background:#f0fdf4;border:2px solid #22c55e;border-radius:8px;"
-                    "padding:10px 14px;margin-bottom:4px;cursor:default;"
-                )
-                _dot = '<span style="color:#22c55e;font-size:1.05em;margin-right:8px;">&#9679;</span>'
-                _label_style = "font-weight:600;color:#166534;font-size:0.92em;"
-                _sub_style = "color:#15803d;font-size:0.8em;margin-left:22px;display:block;margin-top:1px;"
-            else:
-                _card_style = (
-                    "background:#ffffff;border:1px solid #e2e8f0;border-radius:8px;"
-                    "padding:10px 14px;margin-bottom:4px;cursor:pointer;"
-                )
-                _dot = '<span style="color:#cbd5e1;font-size:1.05em;margin-right:8px;">&#9675;</span>'
-                _label_style = "font-weight:500;color:#334155;font-size:0.92em;"
-                _sub_style = "color:#94a3b8;font-size:0.8em;margin-left:22px;display:block;margin-top:1px;"
+        # --- v1.0.9.1: Method cards — 2×2 grid matching landing page feature cards ---
+        _method_cards = [
+            {
+                "key": "free_llm",
+                "icon": "&#9889;",  # lightning
+                "icon_bg": "linear-gradient(135deg, #3B82F6 0%, #6366F1 100%)",
+                "title": "Built-in AI",
+                "tag": "Recommended",
+                "tag_color": "#22c55e",
+                "subtitle": "Free AI-generated responses",
+                "details": [
+                    "Uses our built-in LLM providers (Groq, Cerebras, Google AI) at no cost",
+                    "Generates contextually aware open-ended responses grounded in your study design",
+                    "Behavioral coherence: numeric ratings and text responses tell a consistent story",
+                    "Automatic provider failover ensures reliable generation",
+                ],
+            },
+            {
+                "key": "own_api",
+                "icon": "&#128273;",  # key
+                "icon_bg": "linear-gradient(135deg, #8B5CF6 0%, #A78BFA 100%)",
+                "title": "Your API Key",
+                "tag": "",
+                "tag_color": "",
+                "subtitle": "Bring your own LLM provider",
+                "details": [
+                    "Use your own API key from Google AI, Groq, Cerebras, OpenRouter, Poe, or OpenAI",
+                    "Higher rate limits and faster generation with dedicated access",
+                    "Same behavioral coherence pipeline — your key just powers the LLM calls",
+                    "Key encrypted in memory only; never saved to disk or logged",
+                ],
+            },
+            {
+                "key": "template",
+                "icon": "&#9881;",  # gear
+                "icon_bg": "linear-gradient(135deg, #F59E0B 0%, #F97316 100%)",
+                "title": "Template Engine",
+                "tag": "Offline",
+                "tag_color": "#F59E0B",
+                "subtitle": "No internet required",
+                "details": [
+                    "225+ research domain templates with Markov chain text generation",
+                    "Works completely offline — no API calls, no rate limits, instant results",
+                    "Domain-specific response banks calibrated to published norms (Engel 2011, Berg 1995)",
+                    "Best for: quick iterations, offline use, or when AI providers are unavailable",
+                ],
+            },
+            {
+                "key": "experimental",
+                "icon": "&#129504;",  # brain
+                "icon_bg": "linear-gradient(135deg, #0EA5E9 0%, #06B6D4 100%)",
+                "title": "Adaptive Behavioral Engine",
+                "tag": "Beta",
+                "tag_color": "#3B82F6",
+                "subtitle": "Science-driven simulation",
+                "details": [
+                    "Reads your full study design and applies domain-calibrated behavioral models",
+                    "50+ persona archetypes with 7-dimensional trait profiles (attention, verbosity, SD bias, extremity, ...)",
+                    "30+ experimental paradigm recognizers: economic games, social dilemmas, political polarization, "
+                    "trust/cooperation, risk, moral judgment, stereotype threat, and more",
+                    "Published effect size calibration: dictator game (Engel 2011), intergroup discrimination "
+                    "(Iyengar & Westwood 2015), political polarization (Dimant 2024)",
+                    "Cross-DV coherence: participants who rate high on trust also write trusting open-text responses",
+                    "Latent behavioral classes generate realistic individual differences and response patterns",
+                ],
+            },
+        ]
 
-            # Beta badge for experimental only
-            _badge = ""
-            if _mk == "experimental":
-                _badge = (
-                    ' <span style="background:#eff6ff;color:#3b82f6;font-size:0.65em;'
-                    'border-radius:3px;padding:1px 5px;margin-left:4px;font-weight:600;'
-                    'vertical-align:middle;">BETA</span>'
+        # Render 2×2 grid
+        _row1_col1, _row1_col2 = st.columns(2)
+        _row2_col1, _row2_col2 = st.columns(2)
+        _card_cols = [_row1_col1, _row1_col2, _row2_col1, _row2_col2]
+
+        for _ci, _card in enumerate(_method_cards):
+            with _card_cols[_ci]:
+                _mk = _card["key"]
+                _is_sel = _current_method == _mk
+
+                # Card styling — matches landing page feature cards
+                if _is_sel:
+                    _border = "border:2px solid #22c55e;"
+                    _bg = "background:#f8fdf9;"
+                    _title_color = "#166534"
+                    _check_icon = '<span style="color:#22c55e;font-size:0.85em;float:right;">&#10003; Selected</span>'
+                else:
+                    _border = "border:1px solid #E5E7EB;"
+                    _bg = "background:#ffffff;"
+                    _title_color = "#1F2937"
+                    _check_icon = ""
+
+                # Tag badge
+                _tag_html = ""
+                if _card["tag"]:
+                    _tag_html = (
+                        f'<span style="background:{_card["tag_color"]}15;color:{_card["tag_color"]};'
+                        f'font-size:0.65em;border-radius:4px;padding:2px 6px;margin-left:6px;'
+                        f'font-weight:600;vertical-align:middle;">{_card["tag"]}</span>'
+                    )
+
+                # Detail bullets
+                _details_html = ""
+                for _d in _card["details"]:
+                    _details_html += (
+                        f'<div style="display:flex;gap:6px;margin-bottom:3px;">'
+                        f'<span style="color:#9CA3AF;font-size:0.72em;line-height:1.5;">&#8226;</span>'
+                        f'<span style="color:#6B7280;font-size:0.78em;line-height:1.5;">{_d}</span>'
+                        f'</div>'
+                    )
+
+                st.markdown(
+                    f'<div style="{_border}{_bg}border-radius:10px;padding:14px 16px;'
+                    f'margin-bottom:6px;min-height:180px;">'
+                    # Icon + title row
+                    f'<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">'
+                    f'<span style="display:inline-flex;align-items:center;justify-content:center;'
+                    f'width:32px;height:32px;border-radius:8px;background:{_card["icon_bg"]};'
+                    f'color:white;font-size:0.9em;">{_card["icon"]}</span>'
+                    f'<span style="font-weight:600;font-size:0.9em;color:{_title_color};">'
+                    f'{_card["title"]}{_tag_html}</span>'
+                    f'{_check_icon}'
+                    f'</div>'
+                    # Subtitle
+                    f'<div style="color:#6B7280;font-size:0.82em;margin-bottom:8px;">'
+                    f'{_card["subtitle"]}</div>'
+                    # Detail bullets
+                    f'{_details_html}'
+                    f'</div>',
+                    unsafe_allow_html=True,
                 )
 
-            st.markdown(
-                f'<div style="{_card_style}">'
-                f'{_dot}<span style="{_label_style}">{_ml}{_badge}</span>'
-                f'<span style="{_sub_style}">{_method_subtitles[_mk]}</span>'
-                f'</div>',
-                unsafe_allow_html=True,
-            )
-            # Invisible Streamlit button overlaying each card for click handling
-            if not _is_sel:
-                if st.button(f"Select {_ml}", key=f"gen_method_{_mk}", use_container_width=True,
-                             type="secondary"):
-                    st.session_state[_gen_method_key] = _mk
-                    st.session_state["allow_template_fallback_once"] = _mk in ("template", "experimental")
-                    st.session_state["_use_socsim_experimental"] = (_mk == "experimental")
-                    if _mk in ("free_llm", "own_api"):
-                        st.session_state["_use_socsim_experimental"] = False
-                    st.rerun()
+                # Select button — only for non-selected cards
+                if not _is_sel:
+                    if st.button(f"Select", key=f"gen_method_{_mk}",
+                                 type="secondary", use_container_width=True):
+                        st.session_state[_gen_method_key] = _mk
+                        st.session_state["allow_template_fallback_once"] = _mk in ("template", "experimental")
+                        st.session_state["_use_socsim_experimental"] = (_mk == "experimental")
+                        if _mk in ("free_llm", "own_api"):
+                            st.session_state["_use_socsim_experimental"] = False
+                        st.rerun()
 
-        # --- Contextual detail panel for selected method ---
+        # --- Inline detail panel for methods that need configuration ---
         if _current_method == "own_api":
-            st.markdown("")  # spacing
+            st.markdown("")
             st.markdown(
                 "**Get a free key in 30 seconds** from any of these providers:"
             )
@@ -11009,20 +11167,6 @@ if active_page == 3:
                     '</span></div>',
                     unsafe_allow_html=True,
                 )
-
-        elif _current_method == "experimental":
-            # Soft informational panel — no red, no jargon
-            st.markdown(
-                '<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;'
-                'padding:10px 14px;margin-top:4px;">'
-                '<span style="color:#1e40af;font-size:0.83em;">'
-                'The adaptive engine reads your study design — conditions, scales, open-ended questions, '
-                'and context — then applies published behavioral models calibrated to your research domain. '
-                'It supports 25+ experimental paradigms (economic games, social dilemmas, risk tasks, etc.) '
-                'and uses latent behavioral classes to generate realistic individual differences.'
-                '</span></div>',
-                unsafe_allow_html=True,
-            )
 
         # Wire method choice into engine settings
         if _current_method == "template":
@@ -11157,22 +11301,23 @@ if active_page == 3:
 
     can_generate = all_required_complete and not is_generating and not has_generated and not _preflight_errors and not _llm_gate_block
 
-    # v1.4.5: No generate button during generation — just show the progress + reset
+    # v1.0.9.1: Generate button — refined sizing, not full-width
     if is_generating:
-        # Only show reset button during generation
-        if st.button("Cancel & Reset", use_container_width=True, key="reset_generate_btn"):
-            _reset_generation_state()
-            _navigate_to(3)
-    else:
-        # Create button row with generate + reset
-        if has_generated:
-            # After generation: only show reset button (download section below)
-            if st.button("Reset & Generate New", use_container_width=True, key="reset_after_gen_btn"):
+        _reset_c1, _reset_c2 = st.columns([1, 3])
+        with _reset_c1:
+            if st.button("Cancel & Reset", key="reset_generate_btn"):
                 _reset_generation_state()
                 _navigate_to(3)
+    else:
+        if has_generated:
+            _reset_c1, _reset_c2 = st.columns([1, 3])
+            with _reset_c1:
+                if st.button("Reset & Generate New", key="reset_after_gen_btn"):
+                    _reset_generation_state()
+                    _navigate_to(3)
         else:
-            btn_col1, btn_col2 = st.columns([3, 1])
-            with btn_col1:
+            _gen_c1, _gen_c2 = st.columns([2, 2])
+            with _gen_c1:
                 if st.button("Generate simulated dataset", type="primary", disabled=not can_generate, use_container_width=True, key="generate_dataset_btn"):
                     st.session_state["generation_requested"] = False
                     st.session_state["is_generating"] = True
@@ -11410,6 +11555,10 @@ if active_page == 3:
         _cond_descs_for_engine = st.session_state.get("builder_condition_descriptions", {})
         if _cond_descs_for_engine:
             _engine_study_context["condition_descriptions"] = _cond_descs_for_engine
+        # v1.0.9.1: Pass user-provided additional simulation context
+        _additional_sim_ctx = st.session_state.get("simulation_additional_context", "").strip()
+        if _additional_sim_ctx:
+            _engine_study_context["additional_context"] = _additional_sim_ctx
 
         # v1.0.8.1: Real-time progress tracking via callback
         # Create a placeholder for the live participant counter
