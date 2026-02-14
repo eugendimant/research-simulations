@@ -33,7 +33,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 # Version identifier to help track deployed code
-__version__ = "1.0.9.5"  # v1.0.9.5: Add 15 new STEP 2 domains (nostalgia through social status)
+__version__ = "1.0.9.7"  # v1.0.9.7: Expand META_ANALYTIC_DB from 54 to 187 entries across 16 research domains
 
 
 # ============================================================================

@@ -63,7 +63,7 @@ association, impression, perception, feedback, comment, observation, general
 Version: 1.8.5 - Improved domain detection with weighted scoring and disambiguation
 """
 
-__version__ = "1.0.9.5"
+__version__ = "1.0.9.7"
 
 import random
 import re
@@ -4239,6 +4239,295 @@ DOMAIN_TEMPLATES: Dict[str, Dict[str, Dict[str, List[str]]]] = {
                 "Digital detox culture is mostly a privilege for people who can afford to disconnect from their obligations.",
                 "The moral panic about phones resembles past panics about television and radio that turned out to be overblown.",
                 "I'm skeptical that individual digital wellbeing practices can solve problems created by addictive design choices.",
+            ],
+        },
+    },
+
+    # ========== NEW DOMAINS (v1.0.9.3) ==========
+
+    # NOSTALGIA
+    "nostalgia": {
+        "explanation": {
+            "very_positive": [
+                "I love revisiting memories from my past because they remind me of who I am and where I came from.",
+                "Nostalgia fills me with warmth and gratitude for the experiences and people that shaped my life.",
+                "Looking back on meaningful moments from my past brings me genuine joy and a sense of connection to my younger self.",
+                "I cherish nostalgic memories because they give me a sense of continuity and meaning in my life.",
+                "Thinking about the past makes me deeply appreciate the relationships and experiences I've been lucky to have.",
+            ],
+            "positive": [
+                "I enjoy looking back on fond memories, even though I know things have changed since then.",
+                "Nostalgia generally feels pleasant to me and reminds me of good times and important people.",
+                "Revisiting memories from my past usually puts me in a positive mood and gives me perspective.",
+                "I find comfort in nostalgic thoughts because they remind me of simpler or happier times.",
+                "Looking back on my past is mostly a positive experience that helps me appreciate my journey.",
+            ],
+            "neutral": [
+                "I have mixed feelings about nostalgia because while some memories are pleasant, others are bittersweet.",
+                "Looking back on the past doesn't strongly affect me one way or another most of the time.",
+                "Nostalgia is something I experience occasionally but it doesn't play a major role in my emotional life.",
+                "I'm fairly neutral about revisiting old memories because the past is the past to me.",
+                "Sometimes nostalgia feels good and sometimes it just makes me aware of how much has changed.",
+            ],
+            "negative": [
+                "Nostalgia often makes me sad because it reminds me of things I've lost or can never get back.",
+                "Looking back on the past tends to make me feel worse rather than better about where I am now.",
+                "I find nostalgic memories bittersweet at best, and they usually leave me feeling a sense of loss.",
+                "Revisiting the past is emotionally difficult because it highlights what's changed for the worse.",
+                "I try to avoid nostalgia because dwelling on the past prevents me from focusing on the present.",
+            ],
+            "very_negative": [
+                "Nostalgia is genuinely painful for me because it brings up memories of people and times I've lost forever.",
+                "Looking back on the past fills me with deep sadness and regret about how things turned out.",
+                "I find nostalgic thoughts overwhelming because they remind me of everything that went wrong or slipped away.",
+                "The past was so much better than my present that thinking about it only makes my current situation feel worse.",
+                "I strongly avoid nostalgic thinking because it sends me into a spiral of sadness and longing for what's gone.",
+            ],
+        },
+    },
+
+    # FORGIVENESS
+    "forgiveness": {
+        "explanation": {
+            "very_positive": [
+                "I believe deeply in forgiveness because holding grudges only hurts the person who was wronged.",
+                "I find it relatively easy to forgive others because I understand that everyone makes mistakes.",
+                "Forgiveness is central to my approach to relationships, and I've seen how it heals both parties.",
+                "I've experienced the freedom that comes with letting go of resentment and I try to practice forgiveness actively.",
+                "I believe that forgiving someone doesn't mean condoning what they did, but it frees me from carrying anger.",
+            ],
+            "positive": [
+                "I generally try to forgive others because I know it's better for my own mental health and relationships.",
+                "Forgiveness doesn't come instantly for me, but I usually get there eventually with time and reflection.",
+                "I think forgiveness is important, even though some situations take longer to work through than others.",
+                "I lean toward forgiveness in most situations because I don't want bitterness to define my life.",
+                "I believe in giving people second chances when they seem genuinely sorry for what they did.",
+            ],
+            "neutral": [
+                "My ability to forgive really depends on the severity of what happened and whether the person is truly sorry.",
+                "I have mixed feelings about forgiveness because some things feel forgivable and others genuinely don't.",
+                "I'm not sure where I stand on forgiveness because it seems like the right thing to do but it's incredibly hard sometimes.",
+                "Forgiveness is complicated for me and I don't think there's a universal rule about when to forgive.",
+                "I can forgive some things easily but other transgressions feel like they cross a line that's hard to come back from.",
+            ],
+            "negative": [
+                "I find forgiveness very difficult, especially when someone has deeply hurt me or violated my trust.",
+                "I tend to hold onto grievances longer than I probably should because letting go feels like excusing bad behavior.",
+                "Forgiveness doesn't come naturally to me and I often struggle with resentment long after the event.",
+                "I'm skeptical of the pressure to forgive because some actions don't deserve forgiveness in my view.",
+                "I have trouble forgiving because I worry that it signals to the other person that what they did was acceptable.",
+            ],
+            "very_negative": [
+                "I find it nearly impossible to forgive people who have seriously wronged me, and I don't think I should have to.",
+                "Forgiveness feels like letting someone off the hook for real harm, and I refuse to do that.",
+                "I hold onto resentment because the pain that was caused to me was real and forgiving would dishonor that.",
+                "I strongly resist the idea that I owe forgiveness to people who deliberately hurt me.",
+                "Some things are simply unforgivable and I reject the notion that forgiveness is always the right path.",
+            ],
+        },
+    },
+
+    # GRATITUDE EXPERIENCE
+    "gratitude_experience": {
+        "explanation": {
+            "very_positive": [
+                "I feel an overwhelming sense of thankfulness when I reflect on the meaningful experiences in my life.",
+                "Practicing gratitude has genuinely transformed my outlook and I feel deeply appreciative every day.",
+                "I experience gratitude intensely and it brings me a profound sense of contentment and connection.",
+                "I'm deeply thankful for the kindness others have shown me and the opportunities I've been given.",
+                "Gratitude comes naturally to me and it enhances almost every aspect of my emotional life.",
+            ],
+            "positive": [
+                "I generally feel appreciative of the good things in my life and try to acknowledge them regularly.",
+                "Gratitude is something I experience often, especially when I take a moment to reflect on what I have.",
+                "I feel thankful for my relationships, health, and opportunities, even when other things are challenging.",
+                "Practicing gratitude has been helpful for my wellbeing and I try to make it a regular habit.",
+                "I experience genuine appreciation for the positive aspects of my life more often than not.",
+            ],
+            "neutral": [
+                "My experience of gratitude is fairly average and depends a lot on my current mood and circumstances.",
+                "I feel appreciative sometimes, but gratitude isn't something I actively cultivate or think about much.",
+                "I have mixed experiences with gratitude, feeling thankful in some moments and indifferent in others.",
+                "I understand the value of gratitude but I wouldn't say it's a prominent emotion in my daily experience.",
+                "My gratitude experience is inconsistent and varies quite a bit depending on what's going on in my life.",
+            ],
+            "negative": [
+                "I find it difficult to feel genuinely grateful because my focus tends to drift toward what's wrong or missing.",
+                "Gratitude feels forced when I try to practice it, like I'm going through the motions without real feeling.",
+                "I struggle with feeling appreciative because the challenges in my life overshadow the good things.",
+                "The idea of gratitude sometimes feels dismissive of the real difficulties I'm experiencing.",
+                "I rarely experience spontaneous feelings of gratitude and have to work hard to notice the positives.",
+            ],
+            "very_negative": [
+                "I almost never feel grateful and the concept feels hollow given what I've been through.",
+                "Gratitude feels impossible when your circumstances are genuinely difficult and no amount of reframing changes that.",
+                "I resent being told to feel grateful because it minimizes the very real struggles I face every day.",
+                "My experience with gratitude is essentially nonexistent because I can't seem to find much to be thankful for.",
+                "I feel angry when people suggest gratitude as a solution because it doesn't address the root causes of my unhappiness.",
+            ],
+        },
+    },
+
+    # SLEEP QUALITY
+    "sleep_quality": {
+        "explanation": {
+            "very_positive": [
+                "I consistently sleep well and wake up feeling rested and ready to tackle the day.",
+                "My sleep quality is excellent and I credit it with helping me function at my best mentally and physically.",
+                "I fall asleep easily, stay asleep through the night, and feel genuinely refreshed every morning.",
+                "I've established a sleep routine that works perfectly for me and I rarely have trouble sleeping.",
+                "Good sleep is one of the foundations of my wellbeing and I'm fortunate that it comes naturally to me.",
+            ],
+            "positive": [
+                "I generally sleep well and most nights I feel reasonably rested when I wake up.",
+                "My sleep quality is pretty good, with occasional nights that aren't as restful as I'd like.",
+                "I usually fall asleep within a reasonable time and get enough rest to function well during the day.",
+                "Sleep is mostly a positive experience for me, even if I have the occasional restless night.",
+                "I feel fairly well-rested most of the time, which helps me maintain my energy and focus.",
+            ],
+            "neutral": [
+                "My sleep quality is average, with some nights being better than others and no strong pattern.",
+                "I wouldn't describe my sleep as particularly good or bad, it's just kind of there.",
+                "Some nights I sleep great and others I toss and turn, and I'm not sure what makes the difference.",
+                "My sleep is inconsistent and I don't feel strongly about it one way or another.",
+                "I get through most days fine but I wouldn't say I feel fully rested on a regular basis either.",
+            ],
+            "negative": [
+                "My sleep quality is poor and it affects my mood, energy, and ability to concentrate during the day.",
+                "I frequently have trouble falling asleep or staying asleep, which leaves me feeling drained.",
+                "I wake up feeling tired more often than not, and it's starting to take a toll on my daily life.",
+                "Sleep has become a source of frustration because I can never seem to get enough quality rest.",
+                "I lie awake many nights with racing thoughts and the lack of sleep makes everything harder.",
+            ],
+            "very_negative": [
+                "My sleep quality is terrible and chronic insomnia has become one of the biggest problems in my life.",
+                "I dread going to bed because I know I'll spend hours lying awake, exhausted but unable to fall asleep.",
+                "The lack of quality sleep has seriously damaged my health, relationships, and ability to function.",
+                "I'm constantly exhausted because I can never get a full night of uninterrupted, restful sleep.",
+                "Sleep deprivation has become a vicious cycle that affects everything in my life and I feel desperate for relief.",
+            ],
+        },
+    },
+
+    # CLIMATE CHANGE
+    "climate_change": {
+        "explanation": {
+            "very_positive": [
+                "I'm deeply committed to addressing climate change and believe we have both the technology and moral obligation to act now.",
+                "Climate change is the defining challenge of our generation and I'm optimistic that collective action can make a real difference.",
+                "I take personal responsibility for my environmental footprint and advocate strongly for systemic changes to reduce emissions.",
+                "I believe the science on climate change is clear and compelling, and we need to listen to the experts and act urgently.",
+                "I feel hopeful about climate solutions like renewable energy and sustainable practices that are already making progress.",
+            ],
+            "positive": [
+                "I take climate change seriously and try to make environmentally conscious choices in my daily life.",
+                "I believe we should be doing more to address climate change, even though the scale of the problem feels daunting.",
+                "I'm concerned about the effects of climate change on future generations and support policies that address it.",
+                "I think the evidence for human-caused climate change is strong and we have a responsibility to respond.",
+                "I care about sustainability and make reasonable efforts to reduce my environmental impact.",
+            ],
+            "neutral": [
+                "I have mixed feelings about climate change because while the science seems concerning, the solutions feel complex.",
+                "I'm somewhere in the middle on climate change policy because I see both the environmental and economic concerns.",
+                "I think climate change is real but I'm not sure how much individuals can actually do about it.",
+                "I care about the environment to some extent but climate change isn't the issue I feel most passionate about.",
+                "I accept that the climate is changing but I'm uncertain about the best way to respond to the problem.",
+            ],
+            "negative": [
+                "I'm skeptical about the urgency of climate change claims and think the economic costs of action are being ignored.",
+                "I think climate change concerns are often exaggerated and the proposed solutions would hurt ordinary people the most.",
+                "I disagree with many climate policies because they seem to prioritize environmental goals over economic reality.",
+                "I'm not convinced that drastic climate action is necessary or that the predictions are as certain as claimed.",
+                "Climate change activism feels more like political ideology than genuine science to me.",
+            ],
+            "very_negative": [
+                "I believe climate change fears are greatly exaggerated and the push for climate action is driven by political agendas.",
+                "I strongly oppose most climate change policies because they destroy jobs and raise costs without meaningful environmental benefit.",
+                "I think the climate change narrative is used to control people and restrict economic freedom.",
+                "I reject the idea that humans are primarily responsible for climate change and I'm tired of the alarmism.",
+                "Climate change activism has become a religion that doesn't tolerate dissent, and I refuse to buy into the hysteria.",
+            ],
+        },
+    },
+
+    # ARTIFICIAL INTELLIGENCE
+    "artificial_intelligence": {
+        "explanation": {
+            "very_positive": [
+                "I'm genuinely excited about artificial intelligence and believe it has the potential to solve some of humanity's biggest challenges.",
+                "AI technology is one of the most promising developments in human history, and I'm optimistic about its applications in healthcare, science, and education.",
+                "I embrace AI tools in my daily life and work because they make me more productive and open up new possibilities.",
+                "I believe artificial intelligence will create more opportunities than it eliminates and I'm excited to see where it goes.",
+                "AI represents a transformative leap in human capability and I think the benefits far outweigh the risks if we develop it responsibly.",
+            ],
+            "positive": [
+                "I generally view artificial intelligence positively and think it has useful applications in many areas of life.",
+                "AI technology has impressed me with what it can do, even though I think we need to be thoughtful about how we use it.",
+                "I'm moderately optimistic about AI because I've seen it help people be more efficient and solve complex problems.",
+                "I believe AI can be a force for good as long as we maintain human oversight and address bias concerns.",
+                "I find artificial intelligence tools helpful in my work and I'm open to seeing how the technology continues to develop.",
+            ],
+            "neutral": [
+                "I have mixed feelings about artificial intelligence because I can see both the tremendous potential and the real risks.",
+                "AI is interesting technology but I'm not sure whether the long-term effects will be mostly positive or negative.",
+                "I think the conversation about AI is important but I don't feel strongly optimistic or pessimistic about it.",
+                "My views on artificial intelligence are fairly balanced because there are legitimate arguments on both sides.",
+                "I use some AI tools but I also have questions about privacy, job displacement, and accountability that keep me from fully embracing it.",
+            ],
+            "negative": [
+                "I'm concerned about artificial intelligence because I think the rush to deploy it is outpacing our ability to manage the risks.",
+                "AI technology worries me because of its potential to eliminate jobs, invade privacy, and concentrate power in fewer hands.",
+                "I'm skeptical about the hype around artificial intelligence and think the downsides are being seriously underestimated.",
+                "I have real concerns about AI bias, lack of transparency, and the erosion of human decision-making in critical areas.",
+                "Artificial intelligence makes me uncomfortable because I don't fully understand how it works and I don't trust the companies building it.",
+            ],
+            "very_negative": [
+                "I believe artificial intelligence poses serious dangers to employment, privacy, democracy, and human autonomy.",
+                "AI technology deeply concerns me because I think we are creating systems we cannot control or fully understand.",
+                "I'm strongly opposed to the unchecked development of artificial intelligence because the risks are existential.",
+                "I think AI is being used to exploit and manipulate people while the companies profiting from it avoid accountability.",
+                "Artificial intelligence represents a threat to what makes us human, and I believe we should be far more cautious about its development.",
+            ],
+        },
+    },
+
+    # REMOTE WORK
+    "remote_work": {
+        "explanation": {
+            "very_positive": [
+                "Working remotely has been genuinely transformative for my quality of life, productivity, and work-life balance.",
+                "I love working from home because it eliminates commuting, gives me flexibility, and lets me create my ideal work environment.",
+                "Remote work has made me more productive because I can focus without the distractions and politics of an office.",
+                "I feel strongly that remote work should be a permanent option because it benefits both employees and employers.",
+                "Working remotely has improved my health, relationships, and job satisfaction in ways I didn't expect.",
+            ],
+            "positive": [
+                "I generally enjoy remote work because of the flexibility it provides, even though it has some challenges.",
+                "Working from home has been a mostly positive experience that I'd prefer to continue over going back to an office full-time.",
+                "I appreciate the work-life balance that remote work offers, though I do miss some aspects of in-person collaboration.",
+                "Remote work suits my personality and working style well, and I feel I perform better with the autonomy it provides.",
+                "I'm satisfied with remote work arrangements and think they should be widely available for jobs that can support them.",
+            ],
+            "neutral": [
+                "I have genuinely mixed feelings about remote work because I see real benefits and real drawbacks.",
+                "Some days I love working from home and other days I miss the structure and social aspects of an office.",
+                "Remote work is fine for certain tasks but I think some types of collaboration genuinely require being in person.",
+                "I don't feel strongly about remote versus in-office work because both have their advantages depending on the situation.",
+                "My experience with remote work has been average, with productivity gains offset by isolation and boundary issues.",
+            ],
+            "negative": [
+                "I find remote work isolating and struggle with the lack of social interaction and clear boundaries between work and home.",
+                "Working from home has been challenging for me because I need the structure and accountability of an office environment.",
+                "I miss the spontaneous collaboration and casual social connections that come with working alongside colleagues.",
+                "Remote work has blurred the lines between my professional and personal life in ways that aren't healthy for me.",
+                "I've noticed my mental health and motivation declining since switching to remote work, and I'd prefer to go back to the office.",
+            ],
+            "very_negative": [
+                "Remote work has been terrible for me and has significantly worsened my mental health, productivity, and sense of connection.",
+                "I feel deeply isolated and disconnected working from home, and it has affected both my work performance and personal life.",
+                "Working remotely has destroyed the work-life boundaries I used to have and I feel like I'm always on the clock.",
+                "I strongly believe remote work is harmful for team cohesion, company culture, and most people's wellbeing.",
+                "I desperately want to return to in-person work because remote work has made me lonely, unmotivated, and professionally stagnant.",
             ],
         },
     },
