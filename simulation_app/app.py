@@ -54,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.0.9.2"
-BUILD_ID = "20260214-v10902-oe-improvements-report-fixes"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.0.9.4"
+BUILD_ID = "20260214-v10904-expand-game-calibrations-50-entries"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -118,7 +118,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.0.9.2"  # v1.0.9.2: OE response quality overhaul, report differentiation, API tracking fix
+APP_VERSION = "1.0.9.4"  # v1.0.9.4: Expand GAME_CALIBRATIONS with 50 new economic game variants
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -10923,51 +10923,22 @@ if active_page == 3:
             unsafe_allow_html=True,
         )
 
-        # --- v1.0.9.1: Method cards — 2×2 grid matching landing page feature cards ---
+        # --- v1.0.9.3: Method cards — 2×2 clickable card grid, reordered ---
+        # Order: Template Engine, Adaptive Behavioral Engine (Beta), Built-in AI, Your API Key
         _method_cards = [
-            {
-                "key": "free_llm",
-                "icon": "&#9889;",  # lightning
-                "icon_bg": "linear-gradient(135deg, #3B82F6 0%, #6366F1 100%)",
-                "title": "Built-in AI",
-                "tag": "Recommended",
-                "tag_color": "#22c55e",
-                "subtitle": "Free AI-generated responses",
-                "details": [
-                    "Uses our built-in LLM providers (Groq, Cerebras, Google AI) at no cost",
-                    "Generates contextually aware open-ended responses grounded in your study design",
-                    "Behavioral coherence: numeric ratings and text responses tell a consistent story",
-                    "Automatic provider failover ensures reliable generation",
-                ],
-            },
-            {
-                "key": "own_api",
-                "icon": "&#128273;",  # key
-                "icon_bg": "linear-gradient(135deg, #8B5CF6 0%, #A78BFA 100%)",
-                "title": "Your API Key",
-                "tag": "",
-                "tag_color": "",
-                "subtitle": "Bring your own LLM provider",
-                "details": [
-                    "Use your own API key from Google AI, Groq, Cerebras, OpenRouter, Poe, or OpenAI",
-                    "Higher rate limits and faster generation with dedicated access",
-                    "Same behavioral coherence pipeline — your key just powers the LLM calls",
-                    "Key encrypted in memory only; never saved to disk or logged",
-                ],
-            },
             {
                 "key": "template",
                 "icon": "&#9881;",  # gear
                 "icon_bg": "linear-gradient(135deg, #F59E0B 0%, #F97316 100%)",
                 "title": "Template Engine",
-                "tag": "Offline",
+                "tag": "Instant",
                 "tag_color": "#F59E0B",
-                "subtitle": "No internet required",
+                "subtitle": "Pre-built response patterns across 225+ research domains",
                 "details": [
-                    "225+ research domain templates with compositional response generation",
-                    "Works completely offline — no API calls, no rate limits, instant results",
-                    "Domain-specific response banks calibrated to published norms (Engel 2011, Berg 1995)",
-                    "Strongest for numeric/behavioral data; for highest-quality open-text, use Built-in AI or Your API Key",
+                    "Generates data instantly with no internet connection or API calls needed",
+                    "Uses a library of research-domain-specific response patterns (e.g., economic games, social psychology, consumer behavior) to compose realistic answers",
+                    "Numeric data is calibrated to published norms for each construct and game type",
+                    "Best for: quick pilot simulations or when you need immediate results without waiting for AI generation",
                 ],
             },
             {
@@ -10977,20 +10948,48 @@ if active_page == 3:
                 "title": "Adaptive Behavioral Engine",
                 "tag": "Beta",
                 "tag_color": "#3B82F6",
-                "subtitle": "Science-driven simulation",
+                "subtitle": "Simulates realistic participant behavior using domain-calibrated models",
                 "details": [
-                    "Reads your full study design and applies domain-calibrated behavioral models",
-                    "50+ persona archetypes with 7-dimensional trait profiles (attention, verbosity, SD bias, extremity, ...)",
-                    "30+ experimental paradigm recognizers: economic games, social dilemmas, political polarization, "
-                    "trust/cooperation, risk, moral judgment, stereotype threat, and more",
-                    "Published effect size calibration: dictator game (Engel 2011), intergroup discrimination "
-                    "(Iyengar & Westwood 2015), political polarization (Dimant 2024)",
-                    "Strongest for numeric/behavioral data realism; for highest-quality open-text, use Built-in AI or Your API Key",
+                    "Analyzes your full study design (conditions, scales, paradigm) and applies behavioral models that adapt to your specific experiment",
+                    "60+ simulated participant archetypes with distinct response styles — from careful optimizers to careless satisficers — each with realistic trait profiles",
+                    "Recognizes 30+ experimental paradigms (economic games, social dilemmas, political polarization, moral judgment, etc.) and applies paradigm-appropriate response patterns",
+                    "Effect sizes are calibrated to hundreds of published meta-analyses across psychology, economics, and organizational behavior",
+                    "Best for: realistic behavioral data where numeric patterns need to reflect established scientific findings for your specific domain",
+                ],
+            },
+            {
+                "key": "free_llm",
+                "icon": "&#9889;",  # lightning
+                "icon_bg": "linear-gradient(135deg, #3B82F6 0%, #6366F1 100%)",
+                "title": "Built-in AI",
+                "tag": "Recommended",
+                "tag_color": "#22c55e",
+                "subtitle": "AI-generated responses using free LLM providers",
+                "details": [
+                    "Uses free-tier AI models (Groq, Cerebras, Google AI) to generate contextually rich open-ended text responses grounded in your study design",
+                    "Behavioral coherence pipeline ensures that each participant's text responses match their numeric ratings — the same person tells a consistent story",
+                    "Automatic failover across multiple providers for reliable generation",
+                    "Note: uses shared free API access — availability may be limited during high-usage periods. If generation is slow or unavailable, switch to Template Engine or use Your API Key",
+                ],
+            },
+            {
+                "key": "own_api",
+                "icon": "&#128273;",  # key
+                "icon_bg": "linear-gradient(135deg, #8B5CF6 0%, #A78BFA 100%)",
+                "title": "Your API Key",
+                "tag": "",
+                "tag_color": "",
+                "subtitle": "Bring your own LLM provider for dedicated access",
+                "details": [
+                    "Use your own API key from Google AI, Groq, Cerebras, OpenRouter, Poe, or OpenAI",
+                    "Higher rate limits and faster generation with your own dedicated access — no shared usage constraints",
+                    "Same behavioral coherence pipeline as Built-in AI — your key just powers the LLM calls",
+                    "Key is used in-memory only during your session; never saved to disk or logged",
                 ],
             },
         ]
 
-        # Render 2×2 grid
+        # Render 2×2 grid — cards are clickable (button IS the card)
         _row1_col1, _row1_col2 = st.columns(2)
         _row2_col1, _row2_col2 = st.columns(2)
         _card_cols = [_row1_col1, _row1_col2, _row2_col1, _row2_col2]
@@ -11000,17 +10999,19 @@ if active_page == 3:
                 _mk = _card["key"]
                 _is_sel = _current_method == _mk
 
-                # Card styling — matches landing page feature cards
+                # Card styling
                 if _is_sel:
                     _border = "border:2px solid #22c55e;"
                     _bg = "background:#f8fdf9;"
                     _title_color = "#166534"
-                    _check_icon = '<span style="color:#22c55e;font-size:0.85em;float:right;">&#10003; Selected</span>'
+                    _check_icon = '<span style="color:#22c55e;font-size:0.85em;float:right;">&#10003; Active</span>'
+                    _cursor = ""
                 else:
                     _border = "border:1px solid #E5E7EB;"
                     _bg = "background:#ffffff;"
                     _title_color = "#1F2937"
                     _check_icon = ""
+                    _cursor = "cursor:pointer;"
 
                 # Tag badge
                 _tag_html = ""
@@ -11031,9 +11032,10 @@ if active_page == 3:
                         f'</div>'
                     )
 
+                # Render card HTML
                 st.markdown(
                     f'<div style="{_border}{_bg}border-radius:10px;padding:14px 16px;'
-                    f'margin-bottom:6px;min-height:180px;">'
+                    f'margin-bottom:2px;min-height:200px;{_cursor}">'
                     # Icon + title row
                     f'<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">'
                     f'<span style="display:inline-flex;align-items:center;justify-content:center;'
@@ -11052,10 +11054,15 @@ if active_page == 3:
                     unsafe_allow_html=True,
                 )
 
-                # Select button — only for non-selected cards
+                # Clickable card selector — replaces separate "Select" button
+                # For non-selected cards: a full-width button styled to blend with card
                 if not _is_sel:
-                    if st.button(f"Select", key=f"gen_method_{_mk}",
-                                 type="secondary", use_container_width=True):
+                    if st.button(
+                        f"Use {_card['title']}",
+                        key=f"gen_method_{_mk}",
+                        type="secondary",
+                        use_container_width=True,
+                    ):
                         st.session_state[_gen_method_key] = _mk
                         st.session_state["allow_template_fallback_once"] = _mk in ("template", "experimental")
                         st.session_state["_use_socsim_experimental"] = (_mk == "experimental")
@@ -11783,7 +11790,7 @@ if active_page == 3:
             _gen_method_labels = {
                 "free_llm": "Built-in AI (Free LLM Providers)",
                 "own_api": "User API Key (LLM)",
-                "template": "Template Engine (Offline)",
+                "template": "Template Engine (Instant)",
                 "experimental": "Adaptive Behavioral Engine (Beta)",
             }
             metadata['generation_method'] = _user_gen_method

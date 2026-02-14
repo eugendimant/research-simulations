@@ -45,7 +45,7 @@ This module is designed to run inside a `utils/` package (i.e., imported as
 """
 
 # Version identifier to help track deployed code
-__version__ = "1.0.9.2"  # v1.0.9.2: OE response quality overhaul, report differentiation, API tracking fix
+__version__ = "1.0.9.4"  # v1.0.9.4: Expand STEP 3 condition trait modifiers + GAME_CALIBRATIONS expansion
 
 # =============================================================================
 # SCIENTIFIC FOUNDATIONS FOR SIMULATION
@@ -5923,6 +5923,167 @@ class EnhancedSimulationEngine:
             modifiers['attention_level'] = modifiers.get('attention_level', 0) + 0.04
             modifiers['response_consistency'] = modifiers.get('response_consistency', 0) + 0.03
 
+        # ================================================================
+        # v1.0.9.4: Expanded condition trait modifiers — 15 new categories
+        # Each grounded in published experimental paradigms with
+        # documented effects on response patterns.
+        # ================================================================
+
+        # ── 1. Nostalgia Induction (Wildschut et al., 2006; Sedikides et al., 2015) ──
+        # Nostalgia increases positive affect, social connectedness, and meaning in life.
+        # Enhances engagement and produces slightly more extreme, acquiescent responses.
+        if any(kw in condition_lower for kw in ['nostalgia induct', 'nostalgic',
+               'recall a fond memory', 'sentimental', 'good old days']):
+            modifiers['engagement'] = modifiers.get('engagement', 0) + 0.06
+            modifiers['extremity'] = modifiers.get('extremity', 0) + 0.05
+            modifiers['acquiescence'] = modifiers.get('acquiescence', 0) + 0.04
+
+        # ── 2. Self-Affirmation (Steele, 1988; Cohen & Sherman, 2014) ──
+        # Self-affirmation reduces defensiveness and identity threat, leading to
+        # more open, less socially desirable responding with greater consistency.
+        if any(kw in condition_lower for kw in ['self-affirm', 'self affirm',
+               'values affirmation', 'affirmed', 'wrote about values',
+               'personal strengths']):
+            modifiers['social_desirability'] = modifiers.get('social_desirability', 0) - 0.06
+            modifiers['extremity'] = modifiers.get('extremity', 0) + 0.04
+            modifiers['response_consistency'] = modifiers.get('response_consistency', 0) + 0.04
+
+        # ── 3. Mindfulness / Present-Moment Focus (Brown & Ryan, 2003; Arch & Craske, 2006) ──
+        # Mindfulness increases attention and deliberate responding while reducing
+        # reactive extremity. Enhances consistency through careful item processing.
+        if any(kw in condition_lower for kw in ['present-moment', 'present moment',
+               'body scan', 'mindful attention', 'focused awareness',
+               'mindfulness induction']):
+            modifiers['attention_level'] = modifiers.get('attention_level', 0) + 0.10
+            modifiers['extremity'] = modifiers.get('extremity', 0) - 0.06
+            modifiers['response_consistency'] = modifiers.get('response_consistency', 0) + 0.06
+
+        # ── 4. Gratitude Induction (Emmons & McCullough, 2003; Wood et al., 2010) ──
+        # Gratitude elevates positive mood, increasing acquiescence and engagement.
+        # Also produces slightly more extreme positive evaluations.
+        if any(kw in condition_lower for kw in ['gratitude induct', 'gratitude journal',
+               'grateful', 'appreciation', 'counting blessings',
+               'grateful reflection']):
+            modifiers['acquiescence'] = modifiers.get('acquiescence', 0) + 0.06
+            modifiers['engagement'] = modifiers.get('engagement', 0) + 0.05
+            modifiers['extremity'] = modifiers.get('extremity', 0) + 0.04
+
+        # ── 5. Power Priming — High Power (Galinsky et al., 2003; Anderson & Berdahl, 2002) ──
+        # High power increases approach motivation, risk-taking, and action orientation.
+        # Reduces social desirability concerns and boosts engagement.
+        if any(kw in condition_lower for kw in ['power priming', 'high status',
+               'recall a time you had power', 'dominant role', 'authority role',
+               'elevated status']):
+            modifiers['extremity'] = modifiers.get('extremity', 0) + 0.10
+            modifiers['social_desirability'] = modifiers.get('social_desirability', 0) - 0.06
+            modifiers['engagement'] = modifiers.get('engagement', 0) + 0.04
+
+        # ── 6. Power Priming — Low Power (Keltner et al., 2003; Anderson & Galinsky, 2006) ──
+        # Low power increases inhibition, conformity, and social monitoring.
+        # Reduces extremity and increases social desirability and vigilant attention.
+        if any(kw in condition_lower for kw in ['low status', 'subordinate role',
+               'recall a time someone had power over', 'submissive', 'deferential',
+               'disempowered']):
+            modifiers['extremity'] = modifiers.get('extremity', 0) - 0.06
+            modifiers['social_desirability'] = modifiers.get('social_desirability', 0) + 0.08
+            modifiers['attention_level'] = modifiers.get('attention_level', 0) + 0.04
+
+        # ── 7. Cognitive Load — Dual Task (Sweller, 1988; Gilbert et al., 1988) ──
+        # Heavy cognitive load impairs processing capacity, reducing attention and
+        # consistency. Paradoxically increases extremity through reliance on heuristics.
+        if any(kw in condition_lower for kw in ['dual task', 'memorize number',
+               'concurrent task', 'working memory load', 'remember digits',
+               'count backwards']):
+            modifiers['attention_level'] = modifiers.get('attention_level', 0) - 0.12
+            modifiers['response_consistency'] = modifiers.get('response_consistency', 0) - 0.10
+            modifiers['extremity'] = modifiers.get('extremity', 0) + 0.04
+
+        # ── 8. Mortality Salience (Greenberg et al., 1990; Burke et al., 2010 meta) ──
+        # Terror Management Theory: death awareness triggers worldview defense,
+        # producing more extreme, engaged, and consistent value-congruent responding.
+        if any(kw in condition_lower for kw in ['death prime', 'mortality prime',
+               'write about own death', 'life is short', 'impermanence',
+               'end of life']):
+            modifiers['extremity'] = modifiers.get('extremity', 0) + 0.14
+            modifiers['engagement'] = modifiers.get('engagement', 0) + 0.08
+            modifiers['response_consistency'] = modifiers.get('response_consistency', 0) + 0.06
+
+        # ── 9. Sleep Deprivation / Fatigue (Lim & Dinges, 2010; Killgore, 2010) ──
+        # Sleep deprivation impairs executive function, reducing sustained attention
+        # and response consistency. Increases extremity via reduced inhibition.
+        if any(kw in condition_lower for kw in ['sleep depriv', 'sleep restrict',
+               'fatigued participant', 'tired', 'insufficient sleep',
+               'sleep loss', 'no sleep']):
+            modifiers['attention_level'] = modifiers.get('attention_level', 0) - 0.12
+            modifiers['response_consistency'] = modifiers.get('response_consistency', 0) - 0.08
+            modifiers['extremity'] = modifiers.get('extremity', 0) + 0.06
+
+        # ── 10. Nature Exposure / Green Space (Kaplan, 1995; Berman et al., 2008) ──
+        # Attention Restoration Theory: exposure to natural environments restores
+        # directed attention, reduces mental fatigue, and promotes calmer responding.
+        if any(kw in condition_lower for kw in ['nature exposure', 'nature walk',
+               'green space', 'outdoor', 'park scene', 'forest',
+               'natural environment', 'nature image']):
+            modifiers['attention_level'] = modifiers.get('attention_level', 0) + 0.06
+            modifiers['extremity'] = modifiers.get('extremity', 0) - 0.04
+            modifiers['engagement'] = modifiers.get('engagement', 0) + 0.04
+
+        # ── 11. Social Exclusion / Ostracism (Williams, 2007; Baumeister et al., 2005) ──
+        # Ostracism threatens fundamental needs (belonging, self-esteem, control, meaning).
+        # Produces more extreme responses, higher engagement, but reduced acquiescence
+        # as excluded individuals resist conforming to group norms.
+        if any(kw in condition_lower for kw in ['social exclusion', 'ostracism',
+               'ostracized', 'excluded', 'cyberball exclusion', 'rejected',
+               'left out', 'ignored by group']):
+            modifiers['extremity'] = modifiers.get('extremity', 0) + 0.10
+            modifiers['engagement'] = modifiers.get('engagement', 0) + 0.06
+            modifiers['acquiescence'] = modifiers.get('acquiescence', 0) - 0.08
+
+        # ── 12. Warmth / Cold Priming (Williams & Bargh, 2008; IJzerman & Semin, 2009) ──
+        # Physical warmth primes social warmth — increased acquiescence and engagement.
+        # Physical cold primes social coldness — decreased acquiescence and engagement.
+        if any(kw in condition_lower for kw in ['warm cup', 'warm drink', 'warm prime',
+               'physical warmth', 'warm condition', 'heated room',
+               'warm temperature']):
+            modifiers['acquiescence'] = modifiers.get('acquiescence', 0) + 0.06
+            modifiers['engagement'] = modifiers.get('engagement', 0) + 0.04
+        elif any(kw in condition_lower for kw in ['cold cup', 'cold drink', 'cold prime',
+                 'physical cold', 'cold condition', 'cold temperature',
+                 'ice']):
+            modifiers['acquiescence'] = modifiers.get('acquiescence', 0) - 0.06
+            modifiers['engagement'] = modifiers.get('engagement', 0) - 0.04
+
+        # ── 13. Scarcity Priming (Shah et al., 2012; Mullainathan & Shafir, 2013) ──
+        # Scarcity captures attention (tunneling effect), increases engagement,
+        # and produces more extreme evaluations of scarce resources.
+        if any(kw in condition_lower for kw in ['scarcity prime', 'resource scarce',
+               'financial scarcity', 'scarcity mindset', 'not enough',
+               'running out', 'shortage']):
+            modifiers['attention_level'] = modifiers.get('attention_level', 0) + 0.08
+            modifiers['extremity'] = modifiers.get('extremity', 0) + 0.06
+            modifiers['engagement'] = modifiers.get('engagement', 0) + 0.04
+
+        # ── 14. Autonomy Support (Deci & Ryan, 2000; Ryan & Deci, 2017) ──
+        # Self-Determination Theory: autonomy support satisfies the need for autonomy,
+        # increasing intrinsic motivation, engagement, and consistent responding
+        # while reducing impression management.
+        if any(kw in condition_lower for kw in ['autonomy support', 'autonomous',
+               'free choice', 'self-determined', 'your decision',
+               'choose freely', 'volitional']):
+            modifiers['engagement'] = modifiers.get('engagement', 0) + 0.08
+            modifiers['response_consistency'] = modifiers.get('response_consistency', 0) + 0.06
+            modifiers['social_desirability'] = modifiers.get('social_desirability', 0) - 0.04
+
+        # ── 15. Autonomy Thwarting / Controlling (Deci & Ryan, 2000; Vansteenkiste & Ryan, 2013) ──
+        # Controlling contexts undermine intrinsic motivation, reducing engagement
+        # and consistency while increasing social desirability (conformity pressure).
+        if any(kw in condition_lower for kw in ['autonomy thwart', 'controlling',
+               'forced choice', 'no choice', 'mandated', 'required to',
+               'must comply', 'coerced']):
+            modifiers['engagement'] = modifiers.get('engagement', 0) - 0.06
+            modifiers['response_consistency'] = modifiers.get('response_consistency', 0) - 0.04
+            modifiers['social_desirability'] = modifiers.get('social_desirability', 0) + 0.06
+
         return modifiers
 
     def _get_domain_response_calibration(
@@ -6095,6 +6256,7 @@ class EnhancedSimulationEngine:
         # This catches well-known scales by variable name with published norms
         if HAS_KNOWLEDGE_BASE:
             _construct_map = {
+                # ── Original 22 constructs ──
                 'loneliness': 'loneliness_ucla', 'lonely': 'loneliness_ucla',
                 'swls': 'life_satisfaction_swls', 'life_sat': 'life_satisfaction_swls',
                 'self_esteem': 'self_esteem_rse', 'rosenberg': 'self_esteem_rse',
@@ -6113,6 +6275,97 @@ class EnhancedSimulationEngine:
                 'phq': 'depression_phq9', 'depression': 'depression_phq9',
                 'pss': 'perceived_stress_pss', 'perceived_stress': 'perceived_stress_pss',
                 'impulsiv': 'impulsivity_bis', 'bis_11': 'impulsivity_bis',
+                # ── v1.0.9.3: Clinical Psychology ──
+                'gad': 'anxiety_gad7', 'gad7': 'anxiety_gad7', 'generalized_anxiety': 'anxiety_gad7',
+                'bdi': 'depression_bdi2', 'beck_depression': 'depression_bdi2',
+                'ptsd': 'ptsd_pcl5', 'pcl': 'ptsd_pcl5', 'posttraumatic': 'ptsd_pcl5',
+                'social_anxiety': 'social_anxiety_lsas', 'lsas': 'social_anxiety_lsas',
+                'social_phobia': 'social_anxiety_lsas',
+                'ocd': 'ocd_ybocs', 'ybocs': 'ocd_ybocs', 'obsessi': 'ocd_ybocs',
+                'eating_disorder': 'eating_disorder_eat26', 'eat26': 'eating_disorder_eat26',
+                'eat_26': 'eating_disorder_eat26', 'anorexi': 'eating_disorder_eat26',
+                'panic': 'panic_pdss', 'pdss': 'panic_pdss', 'panic_disorder': 'panic_pdss',
+                'audit': 'alcohol_use_audit', 'alcohol': 'alcohol_use_audit',
+                'staxi': 'anger_staxi', 'anger': 'anger_staxi', 'trait_anger': 'anger_staxi',
+                'death_anxiety': 'death_anxiety_das', 'das': 'death_anxiety_das',
+                'psqi': 'sleep_quality_psqi', 'sleep_quality': 'sleep_quality_psqi',
+                'sleep': 'sleep_quality_psqi', 'insomnia': 'sleep_quality_psqi',
+                'body_image': 'body_image_satisfaction',
+                'health_anxiety': 'health_anxiety_hai', 'hai': 'health_anxiety_hai',
+                'hypochondri': 'health_anxiety_hai',
+                'somatiz': 'somatization_phq15', 'phq15': 'somatization_phq15',
+                'phq_15': 'somatization_phq15',
+                'chronic_fatigue': 'chronic_fatigue',
+                # ── v1.0.9.3: Wellbeing & Positive Psychology ──
+                'flourish': 'flourishing_perma', 'perma': 'flourishing_perma',
+                'positive_affect': 'positive_affect_panas', 'panas_pos': 'positive_affect_panas',
+                'negative_affect': 'negative_affect_panas', 'panas_neg': 'negative_affect_panas',
+                'panas': 'positive_affect_panas',
+                'psych_wellbeing': 'psychological_wellbeing_pwb', 'pwb': 'psychological_wellbeing_pwb',
+                'meaning_life': 'meaning_life_mlq_presence', 'mlq': 'meaning_life_mlq_presence',
+                'meaning_search': 'meaning_life_mlq_search',
+                'hope': 'hope_ahs', 'ahs': 'hope_ahs', 'hopeful': 'hope_ahs',
+                'optimism': 'optimism_lotr', 'lot_r': 'optimism_lotr', 'lotr': 'optimism_lotr',
+                'happiness': 'happiness_shs', 'shs': 'happiness_shs', 'subjective_happiness': 'happiness_shs',
+                'vitality': 'vitality_svs', 'svs': 'vitality_svs',
+                'self_compass': 'self_compassion_scs', 'scs': 'self_compassion_scs',
+                # ── v1.0.9.3: Values & Ideology ──
+                'sdo': 'sdo_social_dominance', 'social_dominan': 'sdo_social_dominance',
+                'rwa': 'rwa_authoritarianism', 'authoritarian': 'rwa_authoritarianism',
+                'just_world': 'just_world_belief_bjw', 'bjw': 'just_world_belief_bjw',
+                'materiali': 'materialism_mvs', 'mvs': 'materialism_mvs',
+                'system_justif': 'system_justification',
+                'political_ideol': 'political_ideology',
+                # ── v1.0.9.3: Social Psychology ──
+                'social_support': 'social_support_mspss', 'mspss': 'social_support_mspss',
+                'belonging': 'belongingness', 'belongingness': 'belongingness',
+                'social_compar': 'social_comparison_sco', 'sco': 'social_comparison_sco',
+                'collective_self': 'collective_self_esteem_cse', 'cse': 'collective_self_esteem_cse',
+                'empathic_concern': 'empathic_concern_iri', 'iri_ec': 'empathic_concern_iri',
+                'perspective_tak': 'perspective_taking_iri', 'iri_pt': 'perspective_taking_iri',
+                'personal_distress': 'personal_distress_iri', 'iri_pd': 'personal_distress_iri',
+                'interpersonal_trust': 'interpersonal_trust',
+                # ── v1.0.9.3: Cognitive & Self-Regulation ──
+                'mindful': 'mindfulness_maas', 'maas': 'mindfulness_maas',
+                'cognitive_flex': 'cognitive_flexibility',
+                'ambiguity_toler': 'tolerance_of_ambiguity',
+                'locus_control': 'locus_of_control',
+                'self_regulat': 'self_regulation_srs', 'srs': 'self_regulation_srs',
+                'cognitive_reflect': 'cognitive_reflection_crt', 'crt': 'cognitive_reflection_crt',
+                'growth_mindset': 'growth_mindset', 'mindset': 'growth_mindset',
+                'grit': 'grit', 'perseveran': 'grit',
+                'ruminat': 'rumination_rrs', 'rrs': 'rumination_rrs',
+                'worry': 'worry_pswq', 'pswq': 'worry_pswq', 'penn_worry': 'worry_pswq',
+                'reappraisal': 'emotion_regulation_erq_reappraisal', 'erq': 'emotion_regulation_erq_reappraisal',
+                'suppress': 'emotion_regulation_erq_suppression',
+                # ── v1.0.9.3: Motivation & Achievement ──
+                'intrinsic_motiv': 'intrinsic_motivation_imi', 'imi': 'intrinsic_motivation_imi',
+                'self_efficacy': 'self_efficacy_gse', 'gse': 'self_efficacy_gse',
+                'work_engage': 'work_engagement_uwes', 'uwes': 'work_engagement_uwes',
+                'flow': 'flow_experience', 'procrastinat': 'procrastination',
+                'test_anxiety': 'test_anxiety_tai', 'tai': 'test_anxiety_tai',
+                # ── v1.0.9.3: Interpersonal & Relationships ──
+                'forgiv': 'forgiveness_tfs', 'tfs': 'forgiveness_tfs',
+                'relation_satisf': 'relationship_satisfaction_ras', 'ras': 'relationship_satisfaction_ras',
+                'jealous': 'jealousy', 'romantic_love': 'romantic_love',
+                'emotional_intellig': 'emotional_intelligence_eq', 'eq_score': 'emotional_intelligence_eq',
+                # ── v1.0.9.3: Work & Organizational ──
+                'job_satisf': 'job_satisfaction_msq', 'msq': 'job_satisfaction_msq',
+                'org_commit': 'organizational_commitment_ocq', 'ocq': 'organizational_commitment_ocq',
+                'lmx': 'leader_member_exchange_lmx',
+                'psycap': 'psychological_capital_psycap',
+                'turnover_intent': 'turnover_intention',
+                'work_family': 'work_family_conflict', 'wfc': 'work_family_conflict',
+                # ── v1.0.9.3: Technology & Media ──
+                'tech_accept': 'technology_acceptance_tam', 'tam': 'technology_acceptance_tam',
+                'internet_addict': 'internet_addiction_iat',
+                'social_media_intens': 'social_media_intensity',
+                'privacy_concern': 'privacy_concern_iuipc', 'iuipc': 'privacy_concern_iuipc',
+                'ai_attitude': 'ai_attitudes',
+                # ── v1.0.9.3: Consumer & Marketing ──
+                'brand_loyal': 'brand_loyalty', 'purchase_intent': 'purchase_intention',
+                'customer_satisf': 'customer_satisfaction_acsi', 'acsi': 'customer_satisfaction_acsi',
+                'perceived_value': 'perceived_value', 'brand_trust': 'brand_trust',
             }
             for _kw, _norm_key in _construct_map.items():
                 if _kw in var_lower:
@@ -7379,6 +7632,78 @@ class EnhancedSimulationEngine:
             elif any(kw in _var_lower for kw in ['screen_time', 'phone_use', 'social_media_use',
                      'app_usage', 'internet_addict', 'phone_depend']):
                 _sd_sensitivity = 1.15  # People underreport digital dependence
+
+            # v1.0.9.3: SEXUAL BEHAVIOR / REPRODUCTION — very high SD sensitivity
+            # Alexander & Fisher (2003): bogus pipeline reveals massive SD gap
+            elif any(kw in _var_lower for kw in ['sexual', 'sex_', 'intercours', 'condom',
+                     'contracepti', 'porn', 'masturbat', 'partner_count', 'infidel']):
+                _sd_sensitivity = 1.6  # Highest category — sexuality strongly norm-laden
+
+            # v1.0.9.3: INCOME / FINANCIAL STATUS — moderate-high inflation
+            # Moore et al. (2000): Self-reported income inflated ~15-20%
+            elif any(kw in _var_lower for kw in ['income', 'salary', 'earning', 'wealth',
+                     'financial_status', 'socioeconomic', 'debt', 'savings']):
+                _sd_sensitivity = 1.25  # People overreport income, underreport debt
+
+            # v1.0.9.3: VOTING / CIVIC BEHAVIOR — moderate-high
+            # Holbrook & Krosnick (2010): ~15% overreport voting
+            elif any(kw in _var_lower for kw in ['voted', 'voting', 'civic_engag', 'volunteer_freq',
+                     'communit', 'recycle_freq', 'blood_donat']):
+                _sd_sensitivity = 1.3  # Social norms strongly favor civic participation
+
+            # v1.0.9.3: PARENTING / CHILD-REARING — high SD sensitivity
+            # Bornstein (2002): Parents systematically overreport positive parenting
+            elif any(kw in _var_lower for kw in ['parent', 'child_rear', 'disciplin', 'nurtur',
+                     'parental', 'spank', 'punish_child']):
+                _sd_sensitivity = 1.4  # Parenting norms very strong
+
+            # v1.0.9.3: COGNITIVE ABILITY / INTELLIGENCE — moderate
+            # Paulhus et al. (2003): self-estimated IQ inflated ~15 points
+            elif any(kw in _var_lower for kw in ['intelligen', 'iq_', 'cognitive_abil', 'smart',
+                     'knowledge_test', 'academic_abil']):
+                _sd_sensitivity = 1.15  # Self-enhancement bias for intelligence
+
+            # v1.0.9.3: ENVIRONMENTAL BEHAVIOR — moderate-high gap
+            # Kormos & Gifford (2014): self-reported pro-environmental > actual
+            elif any(kw in _var_lower for kw in ['pro_environment', 'green_behavior', 'sustainab',
+                     'carbon_footprint', 'energy_conserv']):
+                _sd_sensitivity = 1.25  # Attitude-behavior gap well-documented
+
+            # v1.0.9.3: CONFORMITY / OBEDIENCE — inverted (underreport)
+            # Pronin (2007): bias blind spot — people deny being influenced
+            elif any(kw in _var_lower for kw in ['conform', 'obedien', 'comply', 'submiss',
+                     'follow_crowd', 'peer_pressur', 'susceptib']):
+                _sd_sensitivity = -0.4  # People underreport being influenced
+
+            # v1.0.9.3: PREJUDICE / IMPLICIT BIAS — very high
+            # Greenwald et al. (2009): explicit prejudice measures highly SD-sensitive
+            elif any(kw in _var_lower for kw in ['implicit_bias', 'iat_', 'modern_racism',
+                     'symbolic_racism', 'aversive_racism', 'subtle_prejudic']):
+                _sd_sensitivity = 1.55  # Extremely norm-laden
+
+            # v1.0.9.3: RELATIONSHIP QUALITY — moderate inflation
+            # Fowers & Olson (1993): marital satisfaction scales show positivity bias
+            elif any(kw in _var_lower for kw in ['relation_satisf', 'marital', 'coupl',
+                     'partner_satisf', 'relationship_qual', 'romantic_satisf']):
+                _sd_sensitivity = 1.15  # People overreport relationship quality
+
+            # v1.0.9.3: RELIGIOSITY / SPIRITUAL — moderate-high
+            # Hadaway et al. (1993): church attendance self-reports inflated ~50%
+            elif any(kw in _var_lower for kw in ['religio', 'spiritual', 'church_attend', 'prayer',
+                     'faith', 'worship', 'devoti']):
+                _sd_sensitivity = 1.3  # Religious behavior strongly normed
+
+            # v1.0.9.3: BODY WEIGHT / EATING — moderate-high
+            # Gorber et al. (2007): self-reported weight underestimated, height overestimated
+            elif any(kw in _var_lower for kw in ['body_weight', 'bmi_self', 'calorie_intake',
+                     'eating_habit', 'binge_eat', 'diet_adher', 'food_intake']):
+                _sd_sensitivity = 1.25  # Desirability toward healthy eating norms
+
+            # v1.0.9.3: AGGRESSION / ANGER — high (underreport)
+            # Suris et al. (2004): physical aggression underreported in self-report
+            elif any(kw in _var_lower for kw in ['aggress', 'anger_express', 'physical_fight',
+                     'verbal_aggress', 'road_rage', 'retaliat']):
+                _sd_sensitivity = 1.45  # Strong norms against aggression
 
             # Also check condition context for sensitivity
             _cond_lower = condition.lower() if condition else ""

@@ -159,7 +159,7 @@ Based on recent LLM simulation research:
 """
 
 # Version identifier to help track deployed code
-__version__ = "1.0.9.2"  # v1.0.9.2: OE response quality overhaul, report differentiation, API tracking fix
+__version__ = "1.0.9.4"  # v1.0.9.4: Expand STEP 3 condition trait modifiers + GAME_CALIBRATIONS expansion
 
 import hashlib
 import random

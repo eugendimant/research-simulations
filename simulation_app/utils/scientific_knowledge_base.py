@@ -33,7 +33,7 @@ References are organized by research area with full APA-style citations in comme
 """
 from __future__ import annotations
 
-__version__ = "1.0.9.2"
+__version__ = "1.0.9.4"
 
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
@@ -1363,6 +1363,1002 @@ GAME_CALIBRATIONS: Dict[str, GameCalibration] = {
             "full_liar": 0.20,
         },
         notes="Mean reported ≈ 58% of maximum (vs 50% expected). Not full lying."
+    ),
+
+    # ── DICTATOR GAME VARIANTS (v1.0.9.4) ─────────────────────────────────
+
+    "dictator_earned_money": GameCalibration(
+        source="Cherry et al. (2002); Oxoby & Spraggon (2008)",
+        game_type="dictator",
+        variant="earned_money",
+        mean_proportion=0.15,
+        sd_proportion=0.18,
+        ci_95=(0.11, 0.19),
+        distribution_shape="right_skew",
+        modes=[0.0],
+        n_studies=18,
+        n_participants=1600,
+        subpopulations={
+            "pure_selfish_zero": 0.55,
+            "low_giver_1_20": 0.22,
+            "moderate_giver_21_49": 0.13,
+            "fair_split_50": 0.07,
+            "generous_51_plus": 0.03,
+        },
+        moderators={
+            "earner": {"both_earned": 0.10, "dictator_earned": 0.12, "receiver_earned": 0.22},
+        },
+        notes="Earning reduces giving by ~45% vs windfall. Property rights effect."
+    ),
+
+    "dictator_deserving_receiver": GameCalibration(
+        source="Ruffle (1998); Eckel & Grossman (1996)",
+        game_type="dictator",
+        variant="deserving_receiver",
+        mean_proportion=0.38,
+        sd_proportion=0.20,
+        ci_95=(0.33, 0.43),
+        distribution_shape="bimodal",
+        modes=[0.0, 0.50],
+        n_studies=14,
+        n_participants=1200,
+        subpopulations={
+            "pure_selfish_zero": 0.18,
+            "low_giver_1_20": 0.12,
+            "moderate_giver_21_49": 0.22,
+            "fair_split_50": 0.30,
+            "generous_51_plus": 0.18,
+        },
+        moderators={
+            "charity_type": {"red_cross": 0.42, "unknown_charity": 0.35, "individual_need": 0.38},
+        },
+        notes="Deserving receivers increase giving ~35% above standard DG."
+    ),
+
+    "dictator_ingroup": GameCalibration(
+        source="Whitt & Wilson (2007); Bernhard et al. (2006)",
+        game_type="dictator",
+        variant="ingroup_receiver",
+        mean_proportion=0.35,
+        sd_proportion=0.18,
+        ci_95=(0.31, 0.39),
+        distribution_shape="bimodal",
+        modes=[0.0, 0.50],
+        n_studies=22,
+        n_participants=2800,
+        subpopulations={
+            "pure_selfish_zero": 0.22,
+            "low_giver_1_20": 0.14,
+            "moderate_giver_21_49": 0.22,
+            "fair_split_50": 0.28,
+            "generous_51_plus": 0.14,
+        },
+        moderators={
+            "group_type": {"ethnic": 0.37, "political": 0.38, "minimal": 0.32, "national": 0.36},
+            "conflict_salience": {"low": 0.33, "high": 0.40},
+        },
+        notes="Ingroup favoritism: ~25% more giving than to strangers. Stronger with real groups."
+    ),
+
+    "dictator_outgroup": GameCalibration(
+        source="Iyengar & Westwood (2015); Dimant (2024); Fershtman & Gneezy (2001)",
+        game_type="dictator",
+        variant="outgroup_receiver",
+        mean_proportion=0.20,
+        sd_proportion=0.18,
+        ci_95=(0.16, 0.24),
+        distribution_shape="right_skew",
+        modes=[0.0],
+        n_studies=28,
+        n_participants=3400,
+        subpopulations={
+            "pure_selfish_zero": 0.42,
+            "low_giver_1_20": 0.24,
+            "moderate_giver_21_49": 0.18,
+            "fair_split_50": 0.12,
+            "generous_51_plus": 0.04,
+        },
+        moderators={
+            "group_type": {"political": 0.17, "ethnic": 0.19, "racial": 0.18, "minimal": 0.24},
+            "polarization_era": {"pre_2016": 0.22, "post_2016": 0.16},
+        },
+        notes="Outgroup discrimination d ≈ 0.6-0.9 (Dimant 2024). Political strongest."
+    ),
+
+    "dictator_social_distance": GameCalibration(
+        source="Hoffman et al. (1996); Bohnet & Frey (1999)",
+        game_type="dictator",
+        variant="social_distance",
+        mean_proportion=0.33,
+        sd_proportion=0.20,
+        ci_95=(0.28, 0.38),
+        distribution_shape="bimodal",
+        modes=[0.0, 0.50],
+        n_studies=16,
+        n_participants=1800,
+        moderators={
+            "distance_level": {"face_to_face": 0.45, "one_way_mirror": 0.35,
+                               "double_blind": 0.22, "internet": 0.18},
+        },
+        notes="Social distance inversely predicts giving. Face-to-face: ~45% vs online: ~18%."
+    ),
+
+    "dictator_charity": GameCalibration(
+        source="Eckel & Grossman (1996); Engel (2011) subset",
+        game_type="dictator",
+        variant="charity_option",
+        mean_proportion=0.42,
+        sd_proportion=0.22,
+        ci_95=(0.37, 0.47),
+        distribution_shape="bimodal",
+        modes=[0.0, 0.50],
+        n_studies=20,
+        n_participants=2200,
+        subpopulations={
+            "pure_selfish_zero": 0.15,
+            "low_giver_1_20": 0.12,
+            "moderate_giver_21_49": 0.18,
+            "fair_split_50": 0.25,
+            "generous_51_plus": 0.30,
+        },
+        moderators={
+            "charity_salience": {"named_charity": 0.46, "generic_charity": 0.38},
+        },
+        notes="Charity as receiver increases mean giving ~50% above standard DG."
+    ),
+
+    "dictator_multiple_recipients": GameCalibration(
+        source="Andreoni & Bernheim (2009); Bolton & Ockenfels (2000)",
+        game_type="dictator",
+        variant="multiple_recipients",
+        mean_proportion=0.32,
+        sd_proportion=0.15,
+        ci_95=(0.27, 0.37),
+        distribution_shape="normal",
+        modes=[0.30],
+        n_studies=10,
+        n_participants=900,
+        moderators={
+            "n_recipients": {"2": 0.34, "3": 0.31, "5": 0.28, "10": 0.25},
+        },
+        notes="Per-recipient giving decreases with more recipients. Total giving increases slightly."
+    ),
+
+    "dictator_uncertainty": GameCalibration(
+        source="Dana et al. (2007); Larson & Capra (2009)",
+        game_type="dictator",
+        variant="uncertainty",
+        mean_proportion=0.18,
+        sd_proportion=0.20,
+        ci_95=(0.13, 0.23),
+        distribution_shape="right_skew",
+        modes=[0.0],
+        n_studies=12,
+        n_participants=1100,
+        subpopulations={
+            "pure_selfish_zero": 0.48,
+            "low_giver_1_20": 0.22,
+            "moderate_giver_21_49": 0.16,
+            "fair_split_50": 0.10,
+            "generous_51_plus": 0.04,
+        },
+        notes="Moral wiggle room: uncertainty about receiver outcomes reduces giving ~35%."
+    ),
+
+    # ── TRUST GAME VARIANTS (v1.0.9.4) ────────────────────────────────────
+
+    "trust_with_communication": GameCalibration(
+        source="Ben-Ner & Putterman (2009); Charness & Dufwenberg (2006)",
+        game_type="trust",
+        variant="communication",
+        mean_proportion=0.62,
+        sd_proportion=0.18,
+        ci_95=(0.57, 0.67),
+        distribution_shape="normal",
+        modes=[0.60],
+        n_studies=20,
+        n_participants=2400,
+        moderators={
+            "communication_type": {"free_form": 0.65, "structured_promise": 0.60,
+                                   "cheap_talk": 0.55},
+        },
+        notes="Communication increases trust ~24%. Promises especially effective (guilt aversion)."
+    ),
+
+    "trust_with_reputation": GameCalibration(
+        source="Bohnet & Huck (2004); Bolton et al. (2004)",
+        game_type="trust",
+        variant="reputation",
+        mean_proportion=0.60,
+        sd_proportion=0.16,
+        ci_95=(0.55, 0.65),
+        distribution_shape="normal",
+        modes=[0.60],
+        n_studies=15,
+        n_participants=1800,
+        moderators={
+            "reputation_info": {"full_history": 0.65, "summary_score": 0.58,
+                                "single_encounter": 0.50},
+        },
+        notes="Reputation information increases trust ~20%. History more effective than summary."
+    ),
+
+    "trust_with_punishment": GameCalibration(
+        source="Fehr & Rockenbach (2003); Houser et al. (2008)",
+        game_type="trust",
+        variant="punishment",
+        mean_proportion=0.45,
+        sd_proportion=0.18,
+        ci_95=(0.40, 0.50),
+        distribution_shape="bimodal",
+        modes=[0.20, 0.60],
+        n_studies=12,
+        n_participants=1200,
+        moderators={
+            "punishment_frame": {"sanction_available": 0.42, "sanction_imposed": 0.35,
+                                 "no_sanction": 0.55},
+        },
+        notes="Punishment REDUCES trust (crowding out). Imposed sanctions signal distrust."
+    ),
+
+    "trust_cross_cultural": GameCalibration(
+        source="Johnson & Mislin (2011); Bohnet et al. (2008)",
+        game_type="trust",
+        variant="cross_cultural",
+        mean_proportion=0.44,
+        sd_proportion=0.18,
+        ci_95=(0.39, 0.49),
+        distribution_shape="normal",
+        modes=[0.45],
+        n_studies=35,
+        n_participants=5200,
+        moderators={
+            "culture_pair": {"western_western": 0.52, "western_east_asian": 0.42,
+                             "east_asian_east_asian": 0.40, "arab_western": 0.38,
+                             "within_developing": 0.45},
+        },
+        notes="Cross-cultural trust ~15% lower than within-culture. Strongest deficit with high cultural distance."
+    ),
+
+    "trust_binary": GameCalibration(
+        source="Ermisch et al. (2009); Glaeser et al. (2000)",
+        game_type="trust",
+        variant="binary",
+        mean_proportion=0.55,
+        sd_proportion=0.20,
+        ci_95=(0.50, 0.60),
+        distribution_shape="bimodal",
+        modes=[0.0, 1.0],
+        n_studies=18,
+        n_participants=2600,
+        subpopulations={
+            "trusters": 0.55,
+            "non_trusters": 0.45,
+        },
+        notes="Binary trust decision: ~55% choose to trust. Simpler than continuous."
+    ),
+
+    "trust_with_risk_info": GameCalibration(
+        source="Eckel & Wilson (2004); Houser et al. (2010)",
+        game_type="trust",
+        variant="risk_information",
+        mean_proportion=0.48,
+        sd_proportion=0.17,
+        ci_95=(0.43, 0.53),
+        distribution_shape="normal",
+        modes=[0.50],
+        n_studies=14,
+        n_participants=1500,
+        moderators={
+            "risk_frame": {"probability_displayed": 0.45, "no_risk_info": 0.50,
+                           "return_rate_shown": 0.52},
+        },
+        notes="Explicit risk info slightly reduces trust. Trust ≠ risk preferences (Eckel & Wilson)."
+    ),
+
+    "trust_repeated": GameCalibration(
+        source="Engle-Warnick & Slonim (2004); King-Casas et al. (2005)",
+        game_type="trust",
+        variant="repeated",
+        mean_proportion=0.55,
+        sd_proportion=0.15,
+        ci_95=(0.50, 0.60),
+        distribution_shape="normal",
+        modes=[0.55],
+        n_studies=16,
+        n_participants=1400,
+        moderators={
+            "round": {"early_1_3": 0.48, "middle_4_7": 0.55, "late_8_10": 0.60},
+            "reciprocity_experienced": {"high_return": 0.65, "low_return": 0.35},
+        },
+        notes="Trust grows with repeated interaction. Reciprocity builds trust over rounds."
+    ),
+
+    "trust_with_inequality": GameCalibration(
+        source="Anderson et al. (2006); Xiao & Bicchieri (2010)",
+        game_type="trust",
+        variant="inequality",
+        mean_proportion=0.42,
+        sd_proportion=0.20,
+        ci_95=(0.36, 0.48),
+        distribution_shape="bimodal",
+        modes=[0.20, 0.60],
+        n_studies=10,
+        n_participants=1100,
+        moderators={
+            "inequality_direction": {"trustor_richer": 0.48, "trustor_poorer": 0.35,
+                                     "equal_endowment": 0.50},
+        },
+        notes="Inequality reduces trust, especially when trustor is disadvantaged."
+    ),
+
+    # ── ULTIMATUM GAME VARIANTS (v1.0.9.4) ────────────────────────────────
+
+    "ultimatum_alternative_offers": GameCalibration(
+        source="Fischbacher et al. (2009); Bolton & Zwick (1995)",
+        game_type="ultimatum",
+        variant="alternative_offers",
+        mean_proportion=0.38,
+        sd_proportion=0.12,
+        ci_95=(0.34, 0.42),
+        distribution_shape="left_skew",
+        modes=[0.40],
+        n_studies=10,
+        n_participants=1000,
+        moderators={
+            "alternative_size": {"attractive_alt": 0.35, "unattractive_alt": 0.42},
+        },
+        notes="Outside options reduce offers. Proposers extract more with weak responder alternatives."
+    ),
+
+    "ultimatum_costly_rejection": GameCalibration(
+        source="Yamagishi et al. (2012); Henrich et al. (2006)",
+        game_type="ultimatum",
+        variant="costly_rejection",
+        mean_proportion=0.40,
+        sd_proportion=0.12,
+        ci_95=(0.36, 0.44),
+        distribution_shape="left_skew",
+        modes=[0.40],
+        n_studies=14,
+        n_participants=1600,
+        subpopulations={
+            "fair_offer_40_50": 0.50,
+            "moderate_offer_25_39": 0.30,
+            "low_offer_below_25": 0.15,
+            "hyper_fair_above_50": 0.05,
+        },
+        moderators={
+            "rejection_cost": {"free_rejection": 0.42, "costly_rejection": 0.38,
+                               "very_costly": 0.34},
+        },
+        notes="Costly rejection reduces rejection rates but barely changes offers."
+    ),
+
+    "ultimatum_third_party": GameCalibration(
+        source="Güth & van Damme (1998); Bereby-Meyer & Niederle (2005)",
+        game_type="ultimatum",
+        variant="third_party_allocation",
+        mean_proportion=0.35,
+        sd_proportion=0.14,
+        ci_95=(0.30, 0.40),
+        distribution_shape="normal",
+        modes=[0.35],
+        n_studies=8,
+        n_participants=800,
+        notes="Third-party allocators offer less than self-interested proposers. Strategic fairness reduced."
+    ),
+
+    "mini_ultimatum": GameCalibration(
+        source="Falk et al. (2003); Güth et al. (2001)",
+        game_type="ultimatum",
+        variant="mini",
+        mean_proportion=0.40,
+        sd_proportion=0.10,
+        ci_95=(0.36, 0.44),
+        distribution_shape="bimodal",
+        modes=[0.20, 0.50],
+        n_studies=12,
+        n_participants=1400,
+        moderators={
+            "choice_set": {"fair_vs_hyper_fair": 0.50, "fair_vs_unfair": 0.45,
+                           "unfair_vs_very_unfair": 0.30},
+        },
+        notes="Restricted choice set reveals intention-based fairness preferences (Falk et al. 2003)."
+    ),
+
+    "ultimatum_with_delay": GameCalibration(
+        source="Grimm & Mengel (2011); Neo et al. (2013)",
+        game_type="ultimatum",
+        variant="delay",
+        mean_proportion=0.38,
+        sd_proportion=0.14,
+        ci_95=(0.33, 0.43),
+        distribution_shape="normal",
+        modes=[0.40],
+        n_studies=8,
+        n_participants=700,
+        moderators={
+            "delay_length": {"immediate": 0.42, "10_minutes": 0.38, "24_hours": 0.35},
+        },
+        notes="Delay reduces rejection of unfair offers. Hot vs cold emotion effect."
+    ),
+
+    "ultimatum_information_asymmetry": GameCalibration(
+        source="Kagel et al. (1996); Mitzkewitz & Nagel (1993)",
+        game_type="ultimatum",
+        variant="information_asymmetry",
+        mean_proportion=0.35,
+        sd_proportion=0.15,
+        ci_95=(0.30, 0.40),
+        distribution_shape="right_skew",
+        modes=[0.30],
+        n_studies=10,
+        n_participants=1000,
+        moderators={
+            "info_condition": {"full_info": 0.42, "proposer_knows_more": 0.30,
+                               "responder_knows_more": 0.40},
+        },
+        notes="Informed proposers exploit info advantage. Offers ~28% lower with private info."
+    ),
+
+    "ultimatum_multi_round": GameCalibration(
+        source="Slembeck (1999); Cooper et al. (2003)",
+        game_type="ultimatum",
+        variant="multi_round",
+        mean_proportion=0.40,
+        sd_proportion=0.10,
+        ci_95=(0.37, 0.43),
+        distribution_shape="left_skew",
+        modes=[0.40],
+        n_studies=12,
+        n_participants=1200,
+        moderators={
+            "round": {"round_1": 0.42, "round_5": 0.40, "round_10": 0.38},
+            "role_rotation": {"fixed_roles": 0.38, "rotating_roles": 0.42},
+        },
+        notes="Minimal learning effect. Offers slightly decline over rounds with fixed roles."
+    ),
+
+    "ultimatum_with_communication": GameCalibration(
+        source="Rankin (2003); Zultan (2012)",
+        game_type="ultimatum",
+        variant="communication",
+        mean_proportion=0.45,
+        sd_proportion=0.10,
+        ci_95=(0.41, 0.49),
+        distribution_shape="normal",
+        modes=[0.45],
+        n_studies=10,
+        n_participants=1100,
+        moderators={
+            "communication_type": {"pre_play_chat": 0.47, "written_message": 0.44,
+                                   "demand_option": 0.42},
+        },
+        notes="Communication increases offers ~7%. Reduces rejection rates more than it changes offers."
+    ),
+
+    # ── PUBLIC GOODS VARIANTS (v1.0.9.4) ──────────────────────────────────
+
+    "public_goods_peer_punishment": GameCalibration(
+        source="Fehr & Gächter (2002); Nikiforakis & Normann (2008)",
+        game_type="public_goods",
+        variant="peer_punishment",
+        mean_proportion=0.78,
+        sd_proportion=0.14,
+        ci_95=(0.72, 0.84),
+        distribution_shape="left_skew",
+        modes=[0.90],
+        n_studies=25,
+        n_participants=2800,
+        subpopulations={
+            "full_contributor": 0.40,
+            "high_contributor": 0.30,
+            "moderate_contributor": 0.18,
+            "free_rider": 0.12,
+        },
+        moderators={
+            "punishment_cost_ratio": {"1_to_3": 0.82, "1_to_1": 0.72, "3_to_1": 0.65},
+            "rounds": {"round_1": 0.55, "round_5": 0.75, "round_10": 0.85},
+        },
+        notes="Peer punishment sustains cooperation at ~78%. Cost ratio matters. Antisocial punishment ~15%."
+    ),
+
+    "public_goods_with_reward": GameCalibration(
+        source="Sefton et al. (2007); Rand et al. (2009)",
+        game_type="public_goods",
+        variant="reward",
+        mean_proportion=0.60,
+        sd_proportion=0.16,
+        ci_95=(0.55, 0.65),
+        distribution_shape="normal",
+        modes=[0.60],
+        n_studies=12,
+        n_participants=1400,
+        moderators={
+            "reward_type": {"monetary_reward": 0.62, "social_approval": 0.58,
+                            "status_reward": 0.56},
+        },
+        notes="Rewards less effective than punishment for sustaining cooperation. +13% above baseline."
+    ),
+
+    "public_goods_threshold": GameCalibration(
+        source="Croson & Marks (2000); Cadsby & Maynes (1999)",
+        game_type="public_goods",
+        variant="threshold",
+        mean_proportion=0.65,
+        sd_proportion=0.18,
+        ci_95=(0.59, 0.71),
+        distribution_shape="bimodal",
+        modes=[0.0, 0.80],
+        n_studies=18,
+        n_participants=1800,
+        subpopulations={
+            "full_contributor": 0.35,
+            "threshold_matcher": 0.30,
+            "free_rider": 0.20,
+            "partial_contributor": 0.15,
+        },
+        moderators={
+            "threshold_level": {"low_25pct": 0.72, "medium_50pct": 0.65, "high_75pct": 0.55},
+            "refund_rule": {"no_refund": 0.58, "full_refund": 0.70},
+        },
+        notes="Threshold provision point increases cooperation. Refund rule matters. Bimodal: contribute or not."
+    ),
+
+    "public_goods_step_level": GameCalibration(
+        source="Van de Kragt et al. (1986); Rapoport & Eshed-Levy (1989)",
+        game_type="public_goods",
+        variant="step_level",
+        mean_proportion=0.55,
+        sd_proportion=0.22,
+        ci_95=(0.48, 0.62),
+        distribution_shape="bimodal",
+        modes=[0.0, 1.0],
+        n_studies=14,
+        n_participants=1200,
+        moderators={
+            "group_size": {"small_3_4": 0.65, "medium_5_7": 0.55, "large_8_plus": 0.42},
+        },
+        notes="Step-level: all-or-nothing provision. Coordination failure common in large groups."
+    ),
+
+    "public_goods_with_communication": GameCalibration(
+        source="Isaac & Walker (1988); Bochet et al. (2006)",
+        game_type="public_goods",
+        variant="communication",
+        mean_proportion=0.72,
+        sd_proportion=0.15,
+        ci_95=(0.67, 0.77),
+        distribution_shape="left_skew",
+        modes=[0.80],
+        n_studies=22,
+        n_participants=2500,
+        moderators={
+            "communication_type": {"face_to_face": 0.82, "chat": 0.70,
+                                   "pre_play_only": 0.65, "numerical_signal": 0.55},
+        },
+        notes="Communication is most effective institution for cooperation. Face-to-face strongest."
+    ),
+
+    "public_goods_with_leadership": GameCalibration(
+        source="Güth et al. (2007); Levati et al. (2007)",
+        game_type="public_goods",
+        variant="leadership",
+        mean_proportion=0.62,
+        sd_proportion=0.16,
+        ci_95=(0.56, 0.68),
+        distribution_shape="normal",
+        modes=[0.60],
+        n_studies=10,
+        n_participants=1000,
+        moderators={
+            "leader_type": {"elected": 0.68, "appointed": 0.58,
+                            "leading_by_example": 0.65, "sanctioning_leader": 0.72},
+        },
+        notes="Leaders contribute more and pull followers up. Elected leaders most effective."
+    ),
+
+    "public_goods_repeated_decay": GameCalibration(
+        source="Isaac et al. (1994); Ledyard (1995)",
+        game_type="public_goods",
+        variant="repeated_decay",
+        mean_proportion=0.35,
+        sd_proportion=0.18,
+        ci_95=(0.30, 0.40),
+        distribution_shape="right_skew",
+        modes=[0.20],
+        n_studies=30,
+        n_participants=3600,
+        moderators={
+            "round_block": {"round_1_3": 0.50, "round_4_6": 0.38,
+                            "round_7_9": 0.28, "round_10": 0.18},
+            "group_size": {"small_4": 0.40, "medium_8": 0.33, "large_40": 0.25},
+        },
+        notes="Classic decay: contributions fall from ~50% to ~18% over 10 rounds without punishment."
+    ),
+
+    "public_goods_with_inequality": GameCalibration(
+        source="Cherry et al. (2005); Chan et al. (1999)",
+        game_type="public_goods",
+        variant="inequality",
+        mean_proportion=0.40,
+        sd_proportion=0.20,
+        ci_95=(0.34, 0.46),
+        distribution_shape="normal",
+        modes=[0.40],
+        n_studies=12,
+        n_participants=1200,
+        moderators={
+            "inequality_type": {"unequal_endowment": 0.38, "unequal_mpcr": 0.42,
+                                "both_unequal": 0.35},
+            "position": {"rich_player": 0.35, "poor_player": 0.48},
+        },
+        notes="Inequality reduces total contributions. Rich contribute less proportionally. Poor contribute more."
+    ),
+
+    # ── COORDINATION & OTHER GAMES (v1.0.9.4) ─────────────────────────────
+
+    "stag_hunt_with_communication": GameCalibration(
+        source="Charness (2000); Clark & Sefton (2001)",
+        game_type="stag_hunt",
+        variant="communication",
+        mean_proportion=0.78,
+        sd_proportion=0.18,
+        ci_95=(0.72, 0.84),
+        distribution_shape="left_skew",
+        modes=[1.0],
+        n_studies=10,
+        n_participants=800,
+        moderators={
+            "communication_type": {"two_way": 0.82, "one_way": 0.72, "none": 0.60},
+        },
+        notes="Communication dramatically increases payoff-dominant (Stag) coordination."
+    ),
+
+    "battle_of_sexes_standard": GameCalibration(
+        source="Cooper et al. (1989); Straub (1995)",
+        game_type="battle_of_sexes",
+        variant="standard",
+        mean_proportion=0.50,
+        sd_proportion=0.25,
+        ci_95=(0.43, 0.57),
+        distribution_shape="bimodal",
+        modes=[0.0, 1.0],
+        n_studies=12,
+        n_participants=1000,
+        subpopulations={
+            "own_preferred": 0.55,
+            "other_preferred": 0.30,
+            "miscoordination": 0.15,
+        },
+        moderators={
+            "payoff_asymmetry": {"symmetric": 0.50, "asymmetric": 0.55},
+        },
+        notes="~55% choose own preferred equilibrium. Miscoordination ~15%. Focal points help."
+    ),
+
+    "chicken_hawk_dove_standard": GameCalibration(
+        source="Rapoport & Chammah (1966); Neugebauer et al. (2008)",
+        game_type="chicken",
+        variant="standard",
+        mean_proportion=0.52,
+        sd_proportion=0.22,
+        ci_95=(0.45, 0.59),
+        distribution_shape="bimodal",
+        modes=[0.0, 1.0],
+        n_studies=10,
+        n_participants=900,
+        subpopulations={
+            "hawk_aggressive": 0.48,
+            "dove_yield": 0.52,
+        },
+        moderators={
+            "framing": {"abstract": 0.50, "conflict_framing": 0.55, "cooperation_framing": 0.45},
+        },
+        notes="Hawk-Dove/Chicken: ~52% yield (Dove). Anti-coordination game."
+    ),
+
+    "common_pool_resource_with_communication": GameCalibration(
+        source="Ostrom et al. (1992); Hackett et al. (1994)",
+        game_type="common_pool_resource",
+        variant="communication",
+        mean_proportion=0.45,
+        sd_proportion=0.15,
+        ci_95=(0.40, 0.50),
+        distribution_shape="normal",
+        modes=[0.45],
+        n_studies=14,
+        n_participants=1200,
+        moderators={
+            "communication_type": {"face_to_face": 0.38, "chat": 0.45,
+                                   "one_shot_announcement": 0.52, "none": 0.65},
+        },
+        notes="Communication reduces extraction ~30%. Face-to-face most effective for resource conservation."
+    ),
+
+    "bertrand_competition_standard": GameCalibration(
+        source="Dufwenberg & Gneezy (2000); Argenton & Müller (2012)",
+        game_type="bertrand_competition",
+        variant="standard",
+        mean_proportion=0.45,
+        sd_proportion=0.20,
+        ci_95=(0.38, 0.52),
+        distribution_shape="right_skew",
+        modes=[0.10],
+        n_studies=15,
+        n_participants=1400,
+        moderators={
+            "n_firms": {"duopoly": 0.55, "triopoly": 0.35, "4_plus_firms": 0.15},
+        },
+        notes="Price/max_price ratio. Converges to MC with more firms. Duopoly: supracompetitive."
+    ),
+
+    "cournot_competition_standard": GameCalibration(
+        source="Huck et al. (2004); Fouraker & Siegel (1963)",
+        game_type="cournot_competition",
+        variant="standard",
+        mean_proportion=0.58,
+        sd_proportion=0.15,
+        ci_95=(0.52, 0.64),
+        distribution_shape="normal",
+        modes=[0.55],
+        n_studies=18,
+        n_participants=1600,
+        moderators={
+            "n_firms": {"duopoly": 0.55, "triopoly": 0.60, "4_plus_firms": 0.65},
+            "information": {"full": 0.58, "incomplete": 0.55},
+        },
+        notes="Quantity/Nash equilibrium quantity ratio. Slight overproduction (above Nash). More competitive than theory."
+    ),
+
+    "beauty_contest_iterated": GameCalibration(
+        source="Ho et al. (1998); Bosch-Domènech et al. (2002)",
+        game_type="beauty_contest",
+        variant="iterated",
+        mean_proportion=0.15,
+        sd_proportion=0.12,
+        ci_95=(0.10, 0.20),
+        distribution_shape="right_skew",
+        modes=[0.05],
+        n_studies=12,
+        n_participants=2000,
+        moderators={
+            "round": {"round_1": 0.33, "round_3": 0.20, "round_5": 0.12, "round_10": 0.05},
+            "population": {"students": 0.33, "game_theorists": 0.15, "ceos": 0.30},
+        },
+        notes="Learning drives guesses toward 0 (Nash). CEOs no better than students initially."
+    ),
+
+    "centipede_standard": GameCalibration(
+        source="McKelvey & Palfrey (1992); Levitt et al. (2011)",
+        game_type="centipede",
+        variant="standard",
+        mean_proportion=0.65,
+        sd_proportion=0.22,
+        ci_95=(0.58, 0.72),
+        distribution_shape="bimodal",
+        modes=[0.40, 0.90],
+        n_studies=15,
+        n_participants=1400,
+        subpopulations={
+            "early_stopper_1_2": 0.25,
+            "mid_stopper_3_4": 0.35,
+            "late_stopper_5_6": 0.30,
+            "full_cooperator": 0.10,
+        },
+        moderators={
+            "game_length": {"4_moves": 0.55, "6_moves": 0.65, "10_moves": 0.75},
+            "stakes": {"low": 0.70, "high": 0.55},
+        },
+        notes="Proportion of game played before stopping. Most deviate from backward induction (stop at move 1)."
+    ),
+
+    "market_entry_standard": GameCalibration(
+        source="Sundali et al. (1995); Rapoport et al. (2002)",
+        game_type="market_entry",
+        variant="standard",
+        mean_proportion=0.55,
+        sd_proportion=0.15,
+        ci_95=(0.50, 0.60),
+        distribution_shape="normal",
+        modes=[0.55],
+        n_studies=14,
+        n_participants=1600,
+        moderators={
+            "market_capacity": {"low_25pct": 0.35, "medium_50pct": 0.55, "high_75pct": 0.72},
+            "information": {"full": 0.52, "partial": 0.58},
+        },
+        notes="Proportion choosing to enter. Remarkable aggregate convergence to Nash prediction (magic of markets)."
+    ),
+
+    "volunteer_dilemma_standard": GameCalibration(
+        source="Diekmann (1985); Goeree et al. (2017)",
+        game_type="volunteer_dilemma",
+        variant="standard",
+        mean_proportion=0.55,
+        sd_proportion=0.20,
+        ci_95=(0.48, 0.62),
+        distribution_shape="bimodal",
+        modes=[0.0, 1.0],
+        n_studies=12,
+        n_participants=1100,
+        subpopulations={
+            "volunteer": 0.55,
+            "free_rider": 0.45,
+        },
+        moderators={
+            "group_size": {"2_person": 0.65, "4_person": 0.50, "8_person": 0.38},
+            "cost_of_volunteering": {"low": 0.65, "medium": 0.50, "high": 0.35},
+        },
+        notes="Volunteering rate decreases with group size (diffusion of responsibility)."
+    ),
+
+    # ── SOCIAL DILEMMA VARIANTS (v1.0.9.4) ────────────────────────────────
+
+    "tragedy_of_commons_standard": GameCalibration(
+        source="Ostrom (1990); Walker & Gardner (1992)",
+        game_type="tragedy_of_commons",
+        variant="standard",
+        mean_proportion=0.62,
+        sd_proportion=0.18,
+        ci_95=(0.56, 0.68),
+        distribution_shape="right_skew",
+        modes=[0.70],
+        n_studies=20,
+        n_participants=2000,
+        moderators={
+            "resource_visibility": {"visible_depletion": 0.55, "hidden_stock": 0.68},
+            "group_size": {"small_4": 0.55, "medium_8": 0.62, "large_20_plus": 0.72},
+        },
+        notes="Extraction/optimal ratio. Groups overextract by ~24%. Larger groups overextract more."
+    ),
+
+    "prisoners_dilemma_with_punishment": GameCalibration(
+        source="Dreber et al. (2008); Rand et al. (2009)",
+        game_type="prisoners_dilemma",
+        variant="punishment",
+        mean_proportion=0.58,
+        sd_proportion=0.20,
+        ci_95=(0.52, 0.64),
+        distribution_shape="bimodal",
+        modes=[0.0, 1.0],
+        n_studies=16,
+        n_participants=2400,
+        subpopulations={
+            "cooperator": 0.58,
+            "defector": 0.42,
+        },
+        moderators={
+            "punishment_type": {"costly_punishment": 0.62, "free_punishment": 0.70,
+                                "antisocial_possible": 0.50},
+        },
+        notes="Punishment increases cooperation ~23%. But costly punishment can reduce group payoffs."
+    ),
+
+    "prisoners_dilemma_iterated_axelrod": GameCalibration(
+        source="Axelrod (1984); Dal Bó & Fréchette (2011)",
+        game_type="prisoners_dilemma",
+        variant="iterated",
+        mean_proportion=0.60,
+        sd_proportion=0.20,
+        ci_95=(0.55, 0.65),
+        distribution_shape="bimodal",
+        modes=[0.0, 1.0],
+        n_studies=22,
+        n_participants=3200,
+        subpopulations={
+            "always_cooperate": 0.15,
+            "conditional_cooperator": 0.45,
+            "tit_for_tat_like": 0.20,
+            "always_defect": 0.20,
+        },
+        moderators={
+            "continuation_probability": {"low_0.5": 0.45, "medium_0.75": 0.58, "high_0.9": 0.70},
+            "round_block": {"early": 0.55, "middle": 0.60, "late": 0.62},
+        },
+        notes="Cooperation rate ~60%. Higher with high continuation probability (shadow of future)."
+    ),
+
+    "prisoners_dilemma_with_reputation": GameCalibration(
+        source="Milinski et al. (2002); Nowak & Sigmund (2005)",
+        game_type="prisoners_dilemma",
+        variant="reputation",
+        mean_proportion=0.65,
+        sd_proportion=0.18,
+        ci_95=(0.59, 0.71),
+        distribution_shape="left_skew",
+        modes=[1.0],
+        n_studies=14,
+        n_participants=1800,
+        moderators={
+            "reputation_visibility": {"public_history": 0.70, "score_only": 0.62,
+                                      "private": 0.47},
+            "observation_probability": {"always_observed": 0.70, "sometimes_0.5": 0.58,
+                                        "rarely_0.1": 0.50},
+        },
+        notes="Reputation sustains indirect reciprocity. Public history strongest. Image scoring works."
+    ),
+
+    "prisoners_dilemma_exit_option": GameCalibration(
+        source="Orbell & Dawes (1993); Batali & Kitcher (1995)",
+        game_type="prisoners_dilemma",
+        variant="exit_option",
+        mean_proportion=0.62,
+        sd_proportion=0.18,
+        ci_95=(0.56, 0.68),
+        distribution_shape="trimodal",
+        modes=[0.0, 0.50, 1.0],
+        n_studies=10,
+        n_participants=1200,
+        subpopulations={
+            "cooperator_stays": 0.45,
+            "exits_to_safety": 0.25,
+            "defector_stays": 0.30,
+        },
+        moderators={
+            "exit_payoff": {"low_exit": 0.55, "medium_exit": 0.62, "high_exit": 0.70},
+        },
+        notes="Exit option among cooperators: cooperation rate. Exit enables assortment of cooperators."
+    ),
+
+    "prisoners_dilemma_multiplayer": GameCalibration(
+        source="Barcelo & Capraro (2015); Grujić et al. (2010)",
+        game_type="prisoners_dilemma",
+        variant="multiplayer",
+        mean_proportion=0.42,
+        sd_proportion=0.22,
+        ci_95=(0.36, 0.48),
+        distribution_shape="bimodal",
+        modes=[0.0, 1.0],
+        n_studies=14,
+        n_participants=2000,
+        moderators={
+            "group_size": {"3_players": 0.50, "5_players": 0.42, "10_players": 0.35,
+                           "20_plus_players": 0.28},
+        },
+        notes="Cooperation declines with group size. N-player PD converges to public goods structure."
+    ),
+
+    "prisoners_dilemma_asymmetric": GameCalibration(
+        source="Beckenkamp et al. (2007); Ahn et al. (2007)",
+        game_type="prisoners_dilemma",
+        variant="asymmetric_payoffs",
+        mean_proportion=0.40,
+        sd_proportion=0.22,
+        ci_95=(0.34, 0.46),
+        distribution_shape="bimodal",
+        modes=[0.0, 1.0],
+        n_studies=10,
+        n_participants=1000,
+        moderators={
+            "asymmetry_level": {"slight": 0.45, "moderate": 0.40, "large": 0.32},
+            "position": {"advantaged_player": 0.35, "disadvantaged_player": 0.45},
+        },
+        notes="Asymmetric payoffs reduce cooperation. Advantaged players defect more. Inequity aversion matters."
+    ),
+
+    "prisoners_dilemma_costly_signaling": GameCalibration(
+        source="Gintis et al. (2001); Smith & Bliege Bird (2000)",
+        game_type="prisoners_dilemma",
+        variant="costly_signaling",
+        mean_proportion=0.58,
+        sd_proportion=0.20,
+        ci_95=(0.51, 0.65),
+        distribution_shape="bimodal",
+        modes=[0.0, 1.0],
+        n_studies=8,
+        n_participants=800,
+        subpopulations={
+            "signaler_cooperator": 0.50,
+            "non_signaler_cooperator": 0.20,
+            "signaler_defector": 0.10,
+            "non_signaler_defector": 0.20,
+        },
+        moderators={
+            "signal_cost": {"cheap": 0.52, "moderate": 0.58, "expensive": 0.65},
+        },
+        notes="Costly signals of cooperative intent increase cooperation. Higher cost = more credible."
     ),
 }
 
