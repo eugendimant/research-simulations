@@ -63,7 +63,7 @@ association, impression, perception, feedback, comment, observation, general
 Version: 1.8.5 - Improved domain detection with weighted scoring and disambiguation
 """
 
-__version__ = "1.1.0.5"
+__version__ = "1.1.0.6"
 
 import random
 import re
@@ -7804,6 +7804,26 @@ class ComprehensiveResponseGenerator:
                 ]
                 response = local_rng.choice(_generic_fallbacks)
 
+        # v1.1.0.6 ITERATION 1: Response length calibration from log-normal
+        # distribution (Denscombe 2008: mean ~40 words for engaged respondents).
+        # This replaces the uniform-ish lengths template generation produces.
+        if behavioral_profile and isinstance(behavioral_profile, dict):
+            _bp_traits = behavioral_profile.get('trait_profile', {})
+            _bp_engagement = _bp_traits.get('attention', persona_engagement)
+            _bp_verbosity = _bp_traits.get('verbosity', persona_verbosity)
+            response = self._calibrate_response_length(
+                response, _bp_engagement, _bp_verbosity, local_rng,
+            )
+
+        # v1.1.0.6 ITERATION 3: Cross-response voice consistency —
+        # Same participant writes with consistent stylistic patterns
+        # (opinion verbs, punctuation habits, hedge preferences).
+        if behavioral_profile and isinstance(behavioral_profile, dict):
+            _bp_traits = behavioral_profile.get('trait_profile', {})
+            response = self._apply_cross_response_voice_consistency(
+                response, participant_seed, _bp_traits, local_rng,
+            )
+
         # v1.1.0: Ensure response is unique within the dataset
         response = self._ensure_unique_response(response, local_rng)
 
@@ -11502,6 +11522,27 @@ class ComprehensiveResponseGenerator:
             _response, _traits, behavioral_profile or {}, rng,
         )
 
+        # --- v1.1.0.6 ITERATION 1: LIWC-informed linguistic profile ------
+        # Discourse markers, cognitive process markers, experiential grounding.
+        # Scientific basis: Pennebaker & King (1999), Tausczik & Pennebaker (2010).
+        _response = self._apply_liwc_linguistic_profile(
+            _response, _traits, behavioral_profile or {}, rng,
+        )
+
+        # --- v1.1.0.6 ITERATION 2: Pragmatic naturalness -----------------
+        # Clause combination, sentence starter variety, incomplete thoughts.
+        # Scientific basis: Krosnick (1999), Hobbs (1979) discourse coherence.
+        _response = self._apply_pragmatic_naturalness(
+            _response, _traits, rng,
+        )
+
+        # --- v1.1.0.6 ITERATION 3: Vocabulary calibration ----------------
+        # Register-appropriate vocabulary, casual contractions, filler words.
+        # Scientific basis: Zipf's law, Biber et al. (1999) register variation.
+        _response = self._apply_vocabulary_calibration(
+            _response, _traits, rng,
+        )
+
         # --- v1.1.0.3: Naturalize topic references -----------------------
         # Replace repeated "{topic}" mentions with pronouns and implicit refs.
         # Real humans don't say "trust" 4 times in 2 sentences.
@@ -13065,6 +13106,561 @@ class ComprehensiveResponseGenerator:
                     if _orig[0].isupper():
                         _syn = _syn[0].upper() + _syn[1:]
                     text = text[:_idx] + _syn + text[_idx + len(_word):]
+        return text
+
+    # ══════════════════════════════════════════════════════════════════
+    # FREE-FORM TEXT QUALITY — ITERATIONS 1-3 (v1.1.0.6)
+    # Scientific basis: Pennebaker & King (1999) LIWC linguistic styles,
+    # Tausczik & Pennebaker (2010) psychological meaning of words,
+    # Krosnick (1991) satisficing theory, Denscombe (2008) response length.
+    # ══════════════════════════════════════════════════════════════════
+
+    # ── ITERATION 1: LIWC-informed linguistic profile system ──────────
+    # Maps persona trait dimensions to empirically-grounded linguistic
+    # features per Pennebaker & King (1999) — Big Five → LIWC correlations.
+    #
+    # Key findings implemented:
+    # - Extraversion → more social words, positive emotion, higher word count
+    # - Neuroticism → more negative emotion, anxiety words, first-person singular
+    # - Openness → longer words, more articles, insight words
+    # - Agreeableness → more positive emotion, fewer negative, fewer swear words
+    # - Conscientiousness → fewer negations, organized structure
+
+    # Discourse markers that real humans use organically (not template-like)
+    # Source: ACL taxonomy of discourse markers in dialog
+    _DISCOURSE_MARKERS_CASUAL = [
+        "well ", "so ", "anyway ", "like ", "you know ", "I mean ",
+        "ok so ", "right so ", "basically ", "honestly ", "look ",
+    ]
+    _DISCOURSE_MARKERS_MODERATE = [
+        "that said, ", "in any case, ", "on that note, ", "to be fair, ",
+        "interestingly, ", "admittedly, ", "at the end of the day, ",
+    ]
+    _DISCOURSE_MARKERS_FORMAL = [
+        "broadly speaking, ", "to that end, ", "in particular, ",
+        "on balance, ", "with that in mind, ", "as I see it, ",
+    ]
+
+    # Cognitive process markers — signals of genuine thought (Tausczik 2010)
+    _COGNITIVE_PROCESS_MARKERS = {
+        'insight': ["I realize ", "I noticed ", "it occurred to me ", "what struck me was ",
+                    "I came to see ", "I figured out ", "it dawned on me "],
+        'causation': ["because ", "the reason is ", "that's why ", "which led to ",
+                      "so then ", "that caused ", "it made me "],
+        'certainty': ["I'm sure ", "without question ", "there's no doubt ", "clearly ",
+                      "I'm certain ", "I know for a fact "],
+        'tentative': ["I think maybe ", "it seems like ", "possibly ", "I'm not sure but ",
+                      "it might be ", "there's a chance ", "I wonder if "],
+        'discrepancy': ["but then ", "even though ", "despite that ", "on the other hand ",
+                        "at the same time ", "however ", "and yet "],
+    }
+
+    # Personal experience grounding phrases (makes responses feel lived-in)
+    _EXPERIENTIAL_GROUNDING = {
+        'recent': [
+            "just the other day ", "recently ", "last week ",
+            "a few days ago ", "this past month ", "not too long ago ",
+        ],
+        'habitual': [
+            "I've always ", "every time I ", "growing up I ",
+            "for as long as I can remember ", "I tend to ", "usually I ",
+        ],
+        'specific_person': [
+            "my friend ", "someone I know ", "a coworker of mine ",
+            "my neighbor ", "a family member ", "someone in my class ",
+        ],
+        'sensory': [
+            "I remember feeling ", "I could see ", "what stood out was ",
+            "the thing that hit me was ", "I vividly recall ", "I noticed ",
+        ],
+    }
+
+    # Response length calibration — log-normal distribution parameters
+    # Source: Denscombe (2008): mean ~40 words for engaged respondents
+    _LENGTH_PARAMS = {
+        'high_engagement': {'mu': 3.5, 'sigma': 0.55},    # median ~33 words
+        'moderate_engagement': {'mu': 2.8, 'sigma': 0.5},  # median ~16 words
+        'low_engagement': {'mu': 1.6, 'sigma': 0.6},       # median ~5 words
+    }
+
+    def _apply_liwc_linguistic_profile(
+        self,
+        text: str,
+        traits: Dict[str, Any],
+        behavioral_profile: Dict[str, Any],
+        rng: random.Random,
+    ) -> str:
+        """Apply LIWC-informed linguistic transformations based on persona traits.
+
+        v1.1.0.6 ITERATION 1.
+        Maps persona dimensions to empirically validated linguistic features:
+        - High social desirability → more hedging, diplomatic qualifiers
+        - High extremity → more emotional/intense language, certainty markers
+        - Low extremity → tentative language, discrepancy markers
+        - High engagement → cognitive process markers (insight, causation)
+        - Low formality → discourse markers, filler words, contractions
+
+        Scientific basis: Pennebaker & King (1999), Tausczik & Pennebaker (2010).
+        """
+        if not text or not traits:
+            return text
+
+        _extremity = traits.get('extremity', 0.4)
+        _engagement = traits.get('attention', 0.5)
+        _formality = traits.get('formality', 0.5)
+        _verbosity = traits.get('verbosity', 0.5)
+        _sd = traits.get('social_desirability', 0.3)
+
+        _sentences = re.split(r'(?<=[.!?])\s+', text.strip())
+        if not _sentences:
+            return text
+
+        # ── 1. DISCOURSE MARKER INSERTION ───────────────────────────────
+        # Real humans begin sentences with discourse markers ~20-40% of time
+        if _formality < 0.4:
+            _dm_bank = self._DISCOURSE_MARKERS_CASUAL
+            _dm_prob = 0.25
+        elif _formality > 0.65:
+            _dm_bank = self._DISCOURSE_MARKERS_FORMAL
+            _dm_prob = 0.15
+        else:
+            _dm_bank = self._DISCOURSE_MARKERS_MODERATE
+            _dm_prob = 0.18
+
+        # Don't add marker to first sentence (would sound unnatural)
+        for i in range(1, len(_sentences)):
+            if rng.random() < _dm_prob and len(_sentences[i]) > 15:
+                _marker = rng.choice(_dm_bank)
+                _s = _sentences[i]
+                # Only add if sentence doesn't already start with a marker
+                if not any(_s.lower().startswith(m.strip()) for m in _dm_bank):
+                    _sentences[i] = _marker + _s[0].lower() + _s[1:]
+
+        # ── 2. COGNITIVE PROCESS MARKERS ────────────────────────────────
+        # Engaged respondents show more cognitive processing language
+        if _engagement > 0.55 and _verbosity > 0.4 and rng.random() < 0.30:
+            if _extremity > 0.65:
+                _cog_type = 'certainty'
+            elif _extremity < 0.35:
+                _cog_type = 'tentative'
+            elif rng.random() < 0.5:
+                _cog_type = 'insight'
+            else:
+                _cog_type = 'causation'
+
+            _cog_marker = rng.choice(self._COGNITIVE_PROCESS_MARKERS[_cog_type])
+            # Insert at start of a middle sentence
+            if len(_sentences) >= 2:
+                _insert_idx = rng.randint(1, len(_sentences) - 1)
+                _s = _sentences[_insert_idx]
+                if not any(_s.lower().startswith(cm.strip().lower())
+                           for cm_list in self._COGNITIVE_PROCESS_MARKERS.values()
+                           for cm in cm_list):
+                    _sentences[_insert_idx] = _cog_marker + _s[0].lower() + _s[1:]
+
+        # ── 3. EXPERIENTIAL GROUNDING ───────────────────────────────────
+        # Engaged respondents ground opinions in personal experience
+        if _engagement > 0.5 and _verbosity > 0.45 and rng.random() < 0.25:
+            _exp_type = rng.choice(['recent', 'habitual', 'specific_person', 'sensory'])
+            _exp_phrase = rng.choice(self._EXPERIENTIAL_GROUNDING[_exp_type])
+            # Add as a brief clause at the end of a sentence
+            if len(_sentences) >= 2:
+                _target = rng.randint(0, len(_sentences) - 1)
+                _s = _sentences[_target].rstrip('.!?')
+                # Only add if sentence is long enough to handle it
+                if len(_s.split()) > 4:
+                    _bridges = [" — ", ", like ", ", and "]
+                    _sentences[_target] = _s + rng.choice(_bridges) + _exp_phrase.rstrip() + "."
+
+        text = ' '.join(_sentences)
+        return text
+
+    def _calibrate_response_length(
+        self,
+        text: str,
+        engagement: float,
+        verbosity: float,
+        rng: random.Random,
+    ) -> str:
+        """Calibrate response length to match log-normal distribution from real data.
+
+        v1.1.0.6 ITERATION 1.
+        Real survey response lengths follow a log-normal distribution
+        (Denscombe 2008): most are short, with a long right tail.
+        This method adjusts generated text to match empirical distributions
+        rather than the uniform-ish lengths that template generation produces.
+        """
+        import math
+        # Determine engagement tier
+        if engagement > 0.6:
+            _params = self._LENGTH_PARAMS['high_engagement']
+        elif engagement > 0.35:
+            _params = self._LENGTH_PARAMS['moderate_engagement']
+        else:
+            _params = self._LENGTH_PARAMS['low_engagement']
+
+        # Adjust by verbosity
+        _mu = _params['mu'] + (verbosity - 0.5) * 0.4
+        _sigma = _params['sigma']
+
+        # Sample target word count from log-normal
+        _target = int(math.exp(rng.gauss(_mu, _sigma)))
+        _target = max(2, min(_target, 120))  # Clamp to reasonable range
+
+        _words = text.split()
+        _current = len(_words)
+
+        if _current <= _target + 3:
+            return text  # Close enough, don't truncate good content
+
+        # Truncate at a sentence boundary nearest to target
+        _sentences = re.split(r'(?<=[.!?])\s+', text.strip())
+        _running = 0
+        _kept: List[str] = []
+        for _s in _sentences:
+            _s_words = len(_s.split())
+            if _running + _s_words > _target and _kept:
+                break
+            _kept.append(_s)
+            _running += _s_words
+
+        if _kept:
+            _result = ' '.join(_kept)
+            if _result and _result[-1] not in '.!?':
+                _result += '.'
+            return _result
+        return text
+
+    # ── ITERATION 2: Pragmatic naturalness & cognitive process markers ─
+
+    # Clause combination patterns — how humans naturally chain ideas
+    # Source: Discourse coherence models (Hobbs 1979, Grosz & Sidner 1986)
+    _CLAUSE_COMBINERS = {
+        'additive': [" and ", ", and also ", " plus ", ", not to mention "],
+        'contrastive': [" but ", " although ", " even though ", ", yet "],
+        'causal': [" so ", " which is why ", " because of that ", " and that's why "],
+        'temporal': [" and then ", " after that ", " eventually ", ", and over time "],
+        'elaborative': [" — meaning ", " which basically means ", ", in other words ", " like "],
+    }
+
+    # Sentence-initial variation patterns — prevent "I [verb]" monotony
+    _SENTENCE_STARTERS_ENGAGED = [
+        "The thing is, ", "What gets me is ", "Part of it is ",
+        "One thing I noticed is ", "Here's the thing — ",
+        "From what I can tell, ", "The way I look at it, ",
+        "Looking at it now, ", "Having gone through that, ",
+    ]
+    _SENTENCE_STARTERS_CASUAL = [
+        "Like ", "Ok so ", "Tbh ", "Ngl ", "Idk but ",
+        "Fr though ", "Lowkey ", "Not gonna lie ",
+    ]
+
+    # Incomplete thought patterns — casual personas trail off
+    _TRAILING_OFF_PATTERNS = [
+        "...", ".. idk", "... but yeah", ".. anyway",
+        "... or something like that", "... you know what I mean",
+        ".. but whatever", "... hard to explain",
+    ]
+
+    def _apply_pragmatic_naturalness(
+        self,
+        text: str,
+        traits: Dict[str, Any],
+        rng: random.Random,
+    ) -> str:
+        """Apply pragmatic naturalness transformations.
+
+        v1.1.0.6 ITERATION 2.
+        Makes text sound like natural human writing through:
+        1. Clause combination instead of short choppy sentences
+        2. Varied sentence starters (break "I [verb]" monotony)
+        3. Incomplete thoughts for casual personas
+        4. Natural repetition avoidance
+        5. Question-asking within responses (engaged personas)
+
+        Scientific basis: Krosnick (1999) satisficing spectrum,
+        Hobbs (1979) discourse coherence.
+        """
+        if not text or len(text) < 20:
+            return text
+
+        _formality = traits.get('formality', 0.5)
+        _engagement = traits.get('attention', 0.5)
+        _verbosity = traits.get('verbosity', 0.5)
+
+        _sentences = re.split(r'(?<=[.!?])\s+', text.strip())
+        if len(_sentences) < 2:
+            return text
+
+        # ── 1. CLAUSE COMBINATION ───────────────────────────────────────
+        # Real humans combine short clauses with conjunctions rather than
+        # writing isolated short sentences.  "I like X. It works well."
+        # becomes "I like X and it works well."
+        if len(_sentences) >= 3 and rng.random() < 0.30:
+            _combine_idx = rng.randint(0, len(_sentences) - 2)
+            _s1 = _sentences[_combine_idx]
+            _s2 = _sentences[_combine_idx + 1]
+            # Only combine if both are short-to-medium length
+            if len(_s1.split()) < 12 and len(_s2.split()) < 12:
+                # Pick combiner type based on relationship
+                _s2_lower = _s2.lower()
+                if any(w in _s2_lower for w in ('but', 'however', 'although', 'yet', 'though')):
+                    _ctype = 'contrastive'
+                elif any(w in _s2_lower for w in ('so', 'because', 'therefore', 'thus')):
+                    _ctype = 'causal'
+                elif any(w in _s2_lower for w in ('then', 'after', 'later', 'eventually')):
+                    _ctype = 'temporal'
+                else:
+                    _ctype = rng.choice(['additive', 'elaborative'])
+
+                _combiner = rng.choice(self._CLAUSE_COMBINERS[_ctype])
+                _combined = _s1.rstrip('.!?') + _combiner + _s2[0].lower() + _s2[1:]
+                _sentences[_combine_idx] = _combined
+                _sentences.pop(_combine_idx + 1)
+
+        # ── 2. SENTENCE STARTER VARIATION ───────────────────────────────
+        # Detect "I [verb]" repetition — the #1 tell of generated text
+        _i_verb_count = sum(1 for s in _sentences if re.match(r"^I\s+[a-z]", s))
+        if _i_verb_count >= 2 and len(_sentences) >= 2:
+            # Replace one "I [verb]" start with a varied starter
+            _starter_bank = (self._SENTENCE_STARTERS_CASUAL if _formality < 0.35
+                             else self._SENTENCE_STARTERS_ENGAGED)
+            _replaced = False
+            for i in range(1, len(_sentences)):  # Skip first sentence
+                if re.match(r"^I\s+[a-z]", _sentences[i]) and not _replaced and rng.random() < 0.5:
+                    _starter = rng.choice(_starter_bank)
+                    _sentences[i] = _starter + _sentences[i][0].lower() + _sentences[i][1:]
+                    _replaced = True
+
+        # ── 3. INCOMPLETE THOUGHTS (casual, lower engagement) ───────────
+        # ~8-12% of casual survey responses have trailing-off endings
+        if _formality < 0.35 and _engagement < 0.55 and rng.random() < 0.12:
+            _last = _sentences[-1].rstrip('.!?')
+            # Cut the sentence partway and add trailing off
+            _words = _last.split()
+            if len(_words) > 5:
+                _cut = rng.randint(max(3, len(_words) // 2), len(_words) - 1)
+                _sentences[-1] = ' '.join(_words[:_cut]) + rng.choice(self._TRAILING_OFF_PATTERNS)
+
+        # ── 4. EMBEDDED QUESTION (engaged personas think aloud) ─────────
+        # Engaged respondents sometimes pose questions to themselves
+        if _engagement > 0.6 and _verbosity > 0.5 and rng.random() < 0.12:
+            _self_questions = [
+                "And honestly, is that so wrong?",
+                "I don't know, what does that say about me?",
+                "But should I feel differently? Maybe.",
+                "Does that make sense? I think it does.",
+                "Am I biased here? Probably, but still.",
+            ]
+            _sentences.append(rng.choice(_self_questions))
+
+        text = ' '.join(_sentences)
+        return text
+
+    # ── ITERATION 3: Vocabulary frequency + cross-response polish ─────
+
+    # Vocabulary frequency tiers based on COCA/BNC word lists
+    # Source: Zipf's law — high-frequency words for casual, mixed for educated
+    _VOCAB_UPGRADES_EDUCATED = {
+        # Common word → more sophisticated alternative (for high-openness personas)
+        'good': ['beneficial', 'constructive', 'favorable', 'worthwhile'],
+        'bad': ['detrimental', 'problematic', 'concerning', 'counterproductive'],
+        'big': ['significant', 'substantial', 'considerable', 'profound'],
+        'small': ['modest', 'marginal', 'negligible', 'incremental'],
+        'a lot': ['considerably', 'substantially', 'to a great extent'],
+        'get': ['obtain', 'acquire', 'gain', 'attain'],
+        'show': ['demonstrate', 'illustrate', 'indicate', 'reveal'],
+        'help': ['facilitate', 'enable', 'contribute to', 'support'],
+        'thing': ['aspect', 'element', 'factor', 'dimension'],
+        'stuff': ['matters', 'issues', 'considerations', 'factors'],
+    }
+
+    _VOCAB_DOWNGRADES_CASUAL = {
+        # Formal word → more casual alternative (for low-openness personas)
+        'however': ['but', 'though', 'still'],
+        'therefore': ['so', 'thats why', 'which is why'],
+        'additionally': ['also', 'plus', 'and'],
+        'nevertheless': ['still', 'but still', 'even so'],
+        'regarding': ['about', 'on', 'with'],
+        'consider': ['think about', 'look at', 'weigh'],
+        'subsequently': ['then', 'after that', 'later'],
+        'demonstrate': ['show', 'prove', 'make clear'],
+        'significant': ['big', 'major', 'huge', 'real'],
+        'perspective': ['take', 'view', 'angle', 'side'],
+    }
+
+    # Contraction patterns by formality tier
+    # Source: Biber et al. (1999) Longman Grammar — spoken vs written register
+    _CASUAL_CONTRACTIONS_EXTENDED = {
+        'going to ': "gonna ", 'want to ': "wanna ", 'got to ': "gotta ",
+        'kind of ': "kinda ", 'sort of ': "sorta ", 'a lot of ': "a lotta ",
+        'I do not know': "idk", 'to be honest': "tbh",
+        'in my opinion': "imo", 'let me ': "lemme ",
+    }
+
+    # Filler word frequency calibration by engagement (Krosnick satisficing spectrum)
+    _FILLER_WORDS_BY_TIER = {
+        'optimizing': [],  # No fillers — careful, considered responses
+        'weak_satisficing': ['like', 'kinda', 'I guess', 'sort of', 'I think'],
+        'strong_satisficing': ['idk', 'whatever', 'I guess', 'meh'],
+    }
+
+    def _apply_vocabulary_calibration(
+        self,
+        text: str,
+        traits: Dict[str, Any],
+        rng: random.Random,
+    ) -> str:
+        """Apply vocabulary calibration based on persona's education/openness level.
+
+        v1.1.0.6 ITERATION 3.
+        Real humans have characteristic vocabulary ranges:
+        - High-openness/educated → occasional sophisticated vocabulary
+        - Low-openness/casual → simpler, concrete vocabulary
+        - Young/casual → informal contractions (gonna, wanna, kinda)
+
+        This avoids the "uncanny valley" where all generated responses
+        use the same middle-register vocabulary regardless of persona.
+
+        Scientific basis: Pennebaker & King (1999) — Openness predicts
+        longer words, more articles, more insight words.
+        Zipf's law for natural vocabulary distribution.
+        """
+        if not text or len(text) < 15:
+            return text
+
+        _formality = traits.get('formality', 0.5)
+        _openness = traits.get('openness', 0.5) if 'openness' in traits else traits.get('verbosity', 0.5)
+        _engagement = traits.get('attention', 0.5)
+
+        # ── 1. VOCABULARY REGISTER ADJUSTMENT ───────────────────────────
+        if _openness > 0.7 and _formality > 0.5 and rng.random() < 0.25:
+            # Educated persona: occasionally upgrade common words
+            for _common, _upgrades in self._VOCAB_UPGRADES_EDUCATED.items():
+                if ' ' + _common + ' ' in ' ' + text.lower() + ' ' and rng.random() < 0.20:
+                    _upgrade = rng.choice(_upgrades)
+                    # Case-preserving single replacement
+                    _idx = text.lower().find(_common)
+                    if _idx >= 0:
+                        _orig = text[_idx:_idx + len(_common)]
+                        if _orig[0].isupper():
+                            _upgrade = _upgrade[0].upper() + _upgrade[1:]
+                        text = text[:_idx] + _upgrade + text[_idx + len(_common):]
+                        break  # Max 1 upgrade per response
+
+        elif _formality < 0.35 and rng.random() < 0.25:
+            # Casual persona: downgrade formal words
+            for _formal, _downgrades in self._VOCAB_DOWNGRADES_CASUAL.items():
+                if _formal.lower() in text.lower() and rng.random() < 0.25:
+                    _downgrade = rng.choice(_downgrades)
+                    _idx = text.lower().find(_formal.lower())
+                    if _idx >= 0:
+                        _orig = text[_idx:_idx + len(_formal)]
+                        if _orig[0].isupper():
+                            _downgrade = _downgrade[0].upper() + _downgrade[1:]
+                        text = text[:_idx] + _downgrade + text[_idx + len(_formal):]
+                        break
+
+        # ── 2. CASUAL CONTRACTIONS (very informal personas) ─────────────
+        # Source: Biber et al. (1999) — spoken register features
+        if _formality < 0.3 and rng.random() < 0.20:
+            for _full, _casual in self._CASUAL_CONTRACTIONS_EXTENDED.items():
+                if _full.lower() in text.lower() and rng.random() < 0.30:
+                    _idx = text.lower().find(_full.lower())
+                    if _idx >= 0:
+                        text = text[:_idx] + _casual + text[_idx + len(_full):]
+                        break  # Max 1 per response
+
+        # ── 3. FILLER WORD CALIBRATION ──────────────────────────────────
+        # Satisficing tier determines filler word density
+        if _engagement > 0.65:
+            _tier = 'optimizing'
+        elif _engagement > 0.35:
+            _tier = 'weak_satisficing'
+        else:
+            _tier = 'strong_satisficing'
+
+        _fillers = self._FILLER_WORDS_BY_TIER[_tier]
+        if _fillers and _formality < 0.5 and rng.random() < 0.20:
+            _filler = rng.choice(_fillers)
+            _words = text.split()
+            if len(_words) > 6:
+                # Insert filler at a natural position
+                _pos = rng.randint(2, min(5, len(_words) - 2))
+                _words.insert(_pos, _filler + ',')
+                text = ' '.join(_words)
+
+        return text
+
+    def _apply_cross_response_voice_consistency(
+        self,
+        text: str,
+        participant_seed: int,
+        traits: Dict[str, Any],
+        rng: random.Random,
+    ) -> str:
+        """Ensure consistent voice patterns within a participant across questions.
+
+        v1.1.0.6 ITERATION 3.
+        A real person writes with consistent stylistic patterns:
+        - Same person always uses "I think" vs "I feel" vs "I believe"
+        - Same person consistently uses or avoids contractions
+        - Same person has consistent sentence length preferences
+        - Same person has consistent punctuation habits
+
+        This is independent of content — it's the "accent" of their writing.
+        """
+        if not text or len(text) < 15:
+            return text
+
+        # Create participant-deterministic RNG for voice features
+        _voice_rng = random.Random(participant_seed + 77777)
+
+        # ── 1. OPINION VERB CONSISTENCY ─────────────────────────────────
+        # Each person has a preferred opinion verb
+        _opinion_verbs = ["think", "feel", "believe", "reckon", "figure", "say"]
+        _preferred_verb = _opinion_verbs[_voice_rng.randint(0, len(_opinion_verbs) - 1)]
+        _other_verbs = [v for v in ["think", "feel", "believe"] if v != _preferred_verb]
+        for _ov in _other_verbs:
+            if f"I {_ov} " in text and _voice_rng.random() < 0.50:
+                text = text.replace(f"I {_ov} ", f"I {_preferred_verb} ", 1)
+
+        # ── 2. PUNCTUATION PERSONALITY ──────────────────────────────────
+        # Some people overuse exclamation marks, others never use them
+        _uses_exclamation = _voice_rng.random() < 0.25
+        _uses_ellipsis = _voice_rng.random() < 0.20
+        _formality = traits.get('formality', 0.5)
+
+        if not _uses_exclamation and '!' in text:
+            text = text.replace('!', '.')
+        elif _uses_exclamation and _formality < 0.5 and rng.random() < 0.20:
+            # Add occasional exclamation
+            _sents = text.split('. ')
+            if len(_sents) >= 2:
+                _exc_idx = rng.randint(0, len(_sents) - 1)
+                if _sents[_exc_idx].endswith('.'):
+                    _sents[_exc_idx] = _sents[_exc_idx][:-1] + '!'
+                text = '. '.join(_sents)
+
+        if _uses_ellipsis and _formality < 0.45 and rng.random() < 0.15:
+            # Replace one period with ellipsis
+            _first_period = text.find('. ')
+            if _first_period > 10:
+                text = text[:_first_period] + '... ' + text[_first_period + 2:]
+
+        # ── 3. HEDGE WORD PREFERENCE ────────────────────────────────────
+        # Each person has a go-to hedge word
+        _hedge_words = ["kind of", "sort of", "somewhat", "fairly", "pretty much",
+                        "more or less", "to some extent"]
+        _preferred_hedge = _hedge_words[_voice_rng.randint(0, len(_hedge_words) - 1)]
+        _generic_hedges = ["kind of", "sort of", "somewhat"]
+        for _gh in _generic_hedges:
+            if _gh in text.lower() and _gh != _preferred_hedge and _voice_rng.random() < 0.40:
+                _idx = text.lower().find(_gh)
+                if _idx >= 0:
+                    text = text[:_idx] + _preferred_hedge + text[_idx + len(_gh):]
+                    break
+
         return text
 
     # ── Typo simulation data (v1.1.0.3) ───────────────────────────────
