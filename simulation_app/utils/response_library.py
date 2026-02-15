@@ -63,7 +63,7 @@ association, impression, perception, feedback, comment, observation, general
 Version: 1.8.5 - Improved domain detection with weighted scoring and disambiguation
 """
 
-__version__ = "1.1.0.3"
+__version__ = "1.1.0.4"
 
 import random
 import re
@@ -7241,6 +7241,8 @@ class ComprehensiveResponseGenerator:
         ComprehensiveResponseGenerator._session_id += 1
         ComprehensiveResponseGenerator._used_responses = set()
         ComprehensiveResponseGenerator._used_sentences = set()
+        # v1.1.0.4: Track used corpus responses to prevent repetition
+        self._used_corpus_indices: Dict[str, set] = {}  # key: domain|sentiment → set of indices
 
     def set_study_context(self, context: Dict[str, Any]):
         """Set the study context for context-aware generation."""
@@ -7784,37 +7786,23 @@ class ComprehensiveResponseGenerator:
         # handle topic grounding without meta-commentary.
         # response = self._add_topic_context(response, question_text, question_keywords, domain, local_rng)
 
-        # v1.0.3.10: Ensure we never return an empty response — use topic words
+        # v1.1.0.4: LAST RESORT — use corpus response instead of old
+        # "I thought about {variable_name}" fallback that produced gibberish.
         if not response or not response.strip():
-            _fallback_topic = ' '.join(question_keywords[:2]) if question_keywords else ''
-            if not _fallback_topic:
-                # Try extracting from question_text directly
-                _fb_words = re.findall(r'\b[a-zA-Z]{4,}\b', (question_text or "").lower())
-                # v1.0.4.7: Unified stop words with researcher-instruction vocabulary
-                _fb_stop = {
-                    'this', 'that', 'about', 'what', 'your', 'please',
-                    'describe', 'explain', 'question', 'context', 'study',
-                    'topic', 'condition', 'think', 'feel', 'participants',
-                    'respondents', 'primed', 'priming', 'exposed', 'exposure',
-                    'presented', 'shown', 'told', 'telling', 'instructed',
-                    'assigned', 'randomly', 'thinking', 'reading', 'viewing',
-                    'watching', 'completing', 'answering', 'reporting',
-                    'before', 'after', 'during', 'following', 'stories',
-                    'experience', 'experiences', 'believe', 'beliefs',
-                    'favorite', 'favourite', 'whether', 'toward', 'towards',
-                    'survey', 'experiment', 'measure', 'measured', 'response',
-                    'responses', 'answer', 'answers', 'open', 'ended', 'text',
-                }
-                _fb_topic_words = [w for w in _fb_words if w not in _fb_stop][:2]
-                _fallback_topic = ' '.join(_fb_topic_words) if _fb_topic_words else 'what was asked'
-            fallback_responses = [
-                f"I thought about {_fallback_topic} and gave my honest answer.",
-                f"{_fallback_topic} is something I have views on.",
-                f"My response about {_fallback_topic} reflects how I feel.",
-                f"I answered based on my feelings about {_fallback_topic}.",
-                f"I shared my thoughts on {_fallback_topic}.",
-            ]
-            response = local_rng.choice(fallback_responses)
+            _domain_key_fb = domain.value if hasattr(domain, 'value') else str(domain)
+            _corpus_fb = self._get_corpus_response(_domain_key_fb, sentiment, local_rng)
+            if _corpus_fb:
+                response = _corpus_fb
+            else:
+                # Ultra-last-resort: generic but still natural-sounding
+                _generic_fallbacks = [
+                    "I gave my honest answer based on how I feel about this.",
+                    "I thought about it and answered based on my personal experience.",
+                    "My response reflects my genuine views on the topic.",
+                    "I tried to be honest about how I see things.",
+                    "I answered based on what I've personally observed and experienced.",
+                ]
+                response = local_rng.choice(_generic_fallbacks)
 
         # v1.1.0: Ensure response is unique within the dataset
         response = self._ensure_unique_response(response, local_rng)
@@ -8526,32 +8514,200 @@ class ComprehensiveResponseGenerator:
             return rng.choice(_fb_templates)
         return "I answered based on my honest feelings about what was asked."
 
+    # v1.1.0.4: Topic intelligibility — detect whether an extracted topic
+    # can be naturally used in a sentence.  Variable names like "respond_affect"
+    # produce gibberish when interpolated into templates.
+    _UNINTELLIGIBLE_PATTERNS = re.compile(
+        r'^(respond|affect|score|scale|item|var|dv|iv|q\d|v\d|block|loop|'
+        r'measure|variable|factor|construct|subscale|reverse|recode|'
+        r'raw|total|sum|mean|avg|std|index|composite|latent|observed|'
+        r'pre|post|time|wave|trial|stimulus|condition|control|treatment|'
+        r'group|cell|level|manipulation|check|filler|buffer|distractor|'
+        r'demographics?|debrief|consent|attention)\b',
+        re.IGNORECASE,
+    )
+    _MIN_INTELLIGIBLE_WORDS = 3  # Need at least 3 real words for a usable topic
+
+    def _is_topic_intelligible(self, topic: str) -> bool:
+        """Check whether a topic string can be naturally interpolated into a sentence.
+
+        v1.1.0.4: CRITICAL FIX.  The #1 source of gibberish responses was
+        unintelligible topics like "respond affect score" being plugged into
+        templates as "I strongly believe respond affect score".  This validator
+        catches variable names, technical jargon, and other non-natural-language
+        strings BEFORE they reach the template system.
+
+        Returns True if the topic reads as natural language, False if it's a
+        variable name, technical term, or otherwise unfit for interpolation.
+        """
+        if not topic or len(topic.strip()) < 4:
+            return False
+        _t = topic.strip().lower()
+        # Pure numbers or codes
+        if re.match(r'^[\d_\-\.]+$', _t):
+            return False
+        # Single word that's a technical term
+        _words = _t.split()
+        if len(_words) == 1 and self._UNINTELLIGIBLE_PATTERNS.match(_t):
+            return False
+        # Multi-word but every word is a technical/variable term
+        _real_words = [w for w in _words if not self._UNINTELLIGIBLE_PATTERNS.match(w)
+                       and len(w) > 2]
+        if len(_real_words) < 1:
+            return False
+        # Looks like a variable name (camelCase, snake_case with no spaces originally)
+        if re.match(r'^[a-z]+[A-Z]', topic.strip()):  # camelCase
+            return False
+        # All caps (constant name)
+        if topic.strip().isupper() and len(topic.strip()) > 3:
+            return False
+        # Contains repeated underscores or hyphens (was a var name)
+        if '__' in topic or '--' in topic:
+            return False
+        return True
+
     def _extract_response_subject(self, question_text: str, question_context: str) -> str:
         """Extract the core subject/topic from question text and context.
 
+        v1.1.0.4: MAJOR OVERHAUL.  Previous versions returned raw variable
+        names like "respond_affect_score" which produced gibberish when
+        interpolated into templates.  Now includes:
+        1. Multi-source extraction (context → question → variable name)
+        2. Intelligibility validation (rejects variable names/jargon)
+        3. Natural language conversion for common patterns
+        4. Domain-aware fallback descriptions
+
         Returns a short phrase describing what the question is actually about,
-        or empty string if we can't determine the subject.
+        or empty string if we can't determine an intelligible subject.
         """
-        # Use question context first (most specific)
-        source = question_context.strip() if question_context else ''
-        if not source:
-            source = question_text.strip() if question_text else ''
-        if not source:
-            return ''
+        # Source priority: explicit context > question text > variable name
+        _sources: list = []
 
-        # If source has embedded format "Question: ...\nContext: ..."
-        if '\nContext: ' in source:
-            parts = source.split('\nContext: ')
-            if len(parts) > 1:
-                source = parts[1].split('\n')[0].strip()
+        # 1. User-provided question context (most specific)
+        if question_context and question_context.strip():
+            _sources.append(question_context.strip())
 
-        # Clean up variable-name-style text
-        if ' ' not in source:
-            source = re.sub(r'[_\-]+', ' ', source).strip()
+        # 2. Question text (may contain embedded context)
+        if question_text and question_text.strip():
+            _qt = question_text.strip()
+            # Extract embedded context if present
+            if '\nContext: ' in _qt:
+                _parts = _qt.split('\nContext: ')
+                if len(_parts) > 1:
+                    _ctx = _parts[1].split('\n')[0].strip()
+                    if _ctx:
+                        _sources.append(_ctx)
+                # Also use the question part
+                _q_part = _parts[0].replace('Question: ', '').strip()
+                if _q_part:
+                    _sources.append(_q_part)
+            else:
+                _sources.append(_qt)
 
-        # Only return if source has meaningful content (> 10 chars)
-        if len(source) > 10:
-            return source
+        for _src in _sources:
+            # Clean up variable-name-style text
+            _clean = _src
+            if ' ' not in _clean:
+                _clean = re.sub(r'[_\-]+', ' ', _clean).strip()
+
+            # Try to extract the core noun phrase from question text
+            # "What do you think about climate change?" → "climate change"
+            # "How do you feel about the new policy?" → "the new policy"
+            _about_match = re.search(
+                r'(?:about|regarding|toward[s]?|on|of|with)\s+(.+?)(?:\?|$|\.|,)',
+                _clean, re.IGNORECASE,
+            )
+            if _about_match:
+                _candidate = _about_match.group(1).strip()
+                if self._is_topic_intelligible(_candidate) and len(_candidate) > 4:
+                    return _candidate
+
+            # Try the full source if it's intelligible
+            if self._is_topic_intelligible(_clean) and len(_clean) > 4:
+                # Truncate very long sources to a usable topic
+                if len(_clean) > 80:
+                    # Take first meaningful clause
+                    _clause = re.split(r'[.!?,;]', _clean)[0].strip()
+                    if self._is_topic_intelligible(_clause) and len(_clause) > 4:
+                        return _clause
+                else:
+                    return _clean
+
+        # Nothing intelligible found — return empty (caller uses topic-free mode)
+        return ''
+
+    def _infer_topic_from_context(self, domain_key: str, condition: str,
+                                   question_text: str, question_context: str) -> str:
+        """Infer a natural-language topic from domain, condition, and question context.
+
+        v1.1.0.4: When direct topic extraction fails (e.g., variable names),
+        this method tries to construct a meaningful topic from surrounding
+        context.  Returns a human-readable phrase like "political attitudes"
+        or "trust between people" rather than a variable name.
+        """
+        # Try condition first — often contains meaningful content
+        if condition:
+            _cond_clean = re.sub(r'[_\-]+', ' ', condition).strip()
+            _cond_stop = {
+                'control', 'treatment', 'condition', 'group', 'neutral',
+                'baseline', 'default', 'standard', 'cell', 'level', 'high',
+                'low', 'experimental', 'comparison', 'manipulation',
+            }
+            _cw = [w for w in _cond_clean.lower().split() if w not in _cond_stop and len(w) > 2]
+            if _cw and len(' '.join(_cw)) > 3:
+                _candidate = ' '.join(_cw[:4])
+                if self._is_topic_intelligible(_candidate):
+                    return _candidate
+
+        # Domain-based natural language topics
+        _domain_topics: Dict[str, str] = {
+            'political': 'political issues',
+            'polarization': 'political polarization',
+            'partisanship': 'partisan politics',
+            'voting': 'voting and elections',
+            'economic_games': 'fairness and sharing',
+            'dictator_game': 'sharing decisions',
+            'trust_game': 'trust between people',
+            'ultimatum_game': 'fairness in negotiations',
+            'public_goods': 'contributing to the common good',
+            'consumer': 'product quality and value',
+            'brand_loyalty': 'brand preferences',
+            'health': 'health and healthcare',
+            'technology': 'technology and society',
+            'ai_attitudes': 'artificial intelligence',
+            'moral': 'ethical choices',
+            'environment': 'environmental issues',
+            'education': 'education and learning',
+            'social': 'social relationships',
+            'workplace': 'workplace dynamics',
+            'identity': 'personal identity',
+            'risk': 'risk and uncertainty',
+            'persuasion': 'persuasion and influence',
+            'relationship': 'interpersonal relationships',
+            'financial': 'financial decisions',
+            'cooperation': 'cooperation between people',
+            'fairness': 'fairness and justice',
+        }
+        if domain_key in _domain_topics:
+            return _domain_topics[domain_key]
+
+        # Last resort: try extracting from question_text with broader patterns
+        _src = question_context or question_text or ""
+        if _src:
+            # Look for noun phrases after common question patterns
+            _patterns = [
+                r'(?:thoughts?|feelings?|views?|opinions?)\s+(?:on|about|regarding)\s+(.+?)(?:\?|$|\.)',
+                r'(?:how do you (?:feel|think))\s+about\s+(.+?)(?:\?|$|\.)',
+                r'(?:what (?:is|are) your)\s+(.+?)(?:\?|$|\.)',
+                r'(?:describe|explain|discuss)\s+(?:your\s+)?(.+?)(?:\?|$|\.)',
+            ]
+            for _pat in _patterns:
+                _m = re.search(_pat, _src, re.IGNORECASE)
+                if _m:
+                    _candidate = _m.group(1).strip()
+                    if self._is_topic_intelligible(_candidate) and len(_candidate) > 3:
+                        return _candidate[:60]
+
         return ''
 
     def _generate_context_grounded_response(
@@ -10609,6 +10765,458 @@ class ComprehensiveResponseGenerator:
 
         return _vocab
 
+    # ══════════════════════════════════════════════════════════════════════
+    # v1.1.0.4: CORPUS-BASED RESPONSE SYSTEM
+    # ══════════════════════════════════════════════════════════════════════
+    # Complete, self-contained survey responses that sound like real humans.
+    # These do NOT use topic interpolation — they are ready-to-use as-is.
+    # Organized by: domain × sentiment.
+    #
+    # Scientific grounding:
+    # - Response patterns from Krosnick (1991) satisficing theory
+    # - Length distributions from Schaefer & Dillman (1998)
+    # - Content patterns from Hobbs & Green (2024) open-ended response theory
+    # - Quality tiers from Curran (2016) careless responding research
+    # ══════════════════════════════════════════════════════════════════════
+
+    _CORPUS_RESPONSES: Dict[str, Dict[str, List[str]]] = {
+        # ── POLITICAL / SOCIAL ISSUES ──────────────────────────────
+        'political': {
+            'positive': [
+                "I think this is actually a step in the right direction. Not perfect, but it addresses some real problems that people have been ignoring for too long.",
+                "My views on this have gotten stronger over the years. I used to be on the fence but watching how things played out convinced me that the people pushing for change are right.",
+                "I'm cautiously optimistic. The last few years have shown that progress is possible even when things feel stuck. Not everyone agrees with me but I feel good about where this is heading.",
+                "Honestly, I was skeptical at first but the more I learned about it the more it made sense. I talked to a few friends who had different perspectives and it actually reinforced my view.",
+                "I support this and I think most people would too if they looked at the actual data instead of just the headlines. There's a lot of misinformation out there that muddies the waters.",
+                "This resonates with my values. I grew up in a household where we talked about these issues a lot and I've always felt strongly that we need to do better as a society.",
+                "The evidence is pretty clear to me. I've read enough about this topic to feel confident in my position, even though I know not everyone sees it the same way.",
+                "I believe in this because I've seen the impact firsthand in my community. It's not abstract for me — real people I know have benefited.",
+            ],
+            'negative': [
+                "I honestly don't think this is the right approach. The intentions might be good but the execution has been terrible and regular people end up worse off.",
+                "This is one of those issues where I feel like the people in charge are completely out of touch with what average Americans actually deal with on a daily basis.",
+                "I've watched this play out for years and it never delivers what's promised. At some point you have to look at the track record and admit it's not working.",
+                "My problem isn't with the goal, it's with how they're going about it. There are better ways to address this that don't create so many new problems.",
+                "I used to be more open-minded about this but after seeing the results I've become much more critical. The gap between the rhetoric and the reality is enormous.",
+                "I think the people pushing this hardest are the ones least affected by the consequences. Easy to support something when you don't have to live with the downsides.",
+                "This goes against some basic principles I hold. I've thought about it carefully and I keep coming back to the same concerns no matter how I look at it.",
+                "The data doesn't support what advocates claim. I've looked into it and the actual outcomes are far less impressive than the talking points suggest.",
+            ],
+            'neutral': [
+                "I can see valid points on both sides honestly. Some days I lean one way and some days the other. It's genuinely complicated and I don't trust anyone who pretends otherwise.",
+                "I try to stay informed but the more I learn about this the less sure I am of my position. There are trade-offs no matter what approach you take.",
+                "My views are somewhere in the middle. I don't buy the extreme arguments from either side. Reality is usually more nuanced than the debate makes it seem.",
+                "I've gone back and forth on this enough times that I've kind of made peace with being undecided. Not everything needs a firm opinion and this is one of those things.",
+                "Both sides make points I agree with and points I think are wrong. I wish there was more room for nuance in how we talk about these things.",
+                "I know people I respect who feel very differently about this and they all have good reasons. That tells me it's not as simple as picking a side.",
+            ],
+        },
+        # ── ECONOMIC GAMES / BEHAVIORAL ECONOMICS ─────────────────
+        'economic_games': {
+            'positive': [
+                "I tried to be fair because that's just the kind of person I am. I know some people would keep more for themselves but I'd rather both of us walk away feeling okay about it.",
+                "I gave a decent amount because I genuinely believe in treating people the way I'd want to be treated. Even if the other person is a stranger, they're still a person.",
+                "I was generous because I think that's what makes sense in the long run. Being stingy might pay off once but it's not how I want to go through life.",
+                "My decision was pretty easy actually. I thought about what I'd want someone to do if the roles were reversed and went with that. It felt right.",
+                "I split it fairly because I don't think the money is worth feeling guilty about. I'd rather have less and feel good about my choice than keep everything and feel bad.",
+                "Honestly, I tend to be trusting of other people. I know that can backfire sometimes but I'd rather err on the side of generosity than be the person who hoards everything.",
+            ],
+            'negative': [
+                "I kept more for myself and I'm fine with that. It's a one-time interaction with someone I'll never see again, so the strategic choice seemed obvious.",
+                "I played it safe because in my experience, people don't return favors as often as you'd hope. I've been burned before by being too generous with strangers.",
+                "I was practical about it. The rational move is to keep more, and I don't think there's anything wrong with looking out for your own interests in this kind of situation.",
+                "I didn't give much because I had no reason to trust that the other person would be fair to me. Without trust there's no basis for generosity.",
+                "My approach was strategic. I thought about what would maximize my outcome and acted accordingly. I don't think that makes me a bad person, just realistic.",
+                "I kept the larger share because the situation basically rewards self-interest. If the rules incentivize keeping more, that's what most rational people would do.",
+            ],
+            'neutral': [
+                "I went with something in the middle because I couldn't decide whether to be generous or strategic. Splitting it roughly evenly seemed like the safe choice.",
+                "Honestly I just went with my gut and didn't overthink it. I gave a moderate amount and moved on. I don't think there's a right answer here.",
+                "I wasn't sure what the other person would do so I hedged my bets. Not too generous, not too stingy. Somewhere in the comfortable middle.",
+                "I didn't have a strong strategy going in. I just picked a number that felt reasonable and didn't stress about whether it was optimal.",
+                "My approach was pretty simple — I didn't want to feel like a jerk but I also didn't want to be a pushover. The middle ground felt right.",
+            ],
+        },
+        # ── CONSUMER / PRODUCT / BRAND ────────────────────────────
+        'consumer': {
+            'positive': [
+                "I've been using this for a while and it's been really solid. Not flashy or anything, just consistently good quality that I can rely on day to day.",
+                "I'd recommend this to friends and family without hesitation. The value for what you pay is excellent and I haven't had any issues with it.",
+                "My experience has been great. I did some research before choosing and I'm glad I went with this option. It does what it's supposed to do and does it well.",
+                "I'm satisfied with my choice. It might not be the most exciting product out there but it works reliably and that's what matters most to me.",
+                "The quality is noticeably better than alternatives I've tried. I switched to this about a year ago and haven't looked back since.",
+                "I trust this brand because they've been consistent over time. Quality hasn't dropped and they stand behind what they sell which I respect.",
+            ],
+            'negative': [
+                "I was pretty disappointed honestly. The marketing made it seem much better than it actually is, and the reality didn't match my expectations at all.",
+                "I wouldn't buy this again. The quality was below what I'd expect for the price, and customer service wasn't helpful when I tried to address the issues.",
+                "My experience was frustrating. It broke down faster than it should have and getting a replacement was a hassle. I expected better from a company this size.",
+                "Not worth the money in my opinion. There are cheaper alternatives that work just as well or better. I feel like I was paying for the brand name more than anything.",
+                "I regret this purchase. I should have read more reviews before buying because the problems I experienced seem to be pretty common based on what others say.",
+                "The gap between what's advertised and what you actually get is huge. I've moved on to a competitor and the difference in quality is noticeable.",
+            ],
+            'neutral': [
+                "It's fine. Not great, not terrible. It does the basic job but nothing about it really stands out or makes me feel strongly one way or another.",
+                "I have mixed feelings about it. Some aspects are quite good but others are lacking. Overall it's an average experience, nothing to write home about.",
+                "It meets my basic needs but I wouldn't say I'm passionate about it. If something better came along at a similar price I'd probably switch.",
+                "I don't have strong feelings about this. It works, it's reasonably priced, and it does what I need. That's about all I can say.",
+            ],
+        },
+        # ── HEALTH / MEDICAL / WELLBEING ──────────────────────────
+        'health': {
+            'positive': [
+                "I think preventive care is really important and I wish more people took it seriously. When I started paying attention to my health the difference was significant.",
+                "My experience with the healthcare system has been mostly positive. I've been lucky to have good providers who actually listen and take time to explain things.",
+                "I'm a believer in evidence-based approaches. When the research clearly supports something, I think we should follow the science rather than relying on anecdotes.",
+                "Taking care of your health is one of those things that pays off exponentially. Small changes in habits can lead to huge improvements in quality of life.",
+                "I trust medical professionals because they've spent years training and studying. While no system is perfect, the expertise they bring matters a lot.",
+            ],
+            'negative': [
+                "The healthcare system has a lot of problems that nobody seems willing to address. Costs keep going up while actual care quality doesn't improve proportionally.",
+                "I've had some negative experiences with healthcare providers that made me skeptical. When doctors don't listen to patients, it erodes trust in the whole system.",
+                "Access is the biggest issue in my opinion. It doesn't matter how good the treatments are if people can't afford them or can't get appointments.",
+                "I'm frustrated with how the system works. Too much paperwork, too long waits, and too little actual face-to-face time with providers who know your history.",
+                "The pharmaceutical industry has way too much influence over medical practice. It's hard to trust recommendations when there's so much money at stake.",
+            ],
+            'neutral': [
+                "Healthcare is complicated and I don't think there are easy answers. Some things work well and others need major improvement.",
+                "I try to take care of myself but I also recognize the system has limitations. You do what you can and hope for the best with the rest.",
+                "My views on healthcare are mixed. I've had both good and bad experiences and I think most people's situations are similarly nuanced.",
+            ],
+        },
+        # ── TECHNOLOGY / AI ───────────────────────────────────────
+        'technology': {
+            'positive': [
+                "Technology has made my life easier in ways I couldn't have imagined ten years ago. I'm generally optimistic about where things are heading.",
+                "I embrace new tools and innovations. Sure, there are risks, but the benefits far outweigh the downsides when technology is developed responsibly.",
+                "The progress we've made is impressive and I think we're just scratching the surface of what's possible. I find it exciting rather than scary.",
+                "I think technology is a net positive for society even though it creates new challenges. The key is thoughtful regulation, not resistance to change.",
+            ],
+            'negative': [
+                "I'm concerned about how fast things are moving without enough thought about the consequences. Just because we can doesn't mean we should.",
+                "Technology has created as many problems as it's solved in my view. Privacy erosion, screen addiction, misinformation — these are serious issues.",
+                "I worry about the impact on jobs and communities. Not everyone benefits equally from technological change and the people left behind often get ignored.",
+                "The companies driving these changes are motivated by profit, not public good. That makes me skeptical about whether the outcomes will actually benefit regular people.",
+            ],
+            'neutral': [
+                "I use technology every day but I also see the downsides. It's a tool that can be used well or poorly, and right now I think we're doing both.",
+                "I'm neither excited nor worried — just trying to adapt. Technology changes whether you want it to or not, so I focus on using it wisely.",
+                "There are real benefits and real risks. I try not to be either a technophobe or a blind optimist, just someone who pays attention to both sides.",
+            ],
+        },
+        # ── MORAL / ETHICAL JUDGMENT ──────────────────────────────
+        'moral': {
+            'positive': [
+                "I think doing the right thing matters even when it's hard or inconvenient. My moral compass has been shaped by people I admire who stood up for their values.",
+                "I believe people are fundamentally good and that most of us want to do the right thing. We just don't always agree on what the right thing is.",
+                "Ethics aren't abstract to me — they're about how you treat actual people in everyday situations. And I try to treat people the way I'd want to be treated.",
+            ],
+            'negative': [
+                "I think there's a lot of moral hypocrisy in the world. People talk about values but their actions tell a different story. That bothers me deeply.",
+                "Some things are just wrong and I don't think you need to hear both sides to know that. Moral relativism has its limits and we've gone too far with it.",
+                "The ethical failures I've witnessed have made me more cynical about people's intentions. Too often, doing the right thing takes a back seat to self-interest.",
+            ],
+            'neutral': [
+                "Most ethical questions don't have clear answers in my experience. What seems obviously right in one context can be questionable in another.",
+                "I try to be a good person but I also know that moral judgments are complicated. I'm suspicious of anyone who thinks they have all the answers.",
+            ],
+        },
+        # ── ENVIRONMENT / SUSTAINABILITY ──────────────────────────
+        'environment': {
+            'positive': [
+                "I care about the environment and try to make choices that reflect that. Not perfectly, but I believe individual actions add up when enough people participate.",
+                "Climate change is real and we need to take it seriously. I've changed some of my habits because I think it matters, even if my contribution is small.",
+                "I think we have a responsibility to future generations. Sustainability isn't just about us — it's about what kind of world we leave behind.",
+            ],
+            'negative': [
+                "The environmental regulations are often more about politics than science. They hurt working people and businesses without delivering meaningful results.",
+                "I'm skeptical of the doom and gloom narrative. The predictions keep changing and the proposed solutions often cause more economic harm than environmental benefit.",
+                "Individual sacrifice doesn't matter when corporations and other countries aren't held to the same standard. It feels pointless and performative.",
+            ],
+            'neutral': [
+                "I think the environment is important but so are people's livelihoods. Finding the right balance is harder than either side admits.",
+                "I recycle and try to be mindful but I'm not sure how much difference it makes in the grand scheme. The problem is systemic, not individual.",
+            ],
+        },
+        # ── EDUCATION / LEARNING ──────────────────────────────────
+        'education': {
+            'positive': [
+                "Education changed my life and I believe it's one of the most important investments a society can make. Everyone deserves access to quality learning opportunities.",
+                "I had some teachers who made a huge impact on my thinking and I'm grateful for that. Good education doesn't just teach facts — it teaches you how to think.",
+                "Learning is a lifelong process and I try to keep growing. Whether it's formal education or self-directed study, the pursuit of knowledge is valuable.",
+            ],
+            'negative': [
+                "The education system is outdated and doesn't prepare people for the real world. We're teaching to tests instead of developing critical thinking skills.",
+                "College has become too expensive for what you get. The debt burden is crushing a whole generation and not everyone needs a four-year degree to succeed.",
+                "I was failed by the school system in several ways. Too many students fall through the cracks because the system isn't designed to accommodate different learning styles.",
+            ],
+            'neutral': [
+                "Education has its strengths and weaknesses. Some people thrive in traditional settings while others learn better through different paths. One size doesn't fit all.",
+                "I have mixed feelings about the current system. It works for some people but there's clearly room for improvement in many areas.",
+            ],
+        },
+        # ── SOCIAL / INTERPERSONAL / IDENTITY ─────────────────────
+        'social': {
+            'positive': [
+                "I believe people are generally good-natured and most social problems come from misunderstanding rather than malice. We have more in common than we think.",
+                "Community matters to me. I've seen what happens when people come together around shared goals and it gives me hope for how we handle disagreements.",
+                "I think empathy is the most important quality a person can have. If more people tried to genuinely understand each other, a lot of problems would diminish.",
+            ],
+            'negative': [
+                "People are more divided than ever and I don't see it getting better anytime soon. Social media has made it worse by creating echo chambers.",
+                "Trust in institutions and in each other has eroded badly. I'm not sure how we rebuild that when people can't even agree on basic facts anymore.",
+                "There's too much tribalism in how we interact with each other. People define themselves by their group and treat outsiders with suspicion. It's toxic.",
+            ],
+            'neutral': [
+                "Human nature is complicated. We're capable of incredible generosity and terrible cruelty, sometimes in the same person. I try not to idealize or demonize people.",
+                "Social dynamics are always changing and I think it's hard to make sweeping generalizations. Some things are better, some are worse, and most are just different.",
+            ],
+        },
+        # ── WORKPLACE / ORGANIZATIONAL ────────────────────────────
+        'workplace': {
+            'positive': [
+                "I enjoy my work and feel like what I do matters. Not every day is perfect but overall I'm in a good place professionally and that makes a big difference.",
+                "A good workplace culture makes all the difference. When you feel valued and supported, you naturally want to do your best work.",
+                "I've been fortunate to work with good people who push me to grow. The collaborative aspects of my work are what keep me motivated.",
+            ],
+            'negative': [
+                "The modern workplace expects too much for too little. Burnout is everywhere and companies talk about wellness while making things worse with unrealistic demands.",
+                "Management doesn't understand what employees actually deal with. There's a disconnect between leadership's vision and the reality on the ground.",
+                "I'm frustrated with workplace politics and the way merit often takes a back seat to other factors. It's demoralizing when hard work isn't recognized.",
+            ],
+            'neutral': [
+                "Work is work. Some days are good, some aren't. I try to focus on what I can control and not get too caught up in the bigger picture.",
+                "My feelings about my workplace are mixed. There are things I appreciate and things that could be much better. It's a trade-off like everything else.",
+            ],
+        },
+        # ── GENERAL / FALLBACK ────────────────────────────────────
+        'general': {
+            'positive': [
+                "I feel positive about this and have for a while. It aligns with my personal experience and values, and the more I learn about it the more confident I become.",
+                "My overall take is favorable. There are always things that could be improved but on balance I think the positives significantly outweigh the negatives.",
+                "I support this based on what I've seen and experienced. Not just abstract reasoning but actual real-world outcomes that I've witnessed firsthand.",
+                "I've thought about this carefully and I keep arriving at the same positive conclusion. It just makes sense to me on multiple levels.",
+                "I came into this with an open mind and ended up feeling good about it. The evidence and my personal experience both point in the same direction.",
+                "Honestly this is something I care about and I think it deserves more support than it gets. People who dismiss it haven't really engaged with it seriously.",
+                "My experience has been overwhelmingly positive. I know that's not universal but I can only speak to what I've personally seen and encountered.",
+                "I believe in this and I'm not shy about saying so. It's grounded in solid reasoning and backed up by outcomes I've observed directly.",
+            ],
+            'negative': [
+                "I have serious concerns about this that haven't been adequately addressed. The more I look into it, the more problems I see with how it's being handled.",
+                "My experience has been negative and talking to others confirms it's not just me. There are systemic issues that need attention before this can work properly.",
+                "I was willing to give this a fair chance but the results speak for themselves. When something consistently underperforms, at some point you have to call it what it is.",
+                "The problems here are deeper than people want to admit. Surface-level fixes won't work because the fundamental approach has significant flaws.",
+                "I'm opposed to this and I have concrete reasons based on what I've personally witnessed. It's not just abstract disagreement — I've seen the real-world impact.",
+                "This has been handled poorly from the start and the consequences are becoming harder to ignore. I wish I felt differently but the evidence keeps mounting.",
+                "My frustration with this has grown over time. Initially I was neutral but repeated disappointments have pushed me firmly into the critical camp.",
+                "I don't think the people advocating for this fully understand the downsides. They're focused on the theory while ignoring what actually happens in practice.",
+            ],
+            'neutral': [
+                "I genuinely don't have a strong opinion on this. I've considered different perspectives and I can see merit in arguments on both sides.",
+                "My views are mixed and I'm okay with that. Not everything requires a definitive position and I think this is one of those genuinely ambiguous situations.",
+                "I go back and forth depending on which aspect I'm thinking about. The overall picture is complicated enough that I resist simplifying it.",
+                "I try to be thoughtful about this rather than reactive. There are legitimate concerns and legitimate benefits, and they don't cancel each other out neatly.",
+                "I know people who feel very strongly on both sides and I respect their views. My own position is somewhere in the messy middle, which I've made peace with.",
+                "This is one of those topics where I find myself agreeing with different people at different times. I don't think that's wishy-washy — I think it's realistic.",
+            ],
+        },
+    }
+
+    def _get_corpus_response(self, domain_key: str, sentiment: str,
+                             rng: random.Random) -> str:
+        """Select a complete, natural-sounding response from the corpus.
+
+        v1.1.0.4: These responses are COMPLETE sentences written to sound
+        like real survey respondents.  They don't need topic interpolation
+        because they're self-contained natural language.  Used when topic
+        extraction fails or returns unintelligible text.
+
+        Tracks used responses to avoid giving the same corpus response to
+        multiple participants.  When the pool is exhausted, resets and
+        starts reusing with personalization to differentiate.
+        """
+        _sent_key = 'positive' if sentiment in ('very_positive', 'positive') else \
+                    ('negative' if sentiment in ('very_negative', 'negative') else 'neutral')
+
+        # Map domain_key to corpus key
+        _domain_map: Dict[str, str] = {
+            'dictator_game': 'economic_games', 'trust_game': 'economic_games',
+            'ultimatum_game': 'economic_games', 'public_goods': 'economic_games',
+            'prisoners_dilemma': 'economic_games', 'cooperation': 'economic_games',
+            'fairness': 'economic_games',
+            'polarization': 'political', 'partisanship': 'political',
+            'voting': 'political', 'policy_attitudes': 'political',
+            'intergroup': 'political',
+            'product_evaluation': 'consumer', 'brand_loyalty': 'consumer',
+            'purchase_intent': 'consumer', 'advertising': 'consumer',
+            'medical_decision': 'health', 'wellbeing': 'health',
+            'vaccination': 'health', 'stress': 'health',
+            'moral_judgment': 'moral', 'ethics': 'moral',
+            'ai_attitudes': 'technology', 'automation': 'technology',
+            'climate': 'environment', 'sustainability': 'environment',
+            'learning': 'education',
+            'identity': 'social', 'norms': 'social', 'conformity': 'social',
+            'job_satisfaction': 'workplace', 'leadership': 'workplace',
+            'motivation': 'workplace',
+            'risk_preference': 'general', 'risk': 'general',
+            'persuasion': 'general', 'credibility': 'general',
+            'relationship': 'social', 'attachment': 'social',
+            'financial_decision': 'general', 'investment': 'general',
+        }
+        _corpus_key = _domain_map.get(domain_key, domain_key)
+        if _corpus_key not in self._CORPUS_RESPONSES:
+            _corpus_key = 'general'
+
+        _pool = self._CORPUS_RESPONSES[_corpus_key].get(_sent_key, [])
+        if not _pool:
+            _pool = self._CORPUS_RESPONSES['general'].get(_sent_key, [])
+        if not _pool:
+            return ""
+
+        # Track used indices to avoid giving same response to different participants
+        _track_key = f"{_corpus_key}|{_sent_key}"
+        if _track_key not in self._used_corpus_indices:
+            self._used_corpus_indices[_track_key] = set()
+        _used = self._used_corpus_indices[_track_key]
+
+        # Find unused responses
+        _available = [i for i in range(len(_pool)) if i not in _used]
+        if not _available:
+            # All used — reset tracker (personalization will differentiate)
+            _used.clear()
+            _available = list(range(len(_pool)))
+
+        _idx = rng.choice(_available)
+        _used.add(_idx)
+        return _pool[_idx]
+
+    def _personalize_corpus_response(self, response: str, traits: Dict[str, Any],
+                                      behavioral_profile: Dict[str, Any],
+                                      rng: random.Random) -> str:
+        """Transform a corpus response to sound like a specific persona.
+
+        v1.1.0.4: PERSONA-DRIVEN PERSONALIZATION ENGINE.  Takes a complete
+        corpus response and applies transformations based on persona traits
+        to make each simulated participant sound unique:
+
+        1. Verbosity modulation — truncate for terse participants, extend for verbose
+        2. Formality adjustment — add contractions/slang for casual, remove for formal
+        3. Sentence restructuring — vary the sentence order and structure
+        4. Personal detail injection — add "my [relation]" or "I remember when" fragments
+        5. Imperfection injection — typos, run-ons, missing punctuation for low-engagement
+
+        Based on:
+        - Krosnick (1991): Satisficing produces shorter, less detailed responses
+        - LIWC profiles: Different demographics use different pronoun/verb patterns
+        - Schmidt (2019): Response quality varies with engagement and device type
+        """
+        if not response:
+            return response
+
+        _verbosity = traits.get('verbosity', 0.5)
+        _formality = traits.get('formality', 0.5)
+        _engagement = traits.get('attention', 0.5)
+        _extremity = traits.get('extremity', 0.4)
+
+        _result = response
+
+        # ── 1. Verbosity modulation ──────────────────────────────
+        _sentences = re.split(r'(?<=[.!?])\s+', _result.strip())
+        if _verbosity < 0.3 and len(_sentences) > 2:
+            # Terse persona: keep only 1-2 sentences
+            _keep = rng.choice([1, 2])
+            _result = ' '.join(_sentences[:_keep])
+        elif _verbosity < 0.4 and len(_sentences) > 3:
+            _keep = rng.choice([2, 3])
+            _result = ' '.join(_sentences[:_keep])
+
+        # ── 2. Formality adjustment ──────────────────────────────
+        if _formality < 0.3:
+            # Casual: add contractions, lowercase openers, remove periods
+            _casual_subs = [
+                (r"\bI am\b", "I'm"), (r"\bdo not\b", "don't"),
+                (r"\bdoes not\b", "doesn't"), (r"\bcannot\b", "can't"),
+                (r"\bwould not\b", "wouldn't"), (r"\bit is\b", "it's"),
+                (r"\bthat is\b", "that's"), (r"\bI have\b", "I've"),
+                (r"\bI would\b", "I'd"), (r"\bthey are\b", "they're"),
+                (r"\bwill not\b", "won't"), (r"\bshould not\b", "shouldn't"),
+            ]
+            for _pat, _rep in _casual_subs:
+                if rng.random() < 0.7:
+                    _result = re.sub(_pat, _rep, _result, flags=re.IGNORECASE)
+            # Sometimes drop final period
+            if rng.random() < 0.3 and _result.endswith('.'):
+                _result = _result[:-1]
+            # Casual opener
+            if rng.random() < 0.25:
+                _openers = ["idk ", "tbh ", "lol ", "ok so ", "i mean "]
+                _result = rng.choice(_openers) + _result[0].lower() + _result[1:]
+        elif _formality > 0.7:
+            # Formal: expand contractions
+            _formal_subs = [
+                (r"\bdon't\b", "do not"), (r"\bcan't\b", "cannot"),
+                (r"\bwon't\b", "will not"), (r"\bI'm\b", "I am"),
+                (r"\bI've\b", "I have"), (r"\bit's\b", "it is"),
+                (r"\bthat's\b", "that is"), (r"\bI'd\b", "I would"),
+                (r"\bthey're\b", "they are"), (r"\bwouldn't\b", "would not"),
+            ]
+            for _pat, _rep in _formal_subs:
+                if rng.random() < 0.5:
+                    _result = re.sub(_pat, _rep, _result, flags=re.IGNORECASE)
+
+        # ── 3. Sentence restructuring — swap sentence order ──────
+        _re_sentences = re.split(r'(?<=[.!?])\s+', _result.strip())
+        if len(_re_sentences) >= 3 and rng.random() < 0.3:
+            # Swap two random sentences
+            _i, _j = rng.sample(range(len(_re_sentences)), 2)
+            _re_sentences[_i], _re_sentences[_j] = _re_sentences[_j], _re_sentences[_i]
+            _result = ' '.join(_re_sentences)
+
+        # ── 4. Personal detail injection ─────────────────────────
+        if _verbosity > 0.5 and rng.random() < 0.25:
+            _details = [
+                " My partner thinks the same way about this.",
+                " I was just talking about this with a friend last week.",
+                " I noticed this more after moving to a new city.",
+                " Growing up, my parents had strong views on this.",
+                " I've been thinking about this more lately.",
+                " Someone at work brought this up recently and it got me thinking.",
+            ]
+            _result = _result.rstrip('.') + '.' + rng.choice(_details)
+
+        # ── 5. Imperfection injection for low engagement ─────────
+        if _engagement < 0.4 and rng.random() < 0.35:
+            _imperfections = [
+                # Run-on sentence
+                lambda t: t.replace('. ', ', ', 1) if '. ' in t else t,
+                # Missing apostrophe
+                lambda t: t.replace("don't", "dont", 1) if "don't" in t else t,
+                lambda t: t.replace("I'm", "Im", 1) if "I'm" in t else t,
+                lambda t: t.replace("can't", "cant", 1) if "can't" in t else t,
+                # Lowercase first letter
+                lambda t: t[0].lower() + t[1:] if t else t,
+                # Double space
+                lambda t: t.replace(' ', '  ', 1) if rng.random() < 0.3 else t,
+            ]
+            _imperfection = rng.choice(_imperfections)
+            _result = _imperfection(_result)
+
+        # ── 6. Extremity amplification ───────────────────────────
+        if _extremity > 0.7 and rng.random() < 0.3:
+            _intensifiers = [
+                ("I think", rng.choice(["I strongly believe", "I firmly think", "I'm convinced"])),
+                ("I feel", rng.choice(["I deeply feel", "I really feel", "I'm certain"])),
+                ("good", rng.choice(["excellent", "fantastic", "outstanding"])),
+                ("bad", rng.choice(["terrible", "awful", "disastrous"])),
+                ("important", rng.choice(["crucial", "absolutely essential", "vitally important"])),
+            ]
+            for _old, _new in _intensifiers:
+                if _old in _result.lower():
+                    _result = re.sub(re.escape(_old), _new, _result, count=1, flags=re.IGNORECASE)
+                    break
+
+        return _result
+
     # ===================================================================
     # v1.0.9.2: ADAPTIVE COMPOSITIONAL RESPONSE BUILDER
     # ===================================================================
@@ -10722,10 +11330,13 @@ class ComprehensiveResponseGenerator:
         structural patterns — some blurt out a position, some tell a story,
         some list reasons, some start with a rhetorical question.  This
         engine reproduces that structural diversity.
-        """
-        if not topic:
-            topic = "this"
 
+        v1.1.0.4: TOPIC INTELLIGIBILITY GATE.  Before interpolating any
+        topic into templates, validates that the topic is natural language
+        (not a variable name like "respond_affect_score").  When the topic
+        is unintelligible, uses corpus-based complete responses instead of
+        template interpolation.  This is the #1 fix for gibberish output.
+        """
         _traits = behavioral_profile.get('trait_profile', {}) if behavioral_profile else {}
         _verbosity = _traits.get('verbosity', 0.5)
         _formality = _traits.get('formality', 0.5)
@@ -10733,6 +11344,22 @@ class ComprehensiveResponseGenerator:
         _extremity = _traits.get('extremity', 0.4)
         _sd = _traits.get('social_desirability', 0.3)
         _intensity = behavioral_profile.get('intensity', 0.5) if behavioral_profile else 0.5
+
+        # --- v1.1.0.4: TOPIC INTELLIGIBILITY CHECK -------------------------
+        # If the topic is a variable name or technical jargon, DON'T try to
+        # interpolate it into templates.  Instead, use a complete corpus
+        # response that stands on its own without needing a topic variable.
+        _topic_usable = self._is_topic_intelligible(topic) if topic else False
+        if not _topic_usable:
+            # Try to infer a natural-language topic from domain/condition
+            _inferred = self._infer_topic_from_context(
+                domain_key, condition, question_text, question_context,
+            )
+            if _inferred and self._is_topic_intelligible(_inferred):
+                topic = _inferred
+                _topic_usable = True
+            else:
+                topic = "this"
 
         # --- v1.1.0.3: Ultra-short handler for very low engagement ------
         # ~15-20% of real survey responses are 1-5 words. Disengaged personas
@@ -10743,6 +11370,18 @@ class ComprehensiveResponseGenerator:
             return self._build_ultra_short(topic, sentiment, _formality, rng)
         if _engagement < 0.35 and _verbosity < 0.3 and rng.random() < 0.35:
             return self._build_ultra_short(topic, sentiment, _formality, rng)
+
+        # --- v1.1.0.4: CORPUS-BASED PATH for unintelligible topics ------
+        # When topic is just "this", use complete pre-written responses
+        # instead of templates that would produce "I believe in this" gibberish.
+        if not _topic_usable:
+            _corpus_resp = self._get_corpus_response(domain_key, sentiment, rng)
+            if _corpus_resp:
+                # Apply FULL personalization pipeline to make each persona unique
+                _corpus_resp = self._personalize_corpus_response(
+                    _corpus_resp, _traits, behavioral_profile or {}, rng,
+                )
+                return _corpus_resp
 
         # --- Extract question words to mirror in response ---------------
         _q_mirror_words: List[str] = []

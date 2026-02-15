@@ -516,6 +516,10 @@ class InstructorReportGenerator:
         lines.append(f"| **Mode** | {metadata.get('simulation_mode', 'pilot').title()} |")
         lines.append(f"| **Tool Version** | {metadata.get('app_version', 'N/A')} |")
         lines.append(f"| **Random Seed** | {metadata.get('random_seed', 'Auto')} |")
+        # v1.1.0.4: Show which generation method was used (not just in admin dashboard)
+        _gen_method_label = metadata.get('generation_method_label', '')
+        if _gen_method_label:
+            lines.append(f"| **Generation Method** | {_gen_method_label} |")
         lines.append("")
 
         # v1.1.0: Add Study Overview section
@@ -2080,6 +2084,12 @@ class ComprehensiveInstructorReport:
             lines.append("### Abstract / Study Description")
             lines.append("")
             lines.append(study_description)
+            lines.append("")
+
+        # v1.1.0.4: Generation method (visible in both user and instructor reports)
+        _gen_method_label = metadata.get('generation_method_label', '')
+        if _gen_method_label:
+            lines.append(f"**Data Generation Method:** {_gen_method_label}")
             lines.append("")
 
         # Experimental Design
