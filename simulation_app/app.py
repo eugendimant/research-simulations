@@ -54,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.1.0.4"
-BUILD_ID = "20260215-v11004-corpus-based-oe-generation"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.1.0.5"
+BUILD_ID = "20260215-v11005-fix-generation-method-labels"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -118,7 +118,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.1.0.4"  # v1.1.0.4: Corpus-based OE generation, topic intelligibility, generation method display
+APP_VERSION = "1.1.0.5"  # v1.1.0.5: Fix conflicting generation method labels when AI fails
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -11796,6 +11796,31 @@ if active_page == 3:
             metadata['generation_method'] = _user_gen_method
             metadata['generation_method_label'] = _gen_method_labels.get(
                 _user_gen_method, _user_gen_method)
+
+            # v1.1.0.5: Override generation_method_label to reflect ACTUAL outcome.
+            # If user selected AI but all providers failed, label should say
+            # "Template Engine" — not "Built-in AI" — to avoid confusion between
+            # what was selected and what actually generated the data.
+            if _user_gen_method in ('free_llm', 'own_api'):
+                _actual_stats = metadata.get('llm_stats', {}) or {}
+                _actual_pool = int(_actual_stats.get('pool_size', 0) or 0)
+                _actual_llm_calls = int(_actual_stats.get('llm_calls', 0) or 0)
+                _actual_attempts = int(_actual_stats.get('llm_attempts', 0) or 0)
+                if _actual_pool == 0:
+                    # No AI responses generated — templates were used
+                    metadata['selected_generation_method'] = _user_gen_method
+                    metadata['selected_generation_method_label'] = _gen_method_labels.get(
+                        _user_gen_method, _user_gen_method)
+                    if _actual_llm_calls > 0 or _actual_attempts > 0:
+                        metadata['generation_method_label'] = "Template Engine (AI providers were unavailable)"
+                    else:
+                        metadata['generation_method_label'] = "Template Engine (no AI providers connected)"
+                elif _actual_pool > 0:
+                    _fallback = int(_actual_stats.get('fallback_uses', 0) or 0)
+                    _total = _actual_pool + _fallback
+                    if _fallback > 0 and _total > 0:
+                        _ai_pct = int((_actual_pool / _total) * 100)
+                        metadata['generation_method_label'] = f"AI-Powered ({_ai_pct}% AI, {100 - _ai_pct}% template)"
 
             # v1.0.8.2: Post-generation LLM health diagnostic — detect issues and
             # show actionable notification for the user to switch methods if needed.
