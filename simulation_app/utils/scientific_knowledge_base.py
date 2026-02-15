@@ -33,7 +33,7 @@ References are organized by research area with full APA-style citations in comme
 """
 from __future__ import annotations
 
-__version__ = "1.1.0.4"
+__version__ = "1.1.0.5"
 
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple

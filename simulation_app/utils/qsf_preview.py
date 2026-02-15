@@ -33,7 +33,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 # Version identifier to help track deployed code
-__version__ = "1.1.0.4"  # v1.1.0.4: Corpus-based OE generation, topic intelligibility, generation method display
+__version__ = "1.1.0.5"  # v1.1.0.5: Fix conflicting generation method labels when AI fails
 
 
 # ============================================================================
