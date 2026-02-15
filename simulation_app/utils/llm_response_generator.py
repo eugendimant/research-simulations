@@ -21,7 +21,7 @@ Architecture:
 Version: 1.0.8.0
 """
 
-__version__ = "1.1.0.3"
+__version__ = "1.1.0.4"
 
 import hashlib
 import json
@@ -917,10 +917,27 @@ def _build_batch_prompt(
             if _voice_hint:
                 _beh_hint += f" | CONTINUITY: {_voice_hint[:120]}"
 
+        # v1.1.0.4: Concrete writing style example — give the LLM a specific
+        # example sentence showing HOW this persona writes, not just traits.
+        # This dramatically improves persona differentiation in LLM output.
+        _style_example = ""
+        if e < 0.25:
+            _style_example = ' | WRITE LIKE: "yeah idk its fine" or "not really into it"'
+        elif f < 0.25 and v > 0.5:
+            _style_example = ' | WRITE LIKE: "ok so basically I think the whole thing is kinda messed up tbh, like nobody even tries anymore"'
+        elif f > 0.75:
+            _style_example = ' | WRITE LIKE: "I believe there are valid concerns on both sides, though my own assessment leans toward a more cautious interpretation."'
+        elif _ext > 0.7 and s in ("very_positive", "positive"):
+            _style_example = ' | WRITE LIKE: "This is genuinely great and I wish more people could see that. Its one of the best things Ive seen."'
+        elif _ext > 0.7 and s in ("very_negative", "negative"):
+            _style_example = ' | WRITE LIKE: "This is a complete disaster and I cant believe anyone supports it. Honestly infuriating."'
+        elif v < 0.3:
+            _style_example = ' | WRITE LIKE: "its ok" or "good overall" or "I liked it, pretty straightforward"'
+
         participant_lines.append(
             f"Participant {i}: length={length_hint} | "
             f"style={style_hint} | effort={effort_hint} | "
-            f"sentiment={sentiment_hint}{rating_cue}{demo_hints}{_beh_hint}"
+            f"sentiment={sentiment_hint}{rating_cue}{demo_hints}{_beh_hint}{_style_example}"
         )
 
     participants_block = "\n".join(participant_lines)

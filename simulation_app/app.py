@@ -54,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.1.0.3"
-BUILD_ID = "20260214-v11003-5x-oe-realism-round2"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.1.0.4"
+BUILD_ID = "20260215-v11004-corpus-based-oe-generation"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -118,7 +118,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.1.0.3"  # v1.1.0.3: Holistic OE quality polish — 5x non-LLM response realism
+APP_VERSION = "1.1.0.4"  # v1.1.0.4: Corpus-based OE generation, topic intelligibility, generation method display
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -12386,8 +12386,27 @@ if active_page == 3:
             unsafe_allow_html=True,
         )
 
-        # Data realism badges (correlation + missing data)
+        # v1.1.0.4: Generation method badge — show which engine was used
         _gen_meta = st.session_state.get("last_metadata", {}) or {}
+        _gen_method_label = _gen_meta.get('generation_method_label', '')
+        _gen_method_key = _gen_meta.get('generation_method', '')
+        if _gen_method_label:
+            _method_icons = {
+                'template': '\u2699\ufe0f',      # gear
+                'experimental': '\U0001f9e0',     # brain
+                'free_llm': '\u26a1',             # lightning
+                'own_api': '\U0001f511',          # key
+            }
+            _method_icon = _method_icons.get(_gen_method_key, '')
+            st.markdown(
+                f'<div style="background:#EEF2FF;border:1px solid #C7D2FE;border-radius:8px;'
+                f'padding:8px 14px;margin:6px 0 10px 0;font-size:0.88em;color:#3730A3;">'
+                f'{_method_icon} <strong>Generation Method:</strong> {_gen_method_label}'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+
+        # Data realism badges (correlation + missing data)
         _gen_badges = []
         _corr_info = _gen_meta.get("cross_dv_correlation", {})
         if _corr_info.get("enabled"):
