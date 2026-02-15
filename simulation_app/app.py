@@ -54,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.1.0.5"
-BUILD_ID = "20260215-v11005-fix-generation-method-labels"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.1.0.6"
+BUILD_ID = "20260215-v11006-card-ux-freeform-text-quality"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -118,7 +118,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.1.0.5"  # v1.1.0.5: Fix conflicting generation method labels when AI fails
+APP_VERSION = "1.1.0.6"  # v1.1.0.6: Card UX overhaul, graceful fallback UI, 3-iteration free-form text quality
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -10911,7 +10911,7 @@ if active_page == 3:
             _llm_status = {"available": True, "provider": "not_needed"}
 
         _gen_method_key = "generation_method"
-        _current_method = st.session_state.get(_gen_method_key, "free_llm")
+        _current_method = st.session_state.get(_gen_method_key, None)
 
         st.markdown(
             '<div style="margin-bottom:8px;">'
@@ -10935,11 +10935,12 @@ if active_page == 3:
                 "tag_color": "#F59E0B",
                 "subtitle": "Pre-built response patterns across 225+ research domains",
                 "details": [
-                    "Generates data instantly with no internet connection or API calls needed",
-                    "Uses a library of research-domain-specific response patterns (e.g., economic games, social psychology, consumer behavior) to compose realistic answers",
+                    "Runs entirely offline — no API calls or external services required",
+                    "Uses a library of research-domain-specific response patterns (e.g., economic games, social psychology, consumer behavior) to compose answers",
                     "Numeric data is calibrated to published norms for each construct and game type",
-                    "Best for: quick pilot simulations or when you need immediate results without waiting for AI generation",
+                    "Best for: quick pilot simulations or testing your analysis pipeline before collecting real data",
                 ],
+                "quality_note": "Open-text quality: Responses are assembled from domain-specific templates and phrase banks. They will be on-topic and structurally varied, but may occasionally sound formulaic compared to real human writing. Best suited for testing data pipelines rather than evaluating response content.",
             },
             {
                 "key": "experimental",
@@ -10950,26 +10951,27 @@ if active_page == 3:
                 "tag_color": "#3B82F6",
                 "subtitle": "Simulates realistic participant behavior using domain-calibrated models",
                 "details": [
-                    "Analyzes your full study design (conditions, scales, paradigm) and applies behavioral models that adapt to your specific experiment",
+                    "Runs entirely offline — analyzes your study design locally and applies behavioral models adapted to your specific experiment",
                     "60+ simulated participant archetypes with distinct response styles — from careful optimizers to careless satisficers — each with realistic trait profiles",
                     "Recognizes 30+ experimental paradigms (economic games, social dilemmas, political polarization, moral judgment, etc.) and applies paradigm-appropriate response patterns",
                     "Effect sizes are calibrated to hundreds of published meta-analyses across psychology, economics, and organizational behavior",
                     "Best for: realistic behavioral data where numeric patterns need to reflect established scientific findings for your specific domain",
                 ],
+                "quality_note": "Open-text quality: Similar to the Template Engine for text responses, but with stronger persona-to-text coherence (e.g., a high-agreeableness persona writes differently than a careless satisficer). Numeric data quality is the primary strength here.",
             },
             {
                 "key": "free_llm",
                 "icon": "&#9889;",  # lightning
                 "icon_bg": "linear-gradient(135deg, #3B82F6 0%, #6366F1 100%)",
                 "title": "Built-in AI",
-                "tag": "Recommended",
-                "tag_color": "#22c55e",
+                "tag": "Free",
+                "tag_color": "#3B82F6",
                 "subtitle": "AI-generated responses using free LLM providers",
                 "details": [
                     "Uses free-tier AI models (Groq, Cerebras, Google AI) to generate contextually rich open-ended text responses grounded in your study design",
                     "Behavioral coherence pipeline ensures that each participant's text responses match their numeric ratings — the same person tells a consistent story",
                     "Automatic failover across multiple providers for reliable generation",
-                    "Note: uses shared free API access — availability may be limited during high-usage periods. If generation is slow or unavailable, switch to Template Engine or use Your API Key",
+                    "Note: relies on shared free-tier API access — availability depends on current server load across all users. Generation may be slower or temporarily unavailable during peak hours",
                 ],
             },
             {
@@ -10979,10 +10981,10 @@ if active_page == 3:
                 "title": "Your API Key",
                 "tag": "",
                 "tag_color": "",
-                "subtitle": "Bring your own LLM provider for dedicated access",
+                "subtitle": "Bring your own LLM provider for dedicated, reliable access",
                 "details": [
-                    "Use your own API key from Google AI, Groq, Cerebras, OpenRouter, Poe, or OpenAI",
-                    "Higher rate limits and faster generation with your own dedicated access — no shared usage constraints",
+                    "Use your own API key from Google AI, Groq, Cerebras, OpenRouter, Poe, or OpenAI — most offer generous free tiers",
+                    "Dedicated access with your own rate limits — no shared usage constraints or availability issues",
                     "Same behavioral coherence pipeline as Built-in AI — your key just powers the LLM calls",
                     "Key is used in-memory only during your session; never saved to disk or logged",
                 ],
@@ -11032,6 +11034,17 @@ if active_page == 3:
                         f'</div>'
                     )
 
+                # Quality note for non-LLM methods (v1.1.0.6)
+                _quality_note_html = ""
+                _qn = _card.get("quality_note", "")
+                if _qn:
+                    _quality_note_html = (
+                        f'<div style="background:#FFF7ED;border:1px solid #FED7AA;border-radius:6px;'
+                        f'padding:6px 10px;margin-top:6px;">'
+                        f'<span style="color:#9A3412;font-size:0.73em;line-height:1.4;">{_qn}</span>'
+                        f'</div>'
+                    )
+
                 # Render card HTML
                 st.markdown(
                     f'<div style="{_border}{_bg}border-radius:10px;padding:14px 16px;'
@@ -11050,15 +11063,19 @@ if active_page == 3:
                     f'{_card["subtitle"]}</div>'
                     # Detail bullets
                     f'{_details_html}'
+                    # Quality note
+                    f'{_quality_note_html}'
                     f'</div>',
                     unsafe_allow_html=True,
                 )
 
                 # Clickable card selector — replaces separate "Select" button
-                # For non-selected cards: a full-width button styled to blend with card
+                # v1.1.0.6: Show select button on all cards when nothing is chosen,
+                # or on non-selected cards when one is already active.
                 if not _is_sel:
+                    _btn_label = f"Select {_card['title']}" if _current_method is None else f"Use {_card['title']}"
                     if st.button(
-                        f"Use {_card['title']}",
+                        _btn_label,
                         key=f"gen_method_{_mk}",
                         type="secondary",
                         use_container_width=True,
@@ -11069,6 +11086,17 @@ if active_page == 3:
                         if _mk in ("free_llm", "own_api"):
                             st.session_state["_use_socsim_experimental"] = False
                         st.rerun()
+
+        # v1.1.0.6: Prompt when no method is selected yet
+        if _current_method is None:
+            st.markdown(
+                '<div style="background:#EFF6FF;border:1px solid #BFDBFE;border-radius:8px;'
+                'padding:12px 16px;margin:8px 0;">'
+                '<span style="color:#1E40AF;font-size:0.88em;font-weight:600;">'
+                'Please select a generation method above to continue.</span>'
+                '</div>',
+                unsafe_allow_html=True,
+            )
 
         # --- Inline detail panel for methods that need configuration ---
         if _current_method == "own_api":
@@ -11181,15 +11209,35 @@ if active_page == 3:
         elif _current_method == "free_llm":
             _llm_avail = _llm_status.get("available", False) if _llm_status else False
             if not _llm_avail and _has_open_ended:
+                # v1.1.0.6: Visually clean notice with action buttons instead of alarming warning
                 st.markdown(
-                    '<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:6px;'
-                    'padding:8px 12px;margin-top:4px;">'
-                    '<span style="color:#92400e;font-size:0.83em;">'
-                    'Built-in AI may be temporarily unavailable. '
-                    'If generation stalls, switch to "Your own API key" or "Template engine".'
-                    '</span></div>',
+                    '<div style="background:linear-gradient(135deg, #FFFBEB 0%, #FEF3C7 100%);'
+                    'border:1px solid #FDE68A;border-radius:10px;'
+                    'padding:14px 18px;margin-top:6px;">'
+                    '<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">'
+                    '<span style="font-size:1.0em;">&#128268;</span>'
+                    '<span style="color:#92400e;font-size:0.88em;font-weight:600;">'
+                    'Free AI providers are currently not responding</span></div>'
+                    '<span style="color:#78350f;font-size:0.82em;line-height:1.5;">'
+                    'This typically resolves within a few hours. You can still generate data '
+                    'using one of the alternatives below, or try again later.</span>'
+                    '</div>',
                     unsafe_allow_html=True,
                 )
+                _pre_c1, _pre_c2 = st.columns(2)
+                with _pre_c1:
+                    if st.button("Switch to Your API Key", key="_pre_switch_api",
+                                 type="secondary", use_container_width=True,
+                                 help="Free keys available from Groq, Google AI, etc."):
+                        st.session_state[_gen_method_key] = "own_api"
+                        st.rerun()
+                with _pre_c2:
+                    if st.button("Switch to Template Engine", key="_pre_switch_template",
+                                 type="secondary", use_container_width=True,
+                                 help="Instant generation, runs entirely offline"):
+                        st.session_state[_gen_method_key] = "template"
+                        st.session_state["allow_template_fallback_once"] = True
+                        st.rerun()
 
         # Wire method choice into engine settings
         if _current_method == "template":
@@ -11856,28 +11904,48 @@ if active_page == 3:
                     )
 
                 if _llm_had_issues:
+                    # v1.1.0.6: Visually appealing issue notification with clear choices
+                    _issue_detail = ' '.join(_issue_messages)
                     _switch_html = (
-                        '<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:10px;'
-                        'padding:16px 20px;margin:12px 0;">'
-                        '<span style="font-size:1.05em;font-weight:700;color:#92400e;">'
-                        'LLM Generation Issues Detected</span><br>'
-                        '<span style="color:#78350f;font-size:0.9em;">'
-                    )
-                    for _msg in _issue_messages:
-                        _switch_html += f'{_msg}<br>'
-                    _switch_html += (
-                        '<br><strong>Recommendations:</strong><br>'
-                        '&bull; <strong>Your own API key</strong> — get a free key from '
-                        '<a href="https://console.groq.com" target="_blank">Groq</a> or '
-                        '<a href="https://aistudio.google.com" target="_blank">Google AI</a> '
-                        'for unlimited, fast AI responses<br>'
-                        '&bull; <strong>Template engine</strong> — instant generation '
-                        'using 225+ domain templates (no API needed)<br>'
-                        '&bull; <strong>Try again later</strong> — built-in free API access '
-                        'refreshes daily'
-                        '</span></div>'
+                        '<div style="background:linear-gradient(135deg, #FFFBEB 0%, #FEF3C7 100%);'
+                        'border:1px solid #FDE68A;border-radius:12px;'
+                        'padding:20px 24px;margin:12px 0;box-shadow:0 1px 3px rgba(0,0,0,0.06);">'
+                        '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">'
+                        '<span style="font-size:1.3em;">&#9888;&#65039;</span>'
+                        '<span style="font-size:1.0em;font-weight:700;color:#92400e;">'
+                        'AI generation ran into some issues</span></div>'
+                        f'<span style="color:#78350f;font-size:0.88em;line-height:1.5;">'
+                        f'{_issue_detail}</span>'
+                        '<div style="margin-top:14px;color:#78350f;font-size:0.85em;">'
+                        'Your data was still generated successfully. To get higher-quality AI text responses next time, '
+                        'you can choose one of the options below:'
+                        '</div></div>'
                     )
                     st.markdown(_switch_html, unsafe_allow_html=True)
+
+                    # Actionable buttons for switching method
+                    _fb_col1, _fb_col2, _fb_col3 = st.columns(3)
+                    with _fb_col1:
+                        if st.button("Use my own API key", key="_post_gen_switch_api",
+                                     type="secondary", use_container_width=True):
+                            st.session_state[_gen_method_key] = "own_api"
+                            st.session_state["allow_template_fallback_once"] = False
+                            st.session_state["_use_socsim_experimental"] = False
+                            _navigate_to(3)
+                    with _fb_col2:
+                        if st.button("Use Template Engine", key="_post_gen_switch_template",
+                                     type="secondary", use_container_width=True):
+                            st.session_state[_gen_method_key] = "template"
+                            st.session_state["allow_template_fallback_once"] = True
+                            st.session_state["_use_socsim_experimental"] = False
+                            _navigate_to(3)
+                    with _fb_col3:
+                        if st.button("Use Behavioral Engine", key="_post_gen_switch_experimental",
+                                     type="secondary", use_container_width=True):
+                            st.session_state[_gen_method_key] = "experimental"
+                            st.session_state["allow_template_fallback_once"] = True
+                            st.session_state["_use_socsim_experimental"] = True
+                            _navigate_to(3)
 
             # v1.0.8.1: Show SocSim enrichment results
             _socsim_meta = metadata.get("socsim", {})
@@ -12303,23 +12371,85 @@ if active_page == 3:
             error_tb = _tb.format_exc()
             error_str = str(e).lower()
 
-            # Categorize the error for a more helpful user-facing message
+            # v1.1.0.6: Categorize errors with user-friendly choice UI instead of
+            # alarming "error" boxes. Give users clear options to proceed.
             if "api" in error_str or "auth" in error_str or "401" in error_str or "403" in error_str:
-                st.error(
-                    "**LLM API Error:** Could not connect to the AI provider. "
-                    "If you provided an API key, please verify it is correct and has not expired. "
-                    "If you do not allow fallback, generation is intentionally blocked until at least one LLM provider succeeds."
+                st.markdown(
+                    '<div style="background:linear-gradient(135deg, #EFF6FF 0%, #DBEAFE 100%);'
+                    'border:1px solid #93C5FD;border-radius:12px;padding:20px 24px;margin:12px 0;'
+                    'box-shadow:0 1px 3px rgba(0,0,0,0.06);">'
+                    '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">'
+                    '<span style="font-size:1.3em;">&#128268;</span>'
+                    '<span style="font-size:1.0em;font-weight:700;color:#1E40AF;">'
+                    'AI providers are currently unavailable</span></div>'
+                    '<span style="color:#1E3A5F;font-size:0.88em;line-height:1.5;">'
+                    'The free AI providers could not be reached. This is usually temporary. '
+                    'How would you like to proceed?</span></div>',
+                    unsafe_allow_html=True,
                 )
-                if st.button("Allow one-time emergency template fallback and retry", key="allow_emergency_template_once"):
-                    st.session_state["allow_template_fallback_once"] = True
-                    st.session_state["is_generating"] = True
-                    st.session_state["_generation_phase"] = 1
-                    _navigate_to(3)
+                _err_c1, _err_c2, _err_c3 = st.columns(3)
+                with _err_c1:
+                    if st.button("Use my own API key", key="_err_switch_api",
+                                 type="secondary", use_container_width=True,
+                                 help="Get a free key from Groq or Google AI in 30 seconds"):
+                        st.session_state[_gen_method_key] = "own_api"
+                        st.session_state["allow_template_fallback_once"] = False
+                        st.session_state["is_generating"] = False
+                        _navigate_to(3)
+                with _err_c2:
+                    if st.button("Generate with Template Engine", key="_err_switch_template",
+                                 type="secondary", use_container_width=True,
+                                 help="Instant generation using domain-specific templates"):
+                        st.session_state["allow_template_fallback_once"] = True
+                        st.session_state[_gen_method_key] = "template"
+                        st.session_state["is_generating"] = True
+                        st.session_state["_generation_phase"] = 1
+                        _navigate_to(3)
+                with _err_c3:
+                    if st.button("Generate with Behavioral Engine", key="_err_switch_experimental",
+                                 type="secondary", use_container_width=True,
+                                 help="Domain-calibrated behavioral models"):
+                        st.session_state["allow_template_fallback_once"] = True
+                        st.session_state[_gen_method_key] = "experimental"
+                        st.session_state["_use_socsim_experimental"] = True
+                        st.session_state["is_generating"] = True
+                        st.session_state["_generation_phase"] = 1
+                        _navigate_to(3)
             elif "timeout" in error_str or "timed out" in error_str or "connection" in error_str:
-                st.error(
-                    "**Connection Timeout:** The AI provider did not respond in time. "
-                    "This is usually temporary. Please try again in a moment, or proceed without an API key."
+                st.markdown(
+                    '<div style="background:linear-gradient(135deg, #EFF6FF 0%, #DBEAFE 100%);'
+                    'border:1px solid #93C5FD;border-radius:12px;padding:20px 24px;margin:12px 0;'
+                    'box-shadow:0 1px 3px rgba(0,0,0,0.06);">'
+                    '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">'
+                    '<span style="font-size:1.3em;">&#9203;</span>'
+                    '<span style="font-size:1.0em;font-weight:700;color:#1E40AF;">'
+                    'Connection timed out</span></div>'
+                    '<span style="color:#1E3A5F;font-size:0.88em;line-height:1.5;">'
+                    'The AI provider did not respond in time. This is usually temporary. '
+                    'How would you like to proceed?</span></div>',
+                    unsafe_allow_html=True,
                 )
+                _to_c1, _to_c2, _to_c3 = st.columns(3)
+                with _to_c1:
+                    if st.button("Try again", key="_timeout_retry",
+                                 type="primary", use_container_width=True):
+                        st.session_state["is_generating"] = True
+                        st.session_state["_generation_phase"] = 1
+                        _navigate_to(3)
+                with _to_c2:
+                    if st.button("Use my own API key", key="_timeout_switch_api",
+                                 type="secondary", use_container_width=True):
+                        st.session_state[_gen_method_key] = "own_api"
+                        st.session_state["is_generating"] = False
+                        _navigate_to(3)
+                with _to_c3:
+                    if st.button("Use Template Engine", key="_timeout_switch_template",
+                                 type="secondary", use_container_width=True):
+                        st.session_state[_gen_method_key] = "template"
+                        st.session_state["allow_template_fallback_once"] = True
+                        st.session_state["is_generating"] = True
+                        st.session_state["_generation_phase"] = 1
+                        _navigate_to(3)
             elif "memory" in error_str or "overflow" in error_str:
                 progress_bar.progress(100, text="Simulation failed.")
                 status_placeholder.error("Simulation failed.")

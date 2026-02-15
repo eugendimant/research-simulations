@@ -29,6 +29,17 @@ WORKFLOW (must follow)
      - git commit -m "Merge <default-branch> into <feature-branch>"
    - Rerun the checks after conflict resolution
 
+SHORTHAND DEFINITIONS
+- **"free-form text issue"**: Refers to the ongoing priority of improving non-LLM
+  open-text response quality to be indistinguishable from real human writing.
+  Workflow: (1) research published scientific approaches/tools/databases for
+  realistic text generation, (2) implement findings on top of existing algorithms
+  in response_library.py and persona_library.py, (3) iterate 3-5 times per round,
+  (4) audit against human-likeness-checklist.md. Key references: Pennebaker &
+  King (1999) LIWC styles, Krosnick (1991) satisficing theory, Denscombe (2008)
+  response lengths, Hobbs (1979) discourse coherence, Zipf's law for vocabulary
+  naturalness, QWERTY-adjacency typo models.
+
 DONE CRITERIA
-- PR shows “able to merge” in GitHub
+- PR shows "able to merge" in GitHub
 - Relevant checks pass
