@@ -54,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.1.0.7"
-BUILD_ID = "20260216-v11007-gemini-api-fix-info-icons-email-tracking"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.1.0.9"
+BUILD_ID = "20260216-v11009-simplify-gen-cards-timeout-safeguard"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -118,7 +118,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.1.0.7"  # v1.1.0.7: Gemini API 404 fix, info icons on cards, email tracking, data source in report
+APP_VERSION = "1.1.0.9"  # v1.1.0.9: Simplify gen method cards, observation-only progress, 5-min LLM timeout
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -9997,6 +9997,12 @@ if active_page == 2:
                 # User cleared all variable names — warn but don't silently delete
                 st.warning("All open-ended question names are empty. Fill in names or remove them explicitly.")
 
+            # v1.1.0.8: Re-set expander flag so it stays open while user edits OE text inputs
+            # Without this, pop() on line above consumes the flag and the next text-input
+            # rerun passes expanded=False, collapsing the section mid-edit.
+            if st.session_state.get("confirmed_open_ended", []):
+                st.session_state["_oe_keep_expanded"] = True
+
         # v1.0.6.7: Prominent context recommendation (OUTSIDE expander) for QSF path
         _oe_final = st.session_state.get("confirmed_open_ended", [])
         _oe_version_outer = st.session_state.get("_oe_version", 0)
@@ -11006,8 +11012,7 @@ if active_page == 3:
             'Generation Method</span>'
             '<p style="font-size:0.82em;color:#6B7280;margin:4px 0 0 0;line-height:1.5;">'
             'Choose how open-ended and numeric data are generated. '
-            'Each method uses different underlying technology — click the '
-            '<span style="color:#6366F1;">&#9432;</span> icon on any card for details.</p>'
+            'Click any card to select it.</p>'
             '</div>',
             unsafe_allow_html=True,
         )
@@ -11029,25 +11034,8 @@ if active_page == 3:
                     "Numeric data calibrated to published norms per construct",
                     "Best for: quick pilots or testing your analysis pipeline",
                 ],
-                "quality_note": "Open-text responses are assembled from domain-specific templates and phrase banks — on-topic and structurally varied, but may occasionally sound formulaic.",
-                "info_tooltip": (
-                    "<b>How the Template Engine works</b><br><br>"
-                    "<b>Numeric data:</b> Response distributions are calibrated to published "
-                    "meta-analytic baselines for each construct type. For example, dictator game offers "
-                    "center around 28% (Engel, 2011 meta-analysis), trust game investments around 50% "
-                    "(Berg et al., 1995), and Likert scales reflect known response style distributions "
-                    "(Greenleaf, 1992; Weijters et al., 2010).<br><br>"
-                    "<b>Open-text:</b> The <i>ComprehensiveResponseGenerator</i> uses 8 structural "
-                    "archetypes (list-maker, storyteller, one-liner, stream-of-consciousness, etc.) "
-                    "combined with 20+ domain-specific concrete detail banks covering economics, "
-                    "social psychology, health, politics, education, technology, and more. A natural "
-                    "imperfection engine injects 10 types of realistic typos, and a synonym rotation "
-                    "system ensures cross-participant diversity.<br><br>"
-                    "<b>Science behind it:</b> Reverse-item engagement failure rates follow Woods (2006) "
-                    "at 10–15%. Social desirability bias follows Nederhof (1985) with domain-sensitive "
-                    "d = 0.25–0.75. Acquiescence bias calibrated to Weijters et al. (2010) at +0.5 pt "
-                    "inflation on reverse-coded items."
-                ),
+                "quality_note": "",
+                "info_tooltip": "",
             },
             {
                 "key": "experimental",
@@ -11063,25 +11051,8 @@ if active_page == 3:
                     "30+ paradigm recognition (economic games, moral judgment...)",
                     "Effect sizes from hundreds of published meta-analyses",
                 ],
-                "quality_note": "Stronger persona-to-text coherence than templates (e.g., agreeable persona writes differently than a satisficer). Numeric data quality is the primary strength.",
-                "info_tooltip": (
-                    "<b>How the Adaptive Behavioral Engine works</b><br><br>"
-                    "<b>10-step simulation pipeline:</b> (1) Domain detection, (2) Persona filtering via "
-                    "condition–persona affinity scores, (3) Weight adjustment for domain relevance, "
-                    "(4) Persona assignment with demographic coherence, (5) 7-dimensional trait generation "
-                    "(Big Five + SD + acquiescence), (6) Condition effect computation with relational "
-                    "parsing, (7) Scale-specific response generation, (8) Cross-DV correlation enforcement, "
-                    "(9) Behavioral profile computation, (10) Open-text generation with persona coherence.<br><br>"
-                    "<b>Paradigm recognition:</b> 30+ experimental paradigms including dictator, trust, "
-                    "ultimatum, public goods, prisoner&#39;s dilemma, moral judgment, social identity, "
-                    "political polarization, consumer choice, and more — each with paradigm-appropriate "
-                    "response distributions.<br><br>"
-                    "<b>Science behind it:</b> Intergroup discrimination follows Iyengar &amp; Westwood (2015). "
-                    "Economic game baselines from Engel (2011), Berg et al. (1995), and Balliet et al. (2014). "
-                    "Political polarization effects calibrated to Dimant (2024) at d ≈ 0.6–0.9. "
-                    "Effect magnitude scaling is domain-aware: political + economic game → 1.6×, "
-                    "political only → 1.3×."
-                ),
+                "quality_note": "",
+                "info_tooltip": "",
             },
             {
                 "key": "free_llm",
@@ -11097,21 +11068,7 @@ if active_page == 3:
                     "Auto-failover across 6 providers for reliability",
                     "Note: shared free-tier — speed varies with server load",
                 ],
-                "info_tooltip": (
-                    "<b>How Built-in AI works</b><br><br>"
-                    "<b>Provider chain:</b> 6 free-tier LLM providers with automatic failover — "
-                    "Google AI (Gemini 2.5 Flash + Flash Lite), Groq (Llama 3.3 70B), "
-                    "Cerebras (Llama 3.3 70B), Poe (GPT-4o-mini), OpenRouter (Mistral Small 3.1). "
-                    "Each has independent rate limits; when one is exhausted, the next is tried automatically.<br><br>"
-                    "<b>Behavioral coherence pipeline:</b> Before generating text, the system computes each "
-                    "participant's behavioral profile from their numeric responses — response pattern, "
-                    "intensity, consistency score, and straight-lining flag. This profile is injected into "
-                    "the LLM prompt so that a participant who gave all 7s writes enthusiastically, while "
-                    "one who gave all 2s writes critically.<br><br>"
-                    "<b>Anti-detection:</b> 95+ banned-phrase filters remove AI-sounding language, "
-                    "QWERTY-based typo injection simulates real typing errors, and cross-participant "
-                    "uniqueness tracking (200-response rolling window) prevents repeated phrasing."
-                ),
+                "info_tooltip": "",
             },
             {
                 "key": "own_api",
@@ -11127,17 +11084,7 @@ if active_page == 3:
                     "Same behavioral coherence pipeline as Built-in AI",
                     "Key used in-memory only; never saved or logged",
                 ],
-                "info_tooltip": (
-                    "<b>How Your API Key works</b><br><br>"
-                    "<b>Provider auto-detection:</b> The system identifies your provider from the key "
-                    "format (gsk_→Groq, csk-→Cerebras, AIza→Google AI, sk-or-→OpenRouter, sk-→OpenAI) "
-                    "and routes to the correct API endpoint automatically.<br><br>"
-                    "<b>Same pipeline:</b> Your key powers the exact same behavioral coherence pipeline, "
-                    "banned-phrase filtering, typo injection, and anti-detection measures as Built-in AI. "
-                    "The only difference is dedicated rate limits — your own quota, no sharing.<br><br>"
-                    "<b>Privacy:</b> API keys are held in browser session memory only. They are never "
-                    "written to disk, logged, or transmitted anywhere except to the LLM provider you chose."
-                ),
+                "info_tooltip": "",
             },
         ]
 
@@ -11184,43 +11131,15 @@ if active_page == 3:
                         f'</div>'
                     )
 
-                # Quality note for non-LLM methods
-                _quality_note_html = ""
-                _qn = _card.get("quality_note", "")
-                if _qn:
-                    _quality_note_html = (
-                        f'<div style="background:#FFF7ED;border:1px solid #FED7AA;border-radius:6px;'
-                        f'padding:6px 10px;margin-top:8px;">'
-                        f'<span style="color:#9A3412;font-size:0.73em;line-height:1.4;">{_qn}</span>'
-                        f'</div>'
-                    )
+                # v1.1.0.9: Quality notes removed for cleaner card layout
 
-                # v1.1.0.7: Info icon with hover tooltip
-                _info_text = _card.get("info_tooltip", "")
-                _info_icon_html = ""
-                if _info_text:
-                    _tooltip_id = f"info_tip_{_mk}"
-                    _info_icon_html = (
-                        f'<span style="position:relative;display:inline-block;float:right;'
-                        f'margin-top:-2px;cursor:help;">'
-                        f'<span class="card-info-icon" data-tooltip="{_tooltip_id}" '
-                        f'style="display:inline-flex;align-items:center;justify-content:center;'
-                        f'width:22px;height:22px;border-radius:50%;background:#EEF2FF;'
-                        f'color:#6366F1;font-size:0.8em;font-weight:700;border:1px solid #C7D2FE;'
-                        f'transition:all 0.15s ease;"'
-                        f' onmouseover="this.style.background=\'#6366F1\';this.style.color=\'white\';"'
-                        f' onmouseout="this.style.background=\'#EEF2FF\';this.style.color=\'#6366F1\';"'
-                        f'>&#9432;</span>'
-                        f'</span>'
-                    )
+                # v1.1.0.9: Info icons removed — cards are self-explanatory
 
-                # Render card HTML
+                # v1.1.0.9: Render card HTML — clicking the card selects the method
                 st.markdown(
                     f'<div style="{_border}{_bg}border-radius:12px;padding:16px 18px;'
-                    f'margin-bottom:8px;min-height:210px;{_shadow}'
+                    f'margin-bottom:4px;min-height:180px;{_shadow}'
                     f'transition:box-shadow 0.15s ease;">'
-                    # Info icon (top-right)
-                    f'{_info_icon_html}'
                     # Icon + title row
                     f'<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">'
                     f'<span style="display:inline-flex;align-items:center;justify-content:center;'
@@ -11235,22 +11154,14 @@ if active_page == 3:
                     f'{_card["subtitle"]}</div>'
                     # Detail bullets
                     f'{_details_html}'
-                    # Quality note
-                    f'{_quality_note_html}'
                     f'</div>',
                     unsafe_allow_html=True,
                 )
 
-                # Info expander — clickable detail panel
-                if _info_text:
-                    with st.expander("Details & science behind this method", expanded=False):
-                        st.markdown(_info_text, unsafe_allow_html=True)
-
-                # Clickable card selector
+                # v1.1.0.9: Single click to select — no separate "Select..." button
                 if not _is_sel:
-                    _btn_label = f"Select {_card['title']}" if _current_method is None else f"Use {_card['title']}"
                     if st.button(
-                        _btn_label,
+                        "Select",
                         key=f"gen_method_{_mk}",
                         type="secondary",
                         use_container_width=True,
@@ -11439,21 +11350,8 @@ if active_page == 3:
     progress_placeholder = st.empty()
     status_placeholder = st.empty()
 
-    # v1.4.5: Show prominent animated progress indicator IMMEDIATELY when generating
-    # (design summary is hidden above, so this is the first thing users see)
-    _eta_msg = "Most runs finish in about 45-120 seconds."
-    try:
-        _eta_n = int(st.session_state.get("sample_size", 200) or 200)
-        _eta_oe = len(st.session_state.get("confirmed_open_ended", []) or [])
-        _eta_factor = max(1.0, (_eta_n / 200.0) * max(1, _eta_oe))
-        _eta_low = int(max(30, 25 * _eta_factor))
-        _eta_high = int(max(90, 70 * _eta_factor))
-        _eta_msg = (
-            f"Estimated runtime: {_eta_low}-{_eta_high} seconds "
-            f"for your current sample size/open-text load."
-        )
-    except Exception:
-        pass
+    # v1.1.0.9: Show prominent animated progress indicator IMMEDIATELY when generating
+    # No time estimates — only real-time observation count (updated via callback)
     if is_generating:
         with status_placeholder.container():
             st.markdown("""
@@ -11499,10 +11397,10 @@ if active_page == 3:
             <div class="progress-container">
                 <div class="progress-spinner"></div>
                 <h2 class="progress-title">Generating Your Dataset...</h2>
-                <p class="progress-subtitle">Creating realistic behavioral data. __ETA_MESSAGE__</p>
+                <p class="progress-subtitle">Creating realistic behavioral data. Progress updates below.</p>
                 <p class="progress-subtitle" style="margin-top: 10px; font-size: 14px;">Please don't close or refresh this page.</p>
             </div>
-            """.replace("__ETA_MESSAGE__", _eta_msg), unsafe_allow_html=True)
+            """, unsafe_allow_html=True)
 
     if has_generated:
         # v1.0.6.7: Generation warnings stored for display in quality report expander
@@ -11826,37 +11724,25 @@ if active_page == 3:
             m, sec = divmod(s, 60)
             return f"{m}m {sec}s"
 
-        def _est_remaining(elapsed: float, current: int, total: int) -> str:
-            """Estimate remaining time based on progress."""
-            if current <= 0 or total <= 0:
-                return ""
-            rate = elapsed / current
-            remaining = rate * (total - current)
-            return f" &middot; ~{_fmt_elapsed(remaining)} remaining"
-
         def _live_progress_callback(phase: str, current: int, total: int) -> None:
-            """Update the live progress counter in the UI."""
+            """v1.1.0.9: Update the live progress counter — observation count only, no time estimates."""
             try:
                 _now = __import__('time').time()
                 _elapsed = _now - _progress_start_time
-                _elapsed_str = _fmt_elapsed(_elapsed)
 
                 # v1.0.8.2: Update stall detection state
                 _last_progress_time[0] = _now
                 _last_progress_phase[0] = phase
 
-                # v1.0.8.2: Detect stalls — if elapsed > threshold and still on
-                # a phase that shouldn't take long, show a slow-generation warning
                 if _elapsed > _stall_threshold_secs and not _stall_warning_shown[0]:
                     if phase in ("personas", "scales", "open_ended"):
-                        # These phases shouldn't take >45s — likely stuck on LLM prefill
                         _stall_warning_shown[0] = True
 
                 if phase == "personas":
                     _progress_counter_placeholder.markdown(
                         f'<div style="text-align:center;padding:10px;background:#f0f9ff;border-radius:8px;margin:8px 0;">'
                         f'<span style="font-size:1.1em;color:#0369a1;">'
-                        f'Assigning behavioral personas... ({_elapsed_str} elapsed)</span></div>',
+                        f'Assigning behavioral personas...</span></div>',
                         unsafe_allow_html=True,
                     )
                 elif phase == "scales":
@@ -11864,63 +11750,38 @@ if active_page == 3:
                     _progress_counter_placeholder.markdown(
                         f'<div style="text-align:center;padding:10px;background:#f0f9ff;border-radius:8px;margin:8px 0;">'
                         f'<span style="font-size:1.1em;color:#0369a1;">'
-                        f'Generating scale responses — scale {current + 1} of {total}'
-                        f' ({_elapsed_str} elapsed)</span>'
+                        f'Generating scale responses — scale {current + 1} of {total}</span>'
                         f'<div style="background:#dbeafe;border-radius:4px;height:6px;margin-top:8px;">'
                         f'<div style="background:#3b82f6;width:{_s_pct}%;height:100%;border-radius:4px;'
                         f'transition:width 0.3s;"></div></div></div>',
                         unsafe_allow_html=True,
                     )
                 elif phase == "open_ended":
-                    # v1.0.8.2: Show AI provider connection status during prefill
-                    _oe_extra = ""
-                    if _elapsed > 30:
-                        _oe_extra = (
-                            '<br><span style="color:#78350f;font-size:0.8em;">'
-                            'Connecting to AI providers... This may take a moment if providers are busy.</span>'
-                        )
                     _progress_counter_placeholder.markdown(
                         f'<div style="text-align:center;padding:10px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;margin:8px 0;">'
                         f'<span style="font-size:1.1em;color:#92400e;">'
-                        f'Preparing open-ended response generation...'
-                        f' ({_elapsed_str} elapsed)</span>{_oe_extra}</div>',
+                        f'Preparing open-ended response generation...</span></div>',
                         unsafe_allow_html=True,
                     )
                 elif phase == "generating":
+                    # v1.1.0.9: Show ONLY observation count — no time estimates
                     _pct = int((current / max(1, total)) * 100)
-                    _eta_str = _est_remaining(_elapsed, current, total) if current > 2 else ""
-                    # v1.0.8.2: Detect slow generation and show inline warning
-                    _slow_warning = ""
-                    if _elapsed > 120 and _pct < 50 and not _stall_warning_shown[0]:
-                        _stall_warning_shown[0] = True
-                        _slow_warning = (
-                            '<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:6px;'
-                            'padding:8px 12px;margin-top:8px;">'
-                            '<span style="color:#92400e;font-size:0.8em;">'
-                            'Generation is slower than expected. LLM providers may be rate-limited. '
-                            'On your next run, consider using <strong>Your own API key</strong> (free from Groq/Google) '
-                            'or the <strong>Template engine</strong> for faster results.</span></div>'
-                        )
                     _progress_counter_placeholder.markdown(
                         f'<div style="text-align:center;padding:14px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;margin:8px 0;">'
-                        f'<span style="font-size:1.4em;font-weight:700;color:#166534;">'
+                        f'<span style="font-size:1.6em;font-weight:700;color:#166534;">'
                         f'{current} of {total}</span>'
-                        f'<span style="font-size:1em;color:#166534;"> participants simulated</span><br>'
-                        f'<span style="color:#15803d;font-size:0.9em;">{_pct}% complete &middot; {_elapsed_str} elapsed{_eta_str}</span>'
+                        f'<span style="font-size:1em;color:#166534;"> participants simulated</span>'
                         f'<div style="background:#dcfce7;border-radius:4px;height:10px;margin-top:10px;">'
                         f'<div style="background:#22c55e;width:{_pct}%;height:100%;border-radius:4px;'
-                        f'transition:width 0.3s;"></div></div>{_slow_warning}</div>',
+                        f'transition:width 0.3s;"></div></div></div>',
                         unsafe_allow_html=True,
                     )
                 elif phase == "socsim_enrichment":
                     _pct_s = int((current / max(1, total)) * 100) if total > 0 else 0
-                    _eta_s = _est_remaining(_elapsed, current, total) if current > 0 else ""
                     _progress_counter_placeholder.markdown(
                         f'<div style="text-align:center;padding:12px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;margin:8px 0;">'
                         f'<span style="font-size:1.1em;font-weight:600;color:#1e40af;">'
-                        f'Applying behavioral models: {current} of {total} tasks</span><br>'
-                        f'<span style="color:#3b82f6;font-size:0.85em;">'
-                        f'Enriching experimental paradigm DVs &middot; {_pct_s}% &middot; {_elapsed_str} elapsed{_eta_s}</span>'
+                        f'Applying behavioral models: {current} of {total} tasks</span>'
                         f'<div style="background:#bfdbfe;border-radius:4px;height:6px;margin-top:8px;">'
                         f'<div style="background:#3b82f6;width:{_pct_s}%;height:100%;border-radius:4px;'
                         f'transition:width 0.3s;"></div></div></div>',
@@ -11930,7 +11791,7 @@ if active_page == 3:
                     _progress_counter_placeholder.markdown(
                         f'<div style="text-align:center;padding:12px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;margin:8px 0;">'
                         f'<span style="font-size:1.2em;font-weight:700;color:#166534;">'
-                        f'&#10003; All {total} participants generated in {_elapsed_str}</span></div>',
+                        f'&#10003; All {total} participants generated</span></div>',
                         unsafe_allow_html=True,
                     )
             except Exception:

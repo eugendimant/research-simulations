@@ -33,7 +33,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 # Version identifier to help track deployed code
-__version__ = "1.1.0.7"  # v1.1.0.7: Gemini API 404 fix, info icons on cards, email tracking, data source in report
+__version__ = "1.1.0.9"  # v1.1.0.9: Simplify gen method cards, observation-only progress, 5-min LLM timeout
 
 
 # ============================================================================
