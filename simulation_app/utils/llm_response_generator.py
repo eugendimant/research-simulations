@@ -5,7 +5,7 @@ Uses free LLM APIs (multi-provider with automatic failover) to generate
 realistic, question-specific, persona-aligned open-ended survey responses.
 
 Architecture:
-- Multi-provider: Google AI Studio (Gemini 2.5 Flash Lite + Gemma 3 27B),
+- Multi-provider: Google AI Studio (Gemini 2.5 Flash + Gemini 2.5 Flash Lite),
   Groq (Llama 3.3 70B), Cerebras (Llama 3.3 70B), Poe (GPT-4o-mini),
   OpenRouter (Mistral Small 3.1) — with automatic key detection,
   per-provider rate limiting, and intelligent failover.
@@ -21,7 +21,7 @@ Architecture:
 Version: 1.0.8.0
 """
 
-__version__ = "1.1.0.6"
+__version__ = "1.1.0.7"
 
 import hashlib
 import json
@@ -41,11 +41,14 @@ GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
 GROQ_MODEL = "llama-3.3-70b-versatile"
 
 # Additional free-tier providers for failover
-# Google AI Studio — Gemini 2.5 Flash Lite is optimal: 10 RPM, 250K TPM, 20 RPD
-# Gemma 3 27B is the high-volume fallback: 30 RPM, 15K TPM, 14,400 RPD
+# Google AI Studio — Gemini 2.5 Flash is the high-volume workhorse: 15 RPM, 1M TPM
+# Gemini 2.5 Flash Lite is the cost-efficient fallback: 30 RPM, 250K TPM
+# NOTE (v1.1.0.7): gemma-3-27b-it does NOT work on the OpenAI-compatible endpoint
+# (/v1beta/openai/chat/completions) — only Gemini models are supported there.
+# This was the root cause of 404 errors reported via Google AI Studio.
 GOOGLE_AI_API_URL = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
-GOOGLE_AI_MODEL = "gemini-2.5-flash-lite"          # 10 RPM, 250K TPM, 20 RPD
-GOOGLE_AI_MODEL_HIGHVOL = "gemma-3-27b-it"          # 30 RPM, 15K TPM, 14,400 RPD
+GOOGLE_AI_MODEL = "gemini-2.5-flash-lite"          # 30 RPM, 250K TPM (cost-efficient)
+GOOGLE_AI_MODEL_HIGHVOL = "gemini-2.5-flash"        # 15 RPM, 1M TPM (high-quality volume)
 
 CEREBRAS_API_URL = "https://api.cerebras.ai/v1/chat/completions"
 CEREBRAS_MODEL = "llama-3.3-70b"
@@ -100,8 +103,8 @@ _EB_CEREBRAS = [57, 41, 49, 119, 111, 63, 98, 104, 50, 49, 104, 50, 52, 46, 45, 
 _DEFAULT_CEREBRAS_KEY = bytes(b ^ _XK for b in _EB_CEREBRAS).decode()
 
 # Google AI Studio — truly free, no credit card
-# Gemini 2.5 Flash Lite: 10 RPM, 250K TPM, 20 RPD (quality)
-# Gemma 3 27B: 30 RPM, 15K TPM, 14,400 RPD (volume)
+# Gemini 2.5 Flash: 15 RPM, 1M TPM (high-quality volume)
+# Gemini 2.5 Flash Lite: 30 RPM, 250K TPM (cost-efficient)
 _EB_GOOGLE_AI = [27, 19, 32, 59, 9, 35, 25, 20, 35, 17, 42, 107, 109, 106, 47, 61,
                  13, 57, 43, 12, 57, 34, 47, 18, 44, 11, 110, 119, 61, 16, 60, 59,
                  41, 111, 98, 15, 11, 51, 15]
@@ -1459,6 +1462,12 @@ def _call_llm_api(
             logger.warning("LLM API rate-limited (429) %s model=%s retry-after=%s",
                            api_url[:50], model, retry_after)
             return None
+        elif resp.status_code == 404:
+            _body_preview = resp.text[:200] if resp.text else "(empty)"
+            logger.warning("LLM API model not found (404) %s model=%s — model may be "
+                           "retired or unsupported on this endpoint. Response: %s",
+                           api_url[:50], model, _body_preview)
+            return None
         elif resp.status_code in (401, 403):
             _body_preview = resp.text[:200] if resp.text else "(empty)"
             logger.warning("LLM API auth error (%d) %s model=%s — key may be invalid. "
@@ -2183,7 +2192,7 @@ class LLMResponseGenerator:
         self._max_recent_starts: int = 200  # Rolling window size
 
         # Build provider chain with per-provider rate limits.
-        # Priority: Groq (natural) → Cerebras (natural) → Gemma 3 (volume) → Gemini Flash (quality) → Poe → OpenRouter
+        # Priority: Gemini 2.5 Flash (volume) → Gemini 2.5 Flash Lite (cost) → Groq → Cerebras → Poe → OpenRouter
         self._providers: List[_LLMProvider] = []
         user_key = api_key or os.environ.get("LLM_API_KEY", "") or os.environ.get("GROQ_API_KEY", "")
         _all_builtin_keys = {_DEFAULT_GROQ_KEY, _DEFAULT_CEREBRAS_KEY,
@@ -2191,19 +2200,19 @@ class LLMResponseGenerator:
                              _DEFAULT_POE_KEY}
 
         # Built-in providers (in priority order) with rate limits from provider dashboards:
-        # 1. Google AI Gemma 3 27B:           30 RPM, 15K TPM, 14,400 RPD (volume)
-        # 2. Google AI Gemini 2.5 Flash Lite: 10 RPM, 250K TPM, 20 RPD (quality)
+        # 1. Google AI Gemini 2.5 Flash:      15 RPM, 1M TPM (high-quality volume)
+        # 2. Google AI Gemini 2.5 Flash Lite: 30 RPM, 250K TPM (cost-efficient)
         # 3. Groq Llama 3.3 70B:              ~30 RPM, 14,400 RPD
         # 4. Cerebras Llama 3.3 70B:          ~30 RPM, 1M tokens/day
         # 5. Poe GPT-4o-mini:                ~20 RPM, ~200 RPD (3K points/day free)
         # 6. OpenRouter Mistral Small 3.1:    varies by model
-        # NOTE: Google AI moved to top because it's confirmed accessible and reliable.
-        # Groq/Cerebras sometimes have intermittent auth/rate issues.
+        # NOTE: Google AI at top — confirmed accessible and reliable on OpenAI-compat endpoint.
+        # v1.1.0.7: Replaced gemma-3-27b-it (404 on OpenAI endpoint) with gemini-2.5-flash.
         _builtin_providers = [
-            ("google_ai_gemma", GOOGLE_AI_API_URL, GOOGLE_AI_MODEL_HIGHVOL,
-             _DEFAULT_GOOGLE_AI_KEY, 25, 14400, 10),
-            ("google_ai_builtin", GOOGLE_AI_API_URL, GOOGLE_AI_MODEL,
-             _DEFAULT_GOOGLE_AI_KEY, 8, 20, 20),
+            ("google_ai_flash", GOOGLE_AI_API_URL, GOOGLE_AI_MODEL_HIGHVOL,
+             _DEFAULT_GOOGLE_AI_KEY, 14, 1500, 20),
+            ("google_ai_lite", GOOGLE_AI_API_URL, GOOGLE_AI_MODEL,
+             _DEFAULT_GOOGLE_AI_KEY, 28, 1500, 20),
             ("groq_builtin", GROQ_API_URL, GROQ_MODEL,
              _DEFAULT_GROQ_KEY, 28, 0, 20),
             ("cerebras_builtin", CEREBRAS_API_URL, CEREBRAS_MODEL,
