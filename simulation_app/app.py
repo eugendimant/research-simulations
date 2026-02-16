@@ -54,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.1.0.7"
-BUILD_ID = "20260216-v11007-gemini-api-fix-info-icons-email-tracking"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.1.0.8"
+BUILD_ID = "20260216-v11008-fix-oe-expander-collapse"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -118,7 +118,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.1.0.7"  # v1.1.0.7: Gemini API 404 fix, info icons on cards, email tracking, data source in report
+APP_VERSION = "1.1.0.8"  # v1.1.0.8: Fix OE expander collapsing when typing question title
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -9996,6 +9996,12 @@ if active_page == 2:
             elif confirmed_open_ended and not updated_open_ended:
                 # User cleared all variable names — warn but don't silently delete
                 st.warning("All open-ended question names are empty. Fill in names or remove them explicitly.")
+
+            # v1.1.0.8: Re-set expander flag so it stays open while user edits OE text inputs
+            # Without this, pop() on line above consumes the flag and the next text-input
+            # rerun passes expanded=False, collapsing the section mid-edit.
+            if st.session_state.get("confirmed_open_ended", []):
+                st.session_state["_oe_keep_expanded"] = True
 
         # v1.0.6.7: Prominent context recommendation (OUTSIDE expander) for QSF path
         _oe_final = st.session_state.get("confirmed_open_ended", [])
