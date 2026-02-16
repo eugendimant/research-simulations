@@ -54,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.1.0.6"
-BUILD_ID = "20260215-v11006-card-ux-freeform-text-quality"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.1.0.7"
+BUILD_ID = "20260216-v11007-gemini-api-fix-info-icons-email-tracking"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -118,7 +118,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.1.0.6"  # v1.1.0.6: Card UX overhaul, graceful fallback UI, 3-iteration free-form text quality
+APP_VERSION = "1.1.0.7"  # v1.1.0.7: Gemini API 404 fix, info icons on cards, email tracking, data source in report
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -7018,6 +7018,59 @@ def _load_admin_history() -> None:
     st.session_state["_admin_history_loaded"] = True
 
 
+def _track_user_email(email: str, source: str = "unknown") -> None:
+    """Persist a user email to admin tracking for later traceability.
+
+    v1.1.0.7: Stores emails with timestamp, source (zip_download, feedback),
+    and study context in the admin persist file and session state.
+    """
+    if not email or "@" not in email:
+        return
+    _entry = {
+        "email": email.strip().lower(),
+        "timestamp": datetime.now().isoformat(timespec="seconds"),
+        "source": source,
+        "study_title": st.session_state.get("study_title", ""),
+        "team_name": st.session_state.get("team_name", ""),
+    }
+    # Add to session state list
+    if "_admin_user_emails" not in st.session_state:
+        st.session_state["_admin_user_emails"] = []
+    # Avoid duplicates within the same session (same email + same study)
+    _existing = st.session_state["_admin_user_emails"]
+    _already = any(
+        e.get("email") == _entry["email"] and e.get("study_title") == _entry["study_title"]
+        for e in _existing
+    )
+    if not _already:
+        st.session_state["_admin_user_emails"].append(_entry)
+    # Persist to disk immediately
+    try:
+        _ADMIN_PERSIST_DIR.mkdir(parents=True, exist_ok=True)
+        _emails_file = _ADMIN_PERSIST_DIR / "user_emails.json"
+        _disk_emails: list = []
+        if _emails_file.exists():
+            try:
+                _disk_emails = json.loads(_emails_file.read_text())
+            except Exception:
+                _disk_emails = []
+        _disk_emails.append(_entry)
+        _emails_file.write_text(json.dumps(_disk_emails, default=str))
+    except Exception:
+        pass  # Best-effort persistence
+
+
+def _load_user_emails() -> list:
+    """Load persisted user emails from disk."""
+    try:
+        _emails_file = _ADMIN_PERSIST_DIR / "user_emails.json"
+        if _emails_file.exists():
+            return json.loads(_emails_file.read_text())
+    except Exception:
+        pass
+    return []
+
+
 def _render_admin_dashboard() -> None:
     """Render the hidden admin dashboard with full diagnostic info."""
     import hashlib
@@ -7089,8 +7142,8 @@ def _render_admin_dashboard() -> None:
         st.metric("Template Fallback", _fb_pct)
 
     # ── Tabs ──────────────────────────────────────────────────────────
-    _tab_llm, _tab_failures, _tab_history, _tab_session, _tab_system = st.tabs([
-        "LLM Pipeline", "Failure Analytics", "Simulation History", "Session State", "System Info"
+    _tab_llm, _tab_failures, _tab_history, _tab_emails, _tab_session, _tab_system = st.tabs([
+        "LLM Pipeline", "Failure Analytics", "Simulation History", "User Emails", "Session State", "System Info"
     ])
 
     # ── TAB 1: LLM Pipeline ──────────────────────────────────────────
@@ -7326,7 +7379,41 @@ def _render_admin_dashboard() -> None:
             st.info("No simulation history found.")
             st.caption("Run a simulation to see entries here. History persists across browser refreshes.")
 
-    # ── TAB 4: Session State Explorer ─────────────────────────────────
+    # ── TAB 4: User Emails (v1.1.0.7) ────────────────────────────────
+    with _tab_emails:
+        st.markdown("### User Email Registry")
+        st.markdown(
+            "Tracks email addresses entered by users when sending simulation "
+            "output via email. Use this to trace software usage."
+        )
+        # Load from both disk and session state
+        _disk_emails = _load_user_emails()
+        _session_emails = st.session_state.get("_admin_user_emails", [])
+        # Merge (disk + session, deduplicate by email+timestamp)
+        _all_emails_map: Dict[str, Dict[str, Any]] = {}
+        for _e in _disk_emails + _session_emails:
+            _ek = f"{_e.get('email', '')}|{_e.get('timestamp', '')}"
+            _all_emails_map[_ek] = _e
+        _all_emails = sorted(_all_emails_map.values(), key=lambda x: x.get("timestamp", ""), reverse=True)
+
+        if _all_emails:
+            st.metric("Total Email Entries", len(_all_emails))
+            _unique_emails = len(set(e.get("email", "") for e in _all_emails))
+            st.caption(f"{_unique_emails} unique email address(es)")
+            _email_table = []
+            for _em in _all_emails:
+                _email_table.append({
+                    "Email": _em.get("email", ""),
+                    "Timestamp": _em.get("timestamp", ""),
+                    "Source": _em.get("source", ""),
+                    "Study": _em.get("study_title", "")[:40] or "N/A",
+                    "Team": _em.get("team_name", "") or "N/A",
+                })
+            st.dataframe(_email_table, use_container_width=True, hide_index=True)
+        else:
+            st.info("No user emails collected yet. Emails are recorded when users send output via email.")
+
+    # ── TAB 5: Session State Explorer ─────────────────────────────────
     with _tab_session:
         st.markdown("### Session State Explorer")
         _filter = st.text_input("Filter keys (contains):", key="_admin_state_filter")
@@ -7346,7 +7433,7 @@ def _render_admin_dashboard() -> None:
         if _state_data:
             st.dataframe(_state_data, use_container_width=True, hide_index=True, height=400)
 
-    # ── TAB 5: System Info ────────────────────────────────────────────
+    # ── TAB 6: System Info ────────────────────────────────────────────
     with _tab_system:
         st.markdown("### System Information")
         _sys_col1, _sys_col2 = st.columns(2)
@@ -10914,16 +11001,18 @@ if active_page == 3:
         _current_method = st.session_state.get(_gen_method_key, None)
 
         st.markdown(
-            '<div style="margin-bottom:8px;">'
-            '<span style="font-size:0.95em;font-weight:600;color:#1F2937;">'
+            '<div style="margin-bottom:14px;">'
+            '<span style="font-size:1.0em;font-weight:700;color:#1F2937;">'
             'Generation Method</span>'
-            '<span style="font-size:0.78em;color:#6B7280;margin-left:8px;">'
-            'Choose how open-ended and numeric data are generated</span>'
+            '<p style="font-size:0.82em;color:#6B7280;margin:4px 0 0 0;line-height:1.5;">'
+            'Choose how open-ended and numeric data are generated. '
+            'Each method uses different underlying technology — click the '
+            '<span style="color:#6366F1;">&#9432;</span> icon on any card for details.</p>'
             '</div>',
             unsafe_allow_html=True,
         )
 
-        # --- v1.0.9.3: Method cards — 2×2 clickable card grid, reordered ---
+        # --- v1.1.0.7: Method cards — 2×2 clickable card grid with info tooltips ---
         # Order: Template Engine, Adaptive Behavioral Engine (Beta), Built-in AI, Your API Key
         _method_cards = [
             {
@@ -10935,12 +11024,30 @@ if active_page == 3:
                 "tag_color": "#F59E0B",
                 "subtitle": "Pre-built response patterns across 225+ research domains",
                 "details": [
-                    "Runs entirely offline — no API calls or external services required",
-                    "Uses a library of research-domain-specific response patterns (e.g., economic games, social psychology, consumer behavior) to compose answers",
-                    "Numeric data is calibrated to published norms for each construct and game type",
-                    "Best for: quick pilot simulations or testing your analysis pipeline before collecting real data",
+                    "Runs entirely offline — no API calls needed",
+                    "225+ domain-specific response pattern libraries",
+                    "Numeric data calibrated to published norms per construct",
+                    "Best for: quick pilots or testing your analysis pipeline",
                 ],
-                "quality_note": "Open-text quality: Responses are assembled from domain-specific templates and phrase banks. They will be on-topic and structurally varied, but may occasionally sound formulaic compared to real human writing. Best suited for testing data pipelines rather than evaluating response content.",
+                "quality_note": "Open-text responses are assembled from domain-specific templates and phrase banks — on-topic and structurally varied, but may occasionally sound formulaic.",
+                "info_tooltip": (
+                    "<b>How the Template Engine works</b><br><br>"
+                    "<b>Numeric data:</b> Response distributions are calibrated to published "
+                    "meta-analytic baselines for each construct type. For example, dictator game offers "
+                    "center around 28% (Engel, 2011 meta-analysis), trust game investments around 50% "
+                    "(Berg et al., 1995), and Likert scales reflect known response style distributions "
+                    "(Greenleaf, 1992; Weijters et al., 2010).<br><br>"
+                    "<b>Open-text:</b> The <i>ComprehensiveResponseGenerator</i> uses 8 structural "
+                    "archetypes (list-maker, storyteller, one-liner, stream-of-consciousness, etc.) "
+                    "combined with 20+ domain-specific concrete detail banks covering economics, "
+                    "social psychology, health, politics, education, technology, and more. A natural "
+                    "imperfection engine injects 10 types of realistic typos, and a synonym rotation "
+                    "system ensures cross-participant diversity.<br><br>"
+                    "<b>Science behind it:</b> Reverse-item engagement failure rates follow Woods (2006) "
+                    "at 10–15%. Social desirability bias follows Nederhof (1985) with domain-sensitive "
+                    "d = 0.25–0.75. Acquiescence bias calibrated to Weijters et al. (2010) at +0.5 pt "
+                    "inflation on reverse-coded items."
+                ),
             },
             {
                 "key": "experimental",
@@ -10949,15 +11056,32 @@ if active_page == 3:
                 "title": "Adaptive Behavioral Engine",
                 "tag": "Beta",
                 "tag_color": "#3B82F6",
-                "subtitle": "Simulates realistic participant behavior using domain-calibrated models",
+                "subtitle": "Domain-calibrated behavioral models with 60+ participant archetypes",
                 "details": [
-                    "Runs entirely offline — analyzes your study design locally and applies behavioral models adapted to your specific experiment",
-                    "60+ simulated participant archetypes with distinct response styles — from careful optimizers to careless satisficers — each with realistic trait profiles",
-                    "Recognizes 30+ experimental paradigms (economic games, social dilemmas, political polarization, moral judgment, etc.) and applies paradigm-appropriate response patterns",
-                    "Effect sizes are calibrated to hundreds of published meta-analyses across psychology, economics, and organizational behavior",
-                    "Best for: realistic behavioral data where numeric patterns need to reflect established scientific findings for your specific domain",
+                    "Runs entirely offline — applies behavioral models to your design",
+                    "60+ archetypes: optimizers, satisficers, extremists, etc.",
+                    "30+ paradigm recognition (economic games, moral judgment...)",
+                    "Effect sizes from hundreds of published meta-analyses",
                 ],
-                "quality_note": "Open-text quality: Similar to the Template Engine for text responses, but with stronger persona-to-text coherence (e.g., a high-agreeableness persona writes differently than a careless satisficer). Numeric data quality is the primary strength here.",
+                "quality_note": "Stronger persona-to-text coherence than templates (e.g., agreeable persona writes differently than a satisficer). Numeric data quality is the primary strength.",
+                "info_tooltip": (
+                    "<b>How the Adaptive Behavioral Engine works</b><br><br>"
+                    "<b>10-step simulation pipeline:</b> (1) Domain detection, (2) Persona filtering via "
+                    "condition–persona affinity scores, (3) Weight adjustment for domain relevance, "
+                    "(4) Persona assignment with demographic coherence, (5) 7-dimensional trait generation "
+                    "(Big Five + SD + acquiescence), (6) Condition effect computation with relational "
+                    "parsing, (7) Scale-specific response generation, (8) Cross-DV correlation enforcement, "
+                    "(9) Behavioral profile computation, (10) Open-text generation with persona coherence.<br><br>"
+                    "<b>Paradigm recognition:</b> 30+ experimental paradigms including dictator, trust, "
+                    "ultimatum, public goods, prisoner&#39;s dilemma, moral judgment, social identity, "
+                    "political polarization, consumer choice, and more — each with paradigm-appropriate "
+                    "response distributions.<br><br>"
+                    "<b>Science behind it:</b> Intergroup discrimination follows Iyengar &amp; Westwood (2015). "
+                    "Economic game baselines from Engel (2011), Berg et al. (1995), and Balliet et al. (2014). "
+                    "Political polarization effects calibrated to Dimant (2024) at d ≈ 0.6–0.9. "
+                    "Effect magnitude scaling is domain-aware: political + economic game → 1.6×, "
+                    "political only → 1.3×."
+                ),
             },
             {
                 "key": "free_llm",
@@ -10968,11 +11092,26 @@ if active_page == 3:
                 "tag_color": "#3B82F6",
                 "subtitle": "AI-generated responses using free LLM providers",
                 "details": [
-                    "Uses free-tier AI models (Groq, Cerebras, Google AI) to generate contextually rich open-ended text responses grounded in your study design",
-                    "Behavioral coherence pipeline ensures that each participant's text responses match their numeric ratings — the same person tells a consistent story",
-                    "Automatic failover across multiple providers for reliable generation",
-                    "Note: relies on shared free-tier API access — availability depends on current server load across all users. Generation may be slower or temporarily unavailable during peak hours",
+                    "Free-tier AI models (Google AI, Groq, Cerebras) for rich text",
+                    "Behavioral coherence: text matches each participant's ratings",
+                    "Auto-failover across 6 providers for reliability",
+                    "Note: shared free-tier — speed varies with server load",
                 ],
+                "info_tooltip": (
+                    "<b>How Built-in AI works</b><br><br>"
+                    "<b>Provider chain:</b> 6 free-tier LLM providers with automatic failover — "
+                    "Google AI (Gemini 2.5 Flash + Flash Lite), Groq (Llama 3.3 70B), "
+                    "Cerebras (Llama 3.3 70B), Poe (GPT-4o-mini), OpenRouter (Mistral Small 3.1). "
+                    "Each has independent rate limits; when one is exhausted, the next is tried automatically.<br><br>"
+                    "<b>Behavioral coherence pipeline:</b> Before generating text, the system computes each "
+                    "participant's behavioral profile from their numeric responses — response pattern, "
+                    "intensity, consistency score, and straight-lining flag. This profile is injected into "
+                    "the LLM prompt so that a participant who gave all 7s writes enthusiastically, while "
+                    "one who gave all 2s writes critically.<br><br>"
+                    "<b>Anti-detection:</b> 95+ banned-phrase filters remove AI-sounding language, "
+                    "QWERTY-based typo injection simulates real typing errors, and cross-participant "
+                    "uniqueness tracking (200-response rolling window) prevents repeated phrasing."
+                ),
             },
             {
                 "key": "own_api",
@@ -10981,19 +11120,30 @@ if active_page == 3:
                 "title": "Your API Key",
                 "tag": "",
                 "tag_color": "",
-                "subtitle": "Bring your own LLM provider for dedicated, reliable access",
+                "subtitle": "Bring your own LLM provider for dedicated access",
                 "details": [
-                    "Use your own API key from Google AI, Groq, Cerebras, OpenRouter, Poe, or OpenAI — most offer generous free tiers",
-                    "Dedicated access with your own rate limits — no shared usage constraints or availability issues",
-                    "Same behavioral coherence pipeline as Built-in AI — your key just powers the LLM calls",
-                    "Key is used in-memory only during your session; never saved to disk or logged",
+                    "Your key from Google AI, Groq, Cerebras, OpenRouter, Poe, or OpenAI",
+                    "Dedicated rate limits — no shared usage constraints",
+                    "Same behavioral coherence pipeline as Built-in AI",
+                    "Key used in-memory only; never saved or logged",
                 ],
+                "info_tooltip": (
+                    "<b>How Your API Key works</b><br><br>"
+                    "<b>Provider auto-detection:</b> The system identifies your provider from the key "
+                    "format (gsk_→Groq, csk-→Cerebras, AIza→Google AI, sk-or-→OpenRouter, sk-→OpenAI) "
+                    "and routes to the correct API endpoint automatically.<br><br>"
+                    "<b>Same pipeline:</b> Your key powers the exact same behavioral coherence pipeline, "
+                    "banned-phrase filtering, typo injection, and anti-detection measures as Built-in AI. "
+                    "The only difference is dedicated rate limits — your own quota, no sharing.<br><br>"
+                    "<b>Privacy:</b> API keys are held in browser session memory only. They are never "
+                    "written to disk, logged, or transmitted anywhere except to the LLM provider you chose."
+                ),
             },
         ]
 
-        # Render 2×2 grid — cards are clickable (button IS the card)
-        _row1_col1, _row1_col2 = st.columns(2)
-        _row2_col1, _row2_col2 = st.columns(2)
+        # v1.1.0.7: Render 2×2 grid with improved spacing and info icons
+        _row1_col1, _row1_col2 = st.columns(2, gap="medium")
+        _row2_col1, _row2_col2 = st.columns(2, gap="medium")
         _card_cols = [_row1_col1, _row1_col2, _row2_col1, _row2_col2]
 
         for _ci, _card in enumerate(_method_cards):
@@ -11006,14 +11156,14 @@ if active_page == 3:
                     _border = "border:2px solid #22c55e;"
                     _bg = "background:#f8fdf9;"
                     _title_color = "#166534"
-                    _check_icon = '<span style="color:#22c55e;font-size:0.85em;float:right;">&#10003; Active</span>'
-                    _cursor = ""
+                    _check_html = '<span style="color:#22c55e;font-size:0.78em;float:right;font-weight:600;">&#10003; Active</span>'
+                    _shadow = "box-shadow:0 2px 8px rgba(34,197,94,0.15);"
                 else:
                     _border = "border:1px solid #E5E7EB;"
                     _bg = "background:#ffffff;"
                     _title_color = "#1F2937"
-                    _check_icon = ""
-                    _cursor = "cursor:pointer;"
+                    _check_html = ""
+                    _shadow = "box-shadow:0 1px 3px rgba(0,0,0,0.06);"
 
                 # Tag badge
                 _tag_html = ""
@@ -11028,38 +11178,60 @@ if active_page == 3:
                 _details_html = ""
                 for _d in _card["details"]:
                     _details_html += (
-                        f'<div style="display:flex;gap:6px;margin-bottom:3px;">'
+                        f'<div style="display:flex;gap:6px;margin-bottom:4px;">'
                         f'<span style="color:#9CA3AF;font-size:0.72em;line-height:1.5;">&#8226;</span>'
                         f'<span style="color:#6B7280;font-size:0.78em;line-height:1.5;">{_d}</span>'
                         f'</div>'
                     )
 
-                # Quality note for non-LLM methods (v1.1.0.6)
+                # Quality note for non-LLM methods
                 _quality_note_html = ""
                 _qn = _card.get("quality_note", "")
                 if _qn:
                     _quality_note_html = (
                         f'<div style="background:#FFF7ED;border:1px solid #FED7AA;border-radius:6px;'
-                        f'padding:6px 10px;margin-top:6px;">'
+                        f'padding:6px 10px;margin-top:8px;">'
                         f'<span style="color:#9A3412;font-size:0.73em;line-height:1.4;">{_qn}</span>'
                         f'</div>'
                     )
 
+                # v1.1.0.7: Info icon with hover tooltip
+                _info_text = _card.get("info_tooltip", "")
+                _info_icon_html = ""
+                if _info_text:
+                    _tooltip_id = f"info_tip_{_mk}"
+                    _info_icon_html = (
+                        f'<span style="position:relative;display:inline-block;float:right;'
+                        f'margin-top:-2px;cursor:help;">'
+                        f'<span class="card-info-icon" data-tooltip="{_tooltip_id}" '
+                        f'style="display:inline-flex;align-items:center;justify-content:center;'
+                        f'width:22px;height:22px;border-radius:50%;background:#EEF2FF;'
+                        f'color:#6366F1;font-size:0.8em;font-weight:700;border:1px solid #C7D2FE;'
+                        f'transition:all 0.15s ease;"'
+                        f' onmouseover="this.style.background=\'#6366F1\';this.style.color=\'white\';"'
+                        f' onmouseout="this.style.background=\'#EEF2FF\';this.style.color=\'#6366F1\';"'
+                        f'>&#9432;</span>'
+                        f'</span>'
+                    )
+
                 # Render card HTML
                 st.markdown(
-                    f'<div style="{_border}{_bg}border-radius:10px;padding:14px 16px;'
-                    f'margin-bottom:2px;min-height:200px;{_cursor}">'
+                    f'<div style="{_border}{_bg}border-radius:12px;padding:16px 18px;'
+                    f'margin-bottom:8px;min-height:210px;{_shadow}'
+                    f'transition:box-shadow 0.15s ease;">'
+                    # Info icon (top-right)
+                    f'{_info_icon_html}'
                     # Icon + title row
-                    f'<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">'
+                    f'<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">'
                     f'<span style="display:inline-flex;align-items:center;justify-content:center;'
-                    f'width:32px;height:32px;border-radius:8px;background:{_card["icon_bg"]};'
-                    f'color:white;font-size:0.9em;">{_card["icon"]}</span>'
-                    f'<span style="font-weight:600;font-size:0.9em;color:{_title_color};">'
+                    f'width:36px;height:36px;border-radius:10px;background:{_card["icon_bg"]};'
+                    f'color:white;font-size:1.0em;">{_card["icon"]}</span>'
+                    f'<span style="font-weight:700;font-size:0.92em;color:{_title_color};">'
                     f'{_card["title"]}{_tag_html}</span>'
-                    f'{_check_icon}'
+                    f'{_check_html}'
                     f'</div>'
                     # Subtitle
-                    f'<div style="color:#6B7280;font-size:0.82em;margin-bottom:8px;">'
+                    f'<div style="color:#6B7280;font-size:0.82em;margin-bottom:10px;line-height:1.4;">'
                     f'{_card["subtitle"]}</div>'
                     # Detail bullets
                     f'{_details_html}'
@@ -11069,9 +11241,12 @@ if active_page == 3:
                     unsafe_allow_html=True,
                 )
 
-                # Clickable card selector — replaces separate "Select" button
-                # v1.1.0.6: Show select button on all cards when nothing is chosen,
-                # or on non-selected cards when one is already active.
+                # Info expander — clickable detail panel
+                if _info_text:
+                    with st.expander("Details & science behind this method", expanded=False):
+                        st.markdown(_info_text, unsafe_allow_html=True)
+
+                # Clickable card selector
                 if not _is_sel:
                     _btn_label = f"Select {_card['title']}" if _current_method is None else f"Use {_card['title']}"
                     if st.button(
@@ -11087,13 +11262,14 @@ if active_page == 3:
                             st.session_state["_use_socsim_experimental"] = False
                         st.rerun()
 
-        # v1.1.0.6: Prompt when no method is selected yet
+        # v1.1.0.7: Prompt when no method is selected yet
         if _current_method is None:
+            st.markdown("")
             st.markdown(
                 '<div style="background:#EFF6FF;border:1px solid #BFDBFE;border-radius:8px;'
-                'padding:12px 16px;margin:8px 0;">'
+                'padding:14px 18px;margin:10px 0;">'
                 '<span style="color:#1E40AF;font-size:0.88em;font-weight:600;">'
-                'Please select a generation method above to continue.</span>'
+                '&#9757; Please select a generation method above to continue.</span>'
                 '</div>',
                 unsafe_allow_html=True,
             )
@@ -11831,6 +12007,15 @@ if active_page == 3:
             # v1.4.9: Inject LLM stats into metadata for the instructor report
             if hasattr(engine, 'llm_generator') and engine.llm_generator is not None:
                 metadata['llm_stats'] = engine.llm_generator.stats
+
+            # v1.1.0.7: Indicate data source (QSF upload vs manual builder) in metadata
+            _study_input_mode = st.session_state.get("study_input_mode", "upload_qsf")
+            if _study_input_mode == "upload_qsf":
+                metadata['data_source'] = "qsf_upload"
+                metadata['data_source_label'] = "QSF File Upload (Qualtrics)"
+            else:
+                metadata['data_source'] = "builder"
+                metadata['data_source_label'] = "Manual Entry (Study Builder)"
 
             # v1.0.9.2: Pass user-selected generation method to metadata for
             # accurate instructor report differentiation.
@@ -12674,6 +12859,8 @@ if active_page == 3:
                 if not to_email or "@" not in to_email:
                     st.error("Please enter a valid email address.")
                 else:
+                    # v1.1.0.7: Track user email in admin area
+                    _track_user_email(to_email, source="zip_download")
                     subject = f"[Behavioral Simulation] Output: {st.session_state.get('study_title','Untitled Study')}"
                     body = (
                         "Attached is the simulation output ZIP (Simulated.csv, metadata, analysis scripts).\n\n"

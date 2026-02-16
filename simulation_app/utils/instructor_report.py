@@ -516,6 +516,10 @@ class InstructorReportGenerator:
         lines.append(f"| **Mode** | {metadata.get('simulation_mode', 'pilot').title()} |")
         lines.append(f"| **Tool Version** | {metadata.get('app_version', 'N/A')} |")
         lines.append(f"| **Random Seed** | {metadata.get('random_seed', 'Auto')} |")
+        # v1.1.0.7: Show data source (QSF upload vs manual builder)
+        _data_source_label = metadata.get('data_source_label', '')
+        if _data_source_label:
+            lines.append(f"| **Data Source** | {_data_source_label} |")
         # v1.1.0.4: Show which generation method was used (not just in admin dashboard)
         _gen_method_label = metadata.get('generation_method_label', '')
         if _gen_method_label:
