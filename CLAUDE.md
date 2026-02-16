@@ -187,6 +187,53 @@ Every simulated participant is ONE person. Their numeric responses and open-text
 
 ---
 
+## CRITICAL: LLM Generation Anti-Hang Architecture (v1.1.1.0+)
+
+**Historical Bug (v1.1.0.9):** LLM generation could hang for 12+ hours even with available API tokens. Root causes were auto-recovery defeating budget enforcement, quality filter silently rejecting valid LLM responses, rate limiter timestamp corruption, and insufficient prefill coverage.
+
+### Five-Layer Defense System (ALL must remain intact)
+
+| Layer | File | Mechanism | Threshold |
+|-------|------|-----------|-----------|
+| 1. **Permanent disable** | `llm_response_generator.py` | `_force_disabled` flag + `disable_permanently()` — auto-recovery CANNOT undo | N/A |
+| 2. **Cumulative failures** | `llm_response_generator.py` | `_cumulative_failure_count` (never resets on success) | 15 total |
+| 3. **Per-participant timeout** | `enhanced_simulation_engine.py` | Tracks wall-clock time per OE response | 3 consecutive > 45s |
+| 4. **OE generation budget** | `enhanced_simulation_engine.py` | Uses `disable_permanently()` | 180s total |
+| 5. **Global watchdog thread** | `app.py` | Daemon thread checks every 30s | 10 min total or 120s stall |
+
+### Anti-Hang Rules (NEVER violate)
+
+1. **NEVER set `_api_available = False` directly** to disable LLM — use `disable_permanently()` instead. Direct assignment can be undone by auto-recovery.
+2. **NEVER re-enable LLM after `_force_disabled = True`** within the same generation run. The flag is intentionally irrecoverable.
+3. **NEVER remove the quality filter fallback** in `_generate_batch()` — when ALL responses fail quality check, the batch MUST accept them instead of silently discarding.
+4. **NEVER reduce the prefill budget below 60s** — insufficient prefill forces expensive on-demand calls for every participant.
+5. **NEVER increase batch retry sizes beyond 2 consecutive** — if first 2 batch sizes fail, remaining will too.
+6. **`reset_providers()` MUST be a no-op when force-disabled** — prevents infinite retry cycles.
+
+### Pre-Flight Health Check (app.py)
+Before generation starts, `engine.llm_generator.health_check(timeout=12)` tests one provider. If it fails, the user sees 3 choices IMMEDIATELY (retry / own API key / template). The user is NEVER left waiting for a dead API.
+
+### Progress Callback Architecture
+- `_report_progress("generating", i, n)` fires EVERY participant (not every 5%)
+- `_report_progress("open_ended_question", idx, total)` fires per-OE-question
+- UI shows: elapsed time, participant count, live LLM stats (AI count vs template count)
+- Post-generation: data source breakdown shown when template fallback was used
+
+### Root Causes That Were Fixed (DO NOT reintroduce)
+
+| Bug | What Happened | Where | Fix |
+|-----|---------------|-------|-----|
+| Auto-recovery cycle | `is_llm_available` re-enabled dead providers every 20s | `llm_response_generator.py:2296` | `_force_disabled` checked first |
+| Quality filter too strict | Topic keyword matching rejected valid LLM responses silently | `_is_low_quality_response()` | 3-char prefix matching + accept-on-full-rejection |
+| Rate limiter timestamp | `wait_if_needed()` returned without appending timestamp when sleep > 15s | `_RateLimiter.wait_if_needed()` | Returns bool; caller checks |
+| Prefill budget too short | 30s filled only 2/15 pool buckets → 500+ on-demand calls | `enhanced_simulation_engine.py` | Increased to 90s |
+| Batch retry waste | 4 sizes tried even when first 2 failed | `generate()` in llm_response_generator | Break after 2 consecutive empty |
+| `_oe_budget_switched_count` | Never incremented → always reported 0 template fallbacks | OE loop | Incremented on budget exceed and empty response |
+| Progress only every 5% | Users saw stale progress for 30+ seconds during OE | OE loop | Every participant now |
+| Pool draw → on-demand waste | Pool response failed quality → triggered expensive on-demand | `generate()` pool draw path | Accept pool responses (LLM-generated) |
+
+---
+
 ## Streamlit DOM & Navigation (Hard-Won Lessons)
 
 ### What Works:
@@ -318,6 +365,17 @@ research-simulations/
 23. Generic 50% baselines → use published baselines per game type
 24. Ignoring domain for effect scaling → political > consumer effect sizes
 25. Treating condition labels literally → parse WHO is matched with WHOM
+
+### LLM Generation Pipeline (v1.1.1.0+)
+26. Setting `_api_available = False` directly → use `disable_permanently()` (auto-recovery undoes direct sets)
+27. Quality filter rejecting ALL batch responses silently → accept when ALL fail (LLM was prompted correctly)
+28. Rate limiter `wait_if_needed()` returning void → must return bool so caller can skip
+29. Prefill budget < 60s → leaves most pool buckets empty, forces expensive on-demand generation
+30. Progress callback every 5% → must be EVERY participant during OE (each can take 30s+)
+31. Auto-fallback to templates without user notification → ALWAYS show user what data source was used
+32. Batch retry all 4 sizes when first 2 failed → break after 2 consecutive empties
+33. Pool draw quality rejection → on-demand generation waste → accept pool responses (they're LLM-generated)
+34. Trusting that `_oe_budget_switched_count` tracks itself → must explicitly increment on fallback
 
 ---
 

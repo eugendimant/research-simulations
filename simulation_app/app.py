@@ -54,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.1.1.1"
-BUILD_ID = "20260216-v11101-preflight-check-quality-filter-fix-progress-ui"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.1.1.2"
+BUILD_ID = "20260216-v11102-oe-progress-pool-efficiency-docs"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -118,7 +118,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.1.1.1"  # v1.1.1.1: Pre-flight LLM check, quality filter fix, rate limiter fix, real-time progress
+APP_VERSION = "1.1.1.2"  # v1.1.1.2: OE per-participant progress, pool draw efficiency, budget tracking, docs
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -11789,6 +11789,14 @@ if active_page == 3:
                         f'<div style="text-align:center;padding:10px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;margin:8px 0;">'
                         f'<span style="font-size:1.1em;color:#92400e;">'
                         f'Preparing open-ended response generation...</span></div>',
+                        unsafe_allow_html=True,
+                    )
+                elif phase == "open_ended_question":
+                    # v1.1.1.2: Per-OE-question progress
+                    _progress_counter_placeholder.markdown(
+                        f'<div style="text-align:center;padding:10px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;margin:8px 0;">'
+                        f'<span style="font-size:1.1em;color:#92400e;">'
+                        f'Generating text responses — question {current + 1} of {total}</span></div>',
                         unsafe_allow_html=True,
                     )
                 elif phase == "generating":
