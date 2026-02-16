@@ -54,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.1.0.9"
-BUILD_ID = "20260216-v11009-simplify-gen-cards-timeout-safeguard"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.1.1.0"
+BUILD_ID = "20260216-v11100-anti-hang-safeguards-permanent-disable-watchdog"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -118,7 +118,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.1.0.9"  # v1.1.0.9: Simplify gen method cards, observation-only progress, 5-min LLM timeout
+APP_VERSION = "1.1.1.0"  # v1.1.1.0: Anti-hang safeguards — permanent disable, cumulative failures, watchdog, per-participant timeout
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -11716,6 +11716,13 @@ if active_page == 3:
         _stall_warning_shown = [False]
         _stall_threshold_secs = 45.0  # Show warning after 45s without progress
 
+        # v1.1.1.0: Global generation timeout — absolute hard limit. If generation
+        # exceeds this, force the LLM generator to permanently disable and let
+        # template fallback finish the remaining participants. This prevents the
+        # scenario where the UI spinner shows "Generating..." for 12+ hours.
+        _GLOBAL_GENERATION_TIMEOUT = 600.0  # 10 minutes absolute max
+        _generation_timed_out = [False]  # mutable ref for closure
+
         def _fmt_elapsed(seconds: float) -> str:
             """Format elapsed time as human-readable string."""
             s = int(seconds)
@@ -11725,7 +11732,7 @@ if active_page == 3:
             return f"{m}m {sec}s"
 
         def _live_progress_callback(phase: str, current: int, total: int) -> None:
-            """v1.1.0.9: Update the live progress counter — observation count only, no time estimates."""
+            """v1.1.1.0: Update the live progress counter with global timeout enforcement."""
             try:
                 _now = __import__('time').time()
                 _elapsed = _now - _progress_start_time
@@ -11733,6 +11740,27 @@ if active_page == 3:
                 # v1.0.8.2: Update stall detection state
                 _last_progress_time[0] = _now
                 _last_progress_phase[0] = phase
+
+                # v1.1.1.0: Global generation timeout enforcement.
+                # If total elapsed exceeds the hard limit, permanently disable LLM
+                # so remaining participants use fast template fallback instead of
+                # continuing to hammer dead API providers.
+                if _elapsed > _GLOBAL_GENERATION_TIMEOUT and not _generation_timed_out[0]:
+                    _generation_timed_out[0] = True
+                    import logging as _cb_logging
+                    _cb_logging.getLogger(__name__).warning(
+                        "GLOBAL GENERATION TIMEOUT (%.0fs) exceeded at phase=%s, "
+                        "current=%d/%d — forcing template fallback",
+                        _GLOBAL_GENERATION_TIMEOUT, phase, current, total,
+                    )
+                    # Force-disable the LLM generator on the engine
+                    try:
+                        if hasattr(engine, 'llm_generator') and engine.llm_generator is not None:
+                            engine.llm_generator.disable_permanently(
+                                f"global timeout ({_GLOBAL_GENERATION_TIMEOUT:.0f}s) exceeded"
+                            )
+                    except Exception:
+                        pass
 
                 if _elapsed > _stall_threshold_secs and not _stall_warning_shown[0]:
                     if phase in ("personas", "scales", "open_ended"):
@@ -11850,6 +11878,60 @@ if active_page == 3:
 
             progress_bar.progress(10, text="Step 1/5 — Initializing simulation engine...")
 
+            # v1.1.1.0: Background watchdog thread — monitors generation and kills
+            # LLM if progress stalls or global timeout is exceeded. This is a safety
+            # net that fires even if the progress callback stops being called (e.g.,
+            # when the engine is stuck inside a single LLM API call).
+            import threading as _watchdog_threading
+
+            def _generation_watchdog() -> None:
+                """Background thread: checks every 30s if generation is stalled."""
+                _wd_start = __import__('time').time()
+                while True:
+                    __import__('time').sleep(30)  # Check every 30 seconds
+                    _wd_elapsed = __import__('time').time() - _wd_start
+                    # Check if generation has completed (flag set by main thread)
+                    if _generation_timed_out[0]:
+                        return  # Already handled
+                    if _wd_elapsed > _GLOBAL_GENERATION_TIMEOUT:
+                        _generation_timed_out[0] = True
+                        import logging as _wd_logging
+                        _wd_logging.getLogger(__name__).warning(
+                            "WATCHDOG: Global timeout (%.0fs) exceeded — "
+                            "force-disabling LLM generator",
+                            _GLOBAL_GENERATION_TIMEOUT,
+                        )
+                        try:
+                            if hasattr(engine, 'llm_generator') and engine.llm_generator is not None:
+                                engine.llm_generator.disable_permanently(
+                                    f"watchdog: global timeout ({_GLOBAL_GENERATION_TIMEOUT:.0f}s)"
+                                )
+                        except Exception:
+                            pass
+                        return
+                    # Also check stall: no progress callback for 120s
+                    _since_last_progress = __import__('time').time() - _last_progress_time[0]
+                    if _since_last_progress > 120.0:
+                        import logging as _wd_logging2
+                        _wd_logging2.getLogger(__name__).warning(
+                            "WATCHDOG: No progress for %.0fs (phase=%s) — "
+                            "force-disabling LLM generator",
+                            _since_last_progress, _last_progress_phase[0],
+                        )
+                        try:
+                            if hasattr(engine, 'llm_generator') and engine.llm_generator is not None:
+                                engine.llm_generator.disable_permanently(
+                                    f"watchdog: stall detected ({_since_last_progress:.0f}s no progress)"
+                                )
+                        except Exception:
+                            pass
+                        return
+
+            _watchdog_thread = _watchdog_threading.Thread(
+                target=_generation_watchdog, daemon=True, name="gen-watchdog"
+            )
+            _watchdog_thread.start()
+
             # v1.0.8.1: Real-time progress counter replaces static time estimates.
             # The progress callback on the engine updates _progress_counter_placeholder live.
             _gen_has_oe = bool(open_ended_questions_for_engine)
@@ -11864,6 +11946,8 @@ if active_page == 3:
                 df, metadata = engine.generate()
 
             _gen_total_time = __import__('time').time() - _progress_start_time
+            # v1.1.1.0: Signal watchdog thread to stop (it's a daemon, but be clean)
+            _generation_timed_out[0] = True
 
             # v1.4.9: Inject LLM stats into metadata for the instructor report
             if hasattr(engine, 'llm_generator') and engine.llm_generator is not None:
@@ -11929,6 +12013,27 @@ if active_page == 3:
                 # Detect specific issues
                 _llm_had_issues = False
                 _issue_messages: List[str] = []
+                _post_force_disabled = bool(_post_llm_stats.get("force_disabled", False))
+                _post_cumul_failures = int(_post_llm_stats.get("cumulative_failures", 0))
+
+                # v1.1.1.0: Detect if generation was force-terminated by safety mechanisms
+                if _post_force_disabled:
+                    _llm_had_issues = True
+                    if _post_cumul_failures >= 15:
+                        _issue_messages.append(
+                            f"AI providers failed {_post_cumul_failures} times during generation. "
+                            "The system automatically switched to template-based responses to complete your data."
+                        )
+                    elif _gen_total_time > _GLOBAL_GENERATION_TIMEOUT * 0.9:
+                        _issue_messages.append(
+                            f"Generation approached the safety timeout ({_fmt_elapsed(_GLOBAL_GENERATION_TIMEOUT)}). "
+                            "The system automatically switched to template-based responses to complete your data."
+                        )
+                    else:
+                        _issue_messages.append(
+                            "AI providers were experiencing issues. "
+                            "The system automatically switched to template-based responses to complete your data."
+                        )
 
                 if _post_llm_calls == 0 and _post_pool_size == 0:
                     _llm_had_issues = True

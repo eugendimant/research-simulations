@@ -2180,6 +2180,16 @@ class LLMResponseGenerator:
         self._quality_rejection_count: int = 0  # v1.0.8.2: Track low-quality response rejections
         self._api_disabled_time: float = 0.0  # v1.0.5.7: When API was disabled
         self._api_recovery_secs: float = 20.0  # v1.0.7.1: Reduced from 60 → 20s for faster recovery
+        # v1.1.1.0: Force-disabled flag — once set, auto-recovery CANNOT re-enable.
+        # Used by the OE budget enforcement and cumulative failure tracking to
+        # permanently kill LLM for the rest of this generation run.
+        self._force_disabled: bool = False
+        # v1.1.1.0: Cumulative failure counter — tracks TOTAL provider failures
+        # across the entire generation run (never resets on success).  After
+        # _CUMULATIVE_FAILURE_LIMIT total failures, permanently disable LLM.
+        self._cumulative_failure_count: int = 0
+        _CUMULATIVE_FAILURE_LIMIT = 15  # After 15 total failures, give up for good
+        self._cumulative_failure_limit: int = _CUMULATIVE_FAILURE_LIMIT
         # v1.0.5.8: Track provider exhaustion events for admin analytics
         self._provider_exhaustion_count: int = 0  # Times ALL providers failed in a batch
         self._user_key_activations: int = 0  # Times a user-provided key was activated mid-session
@@ -2294,6 +2304,9 @@ class LLMResponseGenerator:
 
     @property
     def is_llm_available(self) -> bool:
+        # v1.1.1.0: Force-disabled is permanent for this run — no recovery.
+        if self._force_disabled:
+            return False
         # v1.0.5.7: Auto-recover after cooldown period instead of staying
         # permanently disabled.  After 60s, reset all providers and try again.
         if not self._api_available and self._api_disabled_time > 0:
@@ -2307,6 +2320,24 @@ class LLMResponseGenerator:
                 self._batch_failure_count = 0
                 self._api_disabled_time = 0.0
         return self._api_available
+
+    def disable_permanently(self, reason: str = "") -> None:
+        """v1.1.1.0: Permanently disable LLM for the rest of this generation run.
+
+        Unlike setting _api_available = False, this sets _force_disabled = True
+        which CANNOT be undone by auto-recovery.  Used when:
+        - OE generation budget is exceeded
+        - Cumulative failures exceed threshold
+        - Global generation timeout is approaching
+        """
+        self._force_disabled = True
+        self._api_available = False
+        self._api_disabled_time = 0.0  # Prevent auto-recovery
+        logger.warning("LLM PERMANENTLY disabled for this run: %s "
+                       "(cumulative_failures=%d, exhaustions=%d)",
+                       reason or "no reason given",
+                       self._cumulative_failure_count,
+                       self._provider_exhaustion_count)
 
     @property
     def active_provider_name(self) -> str:
@@ -2356,6 +2387,9 @@ class LLMResponseGenerator:
             "batch_failures": self._batch_failure_count,
             "allow_template_fallback": self._allow_template_fallback,
             "blocked_fallbacks": self._blocked_fallback_count,
+            # v1.1.1.0: Cumulative failure tracking
+            "cumulative_failures": self._cumulative_failure_count,
+            "force_disabled": self._force_disabled,
         }
 
     @property
@@ -2375,7 +2409,12 @@ class LLMResponseGenerator:
 
         v1.0.7.1: Also resets batch failure count and API disabled time
         so providers are truly fresh for the next generation attempt.
+        v1.1.1.0: Respects force-disabled — if permanently disabled, reset
+        is a no-op to prevent infinite retry cycles.
         """
+        if self._force_disabled:
+            logger.debug("reset_providers() skipped — force-disabled is active")
+            return
         for p in self._providers:
             p.reset()
         self._batch_failure_count = 0
@@ -2612,6 +2651,8 @@ class LLMResponseGenerator:
         # v1.0.5.5: Increased threshold from 5→12 to tolerate transient rate-limit
         # storms.  Also add a brief sleep so providers have time to recover.
         self._batch_failure_count += 1
+        # v1.1.1.0: Track cumulative failures (never resets) for permanent kill switch
+        self._cumulative_failure_count += 1
         # v1.0.5.8: Track each provider exhaustion event for admin analytics
         self._provider_exhaustion_count += 1
         self._exhaustion_timestamps.append(time.time())
@@ -2621,12 +2662,19 @@ class LLMResponseGenerator:
             if p.api_key:
                 _status = "available" if p.available else f"cooldown({p._cooldown_seconds:.0f}s)"
                 _tried_summary.append(f"{p.name}:{_status}:fails={p._consecutive_failures}")
-        logger.info("All providers exhausted for batch %d: %s",
-                     self._batch_failure_count, " | ".join(_tried_summary))
+        logger.info("All providers exhausted for batch %d (cumulative %d): %s",
+                     self._batch_failure_count, self._cumulative_failure_count,
+                     " | ".join(_tried_summary))
+        # v1.1.1.0: Cumulative failure kill switch — if total failures across the
+        # entire run exceed limit, permanently disable (no auto-recovery possible).
+        if self._cumulative_failure_count >= self._cumulative_failure_limit:
+            self.disable_permanently(
+                f"cumulative failure limit ({self._cumulative_failure_limit}) reached"
+            )
         # v1.0.7.1: Reduced threshold from 12 → 3 — fail fast, don't hang.
         # After 3 batch failures, fall back to templates immediately.
         # APIs auto-recover after 20s, so next generation attempt will retry them.
-        if self._batch_failure_count >= 3:
+        elif self._batch_failure_count >= 3:
             self._api_available = False
             self._api_disabled_time = time.time()
             logger.warning("All %d LLM providers exhausted after %d batch failures — "
@@ -2784,7 +2832,8 @@ class LLMResponseGenerator:
 
         # 2. Try on-demand LLM batch (if pool was empty)
         # v1.0.5.7: Use property (triggers auto-recovery check) not raw field
-        if self.is_llm_available:
+        # v1.1.1.0: Skip entirely if force-disabled (budget exceeded or cumulative limit)
+        if self.is_llm_available and not self._force_disabled:
             batch = []
             _target_batch_sizes = [self._batch_size, 10, 5, 1]
             _seen_sizes = set()

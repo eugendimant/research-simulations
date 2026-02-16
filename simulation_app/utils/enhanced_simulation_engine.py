@@ -10688,17 +10688,20 @@ class EnhancedSimulationEngine:
                     self._log(f"LLM prefill: {_stats['llm_calls']} API calls but 0 responses in "
                               f"{_prefill_elapsed:.1f}s — using template fallback. "
                               f"Providers: {_stats.get('providers', {})}")
-                    # v1.0.7.1: Reset providers for on-demand generation (but don't
-                    # disable auto-recovery timeout — respect the 20s cooldown)
-                    if hasattr(self.llm_generator, '_reset_all_providers'):
+                    # v1.1.1.0: Only reset if not already force-disabled
+                    if hasattr(self.llm_generator, '_force_disabled') and self.llm_generator._force_disabled:
+                        self._log("LLM prefill: force-disabled — skipping provider reset")
+                    elif hasattr(self.llm_generator, '_reset_all_providers'):
                         self.llm_generator._reset_all_providers()
                         self.llm_generator._api_available = True
             except Exception as _pf_err:
                 self._log(f"WARNING: LLM pool prefill failed: {_pf_err}")
                 logger.warning("LLM pool prefill failed: %s", _pf_err)
-                # v1.9.1: Don't give up — reset providers so on-demand generation can try
+                # v1.1.1.0: Only reset if not force-disabled
                 try:
-                    if hasattr(self.llm_generator, '_reset_all_providers'):
+                    if hasattr(self.llm_generator, '_force_disabled') and self.llm_generator._force_disabled:
+                        self._log("LLM prefill error recovery: force-disabled — skipping reset")
+                    elif hasattr(self.llm_generator, '_reset_all_providers'):
                         self.llm_generator._reset_all_providers()
                         self.llm_generator._api_available = True
                 except Exception as _reset_err:
@@ -10742,13 +10745,22 @@ class EnhancedSimulationEngine:
         # ONLY generate open-ended responses for questions actually in the QSF
         # Never create default/fake questions - this prevents fake variables like "Task_Summary"
         # v1.0.0: Use survey flow handler to determine question visibility per condition
-        # v1.1.0.9: Hard timeout for OE generation — prevents indefinite hangs when
+        # v1.1.1.0: Hard timeout for OE generation — prevents indefinite hangs when
         # LLM providers are slow or unresponsive. After budget expires, remaining
         # participants fall back to template generation automatically.
-        _OE_GENERATION_BUDGET = 300.0  # 5 minutes max for all OE generation
+        # REDUCED from 300s → 180s (3 min). The old 5-min budget plus auto-recovery
+        # allowed infinite retry cycles. 3 min is generous for any real LLM response.
+        _OE_GENERATION_BUDGET = 180.0  # 3 minutes max for all OE generation
+        # v1.1.1.0: Per-participant timeout — if a SINGLE participant's OE response
+        # takes more than this, force template fallback for that participant AND
+        # permanently disable LLM (the provider is clearly hanging).
+        _PER_PARTICIPANT_OE_TIMEOUT = 45.0  # seconds
         _oe_gen_wall_start = time.time()
         _oe_budget_exceeded = False
         _oe_budget_switched_count = 0  # How many participants used fallback
+        # v1.1.1.0: Track consecutive slow participants to detect systemic issues
+        _consecutive_slow_participants = 0
+        _CONSECUTIVE_SLOW_LIMIT = 3  # After 3 slow participants in a row, kill LLM
         _total_oe = len(self.open_ended_questions)
         _report_progress("open_ended", 0, _total_oe)
         for _oe_idx, q in enumerate(self.open_ended_questions):
@@ -10775,7 +10787,8 @@ class EnhancedSimulationEngine:
                 if i % max(1, n // 20) == 0:  # Report every ~5% of participants
                     _report_progress("generating", i, n)
 
-                # v1.1.0.9: Check hard timeout budget — switch to template for remaining
+                # v1.1.1.0: Check hard timeout budget — switch to template for remaining.
+                # Uses disable_permanently() to prevent auto-recovery from re-enabling.
                 if not _oe_budget_exceeded:
                     _oe_elapsed = time.time() - _oe_gen_wall_start
                     if _oe_elapsed >= _OE_GENERATION_BUDGET:
@@ -10785,10 +10798,12 @@ class EnhancedSimulationEngine:
                             f"after {_oe_elapsed:.1f}s at participant {i+1}/{n} — "
                             f"remaining participants use template fallback"
                         )
-                        # Disable LLM to force template path for remaining participants
+                        # v1.1.1.0: PERMANENTLY disable LLM — auto-recovery CANNOT undo this
                         if self.llm_generator:
                             try:
-                                self.llm_generator._api_available = False
+                                self.llm_generator.disable_permanently(
+                                    f"OE budget ({_OE_GENERATION_BUDGET:.0f}s) exceeded"
+                                )
                             except Exception:
                                 pass
 
@@ -10866,6 +10881,9 @@ class EnhancedSimulationEngine:
                 # v1.0.7.0: Wrapped in try/except to guarantee simulation never hard-stops
                 # from OE generation failures (LLM or template errors).
                 # v1.0.7.2: On failure, use _last_resort_oe_response instead of empty string.
+                # v1.1.1.0: Per-participant timeout — if a single participant's OE takes
+                # too long, abort and use template. Also detect consecutive slow participants.
+                _participant_oe_start = time.time()
                 try:
                     text = self._generate_open_response(
                         q,
@@ -10880,6 +10898,32 @@ class EnhancedSimulationEngine:
                 except Exception as _oe_err:
                     logger.warning("OE response generation failed for participant %d: %s", i + 1, _oe_err)
                     _text_str = ""
+
+                # v1.1.1.0: Per-participant timeout tracking
+                _participant_oe_elapsed = time.time() - _participant_oe_start
+                if _participant_oe_elapsed > _PER_PARTICIPANT_OE_TIMEOUT:
+                    _consecutive_slow_participants += 1
+                    self._log(
+                        f"SLOW: Participant {i+1}/{n} OE took {_participant_oe_elapsed:.1f}s "
+                        f"(limit {_PER_PARTICIPANT_OE_TIMEOUT:.0f}s) — "
+                        f"consecutive slow: {_consecutive_slow_participants}/{_CONSECUTIVE_SLOW_LIMIT}"
+                    )
+                    if _consecutive_slow_participants >= _CONSECUTIVE_SLOW_LIMIT and self.llm_generator:
+                        self._log(
+                            f"{_CONSECUTIVE_SLOW_LIMIT} consecutive slow participants — "
+                            f"permanently disabling LLM for remaining participants"
+                        )
+                        try:
+                            self.llm_generator.disable_permanently(
+                                f"{_CONSECUTIVE_SLOW_LIMIT} consecutive participants exceeded "
+                                f"{_PER_PARTICIPANT_OE_TIMEOUT:.0f}s timeout"
+                            )
+                        except Exception:
+                            pass
+                        _oe_budget_exceeded = True
+                elif _participant_oe_elapsed <= 5.0:
+                    # Fast response — reset consecutive slow counter
+                    _consecutive_slow_participants = 0
 
                 # v1.0.7.2: NEVER leave OE response empty when participant should have answered.
                 # If all generators failed or returned empty, use the absolute last-resort.
@@ -10942,20 +10986,28 @@ class EnhancedSimulationEngine:
             q_desc = q.get("question_text", "")[:50] if q.get("question_text") else q.get('type', 'text')
             self.column_info.append((col_name, f"Open-ended: {q_desc}"))
 
-        # v1.1.0.9: Log OE generation budget status and re-enable LLM if it was disabled
+        # v1.1.1.0: Log OE generation budget status with detailed diagnostics
         self._oe_budget_exceeded = _oe_budget_exceeded
+        _oe_total_elapsed = time.time() - _oe_gen_wall_start
         if _oe_budget_exceeded:
-            _oe_total_elapsed = time.time() - _oe_gen_wall_start
-            self._log(
-                f"OE generation completed with budget exceeded: {_oe_total_elapsed:.1f}s total. "
-                f"Some participants used template fallback due to timeout."
-            )
-            # Re-enable LLM for any future use (e.g., if generate() is called again)
+            _llm_stats_summary = ""
             if self.llm_generator:
                 try:
-                    self.llm_generator._api_available = True
+                    _s = self.llm_generator.stats
+                    _llm_stats_summary = (
+                        f" LLM stats: {_s.get('llm_calls', 0)} calls, "
+                        f"{_s.get('pool_size', 0)} pool responses, "
+                        f"{_s.get('cumulative_failures', 0)} cumulative failures, "
+                        f"force_disabled={_s.get('force_disabled', False)}"
+                    )
                 except Exception:
                     pass
+            self._log(
+                f"OE generation completed with budget exceeded: {_oe_total_elapsed:.1f}s total, "
+                f"{_oe_budget_switched_count} participants used template fallback.{_llm_stats_summary}"
+            )
+        else:
+            self._log(f"OE generation completed normally in {_oe_total_elapsed:.1f}s")
 
         # v1.0.0 CRITICAL FIX: Post-processing validation to detect and fix duplicate responses
         # Check each participant's responses across all open-ended questions
