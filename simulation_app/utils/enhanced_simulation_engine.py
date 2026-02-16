@@ -10742,6 +10742,13 @@ class EnhancedSimulationEngine:
         # ONLY generate open-ended responses for questions actually in the QSF
         # Never create default/fake questions - this prevents fake variables like "Task_Summary"
         # v1.0.0: Use survey flow handler to determine question visibility per condition
+        # v1.1.0.9: Hard timeout for OE generation — prevents indefinite hangs when
+        # LLM providers are slow or unresponsive. After budget expires, remaining
+        # participants fall back to template generation automatically.
+        _OE_GENERATION_BUDGET = 300.0  # 5 minutes max for all OE generation
+        _oe_gen_wall_start = time.time()
+        _oe_budget_exceeded = False
+        _oe_budget_switched_count = 0  # How many participants used fallback
         _total_oe = len(self.open_ended_questions)
         _report_progress("open_ended", 0, _total_oe)
         for _oe_idx, q in enumerate(self.open_ended_questions):
@@ -10767,6 +10774,24 @@ class EnhancedSimulationEngine:
                 # v1.0.8.1: Report OE progress per participant (this is the slowest loop)
                 if i % max(1, n // 20) == 0:  # Report every ~5% of participants
                     _report_progress("generating", i, n)
+
+                # v1.1.0.9: Check hard timeout budget — switch to template for remaining
+                if not _oe_budget_exceeded:
+                    _oe_elapsed = time.time() - _oe_gen_wall_start
+                    if _oe_elapsed >= _OE_GENERATION_BUDGET:
+                        _oe_budget_exceeded = True
+                        self._log(
+                            f"OE generation budget ({_OE_GENERATION_BUDGET:.0f}s) exceeded "
+                            f"after {_oe_elapsed:.1f}s at participant {i+1}/{n} — "
+                            f"remaining participants use template fallback"
+                        )
+                        # Disable LLM to force template path for remaining participants
+                        if self.llm_generator:
+                            try:
+                                self.llm_generator._api_available = False
+                            except Exception:
+                                pass
+
                 participant_condition = conditions.iloc[i]
 
                 # Check if this participant's condition allows them to see this question
@@ -10916,6 +10941,21 @@ class EnhancedSimulationEngine:
             data[col_name] = responses
             q_desc = q.get("question_text", "")[:50] if q.get("question_text") else q.get('type', 'text')
             self.column_info.append((col_name, f"Open-ended: {q_desc}"))
+
+        # v1.1.0.9: Log OE generation budget status and re-enable LLM if it was disabled
+        self._oe_budget_exceeded = _oe_budget_exceeded
+        if _oe_budget_exceeded:
+            _oe_total_elapsed = time.time() - _oe_gen_wall_start
+            self._log(
+                f"OE generation completed with budget exceeded: {_oe_total_elapsed:.1f}s total. "
+                f"Some participants used template fallback due to timeout."
+            )
+            # Re-enable LLM for any future use (e.g., if generate() is called again)
+            if self.llm_generator:
+                try:
+                    self.llm_generator._api_available = True
+                except Exception:
+                    pass
 
         # v1.0.0 CRITICAL FIX: Post-processing validation to detect and fix duplicate responses
         # Check each participant's responses across all open-ended questions
@@ -11304,6 +11344,13 @@ class EnhancedSimulationEngine:
                     f"{len(self.conditions)} conditions. Consider increasing sample size "
                     f"for more reliable statistics."
                 )
+        # v1.1.0.9: Warn if OE generation was cut short due to timeout
+        if getattr(self, '_oe_budget_exceeded', False):
+            warnings.append(
+                "Open-ended text generation timed out after 5 minutes. "
+                "Some participants' text was generated using templates instead of AI. "
+                "For full AI generation, try using Your own API key for faster, dedicated access."
+            )
         return warnings
 
     def _validate_generated_data(self, df: pd.DataFrame) -> List[Dict[str, Any]]:
