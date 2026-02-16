@@ -2,7 +2,7 @@
 """
 Utility modules for the Behavioral Experiment Simulation Tool.
 
-Version: 1.1.1.0 - Anti-hang safeguards — permanent disable, cumulative failures, watchdog, per-participant timeout
+Version: 1.1.1.1 - Pre-flight LLM check, quality filter fix, rate limiter fix, real-time progress
 
 Changes (v1.0.0 - 20 Iterations of Comprehensive Improvements):
     === ENHANCED SCALE/MATRIX DETECTION ===
@@ -65,7 +65,7 @@ Modules:
 """
 
 # Package version - should match all module versions
-__version__ = "1.1.1.0"
+__version__ = "1.1.1.1"
 
 from .qsf_parser import parse_qsf_file, extract_survey_structure, generate_qsf_summary
 from .simulation_engine import SimulationEngine
