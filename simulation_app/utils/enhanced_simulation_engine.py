@@ -10612,9 +10612,12 @@ class EnhancedSimulationEngine:
         # v1.0.6.3: Force provider reset before prefill for clean state
         # v1.0.7.1: TOTAL prefill time budget — shared across ALL OE question × condition
         # combinations. This prevents the scenario where auto-recovery re-enables
-        # providers between prefill_pool calls, causing each call to retry and fail
-        # for another 30s. With this budget, the entire prefill phase takes max 30s.
-        _PREFILL_TOTAL_BUDGET = 30.0  # seconds
+        # providers between prefill_pool calls, causing each call to retry and fail.
+        # v1.1.1.0: INCREASED from 30s → 90s. The old 30s budget left most pool
+        # buckets empty (5 sentiments × N conditions × M questions = many buckets).
+        # With 90s, even slow providers (~15s/call) can fill 6+ buckets, which
+        # dramatically reduces expensive on-demand generation during the main loop.
+        _PREFILL_TOTAL_BUDGET = 90.0  # seconds
         if self.llm_generator and self.open_ended_questions:
             try:
                 self.llm_generator.reset_providers()

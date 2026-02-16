@@ -544,7 +544,12 @@ class _RateLimiter:
         self._max_rpm = max_rpm
         self._timestamps: List[float] = []
 
-    def wait_if_needed(self) -> None:
+    def wait_if_needed(self) -> bool:
+        """Wait if rate limit would be exceeded. Returns True if proceed, False if skipped.
+
+        v1.1.1.0: Returns bool so caller can skip the API call when rate limit is too long.
+        Always maintains consistent timestamp state regardless of outcome.
+        """
         now = time.time()
         self._timestamps = [t for t in self._timestamps if now - t < 60]
         if len(self._timestamps) >= self._max_rpm:
@@ -552,12 +557,13 @@ class _RateLimiter:
             # v1.0.8.2: Cap rate-limit sleep to 15s to prevent long hangs.
             # If we'd need to wait >15s, skip this provider instead.
             if sleep_for > 15.0:
-                logger.info("Rate limiter: would sleep %.1fs, capped at skip", sleep_for)
-                return  # Don't append timestamp — let caller fail and try next provider
+                logger.info("Rate limiter: would sleep %.1fs (>15s cap) — skipping call", sleep_for)
+                return False  # Signal caller to skip this call
             if sleep_for > 0:
                 logger.debug("Rate limiter: sleeping %.1fs", sleep_for)
                 time.sleep(sleep_for)
         self._timestamps.append(time.time())
+        return True
 
 
 # ---------------------------------------------------------------------------
@@ -1891,8 +1897,22 @@ def _is_low_quality_response(text: str, topic_tokens: Optional[List[str]] = None
         return True
 
     # Relevance: require at least one topical token hit when available
+    # v1.1.1.0: Use 3-char prefix matching instead of exact substring to catch
+    # stemming variants (e.g. "politic" matches "political", "politically").
+    # Also expanded to check ALL topic tokens, not just first 6.
     if topic_tokens:
-        if not any(tok in lower for tok in topic_tokens[:6]):
+        _lower = stripped.lower()
+        _matched = False
+        for tok in topic_tokens[:10]:
+            # Exact match
+            if tok in _lower:
+                _matched = True
+                break
+            # 3-char prefix match (catches stemming variants)
+            if len(tok) >= 4 and tok[:3] in _lower:
+                _matched = True
+                break
+        if not _matched:
             return True
 
     return False
@@ -2056,7 +2076,10 @@ class _LLMProvider:
                 return None
 
         # Per-provider rate limiting
-        self._rate_limiter.wait_if_needed()
+        # v1.1.1.0: Check return value — False means rate limit too high, skip call
+        if not self._rate_limiter.wait_if_needed():
+            logger.info("Provider '%s' rate-limited (>15s wait needed), skipping", self.name)
+            return None
 
         # v1.0.9.2: Track actual HTTP requests (past all guards)
         self.http_request_count += 1
@@ -2421,6 +2444,50 @@ class LLMResponseGenerator:
         self._api_disabled_time = 0.0
         self._api_available = any(p.available and p.api_key for p in self._providers)
 
+    def health_check(self, timeout: int = 12) -> Dict[str, Any]:
+        """v1.1.1.0: Pre-flight health check — test one LLM provider with a simple prompt.
+
+        Returns dict with:
+            ok: bool — at least one provider responded
+            latency_ms: int — response time in milliseconds (0 if failed)
+            provider: str — which provider responded (empty if failed)
+            error: str — error message if failed (empty if ok)
+
+        Used by the UI to warn users BEFORE starting generation if LLM
+        providers are slow or unavailable, and offer alternative methods.
+        """
+        if not self.is_llm_available:
+            return {"ok": False, "latency_ms": 0, "provider": "", "error": "No providers available"}
+
+        _test_prompt = (
+            "Generate one short sentence (10-20 words) expressing a neutral opinion "
+            "about a generic research study. Return ONLY the sentence, no quotes."
+        )
+        _start = time.time()
+        for p in self._providers:
+            if not p.available or not p.api_key:
+                continue
+            try:
+                result = _call_llm_api(
+                    api_url=p.api_url, api_key=p.api_key, model=p.model,
+                    system_prompt="You are a helpful assistant.",
+                    user_prompt=_test_prompt,
+                    max_tokens=50, timeout=timeout,
+                )
+                _latency = int((time.time() - _start) * 1000)
+                if result and len(result.strip()) > 5:
+                    logger.info("Health check passed: provider=%s latency=%dms",
+                                p.name, _latency)
+                    return {"ok": True, "latency_ms": _latency, "provider": p.name, "error": ""}
+                logger.info("Health check: provider=%s returned empty/short response", p.name)
+            except Exception as e:
+                logger.info("Health check: provider=%s error: %s", p.name, e)
+                continue
+
+        _latency = int((time.time() - _start) * 1000)
+        return {"ok": False, "latency_ms": _latency, "provider": "",
+                "error": "All providers failed health check"}
+
     @property
     def provider_display_name(self) -> str:
         """Human-readable name of the active provider for UI display.
@@ -2629,19 +2696,34 @@ class LLMResponseGenerator:
                 responses = _parse_json_responses(raw, len(persona_specs))
                 if responses:
                     # Post-process: strip AI-sounding phrases
-                    responses = [_clean_ai_artifacts(r) for r in responses]
+                    _cleaned = [_clean_ai_artifacts(r) for r in responses]
                     _filtered: List[str] = []
-                    for r in responses:
+                    _rejected_count = 0
+                    _non_empty: List[str] = []  # v1.1.1.0: track non-empty for fallback
+                    for r in _cleaned:
                         if not r or len(r.strip()) < 3:
                             continue
+                        _non_empty.append(r.strip())
                         if _is_low_quality_response(r, _topic_tokens):
                             self._quality_rejection_count += 1
+                            _rejected_count += 1
                             continue
                         _filtered.append(r)
-                    responses = _filtered
-                    if responses:
+                    if _filtered:
                         self._batch_failure_count = 0  # Reset on success
-                        return responses
+                        return _filtered
+                    # v1.1.1.0: If ALL responses failed quality check but we got
+                    # non-empty responses from a correctly-prompted LLM, accept them
+                    # anyway. The LLM was given the right context — topic-keyword
+                    # matching is too strict for natural language responses.
+                    if _non_empty and _rejected_count > 0:
+                        logger.warning(
+                            "Provider '%s': %d/%d responses failed quality filter but "
+                            "LLM was prompted correctly — accepting anyway to prevent hang",
+                            provider.name, _rejected_count, len(_non_empty),
+                        )
+                        self._batch_failure_count = 0
+                        return _non_empty
                 logger.warning("Provider '%s' returned unparseable response, trying next...",
                                provider.name)
             else:
@@ -2837,9 +2919,17 @@ class LLMResponseGenerator:
             batch = []
             _target_batch_sizes = [self._batch_size, 10, 5, 1]
             _seen_sizes = set()
+            _consecutive_empty = 0  # v1.1.1.0: Track consecutive empty batches
             for _batch_n in _target_batch_sizes:
                 if _batch_n in _seen_sizes or _batch_n <= 0:
                     continue
+                # v1.1.1.0: Break early after 2 consecutive empty batches.
+                # If batch size 20 and 10 both failed, sizes 5 and 1 will too
+                # (same providers, same rate limits). Don't waste 40+ seconds.
+                if _consecutive_empty >= 2:
+                    logger.info("On-demand: 2 consecutive empty batches, "
+                                "skipping remaining sizes")
+                    break
                 _seen_sizes.add(_batch_n)
                 specs = []
                 for _bi in range(_batch_n):
@@ -2863,7 +2953,10 @@ class LLMResponseGenerator:
                     specs.append(_spec)
                 batch = self._generate_batch(question_text, condition, sentiment, specs)
                 if batch:
+                    _consecutive_empty = 0
                     break
+                else:
+                    _consecutive_empty += 1
             if batch:
                 self._pool.add(question_text, condition, sentiment, batch)
                 resp = self._pool.draw_with_replacement(

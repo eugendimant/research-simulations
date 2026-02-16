@@ -54,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.1.1.0"
-BUILD_ID = "20260216-v11100-anti-hang-safeguards-permanent-disable-watchdog"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.1.1.1"
+BUILD_ID = "20260216-v11101-preflight-check-quality-filter-fix-progress-ui"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -118,7 +118,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.1.1.0"  # v1.1.1.0: Anti-hang safeguards — permanent disable, cumulative failures, watchdog, per-participant timeout
+APP_VERSION = "1.1.1.1"  # v1.1.1.1: Pre-flight LLM check, quality filter fix, rate limiter fix, real-time progress
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -11792,13 +11792,41 @@ if active_page == 3:
                         unsafe_allow_html=True,
                     )
                 elif phase == "generating":
-                    # v1.1.0.9: Show ONLY observation count — no time estimates
+                    # v1.1.1.0: Show observation count + elapsed time + LLM source stats
                     _pct = int((current / max(1, total)) * 100)
+                    _elapsed_str = _fmt_elapsed(_elapsed)
+                    # Grab live LLM stats if available
+                    _llm_status_html = ""
+                    if _is_llm_method and _has_oe_questions:
+                        try:
+                            if hasattr(engine, 'llm_generator') and engine.llm_generator is not None:
+                                _ls = engine.llm_generator.stats
+                                _pool_n = int(_ls.get("pool_size", 0))
+                                _fb_n = int(_ls.get("fallback_uses", 0))
+                                _llm_n = int(_ls.get("llm_calls", 0))
+                                _fd = bool(_ls.get("force_disabled", False))
+                                if _fd:
+                                    _src_text = f"AI responses: {_pool_n} | Template fallback: {_fb_n}"
+                                    _src_color = "#B45309"
+                                elif _llm_n > 0:
+                                    _src_text = f"AI responses: {_pool_n} | API calls: {_llm_n}"
+                                    _src_color = "#166534"
+                                else:
+                                    _src_text = "Waiting for AI provider response..."
+                                    _src_color = "#6B7280"
+                                _llm_status_html = (
+                                    f'<div style="font-size:0.8em;color:{_src_color};margin-top:6px;">'
+                                    f'{_src_text}</div>'
+                                )
+                        except Exception:
+                            pass
                     _progress_counter_placeholder.markdown(
                         f'<div style="text-align:center;padding:14px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;margin:8px 0;">'
                         f'<span style="font-size:1.6em;font-weight:700;color:#166534;">'
                         f'{current} of {total}</span>'
                         f'<span style="font-size:1em;color:#166534;"> participants simulated</span>'
+                        f'<div style="font-size:0.85em;color:#4B5563;margin-top:4px;">Elapsed: {_elapsed_str}</div>'
+                        f'{_llm_status_html}'
                         f'<div style="background:#dcfce7;border-radius:4px;height:10px;margin-top:10px;">'
                         f'<div style="background:#22c55e;width:{_pct}%;height:100%;border-radius:4px;'
                         f'transition:width 0.3s;"></div></div></div>',
@@ -11860,6 +11888,62 @@ if active_page == 3:
         if hasattr(engine, 'detected_domains') and engine.detected_domains:
             domain_text = ", ".join([d.replace("_", " ").title() for d in engine.detected_domains[:5]])
             st.info(f"🔬 **Detected research domain(s):** {domain_text}")
+
+        # v1.1.1.0: Pre-flight LLM health check — test providers BEFORE starting
+        # generation so users get immediate feedback instead of waiting minutes.
+        _is_llm_method = st.session_state.get(_gen_method_key) in ("free_llm", "own_api")
+        _has_oe_questions = bool(open_ended_questions_for_engine)
+        if _is_llm_method and _has_oe_questions and hasattr(engine, 'llm_generator') and engine.llm_generator is not None:
+            progress_bar.progress(8, text="Testing AI provider connection...")
+            _health = engine.llm_generator.health_check(timeout=12)
+            if not _health["ok"]:
+                progress_bar.progress(0, text="")
+                st.markdown(
+                    '<div style="background:linear-gradient(135deg, #FFF7ED 0%, #FFEDD5 100%);'
+                    'border:1px solid #FDBA74;border-radius:12px;padding:20px 24px;margin:12px 0;'
+                    'box-shadow:0 1px 3px rgba(0,0,0,0.06);">'
+                    '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">'
+                    '<span style="font-size:1.3em;">&#9888;</span>'
+                    '<span style="font-size:1.05em;font-weight:700;color:#9A3412;">'
+                    'AI providers are not responding</span></div>'
+                    '<span style="color:#7C2D12;font-size:0.88em;line-height:1.5;">'
+                    'The free AI text generation service could not be reached. '
+                    'Your data quality options:</span></div>',
+                    unsafe_allow_html=True,
+                )
+                _hc1, _hc2, _hc3 = st.columns(3)
+                with _hc1:
+                    if st.button("Try again", key="_preflight_retry",
+                                 type="primary", use_container_width=True,
+                                 help="Re-test the AI providers"):
+                        st.session_state["is_generating"] = True
+                        st.session_state["_generation_phase"] = 1
+                        _navigate_to(3)
+                with _hc2:
+                    if st.button("Use my own API key", key="_preflight_own_api",
+                                 type="secondary", use_container_width=True,
+                                 help="Get a free key from Groq or Google AI"):
+                        st.session_state[_gen_method_key] = "own_api"
+                        st.session_state["allow_template_fallback_once"] = False
+                        st.session_state["is_generating"] = False
+                        _navigate_to(3)
+                with _hc3:
+                    if st.button("Use Template Engine", key="_preflight_template",
+                                 type="secondary", use_container_width=True,
+                                 help="Instant generation using domain-specific templates"):
+                        st.session_state["allow_template_fallback_once"] = True
+                        st.session_state[_gen_method_key] = "template"
+                        st.session_state["is_generating"] = True
+                        st.session_state["_generation_phase"] = 1
+                        _navigate_to(3)
+                st.session_state["is_generating"] = False
+                st.stop()
+            elif _health["latency_ms"] > 8000:
+                st.warning(
+                    f"AI providers are responding slowly ({_health['latency_ms']}ms). "
+                    f"Generation may take longer than usual. You can switch to "
+                    f"Template Engine on the method selector above for faster results."
+                )
 
         try:
             # v1.2.0: Enhanced progress indicator with prominent visual display
@@ -12055,8 +12139,29 @@ if active_page == 3:
                     )
 
                 if _llm_had_issues:
-                    # v1.1.0.6: Visually appealing issue notification with clear choices
+                    # v1.1.1.0: Prominent issue notification with data source breakdown
                     _issue_detail = ' '.join(_issue_messages)
+                    # Calculate data source percentages
+                    _ai_count = _post_pool_size
+                    _template_count = _post_fallback_uses
+                    _total_oe = max(1, _ai_count + _template_count)
+                    _ai_pct_display = int((_ai_count / _total_oe) * 100)
+                    _template_pct_display = 100 - _ai_pct_display
+                    _source_breakdown = ""
+                    if _ai_count > 0 and _template_count > 0:
+                        _source_breakdown = (
+                            f'<div style="margin-top:12px;padding:10px;background:#FEF9C3;border-radius:8px;">'
+                            f'<span style="font-weight:600;color:#78350f;">Data source breakdown:</span><br>'
+                            f'<span style="color:#78350f;">AI-generated text: {_ai_pct_display}% ({_ai_count} responses) &nbsp;|&nbsp; '
+                            f'Template-generated: {_template_pct_display}% ({_template_count} responses)</span></div>'
+                        )
+                    elif _template_count > 0 and _ai_count == 0:
+                        _source_breakdown = (
+                            f'<div style="margin-top:12px;padding:10px;background:#FEF9C3;border-radius:8px;">'
+                            f'<span style="font-weight:600;color:#78350f;">Data source:</span> '
+                            f'<span style="color:#78350f;">100% template-generated ({_template_count} responses). '
+                            f'AI providers were unavailable.</span></div>'
+                        )
                     _switch_html = (
                         '<div style="background:linear-gradient(135deg, #FFFBEB 0%, #FEF3C7 100%);'
                         'border:1px solid #FDE68A;border-radius:12px;'
@@ -12067,8 +12172,9 @@ if active_page == 3:
                         'AI generation ran into some issues</span></div>'
                         f'<span style="color:#78350f;font-size:0.88em;line-height:1.5;">'
                         f'{_issue_detail}</span>'
+                        f'{_source_breakdown}'
                         '<div style="margin-top:14px;color:#78350f;font-size:0.85em;">'
-                        'Your data was still generated successfully. To get higher-quality AI text responses next time, '
+                        'Your data was still generated successfully. To re-generate with higher-quality AI text, '
                         'you can choose one of the options below:'
                         '</div></div>'
                     )
