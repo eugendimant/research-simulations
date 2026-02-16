@@ -63,7 +63,7 @@ association, impression, perception, feedback, comment, observation, general
 Version: 1.8.5 - Improved domain detection with weighted scoring and disambiguation
 """
 
-__version__ = "1.1.0.9"
+__version__ = "1.2.0.0"
 
 import random
 import re
@@ -7452,6 +7452,116 @@ class ComprehensiveResponseGenerator:
 
         return ' '.join(result_sentences)
 
+    # ------------------------------------------------------------------
+    # v1.2.0.0: Education-calibrated linguistic features (Westwood 2025 PNAS)
+    # ------------------------------------------------------------------
+    # Typo map for education-calibrated misspellings
+    _EDU_TYPO_MAP: Dict[str, List[str]] = {
+        "the": ["teh", "hte"], "that": ["taht", "tht"], "because": ["becuase", "bc"],
+        "their": ["thier", "there"], "would": ["woud", "wuold"],
+        "really": ["realy", "rly"], "think": ["thnk", "thnik"],
+        "about": ["abuot", "abut"], "something": ["somethng", "smth"],
+        "probably": ["prolly", "probly"], "different": ["diffrent", "diferent"],
+        "going": ["goin", "gona"], "before": ["befor", "b4"],
+        "through": ["thru", "thorugh"], "important": ["importnat", "importent"],
+        "people": ["ppl", "poeple"], "believe": ["belive", "beleive"],
+        "definitely": ["definately", "defintely"], "experience": ["experiance", "expierence"],
+        "government": ["goverment", "governmnt"], "interesting": ["intresting", "intersting"],
+        "opinion": ["oppinion", "opnion"], "receive": ["recieve", "recive"],
+        "separate": ["seperate", "seprate"], "tomorrow": ["tommorow", "tommorrow"],
+    }
+
+    def _apply_education_linguistic_calibration(
+        self,
+        response: str,
+        formality: float,
+        rng: random.Random,
+    ) -> str:
+        """Apply education-calibrated typos, capitalization, and style.
+
+        Per Westwood (2025 PNAS): vocabulary complexity (r=0.50), misspelling
+        rate (r=-0.37), and capitalization accuracy (r=0.23) all scale with
+        education level. Formality serves as a proxy for education.
+
+        Calibration:
+        - formality < 0.25: "high school or less" — 2-4 typos, all lowercase, no apostrophes
+        - formality 0.25-0.45: "some college" — 1-2 typos, mostly lowercase
+        - formality 0.45-0.65: "bachelor's" — 0-1 typos, proper caps
+        - formality > 0.65: "graduate" — 0 typos, proper everything
+        """
+        if not response or len(response) < 10:
+            return response
+
+        result = response
+
+        # --- TYPO INJECTION ---
+        if formality < 0.45:
+            # Determine target typo count based on "education level"
+            if formality < 0.25:
+                _target_typos = rng.randint(2, 4)
+            else:
+                _target_typos = rng.randint(1, 2)
+
+            _typos_added = 0
+            words = result.split()
+            for _wi in range(len(words)):
+                if _typos_added >= _target_typos:
+                    break
+                _w_lower = words[_wi].strip('.,!?;:').lower()
+                if _w_lower in self._EDU_TYPO_MAP and rng.random() < 0.6:
+                    _replacement = rng.choice(self._EDU_TYPO_MAP[_w_lower])
+                    # Preserve trailing punctuation
+                    _trailing = ""
+                    while words[_wi] and words[_wi][-1] in '.,!?;:':
+                        _trailing = words[_wi][-1] + _trailing
+                        words[_wi] = words[_wi][:-1]
+                    words[_wi] = _replacement + _trailing
+                    _typos_added += 1
+            result = ' '.join(words)
+
+        # --- CAPITALIZATION ---
+        if formality < 0.25:
+            # High school or less: all lowercase, no capitals
+            result = result.lower()
+        elif formality < 0.45:
+            # Some college: mostly lowercase, capitalize first letter only sometimes
+            if rng.random() < 0.6:
+                result = result[0].lower() + result[1:] if result else result
+            # Remove some sentence-initial capitals
+            sentences = result.split('. ')
+            for _si in range(1, len(sentences)):
+                if sentences[_si] and rng.random() < 0.4:
+                    sentences[_si] = sentences[_si][0].lower() + sentences[_si][1:] if len(sentences[_si]) > 1 else sentences[_si]
+            result = '. '.join(sentences)
+
+        # --- APOSTROPHE REMOVAL ---
+        if formality < 0.30:
+            # Drop apostrophes in contractions: don't → dont, can't → cant
+            _apostrophe_map = {
+                "don't": "dont", "can't": "cant", "won't": "wont",
+                "didn't": "didnt", "isn't": "isnt", "wasn't": "wasnt",
+                "doesn't": "doesnt", "couldn't": "couldnt", "shouldn't": "shouldnt",
+                "wouldn't": "wouldnt", "haven't": "havent", "hadn't": "hadnt",
+                "it's": "its", "that's": "thats", "there's": "theres",
+                "I'm": "im", "I've": "ive", "I'd": "id", "I'll": "ill",
+                "they're": "theyre", "we're": "were", "you're": "youre",
+            }
+            for _apo_from, _apo_to in _apostrophe_map.items():
+                if _apo_from.lower() in result.lower():
+                    # Case-insensitive replacement
+                    import re as _re_apo
+                    result = _re_apo.sub(
+                        _re_apo.escape(_apo_from), _apo_to,
+                        result, flags=_re_apo.IGNORECASE,
+                    )
+
+        # --- PERIOD REMOVAL FOR VERY INFORMAL ---
+        if formality < 0.20 and rng.random() < 0.5:
+            # Sometimes drop final period
+            result = result.rstrip('.')
+
+        return result
+
     def _ensure_unique_response(self, response: str, local_rng: random.Random, max_attempts: int = 8) -> str:
         """Ensure response is unique within the dataset by varying if needed.
 
@@ -7823,6 +7933,13 @@ class ComprehensiveResponseGenerator:
             response = self._apply_cross_response_voice_consistency(
                 response, participant_seed, _bp_traits, local_rng,
             )
+
+        # v1.2.0.0: Education-calibrated linguistic features (Westwood 2025 PNAS).
+        # Apply typos, capitalization, and style adjustments based on formality
+        # (proxy for education level) to produce human-indistinguishable text.
+        response = self._apply_education_linguistic_calibration(
+            response, persona_formality, local_rng,
+        )
 
         # v1.1.0: Ensure response is unique within the dataset
         response = self._ensure_unique_response(response, local_rng)

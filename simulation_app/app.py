@@ -54,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.1.0.9"
-BUILD_ID = "20260216-v11009-simplify-gen-cards-timeout-safeguard"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.2.0.0"
+BUILD_ID = "20260216-v12000-westwood-realism-progress-ux-stall-recovery"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -118,7 +118,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.1.0.9"  # v1.1.0.9: Simplify gen method cards, observation-only progress, 5-min LLM timeout
+APP_VERSION = "1.2.0.0"  # v1.2.0.0: Westwood-inspired realism, progress UX redesign, stall detection & recovery
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -11350,55 +11350,114 @@ if active_page == 3:
     progress_placeholder = st.empty()
     status_placeholder = st.empty()
 
-    # v1.1.0.9: Show prominent animated progress indicator IMMEDIATELY when generating
-    # No time estimates — only real-time observation count (updated via callback)
+    # v1.2.0.0: Redesigned progress page — clean light theme, detailed step indicators,
+    # informative status messages, and stall-recovery guidance for the user.
     if is_generating:
+        _gen_has_oe_preview = bool(st.session_state.get("confirmed_open_ended", []))
+        _gen_method_preview = st.session_state.get("generation_method", "free_llm")
+        _gen_method_label_preview = {
+            "free_llm": "AI-Powered (Free LLM Providers)",
+            "own_api": "AI-Powered (Your API Key)",
+            "template": "Template Engine (Instant)",
+            "experimental": "Adaptive Behavioral Engine (Beta)",
+        }.get(_gen_method_preview, _gen_method_preview)
+        _gen_n_preview = st.session_state.get("sample_size", 200)
         with status_placeholder.container():
-            st.markdown("""
+            st.markdown(f"""
             <style>
-                @keyframes pulse {
-                    0%, 100% { transform: scale(1); opacity: 1; }
-                    50% { transform: scale(1.1); opacity: 0.8; }
-                }
-                @keyframes spin {
-                    0% { transform: rotate(0deg); }
-                    100% { transform: rotate(360deg); }
-                }
-                .progress-spinner {
-                    display: inline-block;
-                    width: 50px;
-                    height: 50px;
-                    border: 4px solid rgba(255,255,255,0.3);
-                    border-top: 4px solid #ffffff;
+                @keyframes gen-spin {{
+                    0% {{ transform: rotate(0deg); }}
+                    100% {{ transform: rotate(360deg); }}
+                }}
+                @keyframes gen-fade {{
+                    0%, 100% {{ opacity: 1; }}
+                    50% {{ opacity: 0.5; }}
+                }}
+                .gen-card {{
+                    background: #ffffff;
+                    border: 1px solid #e2e8f0;
+                    border-radius: 12px;
+                    padding: 28px 32px;
+                    margin: 16px 0;
+                    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+                }}
+                .gen-header {{
+                    display: flex;
+                    align-items: center;
+                    gap: 14px;
+                    margin-bottom: 18px;
+                }}
+                .gen-spinner {{
+                    width: 28px; height: 28px;
+                    border: 3px solid #e2e8f0;
+                    border-top: 3px solid #3b82f6;
                     border-radius: 50%;
-                    animation: spin 1s linear infinite;
-                    margin-bottom: 15px;
-                }
-                .progress-container {
-                    text-align: center;
-                    padding: 40px;
-                    background: linear-gradient(135deg, #1e3a5f 0%, #2d5a87 100%);
-                    border-radius: 15px;
-                    margin: 20px 0;
-                    box-shadow: 0 4px 15px rgba(0,0,0,0.2);
-                }
-                .progress-title {
-                    color: white;
-                    margin: 0 0 10px 0;
-                    font-size: 24px;
-                    animation: pulse 2s ease-in-out infinite;
-                }
-                .progress-subtitle {
-                    color: #a0c4e8;
-                    font-size: 16px;
-                    margin: 0;
-                }
+                    animation: gen-spin 0.8s linear infinite;
+                    flex-shrink: 0;
+                }}
+                .gen-title {{
+                    font-size: 20px; font-weight: 600;
+                    color: #1e293b; margin: 0;
+                }}
+                .gen-steps {{
+                    display: flex; gap: 6px;
+                    margin-bottom: 18px;
+                    flex-wrap: wrap;
+                }}
+                .gen-step {{
+                    font-size: 12px; font-weight: 500;
+                    padding: 4px 12px;
+                    border-radius: 20px;
+                    white-space: nowrap;
+                }}
+                .gen-step-active {{
+                    background: #dbeafe; color: #1d4ed8;
+                    animation: gen-fade 1.5s ease-in-out infinite;
+                }}
+                .gen-step-pending {{
+                    background: #f1f5f9; color: #94a3b8;
+                }}
+                .gen-details {{
+                    display: grid;
+                    grid-template-columns: 1fr 1fr;
+                    gap: 8px 16px;
+                    font-size: 13px;
+                    color: #64748b;
+                    margin-bottom: 14px;
+                }}
+                .gen-detail-label {{
+                    font-weight: 500; color: #475569;
+                }}
+                .gen-notice {{
+                    font-size: 12px;
+                    color: #94a3b8;
+                    border-top: 1px solid #f1f5f9;
+                    padding-top: 12px;
+                    margin-top: 4px;
+                }}
             </style>
-            <div class="progress-container">
-                <div class="progress-spinner"></div>
-                <h2 class="progress-title">Generating Your Dataset...</h2>
-                <p class="progress-subtitle">Creating realistic behavioral data. Progress updates below.</p>
-                <p class="progress-subtitle" style="margin-top: 10px; font-size: 14px;">Please don't close or refresh this page.</p>
+            <div class="gen-card">
+                <div class="gen-header">
+                    <div class="gen-spinner"></div>
+                    <h2 class="gen-title">Generating Your Dataset</h2>
+                </div>
+                <div class="gen-steps">
+                    <span class="gen-step gen-step-active">1. Personas</span>
+                    <span class="gen-step gen-step-pending">2. Scale responses</span>
+                    <span class="gen-step gen-step-pending">3. {"Open-ended text" if _gen_has_oe_preview else "Finalize"}</span>
+                    <span class="gen-step gen-step-pending">4. Quality checks</span>
+                    <span class="gen-step gen-step-pending">5. Export</span>
+                </div>
+                <div class="gen-details">
+                    <div><span class="gen-detail-label">Sample size:</span> {_gen_n_preview} participants</div>
+                    <div><span class="gen-detail-label">Method:</span> {_gen_method_label_preview}</div>
+                    {"<div><span class='gen-detail-label'>Open-ended:</span> AI text generation active</div>" if _gen_has_oe_preview else ""}
+                    <div><span class="gen-detail-label">Status:</span> Initializing simulation engine...</div>
+                </div>
+                <div class="gen-notice">
+                    Live progress updates appear below. If no updates appear for 60+ seconds, you can
+                    cancel and try the Template Engine method for instant results.
+                </div>
             </div>
             """, unsafe_allow_html=True)
 
@@ -11705,16 +11764,16 @@ if active_page == 3:
         if _additional_sim_ctx:
             _engine_study_context["additional_context"] = _additional_sim_ctx
 
-        # v1.0.8.1: Real-time progress tracking via callback
-        # Create a placeholder for the live participant counter
+        # v1.2.0.0: Real-time progress tracking with stall detection and recovery guidance
         _progress_counter_placeholder = st.empty()
+        _stall_warning_placeholder = st.empty()
         _progress_start_time = __import__('time').time()
 
-        # v1.0.8.2: Stall detection state for watchdog mechanism
-        _last_progress_time = [__import__('time').time()]  # mutable ref for closure
+        # Stall detection state — mutable refs for closure
+        _last_progress_time = [__import__('time').time()]
         _last_progress_phase = ["init"]
-        _stall_warning_shown = [False]
-        _stall_threshold_secs = 45.0  # Show warning after 45s without progress
+        _last_progress_current = [0]
+        _stall_warning_level = [0]  # 0=none, 1=slow, 2=stalled, 3=stuck
 
         def _fmt_elapsed(seconds: float) -> str:
             """Format elapsed time as human-readable string."""
@@ -11724,54 +11783,103 @@ if active_page == 3:
             m, sec = divmod(s, 60)
             return f"{m}m {sec}s"
 
+        def _show_stall_warning(elapsed: float, phase: str, current: int, total: int) -> None:
+            """v1.2.0.0: Show escalating stall warnings with actionable recovery options."""
+            _since_last = elapsed - (_last_progress_time[0] - _progress_start_time)
+            if _since_last < 30:
+                if _stall_warning_level[0] > 0:
+                    _stall_warning_level[0] = 0
+                    _stall_warning_placeholder.empty()
+                return
+            if _since_last >= 120 and _stall_warning_level[0] < 3:
+                _stall_warning_level[0] = 3
+                _stall_warning_placeholder.warning(
+                    f"**Generation appears stuck** ({_fmt_elapsed(elapsed)} elapsed, "
+                    f"no progress for {_fmt_elapsed(_since_last)}). "
+                    f"The LLM providers may be unresponsive.\n\n"
+                    f"**Recommended:** Click **Cancel & Reset** above, then select "
+                    f"**Template Engine (Instant)** as your generation method for "
+                    f"immediate results without AI providers."
+                )
+            elif _since_last >= 60 and _stall_warning_level[0] < 2:
+                _stall_warning_level[0] = 2
+                _stall_warning_placeholder.warning(
+                    f"**Slow progress** — no updates for {_fmt_elapsed(_since_last)}. "
+                    f"AI providers may be rate-limited. The system will automatically "
+                    f"fall back to templates if providers remain unresponsive. "
+                    f"You can also **Cancel & Reset** to switch methods."
+                )
+            elif _since_last >= 30 and _stall_warning_level[0] < 1:
+                _stall_warning_level[0] = 1
+                _stall_warning_placeholder.info(
+                    f"Waiting for AI provider response ({_fmt_elapsed(_since_last)})... "
+                    f"This can take a moment during peak usage."
+                )
+
         def _live_progress_callback(phase: str, current: int, total: int) -> None:
-            """v1.1.0.9: Update the live progress counter — observation count only, no time estimates."""
+            """v1.2.0.0: Progress callback with stall detection and informative status."""
             try:
                 _now = __import__('time').time()
                 _elapsed = _now - _progress_start_time
 
-                # v1.0.8.2: Update stall detection state
-                _last_progress_time[0] = _now
-                _last_progress_phase[0] = phase
+                # Track progress for stall detection
+                if phase != _last_progress_phase[0] or current != _last_progress_current[0]:
+                    _last_progress_time[0] = _now
+                    _last_progress_phase[0] = phase
+                    _last_progress_current[0] = current
+                    if _stall_warning_level[0] > 0:
+                        _stall_warning_level[0] = 0
+                        _stall_warning_placeholder.empty()
 
-                if _elapsed > _stall_threshold_secs and not _stall_warning_shown[0]:
-                    if phase in ("personas", "scales", "open_ended"):
-                        _stall_warning_shown[0] = True
+                # Check for stalls
+                _show_stall_warning(_elapsed, phase, current, total)
+
+                _elapsed_str = _fmt_elapsed(_elapsed)
 
                 if phase == "personas":
                     _progress_counter_placeholder.markdown(
-                        f'<div style="text-align:center;padding:10px;background:#f0f9ff;border-radius:8px;margin:8px 0;">'
-                        f'<span style="font-size:1.1em;color:#0369a1;">'
-                        f'Assigning behavioral personas...</span></div>',
+                        f'<div style="padding:10px 14px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;margin:8px 0;">'
+                        f'<div style="display:flex;justify-content:space-between;align-items:center;">'
+                        f'<span style="font-size:14px;color:#334155;font-weight:500;">'
+                        f'Step 1/5 &mdash; Assigning behavioral personas</span>'
+                        f'<span style="font-size:12px;color:#94a3b8;">{_elapsed_str}</span>'
+                        f'</div></div>',
                         unsafe_allow_html=True,
                     )
                 elif phase == "scales":
                     _s_pct = int(((current + 1) / max(1, total)) * 100)
                     _progress_counter_placeholder.markdown(
-                        f'<div style="text-align:center;padding:10px;background:#f0f9ff;border-radius:8px;margin:8px 0;">'
-                        f'<span style="font-size:1.1em;color:#0369a1;">'
-                        f'Generating scale responses — scale {current + 1} of {total}</span>'
-                        f'<div style="background:#dbeafe;border-radius:4px;height:6px;margin-top:8px;">'
+                        f'<div style="padding:10px 14px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;margin:8px 0;">'
+                        f'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">'
+                        f'<span style="font-size:14px;color:#334155;font-weight:500;">'
+                        f'Step 2/5 &mdash; Generating scale responses ({current + 1}/{total})</span>'
+                        f'<span style="font-size:12px;color:#94a3b8;">{_elapsed_str}</span></div>'
+                        f'<div style="background:#e2e8f0;border-radius:4px;height:6px;">'
                         f'<div style="background:#3b82f6;width:{_s_pct}%;height:100%;border-radius:4px;'
                         f'transition:width 0.3s;"></div></div></div>',
                         unsafe_allow_html=True,
                     )
                 elif phase == "open_ended":
                     _progress_counter_placeholder.markdown(
-                        f'<div style="text-align:center;padding:10px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;margin:8px 0;">'
-                        f'<span style="font-size:1.1em;color:#92400e;">'
-                        f'Preparing open-ended response generation...</span></div>',
+                        f'<div style="padding:10px 14px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;margin:8px 0;">'
+                        f'<div style="display:flex;justify-content:space-between;align-items:center;">'
+                        f'<span style="font-size:14px;color:#92400e;font-weight:500;">'
+                        f'Step 3/5 &mdash; Connecting to AI providers for open-ended text</span>'
+                        f'<span style="font-size:12px;color:#b45309;">{_elapsed_str}</span>'
+                        f'</div>'
+                        f'<div style="font-size:12px;color:#a16207;margin-top:4px;">'
+                        f'Contacting free LLM APIs (Gemini, Groq, Cerebras)... this may take 15-30s</div></div>',
                         unsafe_allow_html=True,
                     )
                 elif phase == "generating":
-                    # v1.1.0.9: Show ONLY observation count — no time estimates
                     _pct = int((current / max(1, total)) * 100)
                     _progress_counter_placeholder.markdown(
-                        f'<div style="text-align:center;padding:14px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;margin:8px 0;">'
-                        f'<span style="font-size:1.6em;font-weight:700;color:#166534;">'
-                        f'{current} of {total}</span>'
-                        f'<span style="font-size:1em;color:#166534;"> participants simulated</span>'
-                        f'<div style="background:#dcfce7;border-radius:4px;height:10px;margin-top:10px;">'
+                        f'<div style="padding:12px 14px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;margin:8px 0;">'
+                        f'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">'
+                        f'<span style="font-size:16px;font-weight:600;color:#166534;">'
+                        f'{current} / {total} participants</span>'
+                        f'<span style="font-size:12px;color:#16a34a;">{_elapsed_str}</span></div>'
+                        f'<div style="background:#dcfce7;border-radius:4px;height:8px;">'
                         f'<div style="background:#22c55e;width:{_pct}%;height:100%;border-radius:4px;'
                         f'transition:width 0.3s;"></div></div></div>',
                         unsafe_allow_html=True,
@@ -11779,19 +11887,24 @@ if active_page == 3:
                 elif phase == "socsim_enrichment":
                     _pct_s = int((current / max(1, total)) * 100) if total > 0 else 0
                     _progress_counter_placeholder.markdown(
-                        f'<div style="text-align:center;padding:12px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;margin:8px 0;">'
-                        f'<span style="font-size:1.1em;font-weight:600;color:#1e40af;">'
-                        f'Applying behavioral models: {current} of {total} tasks</span>'
-                        f'<div style="background:#bfdbfe;border-radius:4px;height:6px;margin-top:8px;">'
+                        f'<div style="padding:10px 14px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;margin:8px 0;">'
+                        f'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">'
+                        f'<span style="font-size:14px;color:#334155;font-weight:500;">'
+                        f'Step 4/5 &mdash; Applying behavioral models ({current}/{total})</span>'
+                        f'<span style="font-size:12px;color:#94a3b8;">{_elapsed_str}</span></div>'
+                        f'<div style="background:#e2e8f0;border-radius:4px;height:6px;">'
                         f'<div style="background:#3b82f6;width:{_pct_s}%;height:100%;border-radius:4px;'
                         f'transition:width 0.3s;"></div></div></div>',
                         unsafe_allow_html=True,
                     )
                 elif phase == "complete":
                     _progress_counter_placeholder.markdown(
-                        f'<div style="text-align:center;padding:12px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;margin:8px 0;">'
-                        f'<span style="font-size:1.2em;font-weight:700;color:#166534;">'
-                        f'&#10003; All {total} participants generated</span></div>',
+                        f'<div style="padding:12px 14px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;margin:8px 0;">'
+                        f'<div style="display:flex;justify-content:space-between;align-items:center;">'
+                        f'<span style="font-size:15px;font-weight:600;color:#166534;">'
+                        f'&#10003; All {total} participants generated successfully</span>'
+                        f'<span style="font-size:12px;color:#16a34a;">{_elapsed_str}</span>'
+                        f'</div></div>',
                         unsafe_allow_html=True,
                     )
             except Exception:
@@ -11838,13 +11951,13 @@ if active_page == 3:
             # Clear the status placeholder and show progress bar
             status_placeholder.empty()
 
-            # Show large, visible progress container
+            # v1.2.0.0: Clean progress container — light theme, no dark blue
             progress_container = st.container()
             with progress_container:
                 st.markdown("""
-                <div style="text-align: center; padding: 25px; background: linear-gradient(135deg, #1e3a5f 0%, #2d5a87 100%); border-radius: 15px; margin: 15px 0;">
-                    <h3 style="color: white; margin: 0 0 8px 0;">Simulation In Progress</h3>
-                    <p style="color: #a0c4e8; font-size: 14px; margin: 0;">Generating realistic behavioral data for your experiment...</p>
+                <div style="text-align: center; padding: 18px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; margin: 12px 0;">
+                    <h3 style="color: #1e293b; margin: 0 0 6px 0; font-size: 16px; font-weight: 600;">Simulation Running</h3>
+                    <p style="color: #64748b; font-size: 13px; margin: 0;">Generating realistic behavioral data for your experiment</p>
                 </div>
                 """, unsafe_allow_html=True)
 

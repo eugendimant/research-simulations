@@ -10742,13 +10742,18 @@ class EnhancedSimulationEngine:
         # ONLY generate open-ended responses for questions actually in the QSF
         # Never create default/fake questions - this prevents fake variables like "Task_Summary"
         # v1.0.0: Use survey flow handler to determine question visibility per condition
-        # v1.1.0.9: Hard timeout for OE generation — prevents indefinite hangs when
+        # v1.2.0.0: Aggressive timeout for OE generation — prevents indefinite hangs when
         # LLM providers are slow or unresponsive. After budget expires, remaining
         # participants fall back to template generation automatically.
-        _OE_GENERATION_BUDGET = 300.0  # 5 minutes max for all OE generation
+        # Reduced from 300s→180s: 3 min is generous; if LLMs can't produce data in 3 min,
+        # templates are the better path and the user should not wait longer.
+        _OE_GENERATION_BUDGET = 180.0  # 3 minutes max for all OE generation
+        _PER_PARTICIPANT_TIMEOUT = 10.0  # Max 10s per individual participant OE generation
+        _CONSECUTIVE_SLOW_LIMIT = 3  # After 3 slow participants, force template for rest
         _oe_gen_wall_start = time.time()
         _oe_budget_exceeded = False
         _oe_budget_switched_count = 0  # How many participants used fallback
+        _consecutive_slow = 0  # Track consecutive slow generations
         _total_oe = len(self.open_ended_questions)
         _report_progress("open_ended", 0, _total_oe)
         for _oe_idx, q in enumerate(self.open_ended_questions):
@@ -10866,7 +10871,24 @@ class EnhancedSimulationEngine:
                 # v1.0.7.0: Wrapped in try/except to guarantee simulation never hard-stops
                 # from OE generation failures (LLM or template errors).
                 # v1.0.7.2: On failure, use _last_resort_oe_response instead of empty string.
+                # v1.2.0.0: Per-participant timing — detect slow LLM providers and force
+                # template fallback after consecutive slow generations to prevent hangs.
+                _participant_oe_start = time.time()
                 try:
+                    # v1.2.0.0: If too many consecutive slow participants, disable LLM
+                    # for the rest of this run to prevent cascading hangs
+                    if _consecutive_slow >= _CONSECUTIVE_SLOW_LIMIT and self.llm_generator:
+                        if not _oe_budget_exceeded:
+                            self._log(
+                                f"OE: {_consecutive_slow} consecutive slow generations — "
+                                f"disabling LLM for remaining participants (template fallback)"
+                            )
+                            _oe_budget_exceeded = True
+                            try:
+                                self.llm_generator._api_available = False
+                            except Exception:
+                                pass
+
                     text = self._generate_open_response(
                         q,
                         persona,
@@ -10880,6 +10902,18 @@ class EnhancedSimulationEngine:
                 except Exception as _oe_err:
                     logger.warning("OE response generation failed for participant %d: %s", i + 1, _oe_err)
                     _text_str = ""
+
+                # v1.2.0.0: Track per-participant generation time for stall detection
+                _participant_oe_elapsed = time.time() - _participant_oe_start
+                if _participant_oe_elapsed > _PER_PARTICIPANT_TIMEOUT:
+                    _consecutive_slow += 1
+                    if _consecutive_slow == 1:
+                        self._log(
+                            f"OE: Participant {i+1} took {_participant_oe_elapsed:.1f}s "
+                            f"(>{_PER_PARTICIPANT_TIMEOUT:.0f}s threshold)"
+                        )
+                else:
+                    _consecutive_slow = 0  # Reset on fast generation
 
                 # v1.0.7.2: NEVER leave OE response empty when participant should have answered.
                 # If all generators failed or returned empty, use the absolute last-resort.
