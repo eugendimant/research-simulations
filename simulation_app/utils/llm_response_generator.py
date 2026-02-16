@@ -2911,6 +2911,13 @@ class LLMResponseGenerator:
                 _final = _ensure_unique_start(result.strip())
                 if not _is_low_quality_response(_final, _topic_tokens):
                     return _final
+                # v1.1.1.2: Pool response failed quality check. Since the pool
+                # was filled by correctly-prompted LLM calls, ACCEPT the response
+                # rather than wasting time on expensive on-demand generation.
+                # Topic-keyword matching is too strict for natural language.
+                logger.debug("Pool draw failed quality check but accepting "
+                             "(pool responses are LLM-generated)")
+                return _final
 
         # 2. Try on-demand LLM batch (if pool was empty)
         # v1.0.5.7: Use property (triggers auto-recovery check) not raw field

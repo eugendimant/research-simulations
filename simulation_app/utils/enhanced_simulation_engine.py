@@ -10767,6 +10767,8 @@ class EnhancedSimulationEngine:
         _total_oe = len(self.open_ended_questions)
         _report_progress("open_ended", 0, _total_oe)
         for _oe_idx, q in enumerate(self.open_ended_questions):
+            # v1.1.1.2: Per-question progress so UI shows "Text question 2/3"
+            _report_progress("open_ended_question", _oe_idx, _total_oe)
             # v1.4.3: Use _clean_column_name for scientific column naming
             col_name = _clean_column_name(str(q.get("name", "Open_Response")))
 
@@ -10786,9 +10788,10 @@ class EnhancedSimulationEngine:
             col_hash = _stable_int_hash(col_name + q_text)  # Include question text for uniqueness
             responses: List[str] = []
             for i in range(n):
-                # v1.0.8.1: Report OE progress per participant (this is the slowest loop)
-                if i % max(1, n // 20) == 0:  # Report every ~5% of participants
-                    _report_progress("generating", i, n)
+                # v1.1.1.2: Report OE progress EVERY participant (not every 5%).
+                # During OE generation, each participant can take 5-30s with LLM.
+                # Users need to see continuous movement, not 30s+ stale progress.
+                _report_progress("generating", i, n)
 
                 # v1.1.1.0: Check hard timeout budget — switch to template for remaining.
                 # Uses disable_permanently() to prevent auto-recovery from re-enabling.
@@ -10928,9 +10931,14 @@ class EnhancedSimulationEngine:
                     # Fast response — reset consecutive slow counter
                     _consecutive_slow_participants = 0
 
+                # v1.1.1.2: Track when participants fall back due to budget/timeout
+                if _oe_budget_exceeded:
+                    _oe_budget_switched_count += 1
+
                 # v1.0.7.2: NEVER leave OE response empty when participant should have answered.
                 # If all generators failed or returned empty, use the absolute last-resort.
                 if not _text_str.strip():
+                    _oe_budget_switched_count += 1  # v1.1.1.2: Count explicit fallbacks too
                     try:
                         _sentiment_for_lr = "neutral"
                         if response_mean is not None:

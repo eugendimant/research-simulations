@@ -33,7 +33,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 # Version identifier to help track deployed code
-__version__ = "1.1.1.1"  # v1.1.1.1: Pre-flight LLM check, quality filter fix, rate limiter fix, real-time progress
+__version__ = "1.1.1.2"  # v1.1.1.2: OE per-participant progress, pool draw efficiency, budget tracking, docs
 
 
 # ============================================================================
