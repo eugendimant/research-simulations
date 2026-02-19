@@ -10630,6 +10630,11 @@ class EnhancedSimulationEngine:
                 _unique_conditions = list(set(conditions.tolist()))
                 _sents = ["very_positive", "positive", "neutral", "negative", "very_negative"]
                 for oq in self.open_ended_questions:
+                    # v1.1.1.3: Skip demographic questions in LLM prefill — they generate
+                    # numeric/categorical data, not text.  Also prevents demographic
+                    # variable names (e.g. "Age") from polluting topic inference.
+                    if str(oq.get("question_purpose", "")).strip() == "Demographic":
+                        continue
                     # v1.0.7.1: Check total budget before each OE question
                     _elapsed = time.time() - _prefill_wall_start
                     if _elapsed >= _PREFILL_TOTAL_BUDGET:
@@ -10786,6 +10791,60 @@ class EnhancedSimulationEngine:
 
             q_text = str(q.get("question_text", col_name))
             col_hash = _stable_int_hash(col_name + q_text)  # Include question text for uniqueness
+
+            # v1.1.1.3: Handle demographic questions — generate realistic demographic
+            # values instead of AI-generated text.  Demographic questions are excluded
+            # from topic inference so "Age" doesn't confuse the study topic.
+            _question_purpose = str(q.get("question_purpose", "DV Response")).strip()
+            if _question_purpose == "Demographic":
+                _demo_responses: List[str] = []
+                _demo_name_lower = col_name.lower()
+                for _di in range(n):
+                    _report_progress("generating", _di, n)
+                    _d_seed = (self.seed + _di * 100 + col_hash) % (2**31)
+                    _d_rng = np.random.RandomState(_d_seed)
+                    if "age" in _demo_name_lower:
+                        # Age: realistic MTurk/Prolific distribution (18-80, slight right skew)
+                        _age = int(np.clip(_d_rng.normal(35, 13), 18, 80))
+                        _demo_responses.append(str(_age))
+                    elif "gender" in _demo_name_lower or "sex" in _demo_name_lower:
+                        _demo_responses.append(
+                            _d_rng.choice(
+                                ["Male", "Female", "Non-binary", "Prefer not to say"],
+                                p=[0.48, 0.48, 0.03, 0.01],
+                            )
+                        )
+                    elif "race" in _demo_name_lower or "ethnic" in _demo_name_lower:
+                        _demo_responses.append(
+                            _d_rng.choice(
+                                ["White", "Black or African American", "Hispanic/Latino",
+                                 "Asian", "Other/Mixed race"],
+                                p=[0.58, 0.13, 0.19, 0.06, 0.04],
+                            )
+                        )
+                    elif "education" in _demo_name_lower or "degree" in _demo_name_lower:
+                        _demo_responses.append(
+                            _d_rng.choice(
+                                ["High school diploma", "Some college", "Bachelor's degree",
+                                 "Master's degree", "Doctoral degree"],
+                                p=[0.15, 0.25, 0.35, 0.18, 0.07],
+                            )
+                        )
+                    elif "income" in _demo_name_lower or "salary" in _demo_name_lower:
+                        _inc = int(np.clip(_d_rng.lognormal(10.8, 0.8), 15000, 300000))
+                        _demo_responses.append(str(_inc))
+                    elif "state" in _demo_name_lower or "location" in _demo_name_lower:
+                        _us_states = ["California", "Texas", "Florida", "New York",
+                                      "Pennsylvania", "Illinois", "Ohio", "Georgia",
+                                      "North Carolina", "Michigan", "Other"]
+                        _demo_responses.append(_d_rng.choice(_us_states))
+                    else:
+                        # Generic demographic — generate short factual answers
+                        _demo_responses.append(str(int(np.clip(_d_rng.normal(40, 15), 1, 99))))
+                data[col_name] = _demo_responses
+                self._log(f"Generated demographic data for '{col_name}' ({n} values)")
+                continue  # Skip normal OE text generation
+
             responses: List[str] = []
             for i in range(n):
                 # v1.1.1.2: Report OE progress EVERY participant (not every 5%).
