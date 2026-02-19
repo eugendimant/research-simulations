@@ -54,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.2.0.0"
-BUILD_ID = "20260219-v12000-fix-multi-question-llm-budget-per-question"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.2.0.1"
+BUILD_ID = "20260219-v12001-llm-exhaustion-prompt-generation-source"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -118,7 +118,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.2.0.0"  # v1.2.0.0: Fix multi-OE-question LLM — per-question budget reset
+APP_VERSION = "1.2.0.1"  # v1.2.0.1: LLM exhaustion prompt + _Generation_Source column
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -6038,6 +6038,12 @@ def _reset_generation_state() -> None:
     st.session_state["_validation_results"] = None
     st.session_state["_llm_connectivity_status"] = None  # Re-check LLM on next run
     st.session_state.pop("preview_df", None)
+    # v1.2.0.0: Clear LLM exhaustion state
+    for _exh_key in ("_llm_exhausted_pending", "_llm_exhausted_step",
+                      "_llm_exhausted_choice", "_llm_exhausted_partial_data",
+                      "_llm_exhausted_completed_cols", "_llm_exhausted_remaining_qs",
+                      "_llm_exhausted_engine_state", "_llm_exhausted_source_map"):
+        st.session_state.pop(_exh_key, None)
 
 
 def _navigate_to(page_index: int) -> None:
@@ -11027,7 +11033,12 @@ if active_page == 3:
     if not _has_open_ended:
         _has_open_ended = bool(st.session_state.get("confirmed_open_ended", []))
 
+    # v1.2.0.1: Method card section is inside st.empty() so Streamlit fully clears
+    # it during generation.  Without this, column-based widget layouts leave ghost
+    # DOM elements (e.g., "Your API Key" card persisting during generation).
+    _method_section_slot = st.empty()
     if not _is_generating and not _has_generated:
+      with _method_section_slot.container():
         # Check LLM connectivity (cached in session state to avoid repeated API calls)
         _llm_status = st.session_state.get("_llm_connectivity_status")
         if _llm_status is None and _has_open_ended:
@@ -11385,6 +11396,10 @@ if active_page == 3:
             st.session_state["allow_template_fallback_once"] = True
             st.session_state["_use_socsim_experimental"] = True
 
+    else:
+        # v1.2.0.1: Explicitly clear the method section slot during generation
+        # or after generation to prevent ghost DOM elements from persisting.
+        _method_section_slot.empty()
 
     is_generating = _is_generating  # Use the early-read variable
     has_generated = _has_generated
@@ -11505,6 +11520,85 @@ if active_page == 3:
         }
     </style>
     """, unsafe_allow_html=True)
+
+    # v1.2.0.0: Mid-generation LLM exhaustion prompt.
+    # When LLM providers ran out after completing some OE questions, the engine
+    # raises LLMExhaustedMidGeneration and we save partial data to session state.
+    # Show a two-step prompt: first ask about API key, then fallback choice.
+    if st.session_state.get("_llm_exhausted_pending"):
+        _completed_cols = st.session_state.get("_llm_exhausted_completed_cols", [])
+        _remaining_qs = st.session_state.get("_llm_exhausted_remaining_qs", [])
+        _n_completed = len(_completed_cols)
+        _n_remaining = len(_remaining_qs)
+        st.markdown(
+            '<div style="background:linear-gradient(135deg, #FFF7ED 0%, #FFEDD5 100%);'
+            'border:1px solid #FDBA74;border-radius:12px;padding:20px 24px;margin:12px 0;'
+            'box-shadow:0 1px 3px rgba(0,0,0,0.06);">'
+            '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">'
+            '<span style="font-size:1.3em;">&#9888;</span>'
+            '<span style="font-size:1.05em;font-weight:700;color:#9A3412;">'
+            'Free AI providers ran out mid-generation</span></div>'
+            f'<span style="color:#7C2D12;font-size:0.88em;line-height:1.5;">'
+            f'Successfully generated AI responses for <strong>{_n_completed}</strong> '
+            f'open-ended question(s). '
+            f'<strong>{_n_remaining}</strong> question(s) still need responses.</span>'
+            '<div style="margin-top:12px;color:#7C2D12;font-size:0.88em;">'
+            'Would you like to provide your own API key for the remaining questions?</div>'
+            '</div>',
+            unsafe_allow_html=True,
+        )
+        _exh_step = st.session_state.get("_llm_exhausted_step", 1)
+        if _exh_step == 1:
+            # Step 1: Ask about API key
+            _exh_c1, _exh_c2 = st.columns(2)
+            with _exh_c1:
+                if st.button("Yes — enter my API key", key="_exh_use_api_key",
+                             type="primary", use_container_width=True,
+                             help="Get a free key from Groq or Google AI in 30 seconds"):
+                    st.session_state["_llm_exhausted_step"] = 2
+                    st.session_state["_llm_exhausted_choice"] = "own_api"
+                    st.session_state["generation_method"] = "own_api"
+                    st.session_state["allow_template_fallback_once"] = False
+                    st.session_state["_llm_exhausted_pending"] = False
+                    _navigate_to(3)
+            with _exh_c2:
+                if st.button("No — use a different method", key="_exh_no_api_key",
+                             type="secondary", use_container_width=True):
+                    st.session_state["_llm_exhausted_step"] = 3
+                    st.rerun()
+        elif _exh_step == 3:
+            # Step 2: Choose fallback method
+            st.markdown(
+                '<div style="color:#7C2D12;font-size:0.88em;margin:8px 0 12px 0;">'
+                'Which method should be used for the remaining questions?</div>',
+                unsafe_allow_html=True,
+            )
+            _fb_c1, _fb_c2 = st.columns(2)
+            with _fb_c1:
+                if st.button("Template Engine (Recommended)", key="_exh_use_template",
+                             type="primary", use_container_width=True,
+                             help="225+ domains, 58 personas, instant generation"):
+                    st.session_state["_llm_exhausted_choice"] = "template"
+                    st.session_state["generation_method"] = "template"
+                    st.session_state["allow_template_fallback_once"] = True
+                    st.session_state["_use_socsim_experimental"] = False
+                    st.session_state["_llm_exhausted_pending"] = False
+                    # Re-trigger generation with template for remaining Qs
+                    st.session_state["is_generating"] = True
+                    st.session_state["_generation_phase"] = 1
+                    _navigate_to(3)
+            with _fb_c2:
+                if st.button("Adaptive Behavioral Engine", key="_exh_use_experimental",
+                             type="secondary", use_container_width=True,
+                             help="Game-theory models + persona simulation"):
+                    st.session_state["_llm_exhausted_choice"] = "experimental"
+                    st.session_state["generation_method"] = "experimental"
+                    st.session_state["allow_template_fallback_once"] = True
+                    st.session_state["_use_socsim_experimental"] = True
+                    st.session_state["_llm_exhausted_pending"] = False
+                    st.session_state["is_generating"] = True
+                    st.session_state["_generation_phase"] = 1
+                    _navigate_to(3)
 
     # v1.4.14: Preflight validation — catch issues before expensive generation
     _preflight_errors = _preflight_validation() if all_required_complete else []
@@ -11886,42 +11980,61 @@ if active_page == 3:
                     if phase in ("personas", "scales", "open_ended"):
                         _stall_warning_shown[0] = True
 
+                # v1.2.0.1: Always update the main progress bar during early phases
+                # so users see movement, not a static "Step 1/5" for minutes.
                 if phase == "personas":
+                    progress_bar.progress(18, text="Step 2/5 — Assigning behavioral personas...")
                     _progress_counter_placeholder.markdown(
                         f'<div style="text-align:center;padding:10px;background:#f0f9ff;border-radius:8px;margin:8px 0;">'
                         f'<span style="font-size:1.1em;color:#0369a1;">'
-                        f'Assigning behavioral personas...</span></div>',
+                        f'Assigning behavioral personas...</span>'
+                        f'<div style="font-size:0.8em;color:#6B7280;margin-top:4px;">'
+                        f'Elapsed: {_fmt_elapsed(_elapsed)}</div></div>',
                         unsafe_allow_html=True,
                     )
                 elif phase == "scales":
                     _s_pct = int(((current + 1) / max(1, total)) * 100)
+                    _bar_pct = 20 + int(_s_pct * 0.05)  # 20-25% range
+                    progress_bar.progress(_bar_pct, text=f"Step 2/5 — Generating scale responses ({current + 1}/{total})...")
                     _progress_counter_placeholder.markdown(
                         f'<div style="text-align:center;padding:10px;background:#f0f9ff;border-radius:8px;margin:8px 0;">'
                         f'<span style="font-size:1.1em;color:#0369a1;">'
                         f'Generating scale responses — scale {current + 1} of {total}</span>'
                         f'<div style="background:#dbeafe;border-radius:4px;height:6px;margin-top:8px;">'
                         f'<div style="background:#3b82f6;width:{_s_pct}%;height:100%;border-radius:4px;'
-                        f'transition:width 0.3s;"></div></div></div>',
+                        f'transition:width 0.3s;"></div></div>'
+                        f'<div style="font-size:0.8em;color:#6B7280;margin-top:4px;">'
+                        f'Elapsed: {_fmt_elapsed(_elapsed)}</div></div>',
                         unsafe_allow_html=True,
                     )
                 elif phase == "open_ended":
+                    progress_bar.progress(26, text="Step 2/5 — Preparing open-ended text generation...")
                     _progress_counter_placeholder.markdown(
                         f'<div style="text-align:center;padding:10px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;margin:8px 0;">'
                         f'<span style="font-size:1.1em;color:#92400e;">'
-                        f'Preparing open-ended response generation...</span></div>',
+                        f'Preparing open-ended response generation...</span>'
+                        f'<div style="font-size:0.8em;color:#6B7280;margin-top:4px;">'
+                        f'Elapsed: {_fmt_elapsed(_elapsed)}</div></div>',
                         unsafe_allow_html=True,
                     )
                 elif phase == "open_ended_question":
                     # v1.1.1.2: Per-OE-question progress
+                    _oe_pct = 26 + int((current / max(1, total)) * 10)  # 26-36% range
+                    progress_bar.progress(_oe_pct, text=f"Step 2/5 — Text responses: question {current + 1} of {total}...")
                     _progress_counter_placeholder.markdown(
                         f'<div style="text-align:center;padding:10px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;margin:8px 0;">'
                         f'<span style="font-size:1.1em;color:#92400e;">'
-                        f'Generating text responses — question {current + 1} of {total}</span></div>',
+                        f'Generating text responses — question {current + 1} of {total}</span>'
+                        f'<div style="font-size:0.8em;color:#6B7280;margin-top:4px;">'
+                        f'Elapsed: {_fmt_elapsed(_elapsed)}</div></div>',
                         unsafe_allow_html=True,
                     )
                 elif phase == "generating":
                     # v1.1.1.0: Show observation count + elapsed time + LLM source stats
                     _pct = int((current / max(1, total)) * 100)
+                    # v1.2.0.1: Update main progress bar smoothly (25-48% range)
+                    _bar_gen_pct = 25 + int(_pct * 0.23)
+                    progress_bar.progress(_bar_gen_pct, text=f"Step 2/5 — {current} of {total} participants...")
                     _elapsed_str = _fmt_elapsed(_elapsed)
                     # Grab live LLM stats if available
                     _llm_status_html = ""
@@ -12022,6 +12135,13 @@ if active_page == 3:
                 "If your study has multiple conditions, go back to **Design** and configure them."
             )
 
+        # v1.2.0.1: Show initialization progress so user doesn't stare at stale text
+        _progress_counter_placeholder.markdown(
+            '<div style="text-align:center;padding:10px;background:#f0f9ff;border-radius:8px;margin:8px 0;">'
+            '<span style="font-size:1.1em;color:#0369a1;">'
+            'Building simulation engine — configuring personas, scales, and conditions...</span></div>',
+            unsafe_allow_html=True,
+        )
         engine = EnhancedSimulationEngine(
             study_title=title,
             study_description=desc,
@@ -12052,6 +12172,7 @@ if active_page == 3:
             # v1.0.8.1: SocSim experimental engine enrichment
             use_socsim_experimental=bool(st.session_state.get("_use_socsim_experimental", False)),
         )
+        progress_bar.progress(15, text="Step 1/5 — Engine ready, preparing generation...")
 
         # v1.2.4: Show detected research domains
         if hasattr(engine, 'detected_domains') and engine.detected_domains:
@@ -12210,6 +12331,14 @@ if active_page == 3:
             else:
                 _gen_spinner_msg = "Generating numeric responses... This typically takes 5-15 seconds."
 
+            # v1.2.0.1: Show a clear progress update right before generation starts
+            # so the user never sees a stale "Initializing..." message for minutes.
+            _progress_counter_placeholder.markdown(
+                f'<div style="text-align:center;padding:10px;background:#f0f9ff;border-radius:8px;margin:8px 0;">'
+                f'<span style="font-size:1.1em;color:#0369a1;">'
+                f'Starting data generation via {_sel_method_label}...</span></div>',
+                unsafe_allow_html=True,
+            )
             with st.spinner(_gen_spinner_msg):
                 progress_bar.progress(25, text="Step 2/5 — Generating participant responses...")
                 df, metadata = engine.generate()
@@ -12423,15 +12552,27 @@ if active_page == 3:
             # not "n_participants", "conditions_used", "scales_used".
             _llm_run_stats = metadata.get('llm_stats', metadata.get('llm_response_stats', {}))
 
-            # Hard LLM-first integrity guard for OE runs.
-            # If fallback is disabled, we require actual API activity.
+            # v1.2.0.0: Post-generation LLM integrity check.
+            # If user chose free LLM but no AI calls were made, show the exhaustion
+            # prompt instead of crashing.  This handles the case where ALL providers
+            # are dead from the start (single or multi-question surveys).
             if open_ended_questions_for_engine and not bool(st.session_state.get("allow_template_fallback_once", False)):
                 _llm_calls_run = int(_llm_run_stats.get("llm_calls", 0) or 0)
                 _llm_attempts_run = int(_llm_run_stats.get("llm_attempts", 0) or 0)
-                if _llm_calls_run <= 0 and _llm_attempts_run <= 0:
-                    raise RuntimeError(
-                        "LLM-first integrity check failed: open-ended questions were configured but no API calls/attempts were recorded."
-                    )
+                _llm_pool_size = int(_llm_run_stats.get("pool_size", 0) or 0)
+                if _llm_calls_run <= 0 and _llm_attempts_run <= 0 and _llm_pool_size <= 0:
+                    # No AI activity at all — show user the choice prompt
+                    _generation_timed_out[0] = True
+                    progress_bar.progress(0, text="")
+                    status_placeholder.empty()
+                    _progress_counter_placeholder.empty()
+                    st.session_state["is_generating"] = False
+                    st.session_state["_generation_phase"] = 0
+                    st.session_state["_llm_exhausted_pending"] = True
+                    st.session_state["_llm_exhausted_completed_cols"] = []
+                    st.session_state["_llm_exhausted_remaining_qs"] = list(open_ended_questions_for_engine)
+                    _navigate_to(3)
+                    st.stop()
 
             st.session_state["_last_llm_stats"] = _llm_run_stats
             _admin_history = st.session_state.get("_admin_sim_history", [])
@@ -12826,6 +12967,26 @@ if active_page == 3:
             st.session_state["_generation_phase"] = 0  # v1.1.1.3: Clean phase state
             _navigate_to(3)  # Refresh to show download section
         except Exception as e:
+            # v1.2.0.0: Check for LLMExhaustedMidGeneration — prompt user for
+            # fallback choice instead of silently degrading to templates.
+            from utils.enhanced_simulation_engine import LLMExhaustedMidGeneration
+            if isinstance(e, LLMExhaustedMidGeneration):
+                _generation_timed_out[0] = True  # Stop watchdog
+                progress_bar.progress(60, text="AI providers exhausted — waiting for your choice...")
+                status_placeholder.empty()
+                _progress_counter_placeholder.empty()
+                # Store partial state for resumption
+                st.session_state["_llm_exhausted_partial_data"] = e.partial_data
+                st.session_state["_llm_exhausted_completed_cols"] = e.completed_oe_columns
+                st.session_state["_llm_exhausted_remaining_qs"] = e.remaining_questions
+                st.session_state["_llm_exhausted_engine_state"] = e.engine_state
+                st.session_state["_llm_exhausted_source_map"] = e.generation_source_map
+                st.session_state["is_generating"] = False
+                st.session_state["_generation_phase"] = 0
+                st.session_state["_llm_exhausted_pending"] = True
+                _navigate_to(3)  # calls st.rerun()
+                st.stop()  # safety: never fall through to generic error handler
+
             import traceback as _tb
             error_tb = _tb.format_exc()
             error_str = str(e).lower()
