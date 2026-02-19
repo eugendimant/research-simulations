@@ -54,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.1.1.5"
-BUILD_ID = "20260219-v11105-all-methods-hardened-template-skip-llm-budget-fix"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.1.1.6"
+BUILD_ID = "20260219-v11106-edge-case-hardening-dict-effect-sizes"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -118,7 +118,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.1.1.5"  # v1.1.1.5: All 4 methods hardened, template skips LLM, OE budget fix, prefill progress
+APP_VERSION = "1.1.1.6"  # v1.1.1.6: Edge case hardening, dict effect_sizes compat in metadata + methods report
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")

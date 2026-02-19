@@ -3568,10 +3568,20 @@ class EnhancedSimulationEngine:
         variable_lower = str(variable).lower().strip()
 
         for effect in self.effect_sizes:
+            # v1.1.1.5: Support both EffectSizeSpec objects AND plain dicts.
+            # The app always passes EffectSizeSpec, but the engine should be
+            # robust against dicts from tests, API callers, or legacy code.
+            def _eget(obj: Any, key: str, default: Any = "") -> Any:
+                """Get attribute from object or key from dict."""
+                if isinstance(obj, dict):
+                    return obj.get(key, default)
+                return getattr(obj, key, default)
+
             # v1.4.0: Safe conversion of cohens_d (could be string, dict, or NaN)
             try:
-                cohens_d = float(effect.cohens_d) if not isinstance(effect.cohens_d, dict) else 0.5
-            except (ValueError, TypeError):
+                _raw_d = _eget(effect, 'cohens_d', 0.5)
+                cohens_d = float(_raw_d) if not isinstance(_raw_d, dict) else 0.5
+            except (ValueError, TypeError, AttributeError):
                 cohens_d = 0.5  # Default to medium effect on conversion failure
             if isinstance(cohens_d, float) and (np.isnan(cohens_d) or np.isinf(cohens_d)):
                 cohens_d = 0.5
@@ -3579,7 +3589,7 @@ class EnhancedSimulationEngine:
             cohens_d = float(np.clip(abs(cohens_d), 0.0, 3.0))
 
             # Check if this effect spec matches the current variable
-            effect_var = str(effect.variable).lower().strip()
+            effect_var = str(_eget(effect, 'variable', '')).lower().strip()
             variable_matches = (
                 effect_var == variable_lower
                 or variable_lower.startswith(effect_var)
@@ -3588,9 +3598,9 @@ class EnhancedSimulationEngine:
 
             if variable_matches:
                 # v1.4.0: Improved level matching with false-positive prevention
-                level_high = str(effect.level_high).lower().strip()
-                level_low = str(effect.level_low).lower().strip()
-                direction = str(getattr(effect, 'direction', 'positive')).lower().strip()
+                level_high = str(_eget(effect, 'level_high', '')).lower().strip()
+                level_low = str(_eget(effect, 'level_low', '')).lower().strip()
+                direction = str(_eget(effect, 'direction', 'positive')).lower().strip()
 
                 # v1.0.1.3: Use word-boundary matching to prevent false positives
                 # (e.g., level "ai" matching condition "wait")
@@ -11382,7 +11392,12 @@ class EnhancedSimulationEngine:
             "factors": self.factors,
             "scales": self.scales,
             "effect_sizes_configured": [
-                {"variable": e.variable, "factor": e.factor, "cohens_d": e.cohens_d, "direction": e.direction}
+                {
+                    "variable": e.get("variable", "") if isinstance(e, dict) else getattr(e, "variable", ""),
+                    "factor": e.get("factor", "") if isinstance(e, dict) else getattr(e, "factor", ""),
+                    "cohens_d": e.get("cohens_d", 0.5) if isinstance(e, dict) else getattr(e, "cohens_d", 0.5),
+                    "direction": e.get("direction", "") if isinstance(e, dict) else getattr(e, "direction", ""),
+                }
                 for e in self.effect_sizes
             ],
             "effect_sizes_observed": observed_effects,  # Actual effects in generated data
@@ -11918,9 +11933,12 @@ class EnhancedSimulationEngine:
         if self.effect_sizes:
             lines.extend(["", "-" * 70, "EXPECTED EFFECT SIZES", "-" * 70, ""])
             for effect in self.effect_sizes:
-                lines.append(
-                    f"  {effect.variable}: {effect.level_high} > {effect.level_low}, Cohen's d = {effect.cohens_d}"
-                )
+                # v1.1.1.5: Support both EffectSizeSpec objects and plain dicts
+                _ev = effect.get("variable", "") if isinstance(effect, dict) else getattr(effect, 'variable', '')
+                _eh = effect.get("level_high", "") if isinstance(effect, dict) else getattr(effect, 'level_high', '')
+                _el = effect.get("level_low", "") if isinstance(effect, dict) else getattr(effect, 'level_low', '')
+                _ed = effect.get("cohens_d", 0.5) if isinstance(effect, dict) else getattr(effect, 'cohens_d', 0.5)
+                lines.append(f"  {_ev}: {_eh} > {_el}, Cohen's d = {_ed}")
 
         lines.extend(
             [
@@ -12326,7 +12344,10 @@ class EnhancedSimulationEngine:
         # Determine effect size info
         effect_info = "auto-generated (d = 0.4-0.6)"
         if self.effect_sizes:
-            ds = [es.cohens_d for es in self.effect_sizes]
+            ds = [
+                (es.get("cohens_d", 0.5) if isinstance(es, dict) else getattr(es, "cohens_d", 0.5))
+                for es in self.effect_sizes
+            ]
             if len(ds) == 1:
                 effect_info = f"d = {ds[0]:.2f}"
             else:
