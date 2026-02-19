@@ -54,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.2.0.2"
-BUILD_ID = "20260219-v12002-scale-generation-progress-callbacks"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.2.0.3"
+BUILD_ID = "20260219-v12003-engine-init-error-handling"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -118,7 +118,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.2.0.2"  # v1.2.0.2: Per-participant progress callbacks in scale generation
+APP_VERSION = "1.2.0.3"  # v1.2.0.3: Engine init error handling + unified try block
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -12142,100 +12142,151 @@ if active_page == 3:
             'Building simulation engine — configuring personas, scales, and conditions...</span></div>',
             unsafe_allow_html=True,
         )
-        engine = EnhancedSimulationEngine(
-            study_title=title,
-            study_description=desc,
-            sample_size=N,
-            conditions=_engine_conditions,
-            factors=clean_factors,
-            scales=clean_scales,
-            additional_vars=[],
-            demographics=demographics,
-            attention_rate=attention_rate,
-            random_responder_rate=random_responder_rate,
-            effect_sizes=effect_sizes,
-            exclusion_criteria=exclusion,
-            custom_persona_weights=custom_persona_weights,
-            open_ended_questions=open_ended_questions_for_engine,
-            study_context=_engine_study_context,
-            condition_allocation=condition_allocation,
-            seed=None,
-            mode="pilot" if not st.session_state.get("advanced_mode", False) else "final",
-            # v1.0.0: Pass pre-computed visibility map for accurate survey flow simulation
-            precomputed_visibility=inferred.get("condition_visibility_map", {}),
-            # v1.8.8.0: Cross-DV correlations and missing data
-            correlation_matrix=_engine_corr_matrix,
-            missing_data_rate=_engine_missing_rate,
-            dropout_rate=_engine_dropout_rate,
-            allow_template_fallback=bool(st.session_state.get("allow_template_fallback_once", False)),
-            progress_callback=_live_progress_callback,
-            # v1.0.8.1: SocSim experimental engine enrichment
-            use_socsim_experimental=bool(st.session_state.get("_use_socsim_experimental", False)),
-        )
-        progress_bar.progress(15, text="Step 1/5 — Engine ready, preparing generation...")
-
-        # v1.2.4: Show detected research domains
-        if hasattr(engine, 'detected_domains') and engine.detected_domains:
-            domain_text = ", ".join([d.replace("_", " ").title() for d in engine.detected_domains[:5]])
-            st.info(f"🔬 **Detected research domain(s):** {domain_text}")
-
-        # v1.1.1.0: Pre-flight LLM health check — test providers BEFORE starting
-        # generation so users get immediate feedback instead of waiting minutes.
-        # (_is_llm_method and _has_oe_questions defined above the callback closure)
-        if _is_llm_method and _has_oe_questions and hasattr(engine, 'llm_generator') and engine.llm_generator is not None:
-            progress_bar.progress(8, text="Testing AI provider connection...")
-            _health = engine.llm_generator.health_check(timeout=12)
-            if not _health["ok"]:
-                progress_bar.progress(0, text="")
-                st.markdown(
-                    '<div style="background:linear-gradient(135deg, #FFF7ED 0%, #FFEDD5 100%);'
-                    'border:1px solid #FDBA74;border-radius:12px;padding:20px 24px;margin:12px 0;'
-                    'box-shadow:0 1px 3px rgba(0,0,0,0.06);">'
-                    '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">'
-                    '<span style="font-size:1.3em;">&#9888;</span>'
-                    '<span style="font-size:1.05em;font-weight:700;color:#9A3412;">'
-                    'AI providers are not responding</span></div>'
-                    '<span style="color:#7C2D12;font-size:0.88em;line-height:1.5;">'
-                    'The free AI text generation service could not be reached. '
-                    'Your data quality options:</span></div>',
-                    unsafe_allow_html=True,
-                )
-                _hc1, _hc2, _hc3 = st.columns(3)
-                with _hc1:
-                    if st.button("Try again", key="_preflight_retry",
-                                 type="primary", use_container_width=True,
-                                 help="Re-test the AI providers"):
-                        st.session_state["is_generating"] = True
-                        st.session_state["_generation_phase"] = 1
-                        _navigate_to(3)
-                with _hc2:
-                    if st.button("Use my own API key", key="_preflight_own_api",
-                                 type="secondary", use_container_width=True,
-                                 help="Get a free key from Groq or Google AI"):
-                        st.session_state[_gen_method_key] = "own_api"
-                        st.session_state["allow_template_fallback_once"] = False
-                        st.session_state["is_generating"] = False
-                        _navigate_to(3)
-                with _hc3:
-                    if st.button("Use Template Engine", key="_preflight_template",
-                                 type="secondary", use_container_width=True,
-                                 help="Instant generation using domain-specific templates"):
-                        st.session_state["allow_template_fallback_once"] = True
-                        st.session_state[_gen_method_key] = "template"
-                        st.session_state["is_generating"] = True
-                        st.session_state["_generation_phase"] = 1
-                        _navigate_to(3)
-                st.session_state["is_generating"] = False
-                st.session_state["_generation_phase"] = 0  # v1.1.1.3
-                st.stop()
-            elif _health["latency_ms"] > 8000:
-                st.warning(
-                    f"AI providers are responding slowly ({_health['latency_ms']}ms). "
-                    f"Generation may take longer than usual. You can switch to "
-                    f"Template Engine on the method selector above for faster results."
-                )
-
+        # v1.2.0.2: Wrap engine construction in try/except so constructor crashes
+        # show a useful error message instead of the generic stale-phase-2 recovery.
+        # Previously the try block started only around engine.generate(), leaving the
+        # constructor unprotected.  If the Adaptive Behavioral Engine or any other
+        # method crashed during init, users saw "unexpected error" with no details.
         try:
+            engine = EnhancedSimulationEngine(
+                study_title=title,
+                study_description=desc,
+                sample_size=N,
+                conditions=_engine_conditions,
+                factors=clean_factors,
+                scales=clean_scales,
+                additional_vars=[],
+                demographics=demographics,
+                attention_rate=attention_rate,
+                random_responder_rate=random_responder_rate,
+                effect_sizes=effect_sizes,
+                exclusion_criteria=exclusion,
+                custom_persona_weights=custom_persona_weights,
+                open_ended_questions=open_ended_questions_for_engine,
+                study_context=_engine_study_context,
+                condition_allocation=condition_allocation,
+                seed=None,
+                mode="pilot" if not st.session_state.get("advanced_mode", False) else "final",
+                precomputed_visibility=inferred.get("condition_visibility_map", {}),
+                correlation_matrix=_engine_corr_matrix,
+                missing_data_rate=_engine_missing_rate,
+                dropout_rate=_engine_dropout_rate,
+                allow_template_fallback=bool(st.session_state.get("allow_template_fallback_once", False)),
+                progress_callback=_live_progress_callback,
+                use_socsim_experimental=bool(st.session_state.get("_use_socsim_experimental", False)),
+            )
+        except Exception as _init_exc:
+            import traceback as _init_tb
+            _init_error_tb = _init_tb.format_exc()
+            _log(f"Engine construction failed: {_init_exc}\n{_init_error_tb}", level="error")
+            st.session_state["is_generating"] = False
+            st.session_state["_generation_phase"] = 0
+            progress_placeholder.empty()
+            status_placeholder.empty()
+            _progress_counter_placeholder.empty()
+            _method_name = {
+                "template": "Template Engine",
+                "experimental": "Adaptive Behavioral Engine",
+                "free_llm": "Built-in AI",
+                "own_api": "AI (your API key)",
+            }.get(st.session_state.get("generation_method", ""), "the selected method")
+            st.markdown(
+                '<div style="background:linear-gradient(135deg, #FEF2F2 0%, #FEE2E2 100%);'
+                'border:1px solid #FECACA;border-radius:12px;padding:20px 24px;margin:12px 0;'
+                'box-shadow:0 1px 3px rgba(0,0,0,0.06);">'
+                '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">'
+                '<span style="font-size:1.3em;">&#9888;</span>'
+                '<span style="font-size:1.05em;font-weight:700;color:#991B1B;">'
+                f'{_method_name} failed to initialize</span></div>'
+                f'<span style="color:#7F1D1D;font-size:0.88em;line-height:1.5;">'
+                f'Error: {str(_init_exc)[:200]}</span>'
+                '<div style="margin-top:12px;color:#7F1D1D;font-size:0.85em;">'
+                'Try a different generation method, or click Generate to retry.</div>'
+                '</div>',
+                unsafe_allow_html=True,
+            )
+            _init_c1, _init_c2 = st.columns(2)
+            with _init_c1:
+                if st.button("Switch to Template Engine", key="_init_fail_template",
+                             type="primary", use_container_width=True):
+                    st.session_state["generation_method"] = "template"
+                    st.session_state["allow_template_fallback_once"] = True
+                    st.session_state["_use_socsim_experimental"] = False
+                    _navigate_to(3)
+            with _init_c2:
+                if st.button("Try again", key="_init_fail_retry",
+                             type="secondary", use_container_width=True):
+                    st.session_state["is_generating"] = True
+                    st.session_state["_generation_phase"] = 1
+                    _navigate_to(3)
+            st.stop()
+
+        # v1.2.0.2: SINGLE try block covers engine init → generation → post-processing.
+        # Previously the try started only around engine.generate(), leaving the LLM
+        # health check and domain display unprotected.  Any crash in that gap would
+        # trigger the stale-phase-2 recovery with a generic "unexpected error" message.
+        try:
+            progress_bar.progress(15, text="Step 1/5 — Engine ready, preparing generation...")
+
+            # v1.2.4: Show detected research domains
+            if hasattr(engine, 'detected_domains') and engine.detected_domains:
+                domain_text = ", ".join([d.replace("_", " ").title() for d in engine.detected_domains[:5]])
+                st.info(f"🔬 **Detected research domain(s):** {domain_text}")
+
+            # v1.1.1.0: Pre-flight LLM health check — test providers BEFORE starting
+            # generation so users get immediate feedback instead of waiting minutes.
+            if _is_llm_method and _has_oe_questions and hasattr(engine, 'llm_generator') and engine.llm_generator is not None:
+                progress_bar.progress(8, text="Testing AI provider connection...")
+                _health = engine.llm_generator.health_check(timeout=12)
+                if not _health["ok"]:
+                    progress_bar.progress(0, text="")
+                    st.markdown(
+                        '<div style="background:linear-gradient(135deg, #FFF7ED 0%, #FFEDD5 100%);'
+                        'border:1px solid #FDBA74;border-radius:12px;padding:20px 24px;margin:12px 0;'
+                        'box-shadow:0 1px 3px rgba(0,0,0,0.06);">'
+                        '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">'
+                        '<span style="font-size:1.3em;">&#9888;</span>'
+                        '<span style="font-size:1.05em;font-weight:700;color:#9A3412;">'
+                        'AI providers are not responding</span></div>'
+                        '<span style="color:#7C2D12;font-size:0.88em;line-height:1.5;">'
+                        'The free AI text generation service could not be reached. '
+                        'Your data quality options:</span></div>',
+                        unsafe_allow_html=True,
+                    )
+                    _hc1, _hc2, _hc3 = st.columns(3)
+                    with _hc1:
+                        if st.button("Try again", key="_preflight_retry",
+                                     type="primary", use_container_width=True,
+                                     help="Re-test the AI providers"):
+                            st.session_state["is_generating"] = True
+                            st.session_state["_generation_phase"] = 1
+                            _navigate_to(3)
+                    with _hc2:
+                        if st.button("Use my own API key", key="_preflight_own_api",
+                                     type="secondary", use_container_width=True,
+                                     help="Get a free key from Groq or Google AI"):
+                            st.session_state[_gen_method_key] = "own_api"
+                            st.session_state["allow_template_fallback_once"] = False
+                            st.session_state["is_generating"] = False
+                            _navigate_to(3)
+                    with _hc3:
+                        if st.button("Use Template Engine", key="_preflight_template",
+                                     type="secondary", use_container_width=True,
+                                     help="Instant generation using domain-specific templates"):
+                            st.session_state["allow_template_fallback_once"] = True
+                            st.session_state[_gen_method_key] = "template"
+                            st.session_state["is_generating"] = True
+                            st.session_state["_generation_phase"] = 1
+                            _navigate_to(3)
+                    st.session_state["is_generating"] = False
+                    st.session_state["_generation_phase"] = 0
+                    st.stop()
+                elif _health["latency_ms"] > 8000:
+                    st.warning(
+                        f"AI providers are responding slowly ({_health['latency_ms']}ms). "
+                        f"Generation may take longer than usual. You can switch to "
+                        f"Template Engine on the method selector above for faster results."
+                    )
             # v1.2.0: Enhanced progress indicator with prominent visual display
             # Clear the status placeholder and show progress bar
             status_placeholder.empty()
