@@ -8840,9 +8840,12 @@ class EnhancedSimulationEngine:
                 if resp and resp.strip():
                     return resp
             except Exception as _llm_gen_err:
-                if "template fallback is disabled" in str(_llm_gen_err).lower():
-                    raise
-                # v1.0.5.7: Log at WARNING (not debug) so failures are visible
+                # v1.2.0.0: NEVER re-raise "template fallback is disabled" here.
+                # When LLM is force-disabled mid-question (budget exceeded), the old
+                # re-raise bypassed comprehensive_generator and text_generator entirely,
+                # causing _last_resort_oe_response() gibberish for all remaining
+                # participants. Instead, fall through to the template generators below
+                # which produce much higher quality topic-aware responses.
                 logger.warning("LLM generate() error: %s", _llm_gen_err)
                 self._log(f"WARNING: LLM generation failed, falling back: {_llm_gen_err}")
 
@@ -10781,20 +10784,38 @@ class EnhancedSimulationEngine:
         # participants fall back to template generation automatically.
         # REDUCED from 300s → 180s (3 min). The old 5-min budget plus auto-recovery
         # allowed infinite retry cycles. 3 min is generous for any real LLM response.
-        _OE_GENERATION_BUDGET = 180.0  # 3 minutes max for all OE generation
+        _OE_GENERATION_BUDGET = 180.0  # 3 minutes max PER QUESTION
         # v1.1.1.0: Per-participant timeout — if a SINGLE participant's OE response
         # takes more than this, force template fallback for that participant AND
         # permanently disable LLM (the provider is clearly hanging).
         _PER_PARTICIPANT_OE_TIMEOUT = 45.0  # seconds
-        _oe_gen_wall_start = time.time()
-        _oe_budget_exceeded = False
-        _oe_budget_switched_count = 0  # How many participants used fallback
-        # v1.1.1.0: Track consecutive slow participants to detect systemic issues
-        _consecutive_slow_participants = 0
+        # v1.2.0.0: Budget/timer are now RESET per question (moved inside the loop).
+        # Previously a single shared timer meant Q1 could exhaust the budget,
+        # permanently disabling LLM for ALL subsequent questions — producing
+        # gibberish template responses for Q2+ even when the user chose "Built-in AI".
+        _oe_budget_switched_count = 0  # How many participants used fallback (cumulative)
         _CONSECUTIVE_SLOW_LIMIT = 3  # After 3 slow participants in a row, kill LLM
         _total_oe = len(self.open_ended_questions)
         _report_progress("open_ended", 0, _total_oe)
+        _oe_budget_exceeded_any = False  # Track if ANY question hit the budget
+        _oe_all_questions_wall_start = time.time()  # Wall-clock start for total elapsed logging
         for _oe_idx, q in enumerate(self.open_ended_questions):
+            # v1.2.0.0: Reset per-question budget, timer, and LLM state.
+            # Each OE question gets a FRESH 180s budget and a fresh LLM chance.
+            # Without this, Q1 exhausting the budget permanently kills LLM for Q2+,
+            # producing gibberish template fallback for all subsequent questions.
+            _oe_gen_wall_start = time.time()
+            _oe_budget_exceeded = False
+            _consecutive_slow_participants = 0
+            # Re-enable LLM for this question if it was force-disabled by the
+            # PREVIOUS question's budget/timeout.  This is safe because each
+            # question has its own independent budget — a slow provider on Q1
+            # doesn't necessarily mean Q2 will also be slow (different pool entries,
+            # different prompt, possibly recovered provider).
+            if self.llm_generator and getattr(self.llm_generator, '_force_disabled', False):
+                self._log(f"OE Q{_oe_idx+1}/{_total_oe}: Re-enabling LLM (was force-disabled by previous question)")
+                self.llm_generator._force_disabled = False
+                self.llm_generator._api_available = True
             # v1.1.1.2: Per-question progress so UI shows "Text question 2/3"
             _report_progress("open_ended_question", _oe_idx, _total_oe)
             # v1.4.3: Use _clean_column_name for scientific column naming
@@ -11106,12 +11127,15 @@ class EnhancedSimulationEngine:
             data[col_name] = responses
             q_desc = q.get("question_text", "")[:50] if q.get("question_text") else q.get('type', 'text')
             self.column_info.append((col_name, f"Open-ended: {q_desc}"))
+            # v1.2.0.0: Accumulate budget-exceeded flag across questions
+            if _oe_budget_exceeded:
+                _oe_budget_exceeded_any = True
 
         # v1.1.1.0: Log OE generation budget status with detailed diagnostics
-        self._oe_budget_exceeded = _oe_budget_exceeded
+        self._oe_budget_exceeded = _oe_budget_exceeded_any
         self._oe_budget_switched_count = _oe_budget_switched_count  # v1.1.1.4: Expose for metadata
-        _oe_total_elapsed = time.time() - _oe_gen_wall_start
-        if _oe_budget_exceeded:
+        _oe_total_elapsed = time.time() - _oe_all_questions_wall_start
+        if _oe_budget_exceeded_any:
             _llm_stats_summary = ""
             if self.llm_generator:
                 try:

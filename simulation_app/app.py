@@ -54,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.1.1.8"
-BUILD_ID = "20260219-v11108-fix-method-spinner-labels-nameerror"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.2.0.0"
+BUILD_ID = "20260219-v12000-fix-multi-question-llm-budget-per-question"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -118,7 +118,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.1.1.8"  # v1.1.1.8: Fix _method_spinner_labels NameError at generation start
+APP_VERSION = "1.2.0.0"  # v1.2.0.0: Fix multi-OE-question LLM — per-question budget reset
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -11395,16 +11395,40 @@ if active_page == 3:
     # v1.1.0.9: Show prominent animated progress indicator IMMEDIATELY when generating
     # No time estimates — only real-time observation count (updated via callback)
     if is_generating:
-        # v1.1.1.7: Show which method is active in the progress banner
+        # v1.1.1.9: Show the SELECTED method's card (greyed-out) during generation
+        # so the user always sees which method is running.
+        _active_method_key = st.session_state.get("generation_method", "")
+        _active_card_info = {
+            "template":     {"icon": "&#9881;",  "icon_bg": "linear-gradient(135deg, #F59E0B 0%, #F97316 100%)", "title": "Template Engine",              "subtitle": "225+ research domains, 58 personas, instant generation"},
+            "experimental": {"icon": "&#9889;",  "icon_bg": "linear-gradient(135deg, #8B5CF6 0%, #7C3AED 100%)", "title": "Adaptive Behavioral Engine",    "subtitle": "Game-theory models (Fehr-Schmidt, IRT) + persona simulation"},
+            "free_llm":     {"icon": "&#129302;", "icon_bg": "linear-gradient(135deg, #22c55e 0%, #16a34a 100%)", "title": "Built-in AI",                   "subtitle": "Free LLM providers for AI-generated open-ended text"},
+            "own_api":      {"icon": "&#128273;", "icon_bg": "linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)", "title": "AI (your API key)",             "subtitle": "Your own API key for reliable AI-generated text"},
+        }
+        _acard = _active_card_info.get(_active_method_key)
+        if _acard:
+            st.markdown(
+                f'<div style="border:2px solid #22c55e;background:#f8fdf9;border-radius:12px;'
+                f'padding:12px 16px;margin-bottom:8px;opacity:0.7;">'
+                f'<div style="display:flex;align-items:center;gap:10px;">'
+                f'<span style="display:inline-flex;align-items:center;justify-content:center;'
+                f'width:32px;height:32px;border-radius:8px;background:{_acard["icon_bg"]};'
+                f'color:white;font-size:0.9em;">{_acard["icon"]}</span>'
+                f'<div>'
+                f'<span style="font-weight:700;font-size:0.88em;color:#166534;">'
+                f'{_acard["title"]}</span>'
+                f'<span style="color:#22c55e;font-size:0.75em;margin-left:8px;font-weight:600;">&#10003; Running</span>'
+                f'<div style="color:#6B7280;font-size:0.78em;margin-top:2px;">{_acard["subtitle"]}</div>'
+                f'</div></div></div>',
+                unsafe_allow_html=True,
+            )
+
         _banner_method_labels = {
             "template": "Template Engine",
             "experimental": "Adaptive Behavioral Engine",
             "free_llm": "Built-in AI",
             "own_api": "AI (your API key)",
         }
-        _banner_method = _banner_method_labels.get(
-            st.session_state.get("generation_method", ""), ""
-        )
+        _banner_method = _banner_method_labels.get(_active_method_key, "")
         _banner_subtitle = "Creating realistic behavioral data. Progress updates below."
         if _banner_method:
             _banner_subtitle = f"Using <strong>{_banner_method}</strong>. Progress updates below."
