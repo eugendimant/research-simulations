@@ -33,7 +33,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 # Version identifier to help track deployed code
-__version__ = "1.1.1.8"  # v1.1.1.8: Fix _method_spinner_labels NameError at generation start
+__version__ = "1.1.1.9"  # v1.1.1.9: Show correct selected method card during generation
 
 
 # ============================================================================
