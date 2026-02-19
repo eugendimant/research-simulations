@@ -10490,9 +10490,23 @@ class EnhancedSimulationEngine:
                 col_name = f"{scale_name}_{item_num}"
                 is_reverse = item_num in reverse_items
 
+                # v1.2.0.1: Report progress per item within scale so the UI timer
+                # keeps moving.  Without this, a single scale with many items
+                # leaves the progress stale for minutes.
+                _report_progress("scales", scale_idx, _total_scales)
+
                 item_values: List[int] = []
                 col_hash = _stable_int_hash(col_name)
+                # v1.2.0.1: Calculate callback interval for per-participant updates
+                # during scale generation.  Fire every ~5% of participants (min 1,
+                # max every 20) so the elapsed timer keeps moving.
+                _scale_cb_interval = max(1, min(20, n // 20))
                 for i in range(n):
+                    # v1.2.0.1: Fire "generating" callback periodically within
+                    # the scale inner loop.  This drives the participant counter
+                    # and elapsed timer in the UI during long scale generation.
+                    if i % _scale_cb_interval == 0:
+                        _report_progress("generating", i, n)
                     p_seed = (self.seed + i * 100 + col_hash) % (2**31)
                     self._current_participant_idx = i  # v1.0.4.9: for reverse tracking
                     self._current_item_position = item_num

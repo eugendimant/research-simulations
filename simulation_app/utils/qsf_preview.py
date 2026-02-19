@@ -33,7 +33,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 # Version identifier to help track deployed code
-__version__ = "1.2.0.1"  # v1.2.0.1: LLM exhaustion prompt + _Generation_Source column
+__version__ = "1.2.0.2"  # v1.2.0.2: Per-participant progress callbacks in scale generation
 
 
 # ============================================================================
