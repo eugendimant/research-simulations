@@ -54,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.1.1.2"
-BUILD_ID = "20260216-v11102-oe-progress-pool-efficiency-docs"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.1.1.3"
+BUILD_ID = "20260219-v11103-fix-stuck-generation-dv-type-question-purpose"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -118,7 +118,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.1.1.2"  # v1.1.1.2: OE per-participant progress, pool draw efficiency, budget tracking, docs
+APP_VERSION = "1.1.1.3"  # v1.1.1.3: Fix stuck generation, DV type auto-update, question purpose classification
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -9625,6 +9625,17 @@ if active_page == 2:
                             help=items_help
                         )
 
+                    # v1.1.1.3: Auto-update DV type when user changes item count.
+                    # If QSF detected a standalone question as 'single_item' but the user
+                    # corrects the count to >1, upgrade to 'numbered_items'.  Conversely,
+                    # if user reduces a multi-item scale to 1 item, downgrade to 'single_item'.
+                    if num_items > 1 and dv_type == 'single_item':
+                        dv_type = 'numbered_items'
+                        type_badge = type_badges.get(dv_type, '📊 Scale')
+                    elif num_items == 1 and dv_type in ('numbered_items', 'matrix'):
+                        dv_type = 'single_item'
+                        type_badge = type_badges.get(dv_type, '📊 Scale')
+
                     # v1.2.0: Two separate inputs for min and max scale values (1-100 range)
                     with col3a:
                         # Get current min, default to 1
@@ -9884,10 +9895,21 @@ if active_page == 2:
                 _missing_ctx = len(confirmed_open_ended) - _ctx_count
                 st.markdown(f"**{len(confirmed_open_ended)} open-ended question(s):**")
                 st.caption("Add context (1-2 sentences) to each question to improve AI response quality.")
+
+                # v1.1.1.3: Purpose options for open-ended questions
+                _oe_purpose_options = ["DV Response", "Demographic", "Moderator", "Manipulation Check", "Other"]
+                _oe_purpose_help = {
+                    "DV Response": "Primary dependent variable — AI generates topical text responses",
+                    "Demographic": "Demographic info (age, gender, etc.) — generates realistic values, excluded from topic inference",
+                    "Moderator": "Measured variable (not manipulated) — generates responses but excluded from topic inference",
+                    "Manipulation Check": "Checks whether manipulation worked — generates condition-aware responses",
+                    "Other": "General text question — generates responses with basic context",
+                }
+
                 for i, oe in enumerate(confirmed_open_ended):
                     source_type = oe.get("source_type", "detected")
                     source_badge = source_badges.get(source_type, "📝 Text")
-                    col1, col2, col3 = st.columns([3, 2, 0.5])
+                    col1, col2, col3, col4 = st.columns([2.5, 1.2, 1.2, 0.5])
                     with col1:
                         var_name = st.text_input(
                             f"Variable {i+1}",
@@ -9896,8 +9918,21 @@ if active_page == 2:
                             label_visibility="collapsed",
                         )
                     with col2:
-                        st.markdown(f"<small>{source_badge}</small>", unsafe_allow_html=True)
+                        # v1.1.1.3: Question purpose selector
+                        _current_purpose = oe.get("question_purpose", "DV Response")
+                        if _current_purpose not in _oe_purpose_options:
+                            _current_purpose = "DV Response"
+                        _oe_purpose = st.selectbox(
+                            f"Purpose {i+1}",
+                            options=_oe_purpose_options,
+                            index=_oe_purpose_options.index(_current_purpose),
+                            key=f"oe_purpose_v{oe_version}_{i}",
+                            label_visibility="collapsed",
+                            help=_oe_purpose_help.get(_current_purpose, ""),
+                        )
                     with col3:
+                        st.markdown(f"<small>{source_badge}</small>", unsafe_allow_html=True)
+                    with col4:
                         if st.button("✕", key=f"rm_oe_v{oe_version}_{i}", help="Remove"):
                             _removed_name = oe.get("variable_name", oe.get("name", f"OpenEnded_{i+1}"))
                             st.session_state["_oe_removal_notice"] = f"Removed open-ended question: {_removed_name}"
@@ -9905,6 +9940,11 @@ if active_page == 2:
                     q_text = oe.get("question_text", "")
                     if q_text:
                         st.caption(f"*\"{q_text[:80]}{'...' if len(q_text) > 80 else ''}\"*")
+
+                    # v1.1.1.3: Show demographic hint when purpose is Demographic
+                    if _oe_purpose == "Demographic":
+                        st.caption("Demographic questions generate realistic values (numbers/categories) and are excluded from study topic inference.")
+
                     # v1.0.1.2: Enhanced context input with auto-suggest and rich guidance
                     _oe_ctx_existing = oe.get("question_context", "")
                     # Auto-generate a suggested context from question text if user hasn't provided one
@@ -9940,6 +9980,7 @@ if active_page == 2:
                             "name": var_name.strip(),
                             "question_text": oe.get("question_text", ""),
                             "question_context": _oe_ctx.strip(),
+                            "question_purpose": _oe_purpose,  # v1.1.1.3
                             "source_type": source_type,
                             "force_response": oe.get("force_response", False),
                             "context_type": oe.get("context_type", "general"),
@@ -9952,7 +9993,7 @@ if active_page == 2:
             if oe_to_remove:
                 # v1.0.6.1: Clean up orphaned widget state from old version
                 for _ci in range(max(10, len(confirmed_open_ended))):
-                    for _prefix in ("oe_name_v", "oe_ctx_v", "oe_type_v"):
+                    for _prefix in ("oe_name_v", "oe_ctx_v", "oe_type_v", "oe_purpose_v"):
                         st.session_state.pop(f"{_prefix}{oe_version}_{_ci}", None)
                 st.session_state["confirmed_open_ended"] = updated_open_ended
                 st.session_state["_oe_version"] = oe_version + 1
@@ -9967,6 +10008,7 @@ if active_page == 2:
                         "variable_name": f"OpenEnded_{len(confirmed_open_ended)+1}",
                         "name": f"OpenEnded_{len(confirmed_open_ended)+1}",
                         "question_text": "", "question_context": "",
+                        "question_purpose": "DV Response",  # v1.1.1.3
                         "source_type": "manual",
                         "force_response": False, "context_type": "general",
                     }
@@ -11476,9 +11518,32 @@ if active_page == 3:
         st.session_state["_generation_phase"] = 1
         st.rerun()
 
+    # v1.1.1.3: STALE PHASE-2 RECOVERY — if we enter a fresh rerun with phase==2
+    # and is_generating still True, it means the PREVIOUS generation attempt crashed
+    # in setup code OUTSIDE the inner try-except.  Phase goes 1→2 at the start of
+    # the block, then generation runs synchronously.  If we're back here at phase 2,
+    # something threw an uncaught exception.  Reset and show error so users aren't
+    # stuck on the blue progress screen forever.
+    if is_generating and st.session_state.get("_generation_phase", 0) == 2:
+        st.session_state["is_generating"] = False
+        st.session_state["_generation_phase"] = 0
+        st.session_state["generation_requested"] = False
+        is_generating = False
+        status_placeholder.empty()
+        st.error(
+            "**Generation encountered an unexpected error and was stopped.** "
+            "Please click **Generate** to try again. If the problem persists, "
+            "try a different generation method."
+        )
+
     # Phase 2: Actually generate (progress UI is now visible)
     if is_generating and st.session_state.get("_generation_phase", 0) == 1:
         st.session_state["_generation_phase"] = 2  # Move to generation phase
+        # v1.1.1.3: Define _gen_method_key here — the variable is also defined in the
+        # method-chooser block (guarded by `not _is_generating`), which is SKIPPED during
+        # generation reruns.  Without this, every generation attempt crashes with NameError
+        # at the pre-flight health check, leaving is_generating=True forever (stuck blue screen).
+        _gen_method_key = "generation_method"
         progress_bar = progress_placeholder.progress(5, text="Preparing simulation inputs...")
         status_placeholder.info("🔄 Preparing simulation inputs...")
         # v1.0.1.5: Use _p_ persist fallback — widget keys may not survive cross-page navigation
@@ -11502,6 +11567,7 @@ if active_page == 3:
         if missing_fields:
             st.session_state["is_generating"] = False
             st.session_state["generation_requested"] = False
+            st.session_state["_generation_phase"] = 0  # v1.1.1.3
             progress_placeholder.empty()
             st.warning(
                 "Cannot generate: missing required fields "
@@ -11552,6 +11618,7 @@ if active_page == 3:
                         "variable_name": oe.get("variable_name", oe.get("name", "")),
                         "question_text": oe.get("question_text", ""),
                         "question_context": oe.get("question_context", ""),  # v1.8.7.1
+                        "question_purpose": oe.get("question_purpose", "DV Response"),  # v1.1.1.3
                         "context_type": oe.get("context_type", "general"),
                         "type": oe.get("source_type", "text"),
                         "force_response": oe.get("force_response", False),
@@ -11945,6 +12012,7 @@ if active_page == 3:
                         st.session_state["_generation_phase"] = 1
                         _navigate_to(3)
                 st.session_state["is_generating"] = False
+                st.session_state["_generation_phase"] = 0  # v1.1.1.3
                 st.stop()
             elif _health["latency_ms"] > 8000:
                 st.warning(
@@ -12630,6 +12698,7 @@ if active_page == 3:
             status_placeholder.success("Simulation complete.")
             st.session_state["has_generated"] = True
             st.session_state["is_generating"] = False
+            st.session_state["_generation_phase"] = 0  # v1.1.1.3: Clean phase state
             _navigate_to(3)  # Refresh to show download section
         except Exception as e:
             import traceback as _tb
@@ -12753,6 +12822,7 @@ if active_page == 3:
             st.info("You can click **Reset & Generate New** to try again with different settings.")
             st.session_state["is_generating"] = False
             st.session_state["generation_requested"] = False
+            st.session_state["_generation_phase"] = 0  # v1.1.1.3: Reset phase so stale-phase-2 recovery doesn't fire
             # Don't rerun on error - show error message to user
 
     zip_bytes = st.session_state.get("last_zip", None)
