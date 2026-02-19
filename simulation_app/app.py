@@ -54,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.1.1.7"
-BUILD_ID = "20260219-v11107-method-aware-progress-ui-llm-warning-guard"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.1.1.8"
+BUILD_ID = "20260219-v11108-fix-method-spinner-labels-nameerror"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -118,7 +118,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.1.1.7"  # v1.1.1.7: Method-aware progress UI, LLM warning guard for non-AI methods
+APP_VERSION = "1.1.1.8"  # v1.1.1.8: Fix _method_spinner_labels NameError at generation start
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -12097,9 +12097,12 @@ if active_page == 3:
 
             # Show large, visible progress container
             # v1.1.1.7: Include the selected method name so users see what they chose.
-            _progress_method_label = _method_spinner_labels.get(
-                st.session_state.get(_gen_method_key, "free_llm"), "Simulation"
-            )
+            _progress_method_label = {
+                "template": "Template Engine",
+                "experimental": "Adaptive Behavioral Engine",
+                "free_llm": "Built-in AI",
+                "own_api": "AI (your API key)",
+            }.get(st.session_state.get(_gen_method_key, "free_llm"), "Simulation")
             progress_container = st.container()
             with progress_container:
                 st.markdown(f"""
