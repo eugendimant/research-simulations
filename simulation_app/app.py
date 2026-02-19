@@ -54,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.1.1.3"
-BUILD_ID = "20260219-v11103-fix-stuck-generation-dv-type-question-purpose"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.1.1.4"
+BUILD_ID = "20260219-v11104-generation-robustness-edge-cases-budget-tracking"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -118,7 +118,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.1.1.3"  # v1.1.1.3: Fix stuck generation, DV type auto-update, question purpose classification
+APP_VERSION = "1.1.1.4"  # v1.1.1.4: Generation robustness, edge cases, budget tracking, auto-demographic detection
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -11596,7 +11596,7 @@ if active_page == 3:
         # Additional validation: warn if no scales detected
         if not clean_scales:
             st.warning("No scales detected or confirmed. A default scale will be used. Please check your study configuration.")
-            clean_scales = [{"name": "Main_DV", "variable_name": "Main_DV", "num_items": 5, "scale_points": 7, "reverse_items": [], "_validated": True}]
+            clean_scales = [{"name": "Main_DV", "variable_name": "Main_DV", "num_items": 5, "scale_points": 7, "scale_min": 1, "scale_max": 7, "reverse_items": [], "_validated": True}]
 
         clean_factors = _normalize_factor_specs(inferred.get("factors", []), inferred.get("conditions", []))
 
@@ -11629,7 +11629,8 @@ if active_page == 3:
                     # Handle legacy/fallback case where open-ended is a plain string
                     open_ended_questions_for_engine.append({
                         "name": oe, "variable_name": oe,
-                        "question_text": oe, "context_type": "general",
+                        "question_text": oe, "question_purpose": "DV Response",
+                        "context_type": "general",
                         "type": "text", "force_response": False,
                         "min_chars": None, "block_name": "",
                     })
@@ -11647,7 +11648,7 @@ if active_page == 3:
                         open_ended_questions_for_engine.append(q)
                     elif isinstance(q, str) and q.strip():
                         open_ended_questions_for_engine.append(
-                            {"name": q, "question_text": q, "context_type": "general"}
+                            {"name": q, "question_text": q, "question_purpose": "DV Response", "context_type": "general"}
                         )
 
         # ========================================
@@ -11925,14 +11926,32 @@ if active_page == 3:
                         f'&#10003; All {total} participants generated</span></div>',
                         unsafe_allow_html=True,
                     )
-            except Exception:
-                pass
+                else:
+                    # v1.1.1.4: Fallback for unrecognized phases — always show progress
+                    _pct_f = int((current / max(1, total)) * 100) if total > 0 else 0
+                    _progress_counter_placeholder.markdown(
+                        f'<div style="text-align:center;padding:8px;color:#666;">'
+                        f'Processing... ({phase}: {current}/{total} — {_pct_f}%)</div>',
+                        unsafe_allow_html=True,
+                    )
+            except Exception as _cb_exc:
+                _log(f"Progress callback error ({phase} {current}/{total}): {_cb_exc}", level="debug")
+
+        # v1.1.1.4: Validate conditions — engine creates a default "Condition A" for
+        # empty lists, but warn the user so they know the output won't match expectations.
+        _engine_conditions = inferred.get("conditions", [])
+        if not _engine_conditions:
+            _engine_conditions = ["Control"]  # Sensible single-condition default
+            st.info(
+                "No experimental conditions detected. Generating data for a single-condition (control) design. "
+                "If your study has multiple conditions, go back to **Design** and configure them."
+            )
 
         engine = EnhancedSimulationEngine(
             study_title=title,
             study_description=desc,
             sample_size=N,
-            conditions=inferred.get("conditions", []),
+            conditions=_engine_conditions,
             factors=clean_factors,
             scales=clean_scales,
             additional_vars=[],
@@ -12159,6 +12178,9 @@ if active_page == 3:
                     if _fallback > 0 and _total > 0:
                         _ai_pct = int((_actual_pool / _total) * 100)
                         metadata['generation_method_label'] = f"AI-Powered ({_ai_pct}% AI, {100 - _ai_pct}% template)"
+                    elif _fallback == 0 and _actual_pool > 0:
+                        # v1.1.1.4: All responses from AI, zero fallback — label accordingly
+                        metadata['generation_method_label'] = "AI-Powered (100% AI)"
 
             # v1.0.8.2: Post-generation LLM health diagnostic — detect issues and
             # show actionable notification for the user to switch methods if needed.
@@ -12194,6 +12216,16 @@ if active_page == 3:
                             "AI providers were experiencing issues. "
                             "The system automatically switched to template-based responses to complete your data."
                         )
+
+                # v1.1.1.4: Show OE budget exceeded info from engine metadata
+                _oe_budget_exceeded = metadata.get('oe_budget_exceeded', False)
+                _oe_budget_switched = metadata.get('oe_budget_switched_count', 0)
+                if _oe_budget_exceeded and _oe_budget_switched > 0:
+                    _llm_had_issues = True
+                    _issue_messages.append(
+                        f"The AI generation time budget was exceeded. "
+                        f"{_oe_budget_switched} participant(s) used template-generated responses."
+                    )
 
                 if _post_llm_calls == 0 and _post_pool_size == 0:
                     _llm_had_issues = True
@@ -12805,19 +12837,26 @@ if active_page == 3:
 
             with st.expander("Technical details (for support)", expanded=False):
                 st.code(error_tb, language="python")
-                # Show input summary for debugging
-                st.markdown("**Input Summary:**")
-                st.markdown(f"- Scales: {len(clean_scales)} configured")
-                _cond_list = inferred.get('conditions', [])
-                st.markdown(f"- Conditions: {len(_cond_list)} ({', '.join(str(c) for c in _cond_list[:5])}{'...' if len(_cond_list) > 5 else ''})")
-                st.markdown(f"- Sample size: {N}")
-                st.markdown(f"- Open-ended questions: {len(open_ended_questions_for_engine)}")
-                if clean_scales:
-                    st.markdown("**Scale details:**")
-                    for i, s in enumerate(clean_scales[:5]):
-                        st.markdown(f"  - Scale {i+1}: {s.get('name', '?')} (items={s.get('num_items', '?')}, pts={s.get('scale_points', '?')}, min={s.get('scale_min', '?')}, max={s.get('scale_max', '?')})")
-                    if len(clean_scales) > 5:
-                        st.markdown(f"  - ... and {len(clean_scales) - 5} more scale(s)")
+                # v1.1.1.4: Defensive input summary — variables may be undefined if
+                # the error occurred during setup before they were assigned.
+                try:
+                    st.markdown("**Input Summary:**")
+                    _n_scales = len(clean_scales) if 'clean_scales' in dir() else 0
+                    st.markdown(f"- Scales: {_n_scales} configured")
+                    _cond_list = inferred.get('conditions', []) if inferred else []
+                    st.markdown(f"- Conditions: {len(_cond_list)} ({', '.join(str(c) for c in _cond_list[:5])}{'...' if len(_cond_list) > 5 else ''})")
+                    _n_val = N if 'N' in dir() else '?'
+                    st.markdown(f"- Sample size: {_n_val}")
+                    _n_oe = len(open_ended_questions_for_engine) if 'open_ended_questions_for_engine' in dir() else 0
+                    st.markdown(f"- Open-ended questions: {_n_oe}")
+                    if 'clean_scales' in dir() and clean_scales:
+                        st.markdown("**Scale details:**")
+                        for i, s in enumerate(clean_scales[:5]):
+                            st.markdown(f"  - Scale {i+1}: {s.get('name', '?')} (items={s.get('num_items', '?')}, pts={s.get('scale_points', '?')}, min={s.get('scale_min', '?')}, max={s.get('scale_max', '?')})")
+                        if len(clean_scales) > 5:
+                            st.markdown(f"  - ... and {len(clean_scales) - 5} more scale(s)")
+                except Exception as _detail_err:
+                    st.caption(f"Could not display full input summary: {_detail_err}")
 
             st.info("You can click **Reset & Generate New** to try again with different settings.")
             st.session_state["is_generating"] = False
