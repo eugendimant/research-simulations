@@ -10239,8 +10239,10 @@ class EnhancedSimulationEngine:
             if self.progress_callback:
                 try:
                     self.progress_callback(phase, current, total)
-                except Exception:
-                    pass  # Never let callback errors break simulation
+                except Exception as _cb_err:
+                    # v1.1.1.4: Log instead of silently swallowing — helps diagnose
+                    # frozen progress bar issues without breaking generation.
+                    logger.debug("Progress callback error (phase=%s, %d/%d): %s", phase, current, total, _cb_err)
 
         assigned_personas: List[str] = []
         all_traits: List[Dict[str, float]] = []
@@ -10796,25 +10798,38 @@ class EnhancedSimulationEngine:
             # values instead of AI-generated text.  Demographic questions are excluded
             # from topic inference so "Age" doesn't confuse the study topic.
             _question_purpose = str(q.get("question_purpose", "DV Response")).strip()
+            # v1.1.1.4: Auto-detect demographic questions even without explicit tag.
+            # If the variable name is a standalone demographic keyword (e.g., "Age",
+            # "Gender") and the user didn't set a purpose, treat it as demographic to
+            # prevent topic confusion.  Only auto-detect for EXACT single-word matches
+            # to avoid false positives (e.g., "Age_Discrimination_Scale" should NOT match).
+            _DEMOGRAPHIC_EXACT = {"age", "gender", "sex", "race", "ethnicity", "income",
+                                  "education", "salary", "location", "state", "country",
+                                  "zipcode", "zip", "dob", "birthdate", "marital"}
+            if _question_purpose == "DV Response" and col_name.lower().strip() in _DEMOGRAPHIC_EXACT:
+                _question_purpose = "Demographic"
+                self._log(f"Auto-classified '{col_name}' as Demographic (exact name match)")
             if _question_purpose == "Demographic":
                 _demo_responses: List[str] = []
-                _demo_name_lower = col_name.lower()
+                # v1.1.1.4: Check BOTH variable name AND question text for demographic type
+                # so "How old are you?" works even if the variable is named "Q1"
+                _demo_search_text = (col_name + " " + q_text).lower()
                 for _di in range(n):
                     _report_progress("generating", _di, n)
                     _d_seed = (self.seed + _di * 100 + col_hash) % (2**31)
                     _d_rng = np.random.RandomState(_d_seed)
-                    if "age" in _demo_name_lower:
+                    if any(kw in _demo_search_text for kw in ("age", "old", "born", "birth")):
                         # Age: realistic MTurk/Prolific distribution (18-80, slight right skew)
                         _age = int(np.clip(_d_rng.normal(35, 13), 18, 80))
                         _demo_responses.append(str(_age))
-                    elif "gender" in _demo_name_lower or "sex" in _demo_name_lower:
+                    elif any(kw in _demo_search_text for kw in ("gender", "sex", "male", "female")):
                         _demo_responses.append(
                             _d_rng.choice(
                                 ["Male", "Female", "Non-binary", "Prefer not to say"],
                                 p=[0.48, 0.48, 0.03, 0.01],
                             )
                         )
-                    elif "race" in _demo_name_lower or "ethnic" in _demo_name_lower:
+                    elif any(kw in _demo_search_text for kw in ("race", "ethnic", "racial")):
                         _demo_responses.append(
                             _d_rng.choice(
                                 ["White", "Black or African American", "Hispanic/Latino",
@@ -10822,7 +10837,7 @@ class EnhancedSimulationEngine:
                                 p=[0.58, 0.13, 0.19, 0.06, 0.04],
                             )
                         )
-                    elif "education" in _demo_name_lower or "degree" in _demo_name_lower:
+                    elif any(kw in _demo_search_text for kw in ("education", "degree", "school", "college")):
                         _demo_responses.append(
                             _d_rng.choice(
                                 ["High school diploma", "Some college", "Bachelor's degree",
@@ -10830,10 +10845,10 @@ class EnhancedSimulationEngine:
                                 p=[0.15, 0.25, 0.35, 0.18, 0.07],
                             )
                         )
-                    elif "income" in _demo_name_lower or "salary" in _demo_name_lower:
+                    elif any(kw in _demo_search_text for kw in ("income", "salary", "earn", "household income")):
                         _inc = int(np.clip(_d_rng.lognormal(10.8, 0.8), 15000, 300000))
                         _demo_responses.append(str(_inc))
-                    elif "state" in _demo_name_lower or "location" in _demo_name_lower:
+                    elif any(kw in _demo_search_text for kw in ("state", "location", "country", "city", "zip")):
                         _us_states = ["California", "Texas", "Florida", "New York",
                                       "Pennsylvania", "Illinois", "Ohio", "Georgia",
                                       "North Carolina", "Michigan", "Other"]
@@ -11058,6 +11073,7 @@ class EnhancedSimulationEngine:
 
         # v1.1.1.0: Log OE generation budget status with detailed diagnostics
         self._oe_budget_exceeded = _oe_budget_exceeded
+        self._oe_budget_switched_count = _oe_budget_switched_count  # v1.1.1.4: Expose for metadata
         _oe_total_elapsed = time.time() - _oe_gen_wall_start
         if _oe_budget_exceeded:
             _llm_stats_summary = ""
@@ -11384,6 +11400,9 @@ class EnhancedSimulationEngine:
             # v1.0.6.1: Guard against .stats being None
             "llm_response_stats": (getattr(self.llm_generator, 'stats', None) or {"llm_calls": 0, "fallback_uses": 0}) if self.llm_generator else {"llm_calls": 0, "fallback_uses": 0},
             "llm_init_error": self.llm_init_error,
+            # v1.1.1.4: OE generation budget tracking for transparent user reporting
+            "oe_budget_exceeded": getattr(self, '_oe_budget_exceeded', False),
+            "oe_budget_switched_count": getattr(self, '_oe_budget_switched_count', 0),
             # v1.4.3: Column descriptions for data dictionary / codebook generation
             "column_descriptions": {col: desc for col, desc in self.column_info},
             # v1.4.11: Scale generation log — maps scale names to actual generated columns

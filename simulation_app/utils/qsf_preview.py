@@ -33,7 +33,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 # Version identifier to help track deployed code
-__version__ = "1.1.1.3"  # v1.1.1.3: Fix stuck generation, DV type auto-update, question purpose classification
+__version__ = "1.1.1.4"  # v1.1.1.4: Generation robustness, edge cases, budget tracking, auto-demographic detection
 
 
 # ============================================================================
