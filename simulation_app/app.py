@@ -54,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.1.1.6"
-BUILD_ID = "20260219-v11106-edge-case-hardening-dict-effect-sizes"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.1.1.7"
+BUILD_ID = "20260219-v11107-method-aware-progress-ui-llm-warning-guard"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -118,7 +118,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.1.1.6"  # v1.1.1.6: Edge case hardening, dict effect_sizes compat in metadata + methods report
+APP_VERSION = "1.1.1.7"  # v1.1.1.7: Method-aware progress UI, LLM warning guard for non-AI methods
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -11395,18 +11395,31 @@ if active_page == 3:
     # v1.1.0.9: Show prominent animated progress indicator IMMEDIATELY when generating
     # No time estimates — only real-time observation count (updated via callback)
     if is_generating:
+        # v1.1.1.7: Show which method is active in the progress banner
+        _banner_method_labels = {
+            "template": "Template Engine",
+            "experimental": "Adaptive Behavioral Engine",
+            "free_llm": "Built-in AI",
+            "own_api": "AI (your API key)",
+        }
+        _banner_method = _banner_method_labels.get(
+            st.session_state.get("generation_method", ""), ""
+        )
+        _banner_subtitle = "Creating realistic behavioral data. Progress updates below."
+        if _banner_method:
+            _banner_subtitle = f"Using <strong>{_banner_method}</strong>. Progress updates below."
         with status_placeholder.container():
-            st.markdown("""
+            st.markdown(f"""
             <style>
-                @keyframes pulse {
-                    0%, 100% { transform: scale(1); opacity: 1; }
-                    50% { transform: scale(1.1); opacity: 0.8; }
-                }
-                @keyframes spin {
-                    0% { transform: rotate(0deg); }
-                    100% { transform: rotate(360deg); }
-                }
-                .progress-spinner {
+                @keyframes pulse {{
+                    0%, 100% {{ transform: scale(1); opacity: 1; }}
+                    50% {{ transform: scale(1.1); opacity: 0.8; }}
+                }}
+                @keyframes spin {{
+                    0% {{ transform: rotate(0deg); }}
+                    100% {{ transform: rotate(360deg); }}
+                }}
+                .progress-spinner {{
                     display: inline-block;
                     width: 50px;
                     height: 50px;
@@ -11415,31 +11428,31 @@ if active_page == 3:
                     border-radius: 50%;
                     animation: spin 1s linear infinite;
                     margin-bottom: 15px;
-                }
-                .progress-container {
+                }}
+                .progress-container {{
                     text-align: center;
                     padding: 40px;
                     background: linear-gradient(135deg, #1e3a5f 0%, #2d5a87 100%);
                     border-radius: 15px;
                     margin: 20px 0;
                     box-shadow: 0 4px 15px rgba(0,0,0,0.2);
-                }
-                .progress-title {
+                }}
+                .progress-title {{
                     color: white;
                     margin: 0 0 10px 0;
                     font-size: 24px;
                     animation: pulse 2s ease-in-out infinite;
-                }
-                .progress-subtitle {
+                }}
+                .progress-subtitle {{
                     color: #a0c4e8;
                     font-size: 16px;
                     margin: 0;
-                }
+                }}
             </style>
             <div class="progress-container">
                 <div class="progress-spinner"></div>
                 <h2 class="progress-title">Generating Your Dataset...</h2>
-                <p class="progress-subtitle">Creating realistic behavioral data. Progress updates below.</p>
+                <p class="progress-subtitle">{_banner_subtitle}</p>
                 <p class="progress-subtitle" style="margin-top: 10px; font-size: 14px;">Please don't close or refresh this page.</p>
             </div>
             """, unsafe_allow_html=True)
@@ -11798,6 +11811,13 @@ if active_page == 3:
         # to exist when the callback runs (even if engine somehow triggers it early).
         _is_llm_method = st.session_state.get(_gen_method_key) in ("free_llm", "own_api")
         _has_oe_questions = bool(open_ended_questions_for_engine)
+        # v1.1.1.7: Method label for progress display (captured in closure)
+        _cb_method_label = {
+            "template": "Template Engine",
+            "experimental": "Adaptive Behavioral Engine",
+            "free_llm": "Built-in AI",
+            "own_api": "AI (your API key)",
+        }.get(st.session_state.get(_gen_method_key, ""), "")
 
         def _fmt_elapsed(seconds: float) -> str:
             """Format elapsed time as human-readable string."""
@@ -11904,8 +11924,16 @@ if active_page == 3:
                                 )
                         except Exception:
                             pass
+                    # v1.1.1.7: Show method name in the live progress counter
+                    _method_tag_html = ""
+                    if _cb_method_label:
+                        _method_tag_html = (
+                            f'<div style="font-size:0.8em;color:#166534;margin-bottom:4px;'
+                            f'font-weight:600;">{_cb_method_label}</div>'
+                        )
                     _progress_counter_placeholder.markdown(
                         f'<div style="text-align:center;padding:14px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;margin:8px 0;">'
+                        f'{_method_tag_html}'
                         f'<span style="font-size:1.6em;font-weight:700;color:#166534;">'
                         f'{current} of {total}</span>'
                         f'<span style="font-size:1em;color:#166534;"> participants simulated</span>'
@@ -11919,16 +11947,18 @@ if active_page == 3:
                 elif phase == "llm_prefill":
                     # v1.1.1.5: Progress during LLM pool prefill — prevents watchdog
                     # from misinterpreting a long prefill (up to 90s) as a stall.
-                    _pf_pct = int(((current + 1) / max(1, total)) * 100) if total > 0 else 0
-                    _progress_counter_placeholder.markdown(
-                        f'<div style="text-align:center;padding:10px;background:#f0f9ff;border-radius:8px;margin:8px 0;">'
-                        f'<span style="font-size:1.1em;color:#0369a1;">'
-                        f'Pre-filling AI response pool — question {current + 1} of {total}</span>'
-                        f'<div style="background:#dbeafe;border-radius:4px;height:6px;margin-top:8px;">'
-                        f'<div style="background:#3b82f6;width:{_pf_pct}%;height:100%;border-radius:4px;'
-                        f'transition:width 0.3s;"></div></div></div>',
-                        unsafe_allow_html=True,
-                    )
+                    # v1.1.1.7: Only show AI prefill message for AI methods.
+                    if _is_llm_method:
+                        _pf_pct = int(((current + 1) / max(1, total)) * 100) if total > 0 else 0
+                        _progress_counter_placeholder.markdown(
+                            f'<div style="text-align:center;padding:10px;background:#f0f9ff;border-radius:8px;margin:8px 0;">'
+                            f'<span style="font-size:1.1em;color:#0369a1;">'
+                            f'Pre-filling AI response pool — question {current + 1} of {total}</span>'
+                            f'<div style="background:#dbeafe;border-radius:4px;height:6px;margin-top:8px;">'
+                            f'<div style="background:#3b82f6;width:{_pf_pct}%;height:100%;border-radius:4px;'
+                            f'transition:width 0.3s;"></div></div></div>',
+                            unsafe_allow_html=True,
+                        )
                 elif phase == "socsim_enrichment":
                     _pct_s = int((current / max(1, total)) * 100) if total > 0 else 0
                     _progress_counter_placeholder.markdown(
@@ -12066,12 +12096,16 @@ if active_page == 3:
             status_placeholder.empty()
 
             # Show large, visible progress container
+            # v1.1.1.7: Include the selected method name so users see what they chose.
+            _progress_method_label = _method_spinner_labels.get(
+                st.session_state.get(_gen_method_key, "free_llm"), "Simulation"
+            )
             progress_container = st.container()
             with progress_container:
-                st.markdown("""
+                st.markdown(f"""
                 <div style="text-align: center; padding: 25px; background: linear-gradient(135deg, #1e3a5f 0%, #2d5a87 100%); border-radius: 15px; margin: 15px 0;">
                     <h3 style="color: white; margin: 0 0 8px 0;">Simulation In Progress</h3>
-                    <p style="color: #a0c4e8; font-size: 14px; margin: 0;">Generating realistic behavioral data for your experiment...</p>
+                    <p style="color: #a0c4e8; font-size: 14px; margin: 0;">Generating realistic behavioral data via <strong>{_progress_method_label}</strong>...</p>
                 </div>
                 """, unsafe_allow_html=True)
 
@@ -12134,9 +12168,18 @@ if active_page == 3:
             # v1.0.8.1: Real-time progress counter replaces static time estimates.
             # The progress callback on the engine updates _progress_counter_placeholder live.
             _gen_has_oe = bool(open_ended_questions_for_engine)
+            # v1.1.1.7: Spinner message reflects the SELECTED method, not always "AI text".
+            _sel_method = st.session_state.get(_gen_method_key, "free_llm")
+            _method_spinner_labels = {
+                "template": "Template Engine",
+                "experimental": "Adaptive Behavioral Engine",
+                "free_llm": "Built-in AI",
+                "own_api": "AI (your API key)",
+            }
+            _sel_method_label = _method_spinner_labels.get(_sel_method, _sel_method)
             _gen_spinner_msg = "Generating participant responses..."
             if _gen_has_oe:
-                _gen_spinner_msg = "Generating participant responses (AI text + numeric data)..."
+                _gen_spinner_msg = f"Generating participant responses via {_sel_method_label}..."
             else:
                 _gen_spinner_msg = "Generating numeric responses... This typically takes 5-15 seconds."
 
@@ -12204,7 +12247,9 @@ if active_page == 3:
 
             # v1.0.8.2: Post-generation LLM health diagnostic — detect issues and
             # show actionable notification for the user to switch methods if needed.
-            if _gen_has_oe and hasattr(engine, 'llm_generator') and engine.llm_generator is not None:
+            # v1.1.1.7: Only show for AI methods (free_llm, own_api). Template and
+            # Experimental methods intentionally use templates, so LLM stats are irrelevant.
+            if _gen_has_oe and _user_gen_method in ('free_llm', 'own_api') and hasattr(engine, 'llm_generator') and engine.llm_generator is not None:
                 _post_llm_stats = engine.llm_generator.stats
                 _post_pool_size = int(_post_llm_stats.get("pool_size", 0))
                 _post_llm_calls = int(_post_llm_stats.get("llm_calls", 0))
@@ -12382,10 +12427,11 @@ if active_page == 3:
             _save_admin_history()
 
             # v1.0.7.0: Store LLM exhaustion info — friendly language, not error language.
+            # v1.1.1.7: Only for AI methods — template/experimental intentionally skip LLM.
             _run_exhaustions = _llm_run_stats.get("provider_exhaustions", 0)
             _run_fallbacks = _llm_run_stats.get("fallback_uses", 0)
             _run_pool = _llm_run_stats.get("pool_size", 0)
-            if _run_exhaustions > 0 and _run_fallbacks > 0:
+            if _run_exhaustions > 0 and _run_fallbacks > 0 and _user_gen_method in ('free_llm', 'own_api'):
                 _fb_pct = (_run_fallbacks / max(1, _run_pool + _run_fallbacks)) * 100
                 _cum_exhaustions = st.session_state.get("_admin_total_exhaustions", 0)
                 st.session_state["_admin_total_exhaustions"] = _cum_exhaustions + _run_exhaustions
@@ -12893,8 +12939,10 @@ if active_page == 3:
         )
 
         # v1.0.7.1: Prominent LLM status note — shown before download, not hidden in expander
+        # v1.1.1.7: Only display for AI methods — template/experimental intentionally use templates.
         _post_gen_llm_note = st.session_state.get("_gen_llm_exhaustion_note", "")
-        if _post_gen_llm_note:
+        _post_gen_method = st.session_state.get("generation_method", "free_llm")
+        if _post_gen_llm_note and _post_gen_method in ("free_llm", "own_api"):
             st.markdown(
                 '<div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;'
                 'padding:12px 16px;margin:8px 0 12px 0;">'
@@ -13024,7 +13072,10 @@ if active_page == 3:
         # v1.2.5 / v1.0.6.7: Data Quality Report expander — includes validation warnings + LLM exhaustion notes
         quality_checks = st.session_state.get("_quality_checks", [])
         _gen_quality_notes = st.session_state.get("_gen_quality_notes", [])
-        _gen_llm_note = st.session_state.get("_gen_llm_exhaustion_note", "")
+        # v1.1.1.7: Only include LLM note for AI methods (not template/experimental)
+        _gen_llm_note = ""
+        if st.session_state.get("generation_method", "free_llm") in ("free_llm", "own_api"):
+            _gen_llm_note = st.session_state.get("_gen_llm_exhaustion_note", "")
         _has_quality_content = quality_checks or _gen_quality_notes or _gen_llm_note
         if _has_quality_content:
             with st.expander("📊 Data Quality Report", expanded=False):
