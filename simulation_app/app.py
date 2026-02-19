@@ -54,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.1.1.4"
-BUILD_ID = "20260219-v11104-generation-robustness-edge-cases-budget-tracking"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.1.1.5"
+BUILD_ID = "20260219-v11105-all-methods-hardened-template-skip-llm-budget-fix"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -118,7 +118,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.1.1.4"  # v1.1.1.4: Generation robustness, edge cases, budget tracking, auto-demographic detection
+APP_VERSION = "1.1.1.5"  # v1.1.1.5: All 4 methods hardened, template skips LLM, OE budget fix, prefill progress
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -11742,7 +11742,10 @@ if active_page == 3:
                     except (ValueError, TypeError):
                         demographics[key] = {"age_mean": 35, "age_sd": 12, "gender_quota": 50}.get(key, 0)
 
-        # v1.4.9: Ensure user's API key (if provided) is in env for the engine
+        # v1.1.1.5: Always clear stale API key env var first, then set if provided.
+        # Previous bug: if user A set a key, then user B's session could inherit it
+        # from the process environment, leading to cross-session key leakage.
+        os.environ.pop("LLM_API_KEY", None)
         _user_llm_key = st.session_state.get("user_llm_api_key", "") or st.session_state.get("user_groq_api_key", "")
         if _user_llm_key:
             os.environ["LLM_API_KEY"] = _user_llm_key
@@ -11790,6 +11793,11 @@ if active_page == 3:
         # scenario where the UI spinner shows "Generating..." for 12+ hours.
         _GLOBAL_GENERATION_TIMEOUT = 600.0  # 10 minutes absolute max
         _generation_timed_out = [False]  # mutable ref for closure
+
+        # v1.1.1.5: Define these BEFORE the callback closure so they're guaranteed
+        # to exist when the callback runs (even if engine somehow triggers it early).
+        _is_llm_method = st.session_state.get(_gen_method_key) in ("free_llm", "own_api")
+        _has_oe_questions = bool(open_ended_questions_for_engine)
 
         def _fmt_elapsed(seconds: float) -> str:
             """Format elapsed time as human-readable string."""
@@ -11908,6 +11916,19 @@ if active_page == 3:
                         f'transition:width 0.3s;"></div></div></div>',
                         unsafe_allow_html=True,
                     )
+                elif phase == "llm_prefill":
+                    # v1.1.1.5: Progress during LLM pool prefill — prevents watchdog
+                    # from misinterpreting a long prefill (up to 90s) as a stall.
+                    _pf_pct = int(((current + 1) / max(1, total)) * 100) if total > 0 else 0
+                    _progress_counter_placeholder.markdown(
+                        f'<div style="text-align:center;padding:10px;background:#f0f9ff;border-radius:8px;margin:8px 0;">'
+                        f'<span style="font-size:1.1em;color:#0369a1;">'
+                        f'Pre-filling AI response pool — question {current + 1} of {total}</span>'
+                        f'<div style="background:#dbeafe;border-radius:4px;height:6px;margin-top:8px;">'
+                        f'<div style="background:#3b82f6;width:{_pf_pct}%;height:100%;border-radius:4px;'
+                        f'transition:width 0.3s;"></div></div></div>',
+                        unsafe_allow_html=True,
+                    )
                 elif phase == "socsim_enrichment":
                     _pct_s = int((current / max(1, total)) * 100) if total > 0 else 0
                     _progress_counter_placeholder.markdown(
@@ -11985,8 +12006,7 @@ if active_page == 3:
 
         # v1.1.1.0: Pre-flight LLM health check — test providers BEFORE starting
         # generation so users get immediate feedback instead of waiting minutes.
-        _is_llm_method = st.session_state.get(_gen_method_key) in ("free_llm", "own_api")
-        _has_oe_questions = bool(open_ended_questions_for_engine)
+        # (_is_llm_method and _has_oe_questions defined above the callback closure)
         if _is_llm_method and _has_oe_questions and hasattr(engine, 'llm_generator') and engine.llm_generator is not None:
             progress_bar.progress(8, text="Testing AI provider connection...")
             _health = engine.llm_generator.health_check(timeout=12)
