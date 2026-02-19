@@ -348,10 +348,12 @@ def run_socsim_enrichment(
                     continue
 
                 # Run socsim simulation
+                # v1.1.1.5: Guard against None seed (edge case from engine init)
+                _cond_seed = (seed or 0) + abs(hash(condition)) % 10000
                 result: SimulationResult = simulate(
                     spec=spec,
                     n=n_cond,
-                    seed=seed + hash(condition) % 10000,
+                    seed=_cond_seed,
                     priors_path=priors_path,
                     latent_classes_path=latent_classes_path,
                     evidence_store_path=evidence_store_path,
@@ -409,12 +411,17 @@ def run_socsim_enrichment(
                         "condition": condition,
                         "n_enriched": min(n_cond, len(socsim_values)),
                         "action_key": _primary_action_key,
-                        "action_mean": float(np.mean(socsim_values)),
+                        # v1.1.1.5: Guard against empty list → NaN (breaks JSON serialization)
+                        "action_mean": float(np.mean(socsim_values)) if socsim_values else 0.0,
                     })
+
+                # v1.1.1.5: Guard against missing result.summary (can be None if socsim
+                # returns a partial result without raising an exception).
+                _result_summary = getattr(result, 'summary', None) or {}
 
                 # Store traces
                 socsim_metadata["traces"][f"{game_name}_{condition}"] = {
-                    "summary": result.summary,
+                    "summary": _result_summary,
                     "sample_trace": json.loads(result.rows[0].get("trace_json", "{}")) if result.rows else {},
                 }
 
@@ -423,8 +430,8 @@ def run_socsim_enrichment(
                     "game": game_name,
                     "condition": condition,
                     "n": n_cond,
-                    "latent_class_counts": result.summary.get("latent_class_counts", {}),
-                    "action_means": result.summary.get("action_means", {}),
+                    "latent_class_counts": _result_summary.get("latent_class_counts", {}) if isinstance(_result_summary, dict) else {},
+                    "action_means": _result_summary.get("action_means", {}) if isinstance(_result_summary, dict) else {},
                 })
 
             except Exception as e:
@@ -474,7 +481,8 @@ def _scale_to_range(
     dst_max: float,
 ) -> List[float]:
     """Scale values from [src_min, src_max] to [dst_min, dst_max]."""
-    if src_max == src_min:
+    # v1.1.1.5: Guard against float precision issues where src_max ≈ src_min
+    if abs(src_max - src_min) < 1e-12:
         return [float((dst_min + dst_max) / 2)] * len(values)
 
     result = []

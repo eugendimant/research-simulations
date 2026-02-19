@@ -2743,8 +2743,9 @@ class EnhancedSimulationEngine:
             if str(c).replace('\xa0', ' ').strip()
         ]
         if not self.conditions:
-            if hasattr(self, '_log'):
-                self._log("WARNING: No conditions specified - defaulting to single 'Condition A'. Results may not match intended design.")
+            # v1.1.1.5: Use logger instead of self._log() here — validation_log
+            # is not yet initialized at this point in __init__.
+            logger.warning("No conditions specified — defaulting to single 'Condition A'")
             self.conditions = ["Condition A"]
         self.factors = _normalize_factors(factors, self.conditions)
         self.scales = _normalize_scales(scales)
@@ -8809,8 +8810,11 @@ class EnhancedSimulationEngine:
         elif any(w in _qt_early for w in ('evaluate', 'rate', 'assess')):
             _early_intent = "evaluation"
 
+        # v1.1.1.5: Skip LLM entirely when template fallback is enabled (user chose
+        # "Template Engine" or "Adaptive Behavioral Engine").  Trying LLM here wastes
+        # time and can trigger provider errors that obscure the actual generation path.
         # v1.4.9: Try LLM generator first (question-specific, persona-aligned)
-        if self.llm_generator is not None:
+        if self.llm_generator is not None and not self.allow_template_fallback:
             try:
                 resp = self.llm_generator.generate(
                     question_text=question_text or response_type,
@@ -10620,7 +10624,10 @@ class EnhancedSimulationEngine:
         # With 90s, even slow providers (~15s/call) can fill 6+ buckets, which
         # dramatically reduces expensive on-demand generation during the main loop.
         _PREFILL_TOTAL_BUDGET = 90.0  # seconds
-        if self.llm_generator and self.open_ended_questions:
+        # v1.1.1.5: Skip prefill entirely when template fallback is enabled (user chose
+        # "Template Engine" or "Adaptive Behavioral Engine").  No point pre-filling
+        # an LLM pool that won't be used — saves 0-90s of wasted API calls.
+        if self.llm_generator and self.open_ended_questions and not self.allow_template_fallback:
             try:
                 self.llm_generator.reset_providers()
                 self._log("LLM providers reset before prefill (clean state)")
@@ -10631,7 +10638,11 @@ class EnhancedSimulationEngine:
             try:
                 _unique_conditions = list(set(conditions.tolist()))
                 _sents = ["very_positive", "positive", "neutral", "negative", "very_negative"]
-                for oq in self.open_ended_questions:
+                _prefill_oe_count = len(self.open_ended_questions)
+                for _pf_idx, oq in enumerate(self.open_ended_questions):
+                    # v1.1.1.5: Report progress during prefill so the watchdog thread
+                    # doesn't mistake a long prefill (up to 90s) for a stall.
+                    _report_progress("llm_prefill", _pf_idx, _prefill_oe_count)
                     # v1.1.1.3: Skip demographic questions in LLM prefill — they generate
                     # numeric/categorical data, not text.  Also prevents demographic
                     # variable names (e.g. "Age") from polluting topic inference.
@@ -11005,14 +11016,25 @@ class EnhancedSimulationEngine:
                     # Fast response — reset consecutive slow counter
                     _consecutive_slow_participants = 0
 
-                # v1.1.1.2: Track when participants fall back due to budget/timeout
-                if _oe_budget_exceeded:
-                    _oe_budget_switched_count += 1
+                # v1.1.1.5: Track template fallbacks — count ONCE per participant
+                # that actually used a template/last-resort instead of LLM.
+                # Previous bug: double-counted when budget exceeded AND response empty.
+                _was_template_fallback = False
+                if _oe_budget_exceeded and not _text_str.strip():
+                    # Budget exceeded and no LLM response — will fall through to last resort
+                    _was_template_fallback = True
+                elif _oe_budget_exceeded and _text_str.strip():
+                    # Budget exceeded but response already generated (from prior path) — check source
+                    # If text came from non-LLM source, count it
+                    pass  # Don't count — the response exists
+                elif not _oe_budget_exceeded and not _text_str.strip():
+                    # Budget NOT exceeded but still empty — genuine fallback
+                    _was_template_fallback = True
 
                 # v1.0.7.2: NEVER leave OE response empty when participant should have answered.
                 # If all generators failed or returned empty, use the absolute last-resort.
                 if not _text_str.strip():
-                    _oe_budget_switched_count += 1  # v1.1.1.2: Count explicit fallbacks too
+                    _was_template_fallback = True  # Confirmed: falling back to last-resort
                     try:
                         _sentiment_for_lr = "neutral"
                         if response_mean is not None:
@@ -11026,6 +11048,10 @@ class EnhancedSimulationEngine:
                     except Exception as _lr_err:
                         logger.error("Even last-resort OE generation failed for participant %d: %s", i + 1, _lr_err)
                         _text_str = "I shared my honest thoughts on this."
+
+                # v1.1.1.5: Increment fallback count exactly ONCE per participant
+                if _was_template_fallback:
+                    _oe_budget_switched_count += 1
 
                 responses.append(_text_str)
 
