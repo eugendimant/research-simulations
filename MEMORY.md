@@ -1,5 +1,46 @@
 # Memory
 
+## WORKING VERSION — v1.1.1.8 (2026-02-19)
+
+**Git tag:** `working-version`
+**Commit:** `bc0019e`
+**Status:** User-verified stable. All 4 generation methods working.
+
+### How to Roll Back
+If any future update breaks the app, the user will say **"reinstate the Working Version"**. Do this:
+
+```bash
+# 1. Save current changes to a patch file for later
+git diff HEAD > /tmp/pending_changes.patch
+git stash --include-untracked -m "Changes since Working Version"
+
+# 2. Reset to the Working Version
+git checkout working-version -- simulation_app/ tests/
+
+# 3. Commit the rollback
+git add -A && git commit -m "Rollback to Working Version v1.1.1.8"
+git push -u origin <current-branch>
+```
+
+Then document what was attempted in the **Pending Improvements** section below so it can be retried later.
+
+### How to Update the Working Version
+When the user says **"overwrite the Working Version"** or **"make this the new Working Version"**:
+
+```bash
+git tag -d working-version
+git tag -a "working-version" -m "Working Version <new-version> — frozen stable state (<date>)"
+git push origin :refs/tags/working-version
+git push origin working-version
+```
+
+Then update this section with the new version/commit.
+
+### Pending Improvements (not yet in Working Version)
+*(Empty — add entries here when rolling back changes that should be retried later)*
+
+---
+
 ## 2026-02-16 — LLM Generation Anti-Hang Overhaul (v1.1.1.0 → v1.1.1.2)
 
 ### Critical Bug Fixed: 12-Hour Generation Hang
