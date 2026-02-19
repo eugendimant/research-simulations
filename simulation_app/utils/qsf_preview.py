@@ -33,7 +33,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 # Version identifier to help track deployed code
-__version__ = "1.1.1.9"  # v1.1.1.9: Show correct selected method card during generation
+__version__ = "1.2.0.0"  # v1.2.0.0: Fix multi-OE-question LLM — per-question budget reset
 
 
 # ============================================================================
