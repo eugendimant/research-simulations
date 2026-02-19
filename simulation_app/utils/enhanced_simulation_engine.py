@@ -293,6 +293,38 @@ import logging  # must be adjacent to logger — do NOT separate these two lines
 logger = logging.getLogger(__name__)
 
 
+# v1.2.0.0: Custom exception for mid-generation LLM exhaustion.
+# Carries partial data so app.py can prompt the user for a fallback choice
+# instead of silently degrading to templates.
+class LLMExhaustedMidGeneration(Exception):
+    """Raised when LLM providers are exhausted during OE generation.
+
+    Attributes:
+        partial_data: Dict of column_name → list of values generated so far.
+        completed_oe_columns: List of OE column names that were fully generated.
+        remaining_questions: List of OE question dicts still needing generation.
+        engine_state: Dict of engine state needed to resume generation.
+        generation_source_map: Dict mapping column_name → list of per-participant
+            source labels ("AI" or "Template") for completed OE columns.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        partial_data: Dict[str, list],
+        completed_oe_columns: List[str],
+        remaining_questions: List[Dict[str, Any]],
+        engine_state: Dict[str, Any],
+        generation_source_map: Dict[str, List[str]],
+    ):
+        super().__init__(message)
+        self.partial_data = partial_data
+        self.completed_oe_columns = completed_oe_columns
+        self.remaining_questions = remaining_questions
+        self.engine_state = engine_state
+        self.generation_source_map = generation_source_map
+
+
 def _word_in(keyword: str, text: str) -> bool:
     """Check if keyword appears in text as a whole word (word-boundary matching).
 
@@ -8686,6 +8718,8 @@ class EnhancedSimulationEngine:
         - Response sentiment (based on scale responses)
         - Behavioral profile (response pattern, intensity, consistency)
         """
+        # v1.2.0.0: Default source is "Template"; overridden to "AI" if LLM succeeds.
+        self._last_oe_source = "Template"
         response_type = str(question_spec.get("type", "general"))
         question_text = str(question_spec.get("question_text", ""))
         _original_question_text = question_text  # v1.0.4.7: Preserve before context embedding
@@ -8838,6 +8872,7 @@ class EnhancedSimulationEngine:
                     behavioral_profile=behavioral_profile,
                 )
                 if resp and resp.strip():
+                    self._last_oe_source = "AI"
                     return resp
             except Exception as _llm_gen_err:
                 # v1.2.0.0: NEVER re-raise "template fallback is disabled" here.
@@ -8873,6 +8908,7 @@ class EnhancedSimulationEngine:
                     question_context=question_context,  # v1.0.8.4: Pass raw context
                 )
                 if _comp_result and _comp_result.strip():
+                    self._last_oe_source = "Template"
                     return _comp_result
                 # v1.0.7.2: Empty result — fall through to text_generator
                 logger.debug("ComprehensiveResponseGenerator returned empty for '%s', falling through to text_generator",
@@ -10799,6 +10835,10 @@ class EnhancedSimulationEngine:
         _report_progress("open_ended", 0, _total_oe)
         _oe_budget_exceeded_any = False  # Track if ANY question hit the budget
         _oe_all_questions_wall_start = time.time()  # Wall-clock start for total elapsed logging
+        # v1.2.0.0: Per-participant generation source tracking.
+        # Maps OE column_name → list of "AI" or "Template" per participant.
+        _generation_source_map: Dict[str, List[str]] = {}
+        _completed_oe_columns: List[str] = []  # Columns fully generated so far
         for _oe_idx, q in enumerate(self.open_ended_questions):
             # v1.2.0.0: Reset per-question budget, timer, and LLM state.
             # Each OE question gets a FRESH 180s budget and a fresh LLM chance.
@@ -10807,11 +10847,38 @@ class EnhancedSimulationEngine:
             _oe_gen_wall_start = time.time()
             _oe_budget_exceeded = False
             _consecutive_slow_participants = 0
+            # v1.2.0.0: If LLM was force-disabled during the PREVIOUS question
+            # and template fallback is NOT allowed (user chose "Built-in AI"),
+            # raise LLMExhaustedMidGeneration so app.py can prompt the user
+            # to provide their own API key or choose a fallback method.
+            # This ONLY fires on Q2+ (not Q1, since Q1 hasn't had a chance yet).
+            if (_oe_idx > 0
+                    and self.llm_generator
+                    and getattr(self.llm_generator, '_force_disabled', False)
+                    and not self.allow_template_fallback):
+                _remaining_qs = list(self.open_ended_questions[_oe_idx:])
+                self._log(
+                    f"OE Q{_oe_idx+1}/{_total_oe}: LLM exhausted after Q{_oe_idx}. "
+                    f"Raising LLMExhaustedMidGeneration — {len(_remaining_qs)} question(s) remain."
+                )
+                raise LLMExhaustedMidGeneration(
+                    message=(
+                        f"Free AI providers were exhausted after generating question {_oe_idx} "
+                        f"of {_total_oe}. {len(_remaining_qs)} question(s) still need generation."
+                    ),
+                    partial_data=dict(data),
+                    completed_oe_columns=list(_completed_oe_columns),
+                    remaining_questions=_remaining_qs,
+                    engine_state={
+                        "column_info": list(self.column_info),
+                        "participant_voice_memory": dict(_participant_voice_memory),
+                        "oe_budget_switched_count": _oe_budget_switched_count,
+                    },
+                    generation_source_map=dict(_generation_source_map),
+                )
+
             # Re-enable LLM for this question if it was force-disabled by the
-            # PREVIOUS question's budget/timeout.  This is safe because each
-            # question has its own independent budget — a slow provider on Q1
-            # doesn't necessarily mean Q2 will also be slow (different pool entries,
-            # different prompt, possibly recovered provider).
+            # PREVIOUS question's budget/timeout AND template fallback IS allowed.
             if self.llm_generator and getattr(self.llm_generator, '_force_disabled', False):
                 self._log(f"OE Q{_oe_idx+1}/{_total_oe}: Re-enabling LLM (was force-disabled by previous question)")
                 self.llm_generator._force_disabled = False
@@ -10903,6 +10970,7 @@ class EnhancedSimulationEngine:
                 continue  # Skip normal OE text generation
 
             responses: List[str] = []
+            _sources_for_col: List[str] = []  # v1.2.0.0: per-participant source tracking
             for i in range(n):
                 # v1.1.1.2: Report OE progress EVERY participant (not every 5%).
                 # During OE generation, each participant can take 5-30s with LLM.
@@ -11086,6 +11154,12 @@ class EnhancedSimulationEngine:
 
                 responses.append(_text_str)
 
+                # v1.2.0.0: Track source for this participant/question
+                _participant_source = getattr(self, '_last_oe_source', 'Template')
+                if _was_template_fallback:
+                    _participant_source = "Template"
+                _sources_for_col.append(_participant_source)
+
                 # v1.0.5.0: Update voice memory for this participant
                 if _text_str.strip():
                     if i not in _participant_voice_memory:
@@ -11125,6 +11199,8 @@ class EnhancedSimulationEngine:
                         _vm['tone'] = 'neutral'
 
             data[col_name] = responses
+            _generation_source_map[col_name] = _sources_for_col
+            _completed_oe_columns.append(col_name)
             q_desc = q.get("question_text", "")[:50] if q.get("question_text") else q.get('type', 'text')
             self.column_info.append((col_name, f"Open-ended: {q_desc}"))
             # v1.2.0.0: Accumulate budget-exceeded flag across questions
@@ -11154,6 +11230,37 @@ class EnhancedSimulationEngine:
             )
         else:
             self._log(f"OE generation completed normally in {_oe_total_elapsed:.1f}s")
+
+        # v1.2.0.0: Add per-participant _Generation_Source column to the output.
+        # This tells the user which participants got AI-generated OE responses vs
+        # template-generated ones (so they can filter/identify rows later).
+        # The source is determined by the FIRST OE question — if a participant got
+        # AI for Q1, they're marked "AI" even if Q2 used template (which shouldn't
+        # happen now with per-question budget reset, but is a safety net).
+        # If multiple OE questions, use the MAJORITY source across questions.
+        if _generation_source_map and _completed_oe_columns:
+            _per_participant_source: List[str] = []
+            for _pi in range(n):
+                _ai_count = 0
+                _total_count = 0
+                for _src_col in _completed_oe_columns:
+                    _src_list = _generation_source_map.get(_src_col, [])
+                    if _pi < len(_src_list):
+                        _total_count += 1
+                        if _src_list[_pi] == "AI":
+                            _ai_count += 1
+                if _total_count == 0:
+                    _per_participant_source.append("Template")
+                elif _ai_count == _total_count:
+                    _per_participant_source.append("AI")
+                elif _ai_count == 0:
+                    _per_participant_source.append("Template")
+                else:
+                    _per_participant_source.append("Mixed")
+            data["_Generation_Source"] = _per_participant_source
+            self.column_info.append(("_Generation_Source", "AI vs Template source indicator"))
+            # Also store per-question source map in engine for metadata
+            self._generation_source_map = _generation_source_map
 
         # v1.0.0 CRITICAL FIX: Post-processing validation to detect and fix duplicate responses
         # Check each participant's responses across all open-ended questions
