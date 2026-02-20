@@ -54,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.2.0.3"
-BUILD_ID = "20260219-v12003-engine-init-error-handling"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.2.0.4"
+BUILD_ID = "20260220-v12004-exhaustion-recovery-demographics-error-pipeline"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -118,7 +118,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.2.0.3"  # v1.2.0.3: Engine init error handling + unified try block
+APP_VERSION = "1.2.0.4"  # v1.2.0.4: Exhaustion recovery, demographics, error pipeline
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -126,6 +126,17 @@ BASE_STORAGE.mkdir(parents=True, exist_ok=True)
 SIM_RUNS_ROOT = BASE_STORAGE / "simulation_runs"
 SIM_RUN_AUDIT_STATE_FILE = SIM_RUNS_ROOT / ".run_audit_state.json"
 SIM_RUN_IMPROVEMENT_LOG = SIM_RUNS_ROOT / "continuous_improvement_log.txt"
+
+# v1.2.0.4: Self-healing pipeline — check for pending error logs on startup.
+# If there are unresolved errors from previous runs, generates a PENDING_FIXES.md
+# report that an AI agent or developer reads during software updates.
+try:
+    from utils.self_healing import check_and_report as _self_heal_check
+    _self_heal_result = _self_heal_check(APP_VERSION)
+    if _self_heal_result:
+        _log(_self_heal_result, level="info")
+except Exception:
+    pass  # Self-healing must never crash the app
 
 
 # ---------------------------------------------------------------------------
@@ -4129,7 +4140,10 @@ def _preview_to_engine_inputs(preview: QSFPreviewResult) -> Dict[str, Any]:
                 "variable_name": name,
                 "num_items": max(1, num_items),
                 "scale_points": max(2, min(1001, scale_points)),
+                "scale_min": s.get("scale_min", 1),
+                "scale_max": s.get("scale_max", scale_points),
                 "reverse_items": s.get("reverse_items", []) or [],
+                "type": s.get("type", "likert"),
                 "detected_from_qsf": s.get("scale_points") is not None,
                 "_validated": True,
             }
@@ -4138,7 +4152,7 @@ def _preview_to_engine_inputs(preview: QSFPreviewResult) -> Dict[str, Any]:
     # Only add default if NO scales were detected at all
     # This prevents fabricating extra DVs
     if not scales:
-        scales = [{"name": "Main_DV", "variable_name": "Main_DV", "num_items": 5, "scale_points": 7, "reverse_items": [], "detected_from_qsf": False, "_validated": True}]
+        scales = [{"name": "Main_DV", "variable_name": "Main_DV", "num_items": 5, "scale_points": 7, "scale_min": 1, "scale_max": 7, "type": "likert", "reverse_items": [], "detected_from_qsf": False, "_validated": True}]
 
     open_ended = getattr(preview, "open_ended_questions", None) or []
 
@@ -7148,8 +7162,8 @@ def _render_admin_dashboard() -> None:
         st.metric("Template Fallback", _fb_pct)
 
     # ── Tabs ──────────────────────────────────────────────────────────
-    _tab_llm, _tab_failures, _tab_history, _tab_emails, _tab_session, _tab_system = st.tabs([
-        "LLM Pipeline", "Failure Analytics", "Simulation History", "User Emails", "Session State", "System Info"
+    _tab_llm, _tab_failures, _tab_history, _tab_emails, _tab_session, _tab_system, _tab_errors = st.tabs([
+        "LLM Pipeline", "Failure Analytics", "Simulation History", "User Emails", "Session State", "System Info", "Error Logs"
     ])
 
     # ── TAB 1: LLM Pipeline ──────────────────────────────────────────
@@ -7533,6 +7547,72 @@ def _render_admin_dashboard() -> None:
             })
         st.dataframe(_quota_view, use_container_width=True, hide_index=True)
         st.caption("Assumption check: default batch size is 20. Adaptive fallback now automatically retries smaller batches (10/5/1), so batch size will not block OE completion.")
+
+    # ── TAB 7: Error Logs (Self-Healing Pipeline) ──────────────────────
+    with _tab_errors:
+        st.markdown("### Error Log Pipeline")
+        st.caption("Automatically captured generation errors. Pending errors are consumed by the self-healing pipeline during software updates.")
+        try:
+            from utils.error_logger import get_error_summary, get_pending_errors, mark_error_fixed, mark_error_acknowledged, generate_fix_report
+            _err_summary = get_error_summary()
+            _err_cols = st.columns(4)
+            _err_cols[0].metric("Total logged", _err_summary.get("total_logged", 0))
+            _err_cols[1].metric("Pending", _err_summary.get("pending_count", 0))
+            _err_cols[2].metric("Fixed", _err_summary.get("fixed_count", 0))
+            _err_cols[3].metric("Acknowledged", _err_summary.get("acknowledged_count", 0))
+
+            if _err_summary.get("errors_by_phase"):
+                st.markdown("**Errors by phase:**")
+                for _phase, _cnt in _err_summary["errors_by_phase"].items():
+                    st.markdown(f"- `{_phase}`: {_cnt}")
+
+            _pending = get_pending_errors()
+            if _pending:
+                st.markdown(f"### Pending Errors ({len(_pending)})")
+                for _pe in _pending:
+                    with st.expander(f"[{_pe.get('error_type', '?')}] {_pe.get('error_message', '')[:80]} (x{_pe.get('count', 1)})"):
+                        st.markdown(f"**ID:** `{_pe.get('id', '?')}`")
+                        st.markdown(f"**Phase:** {_pe.get('phase', '?')} | **Method:** {_pe.get('generation_method', '?')}")
+                        st.markdown(f"**First:** {_pe.get('first_seen', '?')} | **Last:** {_pe.get('last_seen', '?')}")
+
+                        # Detail view
+                        from utils.error_logger import get_error_detail
+                        _detail = get_error_detail(_pe["id"])
+                        if _detail and _detail.get("traceback"):
+                            st.code(_detail["traceback"][:3000], language="python")
+                        if _detail and _detail.get("context"):
+                            st.json(_detail["context"])
+
+                        _ack_col, _fix_col = st.columns(2)
+                        with _ack_col:
+                            if st.button("Acknowledge", key=f"_err_ack_{_pe['id']}"):
+                                mark_error_acknowledged(_pe["id"])
+                                st.rerun()
+                        with _fix_col:
+                            if st.button(f"Mark fixed (v{APP_VERSION})", key=f"_err_fix_{_pe['id']}"):
+                                mark_error_fixed(_pe["id"], APP_VERSION)
+                                st.rerun()
+
+                # Generate fix report for the self-healing pipeline
+                st.markdown("---")
+                if st.button("Generate Fix Report", key="_gen_fix_report",
+                             help="Generate a report of all pending errors for the AI agent to fix"):
+                    _report = generate_fix_report()
+                    st.markdown(_report)
+                    st.download_button(
+                        "Download Fix Report",
+                        data=_report.encode("utf-8"),
+                        file_name="error_fix_report.md",
+                        mime="text/markdown",
+                        key="_dl_fix_report",
+                    )
+            else:
+                st.success("No pending errors. All clear!")
+
+            st.markdown("---")
+            st.markdown(f"**Last updated:** {_err_summary.get('last_updated', 'Never')}")
+        except Exception as _err_load_exc:
+            st.error(f"Could not load error logs: {_err_load_exc}")
 
     # ── Logout ────────────────────────────────────────────────────────
     st.markdown("---")
@@ -9583,6 +9663,19 @@ if active_page == 2:
 
             for i, scale in enumerate(confirmed_scales):
                 dv_type = scale.get("type", "likert")
+                # v1.2.0.4: Auto-correct type based on structural properties.
+                # A 1-item scale should show as "Single Item" regardless of
+                # what the QSF parser detected (e.g., 'likert' for a single
+                # choice question, or 'slider' for a 1-item slider).
+                _n_items = scale.get("num_items", 1)
+                try:
+                    _n_items = int(_n_items)
+                except (ValueError, TypeError):
+                    _n_items = 1
+                if _n_items == 1 and dv_type in ("likert", "slider", "numeric_input"):
+                    dv_type = "single_item"
+                elif _n_items > 1 and dv_type == "single_item":
+                    dv_type = "numbered_items"
                 type_badge = type_badges.get(dv_type, "📊 Scale")
 
                 # Get item names and scale info for display
@@ -9835,6 +9928,183 @@ if active_page == 2:
                 unsafe_allow_html=True,
             )
         st.session_state["scales_confirmed"] = scales_confirmed
+
+        # ========================================
+        # STEP 4b: DEMOGRAPHIC VARIABLES (optional)
+        # v1.2.0.4: Let users add custom demographic columns (political orientation,
+        # education, ethnicity, etc.) that appear in the output alongside Age/Gender.
+        # ========================================
+        st.markdown("")
+        _custom_demos = st.session_state.get("custom_demographics", [])
+        _demo_header = f"#### Demographic Variables ({len(_custom_demos)})" if _custom_demos else "#### Demographic Variables"
+        st.markdown(_demo_header)
+
+        # Show removal notice
+        _demo_removal_notice = st.session_state.pop("_demo_removal_notice", None)
+        if _demo_removal_notice:
+            st.info(_demo_removal_notice)
+
+        _demo_expander_open = st.session_state.pop("_demo_keep_expanded", False) or False
+        with st.expander(
+            f"Add demographic columns ({len(_custom_demos)}) — beyond the built-in Age & Gender"
+            if _custom_demos
+            else "Add demographic columns (optional) — e.g., political orientation, education, ethnicity",
+            expanded=_demo_expander_open,
+        ):
+            st.caption("Age and Gender are always included. Add additional demographic variables here.")
+
+            # Predefined demographic templates for quick add
+            _DEMO_TEMPLATES: Dict[str, Dict[str, Any]] = {
+                "Political Orientation": {
+                    "name": "Political_Orientation",
+                    "demo_type": "ordinal",
+                    "options": ["Very Liberal", "Liberal", "Slightly Liberal", "Moderate", "Slightly Conservative", "Conservative", "Very Conservative"],
+                    "description": "Self-reported political orientation on 7-point scale",
+                },
+                "Education Level": {
+                    "name": "Education",
+                    "demo_type": "ordinal",
+                    "options": ["High School", "Some College", "Associate's", "Bachelor's", "Master's", "Doctorate"],
+                    "description": "Highest educational attainment",
+                },
+                "Ethnicity (US Census)": {
+                    "name": "Ethnicity",
+                    "demo_type": "categorical",
+                    "options": ["White", "Black or African American", "Hispanic or Latino", "Asian", "Other"],
+                    "weights": [57.8, 12.1, 18.7, 5.9, 5.5],
+                    "description": "Self-reported ethnicity (US Census categories)",
+                },
+                "Household Income": {
+                    "name": "Household_Income",
+                    "demo_type": "categorical",
+                    "options": ["Under $25K", "$25K-$50K", "$50K-$75K", "$75K-$100K", "$100K-$150K", "Over $150K"],
+                    "weights": [18, 22, 20, 16, 14, 10],
+                    "description": "Approximate annual household income bracket",
+                },
+                "Employment Status": {
+                    "name": "Employment_Status",
+                    "demo_type": "categorical",
+                    "options": ["Full-time", "Part-time", "Self-employed", "Unemployed", "Student", "Retired"],
+                    "weights": [45, 12, 8, 7, 18, 10],
+                    "description": "Current employment status",
+                },
+                "Religion": {
+                    "name": "Religion",
+                    "demo_type": "categorical",
+                    "options": ["Christianity", "Islam", "Judaism", "Hinduism", "Buddhism", "None/Atheist", "Other"],
+                    "weights": [65, 3, 2, 2, 1, 23, 4],
+                    "description": "Self-reported religious affiliation",
+                },
+                "Party Identification (US)": {
+                    "name": "Party_ID",
+                    "demo_type": "categorical",
+                    "options": ["Strong Democrat", "Democrat", "Lean Democrat", "Independent", "Lean Republican", "Republican", "Strong Republican"],
+                    "weights": [14, 14, 10, 12, 10, 14, 14],
+                    "description": "US political party identification (7-point scale)",
+                },
+            }
+
+            # Quick-add buttons
+            _existing_names = {d.get("name", "").lower() for d in _custom_demos}
+            _available_templates = {k: v for k, v in _DEMO_TEMPLATES.items()
+                                    if v["name"].lower() not in _existing_names}
+            if _available_templates:
+                st.markdown("**Quick add:**")
+                _demo_btn_cols = st.columns(min(4, len(_available_templates)))
+                for _bi, (_t_name, _t_spec) in enumerate(_available_templates.items()):
+                    with _demo_btn_cols[_bi % len(_demo_btn_cols)]:
+                        if st.button(f"+ {_t_name}", key=f"_demo_quick_{_bi}",
+                                     use_container_width=True):
+                            _custom_demos.append(dict(_t_spec))
+                            st.session_state["custom_demographics"] = _custom_demos
+                            st.session_state["_demo_keep_expanded"] = True
+                            st.rerun()
+
+            # Display existing demographic variables
+            if _custom_demos:
+                st.markdown(f"**{len(_custom_demos)} custom demographic variable(s):**")
+                _demos_to_remove: List[int] = []
+                for _di, _dvar in enumerate(_custom_demos):
+                    _d_cols = st.columns([2.5, 1.5, 3, 0.5])
+                    with _d_cols[0]:
+                        _new_name = st.text_input(
+                            "Column name", value=_dvar.get("name", ""),
+                            key=f"_demo_name_{_di}",
+                            label_visibility="collapsed",
+                        )
+                        _custom_demos[_di]["name"] = _new_name
+                    with _d_cols[1]:
+                        _dtype = _dvar.get("demo_type", "categorical")
+                        st.caption(f"{_dtype.title()} · {len(_dvar.get('options', []))} levels" if _dvar.get("options") else _dtype.title())
+                    with _d_cols[2]:
+                        _opts = _dvar.get("options", [])
+                        if _opts:
+                            st.caption(", ".join(str(o) for o in _opts[:4]) + ("..." if len(_opts) > 4 else ""))
+                        else:
+                            _d_mean = _dvar.get("mean", 50)
+                            _d_sd = _dvar.get("sd", 15)
+                            st.caption(f"M={_d_mean}, SD={_d_sd}")
+                    with _d_cols[3]:
+                        if st.button("✕", key=f"_demo_rm_{_di}",
+                                     help=f"Remove {_new_name}"):
+                            _demos_to_remove.append(_di)
+
+                if _demos_to_remove:
+                    _removed_names = [_custom_demos[j].get("name", "?") for j in _demos_to_remove]
+                    _custom_demos = [d for j, d in enumerate(_custom_demos) if j not in _demos_to_remove]
+                    st.session_state["custom_demographics"] = _custom_demos
+                    st.session_state["_demo_removal_notice"] = f"Removed: {', '.join(_removed_names)}"
+                    st.session_state["_demo_keep_expanded"] = True
+                    st.rerun()
+
+            # Custom variable adder (manual)
+            st.markdown("---")
+            st.caption("Or add a custom demographic variable manually:")
+            _add_cols = st.columns([2, 1.5, 3, 1])
+            with _add_cols[0]:
+                _new_demo_name = st.text_input("Variable name", value="", key="_new_demo_name",
+                                                placeholder="e.g., Religiosity")
+            with _add_cols[1]:
+                _new_demo_type = st.selectbox("Type", ["categorical", "ordinal", "numeric"],
+                                               key="_new_demo_type")
+            with _add_cols[2]:
+                if _new_demo_type in ("categorical", "ordinal"):
+                    _new_demo_opts = st.text_input("Options (comma-separated)", value="",
+                                                    key="_new_demo_opts",
+                                                    placeholder="e.g., Low, Medium, High")
+                else:
+                    _num_cols = st.columns(2)
+                    with _num_cols[0]:
+                        _new_num_mean = st.number_input("Mean", value=50.0, key="_new_demo_mean")
+                    with _num_cols[1]:
+                        _new_num_sd = st.number_input("SD", value=15.0, key="_new_demo_sd")
+            with _add_cols[3]:
+                st.markdown("")  # vertical spacer
+                if st.button("Add", key="_demo_add_manual", type="primary",
+                             use_container_width=True):
+                    if _new_demo_name.strip():
+                        _new_spec: Dict[str, Any] = {
+                            "name": _new_demo_name.strip().replace(" ", "_"),
+                            "demo_type": _new_demo_type,
+                            "description": f"Custom demographic: {_new_demo_name.strip()}",
+                        }
+                        if _new_demo_type in ("categorical", "ordinal"):
+                            _opts_str = st.session_state.get("_new_demo_opts", "")
+                            _new_spec["options"] = [o.strip() for o in _opts_str.split(",") if o.strip()]
+                        else:
+                            _new_spec["mean"] = st.session_state.get("_new_demo_mean", 50.0)
+                            _new_spec["sd"] = st.session_state.get("_new_demo_sd", 15.0)
+                            _new_spec["min"] = 0
+                            _new_spec["max"] = 200
+                            _new_spec["integer"] = True
+                        _custom_demos.append(_new_spec)
+                        st.session_state["custom_demographics"] = _custom_demos
+                        st.session_state["_demo_keep_expanded"] = True
+                        st.rerun()
+                    else:
+                        st.warning("Enter a variable name.")
+
+            st.session_state["custom_demographics"] = _custom_demos
 
         # ========================================
         # STEP 5: OPEN-ENDED QUESTIONS
@@ -10749,6 +11019,10 @@ if active_page == 3:
             }
         else:
             demographics = STANDARD_DEFAULTS["demographics"].copy()
+        # v1.2.0.4: Inject custom demographic variables into demographics dict
+        _user_custom_demos = st.session_state.get("custom_demographics", [])
+        if _user_custom_demos:
+            demographics["custom_demographics"] = _user_custom_demos
         attention_rate = diff_settings['attention_rate']  # From difficulty level
         random_responder_rate = diff_settings['random_responder_rate']  # From difficulty level
         exclusion = ExclusionCriteria(**STANDARD_DEFAULTS["exclusion_criteria"])
@@ -10792,6 +11066,15 @@ if active_page == 3:
                 st.markdown("**Demographics**")
                 st.markdown(f"- Gender balance: {demographics['gender_quota']}% male / {100-demographics['gender_quota']}% female")
                 st.markdown(f"- Age: M = {demographics['age_mean']}, SD = {demographics['age_sd']}")
+                _cd_list = demographics.get("custom_demographics", [])
+                if _cd_list:
+                    for _cd in _cd_list:
+                        _cd_name = _cd.get("name", "?")
+                        _cd_opts = _cd.get("options", [])
+                        if _cd_opts:
+                            st.markdown(f"- {_cd_name}: {len(_cd_opts)} levels")
+                        else:
+                            st.markdown(f"- {_cd_name}: numeric (M={_cd.get('mean', '?')})")
 
                 st.markdown("**Data Quality**")
                 st.markdown(f"- Attention check pass rate: {attention_rate:.0%}")
@@ -10820,6 +11103,10 @@ if active_page == 3:
             age_mean = st.number_input("Mean age", 18, 70, int(ADVANCED_DEFAULTS["demographics"]["age_mean"]))
             age_sd = st.number_input("Age SD", 1, 30, int(ADVANCED_DEFAULTS["demographics"]["age_sd"]))
             demographics = {"gender_quota": int(male_pct), "age_mean": float(age_mean), "age_sd": float(age_sd)}
+            # v1.2.0.4: Inject custom demographic variables
+            _user_custom_demos_adv = st.session_state.get("custom_demographics", [])
+            if _user_custom_demos_adv:
+                demographics["custom_demographics"] = _user_custom_demos_adv
 
         with c2:
             attention_rate = st.slider("Attention check pass rate", 0.50, 1.00, float(ADVANCED_DEFAULTS["attention_rate"]), 0.01)
@@ -11524,7 +11811,8 @@ if active_page == 3:
     # v1.2.0.0: Mid-generation LLM exhaustion prompt.
     # When LLM providers ran out after completing some OE questions, the engine
     # raises LLMExhaustedMidGeneration and we save partial data to session state.
-    # Show a two-step prompt: first ask about API key, then fallback choice.
+    # v1.2.0.4: Show ALL 4 method options at once instead of a 2-step flow.
+    # The user should always be free to choose any method without being funnelled.
     if st.session_state.get("_llm_exhausted_pending"):
         _completed_cols = st.session_state.get("_llm_exhausted_completed_cols", [])
         _remaining_qs = st.session_state.get("_llm_exhausted_remaining_qs", [])
@@ -11543,62 +11831,47 @@ if active_page == 3:
             f'open-ended question(s). '
             f'<strong>{_n_remaining}</strong> question(s) still need responses.</span>'
             '<div style="margin-top:12px;color:#7C2D12;font-size:0.88em;">'
-            'Would you like to provide your own API key for the remaining questions?</div>'
+            'Choose how to continue. Already-generated AI responses will be preserved.</div>'
             '</div>',
             unsafe_allow_html=True,
         )
-        _exh_step = st.session_state.get("_llm_exhausted_step", 1)
-        if _exh_step == 1:
-            # Step 1: Ask about API key
-            _exh_c1, _exh_c2 = st.columns(2)
-            with _exh_c1:
-                if st.button("Yes — enter my API key", key="_exh_use_api_key",
-                             type="primary", use_container_width=True,
-                             help="Get a free key from Groq or Google AI in 30 seconds"):
-                    st.session_state["_llm_exhausted_step"] = 2
-                    st.session_state["_llm_exhausted_choice"] = "own_api"
-                    st.session_state["generation_method"] = "own_api"
-                    st.session_state["allow_template_fallback_once"] = False
-                    st.session_state["_llm_exhausted_pending"] = False
-                    _navigate_to(3)
-            with _exh_c2:
-                if st.button("No — use a different method", key="_exh_no_api_key",
-                             type="secondary", use_container_width=True):
-                    st.session_state["_llm_exhausted_step"] = 3
-                    st.rerun()
-        elif _exh_step == 3:
-            # Step 2: Choose fallback method
-            st.markdown(
-                '<div style="color:#7C2D12;font-size:0.88em;margin:8px 0 12px 0;">'
-                'Which method should be used for the remaining questions?</div>',
-                unsafe_allow_html=True,
-            )
-            _fb_c1, _fb_c2 = st.columns(2)
-            with _fb_c1:
-                if st.button("Template Engine (Recommended)", key="_exh_use_template",
-                             type="primary", use_container_width=True,
-                             help="225+ domains, 58 personas, instant generation"):
-                    st.session_state["_llm_exhausted_choice"] = "template"
-                    st.session_state["generation_method"] = "template"
-                    st.session_state["allow_template_fallback_once"] = True
-                    st.session_state["_use_socsim_experimental"] = False
-                    st.session_state["_llm_exhausted_pending"] = False
-                    # Re-trigger generation with template for remaining Qs
-                    st.session_state["is_generating"] = True
-                    st.session_state["_generation_phase"] = 1
-                    _navigate_to(3)
-            with _fb_c2:
-                if st.button("Adaptive Behavioral Engine", key="_exh_use_experimental",
-                             type="secondary", use_container_width=True,
-                             help="Game-theory models + persona simulation"):
-                    st.session_state["_llm_exhausted_choice"] = "experimental"
-                    st.session_state["generation_method"] = "experimental"
-                    st.session_state["allow_template_fallback_once"] = True
-                    st.session_state["_use_socsim_experimental"] = True
-                    st.session_state["_llm_exhausted_pending"] = False
-                    st.session_state["is_generating"] = True
-                    st.session_state["_generation_phase"] = 1
-                    _navigate_to(3)
+
+        # Helper: common state for resume generation
+        def _exh_resume(method: str, template_fb: bool, socsim: bool, trigger_gen: bool) -> None:
+            st.session_state["_llm_exhausted_pending"] = False
+            st.session_state["_llm_exhausted_step"] = 1
+            st.session_state["_llm_exhausted_resume"] = True
+            st.session_state["generation_method"] = method
+            st.session_state["allow_template_fallback_once"] = template_fb
+            st.session_state["_use_socsim_experimental"] = socsim
+            st.session_state["has_generated"] = False
+            if trigger_gen:
+                st.session_state["is_generating"] = True
+                st.session_state["_generation_phase"] = 1
+                st.session_state["generation_requested"] = False
+            _navigate_to(3)
+
+        _exh_c1, _exh_c2, _exh_c3, _exh_c4 = st.columns(4)
+        with _exh_c1:
+            if st.button("Retry Built-in AI", key="_exh_retry_llm",
+                         type="primary", use_container_width=True,
+                         help="Re-try with the free AI providers (they may have recovered)"):
+                _exh_resume("free_llm", False, False, True)
+        with _exh_c2:
+            if st.button("Use my API key", key="_exh_use_api_key",
+                         type="secondary", use_container_width=True,
+                         help="Enter your own Groq / Google AI key (free tier available)"):
+                _exh_resume("own_api", False, False, False)
+        with _exh_c3:
+            if st.button("Template Engine", key="_exh_use_template",
+                         type="secondary", use_container_width=True,
+                         help="225+ domains, 58 personas, instant generation"):
+                _exh_resume("template", True, False, True)
+        with _exh_c4:
+            if st.button("Adaptive Engine", key="_exh_use_experimental",
+                         type="secondary", use_container_width=True,
+                         help="Game-theory models + persona simulation"):
+                _exh_resume("experimental", True, True, True)
 
     # v1.4.14: Preflight validation — catch issues before expensive generation
     _preflight_errors = _preflight_validation() if all_required_complete else []
@@ -11659,6 +11932,8 @@ if active_page == 3:
         st.session_state["is_generating"] = False
         st.session_state["_generation_phase"] = 0
         st.session_state["generation_requested"] = False
+        # v1.2.0.4: Clean up exhaustion resume state on crash
+        st.session_state.pop("_llm_exhausted_resume", None)
         is_generating = False
         status_placeholder.empty()
         st.error(
@@ -12179,6 +12454,18 @@ if active_page == 3:
             import traceback as _init_tb
             _init_error_tb = _init_tb.format_exc()
             _log(f"Engine construction failed: {_init_exc}\n{_init_error_tb}", level="error")
+            # v1.2.0.4: Log engine init failure to error pipeline
+            try:
+                from utils.error_logger import log_generation_error
+                log_generation_error(
+                    _init_exc,
+                    context={"generation_method": st.session_state.get("generation_method", "")},
+                    app_version=APP_VERSION,
+                    phase="engine_init",
+                    traceback_text=_init_error_tb,
+                )
+            except Exception:
+                pass
             st.session_state["is_generating"] = False
             st.session_state["_generation_phase"] = 0
             progress_placeholder.empty()
@@ -12397,6 +12684,49 @@ if active_page == 3:
             _gen_total_time = __import__('time').time() - _progress_start_time
             # v1.1.1.0: Signal watchdog thread to stop (it's a daemon, but be clean)
             _generation_timed_out[0] = True
+
+            # v1.2.0.4: LLM exhaustion resume — merge preserved AI columns back.
+            # When LLM providers ran out mid-generation and the user chose to continue
+            # with templates, the partial AI-generated OE columns are preserved in
+            # session state. After the fresh template generation completes, overlay
+            # the AI columns onto the DataFrame so the user keeps the higher-quality
+            # AI responses and only the REMAINING questions use templates.
+            if st.session_state.get("_llm_exhausted_resume"):
+                _partial_data = st.session_state.get("_llm_exhausted_partial_data", {})
+                _ai_cols = st.session_state.get("_llm_exhausted_completed_cols", [])
+                _ai_source_map = st.session_state.get("_llm_exhausted_source_map", {})
+                if _partial_data and _ai_cols:
+                    _n_merged = 0
+                    for _ai_col in _ai_cols:
+                        if _ai_col in _partial_data and len(_partial_data[_ai_col]) == len(df):
+                            df[_ai_col] = _partial_data[_ai_col]
+                            _n_merged += 1
+                    # Add a _Response_Source column indicating AI vs Template per OE column
+                    # Format: comma-separated "ColName:AI|Template" for each OE column
+                    _source_tags = []
+                    for _ai_col in _ai_cols:
+                        _source_tags.append(f"{_ai_col}:AI")
+                    _remaining_qs = st.session_state.get("_llm_exhausted_remaining_qs", [])
+                    for _rq in _remaining_qs:
+                        _rq_name = _rq.get("variable_name", _rq.get("name", ""))
+                        if _rq_name:
+                            _source_tags.append(f"{_rq_name}:Template")
+                    if _source_tags:
+                        metadata["oe_data_sources"] = _source_tags
+                        metadata["oe_ai_columns"] = _ai_cols
+                        metadata["oe_template_columns"] = [_rq.get("variable_name", _rq.get("name", "")) for _rq in _remaining_qs]
+                    # Add per-participant source tracking from the AI run
+                    if _ai_source_map:
+                        metadata["oe_source_map_ai_run"] = _ai_source_map
+                    _log(f"LLM exhaustion resume: merged {_n_merged} AI column(s) back into DataFrame: {_ai_cols}")
+                    progress_bar.progress(35, text=f"Step 2.5/5 — Merged {_n_merged} AI-generated column(s)...")
+                # Clean up exhaustion state
+                for _ek in ("_llm_exhausted_resume", "_llm_exhausted_pending",
+                            "_llm_exhausted_step", "_llm_exhausted_choice",
+                            "_llm_exhausted_partial_data", "_llm_exhausted_completed_cols",
+                            "_llm_exhausted_remaining_qs", "_llm_exhausted_engine_state",
+                            "_llm_exhausted_source_map"):
+                    st.session_state.pop(_ek, None)
 
             # v1.4.9: Inject LLM stats into metadata for the instructor report
             if hasattr(engine, 'llm_generator') and engine.llm_generator is not None:
@@ -13026,7 +13356,7 @@ if active_page == 3:
                 progress_bar.progress(60, text="AI providers exhausted — waiting for your choice...")
                 status_placeholder.empty()
                 _progress_counter_placeholder.empty()
-                # Store partial state for resumption
+                # Store partial state for display in recovery UI
                 st.session_state["_llm_exhausted_partial_data"] = e.partial_data
                 st.session_state["_llm_exhausted_completed_cols"] = e.completed_oe_columns
                 st.session_state["_llm_exhausted_remaining_qs"] = e.remaining_questions
@@ -13035,12 +13365,47 @@ if active_page == 3:
                 st.session_state["is_generating"] = False
                 st.session_state["_generation_phase"] = 0
                 st.session_state["_llm_exhausted_pending"] = True
+                st.session_state["_llm_exhausted_step"] = 1  # v1.2.0.4: Reset to step 1
+                # v1.2.0.4: Clear generation artifacts so re-run starts clean
+                st.session_state.pop("has_generated", None)
+                st.session_state.pop("last_zip", None)
+                st.session_state.pop("generated_data", None)
+                st.session_state.pop("generated_metadata", None)
+                st.session_state["generation_requested"] = False
                 _navigate_to(3)  # calls st.rerun()
                 st.stop()  # safety: never fall through to generic error handler
 
             import traceback as _tb
             error_tb = _tb.format_exc()
             error_str = str(e).lower()
+
+            # v1.2.0.4: Automatic error logging — captures every generation error
+            # with full context for the self-healing pipeline to consume.
+            try:
+                from utils.error_logger import log_generation_error
+                _err_ctx = {
+                    "generation_method": st.session_state.get("generation_method", ""),
+                    "sample_size": N if 'N' in dir() else None,
+                    "n_scales": len(clean_scales) if 'clean_scales' in dir() else 0,
+                    "n_conditions": len(inferred.get('conditions', [])) if inferred else 0,
+                    "n_open_ended": len(open_ended_questions_for_engine) if 'open_ended_questions_for_engine' in dir() else 0,
+                    "has_socsim": bool(st.session_state.get("_use_socsim_experimental")),
+                    "allow_template_fallback": bool(st.session_state.get("allow_template_fallback_once")),
+                    "is_resume": bool(st.session_state.get("_llm_exhausted_resume")),
+                }
+                _ss_snap = {k: v for k, v in st.session_state.items()
+                            if isinstance(k, str) and not k.startswith("_p_")}
+                log_generation_error(
+                    e,
+                    context=_err_ctx,
+                    session_state_snapshot=_ss_snap,
+                    generation_method=st.session_state.get("generation_method", ""),
+                    app_version=APP_VERSION,
+                    phase="generation",
+                    traceback_text=error_tb,
+                )
+            except Exception:
+                pass  # Error logging must never crash the app
 
             # v1.1.0.6: Categorize errors with user-friendly choice UI instead of
             # alarming "error" boxes. Give users clear options to proceed.
