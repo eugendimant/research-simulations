@@ -7,8 +7,8 @@ import sys
 import os
 import traceback
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "simulation_app"))
-os.chdir(os.path.join(os.path.dirname(__file__), "simulation_app"))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "simulation_app"))
+os.chdir(os.path.join(os.path.dirname(__file__), "..", "simulation_app"))
 
 from utils.enhanced_simulation_engine import EnhancedSimulationEngine, EffectSizeSpec
 

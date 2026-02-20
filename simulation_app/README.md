@@ -1,6 +1,6 @@
 # Behavioral Experiment Simulation Tool
 
-**Version 1.2.0.5** | A Streamlit application for generating realistic synthetic behavioral experiment data using theory-grounded persona-driven simulation.
+**Version 1.2.0.7** | A Streamlit application for generating realistic synthetic behavioral experiment data using theory-grounded persona-driven simulation.
 
 ## What This Tool Does
 
@@ -19,7 +19,7 @@
 - **Develop analysis scripts** on properly structured data
 - **Check pre-registration consistency** before data collection
 
-## Features (v1.2.0.5)
+## Features (v1.2.0.7)
 
 ### Generation Method Chooser
 - **4 simulation methods** — clean, compact selection:
@@ -296,11 +296,17 @@ research-simulations/
 │       └── group_management.py     # Team/API management
 ├── tests/                          # All test files
 │   ├── conftest.py                 # Shared fixtures & path setup
-│   └── test_e2e.py                 # Main E2E test suite
+│   ├── test_e2e.py                 # Main E2E test suite
+│   ├── test_all_methods.py         # All 4 generation methods
+│   ├── test_edge_cases.py          # Edge case stress tests
+│   └── test_progress_callbacks.py  # Progress callback validation
 ├── docs/                           # Documentation
 │   ├── papers/                     # Research papers & methods PDF
 │   ├── methods_summary.md          # Detailed methodology
-│   └── technical_methods.md        # Technical documentation
+│   └── internal/                   # Internal dev docs & benchmarks
+│       ├── technical_methods.md    # Technical documentation
+│       ├── DEVELOPMENT_REFERENCE.md
+│       └── software_10x_improvements.md
 └── CLAUDE.md                       # Development guidelines
 ```
 

@@ -54,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.2.0.5"
-BUILD_ID = "20260220-v12005-demographics-flexibility-persona-coupling-methods-doc"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.2.0.7"
+BUILD_ID = "20260220-v12007-recovery-button-state-hardening"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -118,7 +118,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.2.0.5"  # v1.2.0.5: Demographics flexibility, persona-demographic coupling, methods doc
+APP_VERSION = "1.2.0.7"  # v1.2.0.7: Recovery button state hardening — all 11 error recovery buttons now set all required flags
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -7611,6 +7611,27 @@ def _render_admin_dashboard() -> None:
 
             st.markdown("---")
             st.markdown(f"**Last updated:** {_err_summary.get('last_updated', 'Never')}")
+
+            # v1.2.0.6: Smoke test button — verifies error logger can write
+            if st.button("Test Error Logger", key="_test_err_logger",
+                         help="Write a test entry to verify the error logging pipeline is working"):
+                try:
+                    _test_id = log_generation_error(
+                        RuntimeError("Smoke test — this is NOT a real error"),
+                        context={"test": True},
+                        app_version=APP_VERSION,
+                        phase="smoke_test",
+                        traceback_text="Smoke test initiated from admin dashboard.",
+                    )
+                    if _test_id:
+                        st.success(f"Error logger working. Test entry ID: `{_test_id}`")
+                        # Immediately mark it as fixed so it doesn't clutter pending list
+                        mark_error_fixed(_test_id, APP_VERSION)
+                    else:
+                        st.error("Error logger returned None — write may have failed. Check file permissions.")
+                except Exception as _test_exc:
+                    st.error(f"Error logger failed: {_test_exc}")
+                st.rerun()
         except Exception as _err_load_exc:
             st.error(f"Could not load error logs: {_err_load_exc}")
 
@@ -12007,18 +12028,95 @@ if active_page == 3:
     # something threw an uncaught exception.  Reset and show error so users aren't
     # stuck on the blue progress screen forever.
     if is_generating and st.session_state.get("_generation_phase", 0) == 2:
+        # v1.2.0.6: Log this stale-phase-2 event to the error pipeline.
+        # The actual exception happened on the PREVIOUS rerun (we can't capture it
+        # here), but we log the detection so the admin dashboard shows it.
+        _stale_method = st.session_state.get("generation_method", "unknown")
+        _stale_was_resume = bool(st.session_state.get("_llm_exhausted_resume"))
+        try:
+            from utils.error_logger import log_generation_error
+            log_generation_error(
+                RuntimeError(
+                    f"Stale phase-2 detected (method={_stale_method}, "
+                    f"was_resume={_stale_was_resume}). "
+                    "Generation crashed outside try/except on previous rerun."
+                ),
+                context={
+                    "generation_method": _stale_method,
+                    "was_exhaustion_resume": _stale_was_resume,
+                    "detection": "stale_phase_2",
+                },
+                generation_method=_stale_method,
+                app_version=APP_VERSION,
+                phase="stale_phase2_recovery",
+                traceback_text="No traceback available — crash occurred on previous rerun.",
+            )
+        except Exception:
+            pass
         st.session_state["is_generating"] = False
         st.session_state["_generation_phase"] = 0
         st.session_state["generation_requested"] = False
         # v1.2.0.4: Clean up exhaustion resume state on crash
-        st.session_state.pop("_llm_exhausted_resume", None)
+        for _stale_key in ("_llm_exhausted_resume", "_llm_exhausted_pending",
+                           "_llm_exhausted_partial_data", "_llm_exhausted_completed_cols",
+                           "_llm_exhausted_remaining_qs", "_llm_exhausted_engine_state",
+                           "_llm_exhausted_source_map"):
+            st.session_state.pop(_stale_key, None)
         is_generating = False
         status_placeholder.empty()
-        st.error(
-            "**Generation encountered an unexpected error and was stopped.** "
-            "Please click **Generate** to try again. If the problem persists, "
-            "try a different generation method."
+        # v1.2.0.7: Show a proper recovery UI with method-switching buttons
+        # instead of a generic error that leaves the user stuck.
+        st.markdown(
+            '<div style="background:linear-gradient(135deg, #FEF2F2 0%, #FEE2E2 100%);'
+            'border:1px solid #FECACA;border-radius:12px;padding:20px 24px;margin:12px 0;'
+            'box-shadow:0 1px 3px rgba(0,0,0,0.06);">'
+            '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">'
+            '<span style="font-size:1.3em;">&#9888;</span>'
+            '<span style="font-size:1.05em;font-weight:700;color:#991B1B;">'
+            'Generation encountered an unexpected error</span></div>'
+            '<span style="color:#7F1D1D;font-size:0.88em;line-height:1.5;">'
+            f'The previous generation attempt using <strong>{_stale_method}</strong> '
+            'crashed during setup. Choose how to proceed:</span></div>',
+            unsafe_allow_html=True,
         )
+        _sp_c1, _sp_c2, _sp_c3, _sp_c4 = st.columns(4)
+        with _sp_c1:
+            if st.button("Retry", key="_stale_retry",
+                         type="primary", use_container_width=True):
+                # Preserve existing method; ensure all flags are explicitly set
+                _retry_method = st.session_state.get("generation_method", "template")
+                st.session_state["generation_method"] = _retry_method
+                st.session_state["allow_template_fallback_once"] = _retry_method in ("template", "experimental")
+                st.session_state["_use_socsim_experimental"] = _retry_method == "experimental"
+                st.session_state["is_generating"] = True
+                st.session_state["_generation_phase"] = 1
+                _navigate_to(3)
+        with _sp_c2:
+            if st.button("Template Engine", key="_stale_template",
+                         type="secondary", use_container_width=True):
+                st.session_state["generation_method"] = "template"
+                st.session_state["allow_template_fallback_once"] = True
+                st.session_state["_use_socsim_experimental"] = False
+                st.session_state["is_generating"] = True
+                st.session_state["_generation_phase"] = 1
+                _navigate_to(3)
+        with _sp_c3:
+            if st.button("Behavioral Engine", key="_stale_experimental",
+                         type="secondary", use_container_width=True):
+                st.session_state["generation_method"] = "experimental"
+                st.session_state["allow_template_fallback_once"] = True
+                st.session_state["_use_socsim_experimental"] = True
+                st.session_state["is_generating"] = True
+                st.session_state["_generation_phase"] = 1
+                _navigate_to(3)
+        with _sp_c4:
+            if st.button("Use my API key", key="_stale_own_api",
+                         type="secondary", use_container_width=True):
+                st.session_state["generation_method"] = "own_api"
+                st.session_state["allow_template_fallback_once"] = False
+                st.session_state["_use_socsim_experimental"] = False
+                st.session_state["is_generating"] = False
+                _navigate_to(3)
 
     # Phase 2: Actually generate (progress UI is now visible)
     if is_generating and st.session_state.get("_generation_phase", 0) == 1:
@@ -12030,6 +12128,7 @@ if active_page == 3:
         _gen_method_key = "generation_method"
         progress_bar = progress_placeholder.progress(5, text="Preparing simulation inputs...")
         status_placeholder.info("🔄 Preparing simulation inputs...")
+
         # v1.0.1.5: Use _p_ persist fallback — widget keys may not survive cross-page navigation
         title = (st.session_state.get("study_title") or st.session_state.get("_p_study_title", "")) or "Untitled Study"
         desc = (st.session_state.get("study_description") or st.session_state.get("_p_study_description", "")) or ""
@@ -12213,6 +12312,44 @@ if active_page == 3:
             return sanitized
 
         clean_scales = _preflight_sanitize_scales(clean_scales)
+
+        # v1.2.0.6: Defensive defaults for engine parameters.
+        # The standard/advanced mode blocks above always define these variables.
+        # But as a safety net for ANY code path that might skip them (e.g.,
+        # st.stop() in a conditional, or Streamlit widget rendering issues during
+        # exhaustion resume), provide explicit fallback values.
+        try:
+            demographics  # type: ignore[used-before-def]
+        except NameError:
+            _log("WARNING: demographics not defined — using defaults", level="warning")
+            demographics = STANDARD_DEFAULTS["demographics"].copy()
+            _user_cd = st.session_state.get("custom_demographics", [])
+            if _user_cd:
+                demographics["custom_demographics"] = _user_cd
+        try:
+            attention_rate  # type: ignore[used-before-def]
+        except NameError:
+            _log("WARNING: attention_rate not defined — using default", level="warning")
+            attention_rate = 0.90
+        try:
+            random_responder_rate  # type: ignore[used-before-def]
+        except NameError:
+            _log("WARNING: random_responder_rate not defined — using default", level="warning")
+            random_responder_rate = 0.05
+        try:
+            exclusion  # type: ignore[used-before-def]
+        except NameError:
+            _log("WARNING: exclusion not defined — using defaults", level="warning")
+            exclusion = ExclusionCriteria(**STANDARD_DEFAULTS["exclusion_criteria"])
+        try:
+            effect_sizes  # type: ignore[used-before-def]
+        except NameError:
+            _log("WARNING: effect_sizes not defined — using empty list", level="warning")
+            effect_sizes = []
+        try:
+            custom_persona_weights  # type: ignore[used-before-def]
+        except NameError:
+            custom_persona_weights = st.session_state.get("custom_persona_weights", None)
 
         # Sanitize demographics dict
         if isinstance(demographics, dict):
@@ -12577,10 +12714,15 @@ if active_page == 3:
                     st.session_state["generation_method"] = "template"
                     st.session_state["allow_template_fallback_once"] = True
                     st.session_state["_use_socsim_experimental"] = False
+                    st.session_state["is_generating"] = True
+                    st.session_state["_generation_phase"] = 1
                     _navigate_to(3)
             with _init_c2:
                 if st.button("Try again", key="_init_fail_retry",
                              type="secondary", use_container_width=True):
+                    _retry_method = st.session_state.get("generation_method", "template")
+                    st.session_state["allow_template_fallback_once"] = _retry_method in ("template", "experimental")
+                    st.session_state["_use_socsim_experimental"] = _retry_method == "experimental"
                     st.session_state["is_generating"] = True
                     st.session_state["_generation_phase"] = 1
                     _navigate_to(3)
@@ -12623,6 +12765,10 @@ if active_page == 3:
                         if st.button("Try again", key="_preflight_retry",
                                      type="primary", use_container_width=True,
                                      help="Re-test the AI providers"):
+                            # Preserve existing method; set all flags explicitly
+                            _retry_method = st.session_state.get(_gen_method_key, "free_llm")
+                            st.session_state["allow_template_fallback_once"] = _retry_method in ("template", "experimental")
+                            st.session_state["_use_socsim_experimental"] = _retry_method == "experimental"
                             st.session_state["is_generating"] = True
                             st.session_state["_generation_phase"] = 1
                             _navigate_to(3)
@@ -12632,6 +12778,7 @@ if active_page == 3:
                                      help="Get a free key from Groq or Google AI"):
                             st.session_state[_gen_method_key] = "own_api"
                             st.session_state["allow_template_fallback_once"] = False
+                            st.session_state["_use_socsim_experimental"] = False
                             st.session_state["is_generating"] = False
                             _navigate_to(3)
                     with _hc3:
@@ -12640,6 +12787,7 @@ if active_page == 3:
                                      help="Instant generation using domain-specific templates"):
                             st.session_state["allow_template_fallback_once"] = True
                             st.session_state[_gen_method_key] = "template"
+                            st.session_state["_use_socsim_experimental"] = False
                             st.session_state["is_generating"] = True
                             st.session_state["_generation_phase"] = 1
                             _navigate_to(3)
@@ -12770,41 +12918,49 @@ if active_page == 3:
             # the AI columns onto the DataFrame so the user keeps the higher-quality
             # AI responses and only the REMAINING questions use templates.
             if st.session_state.get("_llm_exhausted_resume"):
-                _partial_data = st.session_state.get("_llm_exhausted_partial_data", {})
-                _ai_cols = st.session_state.get("_llm_exhausted_completed_cols", [])
-                _ai_source_map = st.session_state.get("_llm_exhausted_source_map", {})
-                if _partial_data and _ai_cols:
-                    _n_merged = 0
-                    for _ai_col in _ai_cols:
-                        if _ai_col in _partial_data and len(_partial_data[_ai_col]) == len(df):
-                            df[_ai_col] = _partial_data[_ai_col]
-                            _n_merged += 1
-                    # Add a _Response_Source column indicating AI vs Template per OE column
-                    # Format: comma-separated "ColName:AI|Template" for each OE column
-                    _source_tags = []
-                    for _ai_col in _ai_cols:
-                        _source_tags.append(f"{_ai_col}:AI")
-                    _remaining_qs = st.session_state.get("_llm_exhausted_remaining_qs", [])
-                    for _rq in _remaining_qs:
-                        _rq_name = _rq.get("variable_name", _rq.get("name", ""))
-                        if _rq_name:
-                            _source_tags.append(f"{_rq_name}:Template")
-                    if _source_tags:
-                        metadata["oe_data_sources"] = _source_tags
-                        metadata["oe_ai_columns"] = _ai_cols
-                        metadata["oe_template_columns"] = [_rq.get("variable_name", _rq.get("name", "")) for _rq in _remaining_qs]
-                    # Add per-participant source tracking from the AI run
-                    if _ai_source_map:
-                        metadata["oe_source_map_ai_run"] = _ai_source_map
-                    _log(f"LLM exhaustion resume: merged {_n_merged} AI column(s) back into DataFrame: {_ai_cols}")
-                    progress_bar.progress(35, text=f"Step 2.5/5 — Merged {_n_merged} AI-generated column(s)...")
-                # Clean up exhaustion state
-                for _ek in ("_llm_exhausted_resume", "_llm_exhausted_pending",
-                            "_llm_exhausted_step", "_llm_exhausted_choice",
-                            "_llm_exhausted_partial_data", "_llm_exhausted_completed_cols",
-                            "_llm_exhausted_remaining_qs", "_llm_exhausted_engine_state",
-                            "_llm_exhausted_source_map"):
-                    st.session_state.pop(_ek, None)
+                try:
+                    _partial_data = st.session_state.get("_llm_exhausted_partial_data", {})
+                    _ai_cols = st.session_state.get("_llm_exhausted_completed_cols", [])
+                    _ai_source_map = st.session_state.get("_llm_exhausted_source_map", {})
+                    if _partial_data and _ai_cols and df is not None:
+                        _n_merged = 0
+                        for _ai_col in _ai_cols:
+                            if _ai_col in _partial_data:
+                                _ai_data = _partial_data[_ai_col]
+                                if hasattr(_ai_data, '__len__') and len(_ai_data) == len(df):
+                                    df[_ai_col] = _ai_data
+                                    _n_merged += 1
+                                else:
+                                    _log(f"Skipping AI column merge for {_ai_col}: "
+                                         f"length mismatch ({len(_ai_data) if hasattr(_ai_data, '__len__') else '?'} vs {len(df)})")
+                        # Add a _Response_Source column indicating AI vs Template per OE column
+                        _source_tags = []
+                        for _ai_col in _ai_cols:
+                            _source_tags.append(f"{_ai_col}:AI")
+                        _remaining_qs = st.session_state.get("_llm_exhausted_remaining_qs", [])
+                        for _rq in _remaining_qs:
+                            _rq_name = _rq.get("variable_name", _rq.get("name", ""))
+                            if _rq_name:
+                                _source_tags.append(f"{_rq_name}:Template")
+                        if _source_tags:
+                            metadata["oe_data_sources"] = _source_tags
+                            metadata["oe_ai_columns"] = _ai_cols
+                            metadata["oe_template_columns"] = [_rq.get("variable_name", _rq.get("name", "")) for _rq in _remaining_qs]
+                        if _ai_source_map:
+                            metadata["oe_source_map_ai_run"] = _ai_source_map
+                        _log(f"LLM exhaustion resume: merged {_n_merged} AI column(s) back into DataFrame: {_ai_cols}")
+                        progress_bar.progress(35, text=f"Step 2.5/5 — Merged {_n_merged} AI-generated column(s)...")
+                except Exception as _merge_exc:
+                    _log(f"LLM exhaustion resume merge failed (non-fatal): {_merge_exc}", level="warning")
+                    # Non-fatal — the template-generated data is still valid
+                finally:
+                    # Clean up exhaustion state regardless of merge success
+                    for _ek in ("_llm_exhausted_resume", "_llm_exhausted_pending",
+                                "_llm_exhausted_step", "_llm_exhausted_choice",
+                                "_llm_exhausted_partial_data", "_llm_exhausted_completed_cols",
+                                "_llm_exhausted_remaining_qs", "_llm_exhausted_engine_state",
+                                "_llm_exhausted_source_map"):
+                        st.session_state.pop(_ek, None)
 
             # v1.4.9: Inject LLM stats into metadata for the instructor report
             if hasattr(engine, 'llm_generator') and engine.llm_generator is not None:
@@ -13431,25 +13587,37 @@ if active_page == 3:
             from utils.enhanced_simulation_engine import LLMExhaustedMidGeneration
             if isinstance(e, LLMExhaustedMidGeneration):
                 _generation_timed_out[0] = True  # Stop watchdog
-                progress_bar.progress(60, text="AI providers exhausted — waiting for your choice...")
-                status_placeholder.empty()
-                _progress_counter_placeholder.empty()
-                # Store partial state for display in recovery UI
-                st.session_state["_llm_exhausted_partial_data"] = e.partial_data
-                st.session_state["_llm_exhausted_completed_cols"] = e.completed_oe_columns
-                st.session_state["_llm_exhausted_remaining_qs"] = e.remaining_questions
-                st.session_state["_llm_exhausted_engine_state"] = e.engine_state
-                st.session_state["_llm_exhausted_source_map"] = e.generation_source_map
+                # v1.2.0.7: Reset state FIRST before accessing exception attributes.
+                # If attribute access fails, the app won't be stuck in is_generating=True.
                 st.session_state["is_generating"] = False
                 st.session_state["_generation_phase"] = 0
-                st.session_state["_llm_exhausted_pending"] = True
-                st.session_state["_llm_exhausted_step"] = 1  # v1.2.0.4: Reset to step 1
-                # v1.2.0.4: Clear generation artifacts so re-run starts clean
+                st.session_state["generation_requested"] = False
                 st.session_state.pop("has_generated", None)
                 st.session_state.pop("last_zip", None)
                 st.session_state.pop("generated_data", None)
                 st.session_state.pop("generated_metadata", None)
-                st.session_state["generation_requested"] = False
+                try:
+                    progress_bar.progress(60, text="AI providers exhausted — waiting for your choice...")
+                    status_placeholder.empty()
+                    _progress_counter_placeholder.empty()
+                except Exception:
+                    pass
+                # Store partial state for display in recovery UI
+                try:
+                    st.session_state["_llm_exhausted_partial_data"] = e.partial_data
+                    st.session_state["_llm_exhausted_completed_cols"] = e.completed_oe_columns
+                    st.session_state["_llm_exhausted_remaining_qs"] = e.remaining_questions
+                    st.session_state["_llm_exhausted_engine_state"] = e.engine_state
+                    st.session_state["_llm_exhausted_source_map"] = e.generation_source_map
+                except AttributeError:
+                    # Defensive: if exception attributes are missing, use safe defaults
+                    st.session_state.setdefault("_llm_exhausted_partial_data", {})
+                    st.session_state.setdefault("_llm_exhausted_completed_cols", [])
+                    st.session_state.setdefault("_llm_exhausted_remaining_qs", [])
+                    st.session_state.setdefault("_llm_exhausted_engine_state", {})
+                    st.session_state.setdefault("_llm_exhausted_source_map", {})
+                st.session_state["_llm_exhausted_pending"] = True
+                st.session_state["_llm_exhausted_step"] = 1
                 _navigate_to(3)  # calls st.rerun()
                 st.stop()  # safety: never fall through to generic error handler
 
@@ -13508,6 +13676,7 @@ if active_page == 3:
                                  help="Get a free key from Groq or Google AI in 30 seconds"):
                         st.session_state[_gen_method_key] = "own_api"
                         st.session_state["allow_template_fallback_once"] = False
+                        st.session_state["_use_socsim_experimental"] = False
                         st.session_state["is_generating"] = False
                         _navigate_to(3)
                 with _err_c2:
@@ -13515,6 +13684,7 @@ if active_page == 3:
                                  type="secondary", use_container_width=True,
                                  help="Instant generation using domain-specific templates"):
                         st.session_state["allow_template_fallback_once"] = True
+                        st.session_state["_use_socsim_experimental"] = False
                         st.session_state[_gen_method_key] = "template"
                         st.session_state["is_generating"] = True
                         st.session_state["_generation_phase"] = 1
@@ -13543,10 +13713,13 @@ if active_page == 3:
                     'How would you like to proceed?</span></div>',
                     unsafe_allow_html=True,
                 )
-                _to_c1, _to_c2, _to_c3 = st.columns(3)
+                _to_c1, _to_c2, _to_c3, _to_c4 = st.columns(4)
                 with _to_c1:
                     if st.button("Try again", key="_timeout_retry",
                                  type="primary", use_container_width=True):
+                        _retry_method = st.session_state.get(_gen_method_key, "free_llm")
+                        st.session_state["allow_template_fallback_once"] = _retry_method in ("template", "experimental")
+                        st.session_state["_use_socsim_experimental"] = _retry_method == "experimental"
                         st.session_state["is_generating"] = True
                         st.session_state["_generation_phase"] = 1
                         _navigate_to(3)
@@ -13554,13 +13727,25 @@ if active_page == 3:
                     if st.button("Use my own API key", key="_timeout_switch_api",
                                  type="secondary", use_container_width=True):
                         st.session_state[_gen_method_key] = "own_api"
+                        st.session_state["allow_template_fallback_once"] = False
+                        st.session_state["_use_socsim_experimental"] = False
                         st.session_state["is_generating"] = False
                         _navigate_to(3)
                 with _to_c3:
-                    if st.button("Use Template Engine", key="_timeout_switch_template",
+                    if st.button("Template Engine", key="_timeout_switch_template",
                                  type="secondary", use_container_width=True):
                         st.session_state[_gen_method_key] = "template"
                         st.session_state["allow_template_fallback_once"] = True
+                        st.session_state["_use_socsim_experimental"] = False
+                        st.session_state["is_generating"] = True
+                        st.session_state["_generation_phase"] = 1
+                        _navigate_to(3)
+                with _to_c4:
+                    if st.button("Behavioral Engine", key="_timeout_switch_experimental",
+                                 type="secondary", use_container_width=True):
+                        st.session_state[_gen_method_key] = "experimental"
+                        st.session_state["allow_template_fallback_once"] = True
+                        st.session_state["_use_socsim_experimental"] = True
                         st.session_state["is_generating"] = True
                         st.session_state["_generation_phase"] = 1
                         _navigate_to(3)
@@ -13606,7 +13791,44 @@ if active_page == 3:
                 except Exception as _detail_err:
                     st.caption(f"Could not display full input summary: {_detail_err}")
 
-            st.info("You can click **Reset & Generate New** to try again with different settings.")
+            # v1.2.0.7: Add quick-switch recovery buttons to ALL error paths
+            st.markdown("**Quick recovery — switch generation method:**")
+            _ge_c1, _ge_c2, _ge_c3, _ge_c4 = st.columns(4)
+            with _ge_c1:
+                if st.button("Retry", key="_gen_err_retry",
+                             type="primary", use_container_width=True):
+                    _retry_method = st.session_state.get("generation_method", "template")
+                    st.session_state["allow_template_fallback_once"] = _retry_method in ("template", "experimental")
+                    st.session_state["_use_socsim_experimental"] = _retry_method == "experimental"
+                    st.session_state["is_generating"] = True
+                    st.session_state["_generation_phase"] = 1
+                    _navigate_to(3)
+            with _ge_c2:
+                if st.button("Template Engine", key="_gen_err_template",
+                             type="secondary", use_container_width=True):
+                    st.session_state["generation_method"] = "template"
+                    st.session_state["allow_template_fallback_once"] = True
+                    st.session_state["_use_socsim_experimental"] = False
+                    st.session_state["is_generating"] = True
+                    st.session_state["_generation_phase"] = 1
+                    _navigate_to(3)
+            with _ge_c3:
+                if st.button("Behavioral Engine", key="_gen_err_experimental",
+                             type="secondary", use_container_width=True):
+                    st.session_state["generation_method"] = "experimental"
+                    st.session_state["allow_template_fallback_once"] = True
+                    st.session_state["_use_socsim_experimental"] = True
+                    st.session_state["is_generating"] = True
+                    st.session_state["_generation_phase"] = 1
+                    _navigate_to(3)
+            with _ge_c4:
+                if st.button("Use my API key", key="_gen_err_own_api",
+                             type="secondary", use_container_width=True):
+                    st.session_state["generation_method"] = "own_api"
+                    st.session_state["allow_template_fallback_once"] = False
+                    st.session_state["_use_socsim_experimental"] = False
+                    st.session_state["is_generating"] = False
+                    _navigate_to(3)
             st.session_state["is_generating"] = False
             st.session_state["generation_requested"] = False
             st.session_state["_generation_phase"] = 0  # v1.1.1.3: Reset phase so stale-phase-2 recovery doesn't fire
