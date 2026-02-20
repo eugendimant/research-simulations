@@ -836,10 +836,21 @@ class SurveyDescriptionParser:
                 oe_var = f"{base_oe}_{_oe_suffix}"
                 _oe_suffix += 1
             _used_var_names.add(oe_var)
+            # Auto-generate question_context from study description + question text
+            # so builder-created OE questions (including examples) are immediately usable
+            # without requiring manual context entry on the Design page.
+            _auto_ctx = ""
+            if parsed.study_description and oe.question_text:
+                _desc_snippet = parsed.study_description[:120].rstrip(".")
+                _auto_ctx = f"Participants respond to: {oe.question_text[:80]}. Study context: {_desc_snippet}."
+            elif oe.question_text:
+                _auto_ctx = f"Participants respond to: {oe.question_text[:120]}"
+
             open_ended.append({
                 "variable_name": oe_var,
                 "name": oe.question_text[:50],
                 "question_text": oe.question_text,
+                "question_context": _auto_ctx,
                 "source_type": "conversational_builder",
                 "force_response": True,
                 "context_type": oe.context_type,
