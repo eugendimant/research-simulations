@@ -21,7 +21,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-__version__ = "1.2.0.5"
+__version__ = "1.2.0.6"
 
 _ERROR_LOG_DIR = Path(__file__).resolve().parent.parent / "_error_logs"
 _PENDING_REPORT_FILE = _ERROR_LOG_DIR / "PENDING_FIXES.md"

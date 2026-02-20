@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Edge case stress tests for all 4 generation methods."""
 import sys, os, traceback
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "simulation_app"))
-os.chdir(os.path.join(os.path.dirname(__file__), "simulation_app"))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "simulation_app"))
+os.chdir(os.path.join(os.path.dirname(__file__), "..", "simulation_app"))
 from utils.enhanced_simulation_engine import EnhancedSimulationEngine, EffectSizeSpec
 
 os.environ.pop("LLM_API_KEY", None)

@@ -10,7 +10,7 @@ This tests that:
 5. No crashes during generation for any method
 """
 import sys, os
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "simulation_app"))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "simulation_app"))
 os.environ.setdefault("STREAMLIT_RUNTIME", "0")
 
 from utils.enhanced_simulation_engine import EnhancedSimulationEngine as BehavioralSimulationEngine
