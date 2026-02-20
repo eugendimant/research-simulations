@@ -9966,7 +9966,54 @@ class EnhancedSimulationEngine:
             p=[male_pct / total, female_pct / total, nonbinary_pct / total, pnts_pct / total],
         )
 
-        return pd.DataFrame({"Age": ages, "Gender": genders})
+        df_demo = pd.DataFrame({"Age": ages, "Gender": genders})
+
+        # v1.2.0.4: Custom demographic variables (political orientation, education, etc.)
+        custom_demos = self.demographics.get("custom_demographics", [])
+        for demo_spec in custom_demos:
+            if not isinstance(demo_spec, dict):
+                continue
+            col_name = str(demo_spec.get("name", "")).strip()
+            if not col_name:
+                continue
+            demo_type = str(demo_spec.get("demo_type", "categorical")).lower()
+            options = demo_spec.get("options", [])
+            weights = demo_spec.get("weights", [])
+
+            if demo_type == "categorical" and options:
+                # Categorical variable (e.g., political orientation, education, ethnicity)
+                n_opts = len(options)
+                if weights and len(weights) == n_opts:
+                    _w = np.array(weights, dtype=float)
+                    _w = np.clip(_w, 0, None)
+                    _wsum = _w.sum()
+                    probs = (_w / _wsum).tolist() if _wsum > 0 else [1.0 / n_opts] * n_opts
+                else:
+                    probs = [1.0 / n_opts] * n_opts
+                df_demo[col_name] = rng.choice(options, size=int(n), p=probs)
+            elif demo_type == "numeric":
+                # Numeric demographic (e.g., income, years of education)
+                d_mean = float(demo_spec.get("mean", 50))
+                d_sd = float(demo_spec.get("sd", 15))
+                d_min = float(demo_spec.get("min", 0))
+                d_max = float(demo_spec.get("max", 100))
+                vals = rng.normal(d_mean, max(0.1, d_sd), int(n))
+                vals = np.clip(vals, d_min, d_max)
+                if demo_spec.get("integer", True):
+                    vals = vals.astype(int)
+                df_demo[col_name] = vals
+            elif demo_type == "ordinal" and options:
+                # Ordinal variable with roughly normal distribution across levels
+                n_opts = len(options)
+                # Centre-weighted distribution for ordinal levels
+                _x = np.arange(n_opts, dtype=float)
+                _centre = (n_opts - 1) / 2.0
+                _spread = max(1.0, n_opts / 3.0)
+                _raw = np.exp(-0.5 * ((_x - _centre) / _spread) ** 2)
+                probs = (_raw / _raw.sum()).tolist()
+                df_demo[col_name] = rng.choice(options, size=int(n), p=probs)
+
+        return df_demo
 
     def _generate_condition_assignment(self, n: int) -> pd.Series:
         """Generate condition assignments based on allocation percentages or equal distribution.
@@ -10286,6 +10333,17 @@ class EnhancedSimulationEngine:
                 ("Gender", "Participant gender: Male, Female, Non-binary, or Prefer not to say"),
             ]
         )
+        # v1.2.0.4: Add custom demographic columns to the output
+        for _demo_col in demographics_df.columns:
+            if _demo_col not in ("Age", "Gender"):
+                data[_demo_col] = demographics_df[_demo_col].tolist()
+                _custom_demos = self.demographics.get("custom_demographics", [])
+                _demo_desc = next(
+                    (d.get("description", f"Custom demographic variable: {_demo_col}")
+                     for d in _custom_demos if isinstance(d, dict) and d.get("name") == _demo_col),
+                    f"Custom demographic variable: {_demo_col}"
+                )
+                self.column_info.append((_demo_col, _demo_desc))
 
         # v1.0.8.1: Progress callback for real-time UI updates
         def _report_progress(phase: str, current: int, total: int) -> None:
