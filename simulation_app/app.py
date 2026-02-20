@@ -54,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.2.0.7"
-BUILD_ID = "20260220-v12007-recovery-button-state-hardening"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.2.0.8"
+BUILD_ID = "20260220-v12008-builder-autocontext-crash-guards-audit-fixes"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -118,7 +118,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.2.0.7"  # v1.2.0.7: Recovery button state hardening — all 11 error recovery buttons now set all required flags
+APP_VERSION = "1.2.0.8"  # v1.2.0.8: Builder auto-context, crash guards, deep audit fixes
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -4301,8 +4301,14 @@ def _finalize_builder_design(
     st.session_state["confirmed_open_ended"] = inferred.get("open_ended_questions", [])
     st.session_state["open_ended_confirmed"] = True
 
-    # v1.0.4.5: Clean up stale QSF design page state to prevent mixed UI
-    st.session_state["_builder_oe_context_complete"] = True
+    # v1.2.0.8: Check if ALL OE questions actually have context before marking complete.
+    # Previously this was blindly set to True, causing the Design page to show
+    # "OE context needed" after the flag was overridden by the context check widgets.
+    _oe_list = inferred.get("open_ended_questions", [])
+    _all_oe_have_ctx = all(
+        bool((q.get("question_context") or "").strip()) for q in _oe_list
+    ) if _oe_list else True
+    st.session_state["_builder_oe_context_complete"] = _all_oe_have_ctx
     st.session_state.pop("_br_scale_version", None)
     st.session_state.pop("_br_oe_version", None)
 
@@ -4416,8 +4422,17 @@ def _render_conversational_builder() -> None:
 
     # Check if builder is already complete
     if st.session_state.get("conversational_builder_complete"):
-        if st.button("Continue to Design \u2192", key="nav_next_builder", type="primary", use_container_width=True):
-            _navigate_to(2)
+        # v1.2.0.8: Check if OE context is incomplete — if so, guide the user
+        _oe_ctx_ok = st.session_state.get("_builder_oe_context_complete", True)
+        _has_oe = bool(st.session_state.get("inferred_design", {}).get("open_ended_questions"))
+        if _has_oe and not _oe_ctx_ok:
+            st.warning(
+                "Your study design has open-ended questions that need context. "
+                "Click **Continue to Design** at the top to add context for each question."
+            )
+        # v1.2.0.8: Removed duplicate "Continue to Design" button — the navigation bar
+        # at the top of Step 2 already provides this. Only show "Edit my description" here.
+        st.success("Study description complete. Use **Continue to Design** at the top to review your design.")
         if st.button("Edit my description", key="builder_reopen_edit"):
             st.session_state["conversational_builder_complete"] = False
             st.rerun()
@@ -11756,6 +11771,9 @@ if active_page == 3:
                                  type="secondary", use_container_width=True,
                                  help="Free keys available from Groq, Google AI, etc."):
                         st.session_state[_gen_method_key] = "own_api"
+                        st.session_state["allow_template_fallback_once"] = False
+                        st.session_state["_use_socsim_experimental"] = False
+                        st.session_state["_llm_connectivity_status"] = None  # v1.2.0.8: Clear stale cache
                         st.rerun()
                 with _pre_c2:
                     if st.button("Switch to Template Engine", key="_pre_switch_template",
@@ -11763,6 +11781,8 @@ if active_page == 3:
                                  help="Instant generation, runs entirely offline"):
                         st.session_state[_gen_method_key] = "template"
                         st.session_state["allow_template_fallback_once"] = True
+                        st.session_state["_use_socsim_experimental"] = False
+                        st.session_state["_llm_connectivity_status"] = None  # v1.2.0.8: Clear stale cache
                         st.rerun()
 
         # Wire method choice into engine settings
@@ -12121,6 +12141,22 @@ if active_page == 3:
     # Phase 2: Actually generate (progress UI is now visible)
     if is_generating and st.session_state.get("_generation_phase", 0) == 1:
         st.session_state["_generation_phase"] = 2  # Move to generation phase
+
+        # v1.2.0.8: Initialize df/metadata BEFORE try block so error handlers
+        # never hit UnboundLocalError if engine construction crashes.
+        df = None
+        metadata = None
+
+        # v1.2.0.8: Guard against corrupted/missing inferred_design.
+        # If session state was cleared (app restart, cache timeout), inferred can be None.
+        if inferred is None:
+            st.session_state["is_generating"] = False
+            st.session_state["_generation_phase"] = 0
+            st.session_state["generation_requested"] = False
+            progress_placeholder.empty()
+            st.warning("Design configuration was lost. Please go back to **Design** and reconfigure.")
+            st.stop()
+
         # v1.1.1.3: Define _gen_method_key here — the variable is also defined in the
         # method-chooser block (guarded by `not _is_generating`), which is SKIPPED during
         # generation reruns.  Without this, every generation attempt crashes with NameError
@@ -12907,6 +12943,22 @@ if active_page == 3:
                 progress_bar.progress(25, text="Step 2/5 — Generating participant responses...")
                 df, metadata = engine.generate()
 
+            # v1.2.0.8: Validate engine output before proceeding.
+            # Engine may return (None, metadata) if it encounters an unrecoverable
+            # error internally without raising an exception.
+            if df is None or len(df) == 0:
+                st.session_state["is_generating"] = False
+                st.session_state["_generation_phase"] = 0
+                st.session_state["generation_requested"] = False
+                progress_placeholder.empty()
+                st.error(
+                    "Data generation failed — the engine returned no data. "
+                    "Please check your design configuration and try again."
+                )
+                st.stop()
+            if metadata is None:
+                metadata = {}
+
             _gen_total_time = __import__('time').time() - _progress_start_time
             # v1.1.1.0: Signal watchdog thread to stop (it's a daemon, but be clean)
             _generation_timed_out[0] = True
@@ -12927,7 +12979,8 @@ if active_page == 3:
                         for _ai_col in _ai_cols:
                             if _ai_col in _partial_data:
                                 _ai_data = _partial_data[_ai_col]
-                                if hasattr(_ai_data, '__len__') and len(_ai_data) == len(df):
+                                # v1.2.0.8: Strict type check — only accept list/array/Series (not dict)
+                                if isinstance(_ai_data, (list, pd.Series)) and len(_ai_data) == len(df):
                                     df[_ai_col] = _ai_data
                                     _n_merged += 1
                                 else:

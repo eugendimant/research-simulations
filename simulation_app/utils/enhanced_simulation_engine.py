@@ -10807,6 +10807,15 @@ class EnhancedSimulationEngine:
         for log_entry in _scale_generation_log:
             item_cols = log_entry["columns_generated"]
             if len(item_cols) > 1:
+                # v1.2.0.8: Validate all columns exist and have n rows before computing mean.
+                # If generation was interrupted, some columns may be missing or incomplete.
+                if any(col not in data for col in item_cols):
+                    _missing = [c for c in item_cols if c not in data]
+                    self._log(f"WARNING: Skipping composite mean — missing columns: {_missing}")
+                    continue
+                if any(len(data[col]) < n for col in item_cols):
+                    self._log(f"WARNING: Skipping composite mean — some columns have < {n} rows")
+                    continue
                 # Compute row-wise mean across all items for this scale
                 mean_values: List[float] = []
                 for i in range(n):
@@ -11226,11 +11235,14 @@ class EnhancedSimulationEngine:
                 _q_hash_input = (q_text + col_name).encode('utf-8', errors='replace')
                 q_text_hash = int(hashlib.md5(_q_hash_input).hexdigest()[:8], 16)
                 p_seed = (self.seed + i * 100 + col_hash + q_text_hash) % (2**31)
-                persona_name = assigned_personas[i]
-                # v1.0.6.1: Safe lookup — fallback to first available persona if name missing
-                persona = self.available_personas.get(
-                    persona_name, next(iter(self.available_personas.values()))
-                )
+                persona_name = assigned_personas[i] if i < len(assigned_personas) else "engaged"
+                # v1.2.0.8: Safe lookup with empty-pool guard. next(iter({})) raises StopIteration.
+                persona = self.available_personas.get(persona_name)
+                if persona is None:
+                    persona = next(iter(self.available_personas.values()), None) if self.available_personas else None
+                if persona is None:
+                    from .persona_library import Persona
+                    persona = Persona(name="default", description="Default responder", weight=1.0, traits={})
                 response_vals = participant_item_responses[i]
                 # v1.0.6.1: Filter NaN before computing mean to prevent propagation
                 _clean_resp = [float(v) for v in response_vals if v is not None and not (isinstance(v, float) and np.isnan(v))] if response_vals else []
@@ -11843,8 +11855,13 @@ class EnhancedSimulationEngine:
                         seed=self.seed,
                         progress_callback=self.progress_callback,
                     )
-                    metadata["socsim"] = socsim_meta
-                    self._log(f"SocSim enrichment complete: {len(socsim_meta.get('enriched_dvs', []))} DVs enriched")
+                    # v1.2.0.8: Null-check socsim_meta — run_socsim_enrichment() may return None
+                    if isinstance(socsim_meta, dict):
+                        metadata["socsim"] = socsim_meta
+                        self._log(f"SocSim enrichment complete: {len(socsim_meta.get('enriched_dvs', []))} DVs enriched")
+                    else:
+                        metadata["socsim"] = {"socsim_used": False, "error": "Invalid return from enrichment"}
+                        self._log("SocSim enrichment returned invalid metadata")
                 else:
                     self._log("SocSim: No game-theory DVs detected — running standard simulation only")
                     metadata["socsim"] = {"socsim_used": False, "reason": "no_game_dvs_detected"}
