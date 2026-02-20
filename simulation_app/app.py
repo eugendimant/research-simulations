@@ -54,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.2.0.6"
-BUILD_ID = "20260220-v12006-error-recovery-repo-cleanup-exhaustion-hardening"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.2.0.7"
+BUILD_ID = "20260220-v12007-recovery-button-state-hardening"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -118,7 +118,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.2.0.6"  # v1.2.0.6: Error recovery hardening, repo cleanup, exhaustion handler robustification
+APP_VERSION = "1.2.0.7"  # v1.2.0.7: Recovery button state hardening — all 11 error recovery buttons now set all required flags
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -12083,6 +12083,11 @@ if active_page == 3:
         with _sp_c1:
             if st.button("Retry", key="_stale_retry",
                          type="primary", use_container_width=True):
+                # Preserve existing method; ensure all flags are explicitly set
+                _retry_method = st.session_state.get("generation_method", "template")
+                st.session_state["generation_method"] = _retry_method
+                st.session_state["allow_template_fallback_once"] = _retry_method in ("template", "experimental")
+                st.session_state["_use_socsim_experimental"] = _retry_method == "experimental"
                 st.session_state["is_generating"] = True
                 st.session_state["_generation_phase"] = 1
                 _navigate_to(3)
@@ -12709,10 +12714,15 @@ if active_page == 3:
                     st.session_state["generation_method"] = "template"
                     st.session_state["allow_template_fallback_once"] = True
                     st.session_state["_use_socsim_experimental"] = False
+                    st.session_state["is_generating"] = True
+                    st.session_state["_generation_phase"] = 1
                     _navigate_to(3)
             with _init_c2:
                 if st.button("Try again", key="_init_fail_retry",
                              type="secondary", use_container_width=True):
+                    _retry_method = st.session_state.get("generation_method", "template")
+                    st.session_state["allow_template_fallback_once"] = _retry_method in ("template", "experimental")
+                    st.session_state["_use_socsim_experimental"] = _retry_method == "experimental"
                     st.session_state["is_generating"] = True
                     st.session_state["_generation_phase"] = 1
                     _navigate_to(3)
@@ -12755,6 +12765,10 @@ if active_page == 3:
                         if st.button("Try again", key="_preflight_retry",
                                      type="primary", use_container_width=True,
                                      help="Re-test the AI providers"):
+                            # Preserve existing method; set all flags explicitly
+                            _retry_method = st.session_state.get(_gen_method_key, "free_llm")
+                            st.session_state["allow_template_fallback_once"] = _retry_method in ("template", "experimental")
+                            st.session_state["_use_socsim_experimental"] = _retry_method == "experimental"
                             st.session_state["is_generating"] = True
                             st.session_state["_generation_phase"] = 1
                             _navigate_to(3)
@@ -12764,6 +12778,7 @@ if active_page == 3:
                                      help="Get a free key from Groq or Google AI"):
                             st.session_state[_gen_method_key] = "own_api"
                             st.session_state["allow_template_fallback_once"] = False
+                            st.session_state["_use_socsim_experimental"] = False
                             st.session_state["is_generating"] = False
                             _navigate_to(3)
                     with _hc3:
@@ -12772,6 +12787,7 @@ if active_page == 3:
                                      help="Instant generation using domain-specific templates"):
                             st.session_state["allow_template_fallback_once"] = True
                             st.session_state[_gen_method_key] = "template"
+                            st.session_state["_use_socsim_experimental"] = False
                             st.session_state["is_generating"] = True
                             st.session_state["_generation_phase"] = 1
                             _navigate_to(3)
@@ -13660,6 +13676,7 @@ if active_page == 3:
                                  help="Get a free key from Groq or Google AI in 30 seconds"):
                         st.session_state[_gen_method_key] = "own_api"
                         st.session_state["allow_template_fallback_once"] = False
+                        st.session_state["_use_socsim_experimental"] = False
                         st.session_state["is_generating"] = False
                         _navigate_to(3)
                 with _err_c2:
@@ -13667,6 +13684,7 @@ if active_page == 3:
                                  type="secondary", use_container_width=True,
                                  help="Instant generation using domain-specific templates"):
                         st.session_state["allow_template_fallback_once"] = True
+                        st.session_state["_use_socsim_experimental"] = False
                         st.session_state[_gen_method_key] = "template"
                         st.session_state["is_generating"] = True
                         st.session_state["_generation_phase"] = 1
@@ -13699,6 +13717,9 @@ if active_page == 3:
                 with _to_c1:
                     if st.button("Try again", key="_timeout_retry",
                                  type="primary", use_container_width=True):
+                        _retry_method = st.session_state.get(_gen_method_key, "free_llm")
+                        st.session_state["allow_template_fallback_once"] = _retry_method in ("template", "experimental")
+                        st.session_state["_use_socsim_experimental"] = _retry_method == "experimental"
                         st.session_state["is_generating"] = True
                         st.session_state["_generation_phase"] = 1
                         _navigate_to(3)
@@ -13706,6 +13727,8 @@ if active_page == 3:
                     if st.button("Use my own API key", key="_timeout_switch_api",
                                  type="secondary", use_container_width=True):
                         st.session_state[_gen_method_key] = "own_api"
+                        st.session_state["allow_template_fallback_once"] = False
+                        st.session_state["_use_socsim_experimental"] = False
                         st.session_state["is_generating"] = False
                         _navigate_to(3)
                 with _to_c3:
@@ -13713,6 +13736,7 @@ if active_page == 3:
                                  type="secondary", use_container_width=True):
                         st.session_state[_gen_method_key] = "template"
                         st.session_state["allow_template_fallback_once"] = True
+                        st.session_state["_use_socsim_experimental"] = False
                         st.session_state["is_generating"] = True
                         st.session_state["_generation_phase"] = 1
                         _navigate_to(3)
@@ -13773,6 +13797,9 @@ if active_page == 3:
             with _ge_c1:
                 if st.button("Retry", key="_gen_err_retry",
                              type="primary", use_container_width=True):
+                    _retry_method = st.session_state.get("generation_method", "template")
+                    st.session_state["allow_template_fallback_once"] = _retry_method in ("template", "experimental")
+                    st.session_state["_use_socsim_experimental"] = _retry_method == "experimental"
                     st.session_state["is_generating"] = True
                     st.session_state["_generation_phase"] = 1
                     _navigate_to(3)
