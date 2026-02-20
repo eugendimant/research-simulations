@@ -84,7 +84,13 @@ Regardless of input method, you review and adjust the detected design:
 
 - Verify conditions, scales, and open-ended questions
 - Edit names, scale ranges, and item counts inline
+- **Scale type auto-correction**: Single-item DVs are automatically identified (not mislabeled as "Likert Scale"); multi-item scales are properly categorized by type (matrix, numbered items, single item). Scale min/max values are propagated from QSF detection.
 - Add or remove measures as needed
+- **Custom demographic variables**: Add demographic questions beyond the defaults (Age, Gender). Quick-add templates include Political Orientation, Education Level, Ethnicity, Household Income, Employment Status, Religion, and Party Identification. Each demographic is fully customizable:
+  - **Categorical**: Edit options and their probability weights (e.g., Political Orientation with "Very Conservative" through "Very Progressive")
+  - **Ordinal**: Set ordered categories with center-weighted distribution
+  - **Numeric**: Configure mean, standard deviation, and min/max bounds (e.g., household income)
+  - **Distribution preview**: See the expected distribution before generating
 - Customize persona weights for domain-specific response patterns
 - Set expected effect sizes (Cohen's d) with visual condition selectors
 
@@ -95,7 +101,7 @@ The system produces a publication-ready CSV file containing:
 - Participant IDs and condition assignments
 - Likert scale responses with realistic distributions
 - Unique open-ended text responses
-- Demographics and metadata
+- Demographics (including custom variables) and metadata
 - Quality metrics and validation flags
 - A comprehensive instructor report with statistical analyses, persona breakdowns, and effect size verification
 
@@ -169,6 +175,18 @@ The system models several well-documented response styles:
 
 **Midpoint Avoidance**: Cultural variation in willingness to use neutral midpoint. East Asian samples typically show lower midpoint avoidance than Western samples.
 
+### Persona-Demographic Coupling
+
+Custom demographic variables are not assigned randomly—they are **coupled to each participant's behavioral persona** to create realistic correlations between demographic characteristics and response patterns, as observed in real survey data.
+
+The coupling algorithm uses a **swap-sort** approach that preserves exact marginal distributions while creating realistic associations:
+
+1. **Affinity lookup**: A mapping defines which persona types tend toward which demographic values (e.g., "Extreme Responder" personas are more likely to hold strong political orientations; "Engaged" personas correlate with higher education levels)
+2. **Trait-based soft coupling**: Beyond explicit persona-demographic mappings, participant traits like extremity, attention, and consistency create additional correlations (e.g., high-extremity participants skew toward extreme political positions)
+3. **Distribution-preserving swaps**: Rather than generating new values, the algorithm only *swaps* existing demographic assignments between participants when a swap improves the persona-demographic fit—ensuring the overall distribution exactly matches the user's specified weights
+
+This means a simulated dataset where 35% of participants are "Engaged Responders" will show a natural correlation between engagement and education level, mirroring real-world patterns without distorting the researcher's target demographic distributions.
+
 ### Behavioral Coherence (Rating–Text Consistency)
 
 A key advancement is the **behavioral coherence pipeline** that ensures each simulated participant's numeric ratings and open-text responses tell a coherent story. The same person who rates trust at 6-7/7 writes positively about trust; a participant who straight-lines 4s across all items writes brief, disengaged text.
@@ -241,6 +259,33 @@ If the AI service is unavailable, the system falls back to a comprehensive templ
 6. **25 careless response templates**: Even low-effort responses reference the actual topic ("trump is ok i guess") rather than generic off-topic text ("fine")
 7. **Context-awareness**: Responses reference the experimental manipulation when appropriate
 8. **Condition-specificity**: Only participants who would see a question receive a response
+
+### LLM Exhaustion Recovery
+
+When free AI providers reach their rate limits during generation, the system provides a **transparent, user-controlled recovery flow** rather than silently switching methods:
+
+1. **Immediate notification**: The user sees a clear message showing how many participants were completed with AI and how many remain
+2. **Four simultaneous options** presented as equal choices:
+   - **Retry Built-in AI**: Wait for rate limits to reset and try again
+   - **Use Your Own API Key**: Enter a personal (free) key from Groq, Cerebras, or OpenRouter for unlimited capacity
+   - **Template Engine**: Complete remaining participants with the 225-domain template system
+   - **Adaptive Behavioral Engine**: Switch to the paradigm-aware behavioral simulation engine
+3. **Data preservation**: Responses already generated by AI are preserved; only remaining participants use the selected fallback method
+4. **Source transparency**: The final dataset includes metadata showing which responses were AI-generated vs. template-generated
+
+This ensures the researcher always knows—and controls—the data source for their simulated dataset.
+
+### Self-Healing Error Pipeline
+
+The system includes an **automatic error logging and self-healing pipeline** that captures generation failures and facilitates rapid fixes:
+
+1. **Automatic error capture**: Every generation error is logged with full context—traceback, session state snapshot, generation method, timing, and phase
+2. **Error fingerprinting**: Errors are deduplicated using a SHA-256 fingerprint of the error type + last traceback frame, so recurring issues are counted rather than duplicated
+3. **Structured reporting**: On software updates (version changes), the system automatically generates a structured `PENDING_FIXES.md` report listing all unresolved errors with their full context
+4. **Privacy-preserving**: Sensitive keys (API keys, passwords, binary content) are automatically redacted from error logs
+5. **Fix tracking**: Each error carries a status (pending → acknowledged → fixed) with the version that resolved it
+
+This pipeline ensures that user-encountered errors are never lost and are systematically addressed in subsequent updates.
 
 ### Example Responses
 
@@ -532,7 +577,15 @@ If you use this tool in your research or teaching, please acknowledge:
 
 ## Changelog Highlights
 
-### Version 1.0.4.9 (Latest)
+### Version 1.2.0.5 (Latest)
+- **Custom demographic variables**: Full flexibility to add and customize demographic questions (Political Orientation, Education, Ethnicity, Income, Employment, Religion, Party ID) with editable options, weights, and distributions
+- **Persona-demographic coupling**: Swap-sort algorithm creates realistic correlations between persona types and demographic values while preserving exact marginal distributions
+- **Scale type auto-correction**: Single-item DVs properly identified; scale type/min/max propagated from QSF detection
+- **LLM exhaustion recovery**: Transparent 4-option UI when free AI providers are exhausted—user always controls the data source
+- **Self-healing error pipeline**: Automatic error logging with full context capture, fingerprinting, deduplication, and structured fix reporting on software updates
+- **Stale-phase recovery**: Unprotected code paths in the generation pipeline now wrapped in comprehensive error handling
+
+### Version 1.0.4.9
 - **5 new research paradigm domains**: Narrative transportation, social comparison, gratitude interventions, moral cleansing/sacred values, digital attention economy
 - **6 new domain-specific personas**: Narrative Thinker, Social Comparer, Grateful Optimist, Moral Absolutist, Digital Native, Financial Deliberator
 - **Enhanced social desirability**: Domain-sensitive construct detection for moral identity, gratitude, digital habits, social comparison
@@ -573,6 +626,6 @@ For questions, feature requests, or collaboration inquiries, please contact thro
 
 ---
 
-*Version 1.0.4.9 | Proprietary Software | All Rights Reserved*
+*Version 1.2.0.5 | Proprietary Software | All Rights Reserved*
 
 *Developed by Dr. Eugen Dimant*

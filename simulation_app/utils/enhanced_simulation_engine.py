@@ -10015,6 +10015,141 @@ class EnhancedSimulationEngine:
 
         return df_demo
 
+    def _adjust_demographics_for_personas(
+        self,
+        data: Dict[str, list],
+        assigned_personas: List[str],
+        all_traits: List[Dict[str, float]],
+        n: int,
+    ) -> None:
+        """Adjust custom demographic values for persona consistency.
+
+        v1.2.0.5: Post-hoc adjustment that swaps demographic values between
+        participants to create realistic persona↔demographic correlations
+        WITHOUT changing the marginal distribution of any demographic column.
+
+        Strategy: for each ordinal/categorical demographic, score how "fitting"
+        each option is for each persona, then probabilistically swap values
+        between participants so that better-fitting values end up with the
+        matching personas.  Because we only swap (never create new values),
+        the marginal distribution is exactly preserved.
+
+        Grounded in:
+        - Weijters et al. (2010): acquiescence correlates with lower education
+        - Yan & Tourangeau (2008): response speed correlates with age
+        - Greenleaf (1992): extremity associated with certain demographics
+        - Iyengar & Westwood (2015): political identity shapes economic behavior
+        """
+        custom_demos = self.demographics.get("custom_demographics", [])
+        if not custom_demos:
+            return
+
+        rng = np.random.RandomState(self.seed + 2000)
+
+        # Persona→demographic affinity rules.  Maps (persona_keyword, demo_keyword)
+        # to a direction: +1 = skew toward high end of ordinal / last options,
+        # -1 = skew toward low end / first options.  Magnitude 0.0-1.0.
+        _PERSONA_DEMO_AFFINITIES = {
+            # Political
+            ("partisan", "political"): 0.7,    # Partisan Ideologue → extreme political orientation
+            ("partisan", "party"): 0.7,
+            ("egalitarian", "political"): -0.3, # Egalitarian → liberal-leaning
+            ("conformist", "political"): 0.0,   # Conformist → moderate
+            ("individualist", "political"): 0.3,# Individualist → conservative-leaning
+            # Education
+            ("deep_learner", "education"): 0.6, # Deep Learner → higher education
+            ("surface_learner", "education"): -0.3,
+            ("engaged", "education"): 0.4,      # Engaged Responder → higher education (Krosnick)
+            ("careless", "education"): -0.5,    # Careless → lower education (Weijters et al.)
+            ("satisficer", "education"): -0.2,
+            # Age-related
+            ("tech_enthusiast", "age"): -0.5,   # Tech personas → younger
+            ("digital_native", "age"): -0.6,
+            ("gen_z", "age"): -0.8,
+            ("boomer", "age"): 0.8,
+            ("traditional", "age"): 0.5,
+            # Income
+            ("deal_seeker", "income"): -0.3,    # Deal Seeker → lower income
+            ("hedonic", "income"): 0.3,         # Hedonic Consumer → higher income
+            ("conscious_consumer", "income"): 0.2,
+            # Religion
+            ("moral_absolutist", "religio"): 0.5,
+            ("conformist", "religio"): 0.3,
+        }
+
+        for demo_spec in custom_demos:
+            if not isinstance(demo_spec, dict):
+                continue
+            col_name = str(demo_spec.get("name", "")).strip()
+            if not col_name or col_name not in data:
+                continue
+            demo_type = str(demo_spec.get("demo_type", "categorical")).lower()
+            options = demo_spec.get("options", [])
+            if demo_type not in ("ordinal", "categorical") or len(options) < 2:
+                continue
+
+            col_lower = col_name.lower()
+            values = list(data[col_name])
+            n_opts = len(options)
+
+            # Compute a "preference score" per participant: how much they should
+            # skew toward high vs low options based on their persona.
+            pref_scores = np.zeros(n, dtype=float)
+            for i in range(n):
+                persona_lower = assigned_personas[i].lower().replace(" ", "_")
+                traits = all_traits[i]
+                score = 0.0
+                for (p_key, d_key), affinity in _PERSONA_DEMO_AFFINITIES.items():
+                    if p_key in persona_lower and d_key in col_lower:
+                        score += affinity
+                # Also use trait-based soft coupling:
+                # extremity → more extreme ordinal values
+                extremity = traits.get("extremity", 0.5)
+                if extremity > 0.7 and "political" in col_lower:
+                    score += (extremity - 0.5) * 0.8  # push toward extremes
+
+                # acquiescence + low attention → lower education affinity (Weijters)
+                if "education" in col_lower:
+                    acq = traits.get("acquiescence", 0.5)
+                    att = traits.get("attention_level", 0.7)
+                    score += (att - 0.5) * 0.5  # higher attention → higher education
+                    score -= (acq - 0.5) * 0.3  # higher acquiescence → lower education
+
+                pref_scores[i] = float(np.clip(score, -1.5, 1.5))
+
+            # Convert current values to ordinal indices
+            option_to_idx = {str(o): j for j, o in enumerate(options)}
+            current_indices = np.array([option_to_idx.get(str(v), n_opts // 2) for v in values])
+
+            # Swap-sort: participants with higher pref_scores should tend to have
+            # higher ordinal indices.  Do probabilistic swaps to create correlation
+            # while preserving the exact marginal distribution.
+            max_abs_score = max(0.01, float(np.max(np.abs(pref_scores))))
+            # Number of swap passes proportional to the strength of correlations
+            n_swaps = int(n * 0.3 * (max_abs_score / 1.5))
+            n_swaps = max(0, min(n_swaps, n * 2))
+
+            for _ in range(n_swaps):
+                # Pick two random participants
+                i1, i2 = rng.choice(n, size=2, replace=False)
+                idx1, idx2 = current_indices[i1], current_indices[i2]
+                if idx1 == idx2:
+                    continue
+                # Participant with higher pref_score should have higher index
+                if pref_scores[i1] > pref_scores[i2] and idx1 < idx2:
+                    # i1 wants higher but has lower → swap with probability
+                    swap_prob = min(0.8, abs(pref_scores[i1] - pref_scores[i2]) / 2.0)
+                    if rng.random() < swap_prob:
+                        current_indices[i1], current_indices[i2] = idx2, idx1
+                elif pref_scores[i1] < pref_scores[i2] and idx1 > idx2:
+                    swap_prob = min(0.8, abs(pref_scores[i1] - pref_scores[i2]) / 2.0)
+                    if rng.random() < swap_prob:
+                        current_indices[i1], current_indices[i2] = idx2, idx1
+
+            # Write back adjusted values
+            for i in range(n):
+                data[col_name][i] = options[int(current_indices[i])]
+
     def _generate_condition_assignment(self, n: int) -> pd.Series:
         """Generate condition assignments based on allocation percentages or equal distribution.
 
@@ -10367,6 +10502,14 @@ class EnhancedSimulationEngine:
             all_traits.append(traits)
 
         data["_PERSONA"] = assigned_personas
+
+        # v1.2.0.5: Adjust custom demographics to be consistent with personas.
+        # After personas are assigned, modulate demographic values so that e.g.
+        # "Partisan Ideologue" skews toward extreme political orientation,
+        # "Tech Enthusiast" skews younger, "Deep Learner" skews higher education.
+        # This preserves the user-specified MARGINAL distributions while adding
+        # realistic persona↔demographic correlations.
+        self._adjust_demographics_for_personas(data, assigned_personas, all_traits, n)
 
         # =================================================================
         # CROSS-DV LATENT CORRELATION SCORES

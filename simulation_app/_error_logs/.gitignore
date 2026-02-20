@@ -1,0 +1,4 @@
+# Runtime error logs — generated automatically by the error logging pipeline.
+# These are machine-specific and should not be committed.
+*
+!.gitignore
