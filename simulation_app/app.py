@@ -54,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.2.0.4"
-BUILD_ID = "20260220-v12004-exhaustion-recovery-demographics-error-pipeline"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.2.0.5"
+BUILD_ID = "20260220-v12005-demographics-flexibility-persona-coupling-methods-doc"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -118,7 +118,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.2.0.4"  # v1.2.0.4: Exhaustion recovery, demographics, error pipeline
+APP_VERSION = "1.2.0.5"  # v1.2.0.5: Demographics flexibility, persona-demographic coupling, methods doc
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -10020,34 +10020,112 @@ if active_page == 2:
                             st.session_state["_demo_keep_expanded"] = True
                             st.rerun()
 
-            # Display existing demographic variables
+            # Display existing demographic variables with EDITABLE options/weights
             if _custom_demos:
                 st.markdown(f"**{len(_custom_demos)} custom demographic variable(s):**")
+                st.caption("Click on any field to customize options, weights, and distributions.")
                 _demos_to_remove: List[int] = []
                 for _di, _dvar in enumerate(_custom_demos):
-                    _d_cols = st.columns([2.5, 1.5, 3, 0.5])
-                    with _d_cols[0]:
-                        _new_name = st.text_input(
-                            "Column name", value=_dvar.get("name", ""),
-                            key=f"_demo_name_{_di}",
-                            label_visibility="collapsed",
-                        )
-                        _custom_demos[_di]["name"] = _new_name
-                    with _d_cols[1]:
-                        _dtype = _dvar.get("demo_type", "categorical")
-                        st.caption(f"{_dtype.title()} · {len(_dvar.get('options', []))} levels" if _dvar.get("options") else _dtype.title())
-                    with _d_cols[2]:
-                        _opts = _dvar.get("options", [])
-                        if _opts:
-                            st.caption(", ".join(str(o) for o in _opts[:4]) + ("..." if len(_opts) > 4 else ""))
+                    with st.container():
+                        _d_header_cols = st.columns([2.5, 1.5, 0.5])
+                        with _d_header_cols[0]:
+                            _new_name = st.text_input(
+                                "Column name", value=_dvar.get("name", ""),
+                                key=f"_demo_name_{_di}",
+                                label_visibility="collapsed",
+                            )
+                            _custom_demos[_di]["name"] = _new_name
+                        with _d_header_cols[1]:
+                            _dtype = _dvar.get("demo_type", "categorical")
+                            _new_type = st.selectbox(
+                                "Type", ["categorical", "ordinal", "numeric"],
+                                index=["categorical", "ordinal", "numeric"].index(_dtype) if _dtype in ["categorical", "ordinal", "numeric"] else 0,
+                                key=f"_demo_type_{_di}",
+                                label_visibility="collapsed",
+                            )
+                            _custom_demos[_di]["demo_type"] = _new_type
+                        with _d_header_cols[2]:
+                            if st.button("✕", key=f"_demo_rm_{_di}",
+                                         help=f"Remove {_new_name}"):
+                                _demos_to_remove.append(_di)
+
+                        # Editable detail row — options/weights for categorical/ordinal,
+                        # mean/SD/min/max for numeric
+                        if _new_type in ("categorical", "ordinal"):
+                            _opts = _dvar.get("options", [])
+                            _wts = _dvar.get("weights", [])
+                            _detail_cols = st.columns([3, 2])
+                            with _detail_cols[0]:
+                                _opts_str = st.text_input(
+                                    "Options (comma-separated)",
+                                    value=", ".join(str(o) for o in _opts),
+                                    key=f"_demo_opts_{_di}",
+                                    help="Edit the category labels. Order matters for ordinal variables.",
+                                )
+                                _new_opts = [o.strip() for o in _opts_str.split(",") if o.strip()]
+                                _custom_demos[_di]["options"] = _new_opts
+                            with _detail_cols[1]:
+                                # Show weights editor — let user specify relative frequencies
+                                _wts_default = ", ".join(str(round(w, 1)) for w in _wts) if _wts and len(_wts) == len(_opts) else ""
+                                _wts_str = st.text_input(
+                                    "Weights (optional, comma-separated)",
+                                    value=_wts_default,
+                                    key=f"_demo_wts_{_di}",
+                                    help="Relative frequency for each option. E.g., '60, 30, 10' for 60%-30%-10%. Leave blank for equal distribution.",
+                                    placeholder="e.g., 60, 30, 10",
+                                )
+                                if _wts_str.strip():
+                                    try:
+                                        _new_wts = [float(w.strip()) for w in _wts_str.split(",") if w.strip()]
+                                        if len(_new_wts) == len(_new_opts):
+                                            _custom_demos[_di]["weights"] = _new_wts
+                                        else:
+                                            _custom_demos[_di].pop("weights", None)
+                                    except ValueError:
+                                        _custom_demos[_di].pop("weights", None)
+                                else:
+                                    _custom_demos[_di].pop("weights", None)
+                            # Show distribution preview
+                            if _new_opts:
+                                _preview_wts = _custom_demos[_di].get("weights", [])
+                                if _preview_wts and len(_preview_wts) == len(_new_opts):
+                                    _wt_sum = sum(_preview_wts)
+                                    _pct_strs = [f"{o}: {w/_wt_sum*100:.0f}%" for o, w in zip(_new_opts, _preview_wts)]
+                                elif _new_type == "ordinal":
+                                    _n_o = len(_new_opts)
+                                    _x = np.arange(_n_o, dtype=float)
+                                    _c = (_n_o - 1) / 2.0
+                                    _s = max(1.0, _n_o / 3.0)
+                                    _raw = np.exp(-0.5 * ((_x - _c) / _s) ** 2)
+                                    _pcts = _raw / _raw.sum() * 100
+                                    _pct_strs = [f"{o}: {p:.0f}%" for o, p in zip(_new_opts, _pcts)]
+                                else:
+                                    _pct_strs = [f"{o}: {100/len(_new_opts):.0f}%" for o in _new_opts]
+                                st.caption(f"Distribution: {' | '.join(_pct_strs[:6])}{'...' if len(_pct_strs) > 6 else ''}")
                         else:
-                            _d_mean = _dvar.get("mean", 50)
-                            _d_sd = _dvar.get("sd", 15)
-                            st.caption(f"M={_d_mean}, SD={_d_sd}")
-                    with _d_cols[3]:
-                        if st.button("✕", key=f"_demo_rm_{_di}",
-                                     help=f"Remove {_new_name}"):
-                            _demos_to_remove.append(_di)
+                            # Numeric variable — editable mean/SD/min/max
+                            _num_detail = st.columns(4)
+                            with _num_detail[0]:
+                                _d_mean = st.number_input("Mean", value=float(_dvar.get("mean", 50)),
+                                                           key=f"_demo_mean_{_di}", format="%.1f")
+                                _custom_demos[_di]["mean"] = _d_mean
+                            with _num_detail[1]:
+                                _d_sd = st.number_input("SD", value=float(_dvar.get("sd", 15)),
+                                                         key=f"_demo_sd_{_di}", format="%.1f")
+                                _custom_demos[_di]["sd"] = _d_sd
+                            with _num_detail[2]:
+                                _d_min = st.number_input("Min", value=float(_dvar.get("min", 0)),
+                                                          key=f"_demo_min_{_di}", format="%.1f")
+                                _custom_demos[_di]["min"] = _d_min
+                            with _num_detail[3]:
+                                _d_max = st.number_input("Max", value=float(_dvar.get("max", 100)),
+                                                          key=f"_demo_max_{_di}", format="%.1f")
+                                _custom_demos[_di]["max"] = _d_max
+                            _is_int = st.checkbox("Integer values", value=_dvar.get("integer", True),
+                                                   key=f"_demo_int_{_di}")
+                            _custom_demos[_di]["integer"] = _is_int
+                        st.markdown('<hr style="margin:4px 0;border:none;border-top:1px solid #eee;">',
+                                    unsafe_allow_html=True)
 
                 if _demos_to_remove:
                     _removed_names = [_custom_demos[j].get("name", "?") for j in _demos_to_remove]
