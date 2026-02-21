@@ -12375,7 +12375,7 @@ class EnhancedSimulationEngine:
 
         for scale in self.scales:
             scale_name_raw = str(scale.get("name", "Scale")).strip() or "Scale"
-            scale_name = scale_name_raw.replace(" ", "_")
+            scale_name = _clean_column_name(scale_name_raw)
             num_items = _safe_numeric(scale.get("num_items", 5), default=5, as_int=True)
             scale_points = _safe_numeric(scale.get("scale_points", 7), default=7, as_int=True)
             reverse_items = _safe_parse_reverse_items(scale.get("reverse_items", []))
@@ -12450,7 +12450,7 @@ class EnhancedSimulationEngine:
 
         for scale in self.scales:
             scale_name_raw = str(scale.get("name", "Scale")).strip() or "Scale"
-            scale_name = scale_name_raw.replace(" ", "_")
+            scale_name = _clean_column_name(scale_name_raw)
             num_items = _safe_numeric(scale.get("num_items", 5), default=5, as_int=True)
             scale_points = _safe_numeric(scale.get("scale_points", 7), default=7, as_int=True)
             reverse_items = _safe_parse_reverse_items(scale.get("reverse_items", []))
@@ -12526,7 +12526,7 @@ class EnhancedSimulationEngine:
 
         for scale in self.scales:
             scale_name_raw = str(scale.get("name", "Scale")).strip() or "Scale"
-            scale_name = scale_name_raw.replace(" ", "_")
+            scale_name = _clean_column_name(scale_name_raw)
             num_items = _safe_numeric(scale.get("num_items", 5), default=5, as_int=True)
             scale_points = _safe_numeric(scale.get("scale_points", 7), default=7, as_int=True)
             reverse_items = _safe_parse_reverse_items(scale.get("reverse_items", []))
@@ -12602,7 +12602,7 @@ class EnhancedSimulationEngine:
 
         for scale in self.scales:
             scale_name_raw = str(scale.get("name", "Scale")).strip() or "Scale"
-            scale_name = scale_name_raw.replace(" ", "_")
+            scale_name = _clean_column_name(scale_name_raw)
             num_items = _safe_numeric(scale.get("num_items", 5), default=5, as_int=True)
             scale_points = _safe_numeric(scale.get("scale_points", 7), default=7, as_int=True)
             reverse_items = _safe_parse_reverse_items(scale.get("reverse_items", []))
@@ -12682,7 +12682,7 @@ class EnhancedSimulationEngine:
 
         for scale in self.scales:
             scale_name_raw = str(scale.get("name", "Scale")).strip() or "Scale"
-            scale_name = scale_name_raw.replace(" ", "_").lower()
+            scale_name = _clean_column_name(scale_name_raw).lower()
             num_items = _safe_numeric(scale.get("num_items", 5), default=5, as_int=True)
             scale_points = _safe_numeric(scale.get("scale_points", 7), default=7, as_int=True)
             reverse_items = _safe_parse_reverse_items(scale.get("reverse_items", []))
