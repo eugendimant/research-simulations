@@ -12363,10 +12363,15 @@ class EnhancedSimulationEngine:
             "# Convert CONDITION to factor with proper levels",
             f"data$CONDITION <- factor(data$CONDITION, levels = c({condition_levels}))",
             "",
-            "# Gender is already labeled as strings (Male, Female, Non-binary, Prefer not to say)",
-            'data$Gender <- factor(data$Gender)',
-            "",
         ]
+
+        # v1.2.0.9: Only include Gender factor conversion if Gender column exists in output
+        if self.demographics.get("include_gender_column", True):
+            lines.extend([
+                "# Gender is already labeled as strings (Male, Female, Non-binary, Prefer not to say)",
+                'data$Gender <- factor(data$Gender)',
+                "",
+            ])
 
         for scale in self.scales:
             scale_name_raw = str(scale.get("name", "Scale")).strip() or "Scale"
@@ -12433,10 +12438,15 @@ class EnhancedSimulationEngine:
             f"condition_order = [{condition_levels}]",
             "data['CONDITION'] = pd.Categorical(data['CONDITION'], categories=condition_order, ordered=True)",
             "",
-            "# Gender is already labeled as strings (Male, Female, Non-binary, Prefer not to say)",
-            "data['Gender'] = pd.Categorical(data['Gender'])",
-            "",
         ]
+
+        # v1.2.0.9: Only include Gender conversion if Gender column exists in output
+        if self.demographics.get("include_gender_column", True):
+            lines.extend([
+                "# Gender is already labeled as strings (Male, Female, Non-binary, Prefer not to say)",
+                "data['Gender'] = pd.Categorical(data['Gender'])",
+                "",
+            ])
 
         for scale in self.scales:
             scale_name_raw = str(scale.get("name", "Scale")).strip() or "Scale"
@@ -12504,10 +12514,15 @@ class EnhancedSimulationEngine:
             f"condition_levels = [{condition_levels}]",
             "data.CONDITION = categorical(data.CONDITION, levels=condition_levels, ordered=true)",
             "",
-            "# Gender is already labeled as strings (Male, Female, Non-binary, Prefer not to say)",
-            "data.Gender = categorical(data.Gender)",
-            "",
         ]
+
+        # v1.2.0.9: Only include Gender conversion if Gender column exists in output
+        if self.demographics.get("include_gender_column", True):
+            lines.extend([
+                "# Gender is already labeled as strings (Male, Female, Non-binary, Prefer not to say)",
+                "data.Gender = categorical(data.Gender)",
+                "",
+            ])
 
         for scale in self.scales:
             scale_name_raw = str(scale.get("name", "Scale")).strip() or "Scale"
@@ -12575,10 +12590,15 @@ class EnhancedSimulationEngine:
             "VALUE LABELS CONDITION",
             f"  {condition_labels}.",
             "",
-            "* Gender is already labeled as strings (Male, Female, Non-binary, Prefer not to say).",
-            "* STRING Gender(A20).",
-            "",
         ])
+
+        # v1.2.0.9: Only include Gender line if Gender column exists in output
+        if self.demographics.get("include_gender_column", True):
+            lines.extend([
+                "* Gender is already labeled as strings (Male, Female, Non-binary, Prefer not to say).",
+                "* STRING Gender(A20).",
+                "",
+            ])
 
         for scale in self.scales:
             scale_name_raw = str(scale.get("name", "Scale")).strip() or "Scale"
@@ -12650,10 +12670,15 @@ class EnhancedSimulationEngine:
         lines.extend([
             "encode condition, gen(condition_num) label(condition_lbl)",
             "",
-            "// Gender is already labeled as strings (Male, Female, Non-binary, Prefer not to say)",
-            "// No numeric encoding needed",
-            "",
         ])
+
+        # v1.2.0.9: Only include Gender comment if Gender column exists in output
+        if self.demographics.get("include_gender_column", True):
+            lines.extend([
+                "// Gender is already labeled as strings (Male, Female, Non-binary, Prefer not to say)",
+                "// No numeric encoding needed",
+                "",
+            ])
 
         for scale in self.scales:
             scale_name_raw = str(scale.get("name", "Scale")).strip() or "Scale"

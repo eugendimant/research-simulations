@@ -11328,7 +11328,16 @@ if active_page == 3:
             male_pct = st.slider("Male %", 0, 100, int(ADVANCED_DEFAULTS["demographics"]["gender_quota"]))
             age_mean = st.number_input("Mean age", 18, 70, int(ADVANCED_DEFAULTS["demographics"]["age_mean"]))
             age_sd = st.number_input("Age SD", 1, 30, int(ADVANCED_DEFAULTS["demographics"]["age_sd"]))
-            demographics = {"gender_quota": int(male_pct), "age_mean": float(age_mean), "age_sd": float(age_sd)}
+            demographics = {
+                "gender_quota": int(male_pct),
+                "age_mean": float(age_mean),
+                "age_sd": float(age_sd),
+                # v1.2.0.9: Compute age bounds from mean/SD for engine clipping
+                "age_min": max(13, int(age_mean - 2 * age_sd)),
+                "age_max": min(120, int(age_mean + 2 * age_sd)),
+                "include_age_column": True,
+                "include_gender_column": True,
+            }
             # v1.2.0.4: Inject custom demographic variables
             _user_custom_demos_adv = st.session_state.get("custom_demographics", [])
             if _user_custom_demos_adv:
