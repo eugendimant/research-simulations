@@ -6,9 +6,9 @@ realistic, question-specific, persona-aligned open-ended survey responses.
 
 Architecture:
 - Multi-provider: Google AI Studio (Gemini 2.5 Flash + Gemini 2.5 Flash Lite),
-  Groq (Llama 3.3 70B), Cerebras (Llama 3.3 70B), Poe (GPT-4o-mini),
-  OpenRouter (Mistral Small 3.1) — with automatic key detection,
-  per-provider rate limiting, and intelligent failover.
+  Groq (Llama 3.3 70B), Cerebras (Llama 3.3 70B), Mistral AI (Mistral Small),
+  SambaNova (Llama 3.1 70B), OpenRouter (Mistral Small 3.1) — with automatic
+  key detection, per-provider rate limiting, and intelligent failover.
   Google AI prioritized for reliability.
 - Large batch sizes: 20 responses per API call (within 32K context)
 - Smart pool scaling: calculates exact pool size needed from sample_size
@@ -59,10 +59,10 @@ OPENROUTER_MODEL = "mistralai/mistral-small-3.1-24b-instruct:free"
 SAMBANOVA_API_URL = "https://api.sambanova.ai/v1/chat/completions"
 SAMBANOVA_MODEL = "Meta-Llama-3.1-70B-Instruct"
 
-# v1.0.5.9: Poe (poe.com) — OpenAI-compatible gateway to multiple models
-# Free tier: 3,000 compute points/day (~200 messages with GPT-4o-mini)
-POE_API_URL = "https://api.poe.com/v1/chat/completions"
-POE_MODEL = "GPT-4o-mini"  # Best value: ~15 points/message
+# v1.2.1.1: Mistral AI — direct API access, generous free tier
+# Free tier: 1B tokens/month, no credit card required, 2 RPM limit
+MISTRAL_API_URL = "https://api.mistral.ai/v1/chat/completions"
+MISTRAL_MODEL = "mistral-small-latest"  # Free tier model
 
 # v1.0.5.8: Additional user-selectable providers for fallback API key entry
 OPENAI_API_URL = "https://api.openai.com/v1/chat/completions"
@@ -76,7 +76,8 @@ USER_SELECTABLE_PROVIDERS: Dict[str, Dict[str, str]] = {
     "Groq (Llama 3.3 70B) — Free": {"api_url": GROQ_API_URL, "model": GROQ_MODEL, "hint": "gsk_..."},
     "Cerebras (Llama 3.3 70B) — Free": {"api_url": CEREBRAS_API_URL, "model": CEREBRAS_MODEL, "hint": "csk-..."},
     "Google AI (Gemini Flash) — Free": {"api_url": GOOGLE_AI_API_URL, "model": GOOGLE_AI_MODEL, "hint": "AIza..."},
-    "Poe (GPT-4o-mini) — Free tier": {"api_url": POE_API_URL, "model": POE_MODEL, "hint": "pFBb..."},
+    "Mistral AI (Mistral Small) — Free": {"api_url": MISTRAL_API_URL, "model": MISTRAL_MODEL, "hint": "(mistral key)"},
+    "SambaNova (Llama 3.1 70B) — Free": {"api_url": SAMBANOVA_API_URL, "model": SAMBANOVA_MODEL, "hint": "snova-..."},
     "OpenRouter (Mistral) — Free tier": {"api_url": OPENROUTER_API_URL, "model": OPENROUTER_MODEL, "hint": "sk-or-..."},
     "OpenAI (GPT-4o-mini)": {"api_url": OPENAI_API_URL, "model": OPENAI_MODEL, "hint": "sk-..."},
 }
@@ -117,12 +118,6 @@ _EB_OPENROUTER = [41, 49, 119, 53, 40, 119, 44, 107, 119, 105, 110, 63, 105, 62,
                   63, 57, 62, 60, 62, 111, 104, 63, 57, 57, 111, 63, 59, 110, 63,
                   105, 104, 109, 111, 105, 60, 111, 99, 107, 98, 110, 62, 107]
 _DEFAULT_OPENROUTER_KEY = bytes(b ^ _XK for b in _EB_OPENROUTER).decode()
-
-# Poe (poe.com) — OpenAI-compatible gateway, free tier 3,000 points/day
-_EB_POE = [42, 28, 24, 56, 10, 2, 2, 105, 5, 28, 22, 119, 14, 55, 104, 111,
-           54, 107, 15, 29, 108, 31, 27, 28, 8, 14, 3, 31, 61, 56, 24, 43,
-           24, 61, 106, 31, 119, 53, 40, 17, 31, 10, 15]
-_DEFAULT_POE_KEY = bytes(b ^ _XK for b in _EB_POE).decode()
 
 # Legacy alias
 _DEFAULT_API_KEY = _DEFAULT_GROQ_KEY
@@ -1942,11 +1937,6 @@ def detect_provider_from_key(api_key: str) -> Optional[Dict[str, str]]:
     elif key.startswith("sk-") and not key.startswith("sk-or-"):
         # v1.0.5.8: OpenAI keys start with "sk-" (but not "sk-or-" which is OpenRouter)
         return {"name": "openai", "api_url": OPENAI_API_URL, "model": OPENAI_MODEL}
-    elif key.startswith("poe-") or (len(key) >= 40 and "_" in key and "-" in key
-                                     and not any(key.startswith(p) for p in ("gsk_", "csk-", "sk-", "AIza", "snova-", "sambanova-"))):
-        # v1.0.5.9: Poe keys — base64-like, ~43 chars with mixed _/- separators
-        # Explicit "poe-" prefix check first, then heuristic for typical Poe key format
-        return {"name": "poe", "api_url": POE_API_URL, "model": POE_MODEL}
     elif len(key) > 30:
         # Default to Groq for unrecognized long keys
         return {"name": "groq", "api_url": GROQ_API_URL, "model": GROQ_MODEL}
@@ -1985,17 +1975,17 @@ def get_supported_providers() -> List[Dict[str, str]]:
             "recommended": True,
         },
         {
-            "name": "Poe",
-            "prefix": "(poe.com key)",
-            "url": "https://poe.com/api_key",
-            "free_tier": "3,000 points/day (~200 messages)",
+            "name": "Mistral AI",
+            "prefix": "(mistral key)",
+            "url": "https://console.mistral.ai",
+            "free_tier": "1B tokens/month (2 RPM)",
             "recommended": False,
         },
         {
             "name": "SambaNova",
-            "prefix": "(any key)",
+            "prefix": "snova-...",
             "url": "https://cloud.sambanova.ai",
-            "free_tier": "Free Llama 3.1 70B",
+            "free_tier": "Free Llama 3.1 70B (20 RPM)",
             "recommended": False,
         },
         {
@@ -2150,9 +2140,9 @@ class LLMResponseGenerator:
     """Generate open-ended survey responses using free LLM APIs.
 
     Multi-provider architecture with automatic failover:
-    1. Built-in keys: Groq, Cerebras, Gemma 3, Gemini Flash, Poe, OpenRouter (seamless)
-    2. User-provided key (auto-detected: Groq, Cerebras, Google AI, Poe, OpenRouter, OpenAI)
-    3. Environment variable providers (Google AI, Cerebras, Poe, OpenRouter)
+    1. Built-in keys: Groq, Cerebras, Gemini Flash, OpenRouter (seamless)
+    2. User-provided key (auto-detected: Groq, Cerebras, Google AI, SambaNova, OpenRouter, OpenAI)
+    3. Environment variable providers (Google AI, Cerebras, Mistral AI, SambaNova, OpenRouter)
     4. Template fallback (always works)
 
     Draw-with-replacement + deep variation means a pool of ~50 base
@@ -2225,20 +2215,18 @@ class LLMResponseGenerator:
         self._max_recent_starts: int = 200  # Rolling window size
 
         # Build provider chain with per-provider rate limits.
-        # Priority: Gemini 2.5 Flash (volume) → Gemini 2.5 Flash Lite (cost) → Groq → Cerebras → Poe → OpenRouter
+        # Priority: Gemini 2.5 Flash (volume) → Gemini 2.5 Flash Lite (cost) → Groq → Cerebras → OpenRouter
         self._providers: List[_LLMProvider] = []
         user_key = api_key or os.environ.get("LLM_API_KEY", "") or os.environ.get("GROQ_API_KEY", "")
         _all_builtin_keys = {_DEFAULT_GROQ_KEY, _DEFAULT_CEREBRAS_KEY,
-                             _DEFAULT_GOOGLE_AI_KEY, _DEFAULT_OPENROUTER_KEY,
-                             _DEFAULT_POE_KEY}
+                             _DEFAULT_GOOGLE_AI_KEY, _DEFAULT_OPENROUTER_KEY}
 
         # Built-in providers (in priority order) with rate limits from provider dashboards:
         # 1. Google AI Gemini 2.5 Flash:      15 RPM, 1M TPM (high-quality volume)
         # 2. Google AI Gemini 2.5 Flash Lite: 30 RPM, 250K TPM (cost-efficient)
         # 3. Groq Llama 3.3 70B:              ~30 RPM, 14,400 RPD
         # 4. Cerebras Llama 3.3 70B:          ~30 RPM, 1M tokens/day
-        # 5. Poe GPT-4o-mini:                ~20 RPM, ~200 RPD (3K points/day free)
-        # 6. OpenRouter Mistral Small 3.1:    varies by model
+        # 5. OpenRouter Mistral Small 3.1:    varies by model
         # NOTE: Google AI at top — confirmed accessible and reliable on OpenAI-compat endpoint.
         # v1.1.0.7: Replaced gemma-3-27b-it (404 on OpenAI endpoint) with gemini-2.5-flash.
         _builtin_providers = [
@@ -2250,8 +2238,6 @@ class LLMResponseGenerator:
              _DEFAULT_GROQ_KEY, 28, 0, 20),
             ("cerebras_builtin", CEREBRAS_API_URL, CEREBRAS_MODEL,
              _DEFAULT_CEREBRAS_KEY, 28, 0, 20),
-            ("poe_builtin", POE_API_URL, POE_MODEL,
-             _DEFAULT_POE_KEY, 20, 200, 20),
             ("openrouter_builtin", OPENROUTER_API_URL, OPENROUTER_MODEL,
              _DEFAULT_OPENROUTER_KEY, 20, 0, 20),
         ]
@@ -2302,11 +2288,21 @@ class LLMResponseGenerator:
                     api_key=user_key,
                 ))
 
+        # Mistral AI (free tier: 1B tokens/month, 2 RPM)
+        _mistral_key = os.environ.get("MISTRAL_API_KEY", "")
+        if _mistral_key:
+            _or_idx = next((i for i, p in enumerate(self._providers)
+                           if p.name == "openrouter_builtin"), len(self._providers))
+            self._providers.insert(_or_idx, _LLMProvider(
+                name="mistral_env", api_url=MISTRAL_API_URL,
+                model=MISTRAL_MODEL, api_key=_mistral_key,
+                max_rpm=2, max_rpd=0, max_batch_size=20,
+            ))
+
         # Extra env-var providers (if someone configures them manually)
         for env_var, name, url, model in [
             ("CEREBRAS_API_KEY", "cerebras_env", CEREBRAS_API_URL, CEREBRAS_MODEL),
             ("OPENROUTER_API_KEY", "openrouter_env", OPENROUTER_API_URL, OPENROUTER_MODEL),
-            ("POE_API_KEY", "poe_env", POE_API_URL, POE_MODEL),
         ]:
             env_key = os.environ.get(env_var, "")
             if env_key and not any(p.api_key == env_key for p in self._providers):

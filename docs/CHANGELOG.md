@@ -4,7 +4,7 @@
 
 #### 4-Option Generation Method Chooser
 - **New pre-generation UI**: Users now choose their simulation method before clicking Generate
-- **Option 1: Built-in AI (Recommended)** — free LLM access via built-in API keys (Groq, Cerebras, Google AI, Poe, OpenRouter)
+- **Option 1: Built-in AI (Recommended)** — free LLM access via built-in API keys (Groq, Cerebras, Google AI, OpenRouter) + env-var support for Mistral AI, SambaNova
 - **Option 2: Your Own API Key** — user provides their own key with auto-detection for 6 providers and visual format validation
 - **Option 3: Built-in Template Engine** — 225+ domain templates, 58+ personas, 40 question types, no API needed
 - **Option 4: Experimental (SocSim)** — evidence-traceable behavioral simulation (Fehr-Schmidt models, IRT, 28 economic games)
@@ -29,7 +29,7 @@
 
 #### API Key Handling Improvements
 - Visual format validation feedback when entering API keys (green checkmark + detected provider name)
-- Auto-detection for 6 provider key formats: Google AI (AIza...), Groq (gsk_...), Cerebras (csk-...), OpenRouter (sk-or-...), OpenAI (sk-...), Poe (poe-...)
+- Auto-detection for 6 provider key formats: Google AI (AIza...), Groq (gsk_...), Cerebras (csk-...), OpenRouter (sk-or-...), SambaNova (snova-...), OpenAI (sk-...)
 - Invalid format warning with red indicator
 
 ---
@@ -83,19 +83,10 @@
 # Agent Change Log
 
 ## 2026-02-12 — v1.0.5.9
-### Poe (poe.com) Added as Built-in LLM Provider
+### Poe (poe.com) Added as Built-in LLM Provider *(REMOVED in v1.2.1.1 — Poe discontinued free API access Feb 2026)*
 
-- **New built-in provider**: Poe (poe.com) added as 6th provider in the LLM failover chain
-  - OpenAI-compatible API at `https://api.poe.com/v1/chat/completions`
-  - Uses GPT-4o-mini model (~15 compute points/message)
-  - Free tier: 3,000 compute points/day (~200 messages)
-  - Positioned after OpenRouter in the chain (last resort before asking user for own key)
-- **Built-in API key**: XOR-encoded Poe key ships with the tool for zero-config usage
-- **Auto-detection**: `detect_provider_from_key()` updated to recognize Poe keys
-- **User-selectable**: Poe added to provider dropdown in the API key fallback dialog
-- **Env var support**: `POE_API_KEY` environment variable recognized for custom Poe keys
-- **UI updates**: Provider count updated from 5 to 6 in exhaustion messages; Poe added to free provider sign-up table
-- **Provider chain**: Groq → Cerebras → Google AI (Gemini) → Google AI (Gemma) → OpenRouter → Poe → (user key) → (template fallback)
+- ~~**New built-in provider**: Poe (poe.com) added as 6th provider in the LLM failover chain~~ **REMOVED**
+- Replaced by Mistral AI (1B tokens/month free) and SambaNova (free Llama 3.1 70B) as supported providers
 
 ---
 
