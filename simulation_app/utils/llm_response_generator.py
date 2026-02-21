@@ -18,10 +18,10 @@ Architecture:
   the existing template-based ComprehensiveResponseGenerator
 - Never hard-stops: always walks user through options when APIs fail
 
-Version: 1.2.1.3
+Version: 1.2.1.4
 """
 
-__version__ = "1.2.1.3"
+__version__ = "1.2.1.4"
 
 import hashlib
 import json
@@ -549,6 +549,11 @@ class _RateLimiter:
     def __init__(self, max_rpm: int = 28) -> None:
         self._max_rpm = max_rpm
         self._timestamps: List[float] = []
+        # v1.2.1.4: Dynamic cap based on RPM — low-RPM providers (e.g. Mistral at
+        # 2 RPM) need longer waits between calls by design.  Cap = max of 15s or
+        # 1.2× the expected inter-call interval, so we never skip a valid wait.
+        _inter_call_secs = 60.0 / max(1, max_rpm)  # e.g. 30s for 2 RPM
+        self._max_wait_cap = max(15.0, _inter_call_secs * 1.2)
 
     def wait_if_needed(self) -> bool:
         """Wait if rate limit would be exceeded. Returns True if proceed, False if skipped.
@@ -560,10 +565,11 @@ class _RateLimiter:
         self._timestamps = [t for t in self._timestamps if now - t < 60]
         if len(self._timestamps) >= self._max_rpm:
             sleep_for = 60.0 - (now - self._timestamps[0]) + 0.5
-            # v1.0.8.2: Cap rate-limit sleep to 15s to prevent long hangs.
-            # If we'd need to wait >15s, skip this provider instead.
-            if sleep_for > 15.0:
-                logger.info("Rate limiter: would sleep %.1fs (>15s cap) — skipping call", sleep_for)
+            # v1.2.1.4: Dynamic cap — scales with provider RPM to avoid skipping
+            # low-RPM providers that legitimately need longer waits.
+            if sleep_for > self._max_wait_cap:
+                logger.info("Rate limiter: would sleep %.1fs (>%.0fs cap) — skipping call",
+                            sleep_for, self._max_wait_cap)
                 return False  # Signal caller to skip this call
             if sleep_for > 0:
                 logger.debug("Rate limiter: sleeping %.1fs", sleep_for)
@@ -2100,7 +2106,7 @@ class _LLMProvider:
         # Per-provider rate limiting
         # v1.1.1.0: Check return value — False means rate limit too high, skip call
         if not self._rate_limiter.wait_if_needed():
-            logger.info("Provider '%s' rate-limited (>15s wait needed), skipping", self.name)
+            logger.info("Provider '%s' rate-limited (exceeds wait cap), skipping", self.name)
             return None
 
         # v1.0.9.2: Track actual HTTP requests (past all guards)
@@ -2334,15 +2340,21 @@ class LLMResponseGenerator:
 
         # User-provided key (appended AFTER all built-ins and env-vars so it's
         # tried last — we want to use the tool's own capacity first)
+        # v1.2.1.4: Provider-specific RPM for user keys — prevents rate limit
+        # mismatches (e.g. Mistral at 2 RPM being configured as 28 RPM).
+        _PROVIDER_RPM = {"mistral": 2, "sambanova": 20, "groq": 28,
+                         "cerebras": 28, "google_ai": 14, "openrouter": 20, "openai": 20}
         if user_key and user_key not in _all_builtin_keys:
             _provider_hint = os.environ.get("LLM_PROVIDER_HINT", "")
             detected = detect_provider_from_key(user_key, provider_hint=_provider_hint)
             if detected:
+                _user_rpm = _PROVIDER_RPM.get(detected["name"], 20)
                 self._providers.append(_LLMProvider(
                     name=f"{detected['name']}_user",
                     api_url=detected["api_url"],
                     model=detected["model"],
                     api_key=user_key,
+                    max_rpm=_user_rpm,
                 ))
             else:
                 self._providers.append(_LLMProvider(
@@ -2853,13 +2865,19 @@ class LLMResponseGenerator:
         # Remove any existing runtime user providers
         self._providers = [p for p in self._providers if "user_runtime" not in p.name]
 
+        # v1.2.1.4: Provider-specific RPM to avoid rate limit mismatches
+        _rpm_map = {"mistral": 2, "sambanova": 20, "groq": 28,
+                    "cerebras": 28, "google_ai": 14, "openrouter": 20, "openai": 20}
+        _detected_name = (detected["name"] if detected else "").lower()
+        _runtime_rpm = _rpm_map.get(_detected_name, 20)
+
         # Insert at position 0 (highest priority)
         self._providers.insert(0, _LLMProvider(
             name=provider_name,
             api_url=api_url,
             model=model,
             api_key=key,
-            max_rpm=20,
+            max_rpm=_runtime_rpm,
             max_rpd=0,
             max_batch_size=20,
         ))

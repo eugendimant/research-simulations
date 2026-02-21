@@ -33,7 +33,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 # Version identifier to help track deployed code
-__version__ = "1.2.1.3"  # v1.2.1.3: Fix Mistral key detection, provider hint passthrough
+__version__ = "1.2.1.4"  # v1.2.1.4: Fix rate limiter cap for low-RPM providers
 
 
 # ============================================================================

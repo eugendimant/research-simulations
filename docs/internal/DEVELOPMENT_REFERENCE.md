@@ -102,11 +102,11 @@ Each iteration should focus on one area, build on previous work, and maintain st
 | Stereotype threat | Nguyen & Ryan (2008) | d = 0.26 |
 | Sunk cost | Arkes & Blumer (1985) | d = 0.30-0.50 |
 
-## LLM Provider Chain (priority order)
-1. Groq Llama 3.3 70B (~30 RPM)
-2. Cerebras Llama 3.3 70B (~30 RPM)
-3. Google AI Studio Gemini 2.5 Flash Lite (10 RPM)
-4. Google AI Studio Gemma 3 27B (30 RPM)
-5. OpenRouter Mistral Small 3.1
-6. Mistral AI Mistral Small (2 RPM, env var)
-7. SambaNova Llama 3.1 70B (20 RPM, env var)
+## LLM Provider Chain (priority order, v1.2.1.4)
+1. Google AI Gemini 2.5 Flash (15 RPM, 1M TPM — high-quality volume)
+2. Google AI Gemini 2.5 Flash Lite (30 RPM, 250K TPM — cost-efficient)
+3. Groq Llama 3.3 70B (~30 RPM, 14,400 RPD)
+4. Cerebras Llama 3.3 70B (~30 RPM, 1M tokens/day)
+5. SambaNova Llama 3.1 70B (20 RPM, persistent free tier)
+6. Mistral AI Mistral Small (2 RPM, 1B tokens/month)
+7. OpenRouter Mistral Small 3.1 (varies)
