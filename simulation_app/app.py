@@ -54,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.2.1.3"
-BUILD_ID = "20260221-v12013-fix-mistral-detection-provider-hint"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.2.1.5"
+BUILD_ID = "20260221-v12015-rate-limiter-cap-full-window"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -118,7 +118,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.2.1.3"  # v1.2.1.3: Fix Mistral key detection, provider hint passthrough
+APP_VERSION = "1.2.1.5"  # v1.2.1.5: Rate limiter cap covers full 60s window for 2 RPM providers
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -13848,6 +13848,9 @@ if active_page == 3:
             st.session_state["_generation_phase"] = 0  # v1.1.1.3: Clean phase state
             _navigate_to(3)  # Refresh to show download section
         except Exception as e:
+            # v1.2.1.4: Clean up provider hint on ANY exception to prevent
+            # cross-session leakage (complements pre-generation cleanup at 12570).
+            os.environ.pop("LLM_PROVIDER_HINT", None)
             # v1.2.0.0: Check for LLMExhaustedMidGeneration — prompt user for
             # fallback choice instead of silently degrading to templates.
             from utils.enhanced_simulation_engine import LLMExhaustedMidGeneration
