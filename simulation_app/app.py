@@ -54,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.2.1.1"
-BUILD_ID = "20260221-v12011-remove-poe-add-mistral-sambanova"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.2.1.2"
+BUILD_ID = "20260221-v12012-builtin-mistral-sambanova-keys"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -118,7 +118,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.2.1.1"  # v1.2.1.1: Remove Poe, add Mistral AI + SambaNova providers
+APP_VERSION = "1.2.1.2"  # v1.2.1.2: Built-in keys for Mistral AI + SambaNova, 7-provider chain
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -7556,8 +7556,8 @@ def _render_admin_dashboard() -> None:
         _daily_tokens = int(_daily_responses * _tokens_per_response)
 
         _quota_rows = [
-            {"Provider": "Google AI Studio (Gemma high-volume)", "Daily request cap": 14400, "Daily token cap": 216_000_000},
-            {"Provider": "Google AI Studio (Gemini flash-lite)", "Daily request cap": 20, "Daily token cap": 5_000_000},
+            {"Provider": "Google AI Studio (Gemini 2.5 Flash)", "Daily request cap": 14400, "Daily token cap": 216_000_000},
+            {"Provider": "Google AI Studio (Gemini 2.5 Flash Lite)", "Daily request cap": 20, "Daily token cap": 5_000_000},
             {"Provider": "Groq (free defaults)", "Daily request cap": 14400, "Daily token cap": 500_000},
             {"Provider": "Cerebras", "Daily request cap": 1000, "Daily token cap": 1_000_000},
             {"Provider": "Mistral AI", "Daily request cap": 2880, "Daily token cap": 33_000_000},
@@ -11669,7 +11669,7 @@ if active_page == 3:
                 "details": [
                     "Free-tier AI models (Google AI, Groq, Cerebras) for rich text",
                     "Behavioral coherence: text matches each participant's ratings",
-                    "Auto-failover across 6 providers for reliability",
+                    "Auto-failover across 7 providers for reliability",
                     "Note: shared free-tier — speed varies with server load",
                 ],
                 "info_tooltip": "",
@@ -11870,7 +11870,8 @@ if active_page == 3:
                 elif _key_val.startswith("sk-"):
                     _detected_provider = "OpenAI"
                     _key_valid_format = len(_key_val) >= 20
-                elif _key_val.startswith("snova-") or _key_val.startswith("sambanova-"):
+                elif (_key_val.startswith("snova-") or _key_val.startswith("sambanova-")
+                      or re.match(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', _key_val)):
                     _detected_provider = "SambaNova"
                     _key_valid_format = len(_key_val) >= 10
                 else:

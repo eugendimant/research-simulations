@@ -77,7 +77,7 @@ USER_SELECTABLE_PROVIDERS: Dict[str, Dict[str, str]] = {
     "Cerebras (Llama 3.3 70B) — Free": {"api_url": CEREBRAS_API_URL, "model": CEREBRAS_MODEL, "hint": "csk-..."},
     "Google AI (Gemini Flash) — Free": {"api_url": GOOGLE_AI_API_URL, "model": GOOGLE_AI_MODEL, "hint": "AIza..."},
     "Mistral AI (Mistral Small) — Free": {"api_url": MISTRAL_API_URL, "model": MISTRAL_MODEL, "hint": "(mistral key)"},
-    "SambaNova (Llama 3.1 70B) — Free": {"api_url": SAMBANOVA_API_URL, "model": SAMBANOVA_MODEL, "hint": "snova-..."},
+    "SambaNova (Llama 3.1 70B) — Free": {"api_url": SAMBANOVA_API_URL, "model": SAMBANOVA_MODEL, "hint": "UUID format"},
     "OpenRouter (Mistral) — Free tier": {"api_url": OPENROUTER_API_URL, "model": OPENROUTER_MODEL, "hint": "sk-or-..."},
     "OpenAI (GPT-4o-mini)": {"api_url": OPENAI_API_URL, "model": OPENAI_MODEL, "hint": "sk-..."},
 }
@@ -118,6 +118,17 @@ _EB_OPENROUTER = [41, 49, 119, 53, 40, 119, 44, 107, 119, 105, 110, 63, 105, 62,
                   63, 57, 62, 60, 62, 111, 104, 63, 57, 57, 111, 63, 59, 110, 63,
                   105, 104, 109, 111, 105, 60, 111, 99, 107, 98, 110, 62, 107]
 _DEFAULT_OPENROUTER_KEY = bytes(b ^ _XK for b in _EB_OPENROUTER).decode()
+
+# v1.2.1.2: Mistral AI — 1B tokens/month free, 2 RPM, no credit card
+_EB_MISTRAL = [46, 8, 111, 109, 109, 42, 57, 55, 40, 107, 106, 110, 105, 18, 29, 2,
+               44, 21, 106, 34, 60, 3, 109, 15, 62, 25, 44, 25, 55, 29, 22, 17]
+_DEFAULT_MISTRAL_KEY = bytes(b ^ _XK for b in _EB_MISTRAL).decode()
+
+# v1.2.1.2: SambaNova Cloud — persistent free tier, Llama 3.1 70B, 20 RPM
+_EB_SAMBANOVA = [109, 105, 57, 99, 107, 56, 109, 107, 119, 110, 63, 98, 107, 119, 110,
+                 106, 60, 109, 119, 56, 109, 57, 111, 119, 107, 107, 104, 59, 105, 106,
+                 106, 62, 62, 56, 60, 59]
+_DEFAULT_SAMBANOVA_KEY = bytes(b ^ _XK for b in _EB_SAMBANOVA).decode()
 
 # Legacy alias
 _DEFAULT_API_KEY = _DEFAULT_GROQ_KEY
@@ -1937,6 +1948,9 @@ def detect_provider_from_key(api_key: str) -> Optional[Dict[str, str]]:
     elif key.startswith("sk-") and not key.startswith("sk-or-"):
         # v1.0.5.8: OpenAI keys start with "sk-" (but not "sk-or-" which is OpenRouter)
         return {"name": "openai", "api_url": OPENAI_API_URL, "model": OPENAI_MODEL}
+    # v1.2.1.2: SambaNova keys can be UUIDs (8-4-4-4-12 hex format)
+    elif re.match(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', key):
+        return {"name": "sambanova", "api_url": SAMBANOVA_API_URL, "model": SAMBANOVA_MODEL}
     elif len(key) > 30:
         # Default to Groq for unrecognized long keys
         return {"name": "groq", "api_url": GROQ_API_URL, "model": GROQ_MODEL}
@@ -1971,7 +1985,7 @@ def get_supported_providers() -> List[Dict[str, str]]:
             "name": "Google AI Studio (Gemini)",
             "prefix": "AIza...",
             "url": "https://aistudio.google.com",
-            "free_tier": "Gemini 2.5 Flash Lite (10 RPM, 20 RPD) + Gemma 3 27B (30 RPM, 14.4K RPD)",
+            "free_tier": "Gemini 2.5 Flash (15 RPM, 1M TPM) + Flash Lite (30 RPM, 250K TPM)",
             "recommended": True,
         },
         {
@@ -2140,9 +2154,9 @@ class LLMResponseGenerator:
     """Generate open-ended survey responses using free LLM APIs.
 
     Multi-provider architecture with automatic failover:
-    1. Built-in keys: Groq, Cerebras, Gemini Flash, OpenRouter (seamless)
-    2. User-provided key (auto-detected: Groq, Cerebras, Google AI, SambaNova, OpenRouter, OpenAI)
-    3. Environment variable providers (Google AI, Cerebras, Mistral AI, SambaNova, OpenRouter)
+    1. Built-in keys: Gemini Flash, Groq, Cerebras, SambaNova, Mistral AI, OpenRouter (seamless)
+    2. User-provided key (auto-detected: Groq, Cerebras, Google AI, SambaNova, Mistral AI, OpenRouter, OpenAI)
+    3. Environment variable overrides (Google AI, Cerebras, Mistral AI, SambaNova, OpenRouter)
     4. Template fallback (always works)
 
     Draw-with-replacement + deep variation means a pool of ~50 base
@@ -2215,20 +2229,24 @@ class LLMResponseGenerator:
         self._max_recent_starts: int = 200  # Rolling window size
 
         # Build provider chain with per-provider rate limits.
-        # Priority: Gemini 2.5 Flash (volume) → Gemini 2.5 Flash Lite (cost) → Groq → Cerebras → OpenRouter
+        # Priority: Gemini Flash → Gemini Lite → Groq → Cerebras → SambaNova → Mistral → OpenRouter
         self._providers: List[_LLMProvider] = []
         user_key = api_key or os.environ.get("LLM_API_KEY", "") or os.environ.get("GROQ_API_KEY", "")
         _all_builtin_keys = {_DEFAULT_GROQ_KEY, _DEFAULT_CEREBRAS_KEY,
-                             _DEFAULT_GOOGLE_AI_KEY, _DEFAULT_OPENROUTER_KEY}
+                             _DEFAULT_GOOGLE_AI_KEY, _DEFAULT_OPENROUTER_KEY,
+                             _DEFAULT_MISTRAL_KEY, _DEFAULT_SAMBANOVA_KEY}
 
-        # Built-in providers (in priority order) with rate limits from provider dashboards:
+        # Built-in providers (in priority order) — ranked by free-tier generosity:
         # 1. Google AI Gemini 2.5 Flash:      15 RPM, 1M TPM (high-quality volume)
         # 2. Google AI Gemini 2.5 Flash Lite: 30 RPM, 250K TPM (cost-efficient)
-        # 3. Groq Llama 3.3 70B:              ~30 RPM, 14,400 RPD
+        # 3. Groq Llama 3.3 70B:              ~30 RPM, 14,400 RPD (very generous)
         # 4. Cerebras Llama 3.3 70B:          ~30 RPM, 1M tokens/day
-        # 5. OpenRouter Mistral Small 3.1:    varies by model
+        # 5. SambaNova Llama 3.1 70B:         20 RPM, persistent free tier
+        # 6. Mistral AI Mistral Small:        2 RPM, 1B tokens/month (huge budget, low rate)
+        # 7. OpenRouter Mistral Small 3.1:    varies by model (last resort)
         # NOTE: Google AI at top — confirmed accessible and reliable on OpenAI-compat endpoint.
         # v1.1.0.7: Replaced gemma-3-27b-it (404 on OpenAI endpoint) with gemini-2.5-flash.
+        # v1.2.1.2: Added SambaNova + Mistral AI as built-in; reordered by free-tier value.
         _builtin_providers = [
             ("google_ai_flash", GOOGLE_AI_API_URL, GOOGLE_AI_MODEL_HIGHVOL,
              _DEFAULT_GOOGLE_AI_KEY, 14, 1500, 20),
@@ -2238,6 +2256,10 @@ class LLMResponseGenerator:
              _DEFAULT_GROQ_KEY, 28, 0, 20),
             ("cerebras_builtin", CEREBRAS_API_URL, CEREBRAS_MODEL,
              _DEFAULT_CEREBRAS_KEY, 28, 0, 20),
+            ("sambanova_builtin", SAMBANOVA_API_URL, SAMBANOVA_MODEL,
+             _DEFAULT_SAMBANOVA_KEY, 20, 0, 20),
+            ("mistral_builtin", MISTRAL_API_URL, MISTRAL_MODEL,
+             _DEFAULT_MISTRAL_KEY, 2, 0, 20),
             ("openrouter_builtin", OPENROUTER_API_URL, OPENROUTER_MODEL,
              _DEFAULT_OPENROUTER_KEY, 20, 0, 20),
         ]
@@ -2259,38 +2281,20 @@ class LLMResponseGenerator:
                 max_rpm=8, max_rpd=20,
             ))
 
-        # SambaNova Cloud (free Llama 3.1 70B)
+        # SambaNova Cloud — env-var override (user's own key, may have different limits)
         _sambanova_key = os.environ.get("SAMBANOVA_API_KEY", "")
-        if _sambanova_key:
+        if _sambanova_key and _sambanova_key != _DEFAULT_SAMBANOVA_KEY:
             _or_idx = next((i for i, p in enumerate(self._providers)
                            if p.name == "openrouter_builtin"), len(self._providers))
             self._providers.insert(_or_idx, _LLMProvider(
-                name="sambanova", api_url=SAMBANOVA_API_URL,
+                name="sambanova_env", api_url=SAMBANOVA_API_URL,
                 model=SAMBANOVA_MODEL, api_key=_sambanova_key,
+                max_rpm=20, max_rpd=0, max_batch_size=20,
             ))
 
-        # User-provided key (appended AFTER built-ins so it's tried last —
-        # we want to use the tool's own capacity first)
-        if user_key and user_key not in _all_builtin_keys:
-            detected = detect_provider_from_key(user_key)
-            if detected:
-                self._providers.append(_LLMProvider(
-                    name=f"{detected['name']}_user",
-                    api_url=detected["api_url"],
-                    model=detected["model"],
-                    api_key=user_key,
-                ))
-            else:
-                self._providers.append(_LLMProvider(
-                    name="groq_user",
-                    api_url=GROQ_API_URL,
-                    model=GROQ_MODEL,
-                    api_key=user_key,
-                ))
-
-        # Mistral AI (free tier: 1B tokens/month, 2 RPM)
+        # Mistral AI — env-var override (user's own key, may have different limits)
         _mistral_key = os.environ.get("MISTRAL_API_KEY", "")
-        if _mistral_key:
+        if _mistral_key and _mistral_key != _DEFAULT_MISTRAL_KEY:
             _or_idx = next((i for i, p in enumerate(self._providers)
                            if p.name == "openrouter_builtin"), len(self._providers))
             self._providers.insert(_or_idx, _LLMProvider(
@@ -2308,6 +2312,25 @@ class LLMResponseGenerator:
             if env_key and not any(p.api_key == env_key for p in self._providers):
                 self._providers.append(_LLMProvider(
                     name=name, api_url=url, model=model, api_key=env_key,
+                ))
+
+        # User-provided key (appended AFTER all built-ins and env-vars so it's
+        # tried last — we want to use the tool's own capacity first)
+        if user_key and user_key not in _all_builtin_keys:
+            detected = detect_provider_from_key(user_key)
+            if detected:
+                self._providers.append(_LLMProvider(
+                    name=f"{detected['name']}_user",
+                    api_url=detected["api_url"],
+                    model=detected["model"],
+                    api_key=user_key,
+                ))
+            else:
+                self._providers.append(_LLMProvider(
+                    name="groq_user",
+                    api_url=GROQ_API_URL,
+                    model=GROQ_MODEL,
+                    api_key=user_key,
                 ))
 
         self._api_available = any(p.available and p.api_key for p in self._providers)
@@ -2673,9 +2696,8 @@ class LLMResponseGenerator:
         # v1.0.6.0: Iterate directly over provider list for correct failover.
         # BUGFIX: Previous _get_active_provider() + tried-set pattern always
         # returned the same (first available) provider after a failure because
-        # a single batch failure doesn't set available=False (needs 6).  This
-        # meant only 1 of 6 providers was ever attempted per batch.  Now we
-        # iterate the full chain so every provider gets a chance.
+        # a single batch failure doesn't set available=False (needs multiple).
+        # Now we iterate the full chain so every provider gets a chance.
         for provider in self._providers:
             if not provider.available or not provider.api_key:
                 continue
