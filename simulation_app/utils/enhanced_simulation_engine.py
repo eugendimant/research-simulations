@@ -9944,8 +9944,11 @@ class EnhancedSimulationEngine:
 
         age_mean = _safe_numeric(self.demographics.get("age_mean", 35), default=35.0)
         age_sd = _safe_numeric(self.demographics.get("age_sd", 12), default=12.0)
+        # v1.2.0.9: Use user-specified age bounds for clipping instead of hardcoded 18-70
+        _age_clip_min = _safe_numeric(self.demographics.get("age_min", 18), default=18.0)
+        _age_clip_max = _safe_numeric(self.demographics.get("age_max", 80), default=80.0)
         ages = rng.normal(age_mean, age_sd, int(n))
-        ages = np.clip(ages, 18, 70).astype(int)
+        ages = np.clip(ages, _age_clip_min, _age_clip_max).astype(int)
 
         male_pct = _safe_numeric(self.demographics.get("gender_quota", 50), default=50.0) / 100.0
         male_pct = float(np.clip(male_pct, 0.0, 1.0))
@@ -10460,14 +10463,22 @@ class EnhancedSimulationEngine:
         self.column_info.append(("CONDITION", f'Experimental condition: {", ".join(self.conditions)}'))
 
         demographics_df = self._generate_demographics(n)
-        data["Age"] = demographics_df["Age"].tolist()
-        data["Gender"] = demographics_df["Gender"].tolist()
-        self.column_info.extend(
-            [
-                ("Age", f"Participant age in years (18-70, mean ~ {self.demographics.get('age_mean', 35)})"),
-                ("Gender", "Participant gender: Male, Female, Non-binary, or Prefer not to say"),
-            ]
-        )
+        # v1.2.0.9: Respect include flags — only add Age/Gender to output if user wants them.
+        # Demographics are always generated internally for persona assignment.
+        _include_age_col = self.demographics.get("include_age_column", True)
+        _include_gender_col = self.demographics.get("include_gender_column", True)
+        if _include_age_col:
+            data["Age"] = demographics_df["Age"].tolist()
+            _age_clip_min = self.demographics.get("age_min", 18)
+            _age_clip_max = self.demographics.get("age_max", 80)
+            self.column_info.append(
+                ("Age", f"Participant age in years ({_age_clip_min}-{_age_clip_max}, mean ~ {self.demographics.get('age_mean', 35)})")
+            )
+        if _include_gender_col:
+            data["Gender"] = demographics_df["Gender"].tolist()
+            self.column_info.append(
+                ("Gender", "Participant gender: Male, Female, Non-binary, or Prefer not to say")
+            )
         # v1.2.0.4: Add custom demographic columns to the output
         for _demo_col in demographics_df.columns:
             if _demo_col not in ("Age", "Gender"):

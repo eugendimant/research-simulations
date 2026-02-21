@@ -54,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.2.0.8"
-BUILD_ID = "20260220-v12008-builder-autocontext-crash-guards-audit-fixes"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.2.0.9"
+BUILD_ID = "20260221-v12009-demographics-age-bounds-generation-simplify"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -118,7 +118,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.2.0.8"  # v1.2.0.8: Builder auto-context, crash guards, deep audit fixes
+APP_VERSION = "1.2.0.9"  # v1.2.0.9: Demographics age bounds, generation UI simplification
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -179,7 +179,7 @@ def _decrypt_api_key(ciphertext_hex: str) -> str:
 MAX_SIMULATED_N = 10000
 
 STANDARD_DEFAULTS = {
-    "demographics": {"gender_quota": 50, "age_mean": 35, "age_sd": 12},
+    "demographics": {"gender_quota": 50, "age_mean": 35, "age_sd": 12, "age_min": 18, "age_max": 80, "include_age_column": True, "include_gender_column": True},
     "attention_rate": 0.95,
     "random_responder_rate": 0.05,
     "exclusion_criteria": {
@@ -193,7 +193,7 @@ STANDARD_DEFAULTS = {
 }
 
 ADVANCED_DEFAULTS = {
-    "demographics": {"gender_quota": 50, "age_mean": 35, "age_sd": 12},
+    "demographics": {"gender_quota": 50, "age_mean": 35, "age_sd": 12, "age_min": 18, "age_max": 80, "include_age_column": True, "include_gender_column": True},
     "attention_rate": 0.95,
     "random_responder_rate": 0.05,
 }
@@ -4840,25 +4840,41 @@ def _render_conversational_builder() -> None:
     with st.expander("Demographics & Participants *(optional — defaults work well)*", expanded=False):
         _demo_col1, _demo_col2, _demo_col3 = st.columns(3)
         with _demo_col1:
-            age_mean = st.number_input(
-                "Mean age", min_value=18, max_value=80, value=35,
-                key="builder_age_mean",
+            _builder_age_min = st.number_input(
+                "Min age", min_value=13, max_value=99, value=18,
+                key="builder_age_min",
+                help="Minimum participant age",
             )
         with _demo_col2:
-            age_sd = st.number_input(
-                "Age SD", min_value=1, max_value=30, value=12,
-                key="builder_age_sd",
+            # v1.2.0.9: Clamp stored max to be above min before rendering
+            _b_max_min_val = int(_builder_age_min) + 1
+            _b_stored_max = int(st.session_state.get("builder_age_max", 80))
+            if _b_stored_max < _b_max_min_val:
+                _b_stored_max = _b_max_min_val
+                st.session_state["builder_age_max"] = _b_stored_max
+            _builder_age_max = st.number_input(
+                "Max age", min_value=_b_max_min_val, max_value=120,
+                value=_b_stored_max,
+                key="builder_age_max",
+                help="Maximum participant age",
             )
         with _demo_col3:
             gender_pct = st.slider(
                 "Male %", min_value=0, max_value=100, value=50,
                 key="builder_gender_pct",
-                help="Percentage of male participants (engine uses this as gender_quota)",
+                help="Percentage of male participants",
             )
+        # v1.2.0.9: Auto-compute mean/SD from bounds for the engine
+        _b_age_mean = round((_builder_age_min + _builder_age_max) / 2)
+        _b_age_sd = max(1, round((_builder_age_max - _builder_age_min) / 4))
         st.session_state["demographics_config"] = {
-            "age_mean": age_mean,
-            "age_sd": age_sd,
+            "age_mean": _b_age_mean,
+            "age_sd": _b_age_sd,
+            "age_min": int(_builder_age_min),
+            "age_max": int(_builder_age_max),
             "gender_quota": gender_pct,
+            "include_age_column": True,
+            "include_gender_column": True,
         }
 
         participant_desc = st.text_area(
@@ -9966,13 +9982,21 @@ if active_page == 2:
         st.session_state["scales_confirmed"] = scales_confirmed
 
         # ========================================
-        # STEP 4b: DEMOGRAPHIC VARIABLES (optional)
-        # v1.2.0.4: Let users add custom demographic columns (political orientation,
-        # education, ethnicity, etc.) that appear in the output alongside Age/Gender.
+        # STEP 4b: DEMOGRAPHIC VARIABLES
+        # v1.2.0.9: Age and Gender pre-populated as editable entries.
+        # Age uses min/max bounds (non-advanced) instead of SD.
+        # Expander stays open during editing.
         # ========================================
         st.markdown("")
         _custom_demos = st.session_state.get("custom_demographics", [])
-        _demo_header = f"#### Demographic Variables ({len(_custom_demos)})" if _custom_demos else "#### Demographic Variables"
+
+        # v1.2.0.9: Track whether built-in Age/Gender are included
+        _include_age = st.session_state.get("_demo_include_age", True)
+        _include_gender = st.session_state.get("_demo_include_gender", True)
+        _builtin_count = int(_include_age) + int(_include_gender)
+        _total_demo_count = _builtin_count + len(_custom_demos)
+
+        _demo_header = f"#### Demographic Variables ({_total_demo_count})"
         st.markdown(_demo_header)
 
         # Show removal notice
@@ -9980,14 +10004,119 @@ if active_page == 2:
         if _demo_removal_notice:
             st.info(_demo_removal_notice)
 
-        _demo_expander_open = st.session_state.pop("_demo_keep_expanded", False) or False
+        # v1.2.0.9: Use get() instead of pop() so expander stays open across reruns
+        _demo_expander_open = st.session_state.get("_demo_keep_expanded", False) or False
         with st.expander(
-            f"Add demographic columns ({len(_custom_demos)}) — beyond the built-in Age & Gender"
-            if _custom_demos
-            else "Add demographic columns (optional) — e.g., political orientation, education, ethnicity",
+            f"Demographic Variables ({_total_demo_count}) — Age, Gender, and additional columns"
+            if _total_demo_count > 0
+            else "Demographic Variables — configure which demographics appear in your data",
             expanded=_demo_expander_open,
         ):
-            st.caption("Age and Gender are always included. Add additional demographic variables here.")
+            # v1.2.0.9: Built-in Age and Gender shown as editable entries
+            # ── Age ──
+            if _include_age:
+                st.markdown(
+                    '<div style="padding:8px 12px;background:#f8fafc;border-radius:8px;'
+                    'border:1px solid #e2e8f0;margin-bottom:8px;">'
+                    '<span style="font-weight:600;color:#1F2937;">Age</span>'
+                    '<span style="font-size:0.78em;color:#6B7280;margin-left:8px;">(numeric, always generated)</span>'
+                    '</div>',
+                    unsafe_allow_html=True,
+                )
+                _age_cols = st.columns([1.5, 1.5, 1, 0.5])
+                with _age_cols[0]:
+                    _age_min = st.number_input(
+                        "Min age", min_value=13, max_value=99, key="_demo_age_min_input",
+                        value=int(st.session_state.get("_demo_age_min", 18)),
+                        help="Minimum participant age",
+                    )
+                    st.session_state["_demo_age_min"] = _age_min
+                with _age_cols[1]:
+                    # v1.2.0.9: Clamp stored max to be above min before rendering
+                    _stored_age_max = int(st.session_state.get("_demo_age_max", 80))
+                    _age_max_min_val = int(_age_min) + 1
+                    if _stored_age_max < _age_max_min_val:
+                        _stored_age_max = _age_max_min_val
+                        st.session_state["_demo_age_max_input"] = _stored_age_max
+                    _age_max = st.number_input(
+                        "Max age", min_value=_age_max_min_val, max_value=120, key="_demo_age_max_input",
+                        value=_stored_age_max,
+                        help="Maximum participant age",
+                    )
+                    st.session_state["_demo_age_max"] = _age_max
+                with _age_cols[2]:
+                    # Auto-compute mean and SD from bounds for the engine
+                    _auto_age_mean = round((_age_min + _age_max) / 2)
+                    _auto_age_sd = max(1, round((_age_max - _age_min) / 4))
+                    st.caption(f"M={_auto_age_mean}, SD={_auto_age_sd}")
+                with _age_cols[3]:
+                    if st.button("✕", key="_demo_rm_age", help="Remove Age from output"):
+                        st.session_state["_demo_include_age"] = False
+                        st.session_state["_demo_keep_expanded"] = True
+                        st.rerun()
+                st.markdown('<hr style="margin:4px 0;border:none;border-top:1px solid #eee;">',
+                            unsafe_allow_html=True)
+
+            # ── Gender ──
+            if _include_gender:
+                st.markdown(
+                    '<div style="padding:8px 12px;background:#f8fafc;border-radius:8px;'
+                    'border:1px solid #e2e8f0;margin-bottom:8px;">'
+                    '<span style="font-weight:600;color:#1F2937;">Gender</span>'
+                    '<span style="font-size:0.78em;color:#6B7280;margin-left:8px;">(categorical, always generated)</span>'
+                    '</div>',
+                    unsafe_allow_html=True,
+                )
+                _gender_cols = st.columns([3, 0.5])
+                with _gender_cols[0]:
+                    _gender_pct = st.slider(
+                        "Male %", min_value=0, max_value=100, key="_demo_gender_pct_input",
+                        value=int(st.session_state.get("_demo_gender_pct", 50)),
+                        help="Percentage of male participants. Remaining split: Female, Non-binary, Prefer not to say.",
+                    )
+                    st.session_state["_demo_gender_pct"] = _gender_pct
+                    _fem_approx = 100 - _gender_pct - 2 if _gender_pct < 98 else 0
+                    st.caption(f"~{_gender_pct}% Male · ~{max(0, _fem_approx)}% Female · ~2% Non-binary/Other")
+                with _gender_cols[1]:
+                    if st.button("✕", key="_demo_rm_gender", help="Remove Gender from output"):
+                        st.session_state["_demo_include_gender"] = False
+                        st.session_state["_demo_keep_expanded"] = True
+                        st.rerun()
+                st.markdown('<hr style="margin:4px 0;border:none;border-top:1px solid #eee;">',
+                            unsafe_allow_html=True)
+
+            # v1.2.0.9: Write built-in demographics to demographics_config
+            _age_min_val = int(st.session_state.get("_demo_age_min", 18))
+            _age_max_val = int(st.session_state.get("_demo_age_max", 80))
+            _gender_pct_val = int(st.session_state.get("_demo_gender_pct", 50))
+            _computed_age_mean = round((_age_min_val + _age_max_val) / 2)
+            _computed_age_sd = max(1, round((_age_max_val - _age_min_val) / 4))
+            st.session_state["demographics_config"] = {
+                "age_mean": _computed_age_mean,
+                "age_sd": _computed_age_sd,
+                "age_min": _age_min_val,
+                "age_max": _age_max_val,
+                "gender_quota": _gender_pct_val,
+                "include_age_column": _include_age,
+                "include_gender_column": _include_gender,
+            }
+
+            # v1.2.0.9: Quick-add buttons to restore removed built-ins
+            _removed_builtins = []
+            if not _include_age:
+                _removed_builtins.append("Age")
+            if not _include_gender:
+                _removed_builtins.append("Gender")
+            if _removed_builtins:
+                _restore_cols = st.columns(len(_removed_builtins))
+                for _ri, _rname in enumerate(_removed_builtins):
+                    with _restore_cols[_ri]:
+                        if st.button(f"+ Add {_rname} back", key=f"_demo_restore_{_rname}",
+                                     use_container_width=True):
+                            st.session_state[f"_demo_include_{_rname.lower()}"] = True
+                            st.session_state["_demo_keep_expanded"] = True
+                            st.rerun()
+                st.markdown("")
 
             # Predefined demographic templates for quick add
             _DEMO_TEMPLATES: Dict[str, Dict[str, Any]] = {
@@ -11018,9 +11147,6 @@ if active_page == 3:
         with difficulty_col2:
             diff_settings = _get_difficulty_settings(difficulty_level)
             st.caption(f"**{diff_settings['description']}**")
-            st.caption(f"Attention rate: {diff_settings['attention_rate']:.0%} | "
-                      f"Careless: {diff_settings['careless_rate']:.0%} | "
-                      f"Text quality: {diff_settings['text_quality']}")
     else:
         # After generation / during generation: read from session state key
         difficulty_level = st.session_state.get("difficulty_level", _diff_default)
@@ -11123,13 +11249,17 @@ if active_page == 3:
     if not st.session_state.get("advanced_mode", False):
         # v1.0.0: Use difficulty level settings
         diff_settings = _get_difficulty_settings(difficulty_level)
-        # Use builder demographics if available, otherwise defaults
+        # v1.2.0.9: Use demographics_config which now includes age bounds and include flags
         builder_demo = st.session_state.get("demographics_config")
         if builder_demo and isinstance(builder_demo, dict):
             demographics = {
                 "gender_quota": builder_demo.get("gender_quota", 50),
                 "age_mean": builder_demo.get("age_mean", 35),
                 "age_sd": builder_demo.get("age_sd", 12),
+                "age_min": builder_demo.get("age_min", 18),
+                "age_max": builder_demo.get("age_max", 80),
+                "include_age_column": builder_demo.get("include_age_column", True),
+                "include_gender_column": builder_demo.get("include_gender_column", True),
             }
         else:
             demographics = STANDARD_DEFAULTS["demographics"].copy()
@@ -11174,40 +11304,22 @@ if active_page == 3:
         # Store difficulty settings in session state for engine
         st.session_state['difficulty_settings'] = diff_settings
 
-        with st.expander("View settings", expanded=False):
-            col_std1, col_std2 = st.columns(2)
-            with col_std1:
-                st.markdown("**Demographics**")
-                st.markdown(f"- Gender balance: {demographics['gender_quota']}% male / {100-demographics['gender_quota']}% female")
-                st.markdown(f"- Age: M = {demographics['age_mean']}, SD = {demographics['age_sd']}")
-                _cd_list = demographics.get("custom_demographics", [])
-                if _cd_list:
-                    for _cd in _cd_list:
-                        _cd_name = _cd.get("name", "?")
-                        _cd_opts = _cd.get("options", [])
-                        if _cd_opts:
-                            st.markdown(f"- {_cd_name}: {len(_cd_opts)} levels")
-                        else:
-                            st.markdown(f"- {_cd_name}: numeric (M={_cd.get('mean', '?')})")
-
-                st.markdown("**Data Quality**")
-                st.markdown(f"- Attention check pass rate: {attention_rate:.0%}")
-                st.markdown(f"- Random/careless responders: {random_responder_rate:.0%}")
-
-            with col_std2:
-                st.markdown("**Exclusion Criteria**")
-                st.markdown(f"- Min completion time: {exclusion.completion_time_min_seconds}s (1 min)")
-                st.markdown(f"- Max completion time: {exclusion.completion_time_max_seconds}s (30 min)")
-                st.markdown(f"- Straight-line threshold: {exclusion.straight_line_threshold}+ items")
-                st.markdown(f"- Check duplicate IPs: {'Yes' if exclusion.duplicate_ip_check else 'No'}")
-
-                st.markdown("**Effect Sizes**")
-                if effect_sizes:
-                    for es in effect_sizes:
-                        st.markdown(f"- **{es.variable}**: d={es.cohens_d} ({es.level_high} > {es.level_low})")
-                else:
-                    st.markdown("- No directional effects (null hypothesis)")
-                    st.caption("Specify effects in the Design tab or enable Advanced mode")
+        # v1.2.0.9: Simplified settings summary for non-advanced mode.
+        # Technical details (ExclusionCriteria, raw parameters) are hidden
+        # to avoid overwhelming users. Only user-meaningful info is shown.
+        _demo_cfg = st.session_state.get("demographics_config", {})
+        _age_range_min = _demo_cfg.get("age_min", 18) if _demo_cfg else 18
+        _age_range_max = _demo_cfg.get("age_max", 80) if _demo_cfg else 80
+        _settings_parts = []
+        _settings_parts.append(f"Age {_age_range_min}–{_age_range_max}")
+        _settings_parts.append(f"{demographics.get('gender_quota', 50)}% male")
+        _cd_list = demographics.get("custom_demographics", [])
+        if _cd_list:
+            _settings_parts.append(f"+{len(_cd_list)} demographics")
+        if effect_sizes:
+            _es_summary = ", ".join(f"d={es.cohens_d}" for es in effect_sizes[:3])
+            _settings_parts.append(f"Effects: {_es_summary}")
+        st.caption(f"Settings: {' · '.join(_settings_parts)}")
     else:
         st.markdown("#### Advanced Settings")
 
@@ -12562,8 +12674,10 @@ if active_page == 3:
                     _bar_gen_pct = 25 + int(_pct * 0.23)
                     progress_bar.progress(_bar_gen_pct, text=f"Step 2/5 — {current} of {total} participants...")
                     _elapsed_str = _fmt_elapsed(_elapsed)
-                    # Grab live LLM stats if available
+                    # v1.2.0.9: Simplified progress stats — hide raw API counts
+                    # in non-advanced mode to avoid overwhelming users.
                     _llm_status_html = ""
+                    _is_advanced = st.session_state.get("advanced_mode", False)
                     if _is_llm_method and _has_oe_questions:
                         try:
                             if hasattr(engine, 'llm_generator') and engine.llm_generator is not None:
@@ -12572,15 +12686,28 @@ if active_page == 3:
                                 _fb_n = int(_ls.get("fallback_uses", 0))
                                 _llm_n = int(_ls.get("llm_calls", 0))
                                 _fd = bool(_ls.get("force_disabled", False))
-                                if _fd:
-                                    _src_text = f"AI responses: {_pool_n} | Template fallback: {_fb_n}"
-                                    _src_color = "#B45309"
-                                elif _llm_n > 0:
-                                    _src_text = f"AI responses: {_pool_n} | API calls: {_llm_n}"
-                                    _src_color = "#166534"
+                                if _is_advanced:
+                                    # Advanced mode: show detailed stats
+                                    if _fd:
+                                        _src_text = f"AI responses: {_pool_n} | Template fallback: {_fb_n}"
+                                        _src_color = "#B45309"
+                                    elif _llm_n > 0:
+                                        _src_text = f"AI responses: {_pool_n} | API calls: {_llm_n}"
+                                        _src_color = "#166534"
+                                    else:
+                                        _src_text = "Waiting for AI provider response..."
+                                        _src_color = "#6B7280"
                                 else:
-                                    _src_text = "Waiting for AI provider response..."
-                                    _src_color = "#6B7280"
+                                    # Standard mode: simplified status
+                                    if _fd:
+                                        _src_text = "Generating responses..."
+                                        _src_color = "#B45309"
+                                    elif _pool_n > 0:
+                                        _src_text = "AI generating responses..."
+                                        _src_color = "#166534"
+                                    else:
+                                        _src_text = "Connecting to AI..."
+                                        _src_color = "#6B7280"
                                 _llm_status_html = (
                                     f'<div style="font-size:0.8em;color:{_src_color};margin-top:6px;">'
                                     f'{_src_text}</div>'
@@ -13136,70 +13263,97 @@ if active_page == 3:
                     )
 
                 if _llm_had_issues:
-                    # v1.1.1.0: Prominent issue notification with data source breakdown
-                    _issue_detail = ' '.join(_issue_messages)
-                    # Calculate data source percentages
+                    # v1.2.0.9: Simplified post-generation notification.
+                    # Non-advanced mode shows a brief note; advanced shows full breakdown.
+                    _is_advanced_mode = st.session_state.get("advanced_mode", False)
                     _ai_count = _post_pool_size
                     _template_count = _post_fallback_uses
                     _total_oe = max(1, _ai_count + _template_count)
                     _ai_pct_display = int((_ai_count / _total_oe) * 100)
-                    _template_pct_display = 100 - _ai_pct_display
-                    _source_breakdown = ""
-                    if _ai_count > 0 and _template_count > 0:
-                        _source_breakdown = (
-                            f'<div style="margin-top:12px;padding:10px;background:#FEF9C3;border-radius:8px;">'
-                            f'<span style="font-weight:600;color:#78350f;">Data source breakdown:</span><br>'
-                            f'<span style="color:#78350f;">AI-generated text: {_ai_pct_display}% ({_ai_count} responses) &nbsp;|&nbsp; '
-                            f'Template-generated: {_template_pct_display}% ({_template_count} responses)</span></div>'
-                        )
-                    elif _template_count > 0 and _ai_count == 0:
-                        _source_breakdown = (
-                            f'<div style="margin-top:12px;padding:10px;background:#FEF9C3;border-radius:8px;">'
-                            f'<span style="font-weight:600;color:#78350f;">Data source:</span> '
-                            f'<span style="color:#78350f;">100% template-generated ({_template_count} responses). '
-                            f'AI providers were unavailable.</span></div>'
-                        )
-                    _switch_html = (
-                        '<div style="background:linear-gradient(135deg, #FFFBEB 0%, #FEF3C7 100%);'
-                        'border:1px solid #FDE68A;border-radius:12px;'
-                        'padding:20px 24px;margin:12px 0;box-shadow:0 1px 3px rgba(0,0,0,0.06);">'
-                        '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">'
-                        '<span style="font-size:1.3em;">&#9888;&#65039;</span>'
-                        '<span style="font-size:1.0em;font-weight:700;color:#92400e;">'
-                        'AI generation ran into some issues</span></div>'
-                        f'<span style="color:#78350f;font-size:0.88em;line-height:1.5;">'
-                        f'{_issue_detail}</span>'
-                        f'{_source_breakdown}'
-                        '<div style="margin-top:14px;color:#78350f;font-size:0.85em;">'
-                        'Your data was still generated successfully. To re-generate with higher-quality AI text, '
-                        'you can choose one of the options below:'
-                        '</div></div>'
-                    )
-                    st.markdown(_switch_html, unsafe_allow_html=True)
 
-                    # Actionable buttons for switching method
-                    _fb_col1, _fb_col2, _fb_col3 = st.columns(3)
-                    with _fb_col1:
-                        if st.button("Use my own API key", key="_post_gen_switch_api",
-                                     type="secondary", use_container_width=True):
-                            st.session_state[_gen_method_key] = "own_api"
-                            st.session_state["allow_template_fallback_once"] = False
-                            st.session_state["_use_socsim_experimental"] = False
-                            _navigate_to(3)
-                    with _fb_col2:
-                        if st.button("Use Template Engine", key="_post_gen_switch_template",
-                                     type="secondary", use_container_width=True):
-                            st.session_state[_gen_method_key] = "template"
-                            st.session_state["allow_template_fallback_once"] = True
-                            st.session_state["_use_socsim_experimental"] = False
-                            _navigate_to(3)
-                    with _fb_col3:
-                        if st.button("Use Behavioral Engine", key="_post_gen_switch_experimental",
-                                     type="secondary", use_container_width=True):
-                            st.session_state[_gen_method_key] = "experimental"
-                            st.session_state["allow_template_fallback_once"] = True
-                            st.session_state["_use_socsim_experimental"] = True
-                            _navigate_to(3)
+                    if not _is_advanced_mode:
+                        # Simplified notification for non-advanced users
+                        _brief_msg = "Your data was generated successfully."
+                        if _ai_count == 0:
+                            _brief_msg += " AI providers were temporarily unavailable, so responses were generated using the built-in template engine."
+                        elif _template_count > 0:
+                            _brief_msg += f" {_ai_pct_display}% of responses were AI-generated."
+                        st.info(_brief_msg)
+                        _retry_col1, _retry_col2 = st.columns(2)
+                        with _retry_col1:
+                            if st.button("Re-generate with my API key", key="_post_gen_switch_api",
+                                         type="secondary", use_container_width=True):
+                                st.session_state[_gen_method_key] = "own_api"
+                                st.session_state["allow_template_fallback_once"] = False
+                                st.session_state["_use_socsim_experimental"] = False
+                                _navigate_to(3)
+                        with _retry_col2:
+                            if st.button("Re-generate", key="_post_gen_switch_template",
+                                         type="secondary", use_container_width=True):
+                                st.session_state[_gen_method_key] = "template"
+                                st.session_state["allow_template_fallback_once"] = True
+                                st.session_state["_use_socsim_experimental"] = False
+                                _navigate_to(3)
+                    else:
+                        # Advanced mode: full diagnostic breakdown
+                        _issue_detail = ' '.join(_issue_messages)
+                        _template_pct_display = 100 - _ai_pct_display
+                        _source_breakdown = ""
+                        if _ai_count > 0 and _template_count > 0:
+                            _source_breakdown = (
+                                f'<div style="margin-top:12px;padding:10px;background:#FEF9C3;border-radius:8px;">'
+                                f'<span style="font-weight:600;color:#78350f;">Data source breakdown:</span><br>'
+                                f'<span style="color:#78350f;">AI-generated text: {_ai_pct_display}% ({_ai_count} responses) &nbsp;|&nbsp; '
+                                f'Template-generated: {_template_pct_display}% ({_template_count} responses)</span></div>'
+                            )
+                        elif _template_count > 0 and _ai_count == 0:
+                            _source_breakdown = (
+                                f'<div style="margin-top:12px;padding:10px;background:#FEF9C3;border-radius:8px;">'
+                                f'<span style="font-weight:600;color:#78350f;">Data source:</span> '
+                                f'<span style="color:#78350f;">100% template-generated ({_template_count} responses). '
+                                f'AI providers were unavailable.</span></div>'
+                            )
+                        _switch_html = (
+                            '<div style="background:linear-gradient(135deg, #FFFBEB 0%, #FEF3C7 100%);'
+                            'border:1px solid #FDE68A;border-radius:12px;'
+                            'padding:20px 24px;margin:12px 0;box-shadow:0 1px 3px rgba(0,0,0,0.06);">'
+                            '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">'
+                            '<span style="font-size:1.3em;">&#9888;&#65039;</span>'
+                            '<span style="font-size:1.0em;font-weight:700;color:#92400e;">'
+                            'AI generation ran into some issues</span></div>'
+                            f'<span style="color:#78350f;font-size:0.88em;line-height:1.5;">'
+                            f'{_issue_detail}</span>'
+                            f'{_source_breakdown}'
+                            '<div style="margin-top:14px;color:#78350f;font-size:0.85em;">'
+                            'Your data was still generated successfully. To re-generate with higher-quality AI text, '
+                            'you can choose one of the options below:'
+                            '</div></div>'
+                        )
+                        st.markdown(_switch_html, unsafe_allow_html=True)
+
+                        # Actionable buttons for switching method
+                        _fb_col1, _fb_col2, _fb_col3 = st.columns(3)
+                        with _fb_col1:
+                            if st.button("Use my own API key", key="_post_gen_switch_api",
+                                         type="secondary", use_container_width=True):
+                                st.session_state[_gen_method_key] = "own_api"
+                                st.session_state["allow_template_fallback_once"] = False
+                                st.session_state["_use_socsim_experimental"] = False
+                                _navigate_to(3)
+                        with _fb_col2:
+                            if st.button("Use Template Engine", key="_post_gen_switch_template",
+                                         type="secondary", use_container_width=True):
+                                st.session_state[_gen_method_key] = "template"
+                                st.session_state["allow_template_fallback_once"] = True
+                                st.session_state["_use_socsim_experimental"] = False
+                                _navigate_to(3)
+                        with _fb_col3:
+                            if st.button("Use Behavioral Engine", key="_post_gen_switch_experimental",
+                                         type="secondary", use_container_width=True):
+                                st.session_state[_gen_method_key] = "experimental"
+                                st.session_state["allow_template_fallback_once"] = True
+                                st.session_state["_use_socsim_experimental"] = True
+                                _navigate_to(3)
 
             # v1.0.8.1: Show SocSim enrichment results
             _socsim_meta = metadata.get("socsim", {})
