@@ -1,6 +1,6 @@
 # Behavioral Experiment Simulation Tool
 
-**Version 1.2.1.0** | A Streamlit application for generating realistic synthetic behavioral experiment data using theory-grounded persona-driven simulation.
+**Version 1.2.1.2** | A Streamlit application for generating realistic synthetic behavioral experiment data using theory-grounded persona-driven simulation.
 
 ## What This Tool Does
 
@@ -19,11 +19,11 @@
 - **Develop analysis scripts** on properly structured data
 - **Check pre-registration consistency** before data collection
 
-## Features (v1.2.1.0)
+## Features (v1.2.1.2)
 
 ### Generation Method Chooser
 - **4 simulation methods** — clean, compact selection:
-  - **Built-in AI** (Recommended) — free LLM access via Groq, Cerebras, Google AI, Poe, OpenRouter
+  - **Built-in AI** (Recommended) — free LLM access via Groq, Cerebras, Google AI, Mistral AI, SambaNova, OpenRouter
   - **Your Own API Key** — bring your own key with auto-detection and format validation
   - **Built-in Template Engine** — 225+ domain templates, 58+ personas, no API needed
   - **Adaptive Behavioral Engine** (Beta) — analyzes your study design and applies domain-specific behavioral models
@@ -42,8 +42,8 @@
 
 ### NEW: AI-Powered Open-Ended Responses with multi-provider failover (v1.4.10+)
 - **Zero-config AI**: open-ended responses are automatically AI-generated using built-in API keys — no setup needed
-- **Prioritized failover chain**: Google AI Studio (Gemma/Gemini) → Groq → Cerebras → Poe → OpenRouter — if one provider rate-limits, the next is tried automatically
-- **Bring your own key**: optionally enter a personal API key from Groq, Cerebras, or OpenRouter for unlimited capacity (auto-detected from key prefix)
+- **Prioritized failover chain**: Google AI (Gemini Flash) → Groq → Cerebras → SambaNova → Mistral AI → OpenRouter — if one provider rate-limits, the next is tried automatically
+- **Bring your own key**: optionally enter a personal API key from any supported provider for dedicated capacity (auto-detected from key prefix)
 - **Large batch architecture**: 20 persona-guided responses per API call for maximum efficiency
 - **Smart pool scaling**: pool size auto-calculated from sample_size (works for 50–5,000+ participants)
 - **Draw-with-replacement + 7-layer deep variation**: persona-driven transformations ensure 90%+ uniqueness even at 2,000 participants from a pool of 30 base responses

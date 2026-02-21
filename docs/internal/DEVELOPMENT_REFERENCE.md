@@ -108,4 +108,5 @@ Each iteration should focus on one area, build on previous work, and maintain st
 3. Google AI Studio Gemini 2.5 Flash Lite (10 RPM)
 4. Google AI Studio Gemma 3 27B (30 RPM)
 5. OpenRouter Mistral Small 3.1
-6. Poe GPT-4o-mini (~20 RPM)
+6. Mistral AI Mistral Small (2 RPM, env var)
+7. SambaNova Llama 3.1 70B (20 RPM, env var)
