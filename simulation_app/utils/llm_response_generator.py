@@ -18,10 +18,10 @@ Architecture:
   the existing template-based ComprehensiveResponseGenerator
 - Never hard-stops: always walks user through options when APIs fail
 
-Version: 1.2.1.5
+Version: 1.2.1.6
 """
 
-__version__ = "1.2.1.5"
+__version__ = "1.2.1.6"
 
 import hashlib
 import json
@@ -70,17 +70,6 @@ OPENAI_MODEL = "gpt-4o-mini"
 
 ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages"
 ANTHROPIC_MODEL = "claude-sonnet-4-5-20250929"
-
-# User-selectable provider configs: {display_name: (api_url, model, key_prefix_hint)}
-USER_SELECTABLE_PROVIDERS: Dict[str, Dict[str, str]] = {
-    "Groq (Llama 3.3 70B) — Free": {"api_url": GROQ_API_URL, "model": GROQ_MODEL, "hint": "gsk_..."},
-    "Cerebras (Llama 3.3 70B) — Free": {"api_url": CEREBRAS_API_URL, "model": CEREBRAS_MODEL, "hint": "csk-..."},
-    "Google AI (Gemini Flash) — Free": {"api_url": GOOGLE_AI_API_URL, "model": GOOGLE_AI_MODEL, "hint": "AIza..."},
-    "Mistral AI (Mistral Small) — Free": {"api_url": MISTRAL_API_URL, "model": MISTRAL_MODEL, "hint": "(mistral key)"},
-    "SambaNova (Llama 3.1 70B) — Free": {"api_url": SAMBANOVA_API_URL, "model": SAMBANOVA_MODEL, "hint": "UUID format"},
-    "OpenRouter (Mistral) — Free tier": {"api_url": OPENROUTER_API_URL, "model": OPENROUTER_MODEL, "hint": "sk-or-..."},
-    "OpenAI (GPT-4o-mini)": {"api_url": OPENAI_API_URL, "model": OPENAI_MODEL, "hint": "sk-..."},
-}
 
 # ---------------------------------------------------------------------------
 # Built-in API keys (XOR-encoded for repository secret scanning compliance)
@@ -2015,16 +2004,16 @@ def get_supported_providers() -> List[Dict[str, str]]:
         },
         {
             "name": "Mistral AI",
-            "prefix": "(mistral key)",
+            "prefix": "32-char alphanumeric",
             "url": "https://console.mistral.ai",
             "free_tier": "1B tokens/month (2 RPM)",
             "recommended": False,
         },
         {
             "name": "SambaNova",
-            "prefix": "snova-...",
+            "prefix": "UUID or snova-...",
             "url": "https://cloud.sambanova.ai",
-            "free_tier": "Free Llama 3.1 70B (20 RPM)",
+            "free_tier": "200K tokens/day (20 RPM)",
             "recommended": False,
         },
         {

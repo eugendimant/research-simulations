@@ -54,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.2.1.5"
-BUILD_ID = "20260221-v12015-rate-limiter-cap-full-window"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.2.1.6"
+BUILD_ID = "20260221-v12016-provider-hints-cleanup"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -118,7 +118,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.2.1.5"  # v1.2.1.5: Rate limiter cap covers full 60s window for 2 RPM providers
+APP_VERSION = "1.2.1.6"  # v1.2.1.6: Provider key hints, SambaNova TPD, dead code cleanup
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -11802,7 +11802,7 @@ if active_page == 3:
                 "| **Groq** | 14,400 req/day | [console.groq.com](https://console.groq.com) |\n"
                 "| **Cerebras** | 1M tokens/day | [cloud.cerebras.ai](https://cloud.cerebras.ai) |\n"
                 "| **Mistral AI** | 1B tokens/month | [console.mistral.ai](https://console.mistral.ai) |\n"
-                "| **SambaNova** | Free Llama 3.1 70B | [cloud.sambanova.ai](https://cloud.sambanova.ai) |\n"
+                "| **SambaNova** | Free 200K tokens/day | [cloud.sambanova.ai](https://cloud.sambanova.ai) |\n"
                 "| **OpenRouter** | Free models | [openrouter.ai](https://openrouter.ai) |\n"
                 "| **OpenAI** | Paid (~$0.15/1M tokens) | [platform.openai.com](https://platform.openai.com) |\n"
             )
@@ -11832,7 +11832,7 @@ if active_page == 3:
                 value=_existing_plain,
                 type="password",
                 key="user_llm_key_input",
-                placeholder="Paste your key here (e.g., AIza..., gsk_..., csk-..., sk-or-...)",
+                placeholder="Paste your key here (e.g., AIza..., gsk_..., csk-..., sk-or-..., snova-...)",
             )
 
             if _user_key_input != _existing_plain:
