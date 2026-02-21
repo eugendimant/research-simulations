@@ -54,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.2.1.2"
-BUILD_ID = "20260221-v12012-builtin-mistral-sambanova-keys"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.2.1.3"
+BUILD_ID = "20260221-v12013-fix-mistral-detection-provider-hint"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -118,7 +118,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.2.1.2"  # v1.2.1.2: Built-in keys for Mistral AI + SambaNova, 7-provider chain
+APP_VERSION = "1.2.1.3"  # v1.2.1.3: Fix Mistral key detection, provider hint passthrough
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -11667,7 +11667,7 @@ if active_page == 3:
                 "tag_color": "#3B82F6",
                 "subtitle": "AI-generated responses using free LLM providers",
                 "details": [
-                    "Free-tier AI models (Google AI, Groq, Cerebras) for rich text",
+                    "Free-tier AI models (Google AI, Groq, Cerebras, SambaNova, Mistral, OpenRouter)",
                     "Behavioral coherence: text matches each participant's ratings",
                     "Auto-failover across 7 providers for reliability",
                     "Note: shared free-tier — speed varies with server load",
@@ -11847,6 +11847,12 @@ if active_page == 3:
                         del os.environ["LLM_API_KEY"]
                 st.session_state["user_llm_api_key"] = _user_key_input.strip() if _user_key_input else ""
                 st.session_state["_user_llm_provider_choice"] = _selected_provider
+                # v1.2.1.3: Pass dropdown selection to LLM generator for
+                # providers without distinctive key prefixes (e.g. Mistral AI)
+                if _selected_provider and _selected_provider != "Auto-detect from key (recommended)":
+                    os.environ["LLM_PROVIDER_HINT"] = _selected_provider
+                else:
+                    os.environ.pop("LLM_PROVIDER_HINT", None)
                 st.session_state["_llm_connectivity_status"] = None
                 st.rerun()
 
@@ -11874,6 +11880,10 @@ if active_page == 3:
                       or re.match(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', _key_val)):
                     _detected_provider = "SambaNova"
                     _key_valid_format = len(_key_val) >= 10
+                elif re.match(r'^[a-zA-Z0-9]{32}$', _key_val):
+                    # v1.2.1.3: Mistral keys are 32-char alphanumeric with no prefix
+                    _detected_provider = "Mistral AI"
+                    _key_valid_format = True
                 else:
                     _key_valid_format = len(_key_val) >= 10
 
@@ -12552,13 +12562,19 @@ if active_page == 3:
                     except (ValueError, TypeError):
                         demographics[key] = {"age_mean": 35, "age_sd": 12, "gender_quota": 50}.get(key, 0)
 
-        # v1.1.1.5: Always clear stale API key env var first, then set if provided.
+        # v1.1.1.5: Always clear stale API key env vars first, then set if provided.
         # Previous bug: if user A set a key, then user B's session could inherit it
         # from the process environment, leading to cross-session key leakage.
+        # v1.2.1.3: Also clear LLM_PROVIDER_HINT to prevent cross-session provider misdetection.
         os.environ.pop("LLM_API_KEY", None)
+        os.environ.pop("LLM_PROVIDER_HINT", None)
         _user_llm_key = st.session_state.get("user_llm_api_key", "") or st.session_state.get("user_groq_api_key", "")
         if _user_llm_key:
             os.environ["LLM_API_KEY"] = _user_llm_key
+        # v1.2.1.3: Re-set provider hint from this session's dropdown choice
+        _provider_choice = st.session_state.get("_user_llm_provider_choice", "")
+        if _provider_choice and _provider_choice != "Auto-detect from key (recommended)":
+            os.environ["LLM_PROVIDER_HINT"] = _provider_choice
 
         # v1.0.7.1: Clear cached LLM connectivity status so next page load re-checks
         st.session_state["_llm_connectivity_status"] = None
