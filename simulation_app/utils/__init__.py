@@ -2,7 +2,7 @@
 """
 Utility modules for the Behavioral Experiment Simulation Tool.
 
-Version: 1.2.0.9 - Demographics age bounds, generation UI simplification
+Version: 1.2.1.0 - Scroll fix, hide technical output, ABE subtitle
 
 Changes (v1.0.0 - 20 Iterations of Comprehensive Improvements):
     === ENHANCED SCALE/MATRIX DETECTION ===
@@ -65,7 +65,7 @@ Modules:
 """
 
 # Package version - should match all module versions
-__version__ = "1.2.0.9"
+__version__ = "1.2.1.0"
 
 from .qsf_parser import parse_qsf_file, extract_survey_structure, generate_qsf_summary
 from .simulation_engine import SimulationEngine
