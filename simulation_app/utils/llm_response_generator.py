@@ -18,10 +18,10 @@ Architecture:
   the existing template-based ComprehensiveResponseGenerator
 - Never hard-stops: always walks user through options when APIs fail
 
-Version: 1.0.8.0
+Version: 1.2.1.3
 """
 
-__version__ = "1.1.0.7"
+__version__ = "1.2.1.3"
 
 import hashlib
 import json
@@ -1927,8 +1927,14 @@ def _is_low_quality_response(text: str, topic_tokens: Optional[List[str]] = None
 # ---------------------------------------------------------------------------
 # Key auto-detection for multi-provider support
 # ---------------------------------------------------------------------------
-def detect_provider_from_key(api_key: str) -> Optional[Dict[str, str]]:
+def detect_provider_from_key(api_key: str, provider_hint: str = "") -> Optional[Dict[str, str]]:
     """Auto-detect LLM provider from API key prefix.
+
+    Args:
+        api_key: The API key to detect.
+        provider_hint: Optional display name from dropdown selection (e.g.
+            "Mistral AI (Mistral Small) — Free") used when key format alone
+            is ambiguous.
 
     Returns dict with 'name', 'api_url', 'model' or None if unrecognized.
     """
@@ -1951,7 +1957,19 @@ def detect_provider_from_key(api_key: str) -> Optional[Dict[str, str]]:
     # v1.2.1.2: SambaNova keys can be UUIDs (8-4-4-4-12 hex format)
     elif re.match(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', key):
         return {"name": "sambanova", "api_url": SAMBANOVA_API_URL, "model": SAMBANOVA_MODEL}
-    elif len(key) > 30:
+
+    # v1.2.1.3: Use dropdown hint for providers without distinctive key prefixes
+    _hint_lower = (provider_hint or "").lower()
+    if "mistral" in _hint_lower and "openrouter" not in _hint_lower:
+        return {"name": "mistral", "api_url": MISTRAL_API_URL, "model": MISTRAL_MODEL}
+    elif "sambanova" in _hint_lower:
+        return {"name": "sambanova", "api_url": SAMBANOVA_API_URL, "model": SAMBANOVA_MODEL}
+
+    # v1.2.1.3: Heuristic — Mistral keys are exactly 32 alphanumeric chars, no prefix
+    if re.match(r'^[a-zA-Z0-9]{32}$', key):
+        return {"name": "mistral", "api_url": MISTRAL_API_URL, "model": MISTRAL_MODEL}
+
+    if len(key) > 30:
         # Default to Groq for unrecognized long keys
         return {"name": "groq", "api_url": GROQ_API_URL, "model": GROQ_MODEL}
     return None
@@ -2317,7 +2335,8 @@ class LLMResponseGenerator:
         # User-provided key (appended AFTER all built-ins and env-vars so it's
         # tried last — we want to use the tool's own capacity first)
         if user_key and user_key not in _all_builtin_keys:
-            detected = detect_provider_from_key(user_key)
+            _provider_hint = os.environ.get("LLM_PROVIDER_HINT", "")
+            detected = detect_provider_from_key(user_key, provider_hint=_provider_hint)
             if detected:
                 self._providers.append(_LLMProvider(
                     name=f"{detected['name']}_user",
