@@ -18,10 +18,10 @@ Architecture:
   the existing template-based ComprehensiveResponseGenerator
 - Never hard-stops: always walks user through options when APIs fail
 
-Version: 1.2.1.4
+Version: 1.2.1.5
 """
 
-__version__ = "1.2.1.4"
+__version__ = "1.2.1.5"
 
 import hashlib
 import json
@@ -549,11 +549,12 @@ class _RateLimiter:
     def __init__(self, max_rpm: int = 28) -> None:
         self._max_rpm = max_rpm
         self._timestamps: List[float] = []
-        # v1.2.1.4: Dynamic cap based on RPM — low-RPM providers (e.g. Mistral at
-        # 2 RPM) need longer waits between calls by design.  Cap = max of 15s or
-        # 1.2× the expected inter-call interval, so we never skip a valid wait.
+        # v1.2.1.5: Dynamic cap based on RPM — low-RPM providers (e.g. Mistral at
+        # 2 RPM) need longer waits between calls by design.  After 2 rapid calls
+        # the 3rd can need up to ~60s sleep (full window).  Cap = 2.1× inter-call
+        # interval (clamped to 61s) so the full sliding window is respected.
         _inter_call_secs = 60.0 / max(1, max_rpm)  # e.g. 30s for 2 RPM
-        self._max_wait_cap = max(15.0, _inter_call_secs * 1.2)
+        self._max_wait_cap = min(61.0, max(15.0, _inter_call_secs * 2.1))
 
     def wait_if_needed(self) -> bool:
         """Wait if rate limit would be exceeded. Returns True if proceed, False if skipped.
@@ -565,8 +566,8 @@ class _RateLimiter:
         self._timestamps = [t for t in self._timestamps if now - t < 60]
         if len(self._timestamps) >= self._max_rpm:
             sleep_for = 60.0 - (now - self._timestamps[0]) + 0.5
-            # v1.2.1.4: Dynamic cap — scales with provider RPM to avoid skipping
-            # low-RPM providers that legitimately need longer waits.
+            # v1.2.1.5: Dynamic cap — scales with provider RPM to avoid skipping
+            # low-RPM providers that legitimately need longer waits (up to 61s).
             if sleep_for > self._max_wait_cap:
                 logger.info("Rate limiter: would sleep %.1fs (>%.0fs cap) — skipping call",
                             sleep_for, self._max_wait_cap)

@@ -33,7 +33,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 # Version identifier to help track deployed code
-__version__ = "1.2.1.4"  # v1.2.1.4: Fix rate limiter cap for low-RPM providers
+__version__ = "1.2.1.5"  # v1.2.1.5: Rate limiter cap covers full 60s window
 
 
 # ============================================================================

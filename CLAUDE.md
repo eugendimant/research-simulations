@@ -154,7 +154,7 @@ Runs in this order:
 2. **Full generation** (`_generate_open_response()` in enhanced_simulation_engine.py): Three-level cascade
 
 ### Three-Level Cascade:
-1. **LLM Generator** (llm_response_generator.py): Free LLM APIs (Groq → Cerebras → Gemini → Gemma → OpenRouter → Poe)
+1. **LLM Generator** (llm_response_generator.py): Free LLM APIs (Google AI Flash → Lite → Groq → Cerebras → SambaNova → Mistral → OpenRouter)
 2. **ComprehensiveResponseGenerator** (response_library.py): Template-based + Markov chain
 3. **TextResponseGenerator** (persona_library.py): Basic template fallback
 
