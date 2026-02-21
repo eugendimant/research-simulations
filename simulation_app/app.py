@@ -54,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.2.0.9"
-BUILD_ID = "20260221-v12009-demographics-age-bounds-generation-simplify"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.2.1.0"
+BUILD_ID = "20260221-v12010-scroll-fix-hide-technical-output"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -118,7 +118,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.2.0.9"  # v1.2.0.9: Demographics age bounds, generation UI simplification
+APP_VERSION = "1.2.1.0"  # v1.2.1.0: Scroll fix, hide technical output, ABE subtitle
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -9999,6 +9999,29 @@ if active_page == 2:
         _demo_header = f"#### Demographic Variables ({_total_demo_count})"
         st.markdown(_demo_header)
 
+        # v1.2.1.0: Anchor for scroll-to-demographics after quick-add button clicks.
+        # When a demographics button triggers st.rerun(), the page would scroll away.
+        # This anchor + JS keeps the viewport on the demographics section.
+        st.markdown('<div id="demographics-section-anchor"></div>', unsafe_allow_html=True)
+        _demo_scroll_needed = st.session_state.pop("_demo_scroll_to_section", False)
+        if _demo_scroll_needed:
+            # v1.2.1.0: Streamlit strips <script> from st.markdown, use components.html instead
+            _st_components.html(
+                '<script>'
+                'function _scrollToDemo() {'
+                '  const frames = window.parent.document.querySelectorAll("iframe");'
+                '  const anchors = window.parent.document.querySelectorAll("[id=demographics-section-anchor]");'
+                '  if (anchors.length > 0) { anchors[0].scrollIntoView({behavior: "instant", block: "start"}); }'
+                '  else { window.parent.document.querySelector("[data-testid=stAppViewContainer]")?.scrollTo(0, '
+                '    Math.max(0, window.parent.document.body.scrollHeight * 0.55)); }'
+                '}'
+                'setTimeout(_scrollToDemo, 100);'
+                'setTimeout(_scrollToDemo, 300);'
+                'setTimeout(_scrollToDemo, 600);'
+                '</script>',
+                height=0,
+            )
+
         # Show removal notice
         _demo_removal_notice = st.session_state.pop("_demo_removal_notice", None)
         if _demo_removal_notice:
@@ -10053,6 +10076,7 @@ if active_page == 2:
                     if st.button("✕", key="_demo_rm_age", help="Remove Age from output"):
                         st.session_state["_demo_include_age"] = False
                         st.session_state["_demo_keep_expanded"] = True
+                        st.session_state["_demo_scroll_to_section"] = True
                         st.rerun()
                 st.markdown('<hr style="margin:4px 0;border:none;border-top:1px solid #eee;">',
                             unsafe_allow_html=True)
@@ -10081,6 +10105,7 @@ if active_page == 2:
                     if st.button("✕", key="_demo_rm_gender", help="Remove Gender from output"):
                         st.session_state["_demo_include_gender"] = False
                         st.session_state["_demo_keep_expanded"] = True
+                        st.session_state["_demo_scroll_to_section"] = True
                         st.rerun()
                 st.markdown('<hr style="margin:4px 0;border:none;border-top:1px solid #eee;">',
                             unsafe_allow_html=True)
@@ -10115,6 +10140,7 @@ if active_page == 2:
                                      use_container_width=True):
                             st.session_state[f"_demo_include_{_rname.lower()}"] = True
                             st.session_state["_demo_keep_expanded"] = True
+                            st.session_state["_demo_scroll_to_section"] = True
                             st.rerun()
                 st.markdown("")
 
@@ -10183,6 +10209,7 @@ if active_page == 2:
                             _custom_demos.append(dict(_t_spec))
                             st.session_state["custom_demographics"] = _custom_demos
                             st.session_state["_demo_keep_expanded"] = True
+                            st.session_state["_demo_scroll_to_section"] = True
                             st.rerun()
 
             # Display existing demographic variables with EDITABLE options/weights
@@ -10298,6 +10325,7 @@ if active_page == 2:
                     st.session_state["custom_demographics"] = _custom_demos
                     st.session_state["_demo_removal_notice"] = f"Removed: {', '.join(_removed_names)}"
                     st.session_state["_demo_keep_expanded"] = True
+                    st.session_state["_demo_scroll_to_section"] = True
                     st.rerun()
 
             # Custom variable adder (manual)
@@ -10343,6 +10371,7 @@ if active_page == 2:
                         _custom_demos.append(_new_spec)
                         st.session_state["custom_demographics"] = _custom_demos
                         st.session_state["_demo_keep_expanded"] = True
+                        st.session_state["_demo_scroll_to_section"] = True
                         st.rerun()
                     else:
                         st.warning("Enter a variable name.")
@@ -11619,7 +11648,7 @@ if active_page == 3:
                 "title": "Adaptive Behavioral Engine",
                 "tag": "Beta",
                 "tag_color": "#3B82F6",
-                "subtitle": "Domain-calibrated behavioral models with 60+ participant archetypes",
+                "subtitle": "60+ participant archetypes, 30+ research paradigms, literature-calibrated effects",
                 "details": [
                     "Runs entirely offline — applies behavioral models to your design",
                     "60+ archetypes: optimizers, satisficers, extremists, etc.",
@@ -11942,7 +11971,7 @@ if active_page == 3:
         _active_method_key = st.session_state.get("generation_method", "")
         _active_card_info = {
             "template":     {"icon": "&#9881;",  "icon_bg": "linear-gradient(135deg, #F59E0B 0%, #F97316 100%)", "title": "Template Engine",              "subtitle": "225+ research domains, 58 personas, instant generation"},
-            "experimental": {"icon": "&#9889;",  "icon_bg": "linear-gradient(135deg, #8B5CF6 0%, #7C3AED 100%)", "title": "Adaptive Behavioral Engine",    "subtitle": "Game-theory models (Fehr-Schmidt, IRT) + persona simulation"},
+            "experimental": {"icon": "&#9889;",  "icon_bg": "linear-gradient(135deg, #8B5CF6 0%, #7C3AED 100%)", "title": "Adaptive Behavioral Engine",    "subtitle": "60+ participant archetypes, 30+ research paradigms, literature-calibrated effects"},
             "free_llm":     {"icon": "&#129302;", "icon_bg": "linear-gradient(135deg, #22c55e 0%, #16a34a 100%)", "title": "Built-in AI",                   "subtitle": "Free LLM providers for AI-generated open-ended text"},
             "own_api":      {"icon": "&#128273;", "icon_bg": "linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)", "title": "AI (your API key)",             "subtitle": "Your own API key for reliable AI-generated text"},
         }
@@ -12110,7 +12139,7 @@ if active_page == 3:
         with _exh_c4:
             if st.button("Adaptive Engine", key="_exh_use_experimental",
                          type="secondary", use_container_width=True,
-                         help="Game-theory models + persona simulation"):
+                         help="60+ archetypes, 30+ paradigms, literature-calibrated effects"):
                 _exh_resume("experimental", True, True, True)
 
     # v1.4.14: Preflight validation — catch issues before expensive generation
@@ -12907,10 +12936,11 @@ if active_page == 3:
         try:
             progress_bar.progress(15, text="Step 1/5 — Engine ready, preparing generation...")
 
-            # v1.2.4: Show detected research domains
+            # v1.2.1.0: Detected domains shown only in advanced mode (too technical for standard users)
             if hasattr(engine, 'detected_domains') and engine.detected_domains:
                 domain_text = ", ".join([d.replace("_", " ").title() for d in engine.detected_domains[:5]])
-                st.info(f"🔬 **Detected research domain(s):** {domain_text}")
+                if st.session_state.get("advanced_mode", False):
+                    st.info(f"🔬 **Detected research domain(s):** {domain_text}")
 
             # v1.1.1.0: Pre-flight LLM health check — test providers BEFORE starting
             # generation so users get immediate feedback instead of waiting minutes.
@@ -13364,19 +13394,20 @@ if active_page == 3:
                                 st.session_state["_use_socsim_experimental"] = True
                                 _navigate_to(3)
 
-            # v1.0.8.1: Show SocSim enrichment results
+            # v1.2.1.0: SocSim enrichment details — only shown in advanced mode
             _socsim_meta = metadata.get("socsim", {})
-            if _socsim_meta.get("socsim_used"):
+            if _socsim_meta.get("socsim_used") and st.session_state.get("advanced_mode", False):
                 _enriched_dvs = _socsim_meta.get("enriched_dvs", [])
                 _games_list = list({d["game"] for d in _enriched_dvs})
                 _n_enriched = len(_enriched_dvs)
-                st.success(
-                    f"**Behavioral Model Enrichment** — {_n_enriched} game DV(s) enriched "
-                    f"with domain-specific behavioral models: {', '.join(_games_list)}."
-                )
-                if _socsim_meta.get("errors"):
-                    for _serr in _socsim_meta["errors"]:
-                        st.warning(f"SocSim warning: {_serr}")
+                with st.expander(f"Behavioral model enrichment — {_n_enriched} game DV(s)", expanded=False):
+                    st.success(
+                        f"**Behavioral Model Enrichment** — {_n_enriched} game DV(s) enriched "
+                        f"with domain-specific behavioral models: {', '.join(_games_list)}."
+                    )
+                    if _socsim_meta.get("errors"):
+                        for _serr in _socsim_meta["errors"]:
+                            st.warning(f"SocSim warning: {_serr}")
 
             # v1.0.5.5: Track simulation run for admin dashboard
             # Fix: engine metadata uses "sample_size", "conditions", "scales" —
@@ -14123,46 +14154,49 @@ if active_page == 3:
                 unsafe_allow_html=True,
             )
 
-        # Data realism badges (correlation + missing data)
-        _gen_badges = []
-        _corr_info = _gen_meta.get("cross_dv_correlation", {})
-        if _corr_info.get("enabled"):
-            _gen_badges.append(
-                f"<span style='background:#E8F4FD;padding:3px 10px;border-radius:6px;"
-                f"font-size:0.78rem;margin-right:6px;'>Cross-DV correlations: "
-                f"{_corr_info.get('num_scales', 0)} scales</span>"
-            )
-        _miss_info = _gen_meta.get("missing_data", {})
-        if _miss_info.get("total_missing_rate", 0) > 0:
-            _gen_badges.append(
-                f"<span style='background:#FEF3C7;padding:3px 10px;border-radius:6px;"
-                f"font-size:0.78rem;margin-right:6px;'>Missing data: "
-                f"{_miss_info.get('total_missing_rate', 0) * 100:.1f}% "
-                f"({_miss_info.get('dropout_count', 0)} dropouts)</span>"
-            )
-        if _gen_badges:
-            st.markdown(
-                "<div style='margin:4px 0 8px 0;'>" + " ".join(_gen_badges) + "</div>",
-                unsafe_allow_html=True,
-            )
+        # v1.2.1.0: Data realism badges — only shown in advanced mode (too technical for standard users)
+        if st.session_state.get("advanced_mode", False):
+            _gen_badges = []
+            _corr_info = _gen_meta.get("cross_dv_correlation", {})
+            if _corr_info.get("enabled"):
+                _gen_badges.append(
+                    f"<span style='background:#E8F4FD;padding:3px 10px;border-radius:6px;"
+                    f"font-size:0.78rem;margin-right:6px;'>Cross-DV correlations: "
+                    f"{_corr_info.get('num_scales', 0)} scales</span>"
+                )
+            _miss_info = _gen_meta.get("missing_data", {})
+            if _miss_info.get("total_missing_rate", 0) > 0:
+                _gen_badges.append(
+                    f"<span style='background:#FEF3C7;padding:3px 10px;border-radius:6px;"
+                    f"font-size:0.78rem;margin-right:6px;'>Missing data: "
+                    f"{_miss_info.get('total_missing_rate', 0) * 100:.1f}% "
+                    f"({_miss_info.get('dropout_count', 0)} dropouts)</span>"
+                )
+            if _gen_badges:
+                st.markdown(
+                    "<div style='margin:4px 0 8px 0;'>" + " ".join(_gen_badges) + "</div>",
+                    unsafe_allow_html=True,
+                )
 
+        # v1.2.1.0: Run archive/audit details hidden — only shown in advanced mode behind dropdown
         _dl_run_archive = (_dl_meta or {}).get("run_archive_path", "")
         _dl_run_audit = (_dl_meta or {}).get("run_audit_summary", {}) or {}
-        _dl_new_audits = _dl_run_audit.get("new_run_count", 0)
-        _dl_audit_errors = _dl_run_audit.get("error_count", 0)
-        _dl_audit_warnings = _dl_run_audit.get("warning_count", 0)
-        _dl_avg_quality = float(_dl_run_audit.get("avg_quality_score", 100.0) or 100.0)
-        _dl_top_issues = _dl_run_audit.get("top_issue_codes", []) or []
-        _dl_log_path = (_dl_meta or {}).get("run_improvement_log", "")
-        if _dl_run_archive:
-            st.caption(f"Run archive folder: `{_dl_run_archive}`")
-            st.caption(f"Continuous improvement log: `{_dl_log_path}`")
-            if _dl_new_audits:
-                st.caption(f"Automatic quality audit completed for {_dl_new_audits} new run(s).")
-                st.caption(f"Latest audit findings: errors={_dl_audit_errors}, warnings={_dl_audit_warnings}")
-                st.caption(f"Portfolio quality score (all audited runs): {_dl_avg_quality:.1f}/100")
-            if _dl_top_issues:
-                st.caption(f"Top recurring issue codes: {', '.join(_dl_top_issues[:3])}")
+        if _dl_run_archive and st.session_state.get("advanced_mode", False):
+            _dl_new_audits = _dl_run_audit.get("new_run_count", 0)
+            _dl_audit_errors = _dl_run_audit.get("error_count", 0)
+            _dl_audit_warnings = _dl_run_audit.get("warning_count", 0)
+            _dl_avg_quality = float(_dl_run_audit.get("avg_quality_score", 100.0) or 100.0)
+            _dl_top_issues = _dl_run_audit.get("top_issue_codes", []) or []
+            _dl_log_path = (_dl_meta or {}).get("run_improvement_log", "")
+            with st.expander("Run archive & quality audit (advanced)", expanded=False):
+                st.caption(f"Run archive folder: `{_dl_run_archive}`")
+                st.caption(f"Continuous improvement log: `{_dl_log_path}`")
+                if _dl_new_audits:
+                    st.caption(f"Automatic quality audit completed for {_dl_new_audits} new run(s).")
+                    st.caption(f"Latest audit findings: errors={_dl_audit_errors}, warnings={_dl_audit_warnings}")
+                    st.caption(f"Portfolio quality score (all audited runs): {_dl_avg_quality:.1f}/100")
+                if _dl_top_issues:
+                    st.caption(f"Top recurring issue codes: {', '.join(_dl_top_issues[:3])}")
 
         st.download_button(
             "Download ZIP (CSV + metadata + analysis scripts)",
