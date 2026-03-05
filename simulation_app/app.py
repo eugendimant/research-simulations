@@ -54,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.2.1.6"
-BUILD_ID = "20260221-v12016-provider-hints-cleanup"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.2.1.7"
+BUILD_ID = "20260305-v12017-fix-stale-phase2-setup-crash"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -118,7 +118,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.2.1.6"  # v1.2.1.6: Provider key hints, SambaNova TPD, dead code cleanup
+APP_VERSION = "1.2.1.7"  # v1.2.1.7: Fix stale-phase-2 ghost error — wrap setup code in try/except
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -12328,530 +12328,623 @@ if active_page == 3:
         progress_bar = progress_placeholder.progress(5, text="Preparing simulation inputs...")
         status_placeholder.info("🔄 Preparing simulation inputs...")
 
-        # v1.0.1.5: Use _p_ persist fallback — widget keys may not survive cross-page navigation
-        title = (st.session_state.get("study_title") or st.session_state.get("_p_study_title", "")) or "Untitled Study"
-        desc = (st.session_state.get("study_description") or st.session_state.get("_p_study_description", "")) or ""
+        # v1.2.1.7: SETUP TRY BLOCK — wrap ALL pre-engine setup code so that ANY crash
+        # (dict-contaminated values, float() on non-numeric, missing keys, etc.) is caught
+        # and shows a proper error instead of causing the stale-phase-2 ghost error.
+        # Previously, code between _generation_phase=2 and the engine try/except was
+        # unprotected, so any exception there killed the Streamlit rerun silently.
         try:
-            requested_n = int(st.session_state.get("sample_size", 200))
-        except (ValueError, TypeError):
-            requested_n = 200
-        if requested_n > MAX_SIMULATED_N:
-            st.info(
-                f"Requested N ({requested_n}) exceeds the cap ({MAX_SIMULATED_N}). "
-                "Using the capped value for standardization."
-            )
-        N = min(requested_n, MAX_SIMULATED_N)
+            # v1.0.1.5: Use _p_ persist fallback — widget keys may not survive cross-page navigation
+            title = (st.session_state.get("study_title") or st.session_state.get("_p_study_title", "")) or "Untitled Study"
+            desc = (st.session_state.get("study_description") or st.session_state.get("_p_study_description", "")) or ""
+            try:
+                requested_n = int(st.session_state.get("sample_size", 200))
+            except (ValueError, TypeError):
+                requested_n = 200
+            if requested_n > MAX_SIMULATED_N:
+                st.info(
+                    f"Requested N ({requested_n}) exceeds the cap ({MAX_SIMULATED_N}). "
+                    "Using the capped value for standardization."
+                )
+            N = min(requested_n, MAX_SIMULATED_N)
 
-        # v1.4.2.1: Safety assertion — missing_fields should never be true here
-        # because the Generate button is disabled when all_required_complete is False.
-        # The legacy generation_requested fallback is the only theoretical path, so
-        # guard defensively rather than leaving dead code.
-        if missing_fields:
-            st.session_state["is_generating"] = False
-            st.session_state["generation_requested"] = False
-            st.session_state["_generation_phase"] = 0  # v1.1.1.3
-            progress_placeholder.empty()
-            st.warning(
-                "Cannot generate: missing required fields "
-                f"({', '.join(missing_fields)}). Please complete all steps first."
-            )
-            st.stop()
+            # v1.4.2.1: Safety assertion — missing_fields should never be true here
+            # because the Generate button is disabled when all_required_complete is False.
+            # The legacy generation_requested fallback is the only theoretical path, so
+            # guard defensively rather than leaving dead code.
+            if missing_fields:
+                st.session_state["is_generating"] = False
+                st.session_state["generation_requested"] = False
+                st.session_state["_generation_phase"] = 0  # v1.1.1.3
+                progress_placeholder.empty()
+                st.warning(
+                    "Cannot generate: missing required fields "
+                    f"({', '.join(missing_fields)}). Please complete all steps first."
+                )
+                st.stop()
 
-        prereg_text = st.session_state.get("prereg_text_sanitized", "")
+            prereg_text = st.session_state.get("prereg_text_sanitized", "")
 
-        # ========================================
-        # QSF VARIABLE VALIDATION
-        # Use only user-confirmed scales from the scale confirmation UI
-        # This ensures we ONLY simulate variables that exist in the QSF
-        # ========================================
-        confirmed_scales = st.session_state.get("confirmed_scales", [])
-        if confirmed_scales:
-            # User has confirmed scales - use those exclusively
-            clean_scales = _normalize_scale_specs(confirmed_scales)
-            # Log the validated scales for debugging
-            validated_scale_names = [s.get("name", "Unknown") for s in clean_scales]
-            st.session_state["_validated_scales_log"] = validated_scale_names
-        else:
-            # Fallback to inferred scales if no confirmation (shouldn't happen with new UI)
-            clean_scales = _normalize_scale_specs(inferred.get("scales", []))
-
-        # Additional validation: warn if no scales detected
-        if not clean_scales:
-            st.warning("No scales detected or confirmed. A default scale will be used. Please check your study configuration.")
-            clean_scales = [{"name": "Main_DV", "variable_name": "Main_DV", "num_items": 5, "scale_points": 7, "scale_min": 1, "scale_max": 7, "reverse_items": [], "_validated": True}]
-
-        clean_factors = _normalize_factor_specs(inferred.get("factors", []), inferred.get("conditions", []))
-
-        # Get condition allocation from session state
-        condition_allocation = st.session_state.get("condition_allocation", None)
-
-        # Build open-ended questions with full context for text generation
-        # PRIORITY: Use user-confirmed open-ended questions from Step 3
-        # This ensures only questions the user verified will have text generated
-        # v1.4.2.1: Robust handling for both dict and string elements in confirmed_open_ended
-        confirmed_open_ended = st.session_state.get("confirmed_open_ended", [])
-        if confirmed_open_ended:
-            # Use user-confirmed questions with full context
-            open_ended_questions_for_engine = []
-            for oe in confirmed_open_ended:
-                if isinstance(oe, dict):
-                    open_ended_questions_for_engine.append({
-                        "name": oe.get("variable_name", oe.get("name", "")),
-                        "variable_name": oe.get("variable_name", oe.get("name", "")),
-                        "question_text": oe.get("question_text", ""),
-                        "question_context": oe.get("question_context", ""),  # v1.8.7.1
-                        "question_purpose": oe.get("question_purpose", "DV Response"),  # v1.1.1.3
-                        "context_type": oe.get("context_type", "general"),
-                        "type": oe.get("source_type", "text"),
-                        "force_response": oe.get("force_response", False),
-                        "min_chars": oe.get("min_chars"),
-                        "block_name": oe.get("block_name", ""),
-                    })
-                elif isinstance(oe, str) and oe.strip():
-                    # Handle legacy/fallback case where open-ended is a plain string
-                    open_ended_questions_for_engine.append({
-                        "name": oe, "variable_name": oe,
-                        "question_text": oe, "question_purpose": "DV Response",
-                        "context_type": "general",
-                        "type": "text", "force_response": False,
-                        "min_chars": None, "block_name": "",
-                    })
-        else:
-            # Fallback to inferred detailed info if available
-            open_ended_details = inferred.get("open_ended_details", [])
-            if open_ended_details:
-                open_ended_questions_for_engine = open_ended_details
+            # ========================================
+            # QSF VARIABLE VALIDATION
+            # Use only user-confirmed scales from the scale confirmation UI
+            # This ensures we ONLY simulate variables that exist in the QSF
+            # ========================================
+            confirmed_scales = st.session_state.get("confirmed_scales", [])
+            if confirmed_scales:
+                # User has confirmed scales - use those exclusively
+                clean_scales = _normalize_scale_specs(confirmed_scales)
+                # Log the validated scales for debugging
+                validated_scale_names = [s.get("name", "Unknown") for s in clean_scales]
+                st.session_state["_validated_scales_log"] = validated_scale_names
             else:
-                # Final fallback to basic list (variable names only)
-                basic_open_ended = inferred.get("open_ended_questions", [])
+                # Fallback to inferred scales if no confirmation (shouldn't happen with new UI)
+                clean_scales = _normalize_scale_specs(inferred.get("scales", []))
+
+            # Additional validation: warn if no scales detected
+            if not clean_scales:
+                st.warning("No scales detected or confirmed. A default scale will be used. Please check your study configuration.")
+                clean_scales = [{"name": "Main_DV", "variable_name": "Main_DV", "num_items": 5, "scale_points": 7, "scale_min": 1, "scale_max": 7, "reverse_items": [], "_validated": True}]
+
+            clean_factors = _normalize_factor_specs(inferred.get("factors", []), inferred.get("conditions", []))
+
+            # Get condition allocation from session state
+            condition_allocation = st.session_state.get("condition_allocation", None)
+
+            # Build open-ended questions with full context for text generation
+            # PRIORITY: Use user-confirmed open-ended questions from Step 3
+            # This ensures only questions the user verified will have text generated
+            # v1.4.2.1: Robust handling for both dict and string elements in confirmed_open_ended
+            confirmed_open_ended = st.session_state.get("confirmed_open_ended", [])
+            if confirmed_open_ended:
+                # Use user-confirmed questions with full context
                 open_ended_questions_for_engine = []
-                for q in basic_open_ended:
-                    if isinstance(q, dict):
-                        open_ended_questions_for_engine.append(q)
-                    elif isinstance(q, str) and q.strip():
-                        open_ended_questions_for_engine.append(
-                            {"name": q, "question_text": q, "question_purpose": "DV Response", "context_type": "general"}
-                        )
-
-        # ========================================
-        # v1.2.3: PRE-FLIGHT VALIDATION
-        # Sanitize all inputs before passing to engine to prevent
-        # float()/int() crashes on unexpected types (dicts, None, etc.)
-        # ========================================
-        def _preflight_sanitize_scales(scales_list: list) -> list:
-            """Ensure all scale dicts have clean numeric values.
-
-            v1.4.0: Enhanced to handle NaN, list, and dict contamination for all fields.
-            Also handles None scale_points for numeric/slider scales from the builder.
-            """
-            sanitized = []
-            for s in scales_list:
-                if not isinstance(s, dict):
-                    continue
-                name = str(s.get("name", "")).strip()
-                if not name:
-                    continue
-
-                def _clean_int(val: Any, default: int) -> int:
-                    """Safely convert any value to int, handling dicts, lists, NaN, None."""
-                    if val is None:
-                        return default
-                    if isinstance(val, float) and (np.isnan(val) or np.isinf(val)):
-                        return default
-                    if isinstance(val, dict):
-                        for key in ("value", "count", "mean"):
-                            if key in val:
-                                try:
-                                    return int(val[key])
-                                except (ValueError, TypeError):
-                                    pass
-                        return default
-                    if isinstance(val, (list, tuple)):
-                        try:
-                            return int(val[0]) if val else default
-                        except (ValueError, TypeError, IndexError):
-                            return default
-                    try:
-                        return int(val)
-                    except (ValueError, TypeError):
-                        return default
-
-                # Determine scale type to handle None scale_points for numeric scales
-                scale_type = str(s.get("type", "likert")).lower()
-
-                # Force all numeric fields to proper types
-                raw_pts = s.get("scale_points")
-                if raw_pts is None and scale_type in ("numeric", "slider", "number"):
-                    # Numeric scales: derive from min/max or use sensible default
-                    _tmp_min = _clean_int(s.get("scale_min"), 0)
-                    _tmp_max = _clean_int(s.get("scale_max"), 100)
-                    pts = max(2, _tmp_max - _tmp_min + 1)
+                for oe in confirmed_open_ended:
+                    if isinstance(oe, dict):
+                        open_ended_questions_for_engine.append({
+                            "name": oe.get("variable_name", oe.get("name", "")),
+                            "variable_name": oe.get("variable_name", oe.get("name", "")),
+                            "question_text": oe.get("question_text", ""),
+                            "question_context": oe.get("question_context", ""),  # v1.8.7.1
+                            "question_purpose": oe.get("question_purpose", "DV Response"),  # v1.1.1.3
+                            "context_type": oe.get("context_type", "general"),
+                            "type": oe.get("source_type", "text"),
+                            "force_response": oe.get("force_response", False),
+                            "min_chars": oe.get("min_chars"),
+                            "block_name": oe.get("block_name", ""),
+                        })
+                    elif isinstance(oe, str) and oe.strip():
+                        # Handle legacy/fallback case where open-ended is a plain string
+                        open_ended_questions_for_engine.append({
+                            "name": oe, "variable_name": oe,
+                            "question_text": oe, "question_purpose": "DV Response",
+                            "context_type": "general",
+                            "type": "text", "force_response": False,
+                            "min_chars": None, "block_name": "",
+                        })
+            else:
+                # Fallback to inferred detailed info if available
+                open_ended_details = inferred.get("open_ended_details", [])
+                if open_ended_details:
+                    open_ended_questions_for_engine = open_ended_details
                 else:
-                    pts = _clean_int(raw_pts, 7)
-
-                n_items = _clean_int(s.get("num_items"), 5)
-
-                # Handle scale_min/scale_max
-                s_min = _clean_int(s.get("scale_min", 1), 1)
-                s_max = _clean_int(s.get("scale_max", pts), pts)
-
-                # Ensure s_max > s_min
-                if s_max <= s_min:
-                    s_max = s_min + max(1, pts - 1)
-
-                sanitized.append({
-                    **s,
-                    "name": name,
-                    "scale_points": max(2, min(1001, pts)),
-                    "num_items": max(1, n_items),
-                    "scale_min": max(0, s_min),
-                    "scale_max": max(1, s_max),
-                    "_validated": True,
-                })
-            return sanitized
-
-        clean_scales = _preflight_sanitize_scales(clean_scales)
-
-        # v1.2.0.6: Defensive defaults for engine parameters.
-        # The standard/advanced mode blocks above always define these variables.
-        # But as a safety net for ANY code path that might skip them (e.g.,
-        # st.stop() in a conditional, or Streamlit widget rendering issues during
-        # exhaustion resume), provide explicit fallback values.
-        try:
-            demographics  # type: ignore[used-before-def]
-        except NameError:
-            _log("WARNING: demographics not defined — using defaults", level="warning")
-            demographics = STANDARD_DEFAULTS["demographics"].copy()
-            _user_cd = st.session_state.get("custom_demographics", [])
-            if _user_cd:
-                demographics["custom_demographics"] = _user_cd
-        try:
-            attention_rate  # type: ignore[used-before-def]
-        except NameError:
-            _log("WARNING: attention_rate not defined — using default", level="warning")
-            attention_rate = 0.90
-        try:
-            random_responder_rate  # type: ignore[used-before-def]
-        except NameError:
-            _log("WARNING: random_responder_rate not defined — using default", level="warning")
-            random_responder_rate = 0.05
-        try:
-            exclusion  # type: ignore[used-before-def]
-        except NameError:
-            _log("WARNING: exclusion not defined — using defaults", level="warning")
-            exclusion = ExclusionCriteria(**STANDARD_DEFAULTS["exclusion_criteria"])
-        try:
-            effect_sizes  # type: ignore[used-before-def]
-        except NameError:
-            _log("WARNING: effect_sizes not defined — using empty list", level="warning")
-            effect_sizes = []
-        try:
-            custom_persona_weights  # type: ignore[used-before-def]
-        except NameError:
-            custom_persona_weights = st.session_state.get("custom_persona_weights", None)
-
-        # Sanitize demographics dict
-        if isinstance(demographics, dict):
-            for key in ("age_mean", "age_sd", "gender_quota"):
-                val = demographics.get(key)
-                if isinstance(val, dict):
-                    demographics[key] = val.get("value", {"age_mean": 35, "age_sd": 12, "gender_quota": 50}.get(key, 0))
-                elif val is not None:
-                    try:
-                        demographics[key] = float(val)
-                    except (ValueError, TypeError):
-                        demographics[key] = {"age_mean": 35, "age_sd": 12, "gender_quota": 50}.get(key, 0)
-
-        # v1.1.1.5: Always clear stale API key env vars first, then set if provided.
-        # Previous bug: if user A set a key, then user B's session could inherit it
-        # from the process environment, leading to cross-session key leakage.
-        # v1.2.1.3: Also clear LLM_PROVIDER_HINT to prevent cross-session provider misdetection.
-        os.environ.pop("LLM_API_KEY", None)
-        os.environ.pop("LLM_PROVIDER_HINT", None)
-        _user_llm_key = st.session_state.get("user_llm_api_key", "") or st.session_state.get("user_groq_api_key", "")
-        if _user_llm_key:
-            os.environ["LLM_API_KEY"] = _user_llm_key
-        # v1.2.1.3: Re-set provider hint from this session's dropdown choice
-        _provider_choice = st.session_state.get("_user_llm_provider_choice", "")
-        if _provider_choice and _provider_choice != "Auto-detect from key (recommended)":
-            os.environ["LLM_PROVIDER_HINT"] = _provider_choice
-
-        # v1.0.7.1: Clear cached LLM connectivity status so next page load re-checks
-        st.session_state["_llm_connectivity_status"] = None
-        # v1.0.7.1: Clear previous exhaustion note
-        st.session_state.pop("_gen_llm_exhaustion_note", None)
-
-        # v1.8.8.0: Retrieve correlation matrix and missing data settings
-        _engine_corr_matrix = None
-        _raw_corr = inferred.get("correlation_matrix")
-        if _raw_corr is not None:
-            try:
-                _engine_corr_matrix = np.array(_raw_corr, dtype=float)
-            except Exception:
-                _engine_corr_matrix = None
-        _engine_missing_rate = float(inferred.get("missing_data_rate", 0.0))
-        _engine_dropout_rate = float(inferred.get("dropout_rate", 0.0))
-
-        # v1.0.5.1: Inject condition descriptions into study_context for the engine
-        _engine_study_context = dict(inferred.get("study_context", {}))
-        _cond_descs_for_engine = st.session_state.get("builder_condition_descriptions", {})
-        if _cond_descs_for_engine:
-            _engine_study_context["condition_descriptions"] = _cond_descs_for_engine
-        # v1.0.9.1: Pass user-provided additional simulation context
-        _additional_sim_ctx = st.session_state.get("simulation_additional_context", "").strip()
-        if _additional_sim_ctx:
-            _engine_study_context["additional_context"] = _additional_sim_ctx
-
-        # v1.0.8.1: Real-time progress tracking via callback
-        # Create a placeholder for the live participant counter
-        _progress_counter_placeholder = st.empty()
-        _progress_start_time = __import__('time').time()
-
-        # v1.0.8.2: Stall detection state for watchdog mechanism
-        _last_progress_time = [__import__('time').time()]  # mutable ref for closure
-        _last_progress_phase = ["init"]
-        _stall_warning_shown = [False]
-        _stall_threshold_secs = 45.0  # Show warning after 45s without progress
-
-        # v1.1.1.0: Global generation timeout — absolute hard limit. If generation
-        # exceeds this, force the LLM generator to permanently disable and let
-        # template fallback finish the remaining participants. This prevents the
-        # scenario where the UI spinner shows "Generating..." for 12+ hours.
-        _GLOBAL_GENERATION_TIMEOUT = 600.0  # 10 minutes absolute max
-        _generation_timed_out = [False]  # mutable ref for closure
-
-        # v1.1.1.5: Define these BEFORE the callback closure so they're guaranteed
-        # to exist when the callback runs (even if engine somehow triggers it early).
-        _is_llm_method = st.session_state.get(_gen_method_key) in ("free_llm", "own_api")
-        _has_oe_questions = bool(open_ended_questions_for_engine)
-        # v1.1.1.7: Method label for progress display (captured in closure)
-        _cb_method_label = {
-            "template": "Template Engine",
-            "experimental": "Adaptive Behavioral Engine",
-            "free_llm": "Built-in AI",
-            "own_api": "AI (your API key)",
-        }.get(st.session_state.get(_gen_method_key, ""), "")
-
-        def _fmt_elapsed(seconds: float) -> str:
-            """Format elapsed time as human-readable string."""
-            s = int(seconds)
-            if s < 60:
-                return f"{s}s"
-            m, sec = divmod(s, 60)
-            return f"{m}m {sec}s"
-
-        def _live_progress_callback(phase: str, current: int, total: int) -> None:
-            """v1.1.1.0: Update the live progress counter with global timeout enforcement."""
-            try:
-                _now = __import__('time').time()
-                _elapsed = _now - _progress_start_time
-
-                # v1.0.8.2: Update stall detection state
-                _last_progress_time[0] = _now
-                _last_progress_phase[0] = phase
-
-                # v1.1.1.0: Global generation timeout enforcement.
-                # If total elapsed exceeds the hard limit, permanently disable LLM
-                # so remaining participants use fast template fallback instead of
-                # continuing to hammer dead API providers.
-                if _elapsed > _GLOBAL_GENERATION_TIMEOUT and not _generation_timed_out[0]:
-                    _generation_timed_out[0] = True
-                    import logging as _cb_logging
-                    _cb_logging.getLogger(__name__).warning(
-                        "GLOBAL GENERATION TIMEOUT (%.0fs) exceeded at phase=%s, "
-                        "current=%d/%d — forcing template fallback",
-                        _GLOBAL_GENERATION_TIMEOUT, phase, current, total,
-                    )
-                    # Force-disable the LLM generator on the engine
-                    try:
-                        if hasattr(engine, 'llm_generator') and engine.llm_generator is not None:
-                            engine.llm_generator.disable_permanently(
-                                f"global timeout ({_GLOBAL_GENERATION_TIMEOUT:.0f}s) exceeded"
+                    # Final fallback to basic list (variable names only)
+                    basic_open_ended = inferred.get("open_ended_questions", [])
+                    open_ended_questions_for_engine = []
+                    for q in basic_open_ended:
+                        if isinstance(q, dict):
+                            open_ended_questions_for_engine.append(q)
+                        elif isinstance(q, str) and q.strip():
+                            open_ended_questions_for_engine.append(
+                                {"name": q, "question_text": q, "question_purpose": "DV Response", "context_type": "general"}
                             )
-                    except Exception:
-                        pass
 
-                if _elapsed > _stall_threshold_secs and not _stall_warning_shown[0]:
-                    if phase in ("personas", "scales", "open_ended"):
-                        _stall_warning_shown[0] = True
+            # ========================================
+            # v1.2.3: PRE-FLIGHT VALIDATION
+            # Sanitize all inputs before passing to engine to prevent
+            # float()/int() crashes on unexpected types (dicts, None, etc.)
+            # ========================================
+            def _preflight_sanitize_scales(scales_list: list) -> list:
+                """Ensure all scale dicts have clean numeric values.
 
-                # v1.2.0.1: Always update the main progress bar during early phases
-                # so users see movement, not a static "Step 1/5" for minutes.
-                if phase == "personas":
-                    progress_bar.progress(18, text="Step 2/5 — Assigning behavioral personas...")
-                    _progress_counter_placeholder.markdown(
-                        f'<div style="text-align:center;padding:10px;background:#f0f9ff;border-radius:8px;margin:8px 0;">'
-                        f'<span style="font-size:1.1em;color:#0369a1;">'
-                        f'Assigning behavioral personas...</span>'
-                        f'<div style="font-size:0.8em;color:#6B7280;margin-top:4px;">'
-                        f'Elapsed: {_fmt_elapsed(_elapsed)}</div></div>',
-                        unsafe_allow_html=True,
-                    )
-                elif phase == "scales":
-                    _s_pct = int(((current + 1) / max(1, total)) * 100)
-                    _bar_pct = 20 + int(_s_pct * 0.05)  # 20-25% range
-                    progress_bar.progress(_bar_pct, text=f"Step 2/5 — Generating scale responses ({current + 1}/{total})...")
-                    _progress_counter_placeholder.markdown(
-                        f'<div style="text-align:center;padding:10px;background:#f0f9ff;border-radius:8px;margin:8px 0;">'
-                        f'<span style="font-size:1.1em;color:#0369a1;">'
-                        f'Generating scale responses — scale {current + 1} of {total}</span>'
-                        f'<div style="background:#dbeafe;border-radius:4px;height:6px;margin-top:8px;">'
-                        f'<div style="background:#3b82f6;width:{_s_pct}%;height:100%;border-radius:4px;'
-                        f'transition:width 0.3s;"></div></div>'
-                        f'<div style="font-size:0.8em;color:#6B7280;margin-top:4px;">'
-                        f'Elapsed: {_fmt_elapsed(_elapsed)}</div></div>',
-                        unsafe_allow_html=True,
-                    )
-                elif phase == "open_ended":
-                    progress_bar.progress(26, text="Step 2/5 — Preparing open-ended text generation...")
-                    _progress_counter_placeholder.markdown(
-                        f'<div style="text-align:center;padding:10px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;margin:8px 0;">'
-                        f'<span style="font-size:1.1em;color:#92400e;">'
-                        f'Preparing open-ended response generation...</span>'
-                        f'<div style="font-size:0.8em;color:#6B7280;margin-top:4px;">'
-                        f'Elapsed: {_fmt_elapsed(_elapsed)}</div></div>',
-                        unsafe_allow_html=True,
-                    )
-                elif phase == "open_ended_question":
-                    # v1.1.1.2: Per-OE-question progress
-                    _oe_pct = 26 + int((current / max(1, total)) * 10)  # 26-36% range
-                    progress_bar.progress(_oe_pct, text=f"Step 2/5 — Text responses: question {current + 1} of {total}...")
-                    _progress_counter_placeholder.markdown(
-                        f'<div style="text-align:center;padding:10px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;margin:8px 0;">'
-                        f'<span style="font-size:1.1em;color:#92400e;">'
-                        f'Generating text responses — question {current + 1} of {total}</span>'
-                        f'<div style="font-size:0.8em;color:#6B7280;margin-top:4px;">'
-                        f'Elapsed: {_fmt_elapsed(_elapsed)}</div></div>',
-                        unsafe_allow_html=True,
-                    )
-                elif phase == "generating":
-                    # v1.1.1.0: Show observation count + elapsed time + LLM source stats
-                    _pct = int((current / max(1, total)) * 100)
-                    # v1.2.0.1: Update main progress bar smoothly (25-48% range)
-                    _bar_gen_pct = 25 + int(_pct * 0.23)
-                    progress_bar.progress(_bar_gen_pct, text=f"Step 2/5 — {current} of {total} participants...")
-                    _elapsed_str = _fmt_elapsed(_elapsed)
-                    # v1.2.0.9: Simplified progress stats — hide raw API counts
-                    # in non-advanced mode to avoid overwhelming users.
-                    _llm_status_html = ""
-                    _is_advanced = st.session_state.get("advanced_mode", False)
-                    if _is_llm_method and _has_oe_questions:
+                v1.4.0: Enhanced to handle NaN, list, and dict contamination for all fields.
+                Also handles None scale_points for numeric/slider scales from the builder.
+                """
+                sanitized = []
+                for s in scales_list:
+                    if not isinstance(s, dict):
+                        continue
+                    name = str(s.get("name", "")).strip()
+                    if not name:
+                        continue
+
+                    def _clean_int(val: Any, default: int) -> int:
+                        """Safely convert any value to int, handling dicts, lists, NaN, None."""
+                        if val is None:
+                            return default
+                        if isinstance(val, float) and (np.isnan(val) or np.isinf(val)):
+                            return default
+                        if isinstance(val, dict):
+                            for key in ("value", "count", "mean"):
+                                if key in val:
+                                    try:
+                                        return int(val[key])
+                                    except (ValueError, TypeError):
+                                        pass
+                            return default
+                        if isinstance(val, (list, tuple)):
+                            try:
+                                return int(val[0]) if val else default
+                            except (ValueError, TypeError, IndexError):
+                                return default
+                        try:
+                            return int(val)
+                        except (ValueError, TypeError):
+                            return default
+
+                    # Determine scale type to handle None scale_points for numeric scales
+                    scale_type = str(s.get("type", "likert")).lower()
+
+                    # Force all numeric fields to proper types
+                    raw_pts = s.get("scale_points")
+                    if raw_pts is None and scale_type in ("numeric", "slider", "number"):
+                        # Numeric scales: derive from min/max or use sensible default
+                        _tmp_min = _clean_int(s.get("scale_min"), 0)
+                        _tmp_max = _clean_int(s.get("scale_max"), 100)
+                        pts = max(2, _tmp_max - _tmp_min + 1)
+                    else:
+                        pts = _clean_int(raw_pts, 7)
+
+                    n_items = _clean_int(s.get("num_items"), 5)
+
+                    # Handle scale_min/scale_max
+                    s_min = _clean_int(s.get("scale_min", 1), 1)
+                    s_max = _clean_int(s.get("scale_max", pts), pts)
+
+                    # Ensure s_max > s_min
+                    if s_max <= s_min:
+                        s_max = s_min + max(1, pts - 1)
+
+                    sanitized.append({
+                        **s,
+                        "name": name,
+                        "scale_points": max(2, min(1001, pts)),
+                        "num_items": max(1, n_items),
+                        "scale_min": max(0, s_min),
+                        "scale_max": max(1, s_max),
+                        "_validated": True,
+                    })
+                return sanitized
+
+            clean_scales = _preflight_sanitize_scales(clean_scales)
+
+            # v1.2.0.6: Defensive defaults for engine parameters.
+            # The standard/advanced mode blocks above always define these variables.
+            # But as a safety net for ANY code path that might skip them (e.g.,
+            # st.stop() in a conditional, or Streamlit widget rendering issues during
+            # exhaustion resume), provide explicit fallback values.
+            try:
+                demographics  # type: ignore[used-before-def]
+            except NameError:
+                _log("WARNING: demographics not defined — using defaults", level="warning")
+                demographics = STANDARD_DEFAULTS["demographics"].copy()
+                _user_cd = st.session_state.get("custom_demographics", [])
+                if _user_cd:
+                    demographics["custom_demographics"] = _user_cd
+            try:
+                attention_rate  # type: ignore[used-before-def]
+            except NameError:
+                _log("WARNING: attention_rate not defined — using default", level="warning")
+                attention_rate = 0.90
+            try:
+                random_responder_rate  # type: ignore[used-before-def]
+            except NameError:
+                _log("WARNING: random_responder_rate not defined — using default", level="warning")
+                random_responder_rate = 0.05
+            try:
+                exclusion  # type: ignore[used-before-def]
+            except NameError:
+                _log("WARNING: exclusion not defined — using defaults", level="warning")
+                exclusion = ExclusionCriteria(**STANDARD_DEFAULTS["exclusion_criteria"])
+            try:
+                effect_sizes  # type: ignore[used-before-def]
+            except NameError:
+                _log("WARNING: effect_sizes not defined — using empty list", level="warning")
+                effect_sizes = []
+            try:
+                custom_persona_weights  # type: ignore[used-before-def]
+            except NameError:
+                custom_persona_weights = st.session_state.get("custom_persona_weights", None)
+
+            # Sanitize demographics dict
+            if isinstance(demographics, dict):
+                for key in ("age_mean", "age_sd", "gender_quota"):
+                    val = demographics.get(key)
+                    if isinstance(val, dict):
+                        demographics[key] = val.get("value", {"age_mean": 35, "age_sd": 12, "gender_quota": 50}.get(key, 0))
+                    elif val is not None:
+                        try:
+                            demographics[key] = float(val)
+                        except (ValueError, TypeError):
+                            demographics[key] = {"age_mean": 35, "age_sd": 12, "gender_quota": 50}.get(key, 0)
+
+            # v1.1.1.5: Always clear stale API key env vars first, then set if provided.
+            # Previous bug: if user A set a key, then user B's session could inherit it
+            # from the process environment, leading to cross-session key leakage.
+            # v1.2.1.3: Also clear LLM_PROVIDER_HINT to prevent cross-session provider misdetection.
+            os.environ.pop("LLM_API_KEY", None)
+            os.environ.pop("LLM_PROVIDER_HINT", None)
+            _user_llm_key = st.session_state.get("user_llm_api_key", "") or st.session_state.get("user_groq_api_key", "")
+            if _user_llm_key:
+                os.environ["LLM_API_KEY"] = _user_llm_key
+            # v1.2.1.3: Re-set provider hint from this session's dropdown choice
+            _provider_choice = st.session_state.get("_user_llm_provider_choice", "")
+            if _provider_choice and _provider_choice != "Auto-detect from key (recommended)":
+                os.environ["LLM_PROVIDER_HINT"] = _provider_choice
+
+            # v1.0.7.1: Clear cached LLM connectivity status so next page load re-checks
+            st.session_state["_llm_connectivity_status"] = None
+            # v1.0.7.1: Clear previous exhaustion note
+            st.session_state.pop("_gen_llm_exhaustion_note", None)
+
+            # v1.8.8.0: Retrieve correlation matrix and missing data settings
+            _engine_corr_matrix = None
+            _raw_corr = inferred.get("correlation_matrix")
+            if _raw_corr is not None:
+                try:
+                    _engine_corr_matrix = np.array(_raw_corr, dtype=float)
+                except Exception:
+                    _engine_corr_matrix = None
+            # v1.2.1.7: Safe float conversion — missing_data_rate/dropout_rate may be
+            # dicts, strings, or None from certain QSF parsing paths.
+            try:
+                _engine_missing_rate = float(inferred.get("missing_data_rate", 0.0) or 0.0)
+            except (ValueError, TypeError):
+                _engine_missing_rate = 0.0
+            try:
+                _engine_dropout_rate = float(inferred.get("dropout_rate", 0.0) or 0.0)
+            except (ValueError, TypeError):
+                _engine_dropout_rate = 0.0
+
+            # v1.0.5.1: Inject condition descriptions into study_context for the engine
+            # v1.2.1.7: Safe dict conversion — study_context may be non-dict in edge cases
+            _raw_ctx = inferred.get("study_context", {})
+            _engine_study_context = dict(_raw_ctx) if isinstance(_raw_ctx, dict) else {}
+            _cond_descs_for_engine = st.session_state.get("builder_condition_descriptions", {})
+            if _cond_descs_for_engine:
+                _engine_study_context["condition_descriptions"] = _cond_descs_for_engine
+            # v1.0.9.1: Pass user-provided additional simulation context
+            _additional_sim_ctx = str(st.session_state.get("simulation_additional_context", "") or "").strip()
+            if _additional_sim_ctx:
+                _engine_study_context["additional_context"] = _additional_sim_ctx
+
+            # v1.0.8.1: Real-time progress tracking via callback
+            # Create a placeholder for the live participant counter
+            _progress_counter_placeholder = st.empty()
+            _progress_start_time = __import__('time').time()
+
+            # v1.0.8.2: Stall detection state for watchdog mechanism
+            _last_progress_time = [__import__('time').time()]  # mutable ref for closure
+            _last_progress_phase = ["init"]
+            _stall_warning_shown = [False]
+            _stall_threshold_secs = 45.0  # Show warning after 45s without progress
+
+            # v1.1.1.0: Global generation timeout — absolute hard limit. If generation
+            # exceeds this, force the LLM generator to permanently disable and let
+            # template fallback finish the remaining participants. This prevents the
+            # scenario where the UI spinner shows "Generating..." for 12+ hours.
+            _GLOBAL_GENERATION_TIMEOUT = 600.0  # 10 minutes absolute max
+            _generation_timed_out = [False]  # mutable ref for closure
+
+            # v1.1.1.5: Define these BEFORE the callback closure so they're guaranteed
+            # to exist when the callback runs (even if engine somehow triggers it early).
+            _is_llm_method = st.session_state.get(_gen_method_key) in ("free_llm", "own_api")
+            _has_oe_questions = bool(open_ended_questions_for_engine)
+            # v1.1.1.7: Method label for progress display (captured in closure)
+            _cb_method_label = {
+                "template": "Template Engine",
+                "experimental": "Adaptive Behavioral Engine",
+                "free_llm": "Built-in AI",
+                "own_api": "AI (your API key)",
+            }.get(st.session_state.get(_gen_method_key, ""), "")
+
+            def _fmt_elapsed(seconds: float) -> str:
+                """Format elapsed time as human-readable string."""
+                s = int(seconds)
+                if s < 60:
+                    return f"{s}s"
+                m, sec = divmod(s, 60)
+                return f"{m}m {sec}s"
+
+            def _live_progress_callback(phase: str, current: int, total: int) -> None:
+                """v1.1.1.0: Update the live progress counter with global timeout enforcement."""
+                try:
+                    _now = __import__('time').time()
+                    _elapsed = _now - _progress_start_time
+
+                    # v1.0.8.2: Update stall detection state
+                    _last_progress_time[0] = _now
+                    _last_progress_phase[0] = phase
+
+                    # v1.1.1.0: Global generation timeout enforcement.
+                    # If total elapsed exceeds the hard limit, permanently disable LLM
+                    # so remaining participants use fast template fallback instead of
+                    # continuing to hammer dead API providers.
+                    if _elapsed > _GLOBAL_GENERATION_TIMEOUT and not _generation_timed_out[0]:
+                        _generation_timed_out[0] = True
+                        import logging as _cb_logging
+                        _cb_logging.getLogger(__name__).warning(
+                            "GLOBAL GENERATION TIMEOUT (%.0fs) exceeded at phase=%s, "
+                            "current=%d/%d — forcing template fallback",
+                            _GLOBAL_GENERATION_TIMEOUT, phase, current, total,
+                        )
+                        # Force-disable the LLM generator on the engine
                         try:
                             if hasattr(engine, 'llm_generator') and engine.llm_generator is not None:
-                                _ls = engine.llm_generator.stats
-                                _pool_n = int(_ls.get("pool_size", 0))
-                                _fb_n = int(_ls.get("fallback_uses", 0))
-                                _llm_n = int(_ls.get("llm_calls", 0))
-                                _fd = bool(_ls.get("force_disabled", False))
-                                if _is_advanced:
-                                    # Advanced mode: show detailed stats
-                                    if _fd:
-                                        _src_text = f"AI responses: {_pool_n} | Template fallback: {_fb_n}"
-                                        _src_color = "#B45309"
-                                    elif _llm_n > 0:
-                                        _src_text = f"AI responses: {_pool_n} | API calls: {_llm_n}"
-                                        _src_color = "#166534"
-                                    else:
-                                        _src_text = "Waiting for AI provider response..."
-                                        _src_color = "#6B7280"
-                                else:
-                                    # Standard mode: simplified status
-                                    if _fd:
-                                        _src_text = "Generating responses..."
-                                        _src_color = "#B45309"
-                                    elif _pool_n > 0:
-                                        _src_text = "AI generating responses..."
-                                        _src_color = "#166534"
-                                    else:
-                                        _src_text = "Connecting to AI..."
-                                        _src_color = "#6B7280"
-                                _llm_status_html = (
-                                    f'<div style="font-size:0.8em;color:{_src_color};margin-top:6px;">'
-                                    f'{_src_text}</div>'
+                                engine.llm_generator.disable_permanently(
+                                    f"global timeout ({_GLOBAL_GENERATION_TIMEOUT:.0f}s) exceeded"
                                 )
                         except Exception:
                             pass
-                    # v1.1.1.7: Show method name in the live progress counter
-                    _method_tag_html = ""
-                    if _cb_method_label:
-                        _method_tag_html = (
-                            f'<div style="font-size:0.8em;color:#166534;margin-bottom:4px;'
-                            f'font-weight:600;">{_cb_method_label}</div>'
-                        )
-                    _progress_counter_placeholder.markdown(
-                        f'<div style="text-align:center;padding:14px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;margin:8px 0;">'
-                        f'{_method_tag_html}'
-                        f'<span style="font-size:1.6em;font-weight:700;color:#166534;">'
-                        f'{current} of {total}</span>'
-                        f'<span style="font-size:1em;color:#166534;"> participants simulated</span>'
-                        f'<div style="font-size:0.85em;color:#4B5563;margin-top:4px;">Elapsed: {_elapsed_str}</div>'
-                        f'{_llm_status_html}'
-                        f'<div style="background:#dcfce7;border-radius:4px;height:10px;margin-top:10px;">'
-                        f'<div style="background:#22c55e;width:{_pct}%;height:100%;border-radius:4px;'
-                        f'transition:width 0.3s;"></div></div></div>',
-                        unsafe_allow_html=True,
-                    )
-                elif phase == "llm_prefill":
-                    # v1.1.1.5: Progress during LLM pool prefill — prevents watchdog
-                    # from misinterpreting a long prefill (up to 90s) as a stall.
-                    # v1.1.1.7: Only show AI prefill message for AI methods.
-                    if _is_llm_method:
-                        _pf_pct = int(((current + 1) / max(1, total)) * 100) if total > 0 else 0
+
+                    if _elapsed > _stall_threshold_secs and not _stall_warning_shown[0]:
+                        if phase in ("personas", "scales", "open_ended"):
+                            _stall_warning_shown[0] = True
+
+                    # v1.2.0.1: Always update the main progress bar during early phases
+                    # so users see movement, not a static "Step 1/5" for minutes.
+                    if phase == "personas":
+                        progress_bar.progress(18, text="Step 2/5 — Assigning behavioral personas...")
                         _progress_counter_placeholder.markdown(
                             f'<div style="text-align:center;padding:10px;background:#f0f9ff;border-radius:8px;margin:8px 0;">'
                             f'<span style="font-size:1.1em;color:#0369a1;">'
-                            f'Pre-filling AI response pool — question {current + 1} of {total}</span>'
+                            f'Assigning behavioral personas...</span>'
+                            f'<div style="font-size:0.8em;color:#6B7280;margin-top:4px;">'
+                            f'Elapsed: {_fmt_elapsed(_elapsed)}</div></div>',
+                            unsafe_allow_html=True,
+                        )
+                    elif phase == "scales":
+                        _s_pct = int(((current + 1) / max(1, total)) * 100)
+                        _bar_pct = 20 + int(_s_pct * 0.05)  # 20-25% range
+                        progress_bar.progress(_bar_pct, text=f"Step 2/5 — Generating scale responses ({current + 1}/{total})...")
+                        _progress_counter_placeholder.markdown(
+                            f'<div style="text-align:center;padding:10px;background:#f0f9ff;border-radius:8px;margin:8px 0;">'
+                            f'<span style="font-size:1.1em;color:#0369a1;">'
+                            f'Generating scale responses — scale {current + 1} of {total}</span>'
                             f'<div style="background:#dbeafe;border-radius:4px;height:6px;margin-top:8px;">'
-                            f'<div style="background:#3b82f6;width:{_pf_pct}%;height:100%;border-radius:4px;'
+                            f'<div style="background:#3b82f6;width:{_s_pct}%;height:100%;border-radius:4px;'
+                            f'transition:width 0.3s;"></div></div>'
+                            f'<div style="font-size:0.8em;color:#6B7280;margin-top:4px;">'
+                            f'Elapsed: {_fmt_elapsed(_elapsed)}</div></div>',
+                            unsafe_allow_html=True,
+                        )
+                    elif phase == "open_ended":
+                        progress_bar.progress(26, text="Step 2/5 — Preparing open-ended text generation...")
+                        _progress_counter_placeholder.markdown(
+                            f'<div style="text-align:center;padding:10px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;margin:8px 0;">'
+                            f'<span style="font-size:1.1em;color:#92400e;">'
+                            f'Preparing open-ended response generation...</span>'
+                            f'<div style="font-size:0.8em;color:#6B7280;margin-top:4px;">'
+                            f'Elapsed: {_fmt_elapsed(_elapsed)}</div></div>',
+                            unsafe_allow_html=True,
+                        )
+                    elif phase == "open_ended_question":
+                        # v1.1.1.2: Per-OE-question progress
+                        _oe_pct = 26 + int((current / max(1, total)) * 10)  # 26-36% range
+                        progress_bar.progress(_oe_pct, text=f"Step 2/5 — Text responses: question {current + 1} of {total}...")
+                        _progress_counter_placeholder.markdown(
+                            f'<div style="text-align:center;padding:10px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;margin:8px 0;">'
+                            f'<span style="font-size:1.1em;color:#92400e;">'
+                            f'Generating text responses — question {current + 1} of {total}</span>'
+                            f'<div style="font-size:0.8em;color:#6B7280;margin-top:4px;">'
+                            f'Elapsed: {_fmt_elapsed(_elapsed)}</div></div>',
+                            unsafe_allow_html=True,
+                        )
+                    elif phase == "generating":
+                        # v1.1.1.0: Show observation count + elapsed time + LLM source stats
+                        _pct = int((current / max(1, total)) * 100)
+                        # v1.2.0.1: Update main progress bar smoothly (25-48% range)
+                        _bar_gen_pct = 25 + int(_pct * 0.23)
+                        progress_bar.progress(_bar_gen_pct, text=f"Step 2/5 — {current} of {total} participants...")
+                        _elapsed_str = _fmt_elapsed(_elapsed)
+                        # v1.2.0.9: Simplified progress stats — hide raw API counts
+                        # in non-advanced mode to avoid overwhelming users.
+                        _llm_status_html = ""
+                        _is_advanced = st.session_state.get("advanced_mode", False)
+                        if _is_llm_method and _has_oe_questions:
+                            try:
+                                if hasattr(engine, 'llm_generator') and engine.llm_generator is not None:
+                                    _ls = engine.llm_generator.stats
+                                    _pool_n = int(_ls.get("pool_size", 0))
+                                    _fb_n = int(_ls.get("fallback_uses", 0))
+                                    _llm_n = int(_ls.get("llm_calls", 0))
+                                    _fd = bool(_ls.get("force_disabled", False))
+                                    if _is_advanced:
+                                        # Advanced mode: show detailed stats
+                                        if _fd:
+                                            _src_text = f"AI responses: {_pool_n} | Template fallback: {_fb_n}"
+                                            _src_color = "#B45309"
+                                        elif _llm_n > 0:
+                                            _src_text = f"AI responses: {_pool_n} | API calls: {_llm_n}"
+                                            _src_color = "#166534"
+                                        else:
+                                            _src_text = "Waiting for AI provider response..."
+                                            _src_color = "#6B7280"
+                                    else:
+                                        # Standard mode: simplified status
+                                        if _fd:
+                                            _src_text = "Generating responses..."
+                                            _src_color = "#B45309"
+                                        elif _pool_n > 0:
+                                            _src_text = "AI generating responses..."
+                                            _src_color = "#166534"
+                                        else:
+                                            _src_text = "Connecting to AI..."
+                                            _src_color = "#6B7280"
+                                    _llm_status_html = (
+                                        f'<div style="font-size:0.8em;color:{_src_color};margin-top:6px;">'
+                                        f'{_src_text}</div>'
+                                    )
+                            except Exception:
+                                pass
+                        # v1.1.1.7: Show method name in the live progress counter
+                        _method_tag_html = ""
+                        if _cb_method_label:
+                            _method_tag_html = (
+                                f'<div style="font-size:0.8em;color:#166534;margin-bottom:4px;'
+                                f'font-weight:600;">{_cb_method_label}</div>'
+                            )
+                        _progress_counter_placeholder.markdown(
+                            f'<div style="text-align:center;padding:14px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;margin:8px 0;">'
+                            f'{_method_tag_html}'
+                            f'<span style="font-size:1.6em;font-weight:700;color:#166534;">'
+                            f'{current} of {total}</span>'
+                            f'<span style="font-size:1em;color:#166534;"> participants simulated</span>'
+                            f'<div style="font-size:0.85em;color:#4B5563;margin-top:4px;">Elapsed: {_elapsed_str}</div>'
+                            f'{_llm_status_html}'
+                            f'<div style="background:#dcfce7;border-radius:4px;height:10px;margin-top:10px;">'
+                            f'<div style="background:#22c55e;width:{_pct}%;height:100%;border-radius:4px;'
                             f'transition:width 0.3s;"></div></div></div>',
                             unsafe_allow_html=True,
                         )
-                elif phase == "socsim_enrichment":
-                    _pct_s = int((current / max(1, total)) * 100) if total > 0 else 0
-                    _progress_counter_placeholder.markdown(
-                        f'<div style="text-align:center;padding:12px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;margin:8px 0;">'
-                        f'<span style="font-size:1.1em;font-weight:600;color:#1e40af;">'
-                        f'Applying behavioral models: {current} of {total} tasks</span>'
-                        f'<div style="background:#bfdbfe;border-radius:4px;height:6px;margin-top:8px;">'
-                        f'<div style="background:#3b82f6;width:{_pct_s}%;height:100%;border-radius:4px;'
-                        f'transition:width 0.3s;"></div></div></div>',
-                        unsafe_allow_html=True,
-                    )
-                elif phase == "complete":
-                    _progress_counter_placeholder.markdown(
-                        f'<div style="text-align:center;padding:12px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;margin:8px 0;">'
-                        f'<span style="font-size:1.2em;font-weight:700;color:#166534;">'
-                        f'&#10003; All {total} participants generated</span></div>',
-                        unsafe_allow_html=True,
-                    )
-                else:
-                    # v1.1.1.4: Fallback for unrecognized phases — always show progress
-                    _pct_f = int((current / max(1, total)) * 100) if total > 0 else 0
-                    _progress_counter_placeholder.markdown(
-                        f'<div style="text-align:center;padding:8px;color:#666;">'
-                        f'Processing... ({phase}: {current}/{total} — {_pct_f}%)</div>',
-                        unsafe_allow_html=True,
-                    )
-            except Exception as _cb_exc:
-                _log(f"Progress callback error ({phase} {current}/{total}): {_cb_exc}", level="debug")
+                    elif phase == "llm_prefill":
+                        # v1.1.1.5: Progress during LLM pool prefill — prevents watchdog
+                        # from misinterpreting a long prefill (up to 90s) as a stall.
+                        # v1.1.1.7: Only show AI prefill message for AI methods.
+                        if _is_llm_method:
+                            _pf_pct = int(((current + 1) / max(1, total)) * 100) if total > 0 else 0
+                            _progress_counter_placeholder.markdown(
+                                f'<div style="text-align:center;padding:10px;background:#f0f9ff;border-radius:8px;margin:8px 0;">'
+                                f'<span style="font-size:1.1em;color:#0369a1;">'
+                                f'Pre-filling AI response pool — question {current + 1} of {total}</span>'
+                                f'<div style="background:#dbeafe;border-radius:4px;height:6px;margin-top:8px;">'
+                                f'<div style="background:#3b82f6;width:{_pf_pct}%;height:100%;border-radius:4px;'
+                                f'transition:width 0.3s;"></div></div></div>',
+                                unsafe_allow_html=True,
+                            )
+                    elif phase == "socsim_enrichment":
+                        _pct_s = int((current / max(1, total)) * 100) if total > 0 else 0
+                        _progress_counter_placeholder.markdown(
+                            f'<div style="text-align:center;padding:12px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;margin:8px 0;">'
+                            f'<span style="font-size:1.1em;font-weight:600;color:#1e40af;">'
+                            f'Applying behavioral models: {current} of {total} tasks</span>'
+                            f'<div style="background:#bfdbfe;border-radius:4px;height:6px;margin-top:8px;">'
+                            f'<div style="background:#3b82f6;width:{_pct_s}%;height:100%;border-radius:4px;'
+                            f'transition:width 0.3s;"></div></div></div>',
+                            unsafe_allow_html=True,
+                        )
+                    elif phase == "complete":
+                        _progress_counter_placeholder.markdown(
+                            f'<div style="text-align:center;padding:12px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;margin:8px 0;">'
+                            f'<span style="font-size:1.2em;font-weight:700;color:#166534;">'
+                            f'&#10003; All {total} participants generated</span></div>',
+                            unsafe_allow_html=True,
+                        )
+                    else:
+                        # v1.1.1.4: Fallback for unrecognized phases — always show progress
+                        _pct_f = int((current / max(1, total)) * 100) if total > 0 else 0
+                        _progress_counter_placeholder.markdown(
+                            f'<div style="text-align:center;padding:8px;color:#666;">'
+                            f'Processing... ({phase}: {current}/{total} — {_pct_f}%)</div>',
+                            unsafe_allow_html=True,
+                        )
+                except Exception as _cb_exc:
+                    _log(f"Progress callback error ({phase} {current}/{total}): {_cb_exc}", level="debug")
 
-        # v1.1.1.4: Validate conditions — engine creates a default "Condition A" for
-        # empty lists, but warn the user so they know the output won't match expectations.
-        _engine_conditions = inferred.get("conditions", [])
-        if not _engine_conditions:
-            _engine_conditions = ["Control"]  # Sensible single-condition default
-            st.info(
-                "No experimental conditions detected. Generating data for a single-condition (control) design. "
-                "If your study has multiple conditions, go back to **Design** and configure them."
+            # v1.1.1.4: Validate conditions — engine creates a default "Condition A" for
+            # empty lists, but warn the user so they know the output won't match expectations.
+            _engine_conditions = inferred.get("conditions", [])
+            if not _engine_conditions:
+                _engine_conditions = ["Control"]  # Sensible single-condition default
+                st.info(
+                    "No experimental conditions detected. Generating data for a single-condition (control) design. "
+                    "If your study has multiple conditions, go back to **Design** and configure them."
+                )
+
+            # v1.2.0.1: Show initialization progress so user doesn't stare at stale text
+            _progress_counter_placeholder.markdown(
+                '<div style="text-align:center;padding:10px;background:#f0f9ff;border-radius:8px;margin:8px 0;">'
+                '<span style="font-size:1.1em;color:#0369a1;">'
+                'Building simulation engine — configuring personas, scales, and conditions...</span></div>',
+                unsafe_allow_html=True,
             )
+        except Exception as _setup_exc:
+            # v1.2.1.7: Catch ANY crash in the pre-engine setup code.
+            # Without this, unhandled exceptions (float() on dict, missing keys, etc.)
+            # kill the Streamlit rerun silently, leaving _generation_phase=2 and
+            # triggering the stale-phase-2 ghost error on the NEXT rerun.
+            import traceback as _setup_tb
+            _setup_error_tb = _setup_tb.format_exc()
+            _log(f"Pre-engine setup crashed: {_setup_exc}\n{_setup_error_tb}", level="error")
+            try:
+                from utils.error_logger import log_generation_error
+                log_generation_error(
+                    _setup_exc,
+                    context={"generation_method": st.session_state.get("generation_method", ""),
+                             "phase": "pre_engine_setup"},
+                    app_version=APP_VERSION,
+                    phase="pre_engine_setup",
+                    traceback_text=_setup_error_tb,
+                )
+            except Exception:
+                pass
+            st.session_state["is_generating"] = False
+            st.session_state["_generation_phase"] = 0
+            st.session_state["generation_requested"] = False
+            progress_placeholder.empty()
+            status_placeholder.empty()
+            _method_name = {
+                "template": "Template Engine",
+                "experimental": "Adaptive Behavioral Engine",
+                "free_llm": "Built-in AI",
+                "own_api": "AI (your API key)",
+            }.get(st.session_state.get("generation_method", ""), "the selected method")
+            st.markdown(
+                '<div style="background:linear-gradient(135deg, #FEF2F2 0%, #FEE2E2 100%);'
+                'border:1px solid #FECACA;border-radius:12px;padding:20px 24px;margin:12px 0;'
+                'box-shadow:0 1px 3px rgba(0,0,0,0.06);">'
+                '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">'
+                '<span style="font-size:1.3em;">&#9888;</span>'
+                '<span style="font-size:1.05em;font-weight:700;color:#991B1B;">'
+                f'Setup error while preparing {_method_name}</span></div>'
+                f'<span style="color:#7F1D1D;font-size:0.88em;line-height:1.5;">'
+                f'Error during input preparation: {str(_setup_exc)[:300]}</span>'
+                '<div style="margin-top:12px;color:#7F1D1D;font-size:0.85em;">'
+                'Try a different generation method, or click Retry.</div>'
+                '</div>',
+                unsafe_allow_html=True,
+            )
+            _su_c1, _su_c2, _su_c3 = st.columns(3)
+            with _su_c1:
+                if st.button("Retry", key="_setup_fail_retry",
+                             type="primary", use_container_width=True):
+                    _retry_method = st.session_state.get("generation_method", "template")
+                    st.session_state["generation_method"] = _retry_method
+                    st.session_state["allow_template_fallback_once"] = _retry_method in ("template", "experimental")
+                    st.session_state["_use_socsim_experimental"] = _retry_method == "experimental"
+                    st.session_state["is_generating"] = True
+                    st.session_state["_generation_phase"] = 1
+                    _navigate_to(3)
+            with _su_c2:
+                if st.button("Template Engine", key="_setup_fail_template",
+                             type="secondary", use_container_width=True):
+                    st.session_state["generation_method"] = "template"
+                    st.session_state["allow_template_fallback_once"] = True
+                    st.session_state["_use_socsim_experimental"] = False
+                    st.session_state["is_generating"] = True
+                    st.session_state["_generation_phase"] = 1
+                    _navigate_to(3)
+            with _su_c3:
+                if st.button("Behavioral Engine", key="_setup_fail_experimental",
+                             type="secondary", use_container_width=True):
+                    st.session_state["generation_method"] = "experimental"
+                    st.session_state["allow_template_fallback_once"] = True
+                    st.session_state["_use_socsim_experimental"] = True
+                    st.session_state["is_generating"] = True
+                    st.session_state["_generation_phase"] = 1
+                    _navigate_to(3)
+            st.stop()
 
-        # v1.2.0.1: Show initialization progress so user doesn't stare at stale text
-        _progress_counter_placeholder.markdown(
-            '<div style="text-align:center;padding:10px;background:#f0f9ff;border-radius:8px;margin:8px 0;">'
-            '<span style="font-size:1.1em;color:#0369a1;">'
-            'Building simulation engine — configuring personas, scales, and conditions...</span></div>',
-            unsafe_allow_html=True,
-        )
         # v1.2.0.2: Wrap engine construction in try/except so constructor crashes
         # show a useful error message instead of the generic stale-phase-2 recovery.
         # Previously the try block started only around engine.generate(), leaving the
