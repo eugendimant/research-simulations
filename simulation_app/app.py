@@ -54,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.2.1.7"
-BUILD_ID = "20260305-v12017-fix-stale-phase2-setup-crash"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.2.1.8"
+BUILD_ID = "20260307-v12018-sambanova-llama33-migration"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -118,7 +118,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.2.1.7"  # v1.2.1.7: Fix stale-phase-2 ghost error — wrap setup code in try/except
+APP_VERSION = "1.2.1.8"  # v1.2.1.8: Migrate SambaNova from Llama 3.1 to 3.3 70B (3.1 deprecated)
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -11813,7 +11813,7 @@ if active_page == 3:
                 "Groq (Llama 3.3 70B) — Free",
                 "Cerebras (Llama 3.3 70B) — Free",
                 "Mistral AI (Mistral Small) — Free",
-                "SambaNova (Llama 3.1 70B) — Free",
+                "SambaNova (Llama 3.3 70B) — Free",
                 "OpenRouter (Mistral) — Free tier",
                 "OpenAI (GPT-4o-mini)",
             ]

@@ -33,7 +33,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 # Version identifier to help track deployed code
-__version__ = "1.2.1.7"  # v1.2.1.7: Fix stale-phase-2 ghost error
+__version__ = "1.2.1.8"  # v1.2.1.8: SambaNova Llama 3.1→3.3 migration
 
 
 # ============================================================================

@@ -2,7 +2,7 @@
 """
 Utility modules for the Behavioral Experiment Simulation Tool.
 
-Version: 1.2.1.7 - Fix stale-phase-2 ghost error — wrap setup code in try/except
+Version: 1.2.1.8 - Migrate SambaNova from Llama 3.1 to 3.3 70B (3.1 deprecated)
 
 Changes (v1.0.0 - 20 Iterations of Comprehensive Improvements):
     === ENHANCED SCALE/MATRIX DETECTION ===
@@ -65,7 +65,7 @@ Modules:
 """
 
 # Package version - should match all module versions
-__version__ = "1.2.1.7"
+__version__ = "1.2.1.8"
 
 from .qsf_parser import parse_qsf_file, extract_survey_structure, generate_qsf_summary
 from .simulation_engine import SimulationEngine

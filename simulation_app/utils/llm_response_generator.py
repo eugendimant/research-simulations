@@ -7,7 +7,7 @@ realistic, question-specific, persona-aligned open-ended survey responses.
 Architecture:
 - Multi-provider: Google AI Studio (Gemini 2.5 Flash + Gemini 2.5 Flash Lite),
   Groq (Llama 3.3 70B), Cerebras (Llama 3.3 70B), Mistral AI (Mistral Small),
-  SambaNova (Llama 3.1 70B), OpenRouter (Mistral Small 3.1) — with automatic
+  SambaNova (Llama 3.3 70B), OpenRouter (Mistral Small 3.1) — with automatic
   key detection, per-provider rate limiting, and intelligent failover.
   Google AI prioritized for reliability.
 - Large batch sizes: 20 responses per API call (within 32K context)
@@ -18,10 +18,10 @@ Architecture:
   the existing template-based ComprehensiveResponseGenerator
 - Never hard-stops: always walks user through options when APIs fail
 
-Version: 1.2.1.7
+Version: 1.2.1.8
 """
 
-__version__ = "1.2.1.7"
+__version__ = "1.2.1.8"
 
 import hashlib
 import json
@@ -57,7 +57,7 @@ OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
 OPENROUTER_MODEL = "mistralai/mistral-small-3.1-24b-instruct:free"
 
 SAMBANOVA_API_URL = "https://api.sambanova.ai/v1/chat/completions"
-SAMBANOVA_MODEL = "Meta-Llama-3.1-70B-Instruct"
+SAMBANOVA_MODEL = "Meta-Llama-3.3-70B-Instruct"  # v1.2.1.8: Migrated from 3.1 (deprecated April 2025)
 
 # v1.2.1.1: Mistral AI — direct API access, generous free tier
 # Free tier: 1B tokens/month, no credit card required, 2 RPM limit
@@ -113,7 +113,7 @@ _EB_MISTRAL = [46, 8, 111, 109, 109, 42, 57, 55, 40, 107, 106, 110, 105, 18, 29,
                44, 21, 106, 34, 60, 3, 109, 15, 62, 25, 44, 25, 55, 29, 22, 17]
 _DEFAULT_MISTRAL_KEY = bytes(b ^ _XK for b in _EB_MISTRAL).decode()
 
-# v1.2.1.2: SambaNova Cloud — persistent free tier, Llama 3.1 70B, 20 RPM
+# v1.2.1.2: SambaNova Cloud — persistent free tier, Llama 3.3 70B, 20 RPM
 _EB_SAMBANOVA = [109, 105, 57, 99, 107, 56, 109, 107, 119, 110, 63, 98, 107, 119, 110,
                  106, 60, 109, 119, 56, 109, 57, 111, 119, 107, 107, 104, 59, 105, 106,
                  106, 62, 62, 56, 60, 59]
@@ -2255,7 +2255,7 @@ class LLMResponseGenerator:
         # 2. Google AI Gemini 2.5 Flash Lite: 30 RPM, 250K TPM (cost-efficient)
         # 3. Groq Llama 3.3 70B:              ~30 RPM, 14,400 RPD (very generous)
         # 4. Cerebras Llama 3.3 70B:          ~30 RPM, 1M tokens/day
-        # 5. SambaNova Llama 3.1 70B:         20 RPM, persistent free tier
+        # 5. SambaNova Llama 3.3 70B:         20 RPM, persistent free tier
         # 6. Mistral AI Mistral Small:        2 RPM, 1B tokens/month (huge budget, low rate)
         # 7. OpenRouter Mistral Small 3.1:    varies by model (last resort)
         # NOTE: Google AI at top — confirmed accessible and reliable on OpenAI-compat endpoint.
