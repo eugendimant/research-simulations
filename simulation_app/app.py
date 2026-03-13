@@ -54,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.2.1.8"
-BUILD_ID = "20260307-v12018-sambanova-llama33-migration"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.2.2.4"
+BUILD_ID = "20260313-v12024-fix-source-na-stale-exhaustion-cleanup"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -118,7 +118,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.2.1.8"  # v1.2.1.8: Migrate SambaNova from Llama 3.1 to 3.3 70B (3.1 deprecated)
+APP_VERSION = "1.2.2.4"  # v1.2.2.4: Fix N/A source label, stale exhaustion cleanup, generation source accuracy
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -126,6 +126,35 @@ BASE_STORAGE.mkdir(parents=True, exist_ok=True)
 SIM_RUNS_ROOT = BASE_STORAGE / "simulation_runs"
 SIM_RUN_AUDIT_STATE_FILE = SIM_RUNS_ROOT / ".run_audit_state.json"
 SIM_RUN_IMPROVEMENT_LOG = SIM_RUNS_ROOT / "continuous_improvement_log.txt"
+
+
+# ---------------------------------------------------------------------------
+# v1.2.1.9: App-level logging helper.  Used throughout app.py for diagnostic
+# messages that should go to the admin engine log (visible in ?admin=1) and
+# Python logging, but NEVER to the user-facing UI.  Previously undefined,
+# causing NameError crashes in the LLM exhaustion resume path (line ~13282).
+# ---------------------------------------------------------------------------
+import logging as _app_logging
+_app_logger = _app_logging.getLogger("simulation_app")
+
+
+def _log(message: str, level: str = "info") -> None:
+    """Log a diagnostic message to the admin engine log and Python logger."""
+    _level_map = {"debug": _app_logging.DEBUG, "info": _app_logging.INFO,
+                  "warning": _app_logging.WARNING, "error": _app_logging.ERROR}
+    _app_logger.log(_level_map.get(level, _app_logging.INFO), message)
+    # Also append to the session-scoped admin engine log for ?admin=1 diagnostics
+    try:
+        _admin_log = st.session_state.get("_admin_engine_log")
+        if _admin_log is None:
+            st.session_state["_admin_engine_log"] = []
+            _admin_log = st.session_state["_admin_engine_log"]
+        _admin_log.append(f"[{level.upper()}] {message}")
+        # Cap log size to prevent memory bloat
+        if len(_admin_log) > 500:
+            st.session_state["_admin_engine_log"] = _admin_log[-300:]
+    except Exception:
+        pass  # Logging must never crash the app
 
 # v1.2.0.4: Self-healing pipeline — check for pending error logs on startup.
 # If there are unresolved errors from previous runs, generates a PENDING_FIXES.md
@@ -177,6 +206,7 @@ def _decrypt_api_key(ciphertext_hex: str) -> str:
         return ""
 
 MAX_SIMULATED_N = 10000
+MAX_FREE_LLM_N = 100  # v1.2.1.9: Cap free LLM generation to prevent API exhaustion
 
 STANDARD_DEFAULTS = {
     "demographics": {"gender_quota": 50, "age_mean": 35, "age_sd": 12, "age_min": 18, "age_max": 80, "include_age_column": True, "include_gender_column": True},
@@ -6087,7 +6117,8 @@ def _reset_generation_state() -> None:
     for _exh_key in ("_llm_exhausted_pending", "_llm_exhausted_step",
                       "_llm_exhausted_choice", "_llm_exhausted_partial_data",
                       "_llm_exhausted_completed_cols", "_llm_exhausted_remaining_qs",
-                      "_llm_exhausted_engine_state", "_llm_exhausted_source_map"):
+                      "_llm_exhausted_engine_state", "_llm_exhausted_source_map",
+                      "_llm_exhausted_resume", "_llm_exhausted_actual_n"):
         st.session_state.pop(_exh_key, None)
 
 
@@ -12019,49 +12050,71 @@ if active_page == 3:
         with status_placeholder.container():
             st.markdown(f"""
             <style>
-                @keyframes pulse {{
-                    0%, 100% {{ transform: scale(1); opacity: 1; }}
-                    50% {{ transform: scale(1.1); opacity: 0.8; }}
+                @keyframes gen-pulse {{
+                    0%, 100% {{ opacity: 1; }}
+                    50% {{ opacity: 0.7; }}
                 }}
-                @keyframes spin {{
+                @keyframes gen-spin {{
                     0% {{ transform: rotate(0deg); }}
                     100% {{ transform: rotate(360deg); }}
                 }}
-                .progress-spinner {{
-                    display: inline-block;
-                    width: 50px;
-                    height: 50px;
-                    border: 4px solid rgba(255,255,255,0.3);
-                    border-top: 4px solid #ffffff;
-                    border-radius: 50%;
-                    animation: spin 1s linear infinite;
-                    margin-bottom: 15px;
+                @keyframes gen-shimmer {{
+                    0% {{ background-position: -200% 0; }}
+                    100% {{ background-position: 200% 0; }}
                 }}
-                .progress-container {{
+                .gen-banner {{
                     text-align: center;
-                    padding: 40px;
-                    background: linear-gradient(135deg, #1e3a5f 0%, #2d5a87 100%);
-                    border-radius: 15px;
-                    margin: 20px 0;
-                    box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+                    padding: 32px 24px;
+                    background: linear-gradient(135deg, #0f172a 0%, #1e3a5f 50%, #0f172a 100%);
+                    border-radius: 16px;
+                    margin: 16px 0;
+                    box-shadow: 0 8px 32px rgba(15,23,42,0.3);
+                    position: relative;
+                    overflow: hidden;
                 }}
-                .progress-title {{
+                .gen-banner::before {{
+                    content: '';
+                    position: absolute;
+                    top: 0; left: 0; right: 0;
+                    height: 3px;
+                    background: linear-gradient(90deg, transparent, #60a5fa, #a78bfa, #60a5fa, transparent);
+                    background-size: 200% 100%;
+                    animation: gen-shimmer 2s linear infinite;
+                }}
+                .gen-spinner {{
+                    display: inline-block;
+                    width: 40px;
+                    height: 40px;
+                    border: 3px solid rgba(96,165,250,0.2);
+                    border-top: 3px solid #60a5fa;
+                    border-radius: 50%;
+                    animation: gen-spin 0.8s linear infinite;
+                    margin-bottom: 16px;
+                }}
+                .gen-title {{
                     color: white;
-                    margin: 0 0 10px 0;
-                    font-size: 24px;
-                    animation: pulse 2s ease-in-out infinite;
+                    margin: 0 0 8px 0;
+                    font-size: 1.4em;
+                    font-weight: 700;
+                    letter-spacing: -0.02em;
                 }}
-                .progress-subtitle {{
-                    color: #a0c4e8;
-                    font-size: 16px;
+                .gen-subtitle {{
+                    color: #93c5fd;
+                    font-size: 0.95em;
                     margin: 0;
+                    line-height: 1.5;
+                }}
+                .gen-note {{
+                    color: #64748b;
+                    font-size: 0.8em;
+                    margin-top: 12px;
                 }}
             </style>
-            <div class="progress-container">
-                <div class="progress-spinner"></div>
-                <h2 class="progress-title">Generating Your Dataset...</h2>
-                <p class="progress-subtitle">{_banner_subtitle}</p>
-                <p class="progress-subtitle" style="margin-top: 10px; font-size: 14px;">Please don't close or refresh this page.</p>
+            <div class="gen-banner">
+                <div class="gen-spinner"></div>
+                <h2 class="gen-title">Simulation In Progress</h2>
+                <p class="gen-subtitle">Generating realistic behavioral data via {_banner_method or 'selected method'}...</p>
+                <p class="gen-note">Please keep this page open. Progress updates appear below.</p>
             </div>
             """, unsafe_allow_html=True)
 
@@ -12119,10 +12172,22 @@ if active_page == 3:
         )
 
         # Helper: common state for resume generation
-        def _exh_resume(method: str, template_fb: bool, socsim: bool, trigger_gen: bool) -> None:
+        # v1.2.2.1: Added is_resume parameter. "Retry" and "own API key" start
+        # FRESH generation (no overlay of old partial data), while template/experimental
+        # are true resumes that overlay preserved AI columns.
+        def _exh_resume(method: str, template_fb: bool, socsim: bool, trigger_gen: bool, is_resume: bool = True) -> None:
             st.session_state["_llm_exhausted_pending"] = False
             st.session_state["_llm_exhausted_step"] = 1
-            st.session_state["_llm_exhausted_resume"] = True
+            if is_resume:
+                st.session_state["_llm_exhausted_resume"] = True
+            else:
+                # Fresh generation — clean up ALL exhaustion state to prevent
+                # stale overlay, N capping, or source map contamination.
+                for _ek in ("_llm_exhausted_resume", "_llm_exhausted_partial_data",
+                            "_llm_exhausted_completed_cols", "_llm_exhausted_remaining_qs",
+                            "_llm_exhausted_engine_state", "_llm_exhausted_source_map",
+                            "_llm_exhausted_actual_n"):
+                    st.session_state.pop(_ek, None)
             st.session_state["generation_method"] = method
             st.session_state["allow_template_fallback_once"] = template_fb
             st.session_state["_use_socsim_experimental"] = socsim
@@ -12138,12 +12203,12 @@ if active_page == 3:
             if st.button("Retry Built-in AI", key="_exh_retry_llm",
                          type="primary", use_container_width=True,
                          help="Re-try with the free AI providers (they may have recovered)"):
-                _exh_resume("free_llm", False, False, True)
+                _exh_resume("free_llm", False, False, True, is_resume=False)
         with _exh_c2:
             if st.button("Use my API key", key="_exh_use_api_key",
                          type="secondary", use_container_width=True,
                          help="Enter your own Groq / Google AI key (free tier available)"):
-                _exh_resume("own_api", False, False, False)
+                _exh_resume("own_api", False, False, False, is_resume=False)
         with _exh_c3:
             if st.button("Template Engine", key="_exh_use_template",
                          type="secondary", use_container_width=True,
@@ -12243,7 +12308,7 @@ if active_page == 3:
         for _stale_key in ("_llm_exhausted_resume", "_llm_exhausted_pending",
                            "_llm_exhausted_partial_data", "_llm_exhausted_completed_cols",
                            "_llm_exhausted_remaining_qs", "_llm_exhausted_engine_state",
-                           "_llm_exhausted_source_map"):
+                           "_llm_exhausted_source_map", "_llm_exhausted_actual_n"):
             st.session_state.pop(_stale_key, None)
         is_generating = False
         status_placeholder.empty()
@@ -12333,6 +12398,23 @@ if active_page == 3:
         # and shows a proper error instead of causing the stale-phase-2 ghost error.
         # Previously, code between _generation_phase=2 and the engine try/except was
         # unprotected, so any exception there killed the Streamlit rerun silently.
+        # v1.2.2.1: Clear stale recovery data at the START of every generation run.
+        # Without this, a failed re-generation could show recovery data from a
+        # PREVIOUS successful run, misleading the user.
+        st.session_state.pop("_raw_generated_df", None)
+        st.session_state.pop("_raw_generated_metadata", None)
+        # v1.2.2.4: Clear stale exhaustion data UNLESS this IS a resume run.
+        # Without this, a user who ignores the recovery UI, goes back to Design,
+        # changes settings, and re-generates would have stale partial_data in
+        # session state.  The merge guard (_llm_exhausted_resume) would prevent
+        # actual corruption, but clearing eagerly is defensive best practice.
+        if not st.session_state.get("_llm_exhausted_resume"):
+            for _stale_exh_key in ("_llm_exhausted_pending", "_llm_exhausted_partial_data",
+                                   "_llm_exhausted_completed_cols", "_llm_exhausted_remaining_qs",
+                                   "_llm_exhausted_engine_state", "_llm_exhausted_source_map",
+                                   "_llm_exhausted_actual_n"):
+                st.session_state.pop(_stale_exh_key, None)
+
         try:
             # v1.0.1.5: Use _p_ persist fallback — widget keys may not survive cross-page navigation
             title = (st.session_state.get("study_title") or st.session_state.get("_p_study_title", "")) or "Untitled Study"
@@ -12347,6 +12429,27 @@ if active_page == 3:
                     "Using the capped value for standardization."
                 )
             N = min(requested_n, MAX_SIMULATED_N)
+
+            # v1.2.2.0: If this is an LLM exhaustion resume, use the SAME N as the
+            # original run to ensure the AI column data (N rows) matches the new DataFrame.
+            _exhaustion_resume_n = st.session_state.get("_llm_exhausted_actual_n")
+            if st.session_state.get("_llm_exhausted_resume") and _exhaustion_resume_n:
+                try:
+                    N = int(_exhaustion_resume_n)
+                except (ValueError, TypeError):
+                    pass  # Keep the already-computed N if session state was corrupted
+                _log(f"LLM exhaustion resume: using original N={N}", level="info")
+
+            # v1.2.1.9: Cap free LLM generation at N=100 to prevent API exhaustion.
+            # Free-tier providers have strict rate limits; large N causes token exhaustion
+            # mid-generation which triggers complex recovery paths.
+            _current_gen_method = st.session_state.get("generation_method", "template")
+            if _current_gen_method == "free_llm" and N > MAX_FREE_LLM_N:
+                st.info(
+                    f"🔬 Free AI generation is capped at **N={MAX_FREE_LLM_N}** to ensure reliable results. "
+                    f"Your requested N={N} has been reduced. Use **Your API Key** or **Template Engine** for larger samples."
+                )
+                N = MAX_FREE_LLM_N
 
             # v1.4.2.1: Safety assertion — missing_fields should never be true here
             # because the Generate button is disabled when all_required_complete is False.
@@ -12523,37 +12626,29 @@ if active_page == 3:
             # But as a safety net for ANY code path that might skip them (e.g.,
             # st.stop() in a conditional, or Streamlit widget rendering issues during
             # exhaustion resume), provide explicit fallback values.
-            try:
-                demographics  # type: ignore[used-before-def]
-            except NameError:
+            # v1.2.1.9: Use `_locals.get()` instead of bare expression existence checks.
+            # Bare `demographics` etc. triggered Streamlit magic auto-rendering,
+            # dumping raw dicts/floats/objects onto the generation screen.
+            _locals = locals()
+            if "demographics" not in _locals:
                 _log("WARNING: demographics not defined — using defaults", level="warning")
                 demographics = STANDARD_DEFAULTS["demographics"].copy()
                 _user_cd = st.session_state.get("custom_demographics", [])
                 if _user_cd:
                     demographics["custom_demographics"] = _user_cd
-            try:
-                attention_rate  # type: ignore[used-before-def]
-            except NameError:
+            if "attention_rate" not in _locals:
                 _log("WARNING: attention_rate not defined — using default", level="warning")
                 attention_rate = 0.90
-            try:
-                random_responder_rate  # type: ignore[used-before-def]
-            except NameError:
+            if "random_responder_rate" not in _locals:
                 _log("WARNING: random_responder_rate not defined — using default", level="warning")
                 random_responder_rate = 0.05
-            try:
-                exclusion  # type: ignore[used-before-def]
-            except NameError:
+            if "exclusion" not in _locals:
                 _log("WARNING: exclusion not defined — using defaults", level="warning")
                 exclusion = ExclusionCriteria(**STANDARD_DEFAULTS["exclusion_criteria"])
-            try:
-                effect_sizes  # type: ignore[used-before-def]
-            except NameError:
+            if "effect_sizes" not in _locals:
                 _log("WARNING: effect_sizes not defined — using empty list", level="warning")
                 effect_sizes = []
-            try:
-                custom_persona_weights  # type: ignore[used-before-def]
-            except NameError:
+            if "custom_persona_weights" not in _locals:
                 custom_persona_weights = st.session_state.get("custom_persona_weights", None)
 
             # Sanitize demographics dict
@@ -13165,8 +13260,9 @@ if active_page == 3:
                                 engine.llm_generator.disable_permanently(
                                     f"watchdog: global timeout ({_GLOBAL_GENERATION_TIMEOUT:.0f}s)"
                                 )
-                        except Exception:
-                            pass
+                        except Exception as _wd_exc:
+                            _wd_logging.getLogger(__name__).error(
+                                "WATCHDOG: disable_permanently failed: %s", _wd_exc)
                         return
                     # Also check stall: no progress callback for 120s
                     _since_last_progress = __import__('time').time() - _last_progress_time[0]
@@ -13182,8 +13278,9 @@ if active_page == 3:
                                 engine.llm_generator.disable_permanently(
                                     f"watchdog: stall detected ({_since_last_progress:.0f}s no progress)"
                                 )
-                        except Exception:
-                            pass
+                        except Exception as _wd_exc2:
+                            _wd_logging2.getLogger(__name__).error(
+                                "WATCHDOG: disable_permanently failed: %s", _wd_exc2)
                         return
 
             _watchdog_thread = _watchdog_threading.Thread(
@@ -13237,6 +13334,13 @@ if active_page == 3:
             if metadata is None:
                 metadata = {}
 
+            # v1.2.2.0: EARLY SAVE — persist the raw DataFrame to session state
+            # IMMEDIATELY after generation, before any post-processing.
+            # If post-processing crashes (reports, email, validation, etc.), the
+            # user's data is still recoverable from session state.
+            st.session_state["_raw_generated_df"] = df
+            st.session_state["_raw_generated_metadata"] = metadata
+
             _gen_total_time = __import__('time').time() - _progress_start_time
             # v1.1.1.0: Signal watchdog thread to stop (it's a daemon, but be clean)
             _generation_timed_out[0] = True
@@ -13252,21 +13356,36 @@ if active_page == 3:
                     _partial_data = st.session_state.get("_llm_exhausted_partial_data", {})
                     _ai_cols = st.session_state.get("_llm_exhausted_completed_cols", [])
                     _ai_source_map = st.session_state.get("_llm_exhausted_source_map", {})
-                    if _partial_data and _ai_cols and df is not None:
+                    # v1.2.2.2: Removed _ai_cols from guard — on first OE question,
+                    # _completed_oe_columns is empty but _partial_data still has valid
+                    # numeric scale data that must be preserved.
+                    if _partial_data and df is not None:
                         _n_merged = 0
+                        _actually_merged_cols: List[str] = []  # v1.2.2.2: Track ACTUALLY merged cols
                         for _ai_col in _ai_cols:
                             if _ai_col in _partial_data:
                                 _ai_data = _partial_data[_ai_col]
                                 # v1.2.0.8: Strict type check — only accept list/array/Series (not dict)
-                                if isinstance(_ai_data, (list, pd.Series)) and len(_ai_data) == len(df):
-                                    df[_ai_col] = _ai_data
+                                # v1.2.2.3: Added np.ndarray to isinstance check to handle numpy arrays
+                                if isinstance(_ai_data, (list, pd.Series, np.ndarray)) and len(_ai_data) == len(df):
+                                    # v1.2.2.2: Force positional assignment to prevent
+                                    # index misalignment when df has non-default index.
+                                    # v1.2.2.3: Also convert np.ndarray to list for safety.
+                                    if isinstance(_ai_data, (pd.Series, np.ndarray)):
+                                        df[_ai_col] = list(_ai_data)
+                                    else:
+                                        df[_ai_col] = _ai_data
                                     _n_merged += 1
+                                    _actually_merged_cols.append(_ai_col)
+                                elif hasattr(_ai_data, '__len__') and len(_ai_data) != len(df):
+                                    _log(f"Skipping AI column merge for {_ai_col}: "
+                                         f"length mismatch ({len(_ai_data)} vs {len(df)})")
                                 else:
                                     _log(f"Skipping AI column merge for {_ai_col}: "
-                                         f"length mismatch ({len(_ai_data) if hasattr(_ai_data, '__len__') else '?'} vs {len(df)})")
-                        # Add a _Response_Source column indicating AI vs Template per OE column
+                                         f"unexpected type {type(_ai_data).__name__}")
+                        # v1.2.2.2: Build source tags from ACTUALLY merged cols, not all _ai_cols
                         _source_tags = []
-                        for _ai_col in _ai_cols:
+                        for _ai_col in _actually_merged_cols:
                             _source_tags.append(f"{_ai_col}:AI")
                         _remaining_qs = st.session_state.get("_llm_exhausted_remaining_qs", [])
                         for _rq in _remaining_qs:
@@ -13275,10 +13394,16 @@ if active_page == 3:
                                 _source_tags.append(f"{_rq_name}:Template")
                         if _source_tags:
                             metadata["oe_data_sources"] = _source_tags
-                            metadata["oe_ai_columns"] = _ai_cols
+                            metadata["oe_ai_columns"] = _actually_merged_cols
                             metadata["oe_template_columns"] = [_rq.get("variable_name", _rq.get("name", "")) for _rq in _remaining_qs]
-                        if _ai_source_map:
-                            metadata["oe_source_map_ai_run"] = _ai_source_map
+                        # v1.2.2.3: Only store source map keys that match actually
+                        # merged columns — prevents KeyError downstream when reading
+                        # map entries for columns that weren't completed before exhaustion.
+                        if _ai_source_map and _actually_merged_cols:
+                            _filtered_src_map = {k: v for k, v in _ai_source_map.items()
+                                                 if k in _actually_merged_cols}
+                            if _filtered_src_map:
+                                metadata["oe_source_map_ai_run"] = _filtered_src_map
                         _log(f"LLM exhaustion resume: merged {_n_merged} AI column(s) back into DataFrame: {_ai_cols}")
                         progress_bar.progress(35, text=f"Step 2.5/5 — Merged {_n_merged} AI-generated column(s)...")
                 except Exception as _merge_exc:
@@ -13290,7 +13415,7 @@ if active_page == 3:
                                 "_llm_exhausted_step", "_llm_exhausted_choice",
                                 "_llm_exhausted_partial_data", "_llm_exhausted_completed_cols",
                                 "_llm_exhausted_remaining_qs", "_llm_exhausted_engine_state",
-                                "_llm_exhausted_source_map"):
+                                "_llm_exhausted_source_map", "_llm_exhausted_actual_n"):
                         st.session_state.pop(_ek, None)
 
             # v1.4.9: Inject LLM stats into metadata for the instructor report
@@ -13346,6 +13471,21 @@ if active_page == 3:
                     elif _fallback == 0 and _actual_pool > 0:
                         # v1.1.1.4: All responses from AI, zero fallback — label accordingly
                         metadata['generation_method_label'] = "AI-Powered (100% AI)"
+
+            # v1.2.1.9: Override label for LLM exhaustion resume (mixed AI + template).
+            # When user started with free LLM, it ran out, and they switched to template
+            # for the remaining OE questions, the label should clearly say "Mixed".
+            _oe_sources = metadata.get('oe_data_sources', [])
+            if _oe_sources:
+                _has_ai = any(":AI" in s for s in _oe_sources)
+                _has_tpl = any(":Template" in s for s in _oe_sources)
+                if _has_ai and _has_tpl:
+                    _n_ai = sum(1 for s in _oe_sources if ":AI" in s)
+                    _n_tpl = sum(1 for s in _oe_sources if ":Template" in s)
+                    metadata['generation_method_label'] = (
+                        f"Mixed: AI ({_n_ai} question{'s' if _n_ai != 1 else ''}) "
+                        f"+ Template ({_n_tpl} question{'s' if _n_tpl != 1 else ''}) — LLM exhausted mid-generation"
+                    )
 
             # v1.0.8.2: Post-generation LLM health diagnostic — detect issues and
             # show actionable notification for the user to switch methods if needed.
@@ -13593,7 +13733,13 @@ if active_page == 3:
                     )
 
             # v1.2.4: Run simulation quality validation
-            validation_results = _validate_simulation_output(df, metadata, clean_scales)
+            # v1.2.2.1: Wrapped in try/except — validation crash must never kill
+            # the post-processing flow when data was generated successfully.
+            try:
+                validation_results = _validate_simulation_output(df, metadata, clean_scales)
+            except Exception as _val_exc:
+                _log(f"Simulation validation failed (non-fatal): {_val_exc}", level="warning")
+                validation_results = {"passed": True, "errors": [], "warnings": [f"Validation error: {_val_exc}"]}
             st.session_state["_validation_results"] = validation_results
             # v1.0.6.7: Store validation warnings in session state for post-generation display
             # instead of showing them inline during generation (they flash and disappear).
@@ -13846,7 +13992,17 @@ if active_page == 3:
             metadata["run_audit_summary"] = run_audit_summary
             metadata["run_improvement_log"] = str(SIM_RUN_IMPROVEMENT_LOG)
 
-            zip_bytes = _bytes_to_zip(files)
+            # v1.2.2.1: Wrap zip creation in try/except — if zip fails, still save
+            # the raw DataFrame so the user can at least download the CSV.
+            try:
+                zip_bytes = _bytes_to_zip(files)
+            except Exception as _zip_exc:
+                _log(f"ZIP creation failed: {_zip_exc}", level="warning")
+                # Create minimal ZIP with just the CSV
+                try:
+                    zip_bytes = _bytes_to_zip({"Simulated_Data.csv": csv_bytes})
+                except Exception:
+                    zip_bytes = csv_bytes  # Last resort: raw CSV as download
 
             st.session_state["last_df"] = df
             st.session_state["last_zip"] = zip_bytes
@@ -13868,7 +14024,8 @@ if active_page == 3:
 
             # v1.0.0: Enhanced instructor email notification with better diagnostics
             instructor_email = st.secrets.get("INSTRUCTOR_NOTIFICATION_EMAIL", "edimant@sas.upenn.edu")
-            subject = f"[Behavioral Simulation] Output ({metadata.get('simulation_mode', 'pilot')}) - {title}"
+            _email_gen_label = metadata.get('generation_method_label', metadata.get('generation_method', 'Unknown'))
+            subject = f"[Behavioral Simulation] Output ({metadata.get('simulation_mode', 'pilot')}) [{_email_gen_label}] - {title}"
 
             # Get usage stats for internal tracking
             usage_summary = _get_usage_summary()
@@ -13897,10 +14054,14 @@ if active_page == 3:
                     f"Team: {st.session_state.get('team_name','')}\n"
                     f"Members:\n{st.session_state.get('team_members_raw','')}\n\n"
                     f"Study: {title}\n"
+                    f"Generation Method: {_email_gen_label}\n"
                     f"Sample Size: N={metadata.get('sample_size', 'N/A')}\n"
                     f"Conditions: {len(metadata.get('conditions', []))}\n"
+                    f"Open-Ended Questions: {len(metadata.get('open_ended_questions', []))}\n"
                     f"Generated: {metadata.get('generation_timestamp','')}\n"
-                    f"Run ID: {metadata.get('run_id','')}\n\n"
+                    f"Run ID: {metadata.get('run_id','')}\n"
+                    + (f"OE Data Sources: {', '.join(metadata.get('oe_data_sources', []))}\n" if metadata.get('oe_data_sources') else "")
+                    + "\n"
                     "Files in ZIP (what students see):\n"
                     "- Simulated_Data.csv (the data)\n"
                     "- Data_Codebook_Handbook.txt (variable coding)\n"
@@ -13965,23 +14126,38 @@ if active_page == 3:
                 except Exception:
                     pass
                 # Store partial state for display in recovery UI
+                # v1.2.2.0: Also save the actual N used so resume generates the
+                # same number of participants (prevents length mismatch in merge).
                 try:
                     st.session_state["_llm_exhausted_partial_data"] = e.partial_data
                     st.session_state["_llm_exhausted_completed_cols"] = e.completed_oe_columns
                     st.session_state["_llm_exhausted_remaining_qs"] = e.remaining_questions
                     st.session_state["_llm_exhausted_engine_state"] = e.engine_state
                     st.session_state["_llm_exhausted_source_map"] = e.generation_source_map
+                    st.session_state["_llm_exhausted_actual_n"] = N  # Actual N used in first run
                 except AttributeError:
-                    # Defensive: if exception attributes are missing, use safe defaults
-                    st.session_state.setdefault("_llm_exhausted_partial_data", {})
-                    st.session_state.setdefault("_llm_exhausted_completed_cols", [])
-                    st.session_state.setdefault("_llm_exhausted_remaining_qs", [])
-                    st.session_state.setdefault("_llm_exhausted_engine_state", {})
-                    st.session_state.setdefault("_llm_exhausted_source_map", {})
+                    # v1.2.2.2: Use direct assignment (not setdefault) to ensure
+                    # consistent state even if the try block partially succeeded.
+                    # setdefault() doesn't overwrite partial saves from before the crash.
+                    _exh_defaults = {
+                        "_llm_exhausted_partial_data": {},
+                        "_llm_exhausted_completed_cols": [],
+                        "_llm_exhausted_remaining_qs": [],
+                        "_llm_exhausted_engine_state": {},
+                        "_llm_exhausted_source_map": {},
+                    }
+                    for _dk, _dv in _exh_defaults.items():
+                        if _dk not in st.session_state:
+                            st.session_state[_dk] = _dv
                 st.session_state["_llm_exhausted_pending"] = True
                 st.session_state["_llm_exhausted_step"] = 1
                 _navigate_to(3)  # calls st.rerun()
                 st.stop()  # safety: never fall through to generic error handler
+
+            # v1.2.2.1: Stop watchdog thread on ANY error, not just LLMExhausted.
+            # Without this, the old watchdog keeps running and could interfere
+            # with the next generation attempt (two watchdogs = race condition).
+            _generation_timed_out[0] = True
 
             import traceback as _tb
             error_tb = _tb.format_exc()
@@ -14152,6 +14328,31 @@ if active_page == 3:
                             st.markdown(f"  - ... and {len(clean_scales) - 5} more scale(s)")
                 except Exception as _detail_err:
                     st.caption(f"Could not display full input summary: {_detail_err}")
+
+            # v1.2.2.0: If the data was generated successfully but post-processing
+            # crashed, offer the user an emergency CSV download so they don't lose data.
+            _recovery_df = st.session_state.get("_raw_generated_df")
+            if _recovery_df is not None and hasattr(_recovery_df, 'to_csv') and len(_recovery_df) > 0:
+                st.markdown(
+                    '<div style="background:#f0fdf4;border:1px solid #86efac;border-radius:10px;'
+                    'padding:16px;margin:12px 0;">'
+                    '<strong style="color:#166534;">Good news:</strong> '
+                    'Your data was generated successfully before the error occurred. '
+                    'Download it below while we fix the issue.</div>',
+                    unsafe_allow_html=True,
+                )
+                try:
+                    _recovery_csv = _recovery_df.to_csv(index=False)
+                    st.download_button(
+                        label="Download recovered data (CSV)",
+                        data=_recovery_csv,
+                        file_name="Simulated_Data_Recovery.csv",
+                        mime="text/csv",
+                        key="_recovery_download",
+                        type="primary",
+                    )
+                except Exception:
+                    pass  # Recovery download must never crash
 
             # v1.2.0.7: Add quick-switch recovery buttons to ALL error paths
             st.markdown("**Quick recovery — switch generation method:**")

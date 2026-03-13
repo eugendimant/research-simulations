@@ -10915,8 +10915,8 @@ class EnhancedSimulationEngine:
             try:
                 self.llm_generator.reset_providers()
                 self._log("LLM providers reset before prefill (clean state)")
-            except Exception:
-                pass
+            except Exception as _rst_err:
+                logger.warning("LLM provider reset before prefill failed: %s", _rst_err)
             _prefill_wall_start = time.time()
             _prefill_timed_out = False
             try:
@@ -11229,8 +11229,8 @@ class EnhancedSimulationEngine:
                                 self.llm_generator.disable_permanently(
                                     f"OE budget ({_OE_GENERATION_BUDGET:.0f}s) exceeded"
                                 )
-                            except Exception:
-                                pass
+                            except Exception as _dp_err:
+                                logger.warning("disable_permanently() failed on budget exceed: %s", _dp_err)
 
                 participant_condition = conditions.iloc[i]
 
@@ -11238,6 +11238,10 @@ class EnhancedSimulationEngine:
                 if not self.survey_flow_handler.is_question_visible(col_name, participant_condition):
                     # Participant wouldn't see this question - leave blank (NA)
                     responses.append("")
+                    # v1.2.2.3: Must also append to _sources_for_col to keep lists aligned.
+                    # Without this, len(responses) != len(_sources_for_col), corrupting
+                    # the _Generation_Source column downstream (wrong participant mapping).
+                    _sources_for_col.append("N/A")
                     continue
 
                 # Generate unique seed using participant, question, and question text hash
@@ -11346,8 +11350,8 @@ class EnhancedSimulationEngine:
                                 f"{_CONSECUTIVE_SLOW_LIMIT} consecutive participants exceeded "
                                 f"{_PER_PARTICIPANT_OE_TIMEOUT:.0f}s timeout"
                             )
-                        except Exception:
-                            pass
+                        except Exception as _dp_err2:
+                            logger.warning("disable_permanently() failed on slow participants: %s", _dp_err2)
                         _oe_budget_exceeded = True
                 elif _participant_oe_elapsed <= 5.0:
                     # Fast response — reset consecutive slow counter
@@ -11460,8 +11464,8 @@ class EnhancedSimulationEngine:
                         f"{_s.get('cumulative_failures', 0)} cumulative failures, "
                         f"force_disabled={_s.get('force_disabled', False)}"
                     )
-                except Exception:
-                    pass
+                except Exception as _stats_err:
+                    logger.debug("Failed to retrieve LLM stats for budget log: %s", _stats_err)
             self._log(
                 f"OE generation completed with budget exceeded: {_oe_total_elapsed:.1f}s total, "
                 f"{_oe_budget_switched_count} participants used template fallback.{_llm_stats_summary}"
@@ -11484,8 +11488,13 @@ class EnhancedSimulationEngine:
                 for _src_col in _completed_oe_columns:
                     _src_list = _generation_source_map.get(_src_col, [])
                     if _pi < len(_src_list):
+                        # v1.2.2.4: Skip "N/A" entries (invisible questions) so they
+                        # don't inflate Template count and corrupt the source label.
+                        _src_val = _src_list[_pi]
+                        if _src_val == "N/A":
+                            continue
                         _total_count += 1
-                        if _src_list[_pi] == "AI":
+                        if _src_val == "AI":
                             _ai_count += 1
                 if _total_count == 0:
                     _per_participant_source.append("Template")
@@ -11502,13 +11511,14 @@ class EnhancedSimulationEngine:
 
         # v1.0.0 CRITICAL FIX: Post-processing validation to detect and fix duplicate responses
         # Check each participant's responses across all open-ended questions
-        # Use actual column names from data (accounting for any renames due to collisions)
+        # v1.2.2.3: Use _completed_oe_columns (actual names after any renames) instead
+        # of re-deriving names from questions.  Previous code missed renamed columns
+        # (e.g., "Age" → "OE_Age") causing duplicate detection to silently skip them.
         open_ended_cols = []
-        for q in self.open_ended_questions:
-            _candidate = _clean_column_name(str(q.get("name", "Open_Response")))
-            if (_candidate in data and isinstance(data[_candidate], list)
-                    and len(data[_candidate]) > 0 and isinstance(data[_candidate][0], str)):
-                open_ended_cols.append(_candidate)
+        for _oec in _completed_oe_columns:
+            if (_oec in data and isinstance(data[_oec], list)
+                    and len(data[_oec]) > 0 and isinstance(data[_oec][0], str)):
+                open_ended_cols.append(_oec)
         if len(open_ended_cols) > 1:
             for i in range(n):
                 participant_responses = {}

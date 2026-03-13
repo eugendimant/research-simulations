@@ -2553,13 +2553,14 @@ class ComprehensiveInstructorReport:
                     lines.append(f"- **Template fallback:** {fallback_uses} response(s) ({pct:.0f}%)")
                 else:
                     lines.append("- **Template fallback:** None needed (all AI-generated)")
-            elif llm_calls > 0:
+            elif llm_calls > 0 or llm_attempts > 0:
                 if _is_adaptive_comp:
                     lines.append("**Generation approach:** Adaptive Behavioral Engine (template-backed)")
                 else:
                     lines.append("**Generation approach:** Template Engine (AI providers were unavailable)")
                 lines.append("")
-                lines.append(f"- {llm_calls} API request(s) were sent but all providers were unavailable or returned errors")
+                _api_req_count = max(llm_calls, llm_attempts)
+                lines.append(f"- {_api_req_count} API request(s) were sent but all providers were unavailable or returned errors")
                 lines.append("- All open-ended responses were generated using the built-in template engine")
             else:
                 if _is_adaptive_comp:
@@ -4759,6 +4760,8 @@ class ComprehensiveInstructorReport:
         html_parts.append("<h3 style='margin-top:28px;padding-top:16px;border-top:1px solid #e2e8f0;'>Generation Details</h3>")
         html_parts.append(f"<p><strong>Generated:</strong> {metadata.get('generation_timestamp', datetime.now().isoformat())}</p>")
         html_parts.append(f"<p><strong>Run ID:</strong> <code>{metadata.get('run_id', 'N/A')}</code></p>")
+        _html_gen_method = metadata.get('generation_method_label', metadata.get('generation_method', 'N/A'))
+        html_parts.append(f"<p><strong>Generation Method:</strong> {_html_gen_method}</p>")
         html_parts.append(f"<p><strong>Mode:</strong> {metadata.get('simulation_mode', 'pilot').title()}</p>")
         html_parts.append(f"<p><strong>Seed:</strong> <code>{metadata.get('seed', 'N/A')}</code></p>")
         html_parts.append(f"<p><strong>App Version:</strong> {__version__}</p>")

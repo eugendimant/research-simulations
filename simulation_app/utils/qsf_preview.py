@@ -33,7 +33,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 # Version identifier to help track deployed code
-__version__ = "1.2.1.8"  # v1.2.1.8: SambaNova Llama 3.1→3.3 migration
+__version__ = "1.2.2.4"  # v1.2.2.4: Fix N/A source label, stale exhaustion cleanup
 
 
 # ============================================================================
@@ -847,7 +847,7 @@ class QSFPreviewParser:
                         block_id = block_data.get('ID', '')
                         if not block_id:
                             continue
-                        block_name = block_data.get('Description', f'Block {block_id}')
+                        block_name = block_data.get('Description') or f'Block {block_id}'
                         block_type = block_data.get('Type', 'Standard')
 
                         # Handle BlockElements that could be None, list, or dict
@@ -878,7 +878,7 @@ class QSFPreviewParser:
                         # Use the ID field if available, otherwise use the dict key
                         # This is important because flow elements reference blocks by ID field
                         block_id = block_data.get('ID', dict_key)
-                        block_name = block_data.get('Description', f'Block {block_id}')
+                        block_name = block_data.get('Description') or f'Block {block_id}'
                         block_type = block_data.get('Type', 'Standard')
 
                         # Handle BlockElements that could be None, list, or dict
@@ -942,7 +942,7 @@ class QSFPreviewParser:
                     sorted_choices = sorted(choices_data.items(), key=lambda x: self._safe_int_key(x[0]))
                     for _, choice_data in sorted_choices:
                         if isinstance(choice_data, dict):
-                            choice_text = choice_data.get('Display', str(choice_data))
+                            choice_text = choice_data.get('Display') or str(choice_data)
                             choices.append(choice_text)
                         else:
                             choices.append(str(choice_data))
@@ -1043,7 +1043,7 @@ class QSFPreviewParser:
                     if isinstance(choice_data, dict):
                         # Check if this choice has TextEntry enabled
                         if choice_data.get('TextEntry') or choice_data.get('TextEntrySize'):
-                            choice_text = choice_data.get('Display', str(choice_data))
+                            choice_text = choice_data.get('Display') or str(choice_data)
                             text_entry_choices.append({
                                 'choice_id': str(choice_id),
                                 'choice_text': choice_text,
@@ -1199,9 +1199,10 @@ class QSFPreviewParser:
             fixed_choices = []
             randomization = payload.get('Randomization', {})
             if isinstance(randomization, dict):
-                choice_randomization = randomization.get('Advanced', {}).get('Randomize', False)
+                _adv = randomization.get('Advanced') or {}
+                choice_randomization = _adv.get('Randomize', False)
                 # Get fixed choices (usually "Other" or "No preference" at end)
-                fixed_positions = randomization.get('Advanced', {}).get('FixedOrder', [])
+                fixed_positions = _adv.get('FixedOrder', [])
                 if fixed_positions and isinstance(choices_data, dict):
                     for pos in fixed_positions:
                         if str(pos) in choices_data:
@@ -1375,7 +1376,7 @@ class QSFPreviewParser:
 
         anchor_count = 0
         for choice in choices:
-            choice_lower = choice.lower()
+            choice_lower = str(choice).lower()
             if any(kw in choice_lower for kw in scale_keywords):
                 anchor_count += 1
 
