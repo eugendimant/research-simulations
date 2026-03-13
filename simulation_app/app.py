@@ -13249,8 +13249,9 @@ if active_page == 3:
                                 engine.llm_generator.disable_permanently(
                                     f"watchdog: global timeout ({_GLOBAL_GENERATION_TIMEOUT:.0f}s)"
                                 )
-                        except Exception:
-                            pass
+                        except Exception as _wd_exc:
+                            _wd_logging.getLogger(__name__).error(
+                                "WATCHDOG: disable_permanently failed: %s", _wd_exc)
                         return
                     # Also check stall: no progress callback for 120s
                     _since_last_progress = __import__('time').time() - _last_progress_time[0]
@@ -13266,8 +13267,9 @@ if active_page == 3:
                                 engine.llm_generator.disable_permanently(
                                     f"watchdog: stall detected ({_since_last_progress:.0f}s no progress)"
                                 )
-                        except Exception:
-                            pass
+                        except Exception as _wd_exc2:
+                            _wd_logging2.getLogger(__name__).error(
+                                "WATCHDOG: disable_permanently failed: %s", _wd_exc2)
                         return
 
             _watchdog_thread = _watchdog_threading.Thread(

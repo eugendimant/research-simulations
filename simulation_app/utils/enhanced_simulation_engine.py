@@ -10915,8 +10915,8 @@ class EnhancedSimulationEngine:
             try:
                 self.llm_generator.reset_providers()
                 self._log("LLM providers reset before prefill (clean state)")
-            except Exception:
-                pass
+            except Exception as _rst_err:
+                logger.warning("LLM provider reset before prefill failed: %s", _rst_err)
             _prefill_wall_start = time.time()
             _prefill_timed_out = False
             try:
@@ -11229,8 +11229,8 @@ class EnhancedSimulationEngine:
                                 self.llm_generator.disable_permanently(
                                     f"OE budget ({_OE_GENERATION_BUDGET:.0f}s) exceeded"
                                 )
-                            except Exception:
-                                pass
+                            except Exception as _dp_err:
+                                logger.warning("disable_permanently() failed on budget exceed: %s", _dp_err)
 
                 participant_condition = conditions.iloc[i]
 
@@ -11238,6 +11238,10 @@ class EnhancedSimulationEngine:
                 if not self.survey_flow_handler.is_question_visible(col_name, participant_condition):
                     # Participant wouldn't see this question - leave blank (NA)
                     responses.append("")
+                    # v1.2.2.3: Must also append to _sources_for_col to keep lists aligned.
+                    # Without this, len(responses) != len(_sources_for_col), corrupting
+                    # the _Generation_Source column downstream (wrong participant mapping).
+                    _sources_for_col.append("N/A")
                     continue
 
                 # Generate unique seed using participant, question, and question text hash
@@ -11346,8 +11350,8 @@ class EnhancedSimulationEngine:
                                 f"{_CONSECUTIVE_SLOW_LIMIT} consecutive participants exceeded "
                                 f"{_PER_PARTICIPANT_OE_TIMEOUT:.0f}s timeout"
                             )
-                        except Exception:
-                            pass
+                        except Exception as _dp_err2:
+                            logger.warning("disable_permanently() failed on slow participants: %s", _dp_err2)
                         _oe_budget_exceeded = True
                 elif _participant_oe_elapsed <= 5.0:
                     # Fast response — reset consecutive slow counter
