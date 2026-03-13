@@ -54,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.2.2.4"
-BUILD_ID = "20260313-v12024-fix-source-na-stale-exhaustion-cleanup"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.2.2.5"
+BUILD_ID = "20260313-v12025-fix-instructor-report-persistent-admin-counter"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -118,7 +118,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.2.2.4"  # v1.2.2.4: Fix N/A source label, stale exhaustion cleanup, generation source accuracy
+APP_VERSION = "1.2.2.5"  # v1.2.2.5: Fix instructor report llm_attempts NameError, persistent admin counter
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -377,8 +377,21 @@ def _get_usage_count() -> Dict[str, Any]:
         return {"total_simulations": 0, "simulations_by_date": {}, "first_use": None, "last_use": None}
 
 
-def _increment_usage_counter() -> Dict[str, Any]:
-    """Increment the usage counter and return updated stats."""
+def _increment_usage_counter(
+    llm_stats: Optional[Dict[str, Any]] = None,
+    sample_size: int = 0,
+    n_conditions: int = 0,
+    n_scales: int = 0,
+    study_title: str = "",
+) -> Dict[str, Any]:
+    """Increment the usage counter and return updated stats.
+
+    v1.2.2.5: Now accumulates ALL-TIME cumulative LLM stats and per-run
+    metadata so the admin dashboard counter NEVER resets — even across
+    server restarts, redeployments, and new sessions.  The file-based
+    counter (.usage_counter.json) in the app directory is the single
+    source of truth for lifetime totals.
+    """
     try:
         stats = _get_usage_count()
         now = datetime.now()
@@ -393,6 +406,34 @@ def _increment_usage_counter() -> Dict[str, Any]:
         if not stats.get("first_use"):
             stats["first_use"] = now.isoformat()
         stats["last_use"] = now.isoformat()
+
+        # v1.2.2.5: Accumulate ALL-TIME cumulative LLM stats
+        if llm_stats:
+            stats["cumulative_llm_calls"] = stats.get("cumulative_llm_calls", 0) + int(llm_stats.get("llm_calls", 0) or 0)
+            stats["cumulative_llm_attempts"] = stats.get("cumulative_llm_attempts", 0) + int(llm_stats.get("llm_attempts", 0) or 0)
+            stats["cumulative_pool_size"] = stats.get("cumulative_pool_size", 0) + int(llm_stats.get("pool_size", 0) or 0)
+            stats["cumulative_fallback_uses"] = stats.get("cumulative_fallback_uses", 0) + int(llm_stats.get("fallback_uses", 0) or 0)
+            stats["cumulative_provider_exhaustions"] = stats.get("cumulative_provider_exhaustions", 0) + int(llm_stats.get("provider_exhaustions", 0) or 0)
+        stats["cumulative_participants"] = stats.get("cumulative_participants", 0) + sample_size
+
+        # v1.2.2.5: Store recent run log (keep last 200 entries)
+        if "run_log" not in stats:
+            stats["run_log"] = []
+        _run_entry: Dict[str, Any] = {
+            "timestamp": now.isoformat(),
+            "sample_size": sample_size,
+            "n_conditions": n_conditions,
+            "n_scales": n_scales,
+            "study_title": study_title[:120] if study_title else "",
+        }
+        if llm_stats:
+            _run_entry["llm_calls"] = int(llm_stats.get("llm_calls", 0) or 0)
+            _run_entry["pool_size"] = int(llm_stats.get("pool_size", 0) or 0)
+            _run_entry["fallback_uses"] = int(llm_stats.get("fallback_uses", 0) or 0)
+        stats["run_log"].append(_run_entry)
+        # Trim to last 200 runs
+        if len(stats["run_log"]) > 200:
+            stats["run_log"] = stats["run_log"][-200:]
 
         # Save to file
         with open(USAGE_COUNTER_FILE, "w") as f:
@@ -7185,43 +7226,71 @@ def _render_admin_dashboard() -> None:
         return
 
     # ── Top metrics bar ───────────────────────────────────────────────
-    # v1.0.5.7: Compute CUMULATIVE stats across all simulations, not just
-    # the last one.  Also fall back to per-history-entry llm_stats if
-    # _last_llm_stats is empty (handles page refresh after simulation).
+    # v1.2.2.5: ALL-TIME counters from the persistent file-based usage
+    # counter (.usage_counter.json).  This NEVER resets — survives server
+    # restarts, redeployments, and new sessions.  Session-only history is
+    # used as a secondary source for the current-session breakdown.
     st.markdown("---")
     _m1, _m2, _m3, _m4 = st.columns(4)
     _sim_history = st.session_state.get("_admin_sim_history", [])
     _current_llm_stats = st.session_state.get("_last_llm_stats", {})
 
-    # Cumulative stats from ALL simulation runs in this session
-    _cum_calls = 0
-    _cum_pool = 0
-    _cum_fallbacks = 0
+    # v1.2.2.5: Read ALL-TIME totals from persistent file
+    _alltime_stats = _get_usage_count()
+    _alltime_total_sims = _alltime_stats.get("total_simulations", 0)
+    _alltime_llm_calls = _alltime_stats.get("cumulative_llm_calls", 0)
+    _alltime_pool = _alltime_stats.get("cumulative_pool_size", 0)
+    _alltime_fallbacks = _alltime_stats.get("cumulative_fallback_uses", 0)
+    _alltime_participants = _alltime_stats.get("cumulative_participants", 0)
+
+    # Session-level stats (for delta display)
+    _session_calls = 0
+    _session_pool = 0
+    _session_fallbacks = 0
     _last_provider = "none"
     for _hist_entry in _sim_history:
         _hls = _hist_entry.get("llm_stats", {})
-        _cum_calls += _hls.get("llm_calls", 0)
-        _cum_pool += _hls.get("pool_size", 0)
-        _cum_fallbacks += _hls.get("fallback_uses", 0)
+        _session_calls += _hls.get("llm_calls", 0)
+        _session_pool += _hls.get("pool_size", 0)
+        _session_fallbacks += _hls.get("fallback_uses", 0)
         _hp = _hls.get("active_provider", "")
         if _hp:
             _last_provider = _hp
     # If no history entries had stats, fall back to _last_llm_stats
-    if _cum_calls == 0 and _cum_pool == 0 and _current_llm_stats:
-        _cum_calls = _current_llm_stats.get("llm_calls", 0)
-        _cum_pool = _current_llm_stats.get("pool_size", 0)
-        _cum_fallbacks = _current_llm_stats.get("fallback_uses", 0)
+    if _session_calls == 0 and _session_pool == 0 and _current_llm_stats:
+        _session_calls = _current_llm_stats.get("llm_calls", 0)
+        _session_pool = _current_llm_stats.get("pool_size", 0)
+        _session_fallbacks = _current_llm_stats.get("fallback_uses", 0)
         _last_provider = _current_llm_stats.get("active_provider", "none")
 
+    # Use ALL-TIME totals for display; fall back to session if file counter
+    # hasn't accumulated yet (backward compat with pre-v1.2.2.5 data).
+    _display_total_sims = max(_alltime_total_sims, len(_sim_history))
+    _display_llm_calls = max(_alltime_llm_calls, _session_calls)
+    _display_pool = max(_alltime_pool, _session_pool)
+    _display_fallbacks = max(_alltime_fallbacks, _session_fallbacks)
+
     with _m1:
-        st.metric("Total Simulations", len(_sim_history))
+        _session_delta = f"+{len(_sim_history)} this session" if len(_sim_history) > 0 else None
+        st.metric("Total Simulations (All-Time)", _display_total_sims, delta=_session_delta)
     with _m2:
-        st.metric("LLM API Calls", _cum_calls)
+        st.metric("LLM API Calls (All-Time)", _display_llm_calls)
     with _m3:
-        st.metric("LLM Pool Size", _cum_pool)
+        st.metric("Total Participants (All-Time)", _alltime_participants)
     with _m4:
-        _fb_pct = f"{(_cum_fallbacks / max(1, _cum_pool + _cum_fallbacks)) * 100:.0f}%" if (_cum_pool + _cum_fallbacks) > 0 else "N/A"
+        _fb_pct = f"{(_display_fallbacks / max(1, _display_pool + _display_fallbacks)) * 100:.0f}%" if (_display_pool + _display_fallbacks) > 0 else "N/A"
         st.metric("Template Fallback", _fb_pct)
+
+    # v1.2.2.5: Show all-time stats detail
+    _first_use = _alltime_stats.get("first_use", "N/A")
+    _last_use = _alltime_stats.get("last_use", "N/A")
+    if _first_use and _first_use != "N/A":
+        try:
+            _first_use = _first_use[:19].replace("T", " ")
+            _last_use = _last_use[:19].replace("T", " ") if _last_use else "N/A"
+        except Exception:
+            pass
+    st.caption(f"First simulation: {_first_use} | Last simulation: {_last_use} | All-time participants: {_alltime_participants}")
 
     # ── Tabs ──────────────────────────────────────────────────────────
     _tab_llm, _tab_failures, _tab_history, _tab_emails, _tab_session, _tab_system, _tab_errors = st.tabs([
@@ -7231,11 +7300,13 @@ def _render_admin_dashboard() -> None:
     # ── TAB 1: LLM Pipeline ──────────────────────────────────────────
     with _tab_llm:
         st.markdown("### LLM Provider Chain")
-        if _cum_calls > 0 or _cum_pool > 0 or _current_llm_stats:
+        if _display_llm_calls > 0 or _display_pool > 0 or _current_llm_stats:
             st.markdown(f"**Active Provider:** `{_last_provider}`")
-            st.markdown(f"**Total API Calls (cumulative):** {_cum_calls}")
-            st.markdown(f"**Response Pool Size (cumulative):** {_cum_pool}")
-            st.markdown(f"**Template Fallbacks (cumulative):** {_cum_fallbacks}")
+            st.markdown(f"**Total API Calls (all-time):** {_display_llm_calls}")
+            st.markdown(f"**Response Pool Size (all-time):** {_display_pool}")
+            st.markdown(f"**Template Fallbacks (all-time):** {_display_fallbacks}")
+            if _session_calls > 0:
+                st.caption(f"This session: {_session_calls} calls, {_session_pool} pool, {_session_fallbacks} fallbacks")
 
             # v1.0.9.2: Show HTTP requests (actual) vs provider probes (inflated)
             _cum_http = 0
@@ -7248,7 +7319,7 @@ def _render_admin_dashboard() -> None:
                 _cum_http = _current_llm_stats.get("llm_http_requests", _current_llm_stats.get("llm_calls", 0))
                 _cum_attempts = _current_llm_stats.get("llm_attempts", 0)
             if _cum_http > 0 or _cum_attempts > 0:
-                st.markdown(f"**Actual HTTP Requests (cumulative):** {_cum_http}")
+                st.markdown(f"**Actual HTTP Requests (session):** {_cum_http}")
                 if _cum_attempts > _cum_http:
                     st.caption(f"Provider probes (incl. rate-limited/blocked): {_cum_attempts}")
 
@@ -7269,10 +7340,10 @@ def _render_admin_dashboard() -> None:
                     st.dataframe(_prov_data, use_container_width=True, hide_index=True)
 
             # LLM generation quality
-            if _cum_pool > 0:
-                _total_gen = _cum_pool + _cum_fallbacks
-                _llm_pct = (_cum_pool / _total_gen) * 100
-                st.markdown("#### Generation Quality")
+            if _display_pool > 0:
+                _total_gen = _display_pool + _display_fallbacks
+                _llm_pct = (_display_pool / _total_gen) * 100
+                st.markdown("#### Generation Quality (All-Time)")
                 st.progress(min(1.0, _llm_pct / 100))
                 st.caption(f"{_llm_pct:.1f}% AI-generated, {100 - _llm_pct:.1f}% template fallback")
         else:
@@ -7458,8 +7529,44 @@ def _render_admin_dashboard() -> None:
                         if len(_run_personas) > 10:
                             st.caption(f"... and {len(_run_personas) - 10} more")
         else:
-            st.info("No simulation history found.")
-            st.caption("Run a simulation to see entries here. History persists across browser refreshes.")
+            st.info("No simulation runs in this session yet.")
+            st.caption("Run a simulation to see session entries here.")
+
+        # v1.2.2.5: ALL-TIME run log from persistent file (never resets)
+        st.markdown("---")
+        st.markdown("### All-Time Run Log (Persistent)")
+        st.caption("This data survives server restarts and redeployments.")
+        _alltime_run_log = _alltime_stats.get("run_log", [])
+        if _alltime_run_log:
+            st.markdown(f"**{len(_alltime_run_log)}** runs recorded (showing most recent 50)")
+            _log_data = []
+            for _rl_entry in reversed(_alltime_run_log[-50:]):
+                _ts = _rl_entry.get("timestamp", "")
+                try:
+                    _ts = _ts[:19].replace("T", " ")
+                except Exception:
+                    pass
+                _log_data.append({
+                    "Timestamp": _ts,
+                    "Study": _rl_entry.get("study_title", "")[:50] or "Untitled",
+                    "N": _rl_entry.get("sample_size", "?"),
+                    "Conditions": _rl_entry.get("n_conditions", "?"),
+                    "Scales": _rl_entry.get("n_scales", "?"),
+                    "LLM Calls": _rl_entry.get("llm_calls", 0),
+                    "AI Pool": _rl_entry.get("pool_size", 0),
+                    "Fallbacks": _rl_entry.get("fallback_uses", 0),
+                })
+            st.dataframe(_log_data, use_container_width=True, hide_index=True)
+
+            # Summary stats
+            _by_date = _alltime_stats.get("simulations_by_date", {})
+            if _by_date:
+                st.markdown("#### Daily Activity")
+                _recent_dates = sorted(_by_date.keys(), reverse=True)[:14]
+                _date_data = [{"Date": d, "Simulations": _by_date[d]} for d in _recent_dates]
+                st.dataframe(_date_data, use_container_width=True, hide_index=True)
+        else:
+            st.info("No all-time run log entries yet. Generate a simulation to start tracking.")
 
     # ── TAB 4: User Emails (v1.1.0.7) ────────────────────────────────
     with _tab_emails:
@@ -13775,8 +13882,21 @@ if active_page == 3:
             st.session_state["_quality_checks"] = quality_checks
 
             # Increment internal usage counter (admin tracking)
+            # v1.2.2.5: Pass LLM stats and run metadata so file-based counter
+            # accumulates ALL-TIME totals that never reset.
             try:
-                usage_stats = _increment_usage_counter()
+                _run_llm_stats = metadata.get('llm_stats', {})
+                _run_sample_size = len(df) if df is not None else 0
+                _run_n_conditions = len(inferred.get("conditions", []))
+                _run_n_scales = len(clean_scales)
+                _run_study_title = metadata.get("study_title", "")
+                usage_stats = _increment_usage_counter(
+                    llm_stats=_run_llm_stats,
+                    sample_size=_run_sample_size,
+                    n_conditions=_run_n_conditions,
+                    n_scales=_run_n_scales,
+                    study_title=_run_study_title,
+                )
             except Exception:
                 usage_stats = {}
 
@@ -14410,6 +14530,8 @@ if active_page == 3:
         _post_gen_llm_note = st.session_state.get("_gen_llm_exhaustion_note", "")
         _post_gen_method = st.session_state.get("generation_method", "free_llm")
         if _post_gen_llm_note and _post_gen_method in ("free_llm", "own_api"):
+            # v1.2.2.5: Increment admin counter for exhaustion dialog shown
+            st.session_state["_admin_llm_exhaust_dialog_shown"] = st.session_state.get("_admin_llm_exhaust_dialog_shown", 0) + 1
             st.markdown(
                 '<div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;'
                 'padding:12px 16px;margin:8px 0 12px 0;">'
