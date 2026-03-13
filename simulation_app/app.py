@@ -54,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.2.2.2"
-BUILD_ID = "20260313-v12022-fix-resume-merge-index-alignment-source-tags"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.2.2.3"
+BUILD_ID = "20260313-v12023-fix-oe-duplicate-detection-source-map-numpy"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -118,7 +118,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.2.2.2"  # v1.2.2.2: Fix resume merge guard, index alignment, source tag accuracy, exception handler
+APP_VERSION = "1.2.2.3"  # v1.2.2.3: Fix OE duplicate detection, source map filter, numpy array merge
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -13353,11 +13353,15 @@ if active_page == 3:
                             if _ai_col in _partial_data:
                                 _ai_data = _partial_data[_ai_col]
                                 # v1.2.0.8: Strict type check — only accept list/array/Series (not dict)
-                                # v1.2.2.2: Added numpy array support and hasattr guard for len()
-                                if isinstance(_ai_data, (list, pd.Series)) and len(_ai_data) == len(df):
+                                # v1.2.2.3: Added np.ndarray to isinstance check to handle numpy arrays
+                                if isinstance(_ai_data, (list, pd.Series, np.ndarray)) and len(_ai_data) == len(df):
                                     # v1.2.2.2: Force positional assignment to prevent
                                     # index misalignment when df has non-default index.
-                                    df[_ai_col] = list(_ai_data) if isinstance(_ai_data, pd.Series) else _ai_data
+                                    # v1.2.2.3: Also convert np.ndarray to list for safety.
+                                    if isinstance(_ai_data, (pd.Series, np.ndarray)):
+                                        df[_ai_col] = list(_ai_data)
+                                    else:
+                                        df[_ai_col] = _ai_data
                                     _n_merged += 1
                                     _actually_merged_cols.append(_ai_col)
                                 elif hasattr(_ai_data, '__len__') and len(_ai_data) != len(df):
@@ -13379,8 +13383,14 @@ if active_page == 3:
                             metadata["oe_data_sources"] = _source_tags
                             metadata["oe_ai_columns"] = _actually_merged_cols
                             metadata["oe_template_columns"] = [_rq.get("variable_name", _rq.get("name", "")) for _rq in _remaining_qs]
-                        if _ai_source_map:
-                            metadata["oe_source_map_ai_run"] = _ai_source_map
+                        # v1.2.2.3: Only store source map keys that match actually
+                        # merged columns — prevents KeyError downstream when reading
+                        # map entries for columns that weren't completed before exhaustion.
+                        if _ai_source_map and _actually_merged_cols:
+                            _filtered_src_map = {k: v for k, v in _ai_source_map.items()
+                                                 if k in _actually_merged_cols}
+                            if _filtered_src_map:
+                                metadata["oe_source_map_ai_run"] = _filtered_src_map
                         _log(f"LLM exhaustion resume: merged {_n_merged} AI column(s) back into DataFrame: {_ai_cols}")
                         progress_bar.progress(35, text=f"Step 2.5/5 — Merged {_n_merged} AI-generated column(s)...")
                 except Exception as _merge_exc:

@@ -11460,8 +11460,8 @@ class EnhancedSimulationEngine:
                         f"{_s.get('cumulative_failures', 0)} cumulative failures, "
                         f"force_disabled={_s.get('force_disabled', False)}"
                     )
-                except Exception:
-                    pass
+                except Exception as _stats_err:
+                    logger.debug("Failed to retrieve LLM stats for budget log: %s", _stats_err)
             self._log(
                 f"OE generation completed with budget exceeded: {_oe_total_elapsed:.1f}s total, "
                 f"{_oe_budget_switched_count} participants used template fallback.{_llm_stats_summary}"
@@ -11502,13 +11502,14 @@ class EnhancedSimulationEngine:
 
         # v1.0.0 CRITICAL FIX: Post-processing validation to detect and fix duplicate responses
         # Check each participant's responses across all open-ended questions
-        # Use actual column names from data (accounting for any renames due to collisions)
+        # v1.2.2.3: Use _completed_oe_columns (actual names after any renames) instead
+        # of re-deriving names from questions.  Previous code missed renamed columns
+        # (e.g., "Age" → "OE_Age") causing duplicate detection to silently skip them.
         open_ended_cols = []
-        for q in self.open_ended_questions:
-            _candidate = _clean_column_name(str(q.get("name", "Open_Response")))
-            if (_candidate in data and isinstance(data[_candidate], list)
-                    and len(data[_candidate]) > 0 and isinstance(data[_candidate][0], str)):
-                open_ended_cols.append(_candidate)
+        for _oec in _completed_oe_columns:
+            if (_oec in data and isinstance(data[_oec], list)
+                    and len(data[_oec]) > 0 and isinstance(data[_oec][0], str)):
+                open_ended_cols.append(_oec)
         if len(open_ended_cols) > 1:
             for i in range(n):
                 participant_responses = {}
