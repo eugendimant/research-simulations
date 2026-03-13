@@ -54,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.2.2.0"
-BUILD_ID = "20260313-v12020-harden-oe-generation-exhaustion-recovery"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.2.2.1"
+BUILD_ID = "20260313-v12021-fix-stale-resume-watchdog-validation-zip"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -118,7 +118,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.2.2.0"  # v1.2.2.0: Harden OE generation, early save, exhaustion resume N-sync, data recovery
+APP_VERSION = "1.2.2.1"  # v1.2.2.1: Fix stale resume, watchdog leak, validation crash, zip safety, reset cleanup
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -6117,7 +6117,8 @@ def _reset_generation_state() -> None:
     for _exh_key in ("_llm_exhausted_pending", "_llm_exhausted_step",
                       "_llm_exhausted_choice", "_llm_exhausted_partial_data",
                       "_llm_exhausted_completed_cols", "_llm_exhausted_remaining_qs",
-                      "_llm_exhausted_engine_state", "_llm_exhausted_source_map"):
+                      "_llm_exhausted_engine_state", "_llm_exhausted_source_map",
+                      "_llm_exhausted_resume", "_llm_exhausted_actual_n"):
         st.session_state.pop(_exh_key, None)
 
 
@@ -12171,10 +12172,22 @@ if active_page == 3:
         )
 
         # Helper: common state for resume generation
-        def _exh_resume(method: str, template_fb: bool, socsim: bool, trigger_gen: bool) -> None:
+        # v1.2.2.1: Added is_resume parameter. "Retry" and "own API key" start
+        # FRESH generation (no overlay of old partial data), while template/experimental
+        # are true resumes that overlay preserved AI columns.
+        def _exh_resume(method: str, template_fb: bool, socsim: bool, trigger_gen: bool, is_resume: bool = True) -> None:
             st.session_state["_llm_exhausted_pending"] = False
             st.session_state["_llm_exhausted_step"] = 1
-            st.session_state["_llm_exhausted_resume"] = True
+            if is_resume:
+                st.session_state["_llm_exhausted_resume"] = True
+            else:
+                # Fresh generation — clean up ALL exhaustion state to prevent
+                # stale overlay, N capping, or source map contamination.
+                for _ek in ("_llm_exhausted_resume", "_llm_exhausted_partial_data",
+                            "_llm_exhausted_completed_cols", "_llm_exhausted_remaining_qs",
+                            "_llm_exhausted_engine_state", "_llm_exhausted_source_map",
+                            "_llm_exhausted_actual_n"):
+                    st.session_state.pop(_ek, None)
             st.session_state["generation_method"] = method
             st.session_state["allow_template_fallback_once"] = template_fb
             st.session_state["_use_socsim_experimental"] = socsim
@@ -12190,12 +12203,12 @@ if active_page == 3:
             if st.button("Retry Built-in AI", key="_exh_retry_llm",
                          type="primary", use_container_width=True,
                          help="Re-try with the free AI providers (they may have recovered)"):
-                _exh_resume("free_llm", False, False, True)
+                _exh_resume("free_llm", False, False, True, is_resume=False)
         with _exh_c2:
             if st.button("Use my API key", key="_exh_use_api_key",
                          type="secondary", use_container_width=True,
                          help="Enter your own Groq / Google AI key (free tier available)"):
-                _exh_resume("own_api", False, False, False)
+                _exh_resume("own_api", False, False, False, is_resume=False)
         with _exh_c3:
             if st.button("Template Engine", key="_exh_use_template",
                          type="secondary", use_container_width=True,
@@ -12385,6 +12398,12 @@ if active_page == 3:
         # and shows a proper error instead of causing the stale-phase-2 ghost error.
         # Previously, code between _generation_phase=2 and the engine try/except was
         # unprotected, so any exception there killed the Streamlit rerun silently.
+        # v1.2.2.1: Clear stale recovery data at the START of every generation run.
+        # Without this, a failed re-generation could show recovery data from a
+        # PREVIOUS successful run, misleading the user.
+        st.session_state.pop("_raw_generated_df", None)
+        st.session_state.pop("_raw_generated_metadata", None)
+
         try:
             # v1.0.1.5: Use _p_ persist fallback — widget keys may not survive cross-page navigation
             title = (st.session_state.get("study_title") or st.session_state.get("_p_study_title", "")) or "Untitled Study"
@@ -12404,7 +12423,10 @@ if active_page == 3:
             # original run to ensure the AI column data (N rows) matches the new DataFrame.
             _exhaustion_resume_n = st.session_state.get("_llm_exhausted_actual_n")
             if st.session_state.get("_llm_exhausted_resume") and _exhaustion_resume_n:
-                N = _exhaustion_resume_n
+                try:
+                    N = int(_exhaustion_resume_n)
+                except (ValueError, TypeError):
+                    pass  # Keep the already-computed N if session state was corrupted
                 _log(f"LLM exhaustion resume: using original N={N}", level="info")
 
             # v1.2.1.9: Cap free LLM generation at N=100 to prevent API exhaustion.
@@ -13677,7 +13699,13 @@ if active_page == 3:
                     )
 
             # v1.2.4: Run simulation quality validation
-            validation_results = _validate_simulation_output(df, metadata, clean_scales)
+            # v1.2.2.1: Wrapped in try/except — validation crash must never kill
+            # the post-processing flow when data was generated successfully.
+            try:
+                validation_results = _validate_simulation_output(df, metadata, clean_scales)
+            except Exception as _val_exc:
+                _log(f"Simulation validation failed (non-fatal): {_val_exc}", level="warning")
+                validation_results = {"passed": True, "errors": [], "warnings": [f"Validation error: {_val_exc}"]}
             st.session_state["_validation_results"] = validation_results
             # v1.0.6.7: Store validation warnings in session state for post-generation display
             # instead of showing them inline during generation (they flash and disappear).
@@ -13930,7 +13958,17 @@ if active_page == 3:
             metadata["run_audit_summary"] = run_audit_summary
             metadata["run_improvement_log"] = str(SIM_RUN_IMPROVEMENT_LOG)
 
-            zip_bytes = _bytes_to_zip(files)
+            # v1.2.2.1: Wrap zip creation in try/except — if zip fails, still save
+            # the raw DataFrame so the user can at least download the CSV.
+            try:
+                zip_bytes = _bytes_to_zip(files)
+            except Exception as _zip_exc:
+                _log(f"ZIP creation failed: {_zip_exc}", level="warning")
+                # Create minimal ZIP with just the CSV
+                try:
+                    zip_bytes = _bytes_to_zip({"Simulated_Data.csv": csv_bytes})
+                except Exception:
+                    zip_bytes = csv_bytes  # Last resort: raw CSV as download
 
             st.session_state["last_df"] = df
             st.session_state["last_zip"] = zip_bytes
@@ -14074,6 +14112,11 @@ if active_page == 3:
                 st.session_state["_llm_exhausted_step"] = 1
                 _navigate_to(3)  # calls st.rerun()
                 st.stop()  # safety: never fall through to generic error handler
+
+            # v1.2.2.1: Stop watchdog thread on ANY error, not just LLMExhausted.
+            # Without this, the old watchdog keeps running and could interfere
+            # with the next generation attempt (two watchdogs = race condition).
+            _generation_timed_out[0] = True
 
             import traceback as _tb
             error_tb = _tb.format_exc()
