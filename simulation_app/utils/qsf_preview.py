@@ -33,7 +33,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 # Version identifier to help track deployed code
-__version__ = "1.2.1.9"  # v1.2.1.9: Fix _log NameError, cap free LLM N=100, clean gen screen
+__version__ = "1.2.2.0"  # v1.2.2.0: Early save, emergency recovery, N-sync for LLM exhaustion resume
 
 
 # ============================================================================

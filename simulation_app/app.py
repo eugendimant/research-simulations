@@ -54,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.2.1.9"
-BUILD_ID = "20260313-v12019-fix-log-nameeerror-cap-llm-n100-clean-gen-ui"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.2.2.0"
+BUILD_ID = "20260313-v12020-harden-oe-generation-exhaustion-recovery"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -118,7 +118,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.2.1.9"  # v1.2.1.9: Fix _log NameError, cap free LLM N=100, clean gen screen, email method info
+APP_VERSION = "1.2.2.0"  # v1.2.2.0: Harden OE generation, early save, exhaustion resume N-sync, data recovery
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -12295,7 +12295,7 @@ if active_page == 3:
         for _stale_key in ("_llm_exhausted_resume", "_llm_exhausted_pending",
                            "_llm_exhausted_partial_data", "_llm_exhausted_completed_cols",
                            "_llm_exhausted_remaining_qs", "_llm_exhausted_engine_state",
-                           "_llm_exhausted_source_map"):
+                           "_llm_exhausted_source_map", "_llm_exhausted_actual_n"):
             st.session_state.pop(_stale_key, None)
         is_generating = False
         status_placeholder.empty()
@@ -12399,6 +12399,13 @@ if active_page == 3:
                     "Using the capped value for standardization."
                 )
             N = min(requested_n, MAX_SIMULATED_N)
+
+            # v1.2.2.0: If this is an LLM exhaustion resume, use the SAME N as the
+            # original run to ensure the AI column data (N rows) matches the new DataFrame.
+            _exhaustion_resume_n = st.session_state.get("_llm_exhausted_actual_n")
+            if st.session_state.get("_llm_exhausted_resume") and _exhaustion_resume_n:
+                N = _exhaustion_resume_n
+                _log(f"LLM exhaustion resume: using original N={N}", level="info")
 
             # v1.2.1.9: Cap free LLM generation at N=100 to prevent API exhaustion.
             # Free-tier providers have strict rate limits; large N causes token exhaustion
@@ -13292,6 +13299,13 @@ if active_page == 3:
             if metadata is None:
                 metadata = {}
 
+            # v1.2.2.0: EARLY SAVE — persist the raw DataFrame to session state
+            # IMMEDIATELY after generation, before any post-processing.
+            # If post-processing crashes (reports, email, validation, etc.), the
+            # user's data is still recoverable from session state.
+            st.session_state["_raw_generated_df"] = df
+            st.session_state["_raw_generated_metadata"] = metadata
+
             _gen_total_time = __import__('time').time() - _progress_start_time
             # v1.1.1.0: Signal watchdog thread to stop (it's a daemon, but be clean)
             _generation_timed_out[0] = True
@@ -13345,7 +13359,7 @@ if active_page == 3:
                                 "_llm_exhausted_step", "_llm_exhausted_choice",
                                 "_llm_exhausted_partial_data", "_llm_exhausted_completed_cols",
                                 "_llm_exhausted_remaining_qs", "_llm_exhausted_engine_state",
-                                "_llm_exhausted_source_map"):
+                                "_llm_exhausted_source_map", "_llm_exhausted_actual_n"):
                         st.session_state.pop(_ek, None)
 
             # v1.4.9: Inject LLM stats into metadata for the instructor report
@@ -14040,12 +14054,15 @@ if active_page == 3:
                 except Exception:
                     pass
                 # Store partial state for display in recovery UI
+                # v1.2.2.0: Also save the actual N used so resume generates the
+                # same number of participants (prevents length mismatch in merge).
                 try:
                     st.session_state["_llm_exhausted_partial_data"] = e.partial_data
                     st.session_state["_llm_exhausted_completed_cols"] = e.completed_oe_columns
                     st.session_state["_llm_exhausted_remaining_qs"] = e.remaining_questions
                     st.session_state["_llm_exhausted_engine_state"] = e.engine_state
                     st.session_state["_llm_exhausted_source_map"] = e.generation_source_map
+                    st.session_state["_llm_exhausted_actual_n"] = N  # Actual N used in first run
                 except AttributeError:
                     # Defensive: if exception attributes are missing, use safe defaults
                     st.session_state.setdefault("_llm_exhausted_partial_data", {})
@@ -14227,6 +14244,31 @@ if active_page == 3:
                             st.markdown(f"  - ... and {len(clean_scales) - 5} more scale(s)")
                 except Exception as _detail_err:
                     st.caption(f"Could not display full input summary: {_detail_err}")
+
+            # v1.2.2.0: If the data was generated successfully but post-processing
+            # crashed, offer the user an emergency CSV download so they don't lose data.
+            _recovery_df = st.session_state.get("_raw_generated_df")
+            if _recovery_df is not None and hasattr(_recovery_df, 'to_csv') and len(_recovery_df) > 0:
+                st.markdown(
+                    '<div style="background:#f0fdf4;border:1px solid #86efac;border-radius:10px;'
+                    'padding:16px;margin:12px 0;">'
+                    '<strong style="color:#166534;">Good news:</strong> '
+                    'Your data was generated successfully before the error occurred. '
+                    'Download it below while we fix the issue.</div>',
+                    unsafe_allow_html=True,
+                )
+                try:
+                    _recovery_csv = _recovery_df.to_csv(index=False)
+                    st.download_button(
+                        label="Download recovered data (CSV)",
+                        data=_recovery_csv,
+                        file_name="Simulated_Data_Recovery.csv",
+                        mime="text/csv",
+                        key="_recovery_download",
+                        type="primary",
+                    )
+                except Exception:
+                    pass  # Recovery download must never crash
 
             # v1.2.0.7: Add quick-switch recovery buttons to ALL error paths
             st.markdown("**Quick recovery — switch generation method:**")
