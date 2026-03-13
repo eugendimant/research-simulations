@@ -33,7 +33,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 # Version identifier to help track deployed code
-__version__ = "1.2.1.8"  # v1.2.1.8: SambaNova Llama 3.1→3.3 migration
+__version__ = "1.2.1.9"  # v1.2.1.9: Fix _log NameError, cap free LLM N=100, clean gen screen
 
 
 # ============================================================================

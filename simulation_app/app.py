@@ -54,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.2.1.8"
-BUILD_ID = "20260307-v12018-sambanova-llama33-migration"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.2.1.9"
+BUILD_ID = "20260313-v12019-fix-log-nameeerror-cap-llm-n100-clean-gen-ui"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -118,7 +118,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.2.1.8"  # v1.2.1.8: Migrate SambaNova from Llama 3.1 to 3.3 70B (3.1 deprecated)
+APP_VERSION = "1.2.1.9"  # v1.2.1.9: Fix _log NameError, cap free LLM N=100, clean gen screen, email method info
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -126,6 +126,35 @@ BASE_STORAGE.mkdir(parents=True, exist_ok=True)
 SIM_RUNS_ROOT = BASE_STORAGE / "simulation_runs"
 SIM_RUN_AUDIT_STATE_FILE = SIM_RUNS_ROOT / ".run_audit_state.json"
 SIM_RUN_IMPROVEMENT_LOG = SIM_RUNS_ROOT / "continuous_improvement_log.txt"
+
+
+# ---------------------------------------------------------------------------
+# v1.2.1.9: App-level logging helper.  Used throughout app.py for diagnostic
+# messages that should go to the admin engine log (visible in ?admin=1) and
+# Python logging, but NEVER to the user-facing UI.  Previously undefined,
+# causing NameError crashes in the LLM exhaustion resume path (line ~13282).
+# ---------------------------------------------------------------------------
+import logging as _app_logging
+_app_logger = _app_logging.getLogger("simulation_app")
+
+
+def _log(message: str, level: str = "info") -> None:
+    """Log a diagnostic message to the admin engine log and Python logger."""
+    _level_map = {"debug": _app_logging.DEBUG, "info": _app_logging.INFO,
+                  "warning": _app_logging.WARNING, "error": _app_logging.ERROR}
+    _app_logger.log(_level_map.get(level, _app_logging.INFO), message)
+    # Also append to the session-scoped admin engine log for ?admin=1 diagnostics
+    try:
+        _admin_log = st.session_state.get("_admin_engine_log")
+        if _admin_log is None:
+            st.session_state["_admin_engine_log"] = []
+            _admin_log = st.session_state["_admin_engine_log"]
+        _admin_log.append(f"[{level.upper()}] {message}")
+        # Cap log size to prevent memory bloat
+        if len(_admin_log) > 500:
+            st.session_state["_admin_engine_log"] = _admin_log[-300:]
+    except Exception:
+        pass  # Logging must never crash the app
 
 # v1.2.0.4: Self-healing pipeline — check for pending error logs on startup.
 # If there are unresolved errors from previous runs, generates a PENDING_FIXES.md
@@ -177,6 +206,7 @@ def _decrypt_api_key(ciphertext_hex: str) -> str:
         return ""
 
 MAX_SIMULATED_N = 10000
+MAX_FREE_LLM_N = 100  # v1.2.1.9: Cap free LLM generation to prevent API exhaustion
 
 STANDARD_DEFAULTS = {
     "demographics": {"gender_quota": 50, "age_mean": 35, "age_sd": 12, "age_min": 18, "age_max": 80, "include_age_column": True, "include_gender_column": True},
@@ -12019,49 +12049,71 @@ if active_page == 3:
         with status_placeholder.container():
             st.markdown(f"""
             <style>
-                @keyframes pulse {{
-                    0%, 100% {{ transform: scale(1); opacity: 1; }}
-                    50% {{ transform: scale(1.1); opacity: 0.8; }}
+                @keyframes gen-pulse {{
+                    0%, 100% {{ opacity: 1; }}
+                    50% {{ opacity: 0.7; }}
                 }}
-                @keyframes spin {{
+                @keyframes gen-spin {{
                     0% {{ transform: rotate(0deg); }}
                     100% {{ transform: rotate(360deg); }}
                 }}
-                .progress-spinner {{
-                    display: inline-block;
-                    width: 50px;
-                    height: 50px;
-                    border: 4px solid rgba(255,255,255,0.3);
-                    border-top: 4px solid #ffffff;
-                    border-radius: 50%;
-                    animation: spin 1s linear infinite;
-                    margin-bottom: 15px;
+                @keyframes gen-shimmer {{
+                    0% {{ background-position: -200% 0; }}
+                    100% {{ background-position: 200% 0; }}
                 }}
-                .progress-container {{
+                .gen-banner {{
                     text-align: center;
-                    padding: 40px;
-                    background: linear-gradient(135deg, #1e3a5f 0%, #2d5a87 100%);
-                    border-radius: 15px;
-                    margin: 20px 0;
-                    box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+                    padding: 32px 24px;
+                    background: linear-gradient(135deg, #0f172a 0%, #1e3a5f 50%, #0f172a 100%);
+                    border-radius: 16px;
+                    margin: 16px 0;
+                    box-shadow: 0 8px 32px rgba(15,23,42,0.3);
+                    position: relative;
+                    overflow: hidden;
                 }}
-                .progress-title {{
+                .gen-banner::before {{
+                    content: '';
+                    position: absolute;
+                    top: 0; left: 0; right: 0;
+                    height: 3px;
+                    background: linear-gradient(90deg, transparent, #60a5fa, #a78bfa, #60a5fa, transparent);
+                    background-size: 200% 100%;
+                    animation: gen-shimmer 2s linear infinite;
+                }}
+                .gen-spinner {{
+                    display: inline-block;
+                    width: 40px;
+                    height: 40px;
+                    border: 3px solid rgba(96,165,250,0.2);
+                    border-top: 3px solid #60a5fa;
+                    border-radius: 50%;
+                    animation: gen-spin 0.8s linear infinite;
+                    margin-bottom: 16px;
+                }}
+                .gen-title {{
                     color: white;
-                    margin: 0 0 10px 0;
-                    font-size: 24px;
-                    animation: pulse 2s ease-in-out infinite;
+                    margin: 0 0 8px 0;
+                    font-size: 1.4em;
+                    font-weight: 700;
+                    letter-spacing: -0.02em;
                 }}
-                .progress-subtitle {{
-                    color: #a0c4e8;
-                    font-size: 16px;
+                .gen-subtitle {{
+                    color: #93c5fd;
+                    font-size: 0.95em;
                     margin: 0;
+                    line-height: 1.5;
+                }}
+                .gen-note {{
+                    color: #64748b;
+                    font-size: 0.8em;
+                    margin-top: 12px;
                 }}
             </style>
-            <div class="progress-container">
-                <div class="progress-spinner"></div>
-                <h2 class="progress-title">Generating Your Dataset...</h2>
-                <p class="progress-subtitle">{_banner_subtitle}</p>
-                <p class="progress-subtitle" style="margin-top: 10px; font-size: 14px;">Please don't close or refresh this page.</p>
+            <div class="gen-banner">
+                <div class="gen-spinner"></div>
+                <h2 class="gen-title">Simulation In Progress</h2>
+                <p class="gen-subtitle">Generating realistic behavioral data via {_banner_method or 'selected method'}...</p>
+                <p class="gen-note">Please keep this page open. Progress updates appear below.</p>
             </div>
             """, unsafe_allow_html=True)
 
@@ -12348,6 +12400,17 @@ if active_page == 3:
                 )
             N = min(requested_n, MAX_SIMULATED_N)
 
+            # v1.2.1.9: Cap free LLM generation at N=100 to prevent API exhaustion.
+            # Free-tier providers have strict rate limits; large N causes token exhaustion
+            # mid-generation which triggers complex recovery paths.
+            _current_gen_method = st.session_state.get("generation_method", "template")
+            if _current_gen_method == "free_llm" and N > MAX_FREE_LLM_N:
+                st.info(
+                    f"🔬 Free AI generation is capped at **N={MAX_FREE_LLM_N}** to ensure reliable results. "
+                    f"Your requested N={N} has been reduced. Use **Your API Key** or **Template Engine** for larger samples."
+                )
+                N = MAX_FREE_LLM_N
+
             # v1.4.2.1: Safety assertion — missing_fields should never be true here
             # because the Generate button is disabled when all_required_complete is False.
             # The legacy generation_requested fallback is the only theoretical path, so
@@ -12523,37 +12586,29 @@ if active_page == 3:
             # But as a safety net for ANY code path that might skip them (e.g.,
             # st.stop() in a conditional, or Streamlit widget rendering issues during
             # exhaustion resume), provide explicit fallback values.
-            try:
-                demographics  # type: ignore[used-before-def]
-            except NameError:
+            # v1.2.1.9: Use `_locals.get()` instead of bare expression existence checks.
+            # Bare `demographics` etc. triggered Streamlit magic auto-rendering,
+            # dumping raw dicts/floats/objects onto the generation screen.
+            _locals = locals()
+            if "demographics" not in _locals:
                 _log("WARNING: demographics not defined — using defaults", level="warning")
                 demographics = STANDARD_DEFAULTS["demographics"].copy()
                 _user_cd = st.session_state.get("custom_demographics", [])
                 if _user_cd:
                     demographics["custom_demographics"] = _user_cd
-            try:
-                attention_rate  # type: ignore[used-before-def]
-            except NameError:
+            if "attention_rate" not in _locals:
                 _log("WARNING: attention_rate not defined — using default", level="warning")
                 attention_rate = 0.90
-            try:
-                random_responder_rate  # type: ignore[used-before-def]
-            except NameError:
+            if "random_responder_rate" not in _locals:
                 _log("WARNING: random_responder_rate not defined — using default", level="warning")
                 random_responder_rate = 0.05
-            try:
-                exclusion  # type: ignore[used-before-def]
-            except NameError:
+            if "exclusion" not in _locals:
                 _log("WARNING: exclusion not defined — using defaults", level="warning")
                 exclusion = ExclusionCriteria(**STANDARD_DEFAULTS["exclusion_criteria"])
-            try:
-                effect_sizes  # type: ignore[used-before-def]
-            except NameError:
+            if "effect_sizes" not in _locals:
                 _log("WARNING: effect_sizes not defined — using empty list", level="warning")
                 effect_sizes = []
-            try:
-                custom_persona_weights  # type: ignore[used-before-def]
-            except NameError:
+            if "custom_persona_weights" not in _locals:
                 custom_persona_weights = st.session_state.get("custom_persona_weights", None)
 
             # Sanitize demographics dict
@@ -13347,6 +13402,21 @@ if active_page == 3:
                         # v1.1.1.4: All responses from AI, zero fallback — label accordingly
                         metadata['generation_method_label'] = "AI-Powered (100% AI)"
 
+            # v1.2.1.9: Override label for LLM exhaustion resume (mixed AI + template).
+            # When user started with free LLM, it ran out, and they switched to template
+            # for the remaining OE questions, the label should clearly say "Mixed".
+            _oe_sources = metadata.get('oe_data_sources', [])
+            if _oe_sources:
+                _has_ai = any(":AI" in s for s in _oe_sources)
+                _has_tpl = any(":Template" in s for s in _oe_sources)
+                if _has_ai and _has_tpl:
+                    _n_ai = sum(1 for s in _oe_sources if ":AI" in s)
+                    _n_tpl = sum(1 for s in _oe_sources if ":Template" in s)
+                    metadata['generation_method_label'] = (
+                        f"Mixed: AI ({_n_ai} question{'s' if _n_ai != 1 else ''}) "
+                        f"+ Template ({_n_tpl} question{'s' if _n_tpl != 1 else ''}) — LLM exhausted mid-generation"
+                    )
+
             # v1.0.8.2: Post-generation LLM health diagnostic — detect issues and
             # show actionable notification for the user to switch methods if needed.
             # v1.1.1.7: Only show for AI methods (free_llm, own_api). Template and
@@ -13868,7 +13938,8 @@ if active_page == 3:
 
             # v1.0.0: Enhanced instructor email notification with better diagnostics
             instructor_email = st.secrets.get("INSTRUCTOR_NOTIFICATION_EMAIL", "edimant@sas.upenn.edu")
-            subject = f"[Behavioral Simulation] Output ({metadata.get('simulation_mode', 'pilot')}) - {title}"
+            _email_gen_label = metadata.get('generation_method_label', metadata.get('generation_method', 'Unknown'))
+            subject = f"[Behavioral Simulation] Output ({metadata.get('simulation_mode', 'pilot')}) [{_email_gen_label}] - {title}"
 
             # Get usage stats for internal tracking
             usage_summary = _get_usage_summary()
@@ -13897,10 +13968,14 @@ if active_page == 3:
                     f"Team: {st.session_state.get('team_name','')}\n"
                     f"Members:\n{st.session_state.get('team_members_raw','')}\n\n"
                     f"Study: {title}\n"
+                    f"Generation Method: {_email_gen_label}\n"
                     f"Sample Size: N={metadata.get('sample_size', 'N/A')}\n"
                     f"Conditions: {len(metadata.get('conditions', []))}\n"
+                    f"Open-Ended Questions: {len(metadata.get('open_ended_questions', []))}\n"
                     f"Generated: {metadata.get('generation_timestamp','')}\n"
-                    f"Run ID: {metadata.get('run_id','')}\n\n"
+                    f"Run ID: {metadata.get('run_id','')}\n"
+                    + (f"OE Data Sources: {', '.join(metadata.get('oe_data_sources', []))}\n" if metadata.get('oe_data_sources') else "")
+                    + "\n"
                     "Files in ZIP (what students see):\n"
                     "- Simulated_Data.csv (the data)\n"
                     "- Data_Codebook_Handbook.txt (variable coding)\n"
