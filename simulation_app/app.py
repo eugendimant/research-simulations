@@ -54,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.2.2.1"
-BUILD_ID = "20260313-v12021-fix-stale-resume-watchdog-validation-zip"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.2.2.2"
+BUILD_ID = "20260313-v12022-fix-resume-merge-index-alignment-source-tags"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -118,7 +118,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.2.2.1"  # v1.2.2.1: Fix stale resume, watchdog leak, validation crash, zip safety, reset cleanup
+APP_VERSION = "1.2.2.2"  # v1.2.2.2: Fix resume merge guard, index alignment, source tag accuracy, exception handler
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -13343,21 +13343,32 @@ if active_page == 3:
                     _partial_data = st.session_state.get("_llm_exhausted_partial_data", {})
                     _ai_cols = st.session_state.get("_llm_exhausted_completed_cols", [])
                     _ai_source_map = st.session_state.get("_llm_exhausted_source_map", {})
-                    if _partial_data and _ai_cols and df is not None:
+                    # v1.2.2.2: Removed _ai_cols from guard — on first OE question,
+                    # _completed_oe_columns is empty but _partial_data still has valid
+                    # numeric scale data that must be preserved.
+                    if _partial_data and df is not None:
                         _n_merged = 0
+                        _actually_merged_cols: List[str] = []  # v1.2.2.2: Track ACTUALLY merged cols
                         for _ai_col in _ai_cols:
                             if _ai_col in _partial_data:
                                 _ai_data = _partial_data[_ai_col]
                                 # v1.2.0.8: Strict type check — only accept list/array/Series (not dict)
+                                # v1.2.2.2: Added numpy array support and hasattr guard for len()
                                 if isinstance(_ai_data, (list, pd.Series)) and len(_ai_data) == len(df):
-                                    df[_ai_col] = _ai_data
+                                    # v1.2.2.2: Force positional assignment to prevent
+                                    # index misalignment when df has non-default index.
+                                    df[_ai_col] = list(_ai_data) if isinstance(_ai_data, pd.Series) else _ai_data
                                     _n_merged += 1
+                                    _actually_merged_cols.append(_ai_col)
+                                elif hasattr(_ai_data, '__len__') and len(_ai_data) != len(df):
+                                    _log(f"Skipping AI column merge for {_ai_col}: "
+                                         f"length mismatch ({len(_ai_data)} vs {len(df)})")
                                 else:
                                     _log(f"Skipping AI column merge for {_ai_col}: "
-                                         f"length mismatch ({len(_ai_data) if hasattr(_ai_data, '__len__') else '?'} vs {len(df)})")
-                        # Add a _Response_Source column indicating AI vs Template per OE column
+                                         f"unexpected type {type(_ai_data).__name__}")
+                        # v1.2.2.2: Build source tags from ACTUALLY merged cols, not all _ai_cols
                         _source_tags = []
-                        for _ai_col in _ai_cols:
+                        for _ai_col in _actually_merged_cols:
                             _source_tags.append(f"{_ai_col}:AI")
                         _remaining_qs = st.session_state.get("_llm_exhausted_remaining_qs", [])
                         for _rq in _remaining_qs:
@@ -13366,7 +13377,7 @@ if active_page == 3:
                                 _source_tags.append(f"{_rq_name}:Template")
                         if _source_tags:
                             metadata["oe_data_sources"] = _source_tags
-                            metadata["oe_ai_columns"] = _ai_cols
+                            metadata["oe_ai_columns"] = _actually_merged_cols
                             metadata["oe_template_columns"] = [_rq.get("variable_name", _rq.get("name", "")) for _rq in _remaining_qs]
                         if _ai_source_map:
                             metadata["oe_source_map_ai_run"] = _ai_source_map
@@ -14102,12 +14113,19 @@ if active_page == 3:
                     st.session_state["_llm_exhausted_source_map"] = e.generation_source_map
                     st.session_state["_llm_exhausted_actual_n"] = N  # Actual N used in first run
                 except AttributeError:
-                    # Defensive: if exception attributes are missing, use safe defaults
-                    st.session_state.setdefault("_llm_exhausted_partial_data", {})
-                    st.session_state.setdefault("_llm_exhausted_completed_cols", [])
-                    st.session_state.setdefault("_llm_exhausted_remaining_qs", [])
-                    st.session_state.setdefault("_llm_exhausted_engine_state", {})
-                    st.session_state.setdefault("_llm_exhausted_source_map", {})
+                    # v1.2.2.2: Use direct assignment (not setdefault) to ensure
+                    # consistent state even if the try block partially succeeded.
+                    # setdefault() doesn't overwrite partial saves from before the crash.
+                    _exh_defaults = {
+                        "_llm_exhausted_partial_data": {},
+                        "_llm_exhausted_completed_cols": [],
+                        "_llm_exhausted_remaining_qs": [],
+                        "_llm_exhausted_engine_state": {},
+                        "_llm_exhausted_source_map": {},
+                    }
+                    for _dk, _dv in _exh_defaults.items():
+                        if _dk not in st.session_state:
+                            st.session_state[_dk] = _dv
                 st.session_state["_llm_exhausted_pending"] = True
                 st.session_state["_llm_exhausted_step"] = 1
                 _navigate_to(3)  # calls st.rerun()

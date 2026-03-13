@@ -33,7 +33,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 # Version identifier to help track deployed code
-__version__ = "1.2.2.1"  # v1.2.2.1: Fix stale resume, watchdog leak, validation crash, zip safety
+__version__ = "1.2.2.2"  # v1.2.2.2: Fix resume merge guard, index alignment, source tag accuracy
 
 
 # ============================================================================
