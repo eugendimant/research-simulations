@@ -54,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.2.2.3"
-BUILD_ID = "20260313-v12023-fix-oe-duplicate-detection-source-map-numpy"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.2.2.4"
+BUILD_ID = "20260313-v12024-fix-source-na-stale-exhaustion-cleanup"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -118,7 +118,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.2.2.3"  # v1.2.2.3: Fix OE duplicate detection, source map filter, numpy array merge
+APP_VERSION = "1.2.2.4"  # v1.2.2.4: Fix N/A source label, stale exhaustion cleanup, generation source accuracy
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -12403,6 +12403,17 @@ if active_page == 3:
         # PREVIOUS successful run, misleading the user.
         st.session_state.pop("_raw_generated_df", None)
         st.session_state.pop("_raw_generated_metadata", None)
+        # v1.2.2.4: Clear stale exhaustion data UNLESS this IS a resume run.
+        # Without this, a user who ignores the recovery UI, goes back to Design,
+        # changes settings, and re-generates would have stale partial_data in
+        # session state.  The merge guard (_llm_exhausted_resume) would prevent
+        # actual corruption, but clearing eagerly is defensive best practice.
+        if not st.session_state.get("_llm_exhausted_resume"):
+            for _stale_exh_key in ("_llm_exhausted_pending", "_llm_exhausted_partial_data",
+                                   "_llm_exhausted_completed_cols", "_llm_exhausted_remaining_qs",
+                                   "_llm_exhausted_engine_state", "_llm_exhausted_source_map",
+                                   "_llm_exhausted_actual_n"):
+                st.session_state.pop(_stale_exh_key, None)
 
         try:
             # v1.0.1.5: Use _p_ persist fallback — widget keys may not survive cross-page navigation

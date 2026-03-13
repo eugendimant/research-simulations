@@ -11488,8 +11488,13 @@ class EnhancedSimulationEngine:
                 for _src_col in _completed_oe_columns:
                     _src_list = _generation_source_map.get(_src_col, [])
                     if _pi < len(_src_list):
+                        # v1.2.2.4: Skip "N/A" entries (invisible questions) so they
+                        # don't inflate Template count and corrupt the source label.
+                        _src_val = _src_list[_pi]
+                        if _src_val == "N/A":
+                            continue
                         _total_count += 1
-                        if _src_list[_pi] == "AI":
+                        if _src_val == "AI":
                             _ai_count += 1
                 if _total_count == 0:
                     _per_participant_source.append("Template")
