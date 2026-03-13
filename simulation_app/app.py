@@ -54,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.2.2.5"
-BUILD_ID = "20260313-v12025-fix-instructor-report-persistent-admin-counter"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.2.2.6"
+BUILD_ID = "20260313-v12026-remove-retry-builtin-ai-from-exhaustion-dialog"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -118,7 +118,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.2.2.5"  # v1.2.2.5: Fix instructor report llm_attempts NameError, persistent admin counter
+APP_VERSION = "1.2.2.6"  # v1.2.2.6: Remove retry built-in AI from exhaustion dialog
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -12273,7 +12273,8 @@ if active_page == 3:
             f'open-ended question(s). '
             f'<strong>{_n_remaining}</strong> question(s) still need responses.</span>'
             '<div style="margin-top:12px;color:#7C2D12;font-size:0.88em;">'
-            'Choose how to continue. Already-generated AI responses will be preserved.</div>'
+            'Choose an alternative method below to complete the remaining questions. '
+            'Already-generated AI responses will be preserved.</div>'
             '</div>',
             unsafe_allow_html=True,
         )
@@ -12305,23 +12306,18 @@ if active_page == 3:
                 st.session_state["generation_requested"] = False
             _navigate_to(3)
 
-        _exh_c1, _exh_c2, _exh_c3, _exh_c4 = st.columns(4)
+        _exh_c1, _exh_c2, _exh_c3 = st.columns(3)
         with _exh_c1:
-            if st.button("Retry Built-in AI", key="_exh_retry_llm",
-                         type="primary", use_container_width=True,
-                         help="Re-try with the free AI providers (they may have recovered)"):
-                _exh_resume("free_llm", False, False, True, is_resume=False)
-        with _exh_c2:
             if st.button("Use my API key", key="_exh_use_api_key",
-                         type="secondary", use_container_width=True,
-                         help="Enter your own Groq / Google AI key (free tier available)"):
+                         type="primary", use_container_width=True,
+                         help="Enter your own Groq / Google AI key (free tier available) — most reliable option"):
                 _exh_resume("own_api", False, False, False, is_resume=False)
-        with _exh_c3:
+        with _exh_c2:
             if st.button("Template Engine", key="_exh_use_template",
                          type="secondary", use_container_width=True,
                          help="225+ domains, 58 personas, instant generation"):
                 _exh_resume("template", True, False, True)
-        with _exh_c4:
+        with _exh_c3:
             if st.button("Adaptive Engine", key="_exh_use_experimental",
                          type="secondary", use_container_width=True,
                          help="60+ archetypes, 30+ paradigms, literature-calibrated effects"):
