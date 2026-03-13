@@ -54,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.2.2.6"
-BUILD_ID = "20260313-v12026-remove-retry-builtin-ai-from-exhaustion-dialog"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.2.2.7"
+BUILD_ID = "20260313-v12027-free-llm-n100-cap-dialog"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -118,7 +118,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.2.2.6"  # v1.2.2.6: Remove retry built-in AI from exhaustion dialog
+APP_VERSION = "1.2.2.7"  # v1.2.2.6: Remove retry built-in AI from exhaustion dialog
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -11808,7 +11808,7 @@ if active_page == 3:
                     "Free-tier AI models (Google AI, Groq, Cerebras, SambaNova, Mistral, OpenRouter)",
                     "Behavioral coherence: text matches each participant's ratings",
                     "Auto-failover across 7 providers for reliability",
-                    "Note: shared free-tier — speed varies with server load",
+                    f"Capped at N={MAX_FREE_LLM_N} (use Your API Key for larger samples)",
                 ],
                 "info_tooltip": "",
             },
@@ -12340,7 +12340,74 @@ if active_page == 3:
         if not _llm_available_now and not _allow_final_fallback and not _has_user_key:
             _llm_gate_block = True
 
-    can_generate = all_required_complete and not is_generating and not has_generated and not _preflight_errors and not _llm_gate_block
+    # v1.2.2.7: Pre-generation N > 100 cap dialog for free LLM.
+    # Instead of silently reducing N mid-generation, BLOCK generation and
+    # let the user choose: proceed with N=100, or switch to another method.
+    _free_llm_cap_block = False
+    _current_N = st.session_state.get("sample_size", 200)
+    _current_gen_method = st.session_state.get("generation_method", "template")
+    if (_current_gen_method == "free_llm" and _current_N > MAX_FREE_LLM_N
+            and not is_generating and not has_generated
+            and not st.session_state.get("_llm_exhausted_pending")
+            and _has_open_ended):
+        _free_llm_cap_block = True
+        st.markdown(
+            '<div style="background:linear-gradient(135deg, #EFF6FF 0%, #DBEAFE 100%);'
+            'border:1px solid #93C5FD;border-radius:12px;padding:20px 24px;margin:12px 0;'
+            'box-shadow:0 1px 3px rgba(0,0,0,0.06);">'
+            '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">'
+            '<span style="font-size:1.2em;">&#128300;</span>'
+            '<span style="font-size:1.05em;font-weight:700;color:#1E40AF;">'
+            f'Free AI generation is capped at N={MAX_FREE_LLM_N}</span></div>'
+            f'<span style="color:#1E3A5F;font-size:0.88em;line-height:1.5;">'
+            f'Your requested sample size is <strong>N={_current_N}</strong>, but free AI providers '
+            f'have shared rate limits that reliably support up to <strong>N={MAX_FREE_LLM_N}</strong>. '
+            f'Choose how to proceed:</span>'
+            '</div>',
+            unsafe_allow_html=True,
+        )
+        _cap_c1, _cap_c2, _cap_c3, _cap_c4 = st.columns(4)
+        with _cap_c1:
+            if st.button(
+                f"Proceed with N={MAX_FREE_LLM_N}",
+                key="_cap_proceed_reduced",
+                type="primary", use_container_width=True,
+                help=f"Generate {MAX_FREE_LLM_N} participants using free AI providers",
+            ):
+                st.session_state["sample_size"] = MAX_FREE_LLM_N
+                _navigate_to(3)
+        with _cap_c2:
+            if st.button(
+                "Use my API key",
+                key="_cap_switch_api",
+                type="secondary", use_container_width=True,
+                help=f"Use your own API key for the full N={_current_N} — free keys available from Google AI, Groq, etc.",
+            ):
+                st.session_state["generation_method"] = "own_api"
+                _navigate_to(3)
+        with _cap_c3:
+            if st.button(
+                "Template Engine",
+                key="_cap_switch_template",
+                type="secondary", use_container_width=True,
+                help=f"Instant generation for the full N={_current_N} — 225+ domains, no API needed",
+            ):
+                st.session_state["generation_method"] = "template"
+                st.session_state["allow_template_fallback_once"] = True
+                _navigate_to(3)
+        with _cap_c4:
+            if st.button(
+                "Adaptive Engine",
+                key="_cap_switch_experimental",
+                type="secondary", use_container_width=True,
+                help=f"Behavioral engine for the full N={_current_N} — 60+ archetypes, no API needed",
+            ):
+                st.session_state["generation_method"] = "experimental"
+                st.session_state["allow_template_fallback_once"] = True
+                st.session_state["_use_socsim_experimental"] = True
+                _navigate_to(3)
+
+    can_generate = all_required_complete and not is_generating and not has_generated and not _preflight_errors and not _llm_gate_block and not _free_llm_cap_block
 
     # v1.0.9.1: Generate button — refined sizing, not full-width
     if is_generating:
