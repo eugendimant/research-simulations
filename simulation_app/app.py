@@ -54,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.2.2.7"
-BUILD_ID = "20260313-v12027-free-llm-n100-cap-dialog"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.2.2.8"
+BUILD_ID = "20260314-v12028-oe-specific-free-llm-cap"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -118,7 +118,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.2.2.7"  # v1.2.2.6: Remove retry built-in AI from exhaustion dialog
+APP_VERSION = "1.2.2.8"  # v1.2.2.8: OE-specific free LLM cap, keep full N for numeric
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -6161,6 +6161,8 @@ def _reset_generation_state() -> None:
                       "_llm_exhausted_engine_state", "_llm_exhausted_source_map",
                       "_llm_exhausted_resume", "_llm_exhausted_actual_n"):
         st.session_state.pop(_exh_key, None)
+    # v1.2.2.8: Clear free LLM OE cap acceptance flag
+    st.session_state.pop("_free_llm_oe_cap_accepted", None)
 
 
 def _navigate_to(page_index: int) -> None:
@@ -12340,17 +12342,23 @@ if active_page == 3:
         if not _llm_available_now and not _allow_final_fallback and not _has_user_key:
             _llm_gate_block = True
 
-    # v1.2.2.7: Pre-generation N > 100 cap dialog for free LLM.
-    # Instead of silently reducing N mid-generation, BLOCK generation and
-    # let the user choose: proceed with N=100, or switch to another method.
+    # v1.2.2.8: Pre-generation free LLM OE cap dialog.
+    # When N > 100 and using free LLM with open-ended questions, inform user
+    # that AI will generate OE responses for the first 100 participants and
+    # the rest will use template fallback.  The user can alternatively switch
+    # to one of 3 other methods for the FULL sample at full AI quality.
+    # The dialog does NOT block generation — "Proceed" keeps full N and uses
+    # the engine-level free_llm_oe_cap to cap LLM at 100 OE participants.
     _free_llm_cap_block = False
     _current_N = st.session_state.get("sample_size", 200)
     _current_gen_method = st.session_state.get("generation_method", "template")
     if (_current_gen_method == "free_llm" and _current_N > MAX_FREE_LLM_N
             and not is_generating and not has_generated
             and not st.session_state.get("_llm_exhausted_pending")
-            and _has_open_ended):
+            and _has_open_ended
+            and not st.session_state.get("_free_llm_oe_cap_accepted")):
         _free_llm_cap_block = True
+        _remaining_N = _current_N - MAX_FREE_LLM_N
         st.markdown(
             '<div style="background:linear-gradient(135deg, #EFF6FF 0%, #DBEAFE 100%);'
             'border:1px solid #93C5FD;border-radius:12px;padding:20px 24px;margin:12px 0;'
@@ -12358,53 +12366,65 @@ if active_page == 3:
             '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">'
             '<span style="font-size:1.2em;">&#128300;</span>'
             '<span style="font-size:1.05em;font-weight:700;color:#1E40AF;">'
-            f'Free AI generation is capped at N={MAX_FREE_LLM_N}</span></div>'
+            f'Free AI: open-ended responses capped at {MAX_FREE_LLM_N} participants</span></div>'
             f'<span style="color:#1E3A5F;font-size:0.88em;line-height:1.5;">'
-            f'Your requested sample size is <strong>N={_current_N}</strong>, but free AI providers '
-            f'have shared rate limits that reliably support up to <strong>N={MAX_FREE_LLM_N}</strong>. '
-            f'Choose how to proceed:</span>'
+            f'Your sample is <strong>N={_current_N}</strong>. Free AI providers have shared rate '
+            f'limits, so open-ended text responses will be AI-generated for the first '
+            f'<strong>{MAX_FREE_LLM_N}</strong> participants. The remaining '
+            f'<strong>{_remaining_N}</strong> participants will receive template-generated '
+            f'open-ended responses. All <strong>{_current_N}</strong> participants get full '
+            f'numeric scale data regardless.</span>'
+            '<div style="margin-top:10px;color:#1E3A5F;font-size:0.88em;">'
+            'You can proceed, or choose an alternative method for <strong>all</strong> '
+            f'{_current_N} participants:</div>'
             '</div>',
             unsafe_allow_html=True,
         )
         _cap_c1, _cap_c2, _cap_c3, _cap_c4 = st.columns(4)
         with _cap_c1:
             if st.button(
-                f"Proceed with N={MAX_FREE_LLM_N}",
-                key="_cap_proceed_reduced",
+                f"Proceed (AI for {MAX_FREE_LLM_N}, template for rest)",
+                key="_cap_proceed_with_cap",
                 type="primary", use_container_width=True,
-                help=f"Generate {MAX_FREE_LLM_N} participants using free AI providers",
+                help=(f"Generate all {_current_N} participants — AI writes open-ended "
+                      f"responses for the first {MAX_FREE_LLM_N}, template engine "
+                      f"writes the remaining {_remaining_N}"),
             ):
-                st.session_state["sample_size"] = MAX_FREE_LLM_N
+                st.session_state["_free_llm_oe_cap_accepted"] = True
+                st.session_state["allow_template_fallback_once"] = True
                 _navigate_to(3)
         with _cap_c2:
             if st.button(
                 "Use my API key",
                 key="_cap_switch_api",
                 type="secondary", use_container_width=True,
-                help=f"Use your own API key for the full N={_current_N} — free keys available from Google AI, Groq, etc.",
+                help=f"Use your own API key for AI on all {_current_N} — free keys available from Google AI, Groq, etc.",
             ):
                 st.session_state["generation_method"] = "own_api"
+                st.session_state.pop("_free_llm_oe_cap_accepted", None)
                 _navigate_to(3)
         with _cap_c3:
             if st.button(
                 "Template Engine",
                 key="_cap_switch_template",
                 type="secondary", use_container_width=True,
-                help=f"Instant generation for the full N={_current_N} — 225+ domains, no API needed",
+                help=f"Instant generation for all {_current_N} — 225+ domains, no API needed",
             ):
                 st.session_state["generation_method"] = "template"
                 st.session_state["allow_template_fallback_once"] = True
+                st.session_state.pop("_free_llm_oe_cap_accepted", None)
                 _navigate_to(3)
         with _cap_c4:
             if st.button(
                 "Adaptive Engine",
                 key="_cap_switch_experimental",
                 type="secondary", use_container_width=True,
-                help=f"Behavioral engine for the full N={_current_N} — 60+ archetypes, no API needed",
+                help=f"Behavioral engine for all {_current_N} — 60+ archetypes, no API needed",
             ):
                 st.session_state["generation_method"] = "experimental"
                 st.session_state["allow_template_fallback_once"] = True
                 st.session_state["_use_socsim_experimental"] = True
+                st.session_state.pop("_free_llm_oe_cap_accepted", None)
                 _navigate_to(3)
 
     can_generate = all_required_complete and not is_generating and not has_generated and not _preflight_errors and not _llm_gate_block and not _free_llm_cap_block
@@ -12610,16 +12630,19 @@ if active_page == 3:
                     pass  # Keep the already-computed N if session state was corrupted
                 _log(f"LLM exhaustion resume: using original N={N}", level="info")
 
-            # v1.2.1.9: Cap free LLM generation at N=100 to prevent API exhaustion.
-            # Free-tier providers have strict rate limits; large N causes token exhaustion
-            # mid-generation which triggers complex recovery paths.
+            # v1.2.2.8: Determine free LLM OE cap. Instead of reducing N (which
+            # also reduces numeric scale data), pass an OE-specific cap to the engine.
+            # The engine generates full N for numeric scales but limits LLM to
+            # MAX_FREE_LLM_N OE responses per question — template fallback for the rest.
             _current_gen_method = st.session_state.get("generation_method", "template")
+            _free_llm_oe_cap = 0  # 0 = no cap
             if _current_gen_method == "free_llm" and N > MAX_FREE_LLM_N:
-                st.info(
-                    f"🔬 Free AI generation is capped at **N={MAX_FREE_LLM_N}** to ensure reliable results. "
-                    f"Your requested N={N} has been reduced. Use **Your API Key** or **Template Engine** for larger samples."
+                _free_llm_oe_cap = MAX_FREE_LLM_N
+                _log(
+                    f"Free LLM OE cap active: LLM will generate OE for first "
+                    f"{MAX_FREE_LLM_N} participants, template for remaining {N - MAX_FREE_LLM_N}",
+                    level="info",
                 )
-                N = MAX_FREE_LLM_N
 
             # v1.4.2.1: Safety assertion — missing_fields should never be true here
             # because the Generate button is disabled when all_required_complete is False.
@@ -13105,6 +13128,18 @@ if active_page == 3:
                             f'&#10003; All {total} participants generated</span></div>',
                             unsafe_allow_html=True,
                         )
+                    elif phase == "oe_cap_reached":
+                        # v1.2.2.8: Free LLM OE cap was reached — inform the user live
+                        _progress_counter_placeholder.markdown(
+                            f'<div style="text-align:center;padding:12px;background:#fffbeb;'
+                            f'border:1px solid #fde68a;border-radius:8px;margin:8px 0;">'
+                            f'<span style="font-size:1.05em;font-weight:600;color:#92400e;">'
+                            f'Free AI cap reached ({current} responses) — '
+                            f'using template engine for remaining participants</span>'
+                            f'<div style="font-size:0.8em;color:#78716c;margin-top:4px;">'
+                            f'Elapsed: {_fmt_elapsed(_elapsed)}</div></div>',
+                            unsafe_allow_html=True,
+                        )
                     else:
                         # v1.1.1.4: Fallback for unrecognized phases — always show progress
                         _pct_f = int((current / max(1, total)) * 100) if total > 0 else 0
@@ -13242,6 +13277,7 @@ if active_page == 3:
                 allow_template_fallback=bool(st.session_state.get("allow_template_fallback_once", False)),
                 progress_callback=_live_progress_callback,
                 use_socsim_experimental=bool(st.session_state.get("_use_socsim_experimental", False)),
+                free_llm_oe_cap=_free_llm_oe_cap,
             )
         except Exception as _init_exc:
             import traceback as _init_tb
@@ -13697,7 +13733,17 @@ if active_page == 3:
                 # v1.1.1.4: Show OE budget exceeded info from engine metadata
                 _oe_budget_exceeded = metadata.get('oe_budget_exceeded', False)
                 _oe_budget_switched = metadata.get('oe_budget_switched_count', 0)
-                if _oe_budget_exceeded and _oe_budget_switched > 0:
+                _oe_cap_reached = metadata.get('free_llm_oe_cap_reached', False)
+                if _oe_cap_reached and _oe_budget_switched > 0:
+                    # v1.2.2.8: OE cap message (not a problem — expected behavior)
+                    _llm_had_issues = True
+                    _oe_cap_val = metadata.get('free_llm_oe_cap', MAX_FREE_LLM_N)
+                    _issue_messages.append(
+                        f"Free AI generated open-ended responses for {_oe_cap_val} participants. "
+                        f"The remaining {_oe_budget_switched} participant(s) used the template engine. "
+                        f"All participants have complete numeric scale data."
+                    )
+                elif _oe_budget_exceeded and _oe_budget_switched > 0:
                     _llm_had_issues = True
                     _issue_messages.append(
                         f"The AI generation time budget was exceeded. "
