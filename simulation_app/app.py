@@ -54,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.2.2.4"
-BUILD_ID = "20260313-v12024-fix-source-na-stale-exhaustion-cleanup"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.2.2.9"
+BUILD_ID = "20260314-v12029-fix-llm-cap-handover"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -118,7 +118,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.2.2.4"  # v1.2.2.4: Fix N/A source label, stale exhaustion cleanup, generation source accuracy
+APP_VERSION = "1.2.2.9"  # v1.2.2.9: Fix LLM cap handover — LLM was skipped entirely in cap mode
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -377,8 +377,21 @@ def _get_usage_count() -> Dict[str, Any]:
         return {"total_simulations": 0, "simulations_by_date": {}, "first_use": None, "last_use": None}
 
 
-def _increment_usage_counter() -> Dict[str, Any]:
-    """Increment the usage counter and return updated stats."""
+def _increment_usage_counter(
+    llm_stats: Optional[Dict[str, Any]] = None,
+    sample_size: int = 0,
+    n_conditions: int = 0,
+    n_scales: int = 0,
+    study_title: str = "",
+) -> Dict[str, Any]:
+    """Increment the usage counter and return updated stats.
+
+    v1.2.2.5: Now accumulates ALL-TIME cumulative LLM stats and per-run
+    metadata so the admin dashboard counter NEVER resets — even across
+    server restarts, redeployments, and new sessions.  The file-based
+    counter (.usage_counter.json) in the app directory is the single
+    source of truth for lifetime totals.
+    """
     try:
         stats = _get_usage_count()
         now = datetime.now()
@@ -393,6 +406,34 @@ def _increment_usage_counter() -> Dict[str, Any]:
         if not stats.get("first_use"):
             stats["first_use"] = now.isoformat()
         stats["last_use"] = now.isoformat()
+
+        # v1.2.2.5: Accumulate ALL-TIME cumulative LLM stats
+        if llm_stats:
+            stats["cumulative_llm_calls"] = stats.get("cumulative_llm_calls", 0) + int(llm_stats.get("llm_calls", 0) or 0)
+            stats["cumulative_llm_attempts"] = stats.get("cumulative_llm_attempts", 0) + int(llm_stats.get("llm_attempts", 0) or 0)
+            stats["cumulative_pool_size"] = stats.get("cumulative_pool_size", 0) + int(llm_stats.get("pool_size", 0) or 0)
+            stats["cumulative_fallback_uses"] = stats.get("cumulative_fallback_uses", 0) + int(llm_stats.get("fallback_uses", 0) or 0)
+            stats["cumulative_provider_exhaustions"] = stats.get("cumulative_provider_exhaustions", 0) + int(llm_stats.get("provider_exhaustions", 0) or 0)
+        stats["cumulative_participants"] = stats.get("cumulative_participants", 0) + sample_size
+
+        # v1.2.2.5: Store recent run log (keep last 200 entries)
+        if "run_log" not in stats:
+            stats["run_log"] = []
+        _run_entry: Dict[str, Any] = {
+            "timestamp": now.isoformat(),
+            "sample_size": sample_size,
+            "n_conditions": n_conditions,
+            "n_scales": n_scales,
+            "study_title": study_title[:120] if study_title else "",
+        }
+        if llm_stats:
+            _run_entry["llm_calls"] = int(llm_stats.get("llm_calls", 0) or 0)
+            _run_entry["pool_size"] = int(llm_stats.get("pool_size", 0) or 0)
+            _run_entry["fallback_uses"] = int(llm_stats.get("fallback_uses", 0) or 0)
+        stats["run_log"].append(_run_entry)
+        # Trim to last 200 runs
+        if len(stats["run_log"]) > 200:
+            stats["run_log"] = stats["run_log"][-200:]
 
         # Save to file
         with open(USAGE_COUNTER_FILE, "w") as f:
@@ -6120,6 +6161,8 @@ def _reset_generation_state() -> None:
                       "_llm_exhausted_engine_state", "_llm_exhausted_source_map",
                       "_llm_exhausted_resume", "_llm_exhausted_actual_n"):
         st.session_state.pop(_exh_key, None)
+    # v1.2.2.8: Clear free LLM OE cap acceptance flag
+    st.session_state.pop("_free_llm_oe_cap_accepted", None)
 
 
 def _navigate_to(page_index: int) -> None:
@@ -7185,43 +7228,71 @@ def _render_admin_dashboard() -> None:
         return
 
     # ── Top metrics bar ───────────────────────────────────────────────
-    # v1.0.5.7: Compute CUMULATIVE stats across all simulations, not just
-    # the last one.  Also fall back to per-history-entry llm_stats if
-    # _last_llm_stats is empty (handles page refresh after simulation).
+    # v1.2.2.5: ALL-TIME counters from the persistent file-based usage
+    # counter (.usage_counter.json).  This NEVER resets — survives server
+    # restarts, redeployments, and new sessions.  Session-only history is
+    # used as a secondary source for the current-session breakdown.
     st.markdown("---")
     _m1, _m2, _m3, _m4 = st.columns(4)
     _sim_history = st.session_state.get("_admin_sim_history", [])
     _current_llm_stats = st.session_state.get("_last_llm_stats", {})
 
-    # Cumulative stats from ALL simulation runs in this session
-    _cum_calls = 0
-    _cum_pool = 0
-    _cum_fallbacks = 0
+    # v1.2.2.5: Read ALL-TIME totals from persistent file
+    _alltime_stats = _get_usage_count()
+    _alltime_total_sims = _alltime_stats.get("total_simulations", 0)
+    _alltime_llm_calls = _alltime_stats.get("cumulative_llm_calls", 0)
+    _alltime_pool = _alltime_stats.get("cumulative_pool_size", 0)
+    _alltime_fallbacks = _alltime_stats.get("cumulative_fallback_uses", 0)
+    _alltime_participants = _alltime_stats.get("cumulative_participants", 0)
+
+    # Session-level stats (for delta display)
+    _session_calls = 0
+    _session_pool = 0
+    _session_fallbacks = 0
     _last_provider = "none"
     for _hist_entry in _sim_history:
         _hls = _hist_entry.get("llm_stats", {})
-        _cum_calls += _hls.get("llm_calls", 0)
-        _cum_pool += _hls.get("pool_size", 0)
-        _cum_fallbacks += _hls.get("fallback_uses", 0)
+        _session_calls += _hls.get("llm_calls", 0)
+        _session_pool += _hls.get("pool_size", 0)
+        _session_fallbacks += _hls.get("fallback_uses", 0)
         _hp = _hls.get("active_provider", "")
         if _hp:
             _last_provider = _hp
     # If no history entries had stats, fall back to _last_llm_stats
-    if _cum_calls == 0 and _cum_pool == 0 and _current_llm_stats:
-        _cum_calls = _current_llm_stats.get("llm_calls", 0)
-        _cum_pool = _current_llm_stats.get("pool_size", 0)
-        _cum_fallbacks = _current_llm_stats.get("fallback_uses", 0)
+    if _session_calls == 0 and _session_pool == 0 and _current_llm_stats:
+        _session_calls = _current_llm_stats.get("llm_calls", 0)
+        _session_pool = _current_llm_stats.get("pool_size", 0)
+        _session_fallbacks = _current_llm_stats.get("fallback_uses", 0)
         _last_provider = _current_llm_stats.get("active_provider", "none")
 
+    # Use ALL-TIME totals for display; fall back to session if file counter
+    # hasn't accumulated yet (backward compat with pre-v1.2.2.5 data).
+    _display_total_sims = max(_alltime_total_sims, len(_sim_history))
+    _display_llm_calls = max(_alltime_llm_calls, _session_calls)
+    _display_pool = max(_alltime_pool, _session_pool)
+    _display_fallbacks = max(_alltime_fallbacks, _session_fallbacks)
+
     with _m1:
-        st.metric("Total Simulations", len(_sim_history))
+        _session_delta = f"+{len(_sim_history)} this session" if len(_sim_history) > 0 else None
+        st.metric("Total Simulations (All-Time)", _display_total_sims, delta=_session_delta)
     with _m2:
-        st.metric("LLM API Calls", _cum_calls)
+        st.metric("LLM API Calls (All-Time)", _display_llm_calls)
     with _m3:
-        st.metric("LLM Pool Size", _cum_pool)
+        st.metric("Total Participants (All-Time)", _alltime_participants)
     with _m4:
-        _fb_pct = f"{(_cum_fallbacks / max(1, _cum_pool + _cum_fallbacks)) * 100:.0f}%" if (_cum_pool + _cum_fallbacks) > 0 else "N/A"
+        _fb_pct = f"{(_display_fallbacks / max(1, _display_pool + _display_fallbacks)) * 100:.0f}%" if (_display_pool + _display_fallbacks) > 0 else "N/A"
         st.metric("Template Fallback", _fb_pct)
+
+    # v1.2.2.5: Show all-time stats detail
+    _first_use = _alltime_stats.get("first_use", "N/A")
+    _last_use = _alltime_stats.get("last_use", "N/A")
+    if _first_use and _first_use != "N/A":
+        try:
+            _first_use = _first_use[:19].replace("T", " ")
+            _last_use = _last_use[:19].replace("T", " ") if _last_use else "N/A"
+        except Exception:
+            pass
+    st.caption(f"First simulation: {_first_use} | Last simulation: {_last_use} | All-time participants: {_alltime_participants}")
 
     # ── Tabs ──────────────────────────────────────────────────────────
     _tab_llm, _tab_failures, _tab_history, _tab_emails, _tab_session, _tab_system, _tab_errors = st.tabs([
@@ -7231,11 +7302,13 @@ def _render_admin_dashboard() -> None:
     # ── TAB 1: LLM Pipeline ──────────────────────────────────────────
     with _tab_llm:
         st.markdown("### LLM Provider Chain")
-        if _cum_calls > 0 or _cum_pool > 0 or _current_llm_stats:
+        if _display_llm_calls > 0 or _display_pool > 0 or _current_llm_stats:
             st.markdown(f"**Active Provider:** `{_last_provider}`")
-            st.markdown(f"**Total API Calls (cumulative):** {_cum_calls}")
-            st.markdown(f"**Response Pool Size (cumulative):** {_cum_pool}")
-            st.markdown(f"**Template Fallbacks (cumulative):** {_cum_fallbacks}")
+            st.markdown(f"**Total API Calls (all-time):** {_display_llm_calls}")
+            st.markdown(f"**Response Pool Size (all-time):** {_display_pool}")
+            st.markdown(f"**Template Fallbacks (all-time):** {_display_fallbacks}")
+            if _session_calls > 0:
+                st.caption(f"This session: {_session_calls} calls, {_session_pool} pool, {_session_fallbacks} fallbacks")
 
             # v1.0.9.2: Show HTTP requests (actual) vs provider probes (inflated)
             _cum_http = 0
@@ -7248,7 +7321,7 @@ def _render_admin_dashboard() -> None:
                 _cum_http = _current_llm_stats.get("llm_http_requests", _current_llm_stats.get("llm_calls", 0))
                 _cum_attempts = _current_llm_stats.get("llm_attempts", 0)
             if _cum_http > 0 or _cum_attempts > 0:
-                st.markdown(f"**Actual HTTP Requests (cumulative):** {_cum_http}")
+                st.markdown(f"**Actual HTTP Requests (session):** {_cum_http}")
                 if _cum_attempts > _cum_http:
                     st.caption(f"Provider probes (incl. rate-limited/blocked): {_cum_attempts}")
 
@@ -7269,10 +7342,10 @@ def _render_admin_dashboard() -> None:
                     st.dataframe(_prov_data, use_container_width=True, hide_index=True)
 
             # LLM generation quality
-            if _cum_pool > 0:
-                _total_gen = _cum_pool + _cum_fallbacks
-                _llm_pct = (_cum_pool / _total_gen) * 100
-                st.markdown("#### Generation Quality")
+            if _display_pool > 0:
+                _total_gen = _display_pool + _display_fallbacks
+                _llm_pct = (_display_pool / _total_gen) * 100
+                st.markdown("#### Generation Quality (All-Time)")
                 st.progress(min(1.0, _llm_pct / 100))
                 st.caption(f"{_llm_pct:.1f}% AI-generated, {100 - _llm_pct:.1f}% template fallback")
         else:
@@ -7458,8 +7531,44 @@ def _render_admin_dashboard() -> None:
                         if len(_run_personas) > 10:
                             st.caption(f"... and {len(_run_personas) - 10} more")
         else:
-            st.info("No simulation history found.")
-            st.caption("Run a simulation to see entries here. History persists across browser refreshes.")
+            st.info("No simulation runs in this session yet.")
+            st.caption("Run a simulation to see session entries here.")
+
+        # v1.2.2.5: ALL-TIME run log from persistent file (never resets)
+        st.markdown("---")
+        st.markdown("### All-Time Run Log (Persistent)")
+        st.caption("This data survives server restarts and redeployments.")
+        _alltime_run_log = _alltime_stats.get("run_log", [])
+        if _alltime_run_log:
+            st.markdown(f"**{len(_alltime_run_log)}** runs recorded (showing most recent 50)")
+            _log_data = []
+            for _rl_entry in reversed(_alltime_run_log[-50:]):
+                _ts = _rl_entry.get("timestamp", "")
+                try:
+                    _ts = _ts[:19].replace("T", " ")
+                except Exception:
+                    pass
+                _log_data.append({
+                    "Timestamp": _ts,
+                    "Study": _rl_entry.get("study_title", "")[:50] or "Untitled",
+                    "N": _rl_entry.get("sample_size", "?"),
+                    "Conditions": _rl_entry.get("n_conditions", "?"),
+                    "Scales": _rl_entry.get("n_scales", "?"),
+                    "LLM Calls": _rl_entry.get("llm_calls", 0),
+                    "AI Pool": _rl_entry.get("pool_size", 0),
+                    "Fallbacks": _rl_entry.get("fallback_uses", 0),
+                })
+            st.dataframe(_log_data, use_container_width=True, hide_index=True)
+
+            # Summary stats
+            _by_date = _alltime_stats.get("simulations_by_date", {})
+            if _by_date:
+                st.markdown("#### Daily Activity")
+                _recent_dates = sorted(_by_date.keys(), reverse=True)[:14]
+                _date_data = [{"Date": d, "Simulations": _by_date[d]} for d in _recent_dates]
+                st.dataframe(_date_data, use_container_width=True, hide_index=True)
+        else:
+            st.info("No all-time run log entries yet. Generate a simulation to start tracking.")
 
     # ── TAB 4: User Emails (v1.1.0.7) ────────────────────────────────
     with _tab_emails:
@@ -11701,7 +11810,7 @@ if active_page == 3:
                     "Free-tier AI models (Google AI, Groq, Cerebras, SambaNova, Mistral, OpenRouter)",
                     "Behavioral coherence: text matches each participant's ratings",
                     "Auto-failover across 7 providers for reliability",
-                    "Note: shared free-tier — speed varies with server load",
+                    f"Capped at N={MAX_FREE_LLM_N} (use Your API Key for larger samples)",
                 ],
                 "info_tooltip": "",
             },
@@ -12166,7 +12275,8 @@ if active_page == 3:
             f'open-ended question(s). '
             f'<strong>{_n_remaining}</strong> question(s) still need responses.</span>'
             '<div style="margin-top:12px;color:#7C2D12;font-size:0.88em;">'
-            'Choose how to continue. Already-generated AI responses will be preserved.</div>'
+            'Choose an alternative method below to complete the remaining questions. '
+            'Already-generated AI responses will be preserved.</div>'
             '</div>',
             unsafe_allow_html=True,
         )
@@ -12198,23 +12308,18 @@ if active_page == 3:
                 st.session_state["generation_requested"] = False
             _navigate_to(3)
 
-        _exh_c1, _exh_c2, _exh_c3, _exh_c4 = st.columns(4)
+        _exh_c1, _exh_c2, _exh_c3 = st.columns(3)
         with _exh_c1:
-            if st.button("Retry Built-in AI", key="_exh_retry_llm",
-                         type="primary", use_container_width=True,
-                         help="Re-try with the free AI providers (they may have recovered)"):
-                _exh_resume("free_llm", False, False, True, is_resume=False)
-        with _exh_c2:
             if st.button("Use my API key", key="_exh_use_api_key",
-                         type="secondary", use_container_width=True,
-                         help="Enter your own Groq / Google AI key (free tier available)"):
+                         type="primary", use_container_width=True,
+                         help="Enter your own Groq / Google AI key (free tier available) — most reliable option"):
                 _exh_resume("own_api", False, False, False, is_resume=False)
-        with _exh_c3:
+        with _exh_c2:
             if st.button("Template Engine", key="_exh_use_template",
                          type="secondary", use_container_width=True,
                          help="225+ domains, 58 personas, instant generation"):
                 _exh_resume("template", True, False, True)
-        with _exh_c4:
+        with _exh_c3:
             if st.button("Adaptive Engine", key="_exh_use_experimental",
                          type="secondary", use_container_width=True,
                          help="60+ archetypes, 30+ paradigms, literature-calibrated effects"):
@@ -12237,7 +12342,92 @@ if active_page == 3:
         if not _llm_available_now and not _allow_final_fallback and not _has_user_key:
             _llm_gate_block = True
 
-    can_generate = all_required_complete and not is_generating and not has_generated and not _preflight_errors and not _llm_gate_block
+    # v1.2.2.8: Pre-generation free LLM OE cap dialog.
+    # When N > 100 and using free LLM with open-ended questions, inform user
+    # that AI will generate OE responses for the first 100 participants and
+    # the rest will use template fallback.  The user can alternatively switch
+    # to one of 3 other methods for the FULL sample at full AI quality.
+    # The dialog does NOT block generation — "Proceed" keeps full N and uses
+    # the engine-level free_llm_oe_cap to cap LLM at 100 OE participants.
+    _free_llm_cap_block = False
+    _current_N = st.session_state.get("sample_size", 200)
+    _current_gen_method = st.session_state.get("generation_method", "template")
+    if (_current_gen_method == "free_llm" and _current_N > MAX_FREE_LLM_N
+            and not is_generating and not has_generated
+            and not st.session_state.get("_llm_exhausted_pending")
+            and _has_open_ended
+            and not st.session_state.get("_free_llm_oe_cap_accepted")):
+        _free_llm_cap_block = True
+        _remaining_N = _current_N - MAX_FREE_LLM_N
+        st.markdown(
+            '<div style="background:linear-gradient(135deg, #EFF6FF 0%, #DBEAFE 100%);'
+            'border:1px solid #93C5FD;border-radius:12px;padding:20px 24px;margin:12px 0;'
+            'box-shadow:0 1px 3px rgba(0,0,0,0.06);">'
+            '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">'
+            '<span style="font-size:1.2em;">&#128300;</span>'
+            '<span style="font-size:1.05em;font-weight:700;color:#1E40AF;">'
+            f'Free AI: open-ended responses capped at {MAX_FREE_LLM_N} participants</span></div>'
+            f'<span style="color:#1E3A5F;font-size:0.88em;line-height:1.5;">'
+            f'Your sample is <strong>N={_current_N}</strong>. Free AI providers have shared rate '
+            f'limits, so open-ended text responses will be AI-generated for the first '
+            f'<strong>{MAX_FREE_LLM_N}</strong> participants. The remaining '
+            f'<strong>{_remaining_N}</strong> participants will receive template-generated '
+            f'open-ended responses. All <strong>{_current_N}</strong> participants get full '
+            f'numeric scale data regardless.</span>'
+            '<div style="margin-top:10px;color:#1E3A5F;font-size:0.88em;">'
+            'You can proceed, or choose an alternative method for <strong>all</strong> '
+            f'{_current_N} participants:</div>'
+            '</div>',
+            unsafe_allow_html=True,
+        )
+        _cap_c1, _cap_c2, _cap_c3, _cap_c4 = st.columns(4)
+        with _cap_c1:
+            if st.button(
+                f"Proceed (AI for {MAX_FREE_LLM_N}, template for rest)",
+                key="_cap_proceed_with_cap",
+                type="primary", use_container_width=True,
+                help=(f"Generate all {_current_N} participants — AI writes open-ended "
+                      f"responses for the first {MAX_FREE_LLM_N}, template engine "
+                      f"writes the remaining {_remaining_N}"),
+            ):
+                st.session_state["_free_llm_oe_cap_accepted"] = True
+                st.session_state["allow_template_fallback_once"] = True
+                _navigate_to(3)
+        with _cap_c2:
+            if st.button(
+                "Use my API key",
+                key="_cap_switch_api",
+                type="secondary", use_container_width=True,
+                help=f"Use your own API key for AI on all {_current_N} — free keys available from Google AI, Groq, etc.",
+            ):
+                st.session_state["generation_method"] = "own_api"
+                st.session_state.pop("_free_llm_oe_cap_accepted", None)
+                _navigate_to(3)
+        with _cap_c3:
+            if st.button(
+                "Template Engine",
+                key="_cap_switch_template",
+                type="secondary", use_container_width=True,
+                help=f"Instant generation for all {_current_N} — 225+ domains, no API needed",
+            ):
+                st.session_state["generation_method"] = "template"
+                st.session_state["allow_template_fallback_once"] = True
+                st.session_state.pop("_free_llm_oe_cap_accepted", None)
+                _navigate_to(3)
+        with _cap_c4:
+            if st.button(
+                "Adaptive Engine",
+                key="_cap_switch_experimental",
+                type="secondary", use_container_width=True,
+                help=f"Behavioral engine for all {_current_N} — 60+ archetypes, no API needed",
+            ):
+                st.session_state["generation_method"] = "experimental"
+                st.session_state["allow_template_fallback_once"] = True
+                st.session_state["_use_socsim_experimental"] = True
+                st.session_state.pop("_free_llm_oe_cap_accepted", None)
+                _navigate_to(3)
+
+    can_generate = all_required_complete and not is_generating and not has_generated and not _preflight_errors and not _llm_gate_block and not _free_llm_cap_block
 
     # v1.0.9.1: Generate button — refined sizing, not full-width
     if is_generating:
@@ -12440,16 +12630,19 @@ if active_page == 3:
                     pass  # Keep the already-computed N if session state was corrupted
                 _log(f"LLM exhaustion resume: using original N={N}", level="info")
 
-            # v1.2.1.9: Cap free LLM generation at N=100 to prevent API exhaustion.
-            # Free-tier providers have strict rate limits; large N causes token exhaustion
-            # mid-generation which triggers complex recovery paths.
+            # v1.2.2.8: Determine free LLM OE cap. Instead of reducing N (which
+            # also reduces numeric scale data), pass an OE-specific cap to the engine.
+            # The engine generates full N for numeric scales but limits LLM to
+            # MAX_FREE_LLM_N OE responses per question — template fallback for the rest.
             _current_gen_method = st.session_state.get("generation_method", "template")
+            _free_llm_oe_cap = 0  # 0 = no cap
             if _current_gen_method == "free_llm" and N > MAX_FREE_LLM_N:
-                st.info(
-                    f"🔬 Free AI generation is capped at **N={MAX_FREE_LLM_N}** to ensure reliable results. "
-                    f"Your requested N={N} has been reduced. Use **Your API Key** or **Template Engine** for larger samples."
+                _free_llm_oe_cap = MAX_FREE_LLM_N
+                _log(
+                    f"Free LLM OE cap active: LLM will generate OE for first "
+                    f"{MAX_FREE_LLM_N} participants, template for remaining {N - MAX_FREE_LLM_N}",
+                    level="info",
                 )
-                N = MAX_FREE_LLM_N
 
             # v1.4.2.1: Safety assertion — missing_fields should never be true here
             # because the Generate button is disabled when all_required_complete is False.
@@ -12935,6 +13128,18 @@ if active_page == 3:
                             f'&#10003; All {total} participants generated</span></div>',
                             unsafe_allow_html=True,
                         )
+                    elif phase == "oe_cap_reached":
+                        # v1.2.2.8: Free LLM OE cap was reached — inform the user live
+                        _progress_counter_placeholder.markdown(
+                            f'<div style="text-align:center;padding:12px;background:#fffbeb;'
+                            f'border:1px solid #fde68a;border-radius:8px;margin:8px 0;">'
+                            f'<span style="font-size:1.05em;font-weight:600;color:#92400e;">'
+                            f'Free AI cap reached ({current} responses) — '
+                            f'using template engine for remaining participants</span>'
+                            f'<div style="font-size:0.8em;color:#78716c;margin-top:4px;">'
+                            f'Elapsed: {_fmt_elapsed(_elapsed)}</div></div>',
+                            unsafe_allow_html=True,
+                        )
                     else:
                         # v1.1.1.4: Fallback for unrecognized phases — always show progress
                         _pct_f = int((current / max(1, total)) * 100) if total > 0 else 0
@@ -13072,6 +13277,7 @@ if active_page == 3:
                 allow_template_fallback=bool(st.session_state.get("allow_template_fallback_once", False)),
                 progress_callback=_live_progress_callback,
                 use_socsim_experimental=bool(st.session_state.get("_use_socsim_experimental", False)),
+                free_llm_oe_cap=_free_llm_oe_cap,
             )
         except Exception as _init_exc:
             import traceback as _init_tb
@@ -13527,7 +13733,17 @@ if active_page == 3:
                 # v1.1.1.4: Show OE budget exceeded info from engine metadata
                 _oe_budget_exceeded = metadata.get('oe_budget_exceeded', False)
                 _oe_budget_switched = metadata.get('oe_budget_switched_count', 0)
-                if _oe_budget_exceeded and _oe_budget_switched > 0:
+                _oe_cap_reached = metadata.get('free_llm_oe_cap_reached', False)
+                if _oe_cap_reached and _oe_budget_switched > 0:
+                    # v1.2.2.8: OE cap message (not a problem — expected behavior)
+                    _llm_had_issues = True
+                    _oe_cap_val = metadata.get('free_llm_oe_cap', MAX_FREE_LLM_N)
+                    _issue_messages.append(
+                        f"Free AI generated open-ended responses for {_oe_cap_val} participants. "
+                        f"The remaining {_oe_budget_switched} participant(s) used the template engine. "
+                        f"All participants have complete numeric scale data."
+                    )
+                elif _oe_budget_exceeded and _oe_budget_switched > 0:
                     _llm_had_issues = True
                     _issue_messages.append(
                         f"The AI generation time budget was exceeded. "
@@ -13775,8 +13991,21 @@ if active_page == 3:
             st.session_state["_quality_checks"] = quality_checks
 
             # Increment internal usage counter (admin tracking)
+            # v1.2.2.5: Pass LLM stats and run metadata so file-based counter
+            # accumulates ALL-TIME totals that never reset.
             try:
-                usage_stats = _increment_usage_counter()
+                _run_llm_stats = metadata.get('llm_stats', {})
+                _run_sample_size = len(df) if df is not None else 0
+                _run_n_conditions = len(inferred.get("conditions", []))
+                _run_n_scales = len(clean_scales)
+                _run_study_title = metadata.get("study_title", "")
+                usage_stats = _increment_usage_counter(
+                    llm_stats=_run_llm_stats,
+                    sample_size=_run_sample_size,
+                    n_conditions=_run_n_conditions,
+                    n_scales=_run_n_scales,
+                    study_title=_run_study_title,
+                )
             except Exception:
                 usage_stats = {}
 
@@ -14410,6 +14639,8 @@ if active_page == 3:
         _post_gen_llm_note = st.session_state.get("_gen_llm_exhaustion_note", "")
         _post_gen_method = st.session_state.get("generation_method", "free_llm")
         if _post_gen_llm_note and _post_gen_method in ("free_llm", "own_api"):
+            # v1.2.2.5: Increment admin counter for exhaustion dialog shown
+            st.session_state["_admin_llm_exhaust_dialog_shown"] = st.session_state.get("_admin_llm_exhaust_dialog_shown", 0) + 1
             st.markdown(
                 '<div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;'
                 'padding:12px 16px;margin:8px 0 12px 0;">'

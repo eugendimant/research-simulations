@@ -2762,6 +2762,11 @@ class EnhancedSimulationEngine:
         progress_callback: Optional[callable] = None,
         # v1.0.8.1: SocSim experimental enrichment for economic game DVs
         use_socsim_experimental: bool = False,
+        # v1.2.2.8: Per-question LLM OE cap for free-tier protection.
+        # When > 0, limits LLM-generated OE responses to this many participants
+        # per question; remaining participants get template fallback automatically.
+        # This keeps the full sample size N for numeric scales.
+        free_llm_oe_cap: int = 0,
     ):
         self.progress_callback = progress_callback
         self.use_socsim_experimental = bool(use_socsim_experimental)
@@ -2808,6 +2813,7 @@ class EnhancedSimulationEngine:
             else "realistic"
         )
         self.allow_template_fallback = bool(allow_template_fallback)
+        self.free_llm_oe_cap = max(0, int(free_llm_oe_cap))
         self.mode = (mode or "pilot").strip().lower()
         if self.mode not in ("pilot", "final"):
             self.mode = "pilot"
@@ -8857,9 +8863,26 @@ class EnhancedSimulationEngine:
         # v1.1.1.5: Skip LLM entirely when template fallback is enabled (user chose
         # "Template Engine" or "Adaptive Behavioral Engine").  Trying LLM here wastes
         # time and can trigger provider errors that obscure the actual generation path.
+        # v1.2.2.9: EXCEPTION — when free_llm_oe_cap > 0, the user chose "Proceed
+        # (AI for 100, template for rest)".  allow_template_fallback is True (needed
+        # for graceful fallback after cap), but we MUST still try LLM for the first
+        # 100 participants.  Once LLM is force-disabled (cap reached), skip directly
+        # to comprehensive_generator for correct source tracking and efficiency.
         # v1.4.9: Try LLM generator first (question-specific, persona-aligned)
-        if self.llm_generator is not None and not self.allow_template_fallback:
+        _llm_force_off = getattr(self.llm_generator, '_force_disabled', False) if self.llm_generator else True
+        _should_try_llm = (
+            self.llm_generator is not None
+            and not _llm_force_off
+            and (not self.allow_template_fallback or self.free_llm_oe_cap > 0)
+        )
+        if _should_try_llm:
             try:
+                # v1.2.2.9: Track fallback count to distinguish real AI responses
+                # from template responses returned through the LLM generator's
+                # internal fallback path.  Without this, template fallbacks in cap
+                # mode are labeled "AI", wasting the 100-response cap budget on
+                # non-AI text and corrupting the _Generation_Source column.
+                _fb_before = getattr(self.llm_generator, '_fallback_count', 0)
                 resp = self.llm_generator.generate(
                     question_text=question_text or response_type,
                     sentiment=sentiment,
@@ -8872,7 +8895,8 @@ class EnhancedSimulationEngine:
                     behavioral_profile=behavioral_profile,
                 )
                 if resp and resp.strip():
-                    self._last_oe_source = "AI"
+                    _fb_after = getattr(self.llm_generator, '_fallback_count', 0)
+                    self._last_oe_source = "AI" if _fb_after == _fb_before else "Template"
                     return resp
             except Exception as _llm_gen_err:
                 # v1.2.0.0: NEVER re-raise "template fallback is disabled" here.
@@ -10911,7 +10935,10 @@ class EnhancedSimulationEngine:
         # v1.1.1.5: Skip prefill entirely when template fallback is enabled (user chose
         # "Template Engine" or "Adaptive Behavioral Engine").  No point pre-filling
         # an LLM pool that won't be used — saves 0-90s of wasted API calls.
-        if self.llm_generator and self.open_ended_questions and not self.allow_template_fallback:
+        # v1.2.2.9: EXCEPTION — when free_llm_oe_cap > 0, the user chose "Proceed
+        # (AI for 100, template for rest)".  We MUST prefill so the first 100
+        # participants have pool responses ready.
+        if self.llm_generator and self.open_ended_questions and (not self.allow_template_fallback or self.free_llm_oe_cap > 0):
             try:
                 self.llm_generator.reset_providers()
                 self._log("LLM providers reset before prefill (clean state)")
@@ -11082,6 +11109,11 @@ class EnhancedSimulationEngine:
             _oe_gen_wall_start = time.time()
             _oe_budget_exceeded = False
             _consecutive_slow_participants = 0
+            # v1.2.2.8: Per-question LLM OE cap counter — tracks how many
+            # participants in THIS question got an LLM-generated response.
+            # When it reaches free_llm_oe_cap (e.g. 100), LLM is disabled
+            # and remaining participants get template fallback.
+            _llm_oe_cap_count = 0
             # v1.2.0.0: If LLM was force-disabled during the PREVIOUS question
             # and template fallback is NOT allowed (user chose "Built-in AI"),
             # raise LLMExhaustedMidGeneration so app.py can prompt the user
@@ -11114,7 +11146,12 @@ class EnhancedSimulationEngine:
 
             # Re-enable LLM for this question if it was force-disabled by the
             # PREVIOUS question's budget/timeout AND template fallback IS allowed.
-            if self.llm_generator and getattr(self.llm_generator, '_force_disabled', False):
+            # v1.2.2.8: Do NOT re-enable if disabled by free_llm_oe_cap — the cap
+            # is cumulative across ALL questions, not per-question.
+            _disabled_by_cap = getattr(self, '_llm_disabled_by_oe_cap', False)
+            if (self.llm_generator
+                    and getattr(self.llm_generator, '_force_disabled', False)
+                    and not _disabled_by_cap):
                 self._log(f"OE Q{_oe_idx+1}/{_total_oe}: Re-enabling LLM (was force-disabled by previous question)")
                 self.llm_generator._force_disabled = False
                 self.llm_generator._api_available = True
@@ -11401,6 +11438,37 @@ class EnhancedSimulationEngine:
                 if _was_template_fallback:
                     _participant_source = "Template"
                 _sources_for_col.append(_participant_source)
+
+                # v1.2.2.8: Free-tier LLM OE cap enforcement.
+                # After N participants have gotten LLM responses for this question,
+                # disable LLM so remaining participants get template fallback.
+                # This protects free API tokens while keeping the full sample size.
+                if _participant_source == "AI":
+                    _llm_oe_cap_count += 1
+                if (self.free_llm_oe_cap > 0
+                        and _llm_oe_cap_count >= self.free_llm_oe_cap
+                        and not _oe_budget_exceeded
+                        and self.llm_generator
+                        and not getattr(self.llm_generator, '_force_disabled', False)):
+                    self._log(
+                        f"Free LLM OE cap reached: {_llm_oe_cap_count}/{self.free_llm_oe_cap} "
+                        f"AI responses for question '{col_name}' — "
+                        f"remaining {n - i - 1} participants will use template fallback"
+                    )
+                    try:
+                        self.llm_generator.disable_permanently(
+                            f"Free LLM OE cap ({self.free_llm_oe_cap}) reached"
+                        )
+                    except Exception as _cap_err:
+                        logger.warning("disable_permanently() failed on OE cap: %s", _cap_err)
+                    # Mark that the cap (not budget/timeout) caused the disable,
+                    # so between-question re-enable logic won't undo it.
+                    self._llm_disabled_by_oe_cap = True
+                    _oe_budget_exceeded = True
+                    # Notify UI via progress callback
+                    _report_progress(
+                        "oe_cap_reached", _llm_oe_cap_count, self.free_llm_oe_cap
+                    )
 
                 # v1.0.5.0: Update voice memory for this participant
                 if _text_str.strip():
@@ -11823,6 +11891,9 @@ class EnhancedSimulationEngine:
             # v1.1.1.4: OE generation budget tracking for transparent user reporting
             "oe_budget_exceeded": getattr(self, '_oe_budget_exceeded', False),
             "oe_budget_switched_count": getattr(self, '_oe_budget_switched_count', 0),
+            # v1.2.2.8: Whether the free LLM OE cap was the cause of the fallback
+            "free_llm_oe_cap_reached": getattr(self, '_llm_disabled_by_oe_cap', False),
+            "free_llm_oe_cap": self.free_llm_oe_cap,
             # v1.4.3: Column descriptions for data dictionary / codebook generation
             "column_descriptions": {col: desc for col, desc in self.column_info},
             # v1.4.11: Scale generation log — maps scale names to actual generated columns

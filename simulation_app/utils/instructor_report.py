@@ -2530,6 +2530,7 @@ class ComprehensiveInstructorReport:
         # v1.0.9.2: LLM Generation Details (in comprehensive report) — with method differentiation
         llm_stats = metadata.get('llm_stats', metadata.get('llm_response_stats', {}))
         llm_calls = llm_stats.get('llm_calls', 0) if llm_stats else 0
+        llm_attempts = llm_stats.get('llm_attempts', llm_calls) if llm_stats else 0
         pool_size = llm_stats.get('pool_size', 0) if llm_stats else 0
         fallback_uses = llm_stats.get('fallback_uses', 0) if llm_stats else 0
         open_ended_qs = metadata.get('open_ended_questions', [])

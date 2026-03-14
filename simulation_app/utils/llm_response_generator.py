@@ -18,10 +18,10 @@ Architecture:
   the existing template-based ComprehensiveResponseGenerator
 - Never hard-stops: always walks user through options when APIs fail
 
-Version: 1.2.2.4
+Version: 1.2.2.9
 """
 
-__version__ = "1.2.2.4"
+__version__ = "1.2.2.9"
 
 import hashlib
 import json
@@ -1422,10 +1422,12 @@ def _call_llm_api(
 
     # Google AI Studio supports key-as-query-param in addition to Bearer token.
     # Append ?key=<key> for googleapis.com endpoints for maximum compatibility.
+    # v1.2.2.7: URL-encode the key to prevent malformed URLs with special chars.
     _effective_url = api_url
     if "googleapis.com" in api_url:
+        from urllib.parse import quote as _url_quote
         _sep = "&" if "?" in api_url else "?"
-        _effective_url = f"{api_url}{_sep}key={api_key}"
+        _effective_url = f"{api_url}{_sep}key={_url_quote(str(api_key), safe='')}"
 
     headers = {
         "Authorization": f"Bearer {api_key}",
@@ -1458,7 +1460,12 @@ def _call_llm_api(
             timeout=timeout,
         )
         if resp.status_code == 200:
-            body = resp.json()
+            try:
+                body = resp.json()
+            except (ValueError, json.JSONDecodeError):
+                logger.warning("LLM API returned 200 but invalid JSON %s model=%s: %s",
+                               api_url[:50], model, resp.text[:200] if resp.text else "(empty)")
+                return None
             content = body.get("choices", [{}])[0].get("message", {}).get("content", "")
             if content:
                 return content
@@ -1512,12 +1519,22 @@ def _call_llm_api(
             _effective_url, data=data, headers=headers, method="POST",
         )
         with urllib.request.urlopen(req, timeout=timeout) as resp:
-            body = json.loads(resp.read().decode("utf-8"))
+            _raw = resp.read().decode("utf-8")
+            try:
+                body = json.loads(_raw)
+            except (ValueError, json.JSONDecodeError):
+                logger.warning("LLM API returned invalid JSON [urllib] %s model=%s: %s",
+                               api_url[:50], model, _raw[:200])
+                return None
             content = body.get("choices", [{}])[0].get("message", {}).get("content", "")
             if content:
                 return content
             logger.warning("LLM API returned empty content via urllib: %s", api_url[:50])
             return None
+    except urllib.error.URLError as exc:
+        logger.warning("LLM API URL/DNS/SSL error [urllib] %s model=%s: %s",
+                       api_url[:50], model, getattr(exc, 'reason', exc))
+        return None
     except urllib.error.HTTPError as exc:
         _body_preview = ""
         try:
