@@ -33,7 +33,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 # Version identifier to help track deployed code
-__version__ = "1.2.2.8"  # v1.2.2.8: OE-specific free LLM cap
+__version__ = "1.2.2.9"  # v1.2.2.9: Fix LLM cap handover
 
 
 # ============================================================================

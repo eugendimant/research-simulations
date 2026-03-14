@@ -8863,8 +8863,19 @@ class EnhancedSimulationEngine:
         # v1.1.1.5: Skip LLM entirely when template fallback is enabled (user chose
         # "Template Engine" or "Adaptive Behavioral Engine").  Trying LLM here wastes
         # time and can trigger provider errors that obscure the actual generation path.
+        # v1.2.2.9: EXCEPTION — when free_llm_oe_cap > 0, the user chose "Proceed
+        # (AI for 100, template for rest)".  allow_template_fallback is True (needed
+        # for graceful fallback after cap), but we MUST still try LLM for the first
+        # 100 participants.  Once LLM is force-disabled (cap reached), skip directly
+        # to comprehensive_generator for correct source tracking and efficiency.
         # v1.4.9: Try LLM generator first (question-specific, persona-aligned)
-        if self.llm_generator is not None and not self.allow_template_fallback:
+        _llm_force_off = getattr(self.llm_generator, '_force_disabled', False) if self.llm_generator else True
+        _should_try_llm = (
+            self.llm_generator is not None
+            and not _llm_force_off
+            and (not self.allow_template_fallback or self.free_llm_oe_cap > 0)
+        )
+        if _should_try_llm:
             try:
                 resp = self.llm_generator.generate(
                     question_text=question_text or response_type,
@@ -10917,7 +10928,10 @@ class EnhancedSimulationEngine:
         # v1.1.1.5: Skip prefill entirely when template fallback is enabled (user chose
         # "Template Engine" or "Adaptive Behavioral Engine").  No point pre-filling
         # an LLM pool that won't be used — saves 0-90s of wasted API calls.
-        if self.llm_generator and self.open_ended_questions and not self.allow_template_fallback:
+        # v1.2.2.9: EXCEPTION — when free_llm_oe_cap > 0, the user chose "Proceed
+        # (AI for 100, template for rest)".  We MUST prefill so the first 100
+        # participants have pool responses ready.
+        if self.llm_generator and self.open_ended_questions and (not self.allow_template_fallback or self.free_llm_oe_cap > 0):
             try:
                 self.llm_generator.reset_providers()
                 self._log("LLM providers reset before prefill (clean state)")
