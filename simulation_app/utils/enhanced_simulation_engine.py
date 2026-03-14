@@ -8877,6 +8877,12 @@ class EnhancedSimulationEngine:
         )
         if _should_try_llm:
             try:
+                # v1.2.2.9: Track fallback count to distinguish real AI responses
+                # from template responses returned through the LLM generator's
+                # internal fallback path.  Without this, template fallbacks in cap
+                # mode are labeled "AI", wasting the 100-response cap budget on
+                # non-AI text and corrupting the _Generation_Source column.
+                _fb_before = getattr(self.llm_generator, '_fallback_count', 0)
                 resp = self.llm_generator.generate(
                     question_text=question_text or response_type,
                     sentiment=sentiment,
@@ -8889,7 +8895,8 @@ class EnhancedSimulationEngine:
                     behavioral_profile=behavioral_profile,
                 )
                 if resp and resp.strip():
-                    self._last_oe_source = "AI"
+                    _fb_after = getattr(self.llm_generator, '_fallback_count', 0)
+                    self._last_oe_source = "AI" if _fb_after == _fb_before else "Template"
                     return resp
             except Exception as _llm_gen_err:
                 # v1.2.0.0: NEVER re-raise "template fallback is disabled" here.
