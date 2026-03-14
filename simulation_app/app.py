@@ -12928,6 +12928,10 @@ if active_page == 3:
             # to exist when the callback runs (even if engine somehow triggers it early).
             _is_llm_method = st.session_state.get(_gen_method_key) in ("free_llm", "own_api")
             _has_oe_questions = bool(open_ended_questions_for_engine)
+            # v1.2.2.9: Mutable flag for closure — tracks if cap was reached so the
+            # "generating" phase can persistently show the cap note instead of letting
+            # the next participant's progress callback overwrite it immediately.
+            _oe_cap_reached_info = [False, 0]  # [reached, count]
             # v1.1.1.7: Method label for progress display (captured in closure)
             _cb_method_label = {
                 "template": "Template Engine",
@@ -13082,6 +13086,17 @@ if active_page == 3:
                                 f'<div style="font-size:0.8em;color:#166534;margin-bottom:4px;'
                                 f'font-weight:600;">{_cb_method_label}</div>'
                             )
+                        # v1.2.2.9: Persistent cap notification — show inside the
+                        # generating progress so it's not overwritten by the next tick.
+                        _cap_note_html = ""
+                        if _oe_cap_reached_info[0]:
+                            _cap_note_html = (
+                                f'<div style="background:#fffbeb;border:1px solid #fde68a;'
+                                f'border-radius:6px;padding:6px 10px;margin-top:8px;'
+                                f'font-size:0.82em;color:#92400e;">'
+                                f'Free AI cap reached ({_oe_cap_reached_info[1]} responses) '
+                                f'&mdash; using template engine for remaining participants</div>'
+                            )
                         _progress_counter_placeholder.markdown(
                             f'<div style="text-align:center;padding:14px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;margin:8px 0;">'
                             f'{_method_tag_html}'
@@ -13090,6 +13105,7 @@ if active_page == 3:
                             f'<span style="font-size:1em;color:#166534;"> participants simulated</span>'
                             f'<div style="font-size:0.85em;color:#4B5563;margin-top:4px;">Elapsed: {_elapsed_str}</div>'
                             f'{_llm_status_html}'
+                            f'{_cap_note_html}'
                             f'<div style="background:#dcfce7;border-radius:4px;height:10px;margin-top:10px;">'
                             f'<div style="background:#22c55e;width:{_pct}%;height:100%;border-radius:4px;'
                             f'transition:width 0.3s;"></div></div></div>',
@@ -13129,7 +13145,11 @@ if active_page == 3:
                             unsafe_allow_html=True,
                         )
                     elif phase == "oe_cap_reached":
-                        # v1.2.2.8: Free LLM OE cap was reached — inform the user live
+                        # v1.2.2.9: Set persistent flag so "generating" phase shows cap
+                        # note on every subsequent tick — otherwise the next participant's
+                        # progress callback overwrites this message immediately.
+                        _oe_cap_reached_info[0] = True
+                        _oe_cap_reached_info[1] = current
                         _progress_counter_placeholder.markdown(
                             f'<div style="text-align:center;padding:12px;background:#fffbeb;'
                             f'border:1px solid #fde68a;border-radius:8px;margin:8px 0;">'
