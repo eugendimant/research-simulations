@@ -6163,6 +6163,8 @@ def _reset_generation_state() -> None:
         st.session_state.pop(_exh_key, None)
     # v1.2.2.8: Clear free LLM OE cap acceptance flag
     st.session_state.pop("_free_llm_oe_cap_accepted", None)
+    # v1.2.3.8: Clear HBS flag so method switch takes effect
+    st.session_state.pop("_use_hbs", None)
 
 
 def _navigate_to(page_index: int) -> None:
@@ -12405,6 +12407,7 @@ if active_page == 3:
                 st.session_state["allow_template_fallback_once"] = False
                 st.session_state["_use_socsim_experimental"] = True
                 st.session_state["_use_abe_v2"] = False
+                st.session_state["_use_hbs"] = False
                 st.session_state.pop("_free_llm_oe_cap_accepted", None)
                 _navigate_to(3)
         with _cap_c3:
@@ -12518,9 +12521,10 @@ if active_page == 3:
                 # Preserve existing method; ensure all flags are explicitly set
                 _retry_method = st.session_state.get("generation_method", "abe_v2")
                 st.session_state["generation_method"] = _retry_method
-                st.session_state["allow_template_fallback_once"] = _retry_method in ("template", "experimental", "abe_v2")
-                st.session_state["_use_socsim_experimental"] = _retry_method in ("experimental", "abe_v2")
-                st.session_state["_use_abe_v2"] = _retry_method == "abe_v2"
+                st.session_state["allow_template_fallback_once"] = _retry_method in ("template", "experimental", "abe_v2", "hbs")
+                st.session_state["_use_socsim_experimental"] = _retry_method in ("experimental", "abe_v2", "hbs")
+                st.session_state["_use_abe_v2"] = _retry_method in ("abe_v2", "hbs")
+                st.session_state["_use_hbs"] = _retry_method == "hbs"
                 st.session_state["is_generating"] = True
                 st.session_state["_generation_phase"] = 1
                 _navigate_to(3)
@@ -12531,6 +12535,7 @@ if active_page == 3:
                 st.session_state["allow_template_fallback_once"] = True
                 st.session_state["_use_socsim_experimental"] = True
                 st.session_state["_use_abe_v2"] = True
+                st.session_state["_use_hbs"] = False
                 st.session_state["is_generating"] = True
                 st.session_state["_generation_phase"] = 1
                 _navigate_to(3)
@@ -12541,6 +12546,7 @@ if active_page == 3:
                 st.session_state["allow_template_fallback_once"] = False
                 st.session_state["_use_socsim_experimental"] = True
                 st.session_state["_use_abe_v2"] = False
+                st.session_state["_use_hbs"] = False
                 st.session_state["is_generating"] = False
                 _navigate_to(3)
 
@@ -13232,9 +13238,10 @@ if active_page == 3:
                              type="primary", use_container_width=True):
                     _retry_method = st.session_state.get("generation_method", "abe_v2")
                     st.session_state["generation_method"] = _retry_method
-                    st.session_state["allow_template_fallback_once"] = _retry_method in ("template", "experimental", "abe_v2")
-                    st.session_state["_use_socsim_experimental"] = _retry_method in ("experimental", "abe_v2")
-                    st.session_state["_use_abe_v2"] = _retry_method == "abe_v2"
+                    st.session_state["allow_template_fallback_once"] = _retry_method in ("template", "experimental", "abe_v2", "hbs")
+                    st.session_state["_use_socsim_experimental"] = _retry_method in ("experimental", "abe_v2", "hbs")
+                    st.session_state["_use_abe_v2"] = _retry_method in ("abe_v2", "hbs")
+                    st.session_state["_use_hbs"] = _retry_method == "hbs"
                     st.session_state["is_generating"] = True
                     st.session_state["_generation_phase"] = 1
                     _navigate_to(3)
@@ -13245,6 +13252,7 @@ if active_page == 3:
                     st.session_state["allow_template_fallback_once"] = True
                     st.session_state["_use_socsim_experimental"] = True
                     st.session_state["_use_abe_v2"] = True
+                    st.session_state["_use_hbs"] = False
                     st.session_state["is_generating"] = True
                     st.session_state["_generation_phase"] = 1
                     _navigate_to(3)
@@ -13413,9 +13421,10 @@ if active_page == 3:
                                      help="Re-test the AI providers"):
                             # Preserve existing method; set all flags explicitly
                             _retry_method = st.session_state.get(_gen_method_key, "free_llm")
-                            st.session_state["allow_template_fallback_once"] = _retry_method in ("template", "experimental", "abe_v2")
-                            st.session_state["_use_socsim_experimental"] = _retry_method in ("experimental", "abe_v2")
-                            st.session_state["_use_abe_v2"] = _retry_method == "abe_v2"
+                            st.session_state["allow_template_fallback_once"] = _retry_method in ("template", "experimental", "abe_v2", "hbs")
+                            st.session_state["_use_socsim_experimental"] = _retry_method in ("experimental", "abe_v2", "hbs")
+                            st.session_state["_use_abe_v2"] = _retry_method in ("abe_v2", "hbs")
+                            st.session_state["_use_hbs"] = _retry_method == "hbs"
                             st.session_state["is_generating"] = True
                             st.session_state["_generation_phase"] = 1
                             _navigate_to(3)
@@ -13427,6 +13436,7 @@ if active_page == 3:
                             st.session_state["allow_template_fallback_once"] = False
                             st.session_state["_use_socsim_experimental"] = True
                             st.session_state["_use_abe_v2"] = False
+                            st.session_state["_use_hbs"] = False
                             st.session_state["is_generating"] = False
                             _navigate_to(3)
                     with _hc3:
@@ -13437,6 +13447,7 @@ if active_page == 3:
                             st.session_state[_gen_method_key] = "abe_v2"
                             st.session_state["_use_socsim_experimental"] = True
                             st.session_state["_use_abe_v2"] = True
+                            st.session_state["_use_hbs"] = False
                             st.session_state["is_generating"] = True
                             st.session_state["_generation_phase"] = 1
                             _navigate_to(3)
@@ -14514,9 +14525,10 @@ if active_page == 3:
                     if st.button("Try again", key="_timeout_retry",
                                  type="primary", use_container_width=True):
                         _retry_method = st.session_state.get(_gen_method_key, "free_llm")
-                        st.session_state["allow_template_fallback_once"] = _retry_method in ("template", "experimental", "abe_v2")
-                        st.session_state["_use_socsim_experimental"] = _retry_method in ("experimental", "abe_v2")
-                        st.session_state["_use_abe_v2"] = _retry_method == "abe_v2"
+                        st.session_state["allow_template_fallback_once"] = _retry_method in ("template", "experimental", "abe_v2", "hbs")
+                        st.session_state["_use_socsim_experimental"] = _retry_method in ("experimental", "abe_v2", "hbs")
+                        st.session_state["_use_abe_v2"] = _retry_method in ("abe_v2", "hbs")
+                        st.session_state["_use_hbs"] = _retry_method == "hbs"
                         st.session_state["is_generating"] = True
                         st.session_state["_generation_phase"] = 1
                         _navigate_to(3)
@@ -14527,6 +14539,7 @@ if active_page == 3:
                         st.session_state["allow_template_fallback_once"] = False
                         st.session_state["_use_socsim_experimental"] = True
                         st.session_state["_use_abe_v2"] = False
+                        st.session_state["_use_hbs"] = False
                         st.session_state["is_generating"] = False
                         _navigate_to(3)
                 with _to_c3:
@@ -14536,6 +14549,7 @@ if active_page == 3:
                         st.session_state["allow_template_fallback_once"] = True
                         st.session_state["_use_socsim_experimental"] = True
                         st.session_state["_use_abe_v2"] = True
+                        st.session_state["_use_hbs"] = False
                         st.session_state["is_generating"] = True
                         st.session_state["_generation_phase"] = 1
                         _navigate_to(3)
@@ -14613,9 +14627,10 @@ if active_page == 3:
                 if st.button("Retry", key="_gen_err_retry",
                              type="primary", use_container_width=True):
                     _retry_method = st.session_state.get("generation_method", "abe_v2")
-                    st.session_state["allow_template_fallback_once"] = _retry_method in ("template", "experimental", "abe_v2")
-                    st.session_state["_use_socsim_experimental"] = _retry_method in ("experimental", "abe_v2")
-                    st.session_state["_use_abe_v2"] = _retry_method == "abe_v2"
+                    st.session_state["allow_template_fallback_once"] = _retry_method in ("template", "experimental", "abe_v2", "hbs")
+                    st.session_state["_use_socsim_experimental"] = _retry_method in ("experimental", "abe_v2", "hbs")
+                    st.session_state["_use_abe_v2"] = _retry_method in ("abe_v2", "hbs")
+                    st.session_state["_use_hbs"] = _retry_method == "hbs"
                     st.session_state["is_generating"] = True
                     st.session_state["_generation_phase"] = 1
                     _navigate_to(3)
@@ -14626,6 +14641,7 @@ if active_page == 3:
                     st.session_state["allow_template_fallback_once"] = True
                     st.session_state["_use_socsim_experimental"] = True
                     st.session_state["_use_abe_v2"] = True
+                    st.session_state["_use_hbs"] = False
                     st.session_state["is_generating"] = True
                     st.session_state["_generation_phase"] = 1
                     _navigate_to(3)
@@ -14636,6 +14652,7 @@ if active_page == 3:
                     st.session_state["allow_template_fallback_once"] = False
                     st.session_state["_use_socsim_experimental"] = True
                     st.session_state["_use_abe_v2"] = False
+                    st.session_state["_use_hbs"] = False
                     st.session_state["is_generating"] = False
                     _navigate_to(3)
             st.session_state["is_generating"] = False

@@ -129,7 +129,7 @@ class HBSEngine:
 
         try:
             from utils.hbs_participant_state import HBSParticipantFactory
-            self._participant_factory = HBSParticipantFactory()
+            self._participant_factory = HBSParticipantFactory(seed=self._seed)
         except Exception as e:
             logger.warning("HBS ParticipantFactory unavailable: %s", e)
             self._participant_factory = None
@@ -284,7 +284,6 @@ class HBSEngine:
                 n=self.sample_size,
                 conditions=self.conditions,
                 domain=_domain,
-                seed=self._seed,
             )
             logger.info("Created %d HBS participant states", len(self._participant_states))
         except Exception as e:
