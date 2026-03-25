@@ -12,10 +12,10 @@ Benchmark axes:
 - Straight-lining rates
 - Rating-text coherence
 
-Version: 1.2.4.0
+Version: 1.2.5.0
 """
 
-__version__ = "1.2.4.0"
+__version__ = "1.2.5.0"
 
 __all__ = ["HBSValidator"]
 

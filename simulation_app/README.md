@@ -1,6 +1,6 @@
 # Behavioral Experiment Simulation Tool
 
-**Version 1.2.4.0** | A Streamlit application for generating realistic synthetic behavioral experiment data using theory-grounded persona-driven simulation.
+**Version 1.2.5.0** | A Streamlit application for generating realistic synthetic behavioral experiment data using theory-grounded persona-driven simulation.
 
 ## What This Tool Does
 
@@ -19,14 +19,13 @@
 - **Develop analysis scripts** on properly structured data
 - **Check pre-registration consistency** before data collection
 
-## Features (v1.2.4.0)
+## Features (v1.2.5.0)
 
 ### Generation Method Chooser
-- **4 simulation methods** — all use the ABE 2.0 behavioral engine for numeric data; methods differ in realism layers and open-ended text source:
-  - **Adaptive Behavioral Engine 2.0** — fully offline, narrative-enhanced open-ended text via 225+ domains, 60+ archetypes
-  - **Human Behavior Simulator (HBS)** — deep persona coherence with census-weighted demographics, calibrated error rates (Frederick 2005), stylometric voice fingerprinting, and adversarial self-validation
-  - **Built-in AI** — ABE 2.0 behavioral engine + free LLM-powered open-ended text (Groq, Google AI, Cerebras, Mistral, SambaNova, OpenRouter)
-  - **Your API Key** — ABE 2.0 behavioral engine + your own LLM key for open-ended text
+- **3 simulation methods** — all use the ABE 3.0 behavioral engine for numeric data; methods differ in open-ended text source:
+  - **Adaptive Behavioral Engine 3.0** (Quick Data Generation) — fully offline, non-LLM open-ended text, census-weighted demographics, stylometric fingerprinting, 5 individual-level consistency layers, calibrated error rates
+  - **Built-in AI** — ABE 3.0 behavioral engine + free LLM-powered open-ended text (Groq, Google AI, Cerebras, Mistral, SambaNova, OpenRouter)
+  - **Your API Key** — ABE 3.0 behavioral engine + your own LLM key for open-ended text
 - LLM stall detection with method-switch recommendations (v1.0.8.2)
 
 ### Real-Time Progress Counter
@@ -34,7 +33,7 @@
 - Phase-specific updates: persona assignment, scales, open-ended, participant simulation
 - Shows: current/total count, percentage, progress bar, elapsed time, ETA
 
-### Adaptive Behavioral Engine 2.0
+### Adaptive Behavioral Engine 3.0
 - **Primary offline generation method** — runs entirely without API calls
 - Wraps the 225+ domain template engine with dedicated **narrative intent builders** for creative beliefs, personal disclosure, creative narratives, personal stories, and hypothetical scenarios (Brotherton 2013, Pennebaker 1997, Green & Brock 2000)
 - **200+ narrative position templates** stratified by sentiment for natural, intent-specific openers
@@ -45,14 +44,13 @@
 - Economic game modeling (Fehr-Schmidt, Engel meta-analysis) via integrated behavioral adapter
 - LIWC-informed linguistic profiling and cross-response voice consistency
 
-### Human Behavior Simulator (HBS)
-- **Deep persona coherence** — each simulated participant carries a persistent identity with census-weighted demographics (age, education, income, party ID, ideology, state, region)
+### ABE 3.0 Advanced Realism Layers (integrated)
+- **Census-weighted demographics** — each simulated participant carries a persistent identity with census-weighted demographics (age, education, income, party ID, ideology, state, region)
 - **Calibrated error rates** — typing errors, reading-speed variation, and response-quality lapses calibrated to education level (Frederick 2005)
 - **Stylometric voice fingerprinting** — vocabulary richness, sentence length, punctuation rate, filler words, and capitalization style remain consistent across all of a participant's open-ended responses
-- **Adversarial self-validation** — HBSValidator checks completion time plausibility, OE uniqueness, straight-lining prevalence, OE length distributions, and rating-text coherence against human-realism benchmarks; auto-corrects failures
-- **Question classification** — HBSQuestionClassifier detects item types (Likert, open-ended, attention check, economic game, demographic) for domain-aware processing
-- **Tool-augmented reasoning** — HBSToolDispatcher provides arithmetic, text analysis, and factual lookup for survey items that require computation
-- Wraps ABE 2.0 as its base engine; falls back gracefully if any HBS module fails to initialize
+- **Adversarial self-validation** — checks completion time plausibility, OE uniqueness, straight-lining prevalence, OE length distributions, and rating-text coherence against human-realism benchmarks; auto-corrects failures
+- **5 individual-level consistency improvements** — survey fatigue drift, demographic-style coupling, 3D latent attitude vector, response pattern inertia, post-generation audit & repair
+- **Question classification** — detects item types (Likert, open-ended, attention check, economic game, demographic) for domain-aware processing
 
 ### AI-Powered Open-Ended Responses with multi-provider failover
 - **Zero-config AI**: open-ended responses are automatically AI-generated using built-in API keys — no setup needed
@@ -61,7 +59,7 @@
 - **Large batch architecture**: 20 persona-guided responses per API call for maximum efficiency
 - **Smart pool scaling**: pool size auto-calculated from sample_size (works for 50–5,000+ participants)
 - **Draw-with-replacement + 7-layer deep variation**: persona-driven transformations ensure 90%+ uniqueness even at 2,000 participants from a pool of 30 base responses
-- **Graceful fallback**: falls back to Adaptive Behavioral Engine 2.0 if all LLM providers are exhausted
+- **Graceful fallback**: falls back to ABE 3.0 non-LLM text generation if all LLM providers are exhausted
 - **Generate tab status**: clear indicator shows whether AI responses are active, which provider is in use, and an option to enter your own free key if built-in capacity is reached
 
 ### NEW: Tab Navigation & UI Fixes (v1.4.7)

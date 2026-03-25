@@ -81,15 +81,15 @@ Following the Manning & Horton methodology:
 | Acquiescence | None or too much | Flat or extreme agreement bias | Add slight positive bias to response generation |
 | Straightlining | Never occurs | 0% straightlining | Allow 2–5% of subjects to straightline on at least one scale block |
 
-## HBS-Specific Checks (v1.2.3.8+)
+## ABE 3.0 Advanced Checks (v1.2.5.0+)
 
-When using the Human Behavior Simulator (HBS) engine, these additional checks apply:
+When using the Adaptive Behavioral Engine 3.0, these additional checks apply:
 
 | Component | Check | Benchmark |
 |-----------|-------|-----------|
-| Census demographics | Age, education, income distributions match US census weights | HBSParticipantFactory distributions |
+| Census demographics | Age, education, income distributions match US census weights | ABE 3.0 ParticipantFactory distributions |
 | Party ID | 7-point scale with realistic partisan lean | 30% D, 25% R, 35% I, 10% other (approx.) |
-| Stylometric consistency | Same participant's OE responses share voice (vocab, sentence length, filler rate) | HBSStylometricEngine fingerprint |
-| Error calibration | Typo rate, reading speed vary by education | Frederick 2005, HBS benchmarks |
-| Completion time | Right-skewed, N(840,120)s clipped [480,1500] | HBSParticipantState defaults |
-| Self-validation | HBSValidator passes all 5 checks (timing, OE uniqueness, straightlining, OE length, rating-text coherence) | HBS benchmark battery |
+| Stylometric consistency | Same participant's OE responses share voice (vocab, sentence length, filler rate) | ABE 3.0 StylometricEngine fingerprint |
+| Error calibration | Typo rate, reading speed vary by education | Frederick 2005, ABE 3.0 benchmarks |
+| Completion time | Right-skewed, N(840,120)s clipped [480,1500] | ABE 3.0 ParticipantState defaults |
+| Self-validation | Validator passes all 5 checks (timing, OE uniqueness, straightlining, OE length, rating-text coherence) | ABE 3.0 benchmark battery |
