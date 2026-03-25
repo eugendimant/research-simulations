@@ -173,19 +173,19 @@ The system uses a primary AI-powered generator with a template-based fallback.
 4. **Draw-with-replacement**: Individual participants draw randomly from the pool without depleting it
 5. **Deep variation**: Each drawn response passes through 7 transformation layers to ensure uniqueness
 
-**Fallback / Standalone: Adaptive Behavioral Engine 2.0 (v1.2.3.1):**
+**Fallback / Standalone: Adaptive Behavioral Engine 3.0 (v1.2.5.0):**
 
-The primary offline generation method. Wraps the ComprehensiveResponseGenerator (225+ domain template engine) with narrative-enhanced capabilities:
+The primary offline generation method. ABE 3.0 integrates census-weighted demographics, stylometric voice fingerprinting, and 5 individual-level consistency improvements (fatigue modeling, response inertia, 3D latent trait space, coherence audit, ultra-short disengaged handlers) into the 225+ domain template engine. It wraps the ComprehensiveResponseGenerator with narrative-enhanced capabilities:
 
 1. **Narrative intent routing**: 5 narrative intents (creative_belief, personal_disclosure, creative_narrative, personal_story, hypothetical) get dedicated position builders with 200+ sentiment-stratified templates. 9 standard intents delegate to the base generator.
 2. **Question intent classification**: 14 intent types detected via expanded regex patterns
 3. **Domain detection**: 225+ research domains via keyword matching
 4. **Compositional template assembly**: opener + intent-matched core + domain-enriched elaboration + coda
 5. **40+ domain vocabulary sets**: Specialized terminology for clinical, sports, legal, food, developmental, personality, cognitive, neuroscience, financial, cross-cultural, and 30+ more domains
-6. **Rich question-text mining**: 33 action verb patterns, 24 object/target groups, 15 key phrase patterns; ABE 2.0 adds question_name fallback for variable-name-only questions
+6. **Rich question-text mining**: 33 action verb patterns, 24 object/target groups, 15 key phrase patterns; ABE 3.0 adds question_name fallback for variable-name-only questions
 7. **Domain-gated personalization**: 8 domain condition modifier blocks — only applied when domain matches
 8. **Condition-aware modulation**: Political/identity conditions amplify extremity (Iyengar & Westwood 2015)
-9. **Behavioral coherence enforcement**: 6-check post-processing + ABE 2.0 ultra-short handlers for disengaged participants
+9. **Behavioral coherence enforcement**: 6-check post-processing + ABE 3.0 ultra-short handlers for disengaged participants
 10. **Cross-participant sentence dedup**: Tracks generated sentences and applies variation phrases to prevent duplicates
 11. **8 structural archetypes** with narrative-specific weighting (story_first, emotional_burst, stream, concession, rhetorical, etc.)
 12. **Variation phrase system**: Time/personal/certainty/ending phrases applied to ~25% of responses for natural diversity

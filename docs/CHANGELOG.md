@@ -2,12 +2,11 @@
 ## 2026-02-13 — v1.0.8.1
 ### Generation Method Chooser, Real-Time Progress Counter, SocSim Integration
 
-#### 4-Option Generation Method Chooser
+#### 3-Option Generation Method Chooser
 - **New pre-generation UI**: Users now choose their simulation method before clicking Generate
-- **Option 1: Built-in AI (Recommended)** — free LLM access via built-in API keys (Groq, Cerebras, Google AI, OpenRouter) + env-var support for Mistral AI, SambaNova
-- **Option 2: Your Own API Key** — user provides their own key with auto-detection for 6 providers and visual format validation
-- **Option 3: Built-in Template Engine** — 225+ domain templates, 58+ personas, 40 question types, no API needed
-- **Option 4: Experimental (SocSim)** — evidence-traceable behavioral simulation (Fehr-Schmidt models, IRT, 28 economic games)
+- **Option 1: Adaptive Behavioral Engine 3.0** — 225+ domains, census-weighted demographics, stylometric fingerprinting, 5 consistency layers, no API needed
+- **Option 2: Built-in AI** — ABE 3.0 behavioral engine + free LLM-powered open-ended text via built-in API keys (Groq, Cerebras, Google AI, OpenRouter)
+- **Option 3: Your API Key** — ABE 3.0 behavioral engine + user's own LLM API key with auto-detection for 6 providers and visual format validation
 - Each option has an expandable "What does this do?" tooltip with detailed explanation
 - Visual selection highlighting with checkmark indicator
 
