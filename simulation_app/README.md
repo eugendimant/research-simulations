@@ -1,6 +1,6 @@
 # Behavioral Experiment Simulation Tool
 
-**Version 1.2.3.1** | A Streamlit application for generating realistic synthetic behavioral experiment data using theory-grounded persona-driven simulation.
+**Version 1.2.3.2** | A Streamlit application for generating realistic synthetic behavioral experiment data using theory-grounded persona-driven simulation.
 
 ## What This Tool Does
 
@@ -19,7 +19,7 @@
 - **Develop analysis scripts** on properly structured data
 - **Check pre-registration consistency** before data collection
 
-## Features (v1.2.3.1)
+## Features (v1.2.3.2)
 
 ### Generation Method Chooser
 - **3 simulation methods** — clean, compact selection:
@@ -33,20 +33,25 @@
 - Phase-specific updates: persona assignment, scales, open-ended, participant simulation
 - Shows: current/total count, percentage, progress bar, elapsed time, ETA
 
-### Adaptive Behavioral Engine (Beta)
-- Reads your study design (conditions, scales, open-ended questions, context) and applies published behavioral models
-- **25+ experimental paradigms** supported: economic games, social dilemmas, risk tasks, and more
-- **Latent behavioral classes** for realistic individual differences
-- **Auto-detection**: automatically identifies paradigm-relevant DVs in your study design
+### Adaptive Behavioral Engine 2.0
+- **Primary offline generation method** — runs entirely without API calls
+- Wraps the 225+ domain template engine with dedicated **narrative intent builders** for creative beliefs, personal disclosure, creative narratives, personal stories, and hypothetical scenarios (Brotherton 2013, Pennebaker 1997, Green & Brock 2000)
+- **200+ narrative position templates** stratified by sentiment for natural, intent-specific openers
+- **Cross-participant sentence dedup** ensures unique output across large samples
+- **Condition-aware modulation** — political/identity conditions amplify extremity (Iyengar & Westwood 2015)
+- **8 structural archetypes** with narrative-specific weighting (story_first, emotional_burst, stream, etc.)
+- **Behavioral coherence** — disengaged/straight-lined participants produce appropriately brief responses
+- Economic game modeling (Fehr-Schmidt, Engel meta-analysis) via integrated behavioral adapter
+- LIWC-informed linguistic profiling and cross-response voice consistency
 
-### NEW: AI-Powered Open-Ended Responses with multi-provider failover (v1.4.10+)
+### AI-Powered Open-Ended Responses with multi-provider failover
 - **Zero-config AI**: open-ended responses are automatically AI-generated using built-in API keys — no setup needed
 - **Prioritized failover chain**: Google AI (Gemini Flash) → Groq → Cerebras → SambaNova → Mistral AI → OpenRouter — if one provider rate-limits, the next is tried automatically
 - **Bring your own key**: optionally enter a personal API key from any supported provider for dedicated capacity (auto-detected from key prefix)
 - **Large batch architecture**: 20 persona-guided responses per API call for maximum efficiency
 - **Smart pool scaling**: pool size auto-calculated from sample_size (works for 50–5,000+ participants)
 - **Draw-with-replacement + 7-layer deep variation**: persona-driven transformations ensure 90%+ uniqueness even at 2,000 participants from a pool of 30 base responses
-- **Graceful fallback**: silently falls back to 225-domain template system if all LLM providers are exhausted
+- **Graceful fallback**: falls back to Adaptive Behavioral Engine 2.0 if all LLM providers are exhausted
 - **Generate tab status**: clear indicator shows whether AI responses are active, which provider is in use, and an option to enter your own free key if built-in capacity is reached
 
 ### NEW: Tab Navigation & UI Fixes (v1.4.7)

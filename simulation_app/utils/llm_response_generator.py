@@ -21,7 +21,7 @@ Architecture:
 Version: 1.2.2.9
 """
 
-__version__ = "1.2.3.1"
+__version__ = "1.2.3.2"
 
 import hashlib
 import json
@@ -2913,6 +2913,8 @@ class LLMResponseGenerator:
         question_name: str = "",
         participant_seed: int = 0,
         behavioral_profile: Optional[Dict[str, Any]] = None,
+        question_intent: str = "",
+        question_context: str = "",
     ) -> str:
         """Generate a single open-ended response.
 
@@ -3065,12 +3067,14 @@ class LLMResponseGenerator:
                 question_name=question_name,
                 participant_seed=participant_seed,
                 behavioral_profile=behavioral_profile,
+                question_intent=question_intent,
+                question_context=question_context,
             )
             if _fallback_text and _fallback_text.strip():
                 return _fallback_text
         # Final non-empty guard for OE completeness even under cascading failures.
         _topic_tokens = _extract_topic_tokens(question_text, condition)
-        _topic = " ".join(_topic_tokens[:2]).strip() or "this topic"
+        _topic = " ".join(_topic_tokens[:2]).strip() or "the questions asked"
         _fallback_rng = random.Random((participant_seed or 0) + len(question_text or "") + len(condition or ""))
         _prefixes = {
             "very_positive": ["I felt strongly positive about", "My reaction was clearly favorable toward"],
