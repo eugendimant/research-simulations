@@ -1,6 +1,6 @@
 # Behavioral Experiment Simulation Tool
 
-**Version 1.2.3.6** | A Streamlit application for generating realistic synthetic behavioral experiment data using theory-grounded persona-driven simulation.
+**Version 1.2.3.8** | A Streamlit application for generating realistic synthetic behavioral experiment data using theory-grounded persona-driven simulation.
 
 ## What This Tool Does
 
@@ -19,11 +19,12 @@
 - **Develop analysis scripts** on properly structured data
 - **Check pre-registration consistency** before data collection
 
-## Features (v1.2.3.6)
+## Features (v1.2.3.8)
 
 ### Generation Method Chooser
-- **3 simulation methods** — all use the ABE 2.0 behavioral engine for numeric data; methods differ in how open-ended text is generated:
+- **4 simulation methods** — all use the ABE 2.0 behavioral engine for numeric data; methods differ in realism layers and open-ended text source:
   - **Adaptive Behavioral Engine 2.0** — fully offline, narrative-enhanced open-ended text via 225+ domains, 60+ archetypes
+  - **Human Behavior Simulator (HBS)** — DANEEL-grade persona coherence with census-weighted demographics, calibrated error rates (Frederick 2005), stylometric voice fingerprinting, and adversarial self-validation
   - **Built-in AI** — ABE 2.0 behavioral engine + free LLM-powered open-ended text (Groq, Google AI, Cerebras, Mistral, SambaNova, OpenRouter)
   - **Your API Key** — ABE 2.0 behavioral engine + your own LLM key for open-ended text
 - LLM stall detection with method-switch recommendations (v1.0.8.2)
@@ -43,6 +44,15 @@
 - **Behavioral coherence** — disengaged/straight-lined participants produce appropriately brief responses
 - Economic game modeling (Fehr-Schmidt, Engel meta-analysis) via integrated behavioral adapter
 - LIWC-informed linguistic profiling and cross-response voice consistency
+
+### Human Behavior Simulator (HBS)
+- **DANEEL-grade persona coherence** — each simulated participant carries a persistent identity with census-weighted demographics (age, education, income, party ID, ideology, state, region)
+- **Calibrated error rates** — typing errors, reading-speed variation, and response-quality lapses calibrated to education level (Frederick 2005)
+- **Stylometric voice fingerprinting** — vocabulary richness, sentence length, punctuation rate, filler words, and capitalization style remain consistent across all of a participant's open-ended responses
+- **Adversarial self-validation** — HBSValidator checks completion time plausibility, OE uniqueness, straight-lining prevalence, OE length distributions, and rating-text coherence against DANEEL benchmarks; auto-corrects failures
+- **Question classification** — HBSQuestionClassifier detects item types (Likert, open-ended, attention check, economic game, demographic) for domain-aware processing
+- **Tool-augmented reasoning** — HBSToolDispatcher provides arithmetic, text analysis, and factual lookup for survey items that require computation
+- Wraps ABE 2.0 as its base engine; falls back gracefully if any HBS module fails to initialize
 
 ### AI-Powered Open-Ended Responses with multi-provider failover
 - **Zero-config AI**: open-ended responses are automatically AI-generated using built-in API keys — no setup needed

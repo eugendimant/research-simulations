@@ -4,6 +4,17 @@ This is the core architecture for producing high-quality simulated survey respon
 
 The fundamental principle: **every response is conditioned on everything that came before it for that subject.** Responses are never generated in isolation. The simulator maintains a running subject context that grows with each item and feeds forward into subsequent items.
 
+## Engine Variants
+
+The pipeline runs through one of two engine wrappers:
+
+| Engine | Class | Key Differentiator |
+|--------|-------|--------------------|
+| **ABE 2.0** | `EnhancedSimulationEngine` | Base engine — 225+ domains, 60+ archetypes, narrative intent builders |
+| **HBS** | `HBSEngine` (wraps ABE 2.0) | DANEEL-grade layer — census-weighted demographics (`HBSParticipantFactory`), calibrated error rates (`HBSErrorCalibrator`), stylometric voice fingerprinting (`HBSStylometricEngine`), adversarial self-validation (`HBSValidator`), question classification (`HBSQuestionClassifier`) |
+
+HBS calls `EnhancedSimulationEngine.generate()` as its base, then enriches the output with demographic columns, applies stylometric fingerprints to open-ended text, and runs the validation battery. If any HBS module fails, it degrades gracefully to ABE 2.0 output.
+
 ## Pipeline Overview
 
 ```
