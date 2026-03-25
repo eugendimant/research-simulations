@@ -8910,6 +8910,8 @@ class EnhancedSimulationEngine:
                     question_name=str(question_spec.get("name", "")),
                     participant_seed=participant_seed,
                     behavioral_profile=behavioral_profile,
+                    question_intent=_early_intent,
+                    question_context=question_context,
                 )
                 if resp and resp.strip():
                     _fb_after = getattr(self.llm_generator, '_fallback_count', 0)
