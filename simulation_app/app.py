@@ -54,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.2.3.4"
-BUILD_ID = "20260325-v12034-remove-template-method-path"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.2.3.5"
+BUILD_ID = "20260325-v12035-fix-validation-log-socsim-always-on"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -118,7 +118,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.2.3.4"  # v1.2.3.4: ABE 2.0 dedup + condition-aware + bug fixes
+APP_VERSION = "1.2.3.5"  # v1.2.3.5: ABE 2.0 dedup + condition-aware + bug fixes
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -11761,7 +11761,7 @@ if active_page == 3:
             unsafe_allow_html=True,
         )
 
-        # --- v1.2.3.4: Method cards — 3-card grid (ABE 2.0 replaces Template + Behavioral) ---
+        # --- v1.2.3.5: Method cards — 3-card grid (ABE 2.0 replaces Template + Behavioral) ---
         # Order: Adaptive Behavioral Engine 2.0, Built-in AI, Your API Key
         _method_cards = [
             {
@@ -11774,10 +11774,9 @@ if active_page == 3:
                 "subtitle": "225+ domains, 60+ archetypes, narrative intelligence, literature-calibrated effects",
                 "details": [
                     "Runs entirely offline — no API calls needed",
-                    "8 structural archetypes with narrative-specific weighting",
-                    "Dedicated builders for creative, disclosure, and story intents",
+                    "Full behavioral engine for numeric &amp; open-ended data",
+                    "Narrative-specific builders for creative, disclosure, and story intents",
                     "Economic game modeling (Fehr-Schmidt, Engel meta-analysis)",
-                    "LIWC-informed linguistic profiling &amp; cross-response voice consistency",
                 ],
                 "quality_note": "",
                 "info_tooltip": "",
@@ -11789,10 +11788,10 @@ if active_page == 3:
                 "title": "Built-in AI",
                 "tag": "Free",
                 "tag_color": "#3B82F6",
-                "subtitle": "AI-generated responses using free LLM providers",
+                "subtitle": "ABE 2.0 behavioral engine + LLM-powered open-ended text",
                 "details": [
-                    "Free-tier AI models (Google AI, Groq, Cerebras, SambaNova, Mistral, OpenRouter)",
-                    "Behavioral coherence: text matches each participant's ratings",
+                    "Numeric data: same ABE 2.0 behavioral engine as standalone",
+                    "Open-ended text: AI-generated via free LLM providers",
                     "Auto-failover across 7 providers for reliability",
                     f"Capped at N={MAX_FREE_LLM_N} (use Your API Key for larger samples)",
                 ],
@@ -11805,18 +11804,18 @@ if active_page == 3:
                 "title": "Your API Key",
                 "tag": "",
                 "tag_color": "",
-                "subtitle": "Bring your own LLM provider for dedicated access",
+                "subtitle": "ABE 2.0 behavioral engine + your own LLM for open-ended text",
                 "details": [
-                    "Your key from Google AI, Groq, Cerebras, Mistral AI, SambaNova, OpenRouter, or OpenAI",
+                    "Numeric data: same ABE 2.0 behavioral engine as standalone",
+                    "Open-ended text: AI-generated via your own API key",
                     "Dedicated rate limits — no shared usage constraints",
-                    "Same behavioral coherence pipeline as Built-in AI",
                     "Key used in-memory only; never saved or logged",
                 ],
                 "info_tooltip": "",
             },
         ]
 
-        # v1.2.3.4: Render 3-column grid (ABE 2.0, Built-in AI, Your API Key)
+        # v1.2.3.5: Render 3-column grid (ABE 2.0, Built-in AI, Your API Key)
         _card_cols = list(st.columns(3, gap="medium"))
 
         for _ci, _card in enumerate(_method_cards):
@@ -11893,12 +11892,12 @@ if active_page == 3:
                         use_container_width=True,
                     ):
                         st.session_state[_gen_method_key] = _mk
-                        # v1.2.3.4: ABE 2.0 replaces template + experimental
-                        st.session_state["allow_template_fallback_once"] = _mk in ("template", "experimental", "abe_v2")
-                        st.session_state["_use_socsim_experimental"] = _mk in ("experimental", "abe_v2")
+                        # v1.2.3.5: Socsim always on — behavioral engine is ABE 2.0 for all methods.
+                        # Tile selection only controls open-ended text source (ABE v2 templates vs LLM).
+                        st.session_state["_use_socsim_experimental"] = True
                         st.session_state["_use_abe_v2"] = (_mk == "abe_v2")
+                        st.session_state["allow_template_fallback_once"] = _mk in ("template", "experimental", "abe_v2")
                         if _mk in ("free_llm", "own_api"):
-                            st.session_state["_use_socsim_experimental"] = False
                             st.session_state["_use_abe_v2"] = False
                         st.rerun()
 
@@ -12060,7 +12059,7 @@ if active_page == 3:
                                  help="Free keys available from Groq, Google AI, etc."):
                         st.session_state[_gen_method_key] = "own_api"
                         st.session_state["allow_template_fallback_once"] = False
-                        st.session_state["_use_socsim_experimental"] = False
+                        st.session_state["_use_socsim_experimental"] = True
                         st.session_state["_use_abe_v2"] = False
                         st.session_state["_llm_connectivity_status"] = None  # v1.2.0.8: Clear stale cache
                         st.rerun()
@@ -12076,23 +12075,15 @@ if active_page == 3:
                         st.rerun()
 
         # Wire method choice into engine settings
-        if _current_method in ("template", "abe_v2"):
+        # v1.2.3.5: Socsim always on — behavioral engine (numeric data) uses ABE 2.0
+        # pipeline for all methods. Tile selection only controls open-ended text source.
+        st.session_state["_use_socsim_experimental"] = True
+        if _current_method in ("template", "abe_v2", "experimental"):
             st.session_state["allow_template_fallback_once"] = True
-            st.session_state["_use_socsim_experimental"] = _current_method in ("abe_v2", "experimental")
             st.session_state["_use_abe_v2"] = _current_method == "abe_v2"
         elif _current_method in ("free_llm", "own_api"):
-            _has_user_key = bool((st.session_state.get("user_llm_api_key", "") or "").strip())
-            if _current_method == "free_llm" and not (_llm_status or {}).get("available", False) and not _has_user_key:
-                st.session_state["allow_template_fallback_once"] = False
-            elif _current_method == "own_api" and not _has_user_key:
-                st.session_state["allow_template_fallback_once"] = False
-            else:
-                st.session_state["allow_template_fallback_once"] = False
-            st.session_state["_use_socsim_experimental"] = False
+            st.session_state["allow_template_fallback_once"] = False
             st.session_state["_use_abe_v2"] = False
-        elif _current_method == "experimental":
-            st.session_state["allow_template_fallback_once"] = True
-            st.session_state["_use_socsim_experimental"] = True
 
     else:
         # v1.2.0.1: Explicitly clear the method section slot during generation
@@ -12389,7 +12380,7 @@ if active_page == 3:
             ):
                 st.session_state["generation_method"] = "own_api"
                 st.session_state["allow_template_fallback_once"] = False
-                st.session_state["_use_socsim_experimental"] = False
+                st.session_state["_use_socsim_experimental"] = True
                 st.session_state["_use_abe_v2"] = False
                 st.session_state.pop("_free_llm_oe_cap_accepted", None)
                 _navigate_to(3)
@@ -12525,7 +12516,7 @@ if active_page == 3:
                          type="secondary", use_container_width=True):
                 st.session_state["generation_method"] = "own_api"
                 st.session_state["allow_template_fallback_once"] = False
-                st.session_state["_use_socsim_experimental"] = False
+                st.session_state["_use_socsim_experimental"] = True
                 st.session_state["_use_abe_v2"] = False
                 st.session_state["is_generating"] = False
                 _navigate_to(3)
@@ -13312,24 +13303,30 @@ if active_page == 3:
                 '</div>',
                 unsafe_allow_html=True,
             )
-            _init_c1, _init_c2 = st.columns(2)
-            with _init_c1:
-                if st.button("Switch to Adaptive Engine 2.0", key="_init_fail_abe_v2",
-                             type="primary", use_container_width=True):
-                    st.session_state["generation_method"] = "abe_v2"
-                    st.session_state["allow_template_fallback_once"] = True
-                    st.session_state["_use_socsim_experimental"] = True
-                    st.session_state["_use_abe_v2"] = True
-                    st.session_state["is_generating"] = True
-                    st.session_state["_generation_phase"] = 1
-                    _navigate_to(3)
-            with _init_c2:
+            # v1.2.3.5: Context-aware recovery — offer alternatives that differ
+            # from the method that just failed.
+            _failed_method = st.session_state.get("generation_method", "abe_v2")
+            _init_alts = [m for m in ["abe_v2", "free_llm", "own_api"] if m != _failed_method]
+            _init_labels = {"abe_v2": "Adaptive Engine 2.0", "free_llm": "Built-in AI", "own_api": "Your API Key"}
+            _init_cols = st.columns(len(_init_alts) + 1)
+            for _ia_i, _ia_m in enumerate(_init_alts):
+                with _init_cols[_ia_i]:
+                    if st.button(f"Switch to {_init_labels[_ia_m]}", key=f"_init_fail_{_ia_m}",
+                                 type="primary" if _ia_i == 0 else "secondary", use_container_width=True):
+                        st.session_state["generation_method"] = _ia_m
+                        st.session_state["_use_socsim_experimental"] = True
+                        st.session_state["_use_abe_v2"] = (_ia_m == "abe_v2")
+                        st.session_state["allow_template_fallback_once"] = _ia_m in ("template", "experimental", "abe_v2")
+                        st.session_state["is_generating"] = _ia_m == "abe_v2"
+                        if _ia_m == "abe_v2":
+                            st.session_state["_generation_phase"] = 1
+                        _navigate_to(3)
+            with _init_cols[-1]:
                 if st.button("Try again", key="_init_fail_retry",
                              type="secondary", use_container_width=True):
-                    _retry_method = st.session_state.get("generation_method", "abe_v2")
-                    st.session_state["allow_template_fallback_once"] = _retry_method in ("template", "experimental", "abe_v2")
-                    st.session_state["_use_socsim_experimental"] = _retry_method in ("experimental", "abe_v2")
-                    st.session_state["_use_abe_v2"] = _retry_method == "abe_v2"
+                    st.session_state["_use_socsim_experimental"] = True
+                    st.session_state["_use_abe_v2"] = _failed_method == "abe_v2"
+                    st.session_state["allow_template_fallback_once"] = _failed_method in ("template", "experimental", "abe_v2")
                     st.session_state["is_generating"] = True
                     st.session_state["_generation_phase"] = 1
                     _navigate_to(3)
@@ -13387,7 +13384,7 @@ if active_page == 3:
                                      help="Get a free key from Groq or Google AI"):
                             st.session_state[_gen_method_key] = "own_api"
                             st.session_state["allow_template_fallback_once"] = False
-                            st.session_state["_use_socsim_experimental"] = False
+                            st.session_state["_use_socsim_experimental"] = True
                             st.session_state["_use_abe_v2"] = False
                             st.session_state["is_generating"] = False
                             _navigate_to(3)
@@ -13791,7 +13788,7 @@ if active_page == 3:
                                          type="secondary", use_container_width=True):
                                 st.session_state[_gen_method_key] = "own_api"
                                 st.session_state["allow_template_fallback_once"] = False
-                                st.session_state["_use_socsim_experimental"] = False
+                                st.session_state["_use_socsim_experimental"] = True
                                 st.session_state["_use_abe_v2"] = False
                                 _navigate_to(3)
                         with _retry_col2:
@@ -13846,7 +13843,7 @@ if active_page == 3:
                                          type="secondary", use_container_width=True):
                                 st.session_state[_gen_method_key] = "own_api"
                                 st.session_state["allow_template_fallback_once"] = False
-                                st.session_state["_use_socsim_experimental"] = False
+                                st.session_state["_use_socsim_experimental"] = True
                                 st.session_state["_use_abe_v2"] = False
                                 _navigate_to(3)
                         with _fb_col2:
@@ -14439,7 +14436,7 @@ if active_page == 3:
                                  help="Get a free key from Groq or Google AI in 30 seconds"):
                         st.session_state[_gen_method_key] = "own_api"
                         st.session_state["allow_template_fallback_once"] = False
-                        st.session_state["_use_socsim_experimental"] = False
+                        st.session_state["_use_socsim_experimental"] = True
                         st.session_state["_use_abe_v2"] = False
                         st.session_state["is_generating"] = False
                         _navigate_to(3)
@@ -14484,7 +14481,7 @@ if active_page == 3:
                                  type="secondary", use_container_width=True):
                         st.session_state[_gen_method_key] = "own_api"
                         st.session_state["allow_template_fallback_once"] = False
-                        st.session_state["_use_socsim_experimental"] = False
+                        st.session_state["_use_socsim_experimental"] = True
                         st.session_state["_use_abe_v2"] = False
                         st.session_state["is_generating"] = False
                         _navigate_to(3)
@@ -14593,7 +14590,7 @@ if active_page == 3:
                              type="secondary", use_container_width=True):
                     st.session_state["generation_method"] = "own_api"
                     st.session_state["allow_template_fallback_once"] = False
-                    st.session_state["_use_socsim_experimental"] = False
+                    st.session_state["_use_socsim_experimental"] = True
                     st.session_state["_use_abe_v2"] = False
                     st.session_state["is_generating"] = False
                     _navigate_to(3)
