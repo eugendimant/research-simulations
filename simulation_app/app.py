@@ -12122,103 +12122,23 @@ if active_page == 3:
         }
         _acard = _active_card_info.get(_active_method_key)
         if _acard:
+            # v1.2.5.0: Minimal method indicator — just name + running badge, no subtitle
             st.markdown(
-                f'<div style="border:2px solid #22c55e;background:#f8fdf9;border-radius:12px;'
-                f'padding:12px 16px;margin-bottom:8px;opacity:0.7;">'
-                f'<div style="display:flex;align-items:center;gap:10px;">'
+                f'<div style="display:flex;align-items:center;gap:8px;padding:8px 0;">'
                 f'<span style="display:inline-flex;align-items:center;justify-content:center;'
-                f'width:32px;height:32px;border-radius:8px;background:{_acard["icon_bg"]};'
-                f'color:white;font-size:0.9em;">{_acard["icon"]}</span>'
-                f'<div>'
-                f'<span style="font-weight:700;font-size:0.88em;color:#166534;">'
+                f'width:28px;height:28px;border-radius:7px;background:{_acard["icon_bg"]};'
+                f'color:white;font-size:0.8em;">{_acard["icon"]}</span>'
+                f'<span style="font-weight:600;font-size:0.85em;color:#374151;">'
                 f'{_acard["title"]}</span>'
-                f'<span style="color:#22c55e;font-size:0.75em;margin-left:8px;font-weight:600;">&#10003; Running</span>'
-                f'<div style="color:#6B7280;font-size:0.78em;margin-top:2px;">{_acard["subtitle"]}</div>'
-                f'</div></div></div>',
+                f'<span style="background:#dcfce7;color:#166534;font-size:0.7em;'
+                f'border-radius:10px;padding:2px 8px;font-weight:600;">Running</span>'
+                f'</div>',
                 unsafe_allow_html=True,
             )
 
-        _banner_method_labels = {
-            "template": "Template Engine",
-            "experimental": "Adaptive Behavioral Engine",
-            "abe_v2": "Adaptive Behavioral Engine 3.0",
-            "free_llm": "Built-in AI",
-            "own_api": "AI (your API key)",
-        }
-        _banner_method = _banner_method_labels.get(_active_method_key, "")
-        _banner_subtitle = "Creating realistic behavioral data. Progress updates below."
-        if _banner_method:
-            _banner_subtitle = f"Using <strong>{_banner_method}</strong>. Progress updates below."
-        with status_placeholder.container():
-            st.markdown(f"""
-            <style>
-                @keyframes gen-pulse {{
-                    0%, 100% {{ opacity: 1; }}
-                    50% {{ opacity: 0.7; }}
-                }}
-                @keyframes gen-spin {{
-                    0% {{ transform: rotate(0deg); }}
-                    100% {{ transform: rotate(360deg); }}
-                }}
-                @keyframes gen-shimmer {{
-                    0% {{ background-position: -200% 0; }}
-                    100% {{ background-position: 200% 0; }}
-                }}
-                .gen-banner {{
-                    text-align: center;
-                    padding: 32px 24px;
-                    background: linear-gradient(135deg, #0f172a 0%, #1e3a5f 50%, #0f172a 100%);
-                    border-radius: 16px;
-                    margin: 16px 0;
-                    box-shadow: 0 8px 32px rgba(15,23,42,0.3);
-                    position: relative;
-                    overflow: hidden;
-                }}
-                .gen-banner::before {{
-                    content: '';
-                    position: absolute;
-                    top: 0; left: 0; right: 0;
-                    height: 3px;
-                    background: linear-gradient(90deg, transparent, #60a5fa, #a78bfa, #60a5fa, transparent);
-                    background-size: 200% 100%;
-                    animation: gen-shimmer 2s linear infinite;
-                }}
-                .gen-spinner {{
-                    display: inline-block;
-                    width: 40px;
-                    height: 40px;
-                    border: 3px solid rgba(96,165,250,0.2);
-                    border-top: 3px solid #60a5fa;
-                    border-radius: 50%;
-                    animation: gen-spin 0.8s linear infinite;
-                    margin-bottom: 16px;
-                }}
-                .gen-title {{
-                    color: white;
-                    margin: 0 0 8px 0;
-                    font-size: 1.4em;
-                    font-weight: 700;
-                    letter-spacing: -0.02em;
-                }}
-                .gen-subtitle {{
-                    color: #93c5fd;
-                    font-size: 0.95em;
-                    margin: 0;
-                    line-height: 1.5;
-                }}
-                .gen-note {{
-                    color: #64748b;
-                    font-size: 0.8em;
-                    margin-top: 12px;
-                }}
-            </style>
-            <div class="gen-banner">
-                <div class="gen-spinner"></div>
-                <h2 class="gen-title">Simulation In Progress</h2>
-                <p class="gen-subtitle">Generating realistic behavioral data via {_banner_method or 'selected method'}...</p>
-                <p class="gen-note">Please keep this page open. Progress updates appear below.</p>
-            </div>
-            """, unsafe_allow_html=True)
+        # v1.2.5.0: Removed heavy dark banner — progress is shown via the clean
+        # progress counter placeholder below. No need for duplicate status elements.
+        status_placeholder.empty()
 
     if has_generated:
         # v1.0.6.7: Generation warnings stored for display in quality report expander
@@ -12556,8 +12476,7 @@ if active_page == 3:
         # generation reruns.  Without this, every generation attempt crashes with NameError
         # at the pre-flight health check, leaving is_generating=True forever (stuck blue screen).
         _gen_method_key = "generation_method"
-        progress_bar = progress_placeholder.progress(5, text="Preparing simulation inputs...")
-        status_placeholder.info("🔄 Preparing simulation inputs...")
+        progress_bar = progress_placeholder.progress(5, text="")
 
         # v1.2.1.7: SETUP TRY BLOCK — wrap ALL pre-engine setup code so that ANY crash
         # (dict-contaminated values, float() on non-numeric, missing keys, etc.) is caught
@@ -12960,165 +12879,108 @@ if active_page == 3:
                         if phase in ("personas", "scales", "open_ended"):
                             _stall_warning_shown[0] = True
 
-                    # v1.2.0.1: Always update the main progress bar during early phases
-                    # so users see movement, not a static "Step 1/5" for minutes.
+                    # =================================================================
+                    # v1.2.5.0: Clean Apple-style progress UI
+                    # Single source of truth: _progress_counter_placeholder
+                    # progress_bar shows a slim percentage bar with minimal text.
+                    # =================================================================
+
+                    def _render_progress(label: str, pct: int, elapsed: float,
+                                         sub_label: str = "", accent: str = "#007AFF") -> None:
+                        """Render the unified progress display."""
+                        _bar_pct = max(5, min(95, pct))
+                        progress_bar.progress(_bar_pct, text="")
+                        _sub_html = ""
+                        if sub_label:
+                            _sub_html = (
+                                f'<div style="font-size:0.78em;color:{accent};margin-top:6px;">'
+                                f'{sub_label}</div>'
+                            )
+                        # Cap notification if applicable
+                        _cap_html = ""
+                        if _oe_cap_reached_info[0]:
+                            _cap_html = (
+                                f'<div style="font-size:0.78em;color:#92400e;margin-top:6px;">'
+                                f'Free AI cap reached — using ABE 3.0 for remaining</div>'
+                            )
+                        _progress_counter_placeholder.markdown(
+                            f'<div style="text-align:center;padding:20px 24px;'
+                            f'background:#FAFAFA;border:1px solid #E5E5EA;'
+                            f'border-radius:14px;margin:4px 0;">'
+                            f'<div style="font-size:0.82em;color:#86868B;letter-spacing:0.02em;'
+                            f'text-transform:uppercase;font-weight:600;margin-bottom:8px;">'
+                            f'{label}</div>'
+                            f'<div style="font-size:2.2em;font-weight:700;color:#1D1D1F;'
+                            f'letter-spacing:-0.03em;line-height:1.1;">'
+                            f'{pct}%</div>'
+                            f'<div style="font-size:0.82em;color:#86868B;margin-top:6px;">'
+                            f'{_fmt_elapsed(elapsed)}</div>'
+                            f'{_sub_html}{_cap_html}'
+                            f'<div style="background:#E5E5EA;border-radius:3px;'
+                            f'height:4px;margin-top:14px;overflow:hidden;">'
+                            f'<div style="background:{accent};width:{pct}%;height:100%;'
+                            f'border-radius:3px;transition:width 0.4s ease;"></div>'
+                            f'</div></div>',
+                            unsafe_allow_html=True,
+                        )
+
                     if phase == "personas":
-                        progress_bar.progress(18, text="Step 2/5 — Assigning behavioral personas...")
-                        _progress_counter_placeholder.markdown(
-                            f'<div style="text-align:center;padding:10px;background:#f0f9ff;border-radius:8px;margin:8px 0;">'
-                            f'<span style="font-size:1.1em;color:#0369a1;">'
-                            f'Assigning behavioral personas...</span>'
-                            f'<div style="font-size:0.8em;color:#6B7280;margin-top:4px;">'
-                            f'Elapsed: {_fmt_elapsed(_elapsed)}</div></div>',
-                            unsafe_allow_html=True,
-                        )
+                        _render_progress("Assigning Personas", 15, _elapsed)
                     elif phase == "scales":
-                        _s_pct = int(((current + 1) / max(1, total)) * 100)
-                        _bar_pct = 20 + int(_s_pct * 0.05)  # 20-25% range
-                        progress_bar.progress(_bar_pct, text=f"Step 2/5 — Generating scale responses ({current + 1}/{total})...")
-                        _progress_counter_placeholder.markdown(
-                            f'<div style="text-align:center;padding:10px;background:#f0f9ff;border-radius:8px;margin:8px 0;">'
-                            f'<span style="font-size:1.1em;color:#0369a1;">'
-                            f'Generating scale responses — scale {current + 1} of {total}</span>'
-                            f'<div style="background:#dbeafe;border-radius:4px;height:6px;margin-top:8px;">'
-                            f'<div style="background:#3b82f6;width:{_s_pct}%;height:100%;border-radius:4px;'
-                            f'transition:width 0.3s;"></div></div>'
-                            f'<div style="font-size:0.8em;color:#6B7280;margin-top:4px;">'
-                            f'Elapsed: {_fmt_elapsed(_elapsed)}</div></div>',
-                            unsafe_allow_html=True,
-                        )
+                        _s_pct = 18 + int(((current + 1) / max(1, total)) * 7)
+                        _render_progress("Generating Scales", _s_pct, _elapsed,
+                                         f"Scale {current + 1} of {total}")
                     elif phase == "open_ended":
-                        progress_bar.progress(26, text="Step 2/5 — Preparing open-ended text generation...")
-                        _progress_counter_placeholder.markdown(
-                            f'<div style="text-align:center;padding:10px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;margin:8px 0;">'
-                            f'<span style="font-size:1.1em;color:#92400e;">'
-                            f'Preparing open-ended response generation...</span>'
-                            f'<div style="font-size:0.8em;color:#6B7280;margin-top:4px;">'
-                            f'Elapsed: {_fmt_elapsed(_elapsed)}</div></div>',
-                            unsafe_allow_html=True,
-                        )
+                        _render_progress("Preparing Open-Ended", 26, _elapsed)
                     elif phase == "open_ended_question":
-                        # v1.1.1.2: Per-OE-question progress
-                        _oe_pct = 26 + int((current / max(1, total)) * 10)  # 26-36% range
-                        progress_bar.progress(_oe_pct, text=f"Step 2/5 — Text responses: question {current + 1} of {total}...")
-                        _progress_counter_placeholder.markdown(
-                            f'<div style="text-align:center;padding:10px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;margin:8px 0;">'
-                            f'<span style="font-size:1.1em;color:#92400e;">'
-                            f'Generating text responses — question {current + 1} of {total}</span>'
-                            f'<div style="font-size:0.8em;color:#6B7280;margin-top:4px;">'
-                            f'Elapsed: {_fmt_elapsed(_elapsed)}</div></div>',
-                            unsafe_allow_html=True,
-                        )
+                        _oe_pct = 26 + int((current / max(1, total)) * 12)
+                        _render_progress("Generating Text", _oe_pct, _elapsed,
+                                         f"Question {current + 1} of {total}",
+                                         accent="#FF9500")
                     elif phase == "generating":
-                        # v1.1.1.0: Show observation count + elapsed time + LLM source stats
                         _pct = int((current / max(1, total)) * 100)
-                        # v1.2.0.1: Update main progress bar smoothly (25-48% range)
                         _bar_gen_pct = 25 + int(_pct * 0.23)
-                        progress_bar.progress(_bar_gen_pct, text=f"Step 2/5 — {current} of {total} participants...")
-                        _elapsed_str = _fmt_elapsed(_elapsed)
-                        # v1.2.0.9: Simplified progress stats — hide raw API counts
-                        # in non-advanced mode to avoid overwhelming users.
-                        _llm_status_html = ""
-                        _is_advanced = st.session_state.get("advanced_mode", False)
+                        # Build subtle LLM status line
+                        _llm_sub = ""
                         if _is_llm_method and _has_oe_questions:
                             try:
                                 if hasattr(engine, 'llm_generator') and engine.llm_generator is not None:
                                     _ls = engine.llm_generator.stats
                                     _pool_n = int(_ls.get("pool_size", 0))
-                                    _fb_n = int(_ls.get("fallback_uses", 0))
-                                    _llm_n = int(_ls.get("llm_calls", 0))
                                     _fd = bool(_ls.get("force_disabled", False))
-                                    if _is_advanced:
-                                        # Advanced mode: show detailed stats
-                                        if _fd:
-                                            _src_text = f"AI responses: {_pool_n} | Template fallback: {_fb_n}"
-                                            _src_color = "#B45309"
-                                        elif _llm_n > 0:
-                                            _src_text = f"AI responses: {_pool_n} | API calls: {_llm_n}"
-                                            _src_color = "#166534"
-                                        else:
-                                            _src_text = "Waiting for AI provider response..."
-                                            _src_color = "#6B7280"
+                                    if _fd:
+                                        _llm_sub = "Using template responses"
+                                    elif _pool_n > 0:
+                                        _llm_sub = "AI text generation active"
                                     else:
-                                        # Standard mode: simplified status
-                                        if _fd:
-                                            _src_text = "Generating responses..."
-                                            _src_color = "#B45309"
-                                        elif _pool_n > 0:
-                                            _src_text = "AI generating responses..."
-                                            _src_color = "#166534"
-                                        else:
-                                            _src_text = "Connecting to AI..."
-                                            _src_color = "#6B7280"
-                                    _llm_status_html = (
-                                        f'<div style="font-size:0.8em;color:{_src_color};margin-top:6px;">'
-                                        f'{_src_text}</div>'
-                                    )
+                                        _llm_sub = "Connecting to AI provider..."
                             except Exception:
                                 pass
-                        # v1.1.1.7: Show method name in the live progress counter
-                        _method_tag_html = ""
-                        if _cb_method_label:
-                            _method_tag_html = (
-                                f'<div style="font-size:0.8em;color:#166534;margin-bottom:4px;'
-                                f'font-weight:600;">{_cb_method_label}</div>'
-                            )
-                        # v1.2.2.9: Persistent cap notification — show inside the
-                        # generating progress so it's not overwritten by the next tick.
-                        _cap_note_html = ""
-                        if _oe_cap_reached_info[0]:
-                            _cap_note_html = (
-                                f'<div style="background:#fffbeb;border:1px solid #fde68a;'
-                                f'border-radius:6px;padding:6px 10px;margin-top:8px;'
-                                f'font-size:0.82em;color:#92400e;">'
-                                f'Free AI cap reached ({_oe_cap_reached_info[1]} responses) '
-                                f'&mdash; using Adaptive Engine 3.0 for remaining participants</div>'
-                            )
-                        _progress_counter_placeholder.markdown(
-                            f'<div style="text-align:center;padding:14px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;margin:8px 0;">'
-                            f'{_method_tag_html}'
-                            f'<span style="font-size:1.6em;font-weight:700;color:#166534;">'
-                            f'{current} of {total}</span>'
-                            f'<span style="font-size:1em;color:#166534;"> participants simulated</span>'
-                            f'<div style="font-size:0.85em;color:#4B5563;margin-top:4px;">Elapsed: {_elapsed_str}</div>'
-                            f'{_llm_status_html}'
-                            f'{_cap_note_html}'
-                            f'<div style="background:#dcfce7;border-radius:4px;height:10px;margin-top:10px;">'
-                            f'<div style="background:#22c55e;width:{_pct}%;height:100%;border-radius:4px;'
-                            f'transition:width 0.3s;"></div></div></div>',
-                            unsafe_allow_html=True,
+                        _render_progress(
+                            f"{current} of {total} participants",
+                            _bar_gen_pct, _elapsed, _llm_sub,
+                            accent="#34C759",
                         )
                     elif phase == "llm_prefill":
-                        # v1.1.1.5: Progress during LLM pool prefill — prevents watchdog
-                        # from misinterpreting a long prefill (up to 90s) as a stall.
-                        # v1.1.1.7: Only show AI prefill message for AI methods.
                         if _is_llm_method:
-                            _pf_pct = int(((current + 1) / max(1, total)) * 100) if total > 0 else 0
-                            _progress_counter_placeholder.markdown(
-                                f'<div style="text-align:center;padding:10px;background:#f0f9ff;border-radius:8px;margin:8px 0;">'
-                                f'<span style="font-size:1.1em;color:#0369a1;">'
-                                f'Pre-filling AI response pool — question {current + 1} of {total}</span>'
-                                f'<div style="background:#dbeafe;border-radius:4px;height:6px;margin-top:8px;">'
-                                f'<div style="background:#3b82f6;width:{_pf_pct}%;height:100%;border-radius:4px;'
-                                f'transition:width 0.3s;"></div></div></div>',
-                                unsafe_allow_html=True,
-                            )
+                            _pf_pct = 12 + int(((current + 1) / max(1, total)) * 8)
+                            _render_progress("Preparing AI Pool", _pf_pct, _elapsed,
+                                             f"Question {current + 1} of {total}",
+                                             accent="#007AFF")
                     elif phase == "socsim_enrichment":
-                        _pct_s = int((current / max(1, total)) * 100) if total > 0 else 0
-                        _progress_counter_placeholder.markdown(
-                            f'<div style="text-align:center;padding:12px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;margin:8px 0;">'
-                            f'<span style="font-size:1.1em;font-weight:600;color:#1e40af;">'
-                            f'Applying behavioral models: {current} of {total} tasks</span>'
-                            f'<div style="background:#bfdbfe;border-radius:4px;height:6px;margin-top:8px;">'
-                            f'<div style="background:#3b82f6;width:{_pct_s}%;height:100%;border-radius:4px;'
-                            f'transition:width 0.3s;"></div></div></div>',
-                            unsafe_allow_html=True,
-                        )
+                        _render_progress("Applying Behavioral Models", 48, _elapsed,
+                                         accent="#5856D6")
                     elif phase == "complete":
+                        progress_bar.progress(50, text="")
                         _progress_counter_placeholder.markdown(
-                            f'<div style="text-align:center;padding:12px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;margin:8px 0;">'
-                            f'<span style="font-size:1.2em;font-weight:700;color:#166534;">'
-                            f'&#10003; All {total} participants generated</span></div>',
+                            f'<div style="text-align:center;padding:16px 24px;'
+                            f'background:#FAFAFA;border:1px solid #E5E5EA;'
+                            f'border-radius:14px;margin:4px 0;">'
+                            f'<div style="font-size:0.82em;color:#34C759;letter-spacing:0.02em;'
+                            f'text-transform:uppercase;font-weight:600;">Complete</div>'
+                            f'<div style="font-size:1.3em;font-weight:600;color:#1D1D1F;'
+                            f'margin-top:4px;">{total} participants generated</div>'
+                            f'</div>',
                             unsafe_allow_html=True,
                         )
                     elif phase == "oe_cap_reached":
@@ -13351,7 +13213,7 @@ if active_page == 3:
         # health check and domain display unprotected.  Any crash in that gap would
         # trigger the stale-phase-2 recovery with a generic "unexpected error" message.
         try:
-            progress_bar.progress(15, text="Step 1/5 — Engine ready, preparing generation...")
+            progress_bar.progress(15, text="")
 
             # v1.2.1.0: Detected domains shown only in advanced mode (too technical for standard users)
             if hasattr(engine, 'detected_domains') and engine.detected_domains:
@@ -13362,7 +13224,7 @@ if active_page == 3:
             # v1.1.1.0: Pre-flight LLM health check — test providers BEFORE starting
             # generation so users get immediate feedback instead of waiting minutes.
             if _is_llm_method and _has_oe_questions and hasattr(engine, 'llm_generator') and engine.llm_generator is not None:
-                progress_bar.progress(8, text="Testing AI provider connection...")
+                progress_bar.progress(8, text="")
                 _health = engine.llm_generator.health_check(timeout=12)
                 if not _health["ok"]:
                     progress_bar.progress(0, text="")
@@ -13426,25 +13288,10 @@ if active_page == 3:
             # Clear the status placeholder and show progress bar
             status_placeholder.empty()
 
-            # Show large, visible progress container
-            # v1.1.1.7: Include the selected method name so users see what they chose.
-            _progress_method_label = {
-                "template": "Template Engine",
-                "experimental": "Adaptive Behavioral Engine",
-                "abe_v2": "Adaptive Behavioral Engine 3.0",
-                "free_llm": "Built-in AI",
-                "own_api": "AI (your API key)",
-            }.get(st.session_state.get(_gen_method_key, "free_llm"), "Simulation")
-            progress_container = st.container()
-            with progress_container:
-                st.markdown(f"""
-                <div style="text-align: center; padding: 25px; background: linear-gradient(135deg, #1e3a5f 0%, #2d5a87 100%); border-radius: 15px; margin: 15px 0;">
-                    <h3 style="color: white; margin: 0 0 8px 0;">Simulation In Progress</h3>
-                    <p style="color: #a0c4e8; font-size: 14px; margin: 0;">Generating realistic behavioral data via <strong>{_progress_method_label}</strong>...</p>
-                </div>
-                """, unsafe_allow_html=True)
+            # v1.2.5.0: Removed second "Simulation In Progress" banner — progress is
+            # shown via the single _progress_counter_placeholder updated by the callback.
 
-            progress_bar.progress(10, text="Step 1/5 — Initializing simulation engine...")
+            progress_bar.progress(10, text="")
 
             # v1.1.1.0: Background watchdog thread — monitors generation and kills
             # LLM if progress stalls or global timeout is exceeded. This is a safety
@@ -13502,35 +13349,9 @@ if active_page == 3:
             )
             _watchdog_thread.start()
 
-            # v1.0.8.1: Real-time progress counter replaces static time estimates.
-            # The progress callback on the engine updates _progress_counter_placeholder live.
-            _gen_has_oe = bool(open_ended_questions_for_engine)
-            # v1.1.1.7: Spinner message reflects the SELECTED method, not always "AI text".
-            _sel_method = st.session_state.get(_gen_method_key, "free_llm")
-            _method_spinner_labels = {
-                "template": "Template Engine",
-                "experimental": "Adaptive Behavioral Engine",
-                "abe_v2": "Adaptive Behavioral Engine 3.0",
-                "free_llm": "Built-in AI",
-                "own_api": "AI (your API key)",
-            }
-            _sel_method_label = _method_spinner_labels.get(_sel_method, _sel_method)
-            _gen_spinner_msg = "Generating participant responses..."
-            if _gen_has_oe:
-                _gen_spinner_msg = f"Generating participant responses via {_sel_method_label}..."
-            else:
-                _gen_spinner_msg = "Generating numeric responses... This typically takes 5-15 seconds."
-
-            # v1.2.0.1: Show a clear progress update right before generation starts
-            # so the user never sees a stale "Initializing..." message for minutes.
-            _progress_counter_placeholder.markdown(
-                f'<div style="text-align:center;padding:10px;background:#f0f9ff;border-radius:8px;margin:8px 0;">'
-                f'<span style="font-size:1.1em;color:#0369a1;">'
-                f'Starting data generation via {_sel_method_label}...</span></div>',
-                unsafe_allow_html=True,
-            )
-            with st.spinner(_gen_spinner_msg):
-                progress_bar.progress(25, text="Step 2/5 — Generating participant responses...")
+            # v1.2.5.0: Clean generation UX — spinner is minimal, progress shown in counter
+            with st.spinner(""):
+                progress_bar.progress(25, text="")
                 df, metadata = engine.generate()
 
             # v1.2.0.8: Validate engine output before proceeding.
@@ -13620,7 +13441,7 @@ if active_page == 3:
                             if _filtered_src_map:
                                 metadata["oe_source_map_ai_run"] = _filtered_src_map
                         _log(f"LLM exhaustion resume: merged {_n_merged} AI column(s) back into DataFrame: {_ai_cols}")
-                        progress_bar.progress(35, text=f"Step 2.5/5 — Merged {_n_merged} AI-generated column(s)...")
+                        progress_bar.progress(35, text="")
                 except Exception as _merge_exc:
                     _log(f"LLM exhaustion resume merge failed (non-fatal): {_merge_exc}", level="warning")
                     # Non-fatal — the template-generated data is still valid
@@ -13978,7 +13799,7 @@ if active_page == 3:
             st.session_state["_gen_quality_notes"] = _gen_quality_notes
 
             # v1.2.5: Show quick data quality summary
-            progress_bar.progress(50, text="Step 3/5 — Validating data quality...")  # v1.4.2.1: Fixed duplicate step numbering
+            progress_bar.progress(50, text="")  # v1.4.2.1: Fixed duplicate step numbering
             status_placeholder.info("🔍 Validating generated data...")
             quality_checks = []
             # Check scale ranges
@@ -14020,7 +13841,7 @@ if active_page == 3:
             # Add usage stats to metadata for instructor report
             metadata["usage_stats"] = usage_stats
 
-            progress_bar.progress(70, text="Step 4/5 — Packaging downloads & reports...")
+            progress_bar.progress(70, text="")
             status_placeholder.info("📦 Packaging downloads and reports...")
             try:
                 explainer = engine.generate_explainer()
@@ -14245,7 +14066,7 @@ if active_page == 3:
             st.session_state["last_zip"] = zip_bytes
             st.session_state["last_metadata"] = metadata
 
-            progress_bar.progress(85, text="Step 5/5 — Finalizing output...")
+            progress_bar.progress(85, text="")
             status_placeholder.info("Packaging your data...")
             # (success message consolidated into download section banner below)
 
@@ -14332,7 +14153,7 @@ if active_page == 3:
                 else:
                     pass  # Instructor notification failed silently — not shown to user
 
-            progress_bar.progress(100, text="Complete — your dataset is ready to download.")
+            progress_bar.progress(100, text="")
             status_placeholder.success("Simulation complete.")
             st.session_state["has_generated"] = True
             st.session_state["is_generating"] = False
@@ -14357,7 +14178,7 @@ if active_page == 3:
                 st.session_state.pop("generated_data", None)
                 st.session_state.pop("generated_metadata", None)
                 try:
-                    progress_bar.progress(60, text="AI providers exhausted — waiting for your choice...")
+                    progress_bar.progress(60, text="")
                     status_placeholder.empty()
                     _progress_counter_placeholder.empty()
                 except Exception:
@@ -14511,21 +14332,21 @@ if active_page == 3:
                         st.session_state["_generation_phase"] = 1
                         _navigate_to(3)
             elif "memory" in error_str or "overflow" in error_str:
-                progress_bar.progress(100, text="Simulation failed.")
+                progress_bar.progress(100, text="")
                 status_placeholder.error("Simulation failed.")
                 st.error(
                     f"**Resource Error:** The simulation ran out of resources (N={N}). "
                     "Try reducing the sample size or the number of scales and retry."
                 )
             elif "scale" in error_str or "column" in error_str:
-                progress_bar.progress(100, text="Simulation failed.")
+                progress_bar.progress(100, text="")
                 status_placeholder.error("Simulation failed.")
                 st.error(
                     f"**Data Configuration Error:** {e}. "
                     "Please go back to the Design step and verify your DV names and scale settings match your QSF."
                 )
             else:
-                progress_bar.progress(100, text="Simulation failed.")
+                progress_bar.progress(100, text="")
                 status_placeholder.error("Simulation failed.")
                 st.error(f"**Simulation failed:** {e}")
 
