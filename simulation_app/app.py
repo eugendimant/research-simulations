@@ -11778,7 +11778,7 @@ if active_page == 3:
                     "Census-weighted demographics &amp; calibrated error rates",
                     "Stylometric voice fingerprinting across all open-ended text (no LLM)",
                     "5 individual-level consistency improvements (fatigue, inertia, 3D latent, audit)",
-                    "Economic game modeling (Fehr-Schmidt, Engel meta-analysis)",
+                    "Economic game modeling based on scientific publications",
                 ],
                 "quality_note": "",
                 "info_tooltip": "",
