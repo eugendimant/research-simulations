@@ -54,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.2.2.9"
-BUILD_ID = "20260314-v12029-fix-llm-cap-handover"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.2.3.0"
+BUILD_ID = "20260324-v12030-abe-v2-narrative-engine"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -118,7 +118,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.2.2.9"  # v1.2.2.9: Fix LLM cap handover — LLM was skipped entirely in cap mode
+APP_VERSION = "1.2.3.0"  # v1.2.3.0: Adaptive Behavioral Engine 2.0 — narrative-enhanced generation
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -11761,39 +11761,23 @@ if active_page == 3:
             unsafe_allow_html=True,
         )
 
-        # --- v1.1.0.7: Method cards — 2×2 clickable card grid with info tooltips ---
-        # Order: Template Engine, Adaptive Behavioral Engine (Beta), Built-in AI, Your API Key
+        # --- v1.2.3.0: Method cards — 3-card grid (ABE 2.0 replaces Template + Behavioral) ---
+        # Order: Adaptive Behavioral Engine 2.0, Built-in AI, Your API Key
         _method_cards = [
             {
-                "key": "template",
-                "icon": "&#9881;",  # gear
-                "icon_bg": "linear-gradient(135deg, #F59E0B 0%, #F97316 100%)",
-                "title": "Template Engine",
-                "tag": "Instant",
-                "tag_color": "#F59E0B",
-                "subtitle": "Pre-built response patterns across 225+ research domains",
-                "details": [
-                    "Runs entirely offline — no API calls needed",
-                    "225+ domain-specific response pattern libraries",
-                    "Numeric data calibrated to published norms per construct",
-                    "Best for: quick pilots or testing your analysis pipeline",
-                ],
-                "quality_note": "",
-                "info_tooltip": "",
-            },
-            {
-                "key": "experimental",
+                "key": "abe_v2",
                 "icon": "&#129504;",  # brain
                 "icon_bg": "linear-gradient(135deg, #0EA5E9 0%, #06B6D4 100%)",
-                "title": "Adaptive Behavioral Engine",
-                "tag": "Beta",
-                "tag_color": "#3B82F6",
-                "subtitle": "60+ participant archetypes, 30+ research paradigms, literature-calibrated effects",
+                "title": "Adaptive Behavioral Engine 2.0",
+                "tag": "New",
+                "tag_color": "#0EA5E9",
+                "subtitle": "225+ domains, 60+ archetypes, narrative intelligence, literature-calibrated effects",
                 "details": [
-                    "Runs entirely offline — applies behavioral models to your design",
-                    "60+ archetypes: optimizers, satisficers, extremists, etc.",
-                    "30+ paradigm recognition (economic games, moral judgment...)",
-                    "Effect sizes from hundreds of published meta-analyses",
+                    "Runs entirely offline — no API calls needed",
+                    "8 structural archetypes with narrative-specific weighting",
+                    "Dedicated builders for creative, disclosure, and story intents",
+                    "Economic game modeling (Fehr-Schmidt, Engel meta-analysis)",
+                    "LIWC-informed linguistic profiling &amp; cross-response voice consistency",
                 ],
                 "quality_note": "",
                 "info_tooltip": "",
@@ -11832,10 +11816,8 @@ if active_page == 3:
             },
         ]
 
-        # v1.1.0.7: Render 2×2 grid with improved spacing and info icons
-        _row1_col1, _row1_col2 = st.columns(2, gap="medium")
-        _row2_col1, _row2_col2 = st.columns(2, gap="medium")
-        _card_cols = [_row1_col1, _row1_col2, _row2_col1, _row2_col2]
+        # v1.2.3.0: Render 3-column grid (ABE 2.0, Built-in AI, Your API Key)
+        _card_cols = list(st.columns(3, gap="medium"))
 
         for _ci, _card in enumerate(_method_cards):
             with _card_cols[_ci]:
@@ -11911,10 +11893,13 @@ if active_page == 3:
                         use_container_width=True,
                     ):
                         st.session_state[_gen_method_key] = _mk
-                        st.session_state["allow_template_fallback_once"] = _mk in ("template", "experimental")
-                        st.session_state["_use_socsim_experimental"] = (_mk == "experimental")
+                        # v1.2.3.0: ABE 2.0 replaces template + experimental
+                        st.session_state["allow_template_fallback_once"] = _mk in ("template", "experimental", "abe_v2")
+                        st.session_state["_use_socsim_experimental"] = _mk in ("experimental", "abe_v2")
+                        st.session_state["_use_abe_v2"] = (_mk == "abe_v2")
                         if _mk in ("free_llm", "own_api"):
                             st.session_state["_use_socsim_experimental"] = False
+                            st.session_state["_use_abe_v2"] = False
                         st.rerun()
 
         # v1.1.0.7: Prompt when no method is selected yet
@@ -12079,19 +12064,21 @@ if active_page == 3:
                         st.session_state["_llm_connectivity_status"] = None  # v1.2.0.8: Clear stale cache
                         st.rerun()
                 with _pre_c2:
-                    if st.button("Switch to Template Engine", key="_pre_switch_template",
+                    if st.button("Switch to Adaptive Behavioral Engine 2.0", key="_pre_switch_template",
                                  type="secondary", use_container_width=True,
                                  help="Instant generation, runs entirely offline"):
-                        st.session_state[_gen_method_key] = "template"
+                        st.session_state[_gen_method_key] = "abe_v2"
                         st.session_state["allow_template_fallback_once"] = True
-                        st.session_state["_use_socsim_experimental"] = False
+                        st.session_state["_use_socsim_experimental"] = True
+                        st.session_state["_use_abe_v2"] = True
                         st.session_state["_llm_connectivity_status"] = None  # v1.2.0.8: Clear stale cache
                         st.rerun()
 
         # Wire method choice into engine settings
-        if _current_method == "template":
+        if _current_method in ("template", "abe_v2"):
             st.session_state["allow_template_fallback_once"] = True
-            st.session_state["_use_socsim_experimental"] = False
+            st.session_state["_use_socsim_experimental"] = _current_method in ("abe_v2", "experimental")
+            st.session_state["_use_abe_v2"] = _current_method == "abe_v2"
         elif _current_method in ("free_llm", "own_api"):
             _has_user_key = bool((st.session_state.get("user_llm_api_key", "") or "").strip())
             if _current_method == "free_llm" and not (_llm_status or {}).get("available", False) and not _has_user_key:
@@ -12101,6 +12088,7 @@ if active_page == 3:
             else:
                 st.session_state["allow_template_fallback_once"] = False
             st.session_state["_use_socsim_experimental"] = False
+            st.session_state["_use_abe_v2"] = False
         elif _current_method == "experimental":
             st.session_state["allow_template_fallback_once"] = True
             st.session_state["_use_socsim_experimental"] = True
@@ -12125,6 +12113,7 @@ if active_page == 3:
         _active_card_info = {
             "template":     {"icon": "&#9881;",  "icon_bg": "linear-gradient(135deg, #F59E0B 0%, #F97316 100%)", "title": "Template Engine",              "subtitle": "225+ research domains, 58 personas, instant generation"},
             "experimental": {"icon": "&#9889;",  "icon_bg": "linear-gradient(135deg, #8B5CF6 0%, #7C3AED 100%)", "title": "Adaptive Behavioral Engine",    "subtitle": "60+ participant archetypes, 30+ research paradigms, literature-calibrated effects"},
+            "abe_v2":       {"icon": "&#129504;", "icon_bg": "linear-gradient(135deg, #0EA5E9 0%, #06B6D4 100%)", "title": "Adaptive Behavioral Engine 2.0", "subtitle": "225+ domains, 60+ archetypes, narrative intelligence, literature-calibrated effects"},
             "free_llm":     {"icon": "&#129302;", "icon_bg": "linear-gradient(135deg, #22c55e 0%, #16a34a 100%)", "title": "Built-in AI",                   "subtitle": "Free LLM providers for AI-generated open-ended text"},
             "own_api":      {"icon": "&#128273;", "icon_bg": "linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)", "title": "AI (your API key)",             "subtitle": "Your own API key for reliable AI-generated text"},
         }
@@ -12149,6 +12138,7 @@ if active_page == 3:
         _banner_method_labels = {
             "template": "Template Engine",
             "experimental": "Adaptive Behavioral Engine",
+            "abe_v2": "Adaptive Behavioral Engine 2.0",
             "free_llm": "Built-in AI",
             "own_api": "AI (your API key)",
         }
@@ -12301,6 +12291,7 @@ if active_page == 3:
             st.session_state["generation_method"] = method
             st.session_state["allow_template_fallback_once"] = template_fb
             st.session_state["_use_socsim_experimental"] = socsim
+            st.session_state["_use_abe_v2"] = (method == "abe_v2")
             st.session_state["has_generated"] = False
             if trigger_gen:
                 st.session_state["is_generating"] = True
@@ -12308,22 +12299,17 @@ if active_page == 3:
                 st.session_state["generation_requested"] = False
             _navigate_to(3)
 
-        _exh_c1, _exh_c2, _exh_c3 = st.columns(3)
+        _exh_c1, _exh_c2 = st.columns(2)
         with _exh_c1:
             if st.button("Use my API key", key="_exh_use_api_key",
                          type="primary", use_container_width=True,
                          help="Enter your own Groq / Google AI key (free tier available) — most reliable option"):
                 _exh_resume("own_api", False, False, False, is_resume=False)
         with _exh_c2:
-            if st.button("Template Engine", key="_exh_use_template",
+            if st.button("Adaptive Engine 2.0", key="_exh_use_abe_v2",
                          type="secondary", use_container_width=True,
-                         help="225+ domains, 58 personas, instant generation"):
-                _exh_resume("template", True, False, True)
-        with _exh_c3:
-            if st.button("Adaptive Engine", key="_exh_use_experimental",
-                         type="secondary", use_container_width=True,
-                         help="60+ archetypes, 30+ paradigms, literature-calibrated effects"):
-                _exh_resume("experimental", True, True, True)
+                         help="225+ domains, 60+ archetypes, narrative intelligence"):
+                _exh_resume("abe_v2", True, True, True)
 
     # v1.4.14: Preflight validation — catch issues before expensive generation
     _preflight_errors = _preflight_validation() if all_required_complete else []
@@ -12380,7 +12366,7 @@ if active_page == 3:
             '</div>',
             unsafe_allow_html=True,
         )
-        _cap_c1, _cap_c2, _cap_c3, _cap_c4 = st.columns(4)
+        _cap_c1, _cap_c2, _cap_c3 = st.columns(3)
         with _cap_c1:
             if st.button(
                 f"Proceed (AI for {MAX_FREE_LLM_N}, template for rest)",
@@ -12405,25 +12391,15 @@ if active_page == 3:
                 _navigate_to(3)
         with _cap_c3:
             if st.button(
-                "Template Engine",
-                key="_cap_switch_template",
+                "Adaptive Engine 2.0",
+                key="_cap_switch_abe_v2",
                 type="secondary", use_container_width=True,
-                help=f"Instant generation for all {_current_N} — 225+ domains, no API needed",
+                help=f"Instant generation for all {_current_N} — 225+ domains, narrative intelligence, no API needed",
             ):
-                st.session_state["generation_method"] = "template"
-                st.session_state["allow_template_fallback_once"] = True
-                st.session_state.pop("_free_llm_oe_cap_accepted", None)
-                _navigate_to(3)
-        with _cap_c4:
-            if st.button(
-                "Adaptive Engine",
-                key="_cap_switch_experimental",
-                type="secondary", use_container_width=True,
-                help=f"Behavioral engine for all {_current_N} — 60+ archetypes, no API needed",
-            ):
-                st.session_state["generation_method"] = "experimental"
+                st.session_state["generation_method"] = "abe_v2"
                 st.session_state["allow_template_fallback_once"] = True
                 st.session_state["_use_socsim_experimental"] = True
+                st.session_state["_use_abe_v2"] = True
                 st.session_state.pop("_free_llm_oe_cap_accepted", None)
                 _navigate_to(3)
 
@@ -12517,37 +12493,30 @@ if active_page == 3:
             'crashed during setup. Choose how to proceed:</span></div>',
             unsafe_allow_html=True,
         )
-        _sp_c1, _sp_c2, _sp_c3, _sp_c4 = st.columns(4)
+        _sp_c1, _sp_c2, _sp_c3 = st.columns(3)
         with _sp_c1:
             if st.button("Retry", key="_stale_retry",
                          type="primary", use_container_width=True):
                 # Preserve existing method; ensure all flags are explicitly set
-                _retry_method = st.session_state.get("generation_method", "template")
+                _retry_method = st.session_state.get("generation_method", "abe_v2")
                 st.session_state["generation_method"] = _retry_method
-                st.session_state["allow_template_fallback_once"] = _retry_method in ("template", "experimental")
-                st.session_state["_use_socsim_experimental"] = _retry_method == "experimental"
+                st.session_state["allow_template_fallback_once"] = _retry_method in ("template", "experimental", "abe_v2")
+                st.session_state["_use_socsim_experimental"] = _retry_method in ("experimental", "abe_v2")
+                st.session_state["_use_abe_v2"] = _retry_method == "abe_v2"
                 st.session_state["is_generating"] = True
                 st.session_state["_generation_phase"] = 1
                 _navigate_to(3)
         with _sp_c2:
-            if st.button("Template Engine", key="_stale_template",
+            if st.button("Adaptive Engine 2.0", key="_stale_abe_v2",
                          type="secondary", use_container_width=True):
-                st.session_state["generation_method"] = "template"
+                st.session_state["generation_method"] = "abe_v2"
                 st.session_state["allow_template_fallback_once"] = True
-                st.session_state["_use_socsim_experimental"] = False
+                st.session_state["_use_socsim_experimental"] = True
+                st.session_state["_use_abe_v2"] = True
                 st.session_state["is_generating"] = True
                 st.session_state["_generation_phase"] = 1
                 _navigate_to(3)
         with _sp_c3:
-            if st.button("Behavioral Engine", key="_stale_experimental",
-                         type="secondary", use_container_width=True):
-                st.session_state["generation_method"] = "experimental"
-                st.session_state["allow_template_fallback_once"] = True
-                st.session_state["_use_socsim_experimental"] = True
-                st.session_state["is_generating"] = True
-                st.session_state["_generation_phase"] = 1
-                _navigate_to(3)
-        with _sp_c4:
             if st.button("Use my API key", key="_stale_own_api",
                          type="secondary", use_container_width=True):
                 st.session_state["generation_method"] = "own_api"
@@ -12936,6 +12905,7 @@ if active_page == 3:
             _cb_method_label = {
                 "template": "Template Engine",
                 "experimental": "Adaptive Behavioral Engine",
+                "abe_v2": "Adaptive Behavioral Engine 2.0",
                 "free_llm": "Built-in AI",
                 "own_api": "AI (your API key)",
             }.get(st.session_state.get(_gen_method_key, ""), "")
@@ -13216,6 +13186,7 @@ if active_page == 3:
             _method_name = {
                 "template": "Template Engine",
                 "experimental": "Adaptive Behavioral Engine",
+                "abe_v2": "Adaptive Behavioral Engine 2.0",
                 "free_llm": "Built-in AI",
                 "own_api": "AI (your API key)",
             }.get(st.session_state.get("generation_method", ""), "the selected method")
@@ -13234,32 +13205,25 @@ if active_page == 3:
                 '</div>',
                 unsafe_allow_html=True,
             )
-            _su_c1, _su_c2, _su_c3 = st.columns(3)
+            _su_c1, _su_c2 = st.columns(2)
             with _su_c1:
                 if st.button("Retry", key="_setup_fail_retry",
                              type="primary", use_container_width=True):
-                    _retry_method = st.session_state.get("generation_method", "template")
+                    _retry_method = st.session_state.get("generation_method", "abe_v2")
                     st.session_state["generation_method"] = _retry_method
-                    st.session_state["allow_template_fallback_once"] = _retry_method in ("template", "experimental")
-                    st.session_state["_use_socsim_experimental"] = _retry_method == "experimental"
+                    st.session_state["allow_template_fallback_once"] = _retry_method in ("template", "experimental", "abe_v2")
+                    st.session_state["_use_socsim_experimental"] = _retry_method in ("experimental", "abe_v2")
+                    st.session_state["_use_abe_v2"] = _retry_method == "abe_v2"
                     st.session_state["is_generating"] = True
                     st.session_state["_generation_phase"] = 1
                     _navigate_to(3)
             with _su_c2:
-                if st.button("Template Engine", key="_setup_fail_template",
+                if st.button("Adaptive Engine 2.0", key="_setup_fail_abe_v2",
                              type="secondary", use_container_width=True):
-                    st.session_state["generation_method"] = "template"
-                    st.session_state["allow_template_fallback_once"] = True
-                    st.session_state["_use_socsim_experimental"] = False
-                    st.session_state["is_generating"] = True
-                    st.session_state["_generation_phase"] = 1
-                    _navigate_to(3)
-            with _su_c3:
-                if st.button("Behavioral Engine", key="_setup_fail_experimental",
-                             type="secondary", use_container_width=True):
-                    st.session_state["generation_method"] = "experimental"
+                    st.session_state["generation_method"] = "abe_v2"
                     st.session_state["allow_template_fallback_once"] = True
                     st.session_state["_use_socsim_experimental"] = True
+                    st.session_state["_use_abe_v2"] = True
                     st.session_state["is_generating"] = True
                     st.session_state["_generation_phase"] = 1
                     _navigate_to(3)
@@ -13297,6 +13261,7 @@ if active_page == 3:
                 allow_template_fallback=bool(st.session_state.get("allow_template_fallback_once", False)),
                 progress_callback=_live_progress_callback,
                 use_socsim_experimental=bool(st.session_state.get("_use_socsim_experimental", False)),
+                use_abe_v2=bool(st.session_state.get("_use_abe_v2", False)),
                 free_llm_oe_cap=_free_llm_oe_cap,
             )
         except Exception as _init_exc:
@@ -13323,6 +13288,7 @@ if active_page == 3:
             _method_name = {
                 "template": "Template Engine",
                 "experimental": "Adaptive Behavioral Engine",
+                "abe_v2": "Adaptive Behavioral Engine 2.0",
                 "free_llm": "Built-in AI",
                 "own_api": "AI (your API key)",
             }.get(st.session_state.get("generation_method", ""), "the selected method")
@@ -13343,20 +13309,22 @@ if active_page == 3:
             )
             _init_c1, _init_c2 = st.columns(2)
             with _init_c1:
-                if st.button("Switch to Template Engine", key="_init_fail_template",
+                if st.button("Switch to Adaptive Engine 2.0", key="_init_fail_abe_v2",
                              type="primary", use_container_width=True):
-                    st.session_state["generation_method"] = "template"
+                    st.session_state["generation_method"] = "abe_v2"
                     st.session_state["allow_template_fallback_once"] = True
-                    st.session_state["_use_socsim_experimental"] = False
+                    st.session_state["_use_socsim_experimental"] = True
+                    st.session_state["_use_abe_v2"] = True
                     st.session_state["is_generating"] = True
                     st.session_state["_generation_phase"] = 1
                     _navigate_to(3)
             with _init_c2:
                 if st.button("Try again", key="_init_fail_retry",
                              type="secondary", use_container_width=True):
-                    _retry_method = st.session_state.get("generation_method", "template")
-                    st.session_state["allow_template_fallback_once"] = _retry_method in ("template", "experimental")
-                    st.session_state["_use_socsim_experimental"] = _retry_method == "experimental"
+                    _retry_method = st.session_state.get("generation_method", "abe_v2")
+                    st.session_state["allow_template_fallback_once"] = _retry_method in ("template", "experimental", "abe_v2")
+                    st.session_state["_use_socsim_experimental"] = _retry_method in ("experimental", "abe_v2")
+                    st.session_state["_use_abe_v2"] = _retry_method == "abe_v2"
                     st.session_state["is_generating"] = True
                     st.session_state["_generation_phase"] = 1
                     _navigate_to(3)
@@ -13402,8 +13370,9 @@ if active_page == 3:
                                      help="Re-test the AI providers"):
                             # Preserve existing method; set all flags explicitly
                             _retry_method = st.session_state.get(_gen_method_key, "free_llm")
-                            st.session_state["allow_template_fallback_once"] = _retry_method in ("template", "experimental")
-                            st.session_state["_use_socsim_experimental"] = _retry_method == "experimental"
+                            st.session_state["allow_template_fallback_once"] = _retry_method in ("template", "experimental", "abe_v2")
+                            st.session_state["_use_socsim_experimental"] = _retry_method in ("experimental", "abe_v2")
+                            st.session_state["_use_abe_v2"] = _retry_method == "abe_v2"
                             st.session_state["is_generating"] = True
                             st.session_state["_generation_phase"] = 1
                             _navigate_to(3)
@@ -13414,15 +13383,17 @@ if active_page == 3:
                             st.session_state[_gen_method_key] = "own_api"
                             st.session_state["allow_template_fallback_once"] = False
                             st.session_state["_use_socsim_experimental"] = False
+                            st.session_state["_use_abe_v2"] = False
                             st.session_state["is_generating"] = False
                             _navigate_to(3)
                     with _hc3:
-                        if st.button("Use Template Engine", key="_preflight_template",
+                        if st.button("Use Adaptive Engine 2.0", key="_preflight_abe_v2",
                                      type="secondary", use_container_width=True,
-                                     help="Instant generation using domain-specific templates"):
+                                     help="Instant generation with narrative intelligence"):
                             st.session_state["allow_template_fallback_once"] = True
-                            st.session_state[_gen_method_key] = "template"
-                            st.session_state["_use_socsim_experimental"] = False
+                            st.session_state[_gen_method_key] = "abe_v2"
+                            st.session_state["_use_socsim_experimental"] = True
+                            st.session_state["_use_abe_v2"] = True
                             st.session_state["is_generating"] = True
                             st.session_state["_generation_phase"] = 1
                             _navigate_to(3)
@@ -13444,6 +13415,7 @@ if active_page == 3:
             _progress_method_label = {
                 "template": "Template Engine",
                 "experimental": "Adaptive Behavioral Engine",
+                "abe_v2": "Adaptive Behavioral Engine 2.0",
                 "free_llm": "Built-in AI",
                 "own_api": "AI (your API key)",
             }.get(st.session_state.get(_gen_method_key, "free_llm"), "Simulation")
@@ -13522,6 +13494,7 @@ if active_page == 3:
             _method_spinner_labels = {
                 "template": "Template Engine",
                 "experimental": "Adaptive Behavioral Engine",
+                "abe_v2": "Adaptive Behavioral Engine 2.0",
                 "free_llm": "Built-in AI",
                 "own_api": "AI (your API key)",
             }
@@ -13859,27 +13832,22 @@ if active_page == 3:
                         st.markdown(_switch_html, unsafe_allow_html=True)
 
                         # Actionable buttons for switching method
-                        _fb_col1, _fb_col2, _fb_col3 = st.columns(3)
+                        _fb_col1, _fb_col2 = st.columns(2)
                         with _fb_col1:
                             if st.button("Use my own API key", key="_post_gen_switch_api",
                                          type="secondary", use_container_width=True):
                                 st.session_state[_gen_method_key] = "own_api"
                                 st.session_state["allow_template_fallback_once"] = False
                                 st.session_state["_use_socsim_experimental"] = False
+                                st.session_state["_use_abe_v2"] = False
                                 _navigate_to(3)
                         with _fb_col2:
-                            if st.button("Use Template Engine", key="_post_gen_switch_template",
+                            if st.button("Use Adaptive Engine 2.0", key="_post_gen_switch_abe_v2",
                                          type="secondary", use_container_width=True):
-                                st.session_state[_gen_method_key] = "template"
-                                st.session_state["allow_template_fallback_once"] = True
-                                st.session_state["_use_socsim_experimental"] = False
-                                _navigate_to(3)
-                        with _fb_col3:
-                            if st.button("Use Behavioral Engine", key="_post_gen_switch_experimental",
-                                         type="secondary", use_container_width=True):
-                                st.session_state[_gen_method_key] = "experimental"
+                                st.session_state[_gen_method_key] = "abe_v2"
                                 st.session_state["allow_template_fallback_once"] = True
                                 st.session_state["_use_socsim_experimental"] = True
+                                st.session_state["_use_abe_v2"] = True
                                 _navigate_to(3)
 
             # v1.2.1.0: SocSim enrichment details — only shown in advanced mode
@@ -14456,7 +14424,7 @@ if active_page == 3:
                     'How would you like to proceed?</span></div>',
                     unsafe_allow_html=True,
                 )
-                _err_c1, _err_c2, _err_c3 = st.columns(3)
+                _err_c1, _err_c2 = st.columns(2)
                 with _err_c1:
                     if st.button("Use my own API key", key="_err_switch_api",
                                  type="secondary", use_container_width=True,
@@ -14464,25 +14432,17 @@ if active_page == 3:
                         st.session_state[_gen_method_key] = "own_api"
                         st.session_state["allow_template_fallback_once"] = False
                         st.session_state["_use_socsim_experimental"] = False
+                        st.session_state["_use_abe_v2"] = False
                         st.session_state["is_generating"] = False
                         _navigate_to(3)
                 with _err_c2:
-                    if st.button("Generate with Template Engine", key="_err_switch_template",
+                    if st.button("Generate with Adaptive Engine 2.0", key="_err_switch_abe_v2",
                                  type="secondary", use_container_width=True,
-                                 help="Instant generation using domain-specific templates"):
+                                 help="225+ domains, narrative intelligence, instant"):
                         st.session_state["allow_template_fallback_once"] = True
-                        st.session_state["_use_socsim_experimental"] = False
-                        st.session_state[_gen_method_key] = "template"
-                        st.session_state["is_generating"] = True
-                        st.session_state["_generation_phase"] = 1
-                        _navigate_to(3)
-                with _err_c3:
-                    if st.button("Generate with Behavioral Engine", key="_err_switch_experimental",
-                                 type="secondary", use_container_width=True,
-                                 help="Domain-calibrated behavioral models"):
-                        st.session_state["allow_template_fallback_once"] = True
-                        st.session_state[_gen_method_key] = "experimental"
                         st.session_state["_use_socsim_experimental"] = True
+                        st.session_state["_use_abe_v2"] = True
+                        st.session_state[_gen_method_key] = "abe_v2"
                         st.session_state["is_generating"] = True
                         st.session_state["_generation_phase"] = 1
                         _navigate_to(3)
@@ -14500,13 +14460,14 @@ if active_page == 3:
                     'How would you like to proceed?</span></div>',
                     unsafe_allow_html=True,
                 )
-                _to_c1, _to_c2, _to_c3, _to_c4 = st.columns(4)
+                _to_c1, _to_c2, _to_c3 = st.columns(3)
                 with _to_c1:
                     if st.button("Try again", key="_timeout_retry",
                                  type="primary", use_container_width=True):
                         _retry_method = st.session_state.get(_gen_method_key, "free_llm")
-                        st.session_state["allow_template_fallback_once"] = _retry_method in ("template", "experimental")
-                        st.session_state["_use_socsim_experimental"] = _retry_method == "experimental"
+                        st.session_state["allow_template_fallback_once"] = _retry_method in ("template", "experimental", "abe_v2")
+                        st.session_state["_use_socsim_experimental"] = _retry_method in ("experimental", "abe_v2")
+                        st.session_state["_use_abe_v2"] = _retry_method == "abe_v2"
                         st.session_state["is_generating"] = True
                         st.session_state["_generation_phase"] = 1
                         _navigate_to(3)
@@ -14516,23 +14477,16 @@ if active_page == 3:
                         st.session_state[_gen_method_key] = "own_api"
                         st.session_state["allow_template_fallback_once"] = False
                         st.session_state["_use_socsim_experimental"] = False
+                        st.session_state["_use_abe_v2"] = False
                         st.session_state["is_generating"] = False
                         _navigate_to(3)
                 with _to_c3:
-                    if st.button("Template Engine", key="_timeout_switch_template",
+                    if st.button("Adaptive Engine 2.0", key="_timeout_switch_abe_v2",
                                  type="secondary", use_container_width=True):
-                        st.session_state[_gen_method_key] = "template"
-                        st.session_state["allow_template_fallback_once"] = True
-                        st.session_state["_use_socsim_experimental"] = False
-                        st.session_state["is_generating"] = True
-                        st.session_state["_generation_phase"] = 1
-                        _navigate_to(3)
-                with _to_c4:
-                    if st.button("Behavioral Engine", key="_timeout_switch_experimental",
-                                 type="secondary", use_container_width=True):
-                        st.session_state[_gen_method_key] = "experimental"
+                        st.session_state[_gen_method_key] = "abe_v2"
                         st.session_state["allow_template_fallback_once"] = True
                         st.session_state["_use_socsim_experimental"] = True
+                        st.session_state["_use_abe_v2"] = True
                         st.session_state["is_generating"] = True
                         st.session_state["_generation_phase"] = 1
                         _navigate_to(3)
@@ -14605,40 +14559,34 @@ if active_page == 3:
 
             # v1.2.0.7: Add quick-switch recovery buttons to ALL error paths
             st.markdown("**Quick recovery — switch generation method:**")
-            _ge_c1, _ge_c2, _ge_c3, _ge_c4 = st.columns(4)
+            _ge_c1, _ge_c2, _ge_c3 = st.columns(3)
             with _ge_c1:
                 if st.button("Retry", key="_gen_err_retry",
                              type="primary", use_container_width=True):
-                    _retry_method = st.session_state.get("generation_method", "template")
-                    st.session_state["allow_template_fallback_once"] = _retry_method in ("template", "experimental")
-                    st.session_state["_use_socsim_experimental"] = _retry_method == "experimental"
+                    _retry_method = st.session_state.get("generation_method", "abe_v2")
+                    st.session_state["allow_template_fallback_once"] = _retry_method in ("template", "experimental", "abe_v2")
+                    st.session_state["_use_socsim_experimental"] = _retry_method in ("experimental", "abe_v2")
+                    st.session_state["_use_abe_v2"] = _retry_method == "abe_v2"
                     st.session_state["is_generating"] = True
                     st.session_state["_generation_phase"] = 1
                     _navigate_to(3)
             with _ge_c2:
-                if st.button("Template Engine", key="_gen_err_template",
+                if st.button("Adaptive Engine 2.0", key="_gen_err_abe_v2",
                              type="secondary", use_container_width=True):
-                    st.session_state["generation_method"] = "template"
+                    st.session_state["generation_method"] = "abe_v2"
                     st.session_state["allow_template_fallback_once"] = True
-                    st.session_state["_use_socsim_experimental"] = False
+                    st.session_state["_use_socsim_experimental"] = True
+                    st.session_state["_use_abe_v2"] = True
                     st.session_state["is_generating"] = True
                     st.session_state["_generation_phase"] = 1
                     _navigate_to(3)
             with _ge_c3:
-                if st.button("Behavioral Engine", key="_gen_err_experimental",
-                             type="secondary", use_container_width=True):
-                    st.session_state["generation_method"] = "experimental"
-                    st.session_state["allow_template_fallback_once"] = True
-                    st.session_state["_use_socsim_experimental"] = True
-                    st.session_state["is_generating"] = True
-                    st.session_state["_generation_phase"] = 1
-                    _navigate_to(3)
-            with _ge_c4:
                 if st.button("Use my API key", key="_gen_err_own_api",
                              type="secondary", use_container_width=True):
                     st.session_state["generation_method"] = "own_api"
                     st.session_state["allow_template_fallback_once"] = False
                     st.session_state["_use_socsim_experimental"] = False
+                    st.session_state["_use_abe_v2"] = False
                     st.session_state["is_generating"] = False
                     _navigate_to(3)
             st.session_state["is_generating"] = False
