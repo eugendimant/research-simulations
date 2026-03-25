@@ -6,7 +6,7 @@ Generates comprehensive instructor-facing reports for student simulations.
 """
 
 # Version identifier to help track deployed code
-__version__ = "1.7.0"  # v1.7.0: Fix state persistence, professional UX redesign
+__version__ = "1.2.3.9"  # v1.2.3.9: HBS instructor report integration
 
 from dataclasses import dataclass
 from datetime import datetime
@@ -4800,7 +4800,7 @@ class ComprehensiveInstructorReport:
         html_parts.append(f"<p><strong>Generation Method:</strong> {_html_gen_method}</p>")
         html_parts.append(f"<p><strong>Mode:</strong> {metadata.get('simulation_mode', 'pilot').title()}</p>")
         html_parts.append(f"<p><strong>Seed:</strong> <code>{metadata.get('seed', 'N/A')}</code></p>")
-        html_parts.append(f"<p><strong>App Version:</strong> {__version__}</p>")
+        html_parts.append(f"<p><strong>App Version:</strong> {metadata.get('app_version', __version__)}</p>")
 
         # Internal usage counter (for instructor tracking)
         usage_stats = metadata.get('usage_stats', {})
