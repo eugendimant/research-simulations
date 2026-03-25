@@ -33,7 +33,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 # Version identifier to help track deployed code
-__version__ = "1.2.3.9"  # v1.2.3.9: Human Behavior Simulator (HBS) engine
+__version__ = "1.2.4.0"  # v1.2.4.0: HBS data quality fixes
 
 
 # ============================================================================

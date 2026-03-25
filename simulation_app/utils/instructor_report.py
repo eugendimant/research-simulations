@@ -6,7 +6,7 @@ Generates comprehensive instructor-facing reports for student simulations.
 """
 
 # Version identifier to help track deployed code
-__version__ = "1.2.3.9"  # v1.2.3.9: HBS instructor report integration
+__version__ = "1.2.4.0"  # v1.2.4.0: HBS data quality fixes
 
 from dataclasses import dataclass
 from datetime import datetime
@@ -2322,8 +2322,10 @@ class ComprehensiveInstructorReport:
         lines.append("-" * 80)
         lines.append("")
 
-        # Clean data for analysis
-        df_clean = df[df["Exclude_Recommended"] == 0] if "Exclude_Recommended" in df.columns else df
+        # v1.2.4.0: Use FULL dataset for instructor report analysis.
+        # Exclude_Recommended is informational (teaches students about data quality)
+        # but should NOT reduce the analysis N — instructors expect the full sample.
+        df_clean = df
 
         # v1.4.11: Build column registry from scale_generation_log if available
         _gen_log = metadata.get("scale_generation_log", [])
@@ -2764,6 +2766,29 @@ class ComprehensiveInstructorReport:
         }
         return impacts.get(persona, "Standard patterns")
 
+    @staticmethod
+    def _p_significance(p: float) -> dict:
+        """Return significance classification for a p-value.
+
+        Returns dict with keys: significant (bool), marginally_significant (bool),
+        sig_label (str: '***', '**', '*', '†', 'ns').
+        - p < 0.001: significant, label '***'
+        - p < 0.01:  significant, label '**'
+        - p < 0.05:  significant, label '*'
+        - p < 0.10:  marginally significant, label '†'
+        - p >= 0.10: not significant, label 'ns'
+        """
+        if p < 0.001:
+            return {"significant": True, "marginally_significant": False, "sig_label": "***"}
+        elif p < 0.01:
+            return {"significant": True, "marginally_significant": False, "sig_label": "**"}
+        elif p < 0.05:
+            return {"significant": True, "marginally_significant": False, "sig_label": "*"}
+        elif p < 0.10:
+            return {"significant": False, "marginally_significant": True, "sig_label": "†"}
+        else:
+            return {"significant": False, "marginally_significant": False, "sig_label": "ns"}
+
     def _run_statistical_tests(
         self,
         df: pd.DataFrame,
@@ -2832,7 +2857,7 @@ class ComprehensiveInstructorReport:
                 results["t_test"] = {
                     "statistic": float(t_stat),
                     "p_value": float(t_p),
-                    "significant": t_p < 0.05,
+                    **self._p_significance(float(t_p)),
                     "groups": [_clean_condition_name(conditions[0]), _clean_condition_name(conditions[1])],
                 }
 
@@ -2841,7 +2866,7 @@ class ComprehensiveInstructorReport:
                 results["welch_t_test"] = {
                     "statistic": float(welch_t),
                     "p_value": float(welch_p),
-                    "significant": welch_p < 0.05,
+                    **self._p_significance(float(welch_p)),
                 }
 
                 # Mann-Whitney U test (non-parametric)
@@ -2849,7 +2874,7 @@ class ComprehensiveInstructorReport:
                 results["mann_whitney"] = {
                     "statistic": float(u_stat),
                     "p_value": float(u_p),
-                    "significant": u_p < 0.05,
+                    **self._p_significance(float(u_p)),
                 }
 
                 # Cohen's d effect size
@@ -2868,7 +2893,7 @@ class ComprehensiveInstructorReport:
             results["anova"] = {
                 "f_statistic": float(f_stat),
                 "p_value": float(anova_p),
-                "significant": anova_p < 0.05,
+                **self._p_significance(float(anova_p)),
                 "num_groups": len(conditions),
             }
 
@@ -2879,7 +2904,7 @@ class ComprehensiveInstructorReport:
                     results["kruskal_wallis"] = {
                         "h_statistic": float(h_stat),
                         "p_value": float(kw_p),
-                        "significant": kw_p < 0.05,
+                        **self._p_significance(float(kw_p)),
                     }
                 except Exception:
                     pass
@@ -2928,7 +2953,7 @@ class ComprehensiveInstructorReport:
                             "t_stat": float(t_stat),
                             "p_value": float(t_p),
                             "cohens_d": float(d),
-                            "significant": t_p < 0.05,
+                            **self._p_significance(float(t_p)),
                         })
                 results["pairwise_comparisons"] = pairwise
 
@@ -3225,7 +3250,7 @@ class ComprehensiveInstructorReport:
                     "std_error": float(se[i + 1]),
                     "t_stat": float(t_stats[i + 1]),
                     "p_value": float(p_values[i + 1]),
-                    "significant": p_values[i + 1] < 0.05,
+                    **self._p_significance(float(p_values[i + 1])),
                 }
 
             results["model_fit"] = {
@@ -3248,7 +3273,7 @@ class ComprehensiveInstructorReport:
                 results["f_test"] = {
                     "f_statistic": float(f_stat),
                     "p_value": float(f_p),
-                    "significant": f_p < 0.05,
+                    **self._p_significance(float(f_p)),
                 }
 
         except Exception as e:
@@ -3432,7 +3457,7 @@ class ComprehensiveInstructorReport:
                 "f_statistic": float(f_f1),
                 "p_value": float(p_f1),
                 "partial_eta_squared": float(eta2_f1),
-                "significant": p_f1 < 0.05,
+                **self._p_significance(float(p_f1)),
                 "interpretation": self._interpret_eta_squared(eta2_f1),
             }
 
@@ -3444,7 +3469,7 @@ class ComprehensiveInstructorReport:
                 "f_statistic": float(f_f2),
                 "p_value": float(p_f2),
                 "partial_eta_squared": float(eta2_f2),
-                "significant": p_f2 < 0.05,
+                **self._p_significance(float(p_f2)),
                 "interpretation": self._interpret_eta_squared(eta2_f2),
             }
 
@@ -3456,7 +3481,7 @@ class ComprehensiveInstructorReport:
                 "f_statistic": float(f_interaction),
                 "p_value": float(p_interaction),
                 "partial_eta_squared": float(eta2_interaction),
-                "significant": p_interaction < 0.05,
+                **self._p_significance(float(p_interaction)),
                 "interpretation": self._interpret_eta_squared(eta2_interaction),
             }
 
@@ -3605,13 +3630,16 @@ class ComprehensiveInstructorReport:
         effect_size = None
         effect_interpretation = None
         is_significant = False
+        is_marginal = False
 
         if "t_test" in stats_results:
             p_value = stats_results["t_test"]["p_value"]
             is_significant = stats_results["t_test"]["significant"]
+            is_marginal = stats_results["t_test"].get("marginally_significant", False)
         elif "anova" in stats_results:
             p_value = stats_results["anova"]["p_value"]
             is_significant = stats_results["anova"]["significant"]
+            is_marginal = stats_results["anova"].get("marginally_significant", False)
 
         if "cohens_d" in stats_results:
             effect_size = stats_results["cohens_d"]["value"]
@@ -3634,6 +3662,16 @@ class ComprehensiveInstructorReport:
                         f" This represents a <strong>{effect_interpretation} effect</strong>"
                         f"{f' (d = {effect_size:.2f})' if effect_size else ''}."
                     )
+            elif is_marginal and p_value is not None:
+                interpretation_parts.append(
+                    f"A marginally significant difference was found between <strong>{highest[0]}</strong> "
+                    f"(M = {highest[1]:.2f}) and <strong>{lowest[0]}</strong> (M = {lowest[1]:.2f}), "
+                    f"with a difference of {mean_diff:.2f} points (p = {p_value:.4f})."
+                )
+                if effect_interpretation and effect_size:
+                    interpretation_parts.append(
+                        f" The effect size was {effect_interpretation} (d = {effect_size:.2f})."
+                    )
             else:
                 interpretation_parts.append(
                     f"No statistically significant difference was found between <strong>{highest[0]}</strong> "
@@ -3649,6 +3687,18 @@ class ComprehensiveInstructorReport:
             if is_significant and p_value is not None:
                 interpretation_parts.append(
                     f"Significant differences were found across conditions (p = {p_value:.4f}). "
+                    f"<strong>{highest[0]}</strong> showed the highest mean (M = {highest[1]:.2f}), "
+                    f"while <strong>{lowest[0]}</strong> showed the lowest (M = {lowest[1]:.2f})."
+                )
+                if effect_interpretation:
+                    interpretation_parts.append(
+                        f" The overall effect was <strong>{effect_interpretation}</strong>"
+                        f"{f' (η² = {effect_size:.3f})' if effect_size else ''}."
+                    )
+            elif is_marginal and p_value is not None:
+                interpretation_parts.append(
+                    f"Marginally significant differences were found across the {n_conditions} conditions "
+                    f"(p = {p_value:.4f}). "
                     f"<strong>{highest[0]}</strong> showed the highest mean (M = {highest[1]:.2f}), "
                     f"while <strong>{lowest[0]}</strong> showed the lowest (M = {lowest[1]:.2f})."
                 )
@@ -3690,6 +3740,7 @@ class ComprehensiveInstructorReport:
 
         # Collect detailed findings
         sig_findings = []
+        marginal_findings = []
         nonsig_findings = []
         largest_effect = None
         largest_effect_size = 0
@@ -3700,6 +3751,7 @@ class ComprehensiveInstructorReport:
             stats = result.get("stats_results", {})
             chart_data = result.get("chart_data", {})
             is_sig = False
+            is_marginal = False
             effect_val = 0
             effect_type = None
             p_val = None
@@ -3708,9 +3760,11 @@ class ComprehensiveInstructorReport:
             if "t_test" in stats:
                 p_val = stats["t_test"]["p_value"]
                 is_sig = stats["t_test"]["significant"]
+                is_marginal = stats["t_test"].get("marginally_significant", False)
             elif "anova" in stats:
                 p_val = stats["anova"]["p_value"]
                 is_sig = stats["anova"]["significant"]
+                is_marginal = stats["anova"].get("marginally_significant", False)
 
             # Get effect size
             if "cohens_d" in stats:
@@ -3740,7 +3794,8 @@ class ComprehensiveInstructorReport:
                 "highest_mean": highest_mean,
                 "lowest_cond": lowest_cond,
                 "lowest_mean": lowest_mean,
-                "significant": is_sig
+                "significant": is_sig,
+                "marginally_significant": is_marginal,
             }
 
             if is_sig:
@@ -3748,6 +3803,8 @@ class ComprehensiveInstructorReport:
                 if effect_val > largest_effect_size:
                     largest_effect_size = effect_val
                     largest_effect = finding_info
+            elif is_marginal:
+                marginal_findings.append(finding_info)
             else:
                 nonsig_findings.append(finding_info)
 
@@ -3794,7 +3851,21 @@ class ComprehensiveInstructorReport:
                 html.append(
                     f"<br>The <strong>strongest effect</strong> was observed for <strong>{largest_effect['scale']}</strong>. "
                 )
-        else:
+
+        # Show marginally significant findings
+        if marginal_findings:
+            html.append(
+                f"<br><span style='color:#f39c12;'>†</span> <strong>{len(marginal_findings)} DV{'s' if len(marginal_findings) > 1 else ''} showed marginally significant differences</strong> (p &lt; .10):<br>"
+            )
+            for finding in marginal_findings:
+                html.append(f"&nbsp;&nbsp;• <strong>{finding['scale']}</strong>: ")
+                if finding['highest_cond'] and finding['lowest_cond']:
+                    html.append(
+                        f"{finding['highest_cond']} (M = {finding['highest_mean']:.2f}) > {finding['lowest_cond']} (M = {finding['lowest_mean']:.2f}), "
+                    )
+                html.append(f"p = {finding['p_value']:.4f}<br>")
+
+        if n_sig == 0 and not marginal_findings:
             html.append(
                 f"<span style='color:#e74c3c;'>✗</span> <strong>No statistically significant differences</strong> were found between conditions "
                 f"on any of the {n_scales} dependent variable{'s' if n_scales > 1 else ''}. "
@@ -3804,6 +3875,11 @@ class ComprehensiveInstructorReport:
                 closest = min(all_effects, key=lambda x: x['p_value'] if x['p_value'] else 1)
                 if closest['p_value']:
                     html.append(f"The closest to significance was <strong>{closest['scale']}</strong> (p = {closest['p_value']:.4f}).")
+        elif n_sig == 0:
+            # Had marginal but no sig findings
+            html.append(
+                f"<span style='color:#e74c3c;'>✗</span> No differences reached conventional significance (p &lt; .05). "
+            )
 
         # Pre-registration Hypothesis Evaluation
         if prereg_text:
@@ -3875,6 +3951,8 @@ class ComprehensiveInstructorReport:
             t = stats_results["t_test"]
             if t["significant"]:
                 return f"The t-test indicates a statistically significant difference between conditions. Participants in the <strong>{highest[0]}</strong> condition scored higher (M = {highest[1]:.2f}) than those in <strong>{lowest[0]}</strong> (M = {lowest[1]:.2f})."
+            elif t.get("marginally_significant"):
+                return f"The t-test found a marginally significant difference (p < .10) between conditions. <strong>{highest[0]}</strong> scored higher (M = {highest[1]:.2f}) than <strong>{lowest[0]}</strong> (M = {lowest[1]:.2f}), though this did not reach conventional significance (p < .05)."
             else:
                 return f"The t-test did not find a statistically significant difference between the two conditions, suggesting that {scale_name} scores were similar regardless of experimental condition."
 
@@ -3882,6 +3960,8 @@ class ComprehensiveInstructorReport:
             a = stats_results["anova"]
             if a["significant"]:
                 return f"The ANOVA reveals significant variation in {scale_name} across conditions. <strong>{highest[0]}</strong> showed the highest scores while <strong>{lowest[0]}</strong> showed the lowest. Post-hoc comparisons (below) identify which specific pairs differ."
+            elif a.get("marginally_significant"):
+                return f"The ANOVA found marginally significant variation (p < .10) in {scale_name} across the {len(conditions)} conditions. <strong>{highest[0]}</strong> showed the highest scores while <strong>{lowest[0]}</strong> showed the lowest. This trend may warrant further investigation with a larger sample."
             else:
                 return f"The ANOVA did not detect significant differences in {scale_name} across the {len(conditions)} conditions, suggesting the experimental manipulation may not have affected this outcome."
 
@@ -4001,7 +4081,7 @@ class ComprehensiveInstructorReport:
             # Add significance and effect size annotation if provided
             annotation_text = []
             if p_value is not None:
-                sig_symbol = "***" if p_value < 0.001 else ("**" if p_value < 0.01 else ("*" if p_value < 0.05 else "ns"))
+                sig_symbol = self._p_significance(p_value)["sig_label"]
                 annotation_text.append(f"p = {p_value:.4f} {sig_symbol}")
             if effect_size is not None:
                 annotation_text.append(f"d = {effect_size:.2f}")
@@ -4277,8 +4357,9 @@ class ComprehensiveInstructorReport:
             # Approximate CI for Cohen's d (rough estimate)
             ci_widths = [0.4 for _ in comparisons]  # Simplified
 
-            # Colors based on significance
-            colors = ['#2ecc71' if sig else '#95a5a6' for sig in significant]
+            # Colors based on significance (green=sig, orange=marginal, gray=ns)
+            marginals = [c.get('marginally_significant', False) for c in comparisons]
+            colors = ['#2ecc71' if sig else ('#f39c12' if marg else '#95a5a6') for sig, marg in zip(significant, marginals)]
 
             # Plot effect sizes
             for i, (effect, label, sig, color) in enumerate(zip(effects, labels, significant, colors)):
@@ -4308,7 +4389,7 @@ class ComprehensiveInstructorReport:
 
             # Add interpretation text
             xlim = ax.get_xlim()
-            ax.text(xlim[1], -0.7, "Green = Significant (p < .05)\nGray = Non-significant",
+            ax.text(xlim[1], -0.7, "Green = Significant (p < .05)\nOrange = Marginally significant (p < .10)\nGray = Non-significant",
                    fontsize=9, ha='right', va='top', style='italic', color='#7f8c8d')
 
             # Clean up spines
@@ -4549,6 +4630,7 @@ class ComprehensiveInstructorReport:
             .back-to-top:hover { color: #2563eb; }
             code { background: #f1f5f9; padding: 2px 6px; border-radius: 4px; font-size: 0.9em; color: #475569; }
             .sig { color: #16a34a; font-weight: 600; }
+            .marginal { color: #f39c12; font-weight: 600; }
             .nonsig { color: #94a3b8; }
             ol, ul { padding-left: 24px; }
             li { margin-bottom: 4px; }
@@ -4845,8 +4927,10 @@ class ComprehensiveInstructorReport:
 
         html_parts.append("<a href='#top' class='back-to-top'>Back to top</a>")
 
-        # Clean data for analysis
-        df_clean = df[df["Exclude_Recommended"] == 0] if "Exclude_Recommended" in df.columns else df
+        # v1.2.4.0: Use FULL dataset for instructor report analysis.
+        # Exclude_Recommended is informational (teaches students about data quality)
+        # but should NOT reduce the analysis N — instructors expect the full sample.
+        df_clean = df
 
         # v1.3.4: Executive Summary placeholder — will be computed after DV analysis and inserted here
         html_parts.append("<a id='exec-summary'></a>")
@@ -5199,16 +5283,20 @@ class ComprehensiveInstructorReport:
                         html_parts.append("<table><tr><th>Comparison</th><th>t</th><th>p</th><th>Cohen's d</th><th>Significant</th></tr>")
 
                         sig_pairs = []
+                        marginal_pairs = []
                         largest_effect_pair = None
                         largest_d = 0
 
                         for comp in stats_results["pairwise_comparisons"]:
-                            sig_class = "sig" if comp["significant"] else "nonsig"
-                            sig_text = "Yes" if comp["significant"] else "No"
+                            _is_marginal = comp.get("marginally_significant", False)
+                            sig_class = "sig" if comp["significant"] else ("marginal" if _is_marginal else "nonsig")
+                            sig_text = "Yes" if comp["significant"] else ("Marginal" if _is_marginal else "No")
                             html_parts.append(f"<tr><td>{comp['comparison']}</td><td>{comp['t_stat']:.3f}</td><td class='{sig_class}'>{comp['p_value']:.4f}</td><td>{comp['cohens_d']:.3f}</td><td class='{sig_class}'>{sig_text}</td></tr>")
 
                             if comp["significant"]:
                                 sig_pairs.append(comp['comparison'])
+                            elif _is_marginal:
+                                marginal_pairs.append(comp['comparison'])
                             if abs(comp['cohens_d']) > largest_d:
                                 largest_d = abs(comp['cohens_d'])
                                 largest_effect_pair = comp
@@ -5222,6 +5310,8 @@ class ComprehensiveInstructorReport:
                             html_parts.append(f"{len(sig_pairs)} of {len(stats_results['pairwise_comparisons'])} pairwise comparisons reached statistical significance. ")
                             if largest_effect_pair:
                                 html_parts.append(f"The largest effect was between {largest_effect_pair['comparison']} (d = {largest_effect_pair['cohens_d']:.2f}).")
+                        elif marginal_pairs:
+                            html_parts.append(f"No pairwise comparisons reached conventional significance (p < .05), but {len(marginal_pairs)} showed marginally significant differences (p < .10): {', '.join(marginal_pairs)}.")
                         else:
                             html_parts.append("No pairwise comparisons reached statistical significance, suggesting the overall ANOVA effect may be driven by subtle differences across multiple groups rather than any single pair.")
                         html_parts.append("</div>")
@@ -5296,18 +5386,18 @@ class ComprehensiveInstructorReport:
 
                             # Main effect 1
                             me1 = factorial_results["main_effect_1"]
-                            sig_class = "sig" if me1["significant"] else "nonsig"
+                            sig_class = "sig" if me1["significant"] else ("marginal" if me1.get("marginally_significant") else "nonsig")
                             html_parts.append(f"<tr><td><strong>{me1['factor']}</strong></td><td>{me1['ss']:.2f}</td><td>{me1['df']}</td><td>{me1['ms']:.2f}</td><td>{me1['f_statistic']:.3f}</td><td class='{sig_class}'>{me1['p_value']:.4f}</td><td>{me1['partial_eta_squared']:.4f}</td></tr>")
 
                             # Main effect 2
                             me2 = factorial_results["main_effect_2"]
-                            sig_class = "sig" if me2["significant"] else "nonsig"
+                            sig_class = "sig" if me2["significant"] else ("marginal" if me2.get("marginally_significant") else "nonsig")
                             html_parts.append(f"<tr><td><strong>{me2['factor']}</strong></td><td>{me2['ss']:.2f}</td><td>{me2['df']}</td><td>{me2['ms']:.2f}</td><td>{me2['f_statistic']:.3f}</td><td class='{sig_class}'>{me2['p_value']:.4f}</td><td>{me2['partial_eta_squared']:.4f}</td></tr>")
 
                             # Interaction
                             if "interaction" in factorial_results:
                                 inter = factorial_results["interaction"]
-                                sig_class = "sig" if inter["significant"] else "nonsig"
+                                sig_class = "sig" if inter["significant"] else ("marginal" if inter.get("marginally_significant") else "nonsig")
                                 html_parts.append(f"<tr><td><strong>{inter['factors']}</strong></td><td>{inter['ss']:.2f}</td><td>{inter['df']}</td><td>{inter['ms']:.2f}</td><td>{inter['f_statistic']:.3f}</td><td class='{sig_class}'>{inter['p_value']:.4f}</td><td>{inter['partial_eta_squared']:.4f}</td></tr>")
 
                             # Error
@@ -5323,10 +5413,16 @@ class ComprehensiveInstructorReport:
                             findings = []
                             if me1["significant"]:
                                 findings.append(f"significant main effect of <strong>{me1['factor']}</strong> ({me1['interpretation']} effect)")
+                            elif me1.get("marginally_significant"):
+                                findings.append(f"marginally significant main effect of <strong>{me1['factor']}</strong> (p < .10)")
                             if me2["significant"]:
                                 findings.append(f"significant main effect of <strong>{me2['factor']}</strong> ({me2['interpretation']} effect)")
+                            elif me2.get("marginally_significant"):
+                                findings.append(f"marginally significant main effect of <strong>{me2['factor']}</strong> (p < .10)")
                             if "interaction" in factorial_results and factorial_results["interaction"]["significant"]:
                                 findings.append(f"<strong>significant interaction</strong> between factors ({factorial_results['interaction']['interpretation']} effect)")
+                            elif "interaction" in factorial_results and factorial_results["interaction"].get("marginally_significant"):
+                                findings.append(f"<strong>marginally significant interaction</strong> between factors (p < .10)")
 
                             if findings:
                                 html_parts.append("The factorial analysis revealed " + ", ".join(findings) + ".")
