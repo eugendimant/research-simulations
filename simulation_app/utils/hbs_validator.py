@@ -2,7 +2,7 @@
 Adversarial Self-Validation Pipeline for the Human Behavior Simulator (HBS)
 ============================================================================
 
-After data generation, validates the dataset against DANEEL benchmark axes
+After data generation, validates the dataset against human-realism benchmark axes
 and auto-corrects any metrics outside human-plausible ranges.
 
 Benchmark axes:
@@ -12,10 +12,10 @@ Benchmark axes:
 - Straight-lining rates
 - Rating-text coherence
 
-Version: 1.2.3.8
+Version: 1.2.3.9
 """
 
-__version__ = "1.2.3.8"
+__version__ = "1.2.3.9"
 
 __all__ = ["HBSValidator"]
 
@@ -64,7 +64,7 @@ _NEGATIVE_WORDS = frozenset({
 class HBSValidator:
     """Adversarial self-validation pipeline for HBS-generated datasets.
 
-    Validates generated data against DANEEL benchmark axes and optionally
+    Validates generated data against human-realism benchmark axes and optionally
     auto-corrects metrics that fall outside human-plausible ranges.
 
     Usage::
@@ -165,7 +165,7 @@ class HBSValidator:
         failed_names = [k for k, v in checks.items() if not v.get("passed", True)]
 
         if all_passed:
-            summary = "All DANEEL benchmark checks passed."
+            summary = "All human-realism benchmark checks passed."
         else:
             summary = (
                 f"{len(failed_names)} of {len(checks)} checks failed: "

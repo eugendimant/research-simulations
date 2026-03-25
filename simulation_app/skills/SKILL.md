@@ -9,7 +9,7 @@ Structured development protocol for the behavioral science simulator. Every code
 
 ## When This Skill Activates
 
-This skill governs ALL code work on the simulator and related tooling. If the task touches code, config, data pipelines, or deployment for the behavioral science simulator — follow this protocol. This includes all engine variants: **ABE 2.0** (`EnhancedSimulationEngine`) and **HBS** (`HBSEngine` — Human Behavior Simulator with DANEEL-grade persona coherence, census weighting, stylometric fingerprinting, and adversarial validation).
+This skill governs ALL code work on the simulator and related tooling. If the task touches code, config, data pipelines, or deployment for the behavioral science simulator — follow this protocol. This includes all engine variants: **ABE 2.0** (`EnhancedSimulationEngine`) and **HBS** (`HBSEngine` — Human Behavior Simulator with deep persona coherence, census weighting, stylometric fingerprinting, and adversarial validation).
 
 ## Step 0: Pre-Execution Analysis (MANDATORY — DO FIRST)
 
