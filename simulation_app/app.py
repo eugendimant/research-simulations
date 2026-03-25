@@ -12110,6 +12110,10 @@ if active_page == 3:
     # v1.1.0.9: Show prominent animated progress indicator IMMEDIATELY when generating
     # No time estimates — only real-time observation count (updated via callback)
     if is_generating:
+        # v1.2.5.0: Immediately clear the progress placeholder to prevent a stale
+        # Streamlit progress bar from the previous rerun showing as a blue bar.
+        progress_placeholder.empty()
+
         # v1.1.1.9: Show the SELECTED method's card (greyed-out) during generation
         # so the user always sees which method is running.
         _active_method_key = st.session_state.get("generation_method", "")
@@ -12476,7 +12480,15 @@ if active_page == 3:
         # generation reruns.  Without this, every generation attempt crashes with NameError
         # at the pre-flight health check, leaving is_generating=True forever (stuck blue screen).
         _gen_method_key = "generation_method"
-        progress_bar = progress_placeholder.progress(5, text="")
+        # v1.2.5.0: Progress is shown solely via _progress_counter_placeholder
+        # (the green bar inside the grey card). The Streamlit progress bar is hidden.
+        # We create a lightweight no-op wrapper so all downstream .progress() calls
+        # are silently ignored without requiring code changes.
+        class _NoOpProgressBar:
+            def progress(self, *a, **kw) -> None:
+                pass
+        progress_bar = _NoOpProgressBar()
+        progress_placeholder.empty()
 
         # v1.2.1.7: SETUP TRY BLOCK — wrap ALL pre-engine setup code so that ANY crash
         # (dict-contaminated values, float() on non-numeric, missing keys, etc.) is caught
@@ -13350,6 +13362,7 @@ if active_page == 3:
             _watchdog_thread.start()
 
             # v1.2.5.0: Clean generation UX — spinner is minimal, progress shown in counter
+            _gen_has_oe = bool(open_ended_questions_for_engine)
             with st.spinner(""):
                 progress_bar.progress(25, text="")
                 df, metadata = engine.generate()
@@ -14333,21 +14346,21 @@ if active_page == 3:
                         _navigate_to(3)
             elif "memory" in error_str or "overflow" in error_str:
                 progress_bar.progress(100, text="")
-                status_placeholder.error("Simulation failed.")
+                status_placeholder.empty()
                 st.error(
                     f"**Resource Error:** The simulation ran out of resources (N={N}). "
                     "Try reducing the sample size or the number of scales and retry."
                 )
             elif "scale" in error_str or "column" in error_str:
                 progress_bar.progress(100, text="")
-                status_placeholder.error("Simulation failed.")
+                status_placeholder.empty()
                 st.error(
                     f"**Data Configuration Error:** {e}. "
                     "Please go back to the Design step and verify your DV names and scale settings match your QSF."
                 )
             else:
                 progress_bar.progress(100, text="")
-                status_placeholder.error("Simulation failed.")
+                status_placeholder.empty()
                 st.error(f"**Simulation failed:** {e}")
 
             with st.expander("Technical details (for support)", expanded=False):
