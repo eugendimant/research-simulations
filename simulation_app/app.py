@@ -54,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.2.3.7"
-BUILD_ID = "20260325-v12037-tile-subtitle-fit"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.2.3.8"
+BUILD_ID = "20260325-v12038-hbs-engine-integration"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -118,7 +118,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.2.3.7"  # v1.2.3.7: ABE 2.0 dedup + condition-aware + bug fixes
+APP_VERSION = "1.2.3.8"  # v1.2.3.8: Human Behavior Simulator (HBS) engine integration
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -11761,8 +11761,8 @@ if active_page == 3:
             unsafe_allow_html=True,
         )
 
-        # --- v1.2.3.7: Method cards — 3-card grid (ABE 2.0 replaces Template + Behavioral) ---
-        # Order: Adaptive Behavioral Engine 2.0, Built-in AI, Your API Key
+        # --- v1.2.3.8: Method cards — 4-card grid (ABE 2.0, HBS, Built-in AI, Your API Key) ---
+        # Order: Adaptive Behavioral Engine 2.0, Human Behavior Simulator (HBS), Built-in AI, Your API Key
         _method_cards = [
             {
                 "key": "abe_v2",
@@ -11777,6 +11777,23 @@ if active_page == 3:
                     "Full behavioral engine for numeric &amp; open-ended data",
                     "Narrative-specific builders for creative, disclosure, and story intents",
                     "Economic game modeling (Fehr-Schmidt, Engel meta-analysis)",
+                ],
+                "quality_note": "",
+                "info_tooltip": "",
+            },
+            {
+                "key": "hbs",
+                "icon": "&#129513;",  # DNA / helix
+                "icon_bg": "linear-gradient(135deg, #F59E0B 0%, #EF4444 100%)",
+                "title": "Human Behavior Simulator",
+                "tag": "Most Realistic",
+                "tag_color": "#DC2626",
+                "subtitle": "DANEEL-grade persona coherence, calibrated human errors",
+                "details": [
+                    "Census-weighted demographics &amp; cross-item coherence",
+                    "Calibrated error rates by education (Frederick 2005, DANEEL)",
+                    "Stylometric voice fingerprinting across all open-ended text",
+                    "Self-validating output against DANEEL benchmark battery",
                 ],
                 "quality_note": "",
                 "info_tooltip": "",
@@ -11815,8 +11832,8 @@ if active_page == 3:
             },
         ]
 
-        # v1.2.3.7: Render 3-column grid (ABE 2.0, Built-in AI, Your API Key)
-        _card_cols = list(st.columns(3, gap="medium"))
+        # v1.2.3.8: Render 4-column grid (ABE 2.0, HBS, Built-in AI, Your API Key)
+        _card_cols = list(st.columns(4, gap="small"))
 
         for _ci, _card in enumerate(_method_cards):
             with _card_cols[_ci]:
@@ -11892,11 +11909,13 @@ if active_page == 3:
                         use_container_width=True,
                     ):
                         st.session_state[_gen_method_key] = _mk
-                        # v1.2.3.7: Socsim always on — behavioral engine is ABE 2.0 for all methods.
+                        # v1.2.3.8: Socsim always on — behavioral engine is ABE 2.0 for all methods.
                         # Tile selection only controls open-ended text source (ABE v2 templates vs LLM).
+                        # HBS uses its own wrapper engine (HBSEngine) with ABE 2.0 as base.
                         st.session_state["_use_socsim_experimental"] = True
-                        st.session_state["_use_abe_v2"] = (_mk == "abe_v2")
-                        st.session_state["allow_template_fallback_once"] = _mk in ("template", "experimental", "abe_v2")
+                        st.session_state["_use_abe_v2"] = (_mk in ("abe_v2", "hbs"))
+                        st.session_state["allow_template_fallback_once"] = _mk in ("template", "experimental", "abe_v2", "hbs")
+                        st.session_state["_use_hbs"] = (_mk == "hbs")
                         if _mk in ("free_llm", "own_api"):
                             st.session_state["_use_abe_v2"] = False
                         st.rerun()
@@ -12075,12 +12094,14 @@ if active_page == 3:
                         st.rerun()
 
         # Wire method choice into engine settings
-        # v1.2.3.7: Socsim always on — behavioral engine (numeric data) uses ABE 2.0
+        # v1.2.3.8: Socsim always on — behavioral engine (numeric data) uses ABE 2.0
         # pipeline for all methods. Tile selection only controls open-ended text source.
+        # HBS uses its own wrapper engine with ABE 2.0 as base + post-processing.
         st.session_state["_use_socsim_experimental"] = True
-        if _current_method in ("template", "abe_v2", "experimental"):
+        st.session_state["_use_hbs"] = (_current_method == "hbs")
+        if _current_method in ("template", "abe_v2", "experimental", "hbs"):
             st.session_state["allow_template_fallback_once"] = True
-            st.session_state["_use_abe_v2"] = _current_method == "abe_v2"
+            st.session_state["_use_abe_v2"] = _current_method in ("abe_v2", "hbs")
         elif _current_method in ("free_llm", "own_api"):
             st.session_state["allow_template_fallback_once"] = False
             st.session_state["_use_abe_v2"] = False
@@ -12105,7 +12126,8 @@ if active_page == 3:
         _active_card_info = {
             "template":     {"icon": "&#9881;",  "icon_bg": "linear-gradient(135deg, #F59E0B 0%, #F97316 100%)", "title": "Template Engine",              "subtitle": "225+ research domains, 58 personas, instant generation"},
             "experimental": {"icon": "&#9889;",  "icon_bg": "linear-gradient(135deg, #8B5CF6 0%, #7C3AED 100%)", "title": "Adaptive Behavioral Engine",    "subtitle": "60+ participant archetypes, 30+ research paradigms, literature-calibrated effects"},
-            "abe_v2":       {"icon": "&#129504;", "icon_bg": "linear-gradient(135deg, #0EA5E9 0%, #06B6D4 100%)", "title": "Adaptive Behavioral Engine 2.0", "subtitle": "225+ domains, 60+ archetypes, narrative intelligence, literature-calibrated effects"},
+            "abe_v2":       {"icon": "&#129504;", "icon_bg": "linear-gradient(135deg, #0EA5E9 0%, #06B6D4 100%)", "title": "Adaptive Behavioral Engine 2.0", "subtitle": "225+ domains, 60+ archetypes, literature-calibrated effects"},
+            "hbs":          {"icon": "&#129513;", "icon_bg": "linear-gradient(135deg, #F59E0B 0%, #EF4444 100%)", "title": "Human Behavior Simulator",      "subtitle": "DANEEL-grade persona coherence, calibrated human errors"},
             "free_llm":     {"icon": "&#129302;", "icon_bg": "linear-gradient(135deg, #22c55e 0%, #16a34a 100%)", "title": "Built-in AI",                   "subtitle": "Free LLM providers for AI-generated open-ended text"},
             "own_api":      {"icon": "&#128273;", "icon_bg": "linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)", "title": "AI (your API key)",             "subtitle": "Your own API key for reliable AI-generated text"},
         }
@@ -12131,6 +12153,7 @@ if active_page == 3:
             "template": "Template Engine",
             "experimental": "Adaptive Behavioral Engine",
             "abe_v2": "Adaptive Behavioral Engine 2.0",
+            "hbs": "Human Behavior Simulator (HBS)",
             "free_llm": "Built-in AI",
             "own_api": "AI (your API key)",
         }
@@ -12902,6 +12925,7 @@ if active_page == 3:
                 "template": "Template Engine",
                 "experimental": "Adaptive Behavioral Engine",
                 "abe_v2": "Adaptive Behavioral Engine 2.0",
+                "hbs": "Human Behavior Simulator (HBS)",
                 "free_llm": "Built-in AI",
                 "own_api": "AI (your API key)",
             }.get(st.session_state.get(_gen_method_key, ""), "")
@@ -13183,6 +13207,7 @@ if active_page == 3:
                 "template": "Template Engine",
                 "experimental": "Adaptive Behavioral Engine",
                 "abe_v2": "Adaptive Behavioral Engine 2.0",
+                "hbs": "Human Behavior Simulator (HBS)",
                 "free_llm": "Built-in AI",
                 "own_api": "AI (your API key)",
             }.get(st.session_state.get("generation_method", ""), "the selected method")
@@ -13231,7 +13256,8 @@ if active_page == 3:
         # constructor unprotected.  If the Adaptive Behavioral Engine or any other
         # method crashed during init, users saw "unexpected error" with no details.
         try:
-            engine = EnhancedSimulationEngine(
+            # v1.2.3.8: Common engine kwargs shared by both EnhancedSimulationEngine and HBSEngine
+            _engine_kwargs = dict(
                 study_title=title,
                 study_description=desc,
                 sample_size=N,
@@ -13260,6 +13286,18 @@ if active_page == 3:
                 use_abe_v2=bool(st.session_state.get("_use_abe_v2", False)),
                 free_llm_oe_cap=_free_llm_oe_cap,
             )
+
+            # v1.2.3.8: Use HBSEngine when Human Behavior Simulator is selected
+            if st.session_state.get("_use_hbs", False):
+                try:
+                    from utils.hbs_engine import HBSEngine
+                    engine = HBSEngine(**_engine_kwargs)
+                    _log("Using Human Behavior Simulator (HBS) engine")
+                except Exception as _hbs_init_err:
+                    _log(f"HBS engine init failed ({_hbs_init_err}), falling back to ABE 2.0", level="warning")
+                    engine = EnhancedSimulationEngine(**_engine_kwargs)
+            else:
+                engine = EnhancedSimulationEngine(**_engine_kwargs)
         except Exception as _init_exc:
             import traceback as _init_tb
             _init_error_tb = _init_tb.format_exc()
@@ -13285,6 +13323,7 @@ if active_page == 3:
                 "template": "Template Engine",
                 "experimental": "Adaptive Behavioral Engine",
                 "abe_v2": "Adaptive Behavioral Engine 2.0",
+                "hbs": "Human Behavior Simulator (HBS)",
                 "free_llm": "Built-in AI",
                 "own_api": "AI (your API key)",
             }.get(st.session_state.get("generation_method", ""), "the selected method")
@@ -13306,8 +13345,8 @@ if active_page == 3:
             # v1.2.3.7: Context-aware recovery — offer alternatives that differ
             # from the method that just failed.
             _failed_method = st.session_state.get("generation_method", "abe_v2")
-            _init_alts = [m for m in ["abe_v2", "free_llm", "own_api"] if m != _failed_method]
-            _init_labels = {"abe_v2": "Adaptive Engine 2.0", "free_llm": "Built-in AI", "own_api": "Your API Key"}
+            _init_alts = [m for m in ["abe_v2", "hbs", "free_llm", "own_api"] if m != _failed_method]
+            _init_labels = {"abe_v2": "Adaptive Engine 2.0", "hbs": "HBS", "free_llm": "Built-in AI", "own_api": "Your API Key"}
             _init_cols = st.columns(len(_init_alts) + 1)
             for _ia_i, _ia_m in enumerate(_init_alts):
                 with _init_cols[_ia_i]:
@@ -13315,18 +13354,20 @@ if active_page == 3:
                                  type="primary" if _ia_i == 0 else "secondary", use_container_width=True):
                         st.session_state["generation_method"] = _ia_m
                         st.session_state["_use_socsim_experimental"] = True
-                        st.session_state["_use_abe_v2"] = (_ia_m == "abe_v2")
-                        st.session_state["allow_template_fallback_once"] = _ia_m in ("template", "experimental", "abe_v2")
-                        st.session_state["is_generating"] = _ia_m == "abe_v2"
-                        if _ia_m == "abe_v2":
+                        st.session_state["_use_abe_v2"] = (_ia_m in ("abe_v2", "hbs"))
+                        st.session_state["_use_hbs"] = (_ia_m == "hbs")
+                        st.session_state["allow_template_fallback_once"] = _ia_m in ("template", "experimental", "abe_v2", "hbs")
+                        st.session_state["is_generating"] = _ia_m in ("abe_v2", "hbs")
+                        if _ia_m in ("abe_v2", "hbs"):
                             st.session_state["_generation_phase"] = 1
                         _navigate_to(3)
             with _init_cols[-1]:
                 if st.button("Try again", key="_init_fail_retry",
                              type="secondary", use_container_width=True):
                     st.session_state["_use_socsim_experimental"] = True
-                    st.session_state["_use_abe_v2"] = _failed_method == "abe_v2"
-                    st.session_state["allow_template_fallback_once"] = _failed_method in ("template", "experimental", "abe_v2")
+                    st.session_state["_use_abe_v2"] = _failed_method in ("abe_v2", "hbs")
+                    st.session_state["_use_hbs"] = _failed_method == "hbs"
+                    st.session_state["allow_template_fallback_once"] = _failed_method in ("template", "experimental", "abe_v2", "hbs")
                     st.session_state["is_generating"] = True
                     st.session_state["_generation_phase"] = 1
                     _navigate_to(3)
@@ -13418,6 +13459,7 @@ if active_page == 3:
                 "template": "Template Engine",
                 "experimental": "Adaptive Behavioral Engine",
                 "abe_v2": "Adaptive Behavioral Engine 2.0",
+                "hbs": "Human Behavior Simulator (HBS)",
                 "free_llm": "Built-in AI",
                 "own_api": "AI (your API key)",
             }.get(st.session_state.get(_gen_method_key, "free_llm"), "Simulation")
@@ -13497,6 +13539,7 @@ if active_page == 3:
                 "template": "Template Engine",
                 "experimental": "Adaptive Behavioral Engine",
                 "abe_v2": "Adaptive Behavioral Engine 2.0",
+                "hbs": "Human Behavior Simulator (HBS)",
                 "free_llm": "Built-in AI",
                 "own_api": "AI (your API key)",
             }
@@ -13639,6 +13682,7 @@ if active_page == 3:
                 "free_llm": "Built-in AI (Free LLM Providers)",
                 "own_api": "User API Key (LLM)",
                 "abe_v2": "Adaptive Behavioral Engine 2.0",
+                "hbs": "Human Behavior Simulator (HBS)",
                 "template": "Template Engine (Instant)",
                 "experimental": "Adaptive Behavioral Engine",
             }

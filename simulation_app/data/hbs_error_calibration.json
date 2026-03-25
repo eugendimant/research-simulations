@@ -1,0 +1,133 @@
+{
+  "bat_and_ball": {
+    "question_pattern": "bat and ball|costs? \\$1\\.10|costs? 10 cents more",
+    "correct_answer": "0.05",
+    "common_wrong_answer": "0.10",
+    "correct_rate_by_education": {"<HS": 0.12, "HS": 0.18, "Some college": 0.28, "BA": 0.42, "Graduate": 0.65},
+    "wrong_answer_distribution": [
+      {"answer": "0.10", "weight": 0.85},
+      {"answer": "0.50", "weight": 0.08},
+      {"answer": "1.00", "weight": 0.04},
+      {"answer": "other_numeric", "weight": 0.03}
+    ],
+    "source": "Frederick (2005) CRT"
+  },
+  "lily_pad": {
+    "question_pattern": "lily pad|doubles in size|covers half",
+    "correct_answer": "47",
+    "common_wrong_answer": "24",
+    "correct_rate_by_education": {"<HS": 0.15, "HS": 0.20, "Some college": 0.30, "BA": 0.45, "Graduate": 0.68},
+    "wrong_answer_distribution": [
+      {"answer": "24", "weight": 0.80},
+      {"answer": "25", "weight": 0.10},
+      {"answer": "other_numeric", "weight": 0.10}
+    ],
+    "source": "Frederick (2005) CRT"
+  },
+  "widget_machines": {
+    "question_pattern": "machines?.*widgets?|5 machines.*5 minutes",
+    "correct_answer": "5",
+    "common_wrong_answer": "100",
+    "correct_rate_by_education": {"<HS": 0.18, "HS": 0.25, "Some college": 0.35, "BA": 0.50, "Graduate": 0.70},
+    "wrong_answer_distribution": [
+      {"answer": "100", "weight": 0.75},
+      {"answer": "50", "weight": 0.15},
+      {"answer": "other_numeric", "weight": 0.10}
+    ],
+    "source": "Frederick (2005) CRT"
+  },
+  "chess_zeros": {
+    "question_pattern": "chess|64.*factorial|how many zero",
+    "correct_answer": "120",
+    "correct_rate_by_education": {"<HS": 0.0, "HS": 0.0, "Some college": 0.01, "BA": 0.02, "Graduate": 0.04},
+    "wrong_answer_distribution": [
+      {"answer": "random_int_10_50", "weight": 0.45},
+      {"answer": "random_int_50_200", "weight": 0.30},
+      {"answer": "i_dont_know", "weight": 0.20},
+      {"answer": "random_int_200_1000", "weight": 0.05}
+    ],
+    "note": "Knowing exact answer (120) is a bot signal",
+    "source": "DANEEL benchmark"
+  },
+  "star_count": {
+    "question_pattern": "how many stars|visible.*naked eye|can.*see.*stars",
+    "correct_answer": "5000",
+    "correct_rate_by_education": {"<HS": 0.02, "HS": 0.05, "Some college": 0.08, "BA": 0.12, "Graduate": 0.20},
+    "wrong_answer_distribution": [
+      {"answer": "random_int_100_1000", "weight": 0.35},
+      {"answer": "random_int_1000_10000", "weight": 0.30},
+      {"answer": "millions", "weight": 0.15},
+      {"answer": "i_dont_know", "weight": 0.20}
+    ],
+    "source": "DANEEL benchmark"
+  },
+  "horse_bones": {
+    "question_pattern": "horse.*bones|bones.*horse|how many bones",
+    "correct_answer": "205",
+    "correct_rate_by_education": {"<HS": 0.01, "HS": 0.02, "Some college": 0.03, "BA": 0.04, "Graduate": 0.06},
+    "wrong_answer_distribution": [
+      {"answer": "random_int_150_300", "weight": 0.60},
+      {"answer": "i_dont_know", "weight": 0.30},
+      {"answer": "random_int_300_500", "weight": 0.10}
+    ],
+    "source": "DANEEL benchmark"
+  },
+  "syllogism_basic": {
+    "question_pattern": "all.*are.*all.*are|syllogism|logical.*conclusion",
+    "correct_rate_by_education": {"<HS": 0.35, "HS": 0.55, "Some college": 0.65, "BA": 0.75, "Graduate": 0.85},
+    "source": "Logical reasoning literature"
+  },
+  "attention_check_simple": {
+    "question_pattern": "please select|choose.*option|attention.*check|quality.*check",
+    "correct_rate_by_persona": {
+      "engaged_responder": 0.98,
+      "satisficer": 0.82,
+      "extreme_responder": 0.88,
+      "acquiescent_responder": 0.80,
+      "careless_responder": 0.60,
+      "social_desirability": 0.95,
+      "moderate_responder": 0.90,
+      "deliberate_responder": 0.96
+    },
+    "source": "Meade & Craig (2012)"
+  },
+  "attention_check_instructed": {
+    "question_pattern": "if you are reading|please.*ignore|do not answer",
+    "correct_rate_by_persona": {
+      "engaged_responder": 0.95,
+      "satisficer": 0.70,
+      "extreme_responder": 0.75,
+      "acquiescent_responder": 0.55,
+      "careless_responder": 0.40,
+      "social_desirability": 0.88,
+      "moderate_responder": 0.80,
+      "deliberate_responder": 0.92
+    },
+    "source": "Oppenheimer et al. (2009) IMC"
+  },
+  "reverse_coded_item": {
+    "question_pattern": "reverse.?cod|negatively.?word",
+    "correct_rate_by_persona": {
+      "engaged_responder": 0.95,
+      "satisficer": 0.70,
+      "extreme_responder": 0.65,
+      "acquiescent_responder": 0.55,
+      "careless_responder": 0.35,
+      "social_desirability": 0.88,
+      "moderate_responder": 0.80,
+      "deliberate_responder": 0.92
+    },
+    "failure_mode": "ignores_direction",
+    "source": "Woods (2006)"
+  },
+  "arithmetic_simple": {
+    "question_pattern": "\\d+\\s*[+\\-×÷*/]\\s*\\d+|calculate|what is \\d+",
+    "correct_rate_by_education": {"<HS": 0.55, "HS": 0.70, "Some college": 0.80, "BA": 0.90, "Graduate": 0.95},
+    "source": "General numeracy literature"
+  },
+  "probability_basic": {
+    "question_pattern": "probability|chance|likelihood|percent.*chance",
+    "correct_rate_by_education": {"<HS": 0.20, "HS": 0.35, "Some college": 0.50, "BA": 0.65, "Graduate": 0.80},
+    "source": "Lipkus et al. (2001) numeracy"
+  }
+}
