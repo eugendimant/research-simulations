@@ -13843,6 +13843,7 @@ if active_page == 3:
                                 st.session_state["allow_template_fallback_once"] = False
                                 st.session_state["_use_socsim_experimental"] = True
                                 st.session_state["_use_abe_v2"] = False
+                                st.session_state["_use_hbs"] = False
                                 _navigate_to(3)
                         with _retry_col2:
                             if st.button("Re-generate with Adaptive Engine 2.0", key="_post_gen_switch_abe",
@@ -13898,6 +13899,7 @@ if active_page == 3:
                                 st.session_state["allow_template_fallback_once"] = False
                                 st.session_state["_use_socsim_experimental"] = True
                                 st.session_state["_use_abe_v2"] = False
+                                st.session_state["_use_hbs"] = False
                                 _navigate_to(3)
                         with _fb_col2:
                             if st.button("Use Adaptive Engine 2.0", key="_post_gen_switch_abe_v2",
@@ -14491,6 +14493,7 @@ if active_page == 3:
                         st.session_state["allow_template_fallback_once"] = False
                         st.session_state["_use_socsim_experimental"] = True
                         st.session_state["_use_abe_v2"] = False
+                        st.session_state["_use_hbs"] = False
                         st.session_state["is_generating"] = False
                         _navigate_to(3)
                 with _err_c2:
@@ -14500,6 +14503,7 @@ if active_page == 3:
                         st.session_state["allow_template_fallback_once"] = True
                         st.session_state["_use_socsim_experimental"] = True
                         st.session_state["_use_abe_v2"] = True
+                        st.session_state["_use_hbs"] = False
                         st.session_state[_gen_method_key] = "abe_v2"
                         st.session_state["is_generating"] = True
                         st.session_state["_generation_phase"] = 1
@@ -14721,6 +14725,8 @@ if active_page == 3:
             _method_icons = {
                 'template': '\u2699\ufe0f',      # gear
                 'experimental': '\U0001f9e0',     # brain
+                'abe_v2': '\U0001f9e0',           # brain
+                'hbs': '\U0001f9ec',              # DNA / helix
                 'free_llm': '\u26a1',             # lightning
                 'own_api': '\U0001f511',          # key
             }
