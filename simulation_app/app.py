@@ -54,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.2.3.0"
-BUILD_ID = "20260324-v12030-abe-v2-narrative-engine"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.2.3.1"
+BUILD_ID = "20260325-v12031-abe-v2-dedup-condition-aware"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -118,7 +118,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.2.3.0"  # v1.2.3.0: Adaptive Behavioral Engine 2.0 — narrative-enhanced generation
+APP_VERSION = "1.2.3.1"  # v1.2.3.1: ABE 2.0 dedup + condition-aware + bug fixes
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -11761,7 +11761,7 @@ if active_page == 3:
             unsafe_allow_html=True,
         )
 
-        # --- v1.2.3.0: Method cards — 3-card grid (ABE 2.0 replaces Template + Behavioral) ---
+        # --- v1.2.3.1: Method cards — 3-card grid (ABE 2.0 replaces Template + Behavioral) ---
         # Order: Adaptive Behavioral Engine 2.0, Built-in AI, Your API Key
         _method_cards = [
             {
@@ -11769,8 +11769,8 @@ if active_page == 3:
                 "icon": "&#129504;",  # brain
                 "icon_bg": "linear-gradient(135deg, #0EA5E9 0%, #06B6D4 100%)",
                 "title": "Adaptive Behavioral Engine 2.0",
-                "tag": "New",
-                "tag_color": "#0EA5E9",
+                "tag": "",
+                "tag_color": "",
                 "subtitle": "225+ domains, 60+ archetypes, narrative intelligence, literature-calibrated effects",
                 "details": [
                     "Runs entirely offline — no API calls needed",
@@ -11816,7 +11816,7 @@ if active_page == 3:
             },
         ]
 
-        # v1.2.3.0: Render 3-column grid (ABE 2.0, Built-in AI, Your API Key)
+        # v1.2.3.1: Render 3-column grid (ABE 2.0, Built-in AI, Your API Key)
         _card_cols = list(st.columns(3, gap="medium"))
 
         for _ci, _card in enumerate(_method_cards):
@@ -11893,7 +11893,7 @@ if active_page == 3:
                         use_container_width=True,
                     ):
                         st.session_state[_gen_method_key] = _mk
-                        # v1.2.3.0: ABE 2.0 replaces template + experimental
+                        # v1.2.3.1: ABE 2.0 replaces template + experimental
                         st.session_state["allow_template_fallback_once"] = _mk in ("template", "experimental", "abe_v2")
                         st.session_state["_use_socsim_experimental"] = _mk in ("experimental", "abe_v2")
                         st.session_state["_use_abe_v2"] = (_mk == "abe_v2")
@@ -12357,7 +12357,7 @@ if active_page == 3:
             f'Your sample is <strong>N={_current_N}</strong>. Free AI providers have shared rate '
             f'limits, so open-ended text responses will be AI-generated for the first '
             f'<strong>{MAX_FREE_LLM_N}</strong> participants. The remaining '
-            f'<strong>{_remaining_N}</strong> participants will receive template-generated '
+            f'<strong>{_remaining_N}</strong> participants will receive Adaptive Engine 2.0 '
             f'open-ended responses. All <strong>{_current_N}</strong> participants get full '
             f'numeric scale data regardless.</span>'
             '<div style="margin-top:10px;color:#1E3A5F;font-size:0.88em;">'
@@ -12369,11 +12369,11 @@ if active_page == 3:
         _cap_c1, _cap_c2, _cap_c3 = st.columns(3)
         with _cap_c1:
             if st.button(
-                f"Proceed (AI for {MAX_FREE_LLM_N}, template for rest)",
+                f"Proceed (AI for {MAX_FREE_LLM_N}, ABE 2.0 for rest)",
                 key="_cap_proceed_with_cap",
                 type="primary", use_container_width=True,
                 help=(f"Generate all {_current_N} participants — AI writes open-ended "
-                      f"responses for the first {MAX_FREE_LLM_N}, template engine "
+                      f"responses for the first {MAX_FREE_LLM_N}, Adaptive Engine 2.0 "
                       f"writes the remaining {_remaining_N}"),
             ):
                 st.session_state["_free_llm_oe_cap_accepted"] = True
@@ -13065,7 +13065,7 @@ if active_page == 3:
                                 f'border-radius:6px;padding:6px 10px;margin-top:8px;'
                                 f'font-size:0.82em;color:#92400e;">'
                                 f'Free AI cap reached ({_oe_cap_reached_info[1]} responses) '
-                                f'&mdash; using template engine for remaining participants</div>'
+                                f'&mdash; using Adaptive Engine 2.0 for remaining participants</div>'
                             )
                         _progress_counter_placeholder.markdown(
                             f'<div style="text-align:center;padding:14px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;margin:8px 0;">'
@@ -13125,7 +13125,7 @@ if active_page == 3:
                             f'border:1px solid #fde68a;border-radius:8px;margin:8px 0;">'
                             f'<span style="font-size:1.05em;font-weight:600;color:#92400e;">'
                             f'Free AI cap reached ({current} responses) — '
-                            f'using template engine for remaining participants</span>'
+                            f'using Adaptive Engine 2.0 for remaining participants</span>'
                             f'<div style="font-size:0.8em;color:#78716c;margin-top:4px;">'
                             f'Elapsed: {_fmt_elapsed(_elapsed)}</div></div>',
                             unsafe_allow_html=True,
@@ -13404,7 +13404,7 @@ if active_page == 3:
                     st.warning(
                         f"AI providers are responding slowly ({_health['latency_ms']}ms). "
                         f"Generation may take longer than usual. You can switch to "
-                        f"Template Engine on the method selector above for faster results."
+                        f"Adaptive Engine 2.0 on the method selector above for faster results."
                     )
             # v1.2.0: Enhanced progress indicator with prominent visual display
             # Clear the status placeholder and show progress bar
@@ -13636,8 +13636,9 @@ if active_page == 3:
             _gen_method_labels = {
                 "free_llm": "Built-in AI (Free LLM Providers)",
                 "own_api": "User API Key (LLM)",
+                "abe_v2": "Adaptive Behavioral Engine 2.0",
                 "template": "Template Engine (Instant)",
-                "experimental": "Adaptive Behavioral Engine (Beta)",
+                "experimental": "Adaptive Behavioral Engine",
             }
             metadata['generation_method'] = _user_gen_method
             metadata['generation_method_label'] = _gen_method_labels.get(
@@ -13658,9 +13659,9 @@ if active_page == 3:
                     metadata['selected_generation_method_label'] = _gen_method_labels.get(
                         _user_gen_method, _user_gen_method)
                     if _actual_llm_calls > 0 or _actual_attempts > 0:
-                        metadata['generation_method_label'] = "Template Engine (AI providers were unavailable)"
+                        metadata['generation_method_label'] = "Adaptive Engine 2.0 (AI providers were unavailable)"
                     else:
-                        metadata['generation_method_label'] = "Template Engine (no AI providers connected)"
+                        metadata['generation_method_label'] = "Adaptive Engine 2.0 (no AI providers connected)"
                 elif _actual_pool > 0:
                     _fallback = int(_actual_stats.get('fallback_uses', 0) or 0)
                     _total = _actual_pool + _fallback
@@ -13733,7 +13734,7 @@ if active_page == 3:
                     _oe_cap_val = metadata.get('free_llm_oe_cap', MAX_FREE_LLM_N)
                     _issue_messages.append(
                         f"Free AI generated open-ended responses for {_oe_cap_val} participants. "
-                        f"The remaining {_oe_budget_switched} participant(s) used the template engine. "
+                        f"The remaining {_oe_budget_switched} participant(s) used Adaptive Engine 2.0. "
                         f"All participants have complete numeric scale data."
                     )
                 elif _oe_budget_exceeded and _oe_budget_switched > 0:
@@ -13753,7 +13754,7 @@ if active_page == 3:
                     _llm_had_issues = True
                     _issue_messages.append(
                         f"LLM providers were exhausted {_post_exhaustions} time(s). "
-                        f"Most responses ({_post_fallback_uses}) used the template engine instead of AI."
+                        f"Most responses ({_post_fallback_uses}) used Adaptive Engine 2.0 instead of AI."
                     )
                 elif _gen_total_time > 180 and _post_pool_size > 0:
                     _llm_had_issues = True
@@ -13775,7 +13776,7 @@ if active_page == 3:
                         # Simplified notification for non-advanced users
                         _brief_msg = "Your data was generated successfully."
                         if _ai_count == 0:
-                            _brief_msg += " AI providers were temporarily unavailable, so responses were generated using the built-in template engine."
+                            _brief_msg += " AI providers were temporarily unavailable, so responses were generated using the Adaptive Behavioral Engine 2.0."
                         elif _template_count > 0:
                             _brief_msg += f" {_ai_pct_display}% of responses were AI-generated."
                         st.info(_brief_msg)

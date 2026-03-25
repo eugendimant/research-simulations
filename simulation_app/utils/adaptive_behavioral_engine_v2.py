@@ -623,6 +623,7 @@ class AdaptiveBehavioralEngineV2:
                 question_context=question_context,
             )
             if response and response.strip() and len(response.strip()) >= 10:
+                response = self._enforce_uniqueness(response, participant_seed)
                 return response
             # Fall through to base generator if narrative builder returned empty
 
@@ -647,6 +648,7 @@ class AdaptiveBehavioralEngineV2:
                     response = self._apply_variation_phrase(
                         response, participant_seed, persona_formality,
                     )
+                    response = self._enforce_uniqueness(response, participant_seed)
                     return response
             except Exception as e:
                 logger.warning("ABE2.0: Base generator error: %s", e)
@@ -676,30 +678,50 @@ class AdaptiveBehavioralEngineV2:
         creative_belief, personal_disclosure, creative_narrative, and
         personal_story intents that previously produced generic output.
         """
+        # Normalize sentiment (handle non-standard values from upstream)
+        _SENT_NORMALIZE = {
+            "somewhat_positive": "positive", "somewhat_negative": "negative",
+            "mixed": "neutral", "ambivalent": "neutral",
+        }
+        sentiment = _SENT_NORMALIZE.get(sentiment, sentiment)
+
         # Create seeded RNG (same deterministic approach as base generator)
-        combined_id = f"{question_name}|{question_text}"
-        if combined_id:
+        combined_id = f"{question_name or ''}|{question_text or ''}"
+        if combined_id and combined_id != "|":
             question_hash = sum(ord(c) * (i + 1) * 31 for i, c in enumerate(combined_id[:200]))
         else:
             question_hash = 0
         unique_seed = (participant_seed + question_hash) % (2**31)
         rng = random.Random(unique_seed)
 
-        # Extract traits
+        # Extract traits (defensive: trait_profile could be None or non-dict)
         _traits = {}
         if behavioral_profile and isinstance(behavioral_profile, dict):
-            _traits = behavioral_profile.get('trait_profile', {})
+            _raw_traits = behavioral_profile.get('trait_profile')
+            if isinstance(_raw_traits, dict):
+                _traits = _raw_traits
         _engagement = _traits.get('attention', persona_engagement)
         _verbosity = _traits.get('verbosity', persona_verbosity)
         _formality = _traits.get('formality', persona_formality)
         _extremity = _traits.get('extremity', 0.4)
-        _is_straight_lined = behavioral_profile.get('straight_lined', False) if behavioral_profile else False
+        _is_straight_lined = behavioral_profile.get('straight_lined', False) if isinstance(behavioral_profile, dict) else False
 
         # Ultra-short handler for disengaged participants
         if (_engagement < 0.2 or _is_straight_lined) and rng.random() < 0.6:
             return self._build_narrative_ultra_short(intent, sentiment, rng)
         if _engagement < 0.35 and _verbosity < 0.3 and rng.random() < 0.35:
             return self._build_narrative_ultra_short(intent, sentiment, rng)
+
+        # v1.2.3.1: Condition-aware sentiment amplification
+        # Political/identity conditions amplify extremity (Iyengar & Westwood 2015)
+        _cond_lower = condition.lower() if condition else ""
+        _is_political = any(kw in _cond_lower for kw in (
+            'republican', 'democrat', 'liberal', 'conservative', 'trump',
+            'biden', 'political', 'partisan', 'left-wing', 'right-wing',
+            'ingroup', 'outgroup', 'in-group', 'out-group',
+        ))
+        if _is_political and _extremity < 0.7:
+            _extremity = min(1.0, _extremity + 0.2)
 
         # Map sentiment for lookup (normalize very_positive/very_negative)
         _sent_key = sentiment
@@ -710,7 +732,7 @@ class AdaptiveBehavioralEngineV2:
 
         # Extract topic for template interpolation
         topic = self._extract_narrative_topic(
-            question_text, question_context, intent,
+            question_text, question_context, question_name, intent,
         )
 
         # Select archetype with narrative weighting
@@ -749,9 +771,10 @@ class AdaptiveBehavioralEngineV2:
         response = response.strip()
         if response and response[-1] not in '.!?':
             response += '.'
-        # Capitalize first letter — but NOT for very disengaged participants
-        # whose lowercase was deliberately set by _apply_narrative_polish
-        if response and _engagement >= 0.35:
+        # Capitalize first letter — but preserve deliberate lowercase from polish
+        # (polish lowercases at engagement < 0.35 && rng < 0.4, so only re-capitalize
+        # when we're sure the lowercase wasn't intentional)
+        if response and len(response) > 1 and response[0].islower() and _engagement >= 0.5:
             response = response[0].upper() + response[1:]
 
         return response
@@ -869,7 +892,7 @@ class AdaptiveBehavioralEngineV2:
                 ],
             }
             _rq_pool = _rqs.get(intent, ["What do I think about this?"])
-            _cap_pos = (position[0].upper() + position[1:]) if position else "I have my thoughts."
+            _cap_pos = (position[0].upper() + position[1:]) if position and len(position) > 1 else "I have my thoughts."
             response = rng.choice(_rq_pool) + " " + _cap_pos
 
         else:
@@ -1022,6 +1045,8 @@ class AdaptiveBehavioralEngineV2:
         archetypes = list(weights.keys())
         probs = list(weights.values())
         total = sum(probs)
+        if total == 0:
+            return archetypes[0] if archetypes else 'direct_answer'
         r = rng.random() * total
         cum = 0
         for arch, w in zip(archetypes, probs):
@@ -1033,9 +1058,18 @@ class AdaptiveBehavioralEngineV2:
     # ── Topic extraction ──────────────────────────────────────
 
     def _extract_narrative_topic(
-        self, question_text: str, question_context: str, intent: str,
+        self, question_text: str, question_context: str,
+        question_name: str, intent: str,
     ) -> str:
-        """Extract a natural-language topic suitable for narrative templates."""
+        """Extract a natural-language topic suitable for narrative templates.
+
+        Fallback chain (matches CLAUDE.md specification):
+        1. question_context (user-provided)
+        2. question_text (the actual question)
+        3. question_name / variable name
+        4. Intent-specific defaults
+        5. Last resort: "the questions asked" (never bare pronouns)
+        """
         _stop = {
             'this', 'that', 'about', 'what', 'your', 'please', 'describe',
             'explain', 'question', 'context', 'study', 'topic', 'condition',
@@ -1044,41 +1078,44 @@ class AdaptiveBehavioralEngineV2:
             'most', 'biggest', 'worst', 'best', 'funniest', 'scariest',
         }
 
-        _source = question_context or question_text or ""
-        if not _source:
-            return "this"
+        # Try sources in priority order: context → text → name
+        for _source in (question_context, question_text):
+            if not _source or not _source.strip():
+                continue
 
-        # Try to extract the core noun phrase
-        # "What is your craziest conspiracy theory?" → "conspiracy theory"
-        # "Share a secret that only your family knows" → "a secret"
-        _source_lower = _source.lower()
+            _source_lower = _source.lower().strip()
 
-        # Pattern: "your X" or "a X" where X is the topic
-        _patterns = [
-            r'(?:your|a|an)\s+(?:craziest|wildest|favorite|biggest|most\s+\w+|worst|best|funniest|scariest|deepest|darkest)?\s*(.{3,40}?)(?:\?|$|\.|\bthat\b|\bwhen\b|\bwhere\b)',
-            r'(?:believe\s+in|think\s+about|feel\s+about|opinion\s+on|views?\s+on|thoughts?\s+on)\s+(.{3,40}?)(?:\?|$|\.)',
-            r'(?:describe|share|tell\s+us\s+about|write\s+about)\s+(?:your\s+)?(?:\w+\s+)?(.{3,40}?)(?:\?|$|\.)',
-        ]
+            # Pattern: "your X" or "a X" where X is the topic
+            _patterns = [
+                r'(?:your|a|an)\s+(?:craziest|wildest|favorite|biggest|most\s+\w+|worst|best|funniest|scariest|deepest|darkest)?\s*(.{3,40}?)(?:\?|$|\.|\bthat\b|\bwhen\b|\bwhere\b)',
+                r'(?:believe\s+in|think\s+about|feel\s+about|opinion\s+on|views?\s+on|thoughts?\s+on)\s+(.{3,40}?)(?:\?|$|\.)',
+                r'(?:describe|share|tell\s+us\s+about|write\s+about)\s+(?:your\s+)?(?:\w+\s+)?(.{3,40}?)(?:\?|$|\.)',
+            ]
 
-        for pattern in _patterns:
-            m = re.search(pattern, _source_lower)
-            if m:
-                topic = m.group(1).strip()
-                # Remove trailing stop words
-                words = topic.split()
-                while words and words[-1] in _stop:
-                    words.pop()
-                while words and words[0] in _stop:
-                    words.pop(0)
-                if words and len(' '.join(words)) >= 3:
-                    return ' '.join(words)
+            for pattern in _patterns:
+                m = re.search(pattern, _source_lower)
+                if m:
+                    topic = m.group(1).strip()
+                    words = topic.split()
+                    while words and words[-1] in _stop:
+                        words.pop()
+                    while words and words[0] in _stop:
+                        words.pop(0)
+                    if words and len(' '.join(words)) >= 3:
+                        return ' '.join(words)
 
-        # Fallback: extract the longest non-stop word sequence
-        words = re.findall(r'\b[a-zA-Z]{3,}\b', _source_lower)
-        content_words = [w for w in words if w not in _stop]
-        if content_words:
-            # Take up to 3 content words
-            return ' '.join(content_words[:3])
+            # Fallback: extract content words
+            words = re.findall(r'\b[a-zA-Z]{3,}\b', _source_lower)
+            content_words = [w for w in words if w not in _stop]
+            if content_words:
+                return ' '.join(content_words[:3])
+
+        # Level 3: question_name / variable name (e.g. "conspiracy_belief_1")
+        if question_name and question_name.strip():
+            _name_clean = re.sub(r'[_\d]+', ' ', question_name.lower()).strip()
+            _name_words = [w for w in _name_clean.split() if len(w) >= 3 and w not in _stop]
+            if _name_words:
+                return ' '.join(_name_words[:3])
 
         # Intent-specific default topics
         _defaults = {
@@ -1088,7 +1125,7 @@ class AdaptiveBehavioralEngineV2:
             "personal_story": "a personal experience",
             "hypothetical": "this scenario",
         }
-        return _defaults.get(intent, "this")
+        return _defaults.get(intent, "the questions asked")
 
     # ── Variation phrase system ────────────────────────────────
 
@@ -1184,6 +1221,37 @@ class AdaptiveBehavioralEngineV2:
                 response = response[:_comma_pos] + rng.choice(_emphasis) + response[_comma_pos:]
 
         return response
+
+    # ── Cross-participant dedup ─────────────────────────────
+
+    def _enforce_uniqueness(self, response: str, participant_seed: int) -> str:
+        """Enforce cross-participant sentence uniqueness.
+
+        If exact response was already generated, apply a variation phrase
+        to differentiate. Tracks used sentences in _used_sentences set.
+        """
+        if not response:
+            return response
+
+        _normalized = response.strip().lower()
+        if _normalized not in self._used_sentences:
+            self._used_sentences.add(_normalized)
+            return response
+
+        # Duplicate detected — apply variation to differentiate
+        rng = random.Random(participant_seed + len(self._used_sentences))
+        _type = rng.choice(["time", "personal", "certainty"])
+        if _type == "time":
+            phrase = rng.choice(_VARIATION_PHRASES["time_phrases"])
+        elif _type == "personal":
+            phrase = rng.choice(_VARIATION_PHRASES["personal_phrases"])
+        else:
+            phrase = rng.choice(_VARIATION_PHRASES["certainty_phrases"])
+
+        modified = phrase + " " + response[0].lower() + response[1:]
+        _mod_normalized = modified.strip().lower()
+        self._used_sentences.add(_mod_normalized)
+        return modified
 
     # ── Utility ───────────────────────────────────────────────
 

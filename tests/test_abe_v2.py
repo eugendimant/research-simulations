@@ -270,7 +270,7 @@ def test_narrative_topic_extraction():
         ("Describe a time when you felt truly proud", "personal_story", "proud"),
     ]
     for q_text, intent, expected_substring in test_cases:
-        topic = engine._extract_narrative_topic(q_text, "", intent)
+        topic = engine._extract_narrative_topic(q_text, "", "", intent)
         # Topic should contain meaningful words, not just "this"
         assert topic != "this" or intent == "hypothetical", \
             f"Topic extraction failed for: {q_text[:40]} → got '{topic}'"
