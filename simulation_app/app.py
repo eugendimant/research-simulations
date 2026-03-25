@@ -54,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.2.3.9"
-BUILD_ID = "20260325-v12039-hbs-2x2-tiles-daneel-removal"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.2.4.0"
+BUILD_ID = "20260325-v12040-hbs-data-quality-fixes"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -118,7 +118,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.2.3.9"  # v1.2.3.9: 2x2 tile layout, DANEEL removal, HBS fixes
+APP_VERSION = "1.2.4.0"  # v1.2.4.0: HBS data quality fixes
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -11834,7 +11834,7 @@ if active_page == 3:
             },
         ]
 
-        # v1.2.3.9: Render 2×2 grid (row 1: ABE 2.0, HBS; row 2: Built-in AI, Your API Key)
+        # v1.2.4.0: Render 2×2 grid (row 1: ABE 2.0, HBS; row 2: Built-in AI, Your API Key)
         # Two rows of st.columns(2) for wider tiles — subtitles fit on one line.
         # Fixed height ensures all 4 tiles are exactly the same size.
         _CARD_HEIGHT = "220px"  # uniform height for all tiles
@@ -11902,16 +11902,25 @@ if active_page == 3:
                         unsafe_allow_html=True,
                     )
 
-                    # Single click to select
-                    if not _is_sel:
-                        if st.button(
-                            "Select",
-                            key=f"gen_method_{_mk}",
-                            type="secondary",
-                            use_container_width=True,
-                        ):
+                    # v1.2.4.0: Always show button on every tile — "Select" or "Selected ✓"
+                    _btn_label = "Selected ✓" if _is_sel else "Select"
+                    _btn_type = "primary" if _is_sel else "secondary"
+                    if st.button(
+                        _btn_label,
+                        key=f"gen_method_{_mk}",
+                        type=_btn_type,
+                        use_container_width=True,
+                    ):
+                        if _is_sel:
+                            # Clicking selected tile deselects it
+                            st.session_state.pop(_gen_method_key, None)
+                            st.session_state.pop("_use_hbs", None)
+                            st.session_state.pop("_use_abe_v2", None)
+                            st.session_state.pop("_use_socsim_experimental", None)
+                            st.session_state.pop("allow_template_fallback_once", None)
+                        else:
                             st.session_state[_gen_method_key] = _mk
-                            # v1.2.3.9: Socsim always on — behavioral engine is ABE 2.0 for all methods.
+                            # v1.2.4.0: Socsim always on — behavioral engine is ABE 2.0 for all methods.
                             st.session_state["_use_socsim_experimental"] = True
                             st.session_state["_use_abe_v2"] = (_mk in ("abe_v2", "hbs"))
                             st.session_state["allow_template_fallback_once"] = _mk in ("template", "experimental", "abe_v2", "hbs")
@@ -11919,7 +11928,7 @@ if active_page == 3:
                             if _mk in ("free_llm", "own_api"):
                                 st.session_state["_use_abe_v2"] = False
                                 st.session_state["_use_hbs"] = False
-                            st.rerun()
+                        st.rerun()
 
         # v1.1.0.7: Prompt when no method is selected yet
         if _current_method is None:

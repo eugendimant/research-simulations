@@ -337,6 +337,9 @@ class HBSEngine:
         }
 
         for col_name, col_data in _hbs_cols.items():
+            if col_name in df.columns:
+                logger.debug("HBS demographic column '%s' already exists — skipping", col_name)
+                continue
             df[col_name] = col_data
 
         # Add column info

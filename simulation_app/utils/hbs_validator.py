@@ -12,10 +12,10 @@ Benchmark axes:
 - Straight-lining rates
 - Rating-text coherence
 
-Version: 1.2.3.9
+Version: 1.2.4.0
 """
 
-__version__ = "1.2.3.9"
+__version__ = "1.2.4.0"
 
 __all__ = ["HBSValidator"]
 
@@ -597,12 +597,19 @@ class HBSValidator:
         return df
 
     def _correct_straightlining(self, df: Any) -> Any:
-        """Perturb 2-3 items by +/-1 for participants with SD < 0.2."""
+        """Perturb 2-3 multi-item scale items by +/-1 for participants with SD < 0.2.
+
+        v1.2.4.0: Only operates on columns identified as multi-item scale items
+        (not standalone DVs). If no multi-item scale columns are found, returns
+        the DataFrame unchanged. This prevents corrupting DV data.
+        """
         scale_cols = self._find_scale_columns(df)
         if len(scale_cols) < 3:
+            logger.info("Straightlining correction skipped: fewer than 3 multi-item scale columns found.")
             return df
 
         n_rows = self._nrows(df)
+        _perturbed_count = 0
 
         for row_idx in range(n_rows):
             row_vals: List[Tuple[str, float]] = []
@@ -630,17 +637,20 @@ class HBSValidator:
                 col_name, old_val = row_vals[idx]
                 direction = random.choice([-1, 1])
                 new_val = old_val + direction
-                # Clamp to scale bounds (assume 1-based)
+                # Clamp to scale bounds (infer from actual data range)
                 max_val = max(vals_only)
-                min_val = min(vals_only)
                 scale_lo = 1
                 scale_hi = int(max_val) if max_val > 5 else 5
                 if scale_hi < 5:
                     scale_hi = 5
                 new_val = max(scale_lo, min(scale_hi, new_val))
                 self._set_cell(df, row_idx, col_name, int(new_val))
+                _perturbed_count += 1
 
-        logger.info("Corrected straight-lining by perturbing scale items.")
+        if _perturbed_count > 0:
+            logger.info("Corrected straight-lining: perturbed %d scale item cells.", _perturbed_count)
+        else:
+            logger.info("Straightlining correction: no rows needed perturbation.")
         return df
 
     def _correct_oe_uniqueness(self, df: Any) -> Any:
@@ -782,15 +792,58 @@ class HBSValidator:
 
         return oe_cols
 
-    def _find_scale_columns(self, df: Any) -> List[str]:
-        """Find numeric columns that look like Likert-type scale items.
+    # Columns that should NEVER be treated as scale items for straightlining
+    # correction — these are metadata, DV composites, or single-item measures.
+    _PROTECTED_COL_PREFIXES = (
+        "PARTICIPANT_", "RUN_ID", "SIMULATION_", "CONDITION", "Gender", "Age",
+        "Exclude_", "Flag_", "Completion_Time", "Attention_", "Max_Straight",
+        "HBS_", "_Generation_Source", "Mean_Item_RT", "Total_Scale_RT",
+    )
+    _PROTECTED_COL_PATTERNS = frozenset({
+        "CONDITION", "RUN_ID", "SIMULATION_MODE", "SIMULATION_SEED",
+    })
 
-        Heuristic: all values are integers in [1, 7] (or [1, 5]) range.
+    def _find_scale_columns(self, df: Any) -> List[str]:
+        """Find numeric columns that look like Likert-type multi-item scale items.
+
+        Heuristic: column name must look like a numbered item (e.g., Scale_1,
+        DV_Item2) and values are integers in [1, 7] (or [1, 5]) range.
+
+        v1.2.4.0: Excludes standalone DV columns, metadata, and any column
+        that doesn't have a multi-item naming pattern. Only columns that appear
+        to be PART OF A MULTI-ITEM SCALE (name contains a trailing number or
+        underscore-number pattern) are eligible. This prevents the straightlining
+        correction from corrupting actual DV data.
         """
         columns = self._columns(df)
         scale_cols: List[str] = []
 
+        # Build set of column base names that have numbered siblings
+        # e.g., if "Main_DV_1", "Main_DV_2" exist, "Main_DV" is a multi-item base
+        import re as _re
+        _numbered_pattern = _re.compile(r'^(.+?)_?(\d+)$')
+        _base_counts: dict = {}
         for col in columns:
+            m = _numbered_pattern.match(col)
+            if m:
+                base = m.group(1)
+                _base_counts[base] = _base_counts.get(base, 0) + 1
+
+        # Only bases with 2+ numbered items are multi-item scales
+        _multi_item_bases = {b for b, c in _base_counts.items() if c >= 2}
+
+        for col in columns:
+            # Skip protected columns
+            if col in self._PROTECTED_COL_PATTERNS:
+                continue
+            if any(col.startswith(p) for p in self._PROTECTED_COL_PREFIXES):
+                continue
+
+            # Must be part of a multi-item scale (has numbered siblings)
+            m = _numbered_pattern.match(col)
+            if not m or m.group(1) not in _multi_item_bases:
+                continue
+
             values = self._col_values_numeric(df, col)
             if len(values) < 3:
                 continue
@@ -805,8 +858,6 @@ class HBSValidator:
 
             # Accept 1-5, 1-7, 1-9, 0-10 scales
             if min_v >= 0 and max_v <= 10 and max_v - min_v <= 9:
-                # Must have at least 2 distinct values across the column
-                # to be a meaningful scale
                 if len(set(int(v) for v in values)) >= 2:
                     scale_cols.append(col)
 
