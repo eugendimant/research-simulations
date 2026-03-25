@@ -265,6 +265,13 @@ try:
 except ImportError:
     HAS_RESPONSE_LIBRARY = False
 
+# Import Adaptive Behavioral Engine 2.0 — narrative-enhanced wrapper
+try:
+    from .adaptive_behavioral_engine_v2 import AdaptiveBehavioralEngineV2
+    HAS_ABE_V2 = True
+except ImportError:
+    HAS_ABE_V2 = False
+
 # Import cross-DV correlation module for realistic between-scale correlations
 try:
     from .correlation_matrix import (
@@ -2762,6 +2769,8 @@ class EnhancedSimulationEngine:
         progress_callback: Optional[callable] = None,
         # v1.0.8.1: SocSim experimental enrichment for economic game DVs
         use_socsim_experimental: bool = False,
+        # v1.2.3.0: Adaptive Behavioral Engine 2.0 — narrative-enhanced wrapper
+        use_abe_v2: bool = False,
         # v1.2.2.8: Per-question LLM OE cap for free-tier protection.
         # When > 0, limits LLM-generated OE responses to this many participants
         # per question; remaining participants get template fallback automatically.
@@ -2770,6 +2779,7 @@ class EnhancedSimulationEngine:
     ):
         self.progress_callback = progress_callback
         self.use_socsim_experimental = bool(use_socsim_experimental)
+        self.use_abe_v2 = bool(use_abe_v2)
         self.study_title = str(study_title or "").strip()
         self.study_description = str(study_description or "").strip()
         self.sample_size = int(sample_size)
@@ -2917,8 +2927,15 @@ class EnhancedSimulationEngine:
         self.stimulus_handler = StimulusEvaluationHandler()
 
         # Initialize comprehensive response generator if available
+        # v1.2.3.0: When use_abe_v2 is True, use AdaptiveBehavioralEngineV2
+        # as drop-in replacement (same generate() interface, enhanced narrative output).
         self.comprehensive_generator = None
-        if HAS_RESPONSE_LIBRARY:
+        if self.use_abe_v2 and HAS_ABE_V2:
+            self.comprehensive_generator = AdaptiveBehavioralEngineV2(seed=self.seed)
+            if self.study_context:
+                self.comprehensive_generator.set_study_context(self.study_context)
+            self._log("Using Adaptive Behavioral Engine 2.0 (narrative-enhanced)")
+        elif HAS_RESPONSE_LIBRARY:
             self.comprehensive_generator = ComprehensiveResponseGenerator(seed=self.seed)
             if self.study_context:
                 self.comprehensive_generator.set_study_context(self.study_context)
