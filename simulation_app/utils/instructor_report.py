@@ -2386,12 +2386,17 @@ class ComprehensiveInstructorReport:
                         cond_data = df_clean_copy[df_clean_copy["CONDITION"] == cond]["_composite"]
                         if len(cond_data) > 0:
                             mean = cond_data.mean()
-                            sd = cond_data.std()
                             n = len(cond_data)
-                            se = sd / (n ** 0.5) if n > 0 else 0
+                            sd = cond_data.std() if n > 1 else 0.0
+                            if np.isnan(sd):
+                                sd = 0.0
+                            se = sd / (n ** 0.5) if n > 1 else 0.0
                             ci_low = mean - 1.96 * se
                             ci_high = mean + 1.96 * se
-                            lines.append(f"| {cond} | {n} | {mean:.3f} | {sd:.3f} | [{ci_low:.3f}, {ci_high:.3f}] |")
+                            if n == 1:
+                                lines.append(f"| {cond} | {n} | {mean:.3f} | — | N/A (single observation) |")
+                            else:
+                                lines.append(f"| {cond} | {n} | {mean:.3f} | {sd:.3f} | [{ci_low:.3f}, {ci_high:.3f}] |")
                     lines.append("")
 
                     # Effect size (Cohen's d for first two conditions)
@@ -2778,6 +2783,9 @@ class ComprehensiveInstructorReport:
         - p < 0.10:  marginally significant, label '†'
         - p >= 0.10: not significant, label 'ns'
         """
+        # Handle NaN / inf p-values gracefully
+        if p != p or p is None:  # NaN check
+            return {"significant": False, "marginally_significant": False, "sig_label": "ns"}
         if p < 0.001:
             return {"significant": True, "marginally_significant": False, "sig_label": "***"}
         elif p < 0.01:
@@ -4976,13 +4984,19 @@ class ComprehensiveInstructorReport:
                     cond_data = df_analysis[df_analysis["CONDITION"] == cond]["_composite"]
                     if len(cond_data) > 0:
                         mean = cond_data.mean()
-                        sd = cond_data.std()
                         n = len(cond_data)
-                        se = sd / np.sqrt(n) if n > 0 else 0
+                        # v1.2.4.0: Handle N=1 gracefully (std with ddof=1 returns NaN)
+                        sd = cond_data.std() if n > 1 else 0.0
+                        if np.isnan(sd):
+                            sd = 0.0
+                        se = sd / np.sqrt(n) if n > 1 else 0.0
                         ci_low = mean - 1.96 * se
                         ci_high = mean + 1.96 * se
                         clean_cond = _clean_condition_name(cond)
-                        html_parts.append(f"<tr><td>{clean_cond}</td><td>{n}</td><td>{mean:.3f}</td><td>{sd:.3f}</td><td>[{ci_low:.3f}, {ci_high:.3f}]</td></tr>")
+                        if n == 1:
+                            html_parts.append(f"<tr><td>{clean_cond}</td><td>{n}</td><td>{mean:.3f}</td><td>—</td><td>N/A (single observation)</td></tr>")
+                        else:
+                            html_parts.append(f"<tr><td>{clean_cond}</td><td>{n}</td><td>{mean:.3f}</td><td>{sd:.3f}</td><td>[{ci_low:.3f}, {ci_high:.3f}]</td></tr>")
                         chart_data[clean_cond] = (mean, 1.96 * se)
 
                 html_parts.append("</table>")
@@ -5209,7 +5223,7 @@ class ComprehensiveInstructorReport:
                     # Two-group tests (t-test)
                     if "t_test" in stats_results:
                         t = stats_results["t_test"]
-                        sig_class = "sig" if t["significant"] else "nonsig"
+                        sig_class = "sig" if t["significant"] else ("marginal" if t.get("marginally_significant") else "nonsig")
                         prereg_badge = " <span style='background:#27ae60;color:white;padding:2px 6px;border-radius:3px;font-size:10px;'>PRE-REGISTERED</span>" if prereg_analyses.get("t_test") else " <span style='background:#95a5a6;color:white;padding:2px 6px;border-radius:3px;font-size:10px;'>ADDITIONAL</span>"
                         html_parts.append("<div class='stat-box'>")
                         html_parts.append(f"<strong>Independent Samples t-test:</strong>{prereg_badge}<br>")
@@ -5234,7 +5248,7 @@ class ComprehensiveInstructorReport:
                     # ANOVA for 3+ groups
                     if "anova" in stats_results:
                         a = stats_results["anova"]
-                        sig_class = "sig" if a["significant"] else "nonsig"
+                        sig_class = "sig" if a["significant"] else ("marginal" if a.get("marginally_significant") else "nonsig")
                         prereg_badge = " <span style='background:#27ae60;color:white;padding:2px 6px;border-radius:3px;font-size:10px;'>PRE-REGISTERED</span>" if prereg_analyses.get("anova") else " <span style='background:#95a5a6;color:white;padding:2px 6px;border-radius:3px;font-size:10px;'>ADDITIONAL</span>"
                         html_parts.append("<div class='stat-box'>")
                         html_parts.append(f"<strong>One-way ANOVA:</strong>{prereg_badge}<br>")
@@ -5351,7 +5365,7 @@ class ComprehensiveInstructorReport:
 
                         if "f_test" in reg_results:
                             f = reg_results["f_test"]
-                            sig_class = "sig" if f["significant"] else "nonsig"
+                            sig_class = "sig" if f["significant"] else ("marginal" if f.get("marginally_significant") else "nonsig")
                             html_parts.append(f"<strong>F-test:</strong> F = {f['f_statistic']:.3f}, <span class='{sig_class}'>p = {f['p_value']:.4f}</span><br>")
 
                         # Coefficients table
@@ -5359,7 +5373,7 @@ class ComprehensiveInstructorReport:
                             html_parts.append("<br><strong>Coefficients:</strong>")
                             html_parts.append("<table><tr><th>Predictor</th><th>B</th><th>SE</th><th>t</th><th>p</th></tr>")
                             for pred, coef in reg_results["coefficients"].items():
-                                sig_class = "sig" if coef.get("significant", coef["p_value"] < 0.05) else "nonsig"
+                                sig_class = "sig" if coef.get("significant") else ("marginal" if coef.get("marginally_significant") else "nonsig")
                                 html_parts.append(f"<tr><td>{pred}</td><td>{coef['estimate']:.3f}</td><td>{coef['std_error']:.3f}</td><td>{coef['t_stat']:.3f}</td><td class='{sig_class}'>{coef['p_value']:.4f}</td></tr>")
                             html_parts.append("</table>")
 
@@ -5645,7 +5659,8 @@ class ComprehensiveInstructorReport:
                     dof = (observed.shape[0] - 1) * (observed.shape[1] - 1)
                     p = 1 - _chi2_cdf(chi2, dof) if dof > 0 else 1.0
 
-                sig_class = "sig" if p < 0.05 else "nonsig"
+                _chi2_sig = self._p_significance(float(p))
+                sig_class = "sig" if _chi2_sig["significant"] else ("marginal" if _chi2_sig["marginally_significant"] else "nonsig")
                 html_parts.append("<div class='stat-box'>")
                 html_parts.append(f"<strong>Chi-squared test:</strong> χ² = {chi2:.3f}, df = {dof}, ")
                 html_parts.append(f"<span class='{sig_class}'>p = {p:.4f}</span>")
