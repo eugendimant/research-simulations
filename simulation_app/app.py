@@ -54,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.2.3.1"
-BUILD_ID = "20260325-v12031-abe-v2-dedup-condition-aware"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.2.3.2"
+BUILD_ID = "20260325-v12032-abe-v2-docs-llm-fallback-fix"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -118,7 +118,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.2.3.1"  # v1.2.3.1: ABE 2.0 dedup + condition-aware + bug fixes
+APP_VERSION = "1.2.3.2"  # v1.2.3.2: ABE 2.0 dedup + condition-aware + bug fixes
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -11761,7 +11761,7 @@ if active_page == 3:
             unsafe_allow_html=True,
         )
 
-        # --- v1.2.3.1: Method cards — 3-card grid (ABE 2.0 replaces Template + Behavioral) ---
+        # --- v1.2.3.2: Method cards — 3-card grid (ABE 2.0 replaces Template + Behavioral) ---
         # Order: Adaptive Behavioral Engine 2.0, Built-in AI, Your API Key
         _method_cards = [
             {
@@ -11816,7 +11816,7 @@ if active_page == 3:
             },
         ]
 
-        # v1.2.3.1: Render 3-column grid (ABE 2.0, Built-in AI, Your API Key)
+        # v1.2.3.2: Render 3-column grid (ABE 2.0, Built-in AI, Your API Key)
         _card_cols = list(st.columns(3, gap="medium"))
 
         for _ci, _card in enumerate(_method_cards):
@@ -11893,7 +11893,7 @@ if active_page == 3:
                         use_container_width=True,
                     ):
                         st.session_state[_gen_method_key] = _mk
-                        # v1.2.3.1: ABE 2.0 replaces template + experimental
+                        # v1.2.3.2: ABE 2.0 replaces template + experimental
                         st.session_state["allow_template_fallback_once"] = _mk in ("template", "experimental", "abe_v2")
                         st.session_state["_use_socsim_experimental"] = _mk in ("experimental", "abe_v2")
                         st.session_state["_use_abe_v2"] = (_mk == "abe_v2")
