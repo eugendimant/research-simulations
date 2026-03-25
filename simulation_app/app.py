@@ -11772,12 +11772,13 @@ if active_page == 3:
                 "title": "Adaptive Behavioral Engine 3.0",
                 "tag": "Quick Data Generation",
                 "tag_color": "#0EA5E9",
-                "subtitle": "225+ domains, census-weighted demographics, stylometric fingerprinting, 5 consistency layers",
+                "subtitle": "225+ domains, census-weighted demographics, stylometric fingerprinting, consistency layers",
                 "details": [
-                    "Runs entirely offline — no API calls, no waiting (non-LLM open-ended text)",
+                    "No API calls, no waiting — generates data instantly on the platform",
                     "Census-weighted demographics &amp; calibrated error rates",
-                    "Stylometric voice fingerprinting across all open-ended text",
+                    "Stylometric voice fingerprinting across all open-ended text (no LLM)",
                     "5 individual-level consistency improvements (fatigue, inertia, 3D latent, audit)",
+                    "Economic game modeling (Fehr-Schmidt, Engel meta-analysis)",
                 ],
                 "quality_note": "",
                 "info_tooltip": "",
@@ -11795,6 +11796,7 @@ if active_page == 3:
                     "Open-ended text: AI-generated via free LLM providers (slower)",
                     "Auto-failover across 7 providers for reliability",
                     f"Capped at N={MAX_FREE_LLM_N} (use Your API Key for larger samples)",
+                    "Stylometric fingerprinting + consistency layers still applied",
                 ],
                 "info_tooltip": "",
             },
@@ -11811,6 +11813,7 @@ if active_page == 3:
                     "Open-ended text: AI-generated via your own API key (slower)",
                     "Dedicated rate limits — no shared usage constraints",
                     "Key used in-memory only; never saved or logged",
+                    "Stylometric fingerprinting + consistency layers still applied",
                 ],
                 "info_tooltip": "",
             },
@@ -11818,7 +11821,7 @@ if active_page == 3:
 
         # v1.2.5.0: Render 3-card grid (ABE 3.0, Built-in AI, Your API Key)
         # Fixed height ensures all tiles are exactly the same size.
-        _CARD_HEIGHT = "240px"  # uniform height for all tiles
+        _CARD_HEIGHT = "270px"  # uniform height for all tiles (5 bullets)
         _card_rows = [_method_cards]  # Single row of 3 cards
         for _row in _card_rows:
             _card_cols = list(st.columns(3, gap="medium"))
