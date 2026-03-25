@@ -708,9 +708,9 @@ class InstructorReportGenerator:
             lines.append("| Variable | Condition 1 | Condition 2 | M₁ | M₂ | Cohen's d |")
             lines.append("|----------|-------------|-------------|-----|-----|-----------|")
             for obs in observed_effects[:10]:
-                var = obs.get('variable', 'DV')[:20]
-                c1 = obs.get('condition_1', 'C1')[:15]
-                c2 = obs.get('condition_2', 'C2')[:15]
+                var = obs.get('variable', 'DV')
+                c1 = obs.get('condition_1', 'C1')
+                c2 = obs.get('condition_2', 'C2')
                 m1 = obs.get('mean_1', 0)
                 m2 = obs.get('mean_2', 0)
                 d = obs.get('cohens_d', 0)
@@ -2506,14 +2506,22 @@ class ComprehensiveInstructorReport:
 
         # Find open-ended columns (text columns that aren't standard)
         standard_cols = {
-            'PARTICIPANT_ID', 'RUN_ID', 'SIMULATION_ID', 'CONDITION', 'Age', 'Gender',
+            'PARTICIPANT_ID', 'RUN_ID', 'SIMULATION_ID', 'SIMULATION_MODE',
+            'SIMULATION_SEED', 'CONDITION', 'Age', 'Gender',
             'Completion_Time_Seconds', 'Attention_Pass_Rate', 'Max_Straight_Line',
-            'Flag_Speed', 'Flag_Attention', 'Flag_StraightLine', 'Exclude_Recommended'
+            'Flag_Speed', 'Flag_Attention', 'Flag_StraightLine', 'Exclude_Recommended',
+            '_Generation_Source', 'Mean_Item_RT_ms', 'Total_Scale_RT_ms',
         }
+        # v1.2.5.0: Also exclude ABE3 demographic columns and any column starting with _
+        _oe_exclude_prefixes = ('ABE3_', '_', 'Flag_', 'Hedonic_', 'Utilitarian_')
         open_ended_cols = []
         for col in df.columns:
-            # Check if column contains string data and is not a standard column
-            if col not in standard_cols and df[col].dtype == 'object':
+            if col in standard_cols or col.startswith(_oe_exclude_prefixes):
+                continue
+            # v1.2.5.0: Check for ANY string-like dtype (object, string, StringDtype)
+            _is_text = (df[col].dtype == 'object'
+                        or str(df[col].dtype) in ('string', 'str', 'String'))
+            if _is_text:
                 sample_val = df[col].iloc[0] if len(df) > 0 else ""
                 if isinstance(sample_val, str) and len(sample_val) > 10:
                     open_ended_cols.append(col)
@@ -2816,8 +2824,11 @@ class ComprehensiveInstructorReport:
         if len(conditions) < 2:
             return {"error": "Need at least 2 conditions for comparison"}
 
-        # Get data by condition
+        # Get data by condition — dropna is needed for statistical computations
+        # but we track both total N and valid N per condition.
         groups = {cond: df[df[condition_column] == cond][dv_column].dropna().values for cond in conditions}
+        # v1.2.5.0: Track total N per condition (including NaN rows) for accurate reporting
+        total_n_per_cond = {cond: int((df[condition_column] == cond).sum()) for cond in conditions}
 
         # Ensure all groups have data
         valid_groups = {c: g for c, g in groups.items() if len(g) >= 2}
@@ -2828,11 +2839,14 @@ class ComprehensiveInstructorReport:
         groups = valid_groups
 
         # Basic descriptive stats
+        # v1.2.5.0: Report total_n (assigned to condition) alongside valid_n (non-NaN)
         results["descriptives"] = {}
         for cond, data in groups.items():
             clean_cond = _clean_condition_name(cond)
+            _total_n = total_n_per_cond.get(cond, len(data))
             results["descriptives"][clean_cond] = {
-                "n": len(data),
+                "n": _total_n,  # Report TOTAL participants in this condition
+                "n_valid": len(data),  # Participants with valid DV data
                 "mean": float(np.mean(data)),
                 "std": float(np.std(data, ddof=1)),
                 "median": float(np.median(data)),
@@ -3300,6 +3314,9 @@ class ComprehensiveInstructorReport:
 
         Parses factorial structure from condition names and computes main effects
         and interactions using Type III SS (approximated with numpy when scipy unavailable).
+
+        v1.2.5.0: Fixed silent row-dropping that reported wrong N. Factor parsing
+        now uses proper level matching instead of positional splitting.
         """
         results = {}
         results["scipy_used"] = SCIPY_AVAILABLE
@@ -3315,7 +3332,6 @@ class ComprehensiveInstructorReport:
                 return {"error": "Need at least 4 conditions for 2x2 factorial", "conditions": len(conditions)}
 
             # Try to parse factor structure from conditions
-            # Common patterns: "Factor1_Level1 x Factor2_Level1", "Level1-Level2", etc.
             factor1_name = factors[0].get("name", "Factor1") if len(factors) > 0 else "Factor1"
             factor2_name = factors[1].get("name", "Factor2") if len(factors) > 1 else "Factor2"
             factor1_levels = factors[0].get("levels", []) if len(factors) > 0 else []
@@ -3323,17 +3339,21 @@ class ComprehensiveInstructorReport:
 
             # Create factor columns by parsing condition names
             df_analysis = df.copy()
+            # v1.2.5.0: Track actual sample size BEFORE any filtering
+            n_actual = len(df)
 
             def extract_factor_level(condition: str, factor_levels: List[str], factor_idx: int) -> Optional[str]:
-                """Extract factor level from condition name."""
-                condition_lower = str(condition).lower()
+                """Extract factor level from condition name.
+
+                v1.2.5.0: Only uses keyword matching against known factor levels.
+                Removed the broken positional fallback that split "No AI x Utilitarian"
+                into garbage tokens.
+                """
+                condition_lower = str(condition).lower().strip()
                 for level in factor_levels:
                     if level.lower() in condition_lower:
                         return level
-                # Try positional extraction (split by common delimiters)
-                parts = re.split(r'[x×_\-\s]+', str(condition))
-                if len(parts) > factor_idx:
-                    return parts[factor_idx].strip()
+                # If no known level matched, return None (row will be handled below)
                 return None
 
             # Extract factor levels for each row
@@ -3347,11 +3367,22 @@ class ComprehensiveInstructorReport:
                 lambda x: extract_factor_level(x, factor2_levels, 1)
             )
 
-            # Drop rows with missing factor assignments
+            # v1.2.5.0: Check how many rows successfully parsed BEFORE dropping
+            _n_parsed_f1 = df_analysis[factor1_col].notna().sum()
+            _n_parsed_f2 = df_analysis[factor2_col].notna().sum()
+            _n_dv_valid = df_analysis[dv_column].notna().sum() if dv_column in df_analysis.columns else 0
+
+            # Drop rows with missing factor assignments or DV
             df_analysis = df_analysis.dropna(subset=[factor1_col, factor2_col, dv_column])
 
             if len(df_analysis) < 10:
-                return {"error": "Insufficient data after factor parsing"}
+                return {
+                    "error": "Insufficient data after factor parsing",
+                    "n_actual": n_actual,
+                    "n_parsed_factor1": int(_n_parsed_f1),
+                    "n_parsed_factor2": int(_n_parsed_f2),
+                    "n_dv_valid": int(_n_dv_valid),
+                }
 
             # Get unique levels
             f1_levels = df_analysis[factor1_col].unique().tolist()
@@ -3365,7 +3396,17 @@ class ComprehensiveInstructorReport:
 
             # Calculate cell means and grand mean
             grand_mean = df_analysis[dv_column].mean()
-            n_total = len(df_analysis)
+            # v1.2.5.0: Report ACTUAL N (full sample), not the post-filter N
+            n_total = n_actual
+            n_analysis = len(df_analysis)
+            results["n_total"] = n_total
+            results["n_analysis"] = n_analysis
+            if n_analysis < n_actual:
+                results["n_dropped"] = n_actual - n_analysis
+                results["n_drop_note"] = (
+                    f"{n_actual - n_analysis} rows excluded from ANOVA "
+                    f"(missing DV or unparseable condition)"
+                )
 
             # Cell means
             cell_stats = {}
@@ -4981,10 +5022,13 @@ class ComprehensiveInstructorReport:
 
                 chart_data = {}
                 for cond in conditions:
-                    cond_data = df_analysis[df_analysis["CONDITION"] == cond]["_composite"]
+                    cond_data = df_analysis[df_analysis["CONDITION"] == cond]["_composite"].dropna()
+                    # v1.2.5.0: N is total participants assigned to condition, not
+                    # filtered by composite NaN. Statistics use valid data only.
+                    n_total_cond = int((df_analysis["CONDITION"] == cond).sum())
                     if len(cond_data) > 0:
                         mean = cond_data.mean()
-                        n = len(cond_data)
+                        n = n_total_cond  # Report total N, not valid-only N
                         # v1.2.4.0: Handle N=1 gracefully (std with ddof=1 returns NaN)
                         sd = cond_data.std() if n > 1 else 0.0
                         if np.isnan(sd):
