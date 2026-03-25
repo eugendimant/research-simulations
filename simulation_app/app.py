@@ -54,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.2.3.6"
-BUILD_ID = "20260325-v12036-fix-persona-log-readme-update"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.2.3.7"
+BUILD_ID = "20260325-v12037-tile-subtitle-fit"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -118,7 +118,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.2.3.6"  # v1.2.3.6: ABE 2.0 dedup + condition-aware + bug fixes
+APP_VERSION = "1.2.3.7"  # v1.2.3.7: ABE 2.0 dedup + condition-aware + bug fixes
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -11761,7 +11761,7 @@ if active_page == 3:
             unsafe_allow_html=True,
         )
 
-        # --- v1.2.3.6: Method cards — 3-card grid (ABE 2.0 replaces Template + Behavioral) ---
+        # --- v1.2.3.7: Method cards — 3-card grid (ABE 2.0 replaces Template + Behavioral) ---
         # Order: Adaptive Behavioral Engine 2.0, Built-in AI, Your API Key
         _method_cards = [
             {
@@ -11771,7 +11771,7 @@ if active_page == 3:
                 "title": "Adaptive Behavioral Engine 2.0",
                 "tag": "",
                 "tag_color": "",
-                "subtitle": "225+ domains, 60+ archetypes, narrative intelligence, literature-calibrated effects",
+                "subtitle": "225+ domains, 60+ archetypes, literature-calibrated effects",
                 "details": [
                     "Runs entirely offline — no API calls needed",
                     "Full behavioral engine for numeric &amp; open-ended data",
@@ -11815,7 +11815,7 @@ if active_page == 3:
             },
         ]
 
-        # v1.2.3.6: Render 3-column grid (ABE 2.0, Built-in AI, Your API Key)
+        # v1.2.3.7: Render 3-column grid (ABE 2.0, Built-in AI, Your API Key)
         _card_cols = list(st.columns(3, gap="medium"))
 
         for _ci, _card in enumerate(_method_cards):
@@ -11892,7 +11892,7 @@ if active_page == 3:
                         use_container_width=True,
                     ):
                         st.session_state[_gen_method_key] = _mk
-                        # v1.2.3.6: Socsim always on — behavioral engine is ABE 2.0 for all methods.
+                        # v1.2.3.7: Socsim always on — behavioral engine is ABE 2.0 for all methods.
                         # Tile selection only controls open-ended text source (ABE v2 templates vs LLM).
                         st.session_state["_use_socsim_experimental"] = True
                         st.session_state["_use_abe_v2"] = (_mk == "abe_v2")
@@ -12075,7 +12075,7 @@ if active_page == 3:
                         st.rerun()
 
         # Wire method choice into engine settings
-        # v1.2.3.6: Socsim always on — behavioral engine (numeric data) uses ABE 2.0
+        # v1.2.3.7: Socsim always on — behavioral engine (numeric data) uses ABE 2.0
         # pipeline for all methods. Tile selection only controls open-ended text source.
         st.session_state["_use_socsim_experimental"] = True
         if _current_method in ("template", "abe_v2", "experimental"):
@@ -13303,7 +13303,7 @@ if active_page == 3:
                 '</div>',
                 unsafe_allow_html=True,
             )
-            # v1.2.3.6: Context-aware recovery — offer alternatives that differ
+            # v1.2.3.7: Context-aware recovery — offer alternatives that differ
             # from the method that just failed.
             _failed_method = st.session_state.get("generation_method", "abe_v2")
             _init_alts = [m for m in ["abe_v2", "free_llm", "own_api"] if m != _failed_method]

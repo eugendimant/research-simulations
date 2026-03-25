@@ -33,7 +33,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 # Version identifier to help track deployed code
-__version__ = "1.2.3.6"  # v1.2.3.6: Adaptive Behavioral Engine 2.0
+__version__ = "1.2.3.7"  # v1.2.3.7: Adaptive Behavioral Engine 2.0
 
 
 # ============================================================================
