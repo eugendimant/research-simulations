@@ -2903,10 +2903,13 @@ class EnhancedSimulationEngine:
             if len({n: p for n, p in _expanded_personas.items()
                     if p.category != 'response_style'}) > len(_domain_specific):
                 self.available_personas = _expanded_personas
-                self._log(f"Persona pool expanded via adjacent domains: "
-                         f"{len(_domain_specific)} → "
-                         f"{len({n: p for n, p in _expanded_personas.items() if p.category != 'response_style'})} "
-                         f"domain-specific personas")
+                # v1.2.3.5: Use logger instead of self._log() — validation_log
+                # is not yet initialized at this point in __init__.
+                logger.info("Persona pool expanded via adjacent domains: "
+                            "%d → %d domain-specific personas",
+                            len(_domain_specific),
+                            len({n: p for n, p in _expanded_personas.items()
+                                 if p.category != 'response_style'}))
 
         # Adjust persona weights based on study characteristics
         self._adjust_persona_weights_for_study()

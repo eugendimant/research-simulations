@@ -1,6 +1,6 @@
 # Behavioral Experiment Simulation Tool
 
-**Version 1.2.3.5** | A Streamlit application for generating realistic synthetic behavioral experiment data using theory-grounded persona-driven simulation.
+**Version 1.2.3.6** | A Streamlit application for generating realistic synthetic behavioral experiment data using theory-grounded persona-driven simulation.
 
 ## What This Tool Does
 
@@ -19,13 +19,13 @@
 - **Develop analysis scripts** on properly structured data
 - **Check pre-registration consistency** before data collection
 
-## Features (v1.2.3.5)
+## Features (v1.2.3.6)
 
 ### Generation Method Chooser
-- **3 simulation methods** — clean, compact selection:
-  - **Adaptive Behavioral Engine 2.0** — 225+ domains, 60+ archetypes, narrative intelligence, literature-calibrated effects, no API needed
-  - **Built-in AI** — free LLM access via Groq, Cerebras, Google AI, Mistral AI, SambaNova, OpenRouter
-  - **Your Own API Key** — bring your own key with auto-detection and format validation
+- **3 simulation methods** — all use the ABE 2.0 behavioral engine for numeric data; methods differ in how open-ended text is generated:
+  - **Adaptive Behavioral Engine 2.0** — fully offline, narrative-enhanced open-ended text via 225+ domains, 60+ archetypes
+  - **Built-in AI** — ABE 2.0 behavioral engine + free LLM-powered open-ended text (Groq, Google AI, Cerebras, Mistral, SambaNova, OpenRouter)
+  - **Your API Key** — ABE 2.0 behavioral engine + your own LLM key for open-ended text
 - LLM stall detection with method-switch recommendations (v1.0.8.2)
 
 ### Real-Time Progress Counter
