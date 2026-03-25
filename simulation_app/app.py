@@ -13703,6 +13703,7 @@ if active_page == 3:
             metadata['generation_method'] = _user_gen_method
             metadata['generation_method_label'] = _gen_method_labels.get(
                 _user_gen_method, _user_gen_method)
+            metadata['app_version'] = APP_VERSION
 
             # v1.1.0.5: Override generation_method_label to reflect ACTUAL outcome.
             # If user selected AI but all providers failed, label should say
