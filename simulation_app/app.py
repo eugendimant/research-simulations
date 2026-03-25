@@ -12476,7 +12476,15 @@ if active_page == 3:
         # generation reruns.  Without this, every generation attempt crashes with NameError
         # at the pre-flight health check, leaving is_generating=True forever (stuck blue screen).
         _gen_method_key = "generation_method"
-        progress_bar = progress_placeholder.progress(5, text="")
+        # v1.2.5.0: Progress is shown solely via _progress_counter_placeholder
+        # (the green bar inside the grey card). The Streamlit progress bar is hidden.
+        # We create a lightweight no-op wrapper so all downstream .progress() calls
+        # are silently ignored without requiring code changes.
+        class _NoOpProgressBar:
+            def progress(self, *a, **kw) -> None:
+                pass
+        progress_bar = _NoOpProgressBar()
+        progress_placeholder.empty()
 
         # v1.2.1.7: SETUP TRY BLOCK — wrap ALL pre-engine setup code so that ANY crash
         # (dict-contaminated values, float() on non-numeric, missing keys, etc.) is caught
