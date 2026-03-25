@@ -2903,10 +2903,13 @@ class EnhancedSimulationEngine:
             if len({n: p for n, p in _expanded_personas.items()
                     if p.category != 'response_style'}) > len(_domain_specific):
                 self.available_personas = _expanded_personas
-                self._log(f"Persona pool expanded via adjacent domains: "
-                         f"{len(_domain_specific)} → "
-                         f"{len({n: p for n, p in _expanded_personas.items() if p.category != 'response_style'})} "
-                         f"domain-specific personas")
+                # v1.2.3.5: Use logger instead of self._log() — validation_log
+                # is not yet initialized at this point in __init__.
+                logger.info("Persona pool expanded via adjacent domains: "
+                            "%d → %d domain-specific personas",
+                            len(_domain_specific),
+                            len({n: p for n, p in _expanded_personas.items()
+                                 if p.category != 'response_style'}))
 
         # Adjust persona weights based on study characteristics
         self._adjust_persona_weights_for_study()
@@ -2925,6 +2928,12 @@ class EnhancedSimulationEngine:
 
         self.text_generator = TextResponseGenerator()
         self.stimulus_handler = StimulusEvaluationHandler()
+
+        # v1.2.3.5: validation_log MUST be initialized before any _log() calls.
+        # The ABE v2 init block below uses _log(), so this must come first.
+        self.column_info: List[Tuple[str, str]] = []
+        self.validation_log: List[str] = []
+        self._scale_generation_log: List[Dict[str, Any]] = []
 
         # Initialize comprehensive response generator if available
         # v1.2.3.0: When use_abe_v2 is True, use AdaptiveBehavioralEngineV2
@@ -2948,10 +2957,6 @@ class EnhancedSimulationEngine:
             open_ended_questions=self.open_ended_questions,
             precomputed_visibility=self.precomputed_visibility
         )
-
-        self.column_info: List[Tuple[str, str]] = []
-        self.validation_log: List[str] = []
-        self._scale_generation_log: List[Dict[str, Any]] = []
 
         # Initialize LLM-powered response generator (optional upgrade)
         # Must come after validation_log init so _log() works
