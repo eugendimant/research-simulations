@@ -1,7 +1,7 @@
 """
 HBS Tool Dispatcher — Programmatic tool-use layer for the Human Behavior Simulator.
 
-Inspired by the DANEEL+ architecture, this module provides Python functions that
+This module provides Python functions that
 handle tasks LLMs systematically fail at: character counting, arithmetic, image
 geometry analysis, and temporal queries.
 

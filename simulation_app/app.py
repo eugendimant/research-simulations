@@ -54,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.2.3.8"
-BUILD_ID = "20260325-v12038-hbs-engine-integration"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.2.3.9"
+BUILD_ID = "20260325-v12039-hbs-2x2-tiles-daneel-removal"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -118,7 +118,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.2.3.8"  # v1.2.3.8: Human Behavior Simulator (HBS) engine integration
+APP_VERSION = "1.2.3.9"  # v1.2.3.9: 2x2 tile layout, DANEEL removal, HBS fixes
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -11790,12 +11790,12 @@ if active_page == 3:
                 "title": "Human Behavior Simulator",
                 "tag": "Most Realistic",
                 "tag_color": "#DC2626",
-                "subtitle": "DANEEL-grade persona coherence, calibrated human errors",
+                "subtitle": "Deep persona coherence, census-weighted demographics, calibrated errors",
                 "details": [
                     "Census-weighted demographics &amp; cross-item coherence",
-                    "Calibrated error rates by education (Frederick 2005, DANEEL)",
+                    "Calibrated error rates by education level (Frederick 2005)",
                     "Stylometric voice fingerprinting across all open-ended text",
-                    "Self-validating output against DANEEL benchmark battery",
+                    "Self-validating output against human-realism benchmarks",
                 ],
                 "quality_note": "",
                 "info_tooltip": "",
@@ -11834,93 +11834,92 @@ if active_page == 3:
             },
         ]
 
-        # v1.2.3.8: Render 4-column grid (ABE 2.0, HBS, Built-in AI, Your API Key)
-        _card_cols = list(st.columns(4, gap="small"))
+        # v1.2.3.9: Render 2×2 grid (row 1: ABE 2.0, HBS; row 2: Built-in AI, Your API Key)
+        # Two rows of st.columns(2) for wider tiles — subtitles fit on one line.
+        # Fixed height ensures all 4 tiles are exactly the same size.
+        _CARD_HEIGHT = "220px"  # uniform height for all tiles
+        _card_rows = [_method_cards[:2], _method_cards[2:]]
+        for _row in _card_rows:
+            _card_cols = list(st.columns(2, gap="medium"))
+            for _ci, _card in enumerate(_row):
+                with _card_cols[_ci]:
+                    _mk = _card["key"]
+                    _is_sel = _current_method == _mk
 
-        for _ci, _card in enumerate(_method_cards):
-            with _card_cols[_ci]:
-                _mk = _card["key"]
-                _is_sel = _current_method == _mk
+                    # Card styling
+                    if _is_sel:
+                        _border = "border:2px solid #22c55e;"
+                        _bg = "background:#f8fdf9;"
+                        _title_color = "#166534"
+                        _check_html = '<span style="color:#22c55e;font-size:0.78em;float:right;font-weight:600;">&#10003; Active</span>'
+                        _shadow = "box-shadow:0 2px 8px rgba(34,197,94,0.15);"
+                    else:
+                        _border = "border:1px solid #E5E7EB;"
+                        _bg = "background:#ffffff;"
+                        _title_color = "#1F2937"
+                        _check_html = ""
+                        _shadow = "box-shadow:0 1px 3px rgba(0,0,0,0.06);"
 
-                # Card styling
-                if _is_sel:
-                    _border = "border:2px solid #22c55e;"
-                    _bg = "background:#f8fdf9;"
-                    _title_color = "#166534"
-                    _check_html = '<span style="color:#22c55e;font-size:0.78em;float:right;font-weight:600;">&#10003; Active</span>'
-                    _shadow = "box-shadow:0 2px 8px rgba(34,197,94,0.15);"
-                else:
-                    _border = "border:1px solid #E5E7EB;"
-                    _bg = "background:#ffffff;"
-                    _title_color = "#1F2937"
-                    _check_html = ""
-                    _shadow = "box-shadow:0 1px 3px rgba(0,0,0,0.06);"
+                    # Tag badge
+                    _tag_html = ""
+                    if _card["tag"]:
+                        _tag_html = (
+                            f'<span style="background:{_card["tag_color"]}15;color:{_card["tag_color"]};'
+                            f'font-size:0.65em;border-radius:4px;padding:2px 6px;margin-left:6px;'
+                            f'font-weight:600;vertical-align:middle;">{_card["tag"]}</span>'
+                        )
 
-                # Tag badge
-                _tag_html = ""
-                if _card["tag"]:
-                    _tag_html = (
-                        f'<span style="background:{_card["tag_color"]}15;color:{_card["tag_color"]};'
-                        f'font-size:0.65em;border-radius:4px;padding:2px 6px;margin-left:6px;'
-                        f'font-weight:600;vertical-align:middle;">{_card["tag"]}</span>'
-                    )
-
-                # Detail bullets
-                _details_html = ""
-                for _d in _card["details"]:
-                    _details_html += (
-                        f'<div style="display:flex;gap:6px;margin-bottom:4px;">'
-                        f'<span style="color:#9CA3AF;font-size:0.72em;line-height:1.5;">&#8226;</span>'
-                        f'<span style="color:#6B7280;font-size:0.78em;line-height:1.5;">{_d}</span>'
-                        f'</div>'
-                    )
-
-                # v1.1.0.9: Quality notes removed for cleaner card layout
-
-                # v1.1.0.9: Info icons removed — cards are self-explanatory
-
-                # v1.1.0.9: Render card HTML — clicking the card selects the method
-                st.markdown(
-                    f'<div style="{_border}{_bg}border-radius:12px;padding:16px 18px;'
-                    f'margin-bottom:4px;min-height:180px;{_shadow}'
-                    f'transition:box-shadow 0.15s ease;">'
-                    # Icon + title row
-                    f'<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">'
-                    f'<span style="display:inline-flex;align-items:center;justify-content:center;'
-                    f'width:36px;height:36px;border-radius:10px;background:{_card["icon_bg"]};'
-                    f'color:white;font-size:1.0em;">{_card["icon"]}</span>'
-                    f'<span style="font-weight:700;font-size:0.92em;color:{_title_color};">'
-                    f'{_card["title"]}{_tag_html}</span>'
-                    f'{_check_html}'
-                    f'</div>'
-                    # Subtitle
-                    f'<div style="color:#6B7280;font-size:0.82em;margin-bottom:10px;line-height:1.4;">'
-                    f'{_card["subtitle"]}</div>'
                     # Detail bullets
-                    f'{_details_html}'
-                    f'</div>',
-                    unsafe_allow_html=True,
-                )
+                    _details_html = ""
+                    for _d in _card["details"]:
+                        _details_html += (
+                            f'<div style="display:flex;gap:6px;margin-bottom:4px;">'
+                            f'<span style="color:#9CA3AF;font-size:0.72em;line-height:1.5;">&#8226;</span>'
+                            f'<span style="color:#6B7280;font-size:0.78em;line-height:1.5;">{_d}</span>'
+                            f'</div>'
+                        )
 
-                # v1.1.0.9: Single click to select — no separate "Select..." button
-                if not _is_sel:
-                    if st.button(
-                        "Select",
-                        key=f"gen_method_{_mk}",
-                        type="secondary",
-                        use_container_width=True,
-                    ):
-                        st.session_state[_gen_method_key] = _mk
-                        # v1.2.3.8: Socsim always on — behavioral engine is ABE 2.0 for all methods.
-                        # Tile selection only controls open-ended text source (ABE v2 templates vs LLM).
-                        # HBS uses its own wrapper engine (HBSEngine) with ABE 2.0 as base.
-                        st.session_state["_use_socsim_experimental"] = True
-                        st.session_state["_use_abe_v2"] = (_mk in ("abe_v2", "hbs"))
-                        st.session_state["allow_template_fallback_once"] = _mk in ("template", "experimental", "abe_v2", "hbs")
-                        st.session_state["_use_hbs"] = (_mk == "hbs")
-                        if _mk in ("free_llm", "own_api"):
-                            st.session_state["_use_abe_v2"] = False
-                        st.rerun()
+                    # Render card HTML with fixed height for uniform tiles
+                    st.markdown(
+                        f'<div style="{_border}{_bg}border-radius:12px;padding:16px 18px;'
+                        f'height:{_CARD_HEIGHT};overflow:hidden;{_shadow}'
+                        f'transition:box-shadow 0.15s ease;display:flex;flex-direction:column;">'
+                        # Icon + title row
+                        f'<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">'
+                        f'<span style="display:inline-flex;align-items:center;justify-content:center;'
+                        f'width:36px;height:36px;border-radius:10px;background:{_card["icon_bg"]};'
+                        f'color:white;font-size:1.0em;">{_card["icon"]}</span>'
+                        f'<span style="font-weight:700;font-size:0.92em;color:{_title_color};">'
+                        f'{_card["title"]}{_tag_html}</span>'
+                        f'{_check_html}'
+                        f'</div>'
+                        # Subtitle
+                        f'<div style="color:#6B7280;font-size:0.82em;margin-bottom:10px;line-height:1.4;">'
+                        f'{_card["subtitle"]}</div>'
+                        # Detail bullets
+                        f'<div style="flex:1;">{_details_html}</div>'
+                        f'</div>',
+                        unsafe_allow_html=True,
+                    )
+
+                    # Single click to select
+                    if not _is_sel:
+                        if st.button(
+                            "Select",
+                            key=f"gen_method_{_mk}",
+                            type="secondary",
+                            use_container_width=True,
+                        ):
+                            st.session_state[_gen_method_key] = _mk
+                            # v1.2.3.9: Socsim always on — behavioral engine is ABE 2.0 for all methods.
+                            st.session_state["_use_socsim_experimental"] = True
+                            st.session_state["_use_abe_v2"] = (_mk in ("abe_v2", "hbs"))
+                            st.session_state["allow_template_fallback_once"] = _mk in ("template", "experimental", "abe_v2", "hbs")
+                            st.session_state["_use_hbs"] = (_mk == "hbs")
+                            if _mk in ("free_llm", "own_api"):
+                                st.session_state["_use_abe_v2"] = False
+                                st.session_state["_use_hbs"] = False
+                            st.rerun()
 
         # v1.1.0.7: Prompt when no method is selected yet
         if _current_method is None:
@@ -12082,6 +12081,7 @@ if active_page == 3:
                         st.session_state["allow_template_fallback_once"] = False
                         st.session_state["_use_socsim_experimental"] = True
                         st.session_state["_use_abe_v2"] = False
+                        st.session_state["_use_hbs"] = False
                         st.session_state["_llm_connectivity_status"] = None  # v1.2.0.8: Clear stale cache
                         st.rerun()
                 with _pre_c2:
@@ -12092,6 +12092,7 @@ if active_page == 3:
                         st.session_state["allow_template_fallback_once"] = True
                         st.session_state["_use_socsim_experimental"] = True
                         st.session_state["_use_abe_v2"] = True
+                        st.session_state["_use_hbs"] = False
                         st.session_state["_llm_connectivity_status"] = None  # v1.2.0.8: Clear stale cache
                         st.rerun()
 
@@ -12129,7 +12130,7 @@ if active_page == 3:
             "template":     {"icon": "&#9881;",  "icon_bg": "linear-gradient(135deg, #F59E0B 0%, #F97316 100%)", "title": "Template Engine",              "subtitle": "225+ research domains, 58 personas, instant generation"},
             "experimental": {"icon": "&#9889;",  "icon_bg": "linear-gradient(135deg, #8B5CF6 0%, #7C3AED 100%)", "title": "Adaptive Behavioral Engine",    "subtitle": "60+ participant archetypes, 30+ research paradigms, literature-calibrated effects"},
             "abe_v2":       {"icon": "&#129504;", "icon_bg": "linear-gradient(135deg, #0EA5E9 0%, #06B6D4 100%)", "title": "Adaptive Behavioral Engine 2.0", "subtitle": "225+ domains, 60+ archetypes, literature-calibrated effects"},
-            "hbs":          {"icon": "&#129513;", "icon_bg": "linear-gradient(135deg, #F59E0B 0%, #EF4444 100%)", "title": "Human Behavior Simulator",      "subtitle": "DANEEL-grade persona coherence, calibrated human errors"},
+            "hbs":          {"icon": "&#129513;", "icon_bg": "linear-gradient(135deg, #F59E0B 0%, #EF4444 100%)", "title": "Human Behavior Simulator",      "subtitle": "Deep persona coherence, census-weighted demographics, calibrated errors"},
             "free_llm":     {"icon": "&#129302;", "icon_bg": "linear-gradient(135deg, #22c55e 0%, #16a34a 100%)", "title": "Built-in AI",                   "subtitle": "Free LLM providers for AI-generated open-ended text"},
             "own_api":      {"icon": "&#128273;", "icon_bg": "linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)", "title": "AI (your API key)",             "subtitle": "Your own API key for reliable AI-generated text"},
         }
@@ -12308,7 +12309,8 @@ if active_page == 3:
             st.session_state["generation_method"] = method
             st.session_state["allow_template_fallback_once"] = template_fb
             st.session_state["_use_socsim_experimental"] = socsim
-            st.session_state["_use_abe_v2"] = (method == "abe_v2")
+            st.session_state["_use_abe_v2"] = (method in ("abe_v2", "hbs"))
+            st.session_state["_use_hbs"] = (method == "hbs")
             st.session_state["has_generated"] = False
             if trigger_gen:
                 st.session_state["is_generating"] = True
@@ -12421,6 +12423,7 @@ if active_page == 3:
                 st.session_state["allow_template_fallback_once"] = True
                 st.session_state["_use_socsim_experimental"] = True
                 st.session_state["_use_abe_v2"] = True
+                st.session_state["_use_hbs"] = False
                 st.session_state.pop("_free_llm_oe_cap_accepted", None)
                 _navigate_to(3)
 
@@ -13845,6 +13848,7 @@ if active_page == 3:
                                 st.session_state["allow_template_fallback_once"] = False
                                 st.session_state["_use_socsim_experimental"] = True
                                 st.session_state["_use_abe_v2"] = False
+                                st.session_state["_use_hbs"] = False
                                 _navigate_to(3)
                         with _retry_col2:
                             if st.button("Re-generate with Adaptive Engine 2.0", key="_post_gen_switch_abe",
@@ -13853,6 +13857,7 @@ if active_page == 3:
                                 st.session_state["allow_template_fallback_once"] = True
                                 st.session_state["_use_socsim_experimental"] = True
                                 st.session_state["_use_abe_v2"] = True
+                                st.session_state["_use_hbs"] = False
                                 _navigate_to(3)
                     else:
                         # Advanced mode: full diagnostic breakdown
@@ -13900,6 +13905,7 @@ if active_page == 3:
                                 st.session_state["allow_template_fallback_once"] = False
                                 st.session_state["_use_socsim_experimental"] = True
                                 st.session_state["_use_abe_v2"] = False
+                                st.session_state["_use_hbs"] = False
                                 _navigate_to(3)
                         with _fb_col2:
                             if st.button("Use Adaptive Engine 2.0", key="_post_gen_switch_abe_v2",
@@ -13908,6 +13914,7 @@ if active_page == 3:
                                 st.session_state["allow_template_fallback_once"] = True
                                 st.session_state["_use_socsim_experimental"] = True
                                 st.session_state["_use_abe_v2"] = True
+                                st.session_state["_use_hbs"] = False
                                 _navigate_to(3)
 
             # v1.2.1.0: SocSim enrichment details — only shown in advanced mode
@@ -14493,6 +14500,7 @@ if active_page == 3:
                         st.session_state["allow_template_fallback_once"] = False
                         st.session_state["_use_socsim_experimental"] = True
                         st.session_state["_use_abe_v2"] = False
+                        st.session_state["_use_hbs"] = False
                         st.session_state["is_generating"] = False
                         _navigate_to(3)
                 with _err_c2:
@@ -14502,6 +14510,7 @@ if active_page == 3:
                         st.session_state["allow_template_fallback_once"] = True
                         st.session_state["_use_socsim_experimental"] = True
                         st.session_state["_use_abe_v2"] = True
+                        st.session_state["_use_hbs"] = False
                         st.session_state[_gen_method_key] = "abe_v2"
                         st.session_state["is_generating"] = True
                         st.session_state["_generation_phase"] = 1
@@ -14723,6 +14732,8 @@ if active_page == 3:
             _method_icons = {
                 'template': '\u2699\ufe0f',      # gear
                 'experimental': '\U0001f9e0',     # brain
+                'abe_v2': '\U0001f9e0',           # brain
+                'hbs': '\U0001f9ec',              # DNA / helix
                 'free_llm': '\u26a1',             # lightning
                 'own_api': '\U0001f511',          # key
             }

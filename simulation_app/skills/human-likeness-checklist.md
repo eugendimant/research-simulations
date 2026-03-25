@@ -90,6 +90,6 @@ When using the Human Behavior Simulator (HBS) engine, these additional checks ap
 | Census demographics | Age, education, income distributions match US census weights | HBSParticipantFactory distributions |
 | Party ID | 7-point scale with realistic partisan lean | 30% D, 25% R, 35% I, 10% other (approx.) |
 | Stylometric consistency | Same participant's OE responses share voice (vocab, sentence length, filler rate) | HBSStylometricEngine fingerprint |
-| Error calibration | Typo rate, reading speed vary by education | Frederick 2005, DANEEL benchmarks |
+| Error calibration | Typo rate, reading speed vary by education | Frederick 2005, HBS benchmarks |
 | Completion time | Right-skewed, N(840,120)s clipped [480,1500] | HBSParticipantState defaults |
-| Self-validation | HBSValidator passes all 5 checks (timing, OE uniqueness, straightlining, OE length, rating-text coherence) | DANEEL benchmark battery |
+| Self-validation | HBSValidator passes all 5 checks (timing, OE uniqueness, straightlining, OE length, rating-text coherence) | HBS benchmark battery |

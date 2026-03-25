@@ -47,7 +47,7 @@
       {"answer": "random_int_200_1000", "weight": 0.05}
     ],
     "note": "Knowing exact answer (120) is a bot signal",
-    "source": "DANEEL benchmark"
+    "source": "HBS benchmark"
   },
   "star_count": {
     "question_pattern": "how many stars|visible.*naked eye|can.*see.*stars",
@@ -59,7 +59,7 @@
       {"answer": "millions", "weight": 0.15},
       {"answer": "i_dont_know", "weight": 0.20}
     ],
-    "source": "DANEEL benchmark"
+    "source": "HBS benchmark"
   },
   "horse_bones": {
     "question_pattern": "horse.*bones|bones.*horse|how many bones",
@@ -70,7 +70,7 @@
       {"answer": "i_dont_know", "weight": 0.30},
       {"answer": "random_int_300_500", "weight": 0.10}
     ],
-    "source": "DANEEL benchmark"
+    "source": "HBS benchmark"
   },
   "syllogism_basic": {
     "question_pattern": "all.*are.*all.*are|syllogism|logical.*conclusion",

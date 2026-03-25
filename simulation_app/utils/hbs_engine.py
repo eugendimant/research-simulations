@@ -2,7 +2,7 @@
 Human Behavior Simulator (HBS) Engine — Orchestrator
 =====================================================
 
-Wraps the existing EnhancedSimulationEngine with DANEEL-grade enhancements:
+Wraps the existing EnhancedSimulationEngine with deep persona-coherence enhancements:
 - Census-weighted demographic persona coherence
 - Calibrated human error distributions (education-stratified)
 - Stylometric voice fingerprinting for all open-ended responses
@@ -13,11 +13,9 @@ Architecture: HBSEngine delegates numeric generation entirely to ABE 2.0
 (EnhancedSimulationEngine) and applies HBS-specific post-processing to
 the generated DataFrame — enriching demographics, applying stylometric
 fingerprints to OE columns, calibrating error patterns, and validating
-the output against DANEEL benchmark axes.
+the output against human-realism benchmark axes.
 
 References:
-    - DANEEL (2025 PNAS): Cross-page persona memory, demographic coherence
-    - DANEEL+ (2026 Nature): Programmatic tool-use, 81/81 bot-trap pass rate
     - Frederick (2005): CRT calibrated error rates
     - Pennebaker & King (1999): LIWC stylometric features
     - Meade & Craig (2012): Careless responding detection
@@ -42,7 +40,7 @@ __all__ = ["HBSEngine"]
 class HBSEngine:
     """
     Human Behavior Simulator — wraps EnhancedSimulationEngine with
-    DANEEL-grade persona coherence, calibrated errors, stylometric
+    Deep persona coherence, calibrated errors, stylometric
     fingerprinting, and adversarial self-validation.
 
     Usage:
@@ -236,6 +234,13 @@ class HBSEngine:
         self.validation_log = getattr(self._base_engine, "validation_log", [])
         self.column_info = getattr(self._base_engine, "column_info", [])
 
+        # Step 2b: Override _Generation_Source to reflect HBS method
+        if "_Generation_Source" in df.columns:
+            df["_Generation_Source"] = "Human Behavior Simulator (HBS)"
+        else:
+            # Ensure the column exists even when no OE questions generated it
+            df["_Generation_Source"] = "Human Behavior Simulator (HBS)"
+
         # Step 3: Enrich demographics
         df = self._enrich_demographics(df)
 
@@ -245,7 +250,9 @@ class HBSEngine:
         # Step 5: Run self-validation + auto-correction
         df, validation_report = self._run_validation(df)
 
-        # Step 6: Add HBS metadata
+        # Step 6: Add HBS metadata + override method labels
+        metadata["generation_method"] = "hbs"
+        metadata["generation_method_label"] = "Human Behavior Simulator (HBS)"
         _hbs_elapsed = time.time() - _hbs_start
         metadata["hbs_engine"] = {
             "enabled": True,
@@ -438,7 +445,7 @@ class HBSEngine:
         """
         Run adversarial self-validation on the generated dataset.
 
-        Checks DANEEL benchmark axes (completion time, attention rates,
+        Checks human-realism benchmark axes (completion time, attention rates,
         OE uniqueness, straight-lining, rating-text coherence) and
         auto-corrects any out-of-range metrics.
         """

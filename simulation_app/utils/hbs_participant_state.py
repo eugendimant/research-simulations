@@ -1,7 +1,7 @@
 """
 HBS Participant State — Central data model for the Human Behavior Simulator.
 
-Part of the DANEEL architecture: this module defines the ParticipantState
+Part of the HBS architecture: this module defines the ParticipantState
 dataclass that every HBS module reads from and writes to. ParticipantState
 is the single source of truth for a simulated participant's identity,
 demographics, behavioral parameters, stylometric fingerprint, survey
@@ -235,7 +235,7 @@ def _weighted_choice_idx(rng: random.Random,
 class ParticipantState:
     """Central data model for a single simulated participant.
 
-    DANEEL architecture: ParticipantState is the shared mutable record
+    HBS architecture: ParticipantState is the shared mutable record
     that every HBS pipeline stage reads and writes.  Fields are grouped
     into identity, demographics, behavioral parameters, stylometric
     fingerprint, survey state, behavioral flags, and validation scores.
@@ -305,7 +305,7 @@ class ParticipantState:
 class HBSParticipantFactory:
     """Factory for creating census-weighted participant batches.
 
-    DANEEL architecture: the factory is the sole entry-point for
+    HBS architecture: the factory is the sole entry-point for
     constructing ParticipantState instances.  It enforces demographic
     plausibility, persona-demographic coupling, and consistent
     within-participant behavioral parameters.

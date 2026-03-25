@@ -10,7 +10,7 @@ their open-ended responses to sound like the same real person.
 Based on: Pennebaker & King (1999) LIWC, Denscombe (2008) response lengths,
 Zipf's law for vocabulary naturalness.
 
-Architecture: DANEEL's cognitive realism pillar — the hardest human signal
+Architecture: Cognitive realism pillar — the hardest human signal
 to fake is sounding like the same person across all OE responses.
 """
 
