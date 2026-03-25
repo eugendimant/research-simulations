@@ -11918,6 +11918,7 @@ if active_page == 3:
                             st.session_state["_use_hbs"] = (_mk == "hbs")
                             if _mk in ("free_llm", "own_api"):
                                 st.session_state["_use_abe_v2"] = False
+                                st.session_state["_use_hbs"] = False
                             st.rerun()
 
         # v1.1.0.7: Prompt when no method is selected yet
@@ -12080,6 +12081,7 @@ if active_page == 3:
                         st.session_state["allow_template_fallback_once"] = False
                         st.session_state["_use_socsim_experimental"] = True
                         st.session_state["_use_abe_v2"] = False
+                        st.session_state["_use_hbs"] = False
                         st.session_state["_llm_connectivity_status"] = None  # v1.2.0.8: Clear stale cache
                         st.rerun()
                 with _pre_c2:
@@ -12090,6 +12092,7 @@ if active_page == 3:
                         st.session_state["allow_template_fallback_once"] = True
                         st.session_state["_use_socsim_experimental"] = True
                         st.session_state["_use_abe_v2"] = True
+                        st.session_state["_use_hbs"] = False
                         st.session_state["_llm_connectivity_status"] = None  # v1.2.0.8: Clear stale cache
                         st.rerun()
 
@@ -12306,7 +12309,8 @@ if active_page == 3:
             st.session_state["generation_method"] = method
             st.session_state["allow_template_fallback_once"] = template_fb
             st.session_state["_use_socsim_experimental"] = socsim
-            st.session_state["_use_abe_v2"] = (method == "abe_v2")
+            st.session_state["_use_abe_v2"] = (method in ("abe_v2", "hbs"))
+            st.session_state["_use_hbs"] = (method == "hbs")
             st.session_state["has_generated"] = False
             if trigger_gen:
                 st.session_state["is_generating"] = True
@@ -12419,6 +12423,7 @@ if active_page == 3:
                 st.session_state["allow_template_fallback_once"] = True
                 st.session_state["_use_socsim_experimental"] = True
                 st.session_state["_use_abe_v2"] = True
+                st.session_state["_use_hbs"] = False
                 st.session_state.pop("_free_llm_oe_cap_accepted", None)
                 _navigate_to(3)
 
@@ -13852,6 +13857,7 @@ if active_page == 3:
                                 st.session_state["allow_template_fallback_once"] = True
                                 st.session_state["_use_socsim_experimental"] = True
                                 st.session_state["_use_abe_v2"] = True
+                                st.session_state["_use_hbs"] = False
                                 _navigate_to(3)
                     else:
                         # Advanced mode: full diagnostic breakdown
@@ -13908,6 +13914,7 @@ if active_page == 3:
                                 st.session_state["allow_template_fallback_once"] = True
                                 st.session_state["_use_socsim_experimental"] = True
                                 st.session_state["_use_abe_v2"] = True
+                                st.session_state["_use_hbs"] = False
                                 _navigate_to(3)
 
             # v1.2.1.0: SocSim enrichment details — only shown in advanced mode

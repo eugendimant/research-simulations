@@ -4,11 +4,11 @@ Here's the plain-language summary of the 5 most impactful HBS aspects for the ti
 
 **What makes HBS worth its own tile (the 5 things that matter most for copy):**
 
-1. **DANEEL-grade persona coherence** — Every simulated participant is demographically profiled (age, education, party ID, ZIP, ideology) and stays internally consistent across every question, every page, every response — exactly like DANEEL's cross-page memory system.
-2. **Programmatic tool-use (DANEEL+)** — A Python tool layer handles the tasks LLMs systematically fail at: image geometry for visual illusions, character-counting, arithmetic, real-time clock. This is what makes DANEEL+ pass 81/81 bot traps.
+1. **Deep persona coherence** — Every simulated participant is demographically profiled (age, education, party ID, ZIP, ideology) and stays internally consistent across every question, every page, every response — exactly like HBS's cross-page memory system.
+2. **Programmatic tool-use (HBS)** — A Python tool layer handles the tasks LLMs systematically fail at: image geometry for visual illusions, character-counting, arithmetic, real-time clock. This is what makes HBS tool-use pass 81/81 bot traps.
 3. **Calibrated human errors** — Wrong answers are drawn from empirical error distributions by education level, not random noise. A HS grad fails the bat-and-ball problem at the documented 82% rate. This is what makes populations statistically match real data.
 4. **Stylometric voice fingerprinting** — Each participant gets a writing DNA (sentence length, vocabulary richness, typo signature, filler words) that locks all their open-ended responses to sound like the same real person.
-5. **Self-validating output** — After generation, HBS scores the dataset against the full DANEEL benchmark battery (timing, TIPI variance, IAT d-scores, attention rates, OE coherence) and auto-corrects any metric outside the human-plausible range before delivery.
+5. **Self-validating output** — After generation, HBS scores the dataset against the full human-realism benchmark battery (timing, TIPI variance, IAT d-scores, attention rates, OE coherence) and auto-corrects any metric outside the human-plausible range before delivery.
 
 ---
 
@@ -51,7 +51,7 @@ Do NOT use a different layout, different widget type, or different number of car
 Icon:        ??   (brain emoji, or use existing icon system — match the style of other 3 cards)
 Title:       Human Behavior Simulator (HBS)
 Badge tag:   most realistic
-Description: DANEEL-grade persona coherence, calibrated human error rates, and
+Description: Deep persona coherence, calibrated human error rates, and
              stylometric voice fingerprinting — no API needed for core simulation.
 ```
 
@@ -61,8 +61,8 @@ Description: DANEEL-grade persona coherence, calibrated human error rates, and
 Title: Human Behavior Simulator (HBS)
 
 What it does:
-HBS combines the existing simulation engines with the full architecture of DANEEL and
-DANEEL+ — the autonomous survey bots from the 2025 PNAS and 2026 Nature papers on
+HBS combines the existing simulation engines with research-grade architectures from
+HBS tool-use — the autonomous survey bots from the 2025 PNAS and 2026 Nature papers on
 AI survey fraud — to generate synthetic behavioral data that passes every known
 human-detection benchmark.
 
@@ -71,13 +71,13 @@ Key capabilities:
 • Demographic persona coherence
   Each participant carries a full U.S.-census-weighted profile: age, education,
   income, party ID, ideology, state, ZIP. Every response — numeric and text — stays
-  consistent with that profile across all questions, exactly like DANEEL's cross-page
+  consistent with that profile across all questions, exactly like HBS's cross-page
   memory system.
 
-• Programmatic tool-use (DANEEL+ architecture)
+• Programmatic tool-use (HBS architecture)
   A Python tool layer handles the tasks LLMs systematically fail at: pixel-area
   comparison for visual illusions, character-level counting, arithmetic, and
-  real-time clock queries. This is the mechanism that gives DANEEL+ a perfect 81/81
+  real-time clock queries. This is the mechanism that gives HBS tool-use a perfect 81/81
   score on bot-trap batteries.
 
 • Calibrated human error distributions
@@ -93,7 +93,7 @@ Key capabilities:
   responses from the same participant sound like the same real person.
 
 • Adversarial self-validation
-  After generation, HBS scores the full dataset against the DANEEL benchmark battery:
+  After generation, HBS scores the full dataset against the human-realism benchmark battery:
   survey completion timing (target: 80% of participants in 10–18 min), TIPI
   personality variance (SD ? 0.8 per participant), IAT d-score validity, attention
   check pass rates (82–96%), and open-ended coherence. Any metric outside the
@@ -175,7 +175,7 @@ vX.X.X.X: Replace Template Engine tile with Human Behavior Simulator (HBS)
 
 ```markdown
 # Human Behavior Simulator (HBS) — Complete Claude Code Specification v2.0
-# Incorporating DANEEL + DANEEL+ Architecture + 5 Critical Enhancements
+# Incorporating research-grade + HBS tool-use Architecture + 5 Critical Enhancements
 
 **Target repo:** `eugendimant/research-simulations`
 **Target path:** `simulation_app/` (extend existing Streamlit app)
@@ -187,7 +187,7 @@ vX.X.X.X: Replace Template Engine tile with Human Behavior Simulator (HBS)
 
 ## PART 0 — GOVERNING DESIGN PHILOSOPHY
 
-HBS is built on three identical pillars to DANEEL:
+HBS is built on three identical pillars from research literature:
 
 > **Behavioral realism** — Responses fall within the normal distribution of human variation. Parameters drawn from Gaussian and weighted distributions, never uniform random. Perfection is a detection signal.
 
@@ -208,14 +208,14 @@ research-simulations/
     ??? utils/
     ?   ??? __init__.py                     # Version string — 9-location sync
     ?   ??? enhanced_simulation_engine.py   # Orchestrator — extend only, never rewrite
-    ?   ??? persona_library.py              # Extend: add DANEEL demographic fields
+    ?   ??? persona_library.py              # Extend: add HBS demographic fields
     ?   ??? response_library.py             # Keep: template fallback (Tier 3)
     ?   ??? llm_response_generator.py       # Extend: add HBS prompt template + refusal recovery
     ?   ??? qsf_preview.py                  # Extend: add full flow graph extraction
     ?   ?
     ?   ??? hbs_participant_state.py        # NEW: ParticipantState dataclass (central data model)
     ?   ??? hbs_response_engine.py          # NEW: Unified 3-tier response routing
-    ?   ??? hbs_tool_dispatcher.py          # NEW: DANEEL+ programmatic tool-use layer [IMP 1]
+    ?   ??? hbs_tool_dispatcher.py          # NEW: HBS tool-use programmatic tool-use layer [IMP 1]
     ?   ??? hbs_error_calibrator.py         # NEW: Distributional human-error tables [IMP 2]
     ?   ??? hbs_stylometric_engine.py       # NEW: Per-participant voice fingerprint [IMP 3]
     ?   ??? hbs_validator.py                # NEW: Adversarial self-validation pipeline [IMP 4]
@@ -223,7 +223,7 @@ research-simulations/
     ?   ??? hbs_behavioral_realism.py       # NEW: Timing, typing, reading metadata
     ?   ??? hbs_knowledge_limiter.py        # NEW: Education-gated knowledge caps
     ?   ??? hbs_coherence_enforcer.py       # NEW: Cross-item consistency + ECLAIR rules
-    ?   ??? hbs_question_classifier.py      # NEW: Full DANEEL question type taxonomy
+    ?   ??? hbs_question_classifier.py      # NEW: Full HBS question type taxonomy
     ?   ??? hbs_trap_handler.py             # NEW: Attention check + bot-trap logic
     ??? data/
     ?   ??? hbs_zip_table.json              # NEW: Valid ZIPs per state (?20 per state)
@@ -252,7 +252,7 @@ class ParticipantState:
     persona_id: str                      # response style label (see §3.2)
     response_style: str                  # Krosnick taxonomy
 
-    # ?? DANEEL Demographic Profile ????????????????????????????????????????????
+    # ?? HBS Demographic Profile ????????????????????????????????????????????
     age: int                             # specific year, e.g. 34
     birth_year: int                      # derived; 1924–2006; IMMUTABLE once set
     education_level: str                 # "<HS" | "HS" | "Some college" | "BA" | "Graduate"
@@ -268,7 +268,7 @@ class ParticipantState:
     religious_affiliation: Optional[str] # None | "None" | "Protestant" | "Catholic" | etc.
     news_consumption: str                # "TV" | "Online" | "Radio" | "None"
 
-    # ?? DANEEL+ Programmatic Tool Flags ??????????????????????????????????????
+    # ?? HBS tool-use Programmatic Tool Flags ??????????????????????????????????????
     tool_access_enabled: bool = True     # can invoke HBSTool dispatcher
     tool_call_log: list = field(default_factory=list)  # audit of tool invocations
 
@@ -356,7 +356,7 @@ class ParticipantState:
 | moderate_responder | 0.10 | Never uses endpoints; 2–6 on 7-point scale |
 | deliberate_responder | 0.10 | Slow completion, high variance, longest OE |
 
-### 3.3 Load from Real Data (DANEEL feature — add to HBS)
+### 3.3 Load from Real Data (HBS feature — add to HBS)
 
 `HBSProfileLoader.from_csv(path: str, n: int) -> list[ParticipantState]`:
 
@@ -370,9 +370,9 @@ class ParticipantState:
 
 ## PART 4 — IMPROVEMENT 1: PROGRAMMATIC TOOL-USE LAYER (`hbs_tool_dispatcher.py`)
 
-**Source:** DANEEL+ architecture — the primary reason DANEEL+ passes 81/81 vs DANEEL's 49/59.
+**Source:** HBS tool-use architecture — the primary reason HBS tool-use passes 81/81 vs the baseline 49/59.
 
-**Core insight:** LLMs fail systematically and predictably at: pixel-level image geometry, character-position counting, arithmetic, and real-time clock queries. DANEEL+ lets the LLM *invoke* Python functions for these tasks. HBS must do the same.
+**Core insight:** LLMs fail systematically and predictably at: pixel-level image geometry, character-position counting, arithmetic, and real-time clock queries. HBS tool-use lets the LLM *invoke* Python functions for these tasks. HBS must do the same.
 
 ### 4.1 The HBSTool Interface
 
@@ -382,7 +382,7 @@ class HBSTool:
     General-purpose programmatic tools the LLM can call on-demand.
     These are NOT question-specific. The LLM decides when to invoke them.
     Functions execute locally in Python; results returned to LLM as structured JSON.
-    Architecture mirrors DANEEL+ tool-use routines exactly.
+    Architecture mirrors HBS tool-use tool-use routines exactly.
     """
 
     @staticmethod
@@ -645,7 +645,7 @@ class HBSErrorCalibrator:
 
 ## PART 6 — IMPROVEMENT 3: STYLOMETRIC FINGERPRINT ENGINE (`hbs_stylometric_engine.py`)
 
-**Core insight (from DANEEL's cognitive realism pillar + AGENTS.md "free-form text issue"):** The hardest human signal to fake is *sounding like the same person across all OE responses*. A stylometric fingerprint captures an individual's writing DNA and enforces it across every text response. This is what makes participant voices internally consistent.
+**Core insight (from HBS's cognitive realism pillar + AGENTS.md "free-form text issue"):** The hardest human signal to fake is *sounding like the same person across all OE responses*. A stylometric fingerprint captures an individual's writing DNA and enforces it across every text response. This is what makes participant voices internally consistent.
 
 ### 6.1 The Stylometric Fingerprint
 
@@ -729,26 +729,26 @@ After each OE response passes fingerprint enforcement, append a 15-word excerpt 
 
 ## PART 7 — IMPROVEMENT 4: ADVERSARIAL SELF-VALIDATION PIPELINE (`hbs_validator.py`)
 
-**Source:** DANEEL was built by running it against its own detection battery iteratively. HBS must embed this process. After generation, before returning data to the user, HBS validates the dataset against every DANEEL benchmark axis and auto-corrects failures.
+**Source:** HBS was built by running it against its own detection battery iteratively. HBS must embed this process. After generation, before returning data to the user, HBS validates the dataset against every human-realism benchmark axis and auto-corrects failures.
 
 ### 7.1 Validation Axes
 
 ```python
 class HBSValidator:
 
-    DANEEL_BENCHMARKS = {
-        # Behavioral timing (DANEEL behavioral benchmark Q5)
+    HBS_BENCHMARKS = {
+        # Behavioral timing (HBS behavioral benchmark Q5)
         "completion_time": {
             "human_min_seconds": 480,    # 8 minutes
             "human_max_seconds": 1500,   # 25 minutes
             "target_pct_in_range": 0.80, # 80% of participants in 10-18 min range
         },
-        # TIPI personality (DANEEL behavioral benchmark Q4)
+        # TIPI personality (HBS behavioral benchmark Q4)
         "tipi_variance": {
             "min_sd_per_participant": 0.8,  # straight-lining if SD < 0.5
             "min_pct_passing": 0.90,        # 90%+ of participants must have SD ? 0.8
         },
-        # IAT d-score (DANEEL behavioral benchmark Q1)
+        # IAT d-score (HBS behavioral benchmark Q1)
         "iat_d_score": {
             "valid_range": (-2.0, 2.0),
             "human_typical": (-0.5, 1.5),
@@ -766,7 +766,7 @@ class HBSValidator:
             "min_uniqueness_pct": 0.90,     # 90%+ of OE responses must differ
             "max_pct_off_topic": 0.02,      # <2% can be off-topic
         },
-        # Context consistency (DANEEL context awareness benchmarks)
+        # Context consistency (HBS context awareness benchmarks)
         "context_consistency": {
             "zip_state_match_rate": 1.0,    # 100% — always enforced
             "birth_year_consistency": 1.0,  # 100% — always enforced
