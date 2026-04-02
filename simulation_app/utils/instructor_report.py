@@ -2388,13 +2388,17 @@ class ComprehensiveInstructorReport:
 
                     for cond in conditions:
                         cond_data = df_clean_copy[df_clean_copy["CONDITION"] == cond]["_composite"]
-                        if len(cond_data) > 0:
-                            mean = cond_data.mean()
-                            n = len(cond_data)
-                            sd = cond_data.std() if n > 1 else 0.0
+                        # v1.2.5.1: Use total assigned N for display, valid N for stats
+                        n_total_c = len(cond_data)
+                        cond_valid = cond_data.dropna()
+                        n_valid_c = len(cond_valid)
+                        if n_valid_c > 0:
+                            mean = cond_valid.mean()
+                            n = n_total_c  # Display N
+                            sd = cond_valid.std() if n_valid_c > 1 else 0.0
                             if np.isnan(sd):
                                 sd = 0.0
-                            se = sd / (n ** 0.5) if n > 1 else 0.0
+                            se = sd / (n_valid_c ** 0.5) if n_valid_c > 1 else 0.0
                             ci_low = mean - 1.96 * se
                             ci_high = mean + 1.96 * se
                             if n == 1:
@@ -3456,7 +3460,8 @@ class ComprehensiveInstructorReport:
             df_f1 = len(f1_levels) - 1
             df_f2 = len(f2_levels) - 1
             df_interaction = df_f1 * df_f2
-            df_within = n_total - len(f1_levels) * len(f2_levels)
+            # v1.2.5.1: Use n_analysis (post-filter) not n_total (pre-filter)
+            df_within = n_analysis - len(f1_levels) * len(f2_levels)
 
             if df_within <= 0:
                 return {"error": "Insufficient degrees of freedom for error term"}
@@ -5013,17 +5018,18 @@ class ComprehensiveInstructorReport:
                 chart_data = {}
                 for cond in conditions:
                     cond_data = df_analysis[df_analysis["CONDITION"] == cond]["_composite"].dropna()
-                    # v1.2.5.0: N is total participants assigned to condition, not
-                    # filtered by composite NaN. Statistics use valid data only.
+                    # v1.2.5.1: N for display = total assigned to condition.
+                    # N for statistics (SD, SE, CI) = valid observations only.
                     n_total_cond = int((df_analysis["CONDITION"] == cond).sum())
-                    if len(cond_data) > 0:
+                    n_valid = len(cond_data)
+                    if n_valid > 0:
                         mean = cond_data.mean()
-                        n = n_total_cond  # Report total N, not valid-only N
-                        # v1.2.4.0: Handle N=1 gracefully (std with ddof=1 returns NaN)
-                        sd = cond_data.std() if n > 1 else 0.0
+                        n = n_total_cond  # Display total N
+                        # v1.2.5.1: SD and SE MUST use valid N, not total N
+                        sd = cond_data.std() if n_valid > 1 else 0.0
                         if np.isnan(sd):
                             sd = 0.0
-                        se = sd / np.sqrt(n) if n > 1 else 0.0
+                        se = sd / np.sqrt(n_valid) if n_valid > 1 else 0.0
                         ci_low = mean - 1.96 * se
                         ci_high = mean + 1.96 * se
                         clean_cond = _clean_condition_name(cond)
