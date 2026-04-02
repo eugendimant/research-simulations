@@ -12593,52 +12593,15 @@ class EnhancedSimulationEngine:
         if HAS_HBS_STYLOMETRIC and _hbs_participant_states:
             try:
                 _stylo_engine = HBSStylometricEngine()
-                # v1.2.5.1: Explicitly exclude non-OE columns to prevent
-                # fingerprinting from corrupting CONDITION labels, demographics,
-                # and other metadata columns. Only actual open-ended text
-                # response columns should be fingerprinted.
-                _stylo_exclude = {
-                    'PARTICIPANT_ID', 'RUN_ID', 'SIMULATION_MODE', 'SIMULATION_SEED',
-                    'CONDITION', 'Age', 'Gender', 'Attention_Check_1',
-                    'Completion_Time_Seconds', 'Attention_Pass_Rate',
-                    'Max_Straight_Line', 'Flag_Speed', 'Flag_Attention',
-                    'Flag_StraightLine', 'Exclude_Recommended',
-                    '_Generation_Source', 'Mean_Item_RT_ms', 'Total_Scale_RT_ms',
-                }
-                _stylo_exclude_prefixes = (
-                    'ABE3_', '_', 'Flag_', 'Hedonic_', 'Utilitarian_',
-                )
-                # Build set of known OE variable names from engine config
+                # v1.2.5.1: Use centralized OE detection with known OE names
+                from utils import detect_oe_columns as _detect_oe
                 _known_oe_names = set()
                 for oeq in self.open_ended_questions:
                     if isinstance(oeq, dict):
                         _known_oe_names.add(oeq.get("variable_name", ""))
                         _known_oe_names.add(oeq.get("name", ""))
                 _known_oe_names.discard("")
-
-                _oe_cols = []
-                for col in df.columns:
-                    # Skip explicitly excluded columns
-                    if col in _stylo_exclude:
-                        continue
-                    if any(col.startswith(p) for p in _stylo_exclude_prefixes):
-                        continue
-                    # Skip scale item columns (numeric data stored as int)
-                    if df[col].dtype in ('int64', 'float64', 'int32', 'float32'):
-                        continue
-                    # Check if it's a text column
-                    _is_text = (df[col].dtype == object
-                                or str(df[col].dtype) in ('string', 'str', 'String'))
-                    if not _is_text:
-                        continue
-                    # Prefer matching against known OE variable names
-                    if _known_oe_names and col in _known_oe_names:
-                        _oe_cols.append(col)
-                    elif not _known_oe_names:
-                        # Fallback: heuristic detection (long text)
-                        _sample = df[col].dropna().head(10)
-                        if len(_sample) > 0 and _sample.str.len().mean() > 20:
-                            _oe_cols.append(col)
+                _oe_cols = _detect_oe(df, known_oe_names=_known_oe_names or None)
                 if _oe_cols:
                     _applied = 0
                     _n_states = len(_hbs_participant_states)
