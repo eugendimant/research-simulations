@@ -189,10 +189,18 @@ def validate_schema(
     for col in df.columns:
         if col in _known_text_cols or col in _oe_names:
             continue
-        # Also skip columns that look like open-ended text (long string values)
-        if df[col].dtype == 'object':
+        # Also skip columns that look like open-ended text
+        # v1.2.5.1: Use centralized detection or string dtype check
+        _dtype_s = str(df[col].dtype)
+        if _dtype_s in ('object', 'string', 'str', 'String'):
+            try:
+                from utils import _PROTECTED_COLUMNS, _PROTECTED_PREFIXES
+                if col in _PROTECTED_COLUMNS or any(col.startswith(p) for p in _PROTECTED_PREFIXES):
+                    continue
+            except ImportError:
+                pass
             _sample = df[col].dropna().head(5)
-            _avg_len = _sample.str.len().mean() if len(_sample) > 0 else 0
+            _avg_len = _sample.astype(str).str.len().mean() if len(_sample) > 0 else 0
             if _avg_len > 50:
                 continue  # Likely an OE text column
             numeric_issues.append(col)

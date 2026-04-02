@@ -766,59 +766,24 @@ class HBSValidator:
                     return col
         return None
 
-    # v1.2.5.1: Columns that should NEVER be treated as OE text — these are
-    # metadata, condition labels, demographics, or engine internals.
-    _OE_EXCLUDE_COLS = frozenset({
-        "CONDITION", "RUN_ID", "SIMULATION_MODE", "SIMULATION_SEED",
-        "PARTICIPANT_ID", "Gender", "Age", "_Generation_Source",
-        "Completion_Time_Seconds", "Attention_Pass_Rate", "Max_Straight_Line",
-        "Mean_Item_RT_ms", "Total_Scale_RT_ms",
-    })
-    _OE_EXCLUDE_PREFIXES = (
-        "Flag_", "Exclude_", "Attention_", "ABE3_", "HBS_", "_",
-    )
-
     def _find_oe_columns(self, df: Any) -> List[str]:
         """Find columns likely containing open-ended text responses.
 
-        Heuristic: dtype is object/string and mean non-empty length > 10 chars.
-
-        v1.2.5.1: Explicitly excludes CONDITION, demographics, and metadata
-        columns to prevent the uniqueness corrector from treating repeated
-        condition labels as "duplicate" OE responses and appending filler words.
+        v1.2.5.1: Delegates to centralized detect_oe_columns() from utils package.
+        This ensures CONDITION, demographics, and metadata columns are NEVER
+        misidentified as OE text across ALL modules.
         """
-        columns = self._columns(df)
-        oe_cols: List[str] = []
+        try:
+            import pandas as _pd
+            if isinstance(df, _pd.DataFrame):
+                from utils import detect_oe_columns
+                return detect_oe_columns(df)
+        except (ImportError, Exception):
+            pass
 
-        for col in columns:
-            # Skip protected columns
-            if col in self._OE_EXCLUDE_COLS:
-                continue
-            if any(col.startswith(p) for p in self._OE_EXCLUDE_PREFIXES):
-                continue
-
-            values = self._col_values_str(df, col)
-            non_empty = [v for v in values if v.strip()]
-            if not non_empty:
-                continue
-
-            # v1.2.5.1: Skip columns with very low cardinality (likely categorical,
-            # not OE text). CONDITION with 6 labels has cardinality 6 out of 600 rows.
-            unique_ratio = len(set(v.lower().strip() for v in non_empty)) / max(len(non_empty), 1)
-            if unique_ratio < 0.10:
-                continue  # <10% unique values → categorical, not OE text
-
-            # Check if values look like free text (not categorical codes)
-            mean_len = sum(len(v) for v in non_empty) / len(non_empty)
-            if mean_len > 10:
-                # Additional check: not purely numeric
-                numeric_count = sum(
-                    1 for v in non_empty if re.match(r"^-?\d+\.?\d*$", v.strip())
-                )
-                if numeric_count / len(non_empty) < 0.5:
-                    oe_cols.append(col)
-
-        return oe_cols
+        # Ultra-safe fallback: only return columns explicitly named as OE
+        # (empty list = no corrections applied, which is safe)
+        return []
 
     # Columns that should NEVER be treated as scale items for straightlining
     # correction — these are metadata, DV composites, or single-item measures.

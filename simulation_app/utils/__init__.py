@@ -67,6 +67,104 @@ Modules:
 # Package version - should match all module versions
 __version__ = "1.2.5.1"
 
+
+# =============================================================================
+# CENTRALIZED OE COLUMN DETECTION (v1.2.5.1)
+# =============================================================================
+# This is the SINGLE SOURCE OF TRUTH for determining which DataFrame columns
+# contain open-ended text responses vs metadata/condition/demographic columns.
+# ALL modules MUST use this function instead of rolling their own detection.
+# This prevents the CONDITION corruption bug where stylometric fingerprinting
+# or uniqueness correction treats condition labels as OE text.
+# =============================================================================
+
+# Columns that are NEVER open-ended text, regardless of dtype or content length
+_PROTECTED_COLUMNS = frozenset({
+    "PARTICIPANT_ID", "RUN_ID", "SIMULATION_MODE", "SIMULATION_SEED",
+    "CONDITION", "Age", "Gender", "Attention_Check_1",
+    "Completion_Time_Seconds", "Attention_Pass_Rate", "Max_Straight_Line",
+    "Flag_Speed", "Flag_Attention", "Flag_StraightLine", "Exclude_Recommended",
+    "_Generation_Source", "Mean_Item_RT_ms", "Total_Scale_RT_ms",
+})
+
+# Prefixes that indicate non-OE columns
+_PROTECTED_PREFIXES = (
+    "ABE3_", "HBS_", "_", "Flag_", "Exclude_", "Attention_",
+    "Hedonic_", "Utilitarian_",
+)
+
+
+def detect_oe_columns(df, known_oe_names=None):
+    """Centralized open-ended column detection.
+
+    Args:
+        df: pandas DataFrame with generated data
+        known_oe_names: Optional set/list of known OE variable names from engine config.
+            When provided, ONLY these columns are returned (safest mode).
+            When None, falls back to heuristic detection with strict guards.
+
+    Returns:
+        List of column names that are open-ended text response columns.
+
+    This function is the ONLY approved way to detect OE columns.
+    It guarantees that CONDITION, demographics, and metadata columns are
+    NEVER misidentified as OE text, regardless of their content or length.
+    """
+    import re as _re
+
+    # If we know the exact OE variable names, use them exclusively
+    if known_oe_names:
+        _names = set(known_oe_names) if not isinstance(known_oe_names, set) else known_oe_names
+        _names.discard("")
+        if _names:
+            return [col for col in df.columns if col in _names]
+
+    # Fallback: heuristic detection with strict safety guards
+    oe_cols = []
+    for col in df.columns:
+        # Guard 1: Explicit exclusion by name
+        if col in _PROTECTED_COLUMNS:
+            continue
+
+        # Guard 2: Explicit exclusion by prefix
+        if any(col.startswith(p) for p in _PROTECTED_PREFIXES):
+            continue
+
+        # Guard 3: Skip numeric columns
+        _dtype_str = str(df[col].dtype)
+        if _dtype_str in ('int64', 'float64', 'int32', 'float32', 'int', 'float'):
+            continue
+
+        # Guard 4: Must be a text dtype
+        _is_text = (df[col].dtype == object
+                    or _dtype_str in ('string', 'str', 'String'))
+        if not _is_text:
+            continue
+
+        # Guard 5: Cardinality check — categorical columns (like CONDITION)
+        # have very low cardinality relative to row count
+        _non_null = df[col].dropna()
+        if len(_non_null) == 0:
+            continue
+        _n_unique = _non_null.nunique()
+        _n_total = len(_non_null)
+        if _n_total >= 10 and _n_unique / _n_total < 0.10:
+            continue  # <10% unique → categorical, not OE text
+
+        # Guard 6: Must have substantial text length (>20 chars avg)
+        _sample = _non_null.head(20)
+        _avg_len = _sample.astype(str).str.len().mean()
+        if _avg_len <= 20:
+            continue
+
+        # Guard 7: Skip columns whose name looks like a scale item (ends with _N)
+        if _re.match(r'^.+_\d+$', col) and _avg_len < 50:
+            continue
+
+        oe_cols.append(col)
+
+    return oe_cols
+
 from .qsf_parser import parse_qsf_file, extract_survey_structure, generate_qsf_summary
 from .simulation_engine import SimulationEngine
 from .enhanced_simulation_engine import (

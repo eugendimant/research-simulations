@@ -2202,8 +2202,12 @@ class ComprehensiveInstructorReport:
                     lines.append(f"| {s_name} | {len(cols)} | [{s_min}-{s_max}] | [{actual_min}-{actual_max}] | {status} |")
             lines.append("")
 
-        # Response uniqueness check for open-ended
-        oe_cols = [c for c in df.columns if df[c].dtype == object and c not in ['CONDITION', 'PARTICIPANT_ID', 'RUN_ID', 'SIMULATION_MODE', 'SIMULATION_SEED', 'Gender']]
+        # Response uniqueness check for open-ended (v1.2.5.1: centralized detection)
+        try:
+            from utils import detect_oe_columns as _detect_oe_uniq
+            oe_cols = _detect_oe_uniq(df)
+        except (ImportError, Exception):
+            oe_cols = []
         if oe_cols:
             lines.append("### Open-Ended Response Uniqueness")
             lines.append("")
@@ -2504,27 +2508,13 @@ class ComprehensiveInstructorReport:
         lines.append("-" * 80)
         lines.append("")
 
-        # Find open-ended columns (text columns that aren't standard)
-        standard_cols = {
-            'PARTICIPANT_ID', 'RUN_ID', 'SIMULATION_ID', 'SIMULATION_MODE',
-            'SIMULATION_SEED', 'CONDITION', 'Age', 'Gender',
-            'Completion_Time_Seconds', 'Attention_Pass_Rate', 'Max_Straight_Line',
-            'Flag_Speed', 'Flag_Attention', 'Flag_StraightLine', 'Exclude_Recommended',
-            '_Generation_Source', 'Mean_Item_RT_ms', 'Total_Scale_RT_ms',
-        }
-        # v1.2.5.0: Also exclude ABE3 demographic columns and any column starting with _
-        _oe_exclude_prefixes = ('ABE3_', '_', 'Flag_', 'Hedonic_', 'Utilitarian_')
-        open_ended_cols = []
-        for col in df.columns:
-            if col in standard_cols or col.startswith(_oe_exclude_prefixes):
-                continue
-            # v1.2.5.0: Check for ANY string-like dtype (object, string, StringDtype)
-            _is_text = (df[col].dtype == 'object'
-                        or str(df[col].dtype) in ('string', 'str', 'String'))
-            if _is_text:
-                sample_val = df[col].iloc[0] if len(df) > 0 else ""
-                if isinstance(sample_val, str) and len(sample_val) > 10:
-                    open_ended_cols.append(col)
+        # v1.2.5.1: Use centralized OE detection to prevent CONDITION/metadata
+        # columns from being misidentified as open-ended text
+        try:
+            from utils import detect_oe_columns
+            open_ended_cols = detect_oe_columns(df)
+        except (ImportError, Exception):
+            open_ended_cols = []
 
         if open_ended_cols:
             lines.append(f"**{len(open_ended_cols)} open-ended question(s) simulated:**")

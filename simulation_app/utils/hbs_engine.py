@@ -377,16 +377,26 @@ class HBSEngine:
             logger.info("No HBS participant states — skipping fingerprinting")
             return df
 
-        # Identify OE columns (string dtype, substantial text)
-        oe_cols = []
-        for col in df.columns:
-            if df[col].dtype == object:
-                # Check if it looks like OE text (not IDs, conditions, etc.)
-                _sample = df[col].dropna().head(10)
-                if len(_sample) > 0:
-                    _avg_len = _sample.str.len().mean()
-                    if _avg_len > 15:  # Likely OE text, not short labels
-                        oe_cols.append(col)
+        # Identify OE columns using centralized detection (v1.2.5.1)
+        # This prevents CONDITION and other metadata columns from being
+        # treated as OE text and corrupted by fingerprinting.
+        try:
+            from utils import detect_oe_columns
+            _known_oe = set()
+            for oeq in self.open_ended_questions:
+                if isinstance(oeq, dict):
+                    _known_oe.add(oeq.get("variable_name", ""))
+                    _known_oe.add(oeq.get("name", ""))
+            _known_oe.discard("")
+            oe_cols = detect_oe_columns(df, known_oe_names=_known_oe or None)
+        except ImportError:
+            # Fallback: use known OE names only (safest possible)
+            oe_cols = []
+            for oeq in self.open_ended_questions:
+                if isinstance(oeq, dict):
+                    vn = oeq.get("variable_name", oeq.get("name", ""))
+                    if vn and vn in df.columns:
+                        oe_cols.append(vn)
 
         if not oe_cols:
             logger.info("No OE columns detected — skipping fingerprinting")
