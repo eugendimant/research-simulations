@@ -2787,6 +2787,11 @@ class QSFPreviewParser:
             if q_info.question_type in ['Descriptive Text', 'DB ()', 'Timing']:
                 continue
 
+            # v1.2.5.1: Skip questions from excluded blocks (demographics, consent, debrief, etc.)
+            _block_name = getattr(q_info, 'block_name', '') or ''
+            if _block_name and self._is_excluded_block_name(_block_name):
+                continue
+
             # v1.0.0: Skip placeholder/template questions with generic text
             q_text_lower = (q_info.question_text or "").strip().lower()
             if q_text_lower in (
@@ -2800,7 +2805,9 @@ class QSFPreviewParser:
 
             # 1. Matrix questions are scales (multi-item)
             if q_info.is_matrix or q_info.question_type == 'Likert Scale Matrix':
-                scale_name = q_info.question_text[:50].strip() or q_id
+                # v1.2.5.1: Use export_tag/variable_name as scale name, NOT question text.
+                # Question text can be entire vignettes that corrupt displays & reports.
+                scale_name = (q_info.export_tag or q_id).strip()
                 # v1.2.0: Use export_tag (DataExportTag) for variable name - this is the EXACT QSF name
                 variable_name = q_info.export_tag if q_info.export_tag else q_id
 
@@ -2834,7 +2841,9 @@ class QSFPreviewParser:
 
             # 2. Slider/Visual Analog scales
             if q_info.question_type in ['Slider', 'Visual Analog', 'VAS', 'Slider ()']:
-                scale_name = q_info.question_text[:50].strip() or q_id
+                # v1.2.5.1: Use export_tag/variable_name as scale name, NOT question text.
+                # Question text can be entire vignettes that corrupt displays & reports.
+                scale_name = (q_info.export_tag or q_id).strip()
                 # v1.2.0: Use export_tag for variable name
                 variable_name = q_info.export_tag if q_info.export_tag else q_id
                 name_key = variable_name.lower()
@@ -2864,7 +2873,9 @@ class QSFPreviewParser:
 
             # 3. Constant Sum questions (allocation tasks)
             if 'Constant Sum' in q_info.question_type or 'CS' in q_info.question_type:
-                scale_name = q_info.question_text[:50].strip() or q_id
+                # v1.2.5.1: Use export_tag/variable_name as scale name, NOT question text.
+                # Question text can be entire vignettes that corrupt displays & reports.
+                scale_name = (q_info.export_tag or q_id).strip()
                 # v1.2.0: Use export_tag for variable name
                 variable_name = q_info.export_tag if q_info.export_tag else q_id
                 name_key = variable_name.lower()
@@ -2890,7 +2901,9 @@ class QSFPreviewParser:
 
             # 3a. Rank Order questions (v2.4.5: NEW)
             if 'Rank Order' in q_info.question_type or 'RO' in q_info.question_type:
-                scale_name = q_info.question_text[:50].strip() or q_id
+                # v1.2.5.1: Use export_tag/variable_name as scale name, NOT question text.
+                # Question text can be entire vignettes that corrupt displays & reports.
+                scale_name = (q_info.export_tag or q_id).strip()
                 # v1.2.0: Use export_tag for variable name
                 variable_name = q_info.export_tag if q_info.export_tag else q_id
                 name_key = variable_name.lower()
@@ -2916,7 +2929,9 @@ class QSFPreviewParser:
 
             # 3b. Pick, Group, and Rank (MaxDiff/Best-Worst) questions (v2.4.5: NEW)
             if 'Pick' in q_info.question_type and 'Rank' in q_info.question_type:
-                scale_name = q_info.question_text[:50].strip() or q_id
+                # v1.2.5.1: Use export_tag/variable_name as scale name, NOT question text.
+                # Question text can be entire vignettes that corrupt displays & reports.
+                scale_name = (q_info.export_tag or q_id).strip()
                 # v1.2.0: Use export_tag for variable name
                 variable_name = q_info.export_tag if q_info.export_tag else q_id
                 name_key = variable_name.lower()
@@ -2942,7 +2957,9 @@ class QSFPreviewParser:
 
             # 3c. Paired Comparison / Side by Side questions (v2.4.5: NEW)
             if 'Side by Side' in q_info.question_type or 'SBS' in q_info.question_type:
-                scale_name = q_info.question_text[:50].strip() or q_id
+                # v1.2.5.1: Use export_tag/variable_name as scale name, NOT question text.
+                # Question text can be entire vignettes that corrupt displays & reports.
+                scale_name = (q_info.export_tag or q_id).strip()
                 # v1.2.0: Use export_tag for variable name
                 variable_name = q_info.export_tag if q_info.export_tag else q_id
                 name_key = variable_name.lower()
@@ -2968,7 +2985,9 @@ class QSFPreviewParser:
 
             # 3d. Hot Spot / Heat Map questions (v2.4.5: NEW)
             if 'Hot Spot' in q_info.question_type or 'Heat Map' in q_info.question_type:
-                scale_name = q_info.question_text[:50].strip() or q_id
+                # v1.2.5.1: Use export_tag/variable_name as scale name, NOT question text.
+                # Question text can be entire vignettes that corrupt displays & reports.
+                scale_name = (q_info.export_tag or q_id).strip()
                 # v1.2.0: Use export_tag for variable name
                 variable_name = q_info.export_tag if q_info.export_tag else q_id
                 name_key = variable_name.lower()
@@ -3055,7 +3074,7 @@ class QSFPreviewParser:
                     name_key = variable_name.lower()
                     if name_key not in seen_scale_names:
                         seen_scale_names.add(name_key)
-                        scale_name = q_info.question_text[:50].strip() or q_id
+                        scale_name = (variable_name or q_id).strip()
                         # Get numeric range from validation if available
                         num_min = q_info.number_min if q_info.number_min is not None else 0
                         num_max = q_info.number_max if q_info.number_max is not None else 100
@@ -3190,7 +3209,7 @@ class QSFPreviewParser:
                 continue
             seen_scale_names.add(name_key)
 
-            scale_name = dv['question_text'][:50].strip() or q_id
+            scale_name = (variable_name or q_id).strip()
             scale_pts = dv['scale_points']
             # v1.2.0: Get scale_anchors and extract range
             anchors = dv.get('scale_anchors', {})
@@ -3229,6 +3248,14 @@ class QSFPreviewParser:
         if not isinstance(questions_map, dict):
             return open_ended
 
+        # v1.2.5.1: Patterns that indicate demographic/ID fields, not real OE questions
+        _demo_id_patterns = frozenset({
+            'age', 'gender', 'income', 'education', 'ethnicity', 'race',
+            'zip', 'zipcode', 'zip_code', 'email', 'phone',
+            'mturk', 'prolific', 'worker_id', 'participant_id',
+            'year_born', 'birth_year', 'country', 'state', 'city',
+        })
+
         for q_id, q_info in questions_map.items():
             # Skip comprehension checks - they require specific answers
             if q_info.is_comprehension_check:
@@ -3238,10 +3265,22 @@ class QSFPreviewParser:
                 )
                 continue
 
+            # v1.2.5.1: Skip questions from excluded blocks
+            _block_name = getattr(q_info, 'block_name', '') or ''
+            if _block_name and self._is_excluded_block_name(_block_name):
+                continue
+
             # Type 1: Standalone Text Entry questions
             if q_info.question_type == 'Text Entry':
                 # Use export_tag if available, otherwise q_id
                 var_name = q_info.export_tag if q_info.export_tag else q_id
+                # v1.2.5.1: Skip demographic/ID fields
+                _var_lower = var_name.lower().replace(' ', '_')
+                _is_demo = any(p in _var_lower for p in _demo_id_patterns)
+                if _is_demo:
+                    self._log(LogLevel.INFO, "OPEN_ENDED_SKIP",
+                              f"Skipping demographic/ID field: {var_name}")
+                    continue
                 if var_name not in open_ended:
                     open_ended.append(var_name)
                     self._log(
@@ -3253,6 +3292,10 @@ class QSFPreviewParser:
             if q_info.text_entry_choices:
                 for te_choice in q_info.text_entry_choices:
                     var_name = te_choice.get('variable_name', f"{q_id}_TEXT")
+                    # v1.2.5.1: Skip demographic text entries (Gender_5_TEXT, Age_TEXT, etc.)
+                    _te_lower = var_name.lower().replace(' ', '_')
+                    if any(p in _te_lower for p in _demo_id_patterns):
+                        continue
                     if var_name not in open_ended:
                         open_ended.append(var_name)
                         self._log(
@@ -3279,6 +3322,10 @@ class QSFPreviewParser:
                 selector = payload.get('Selector', '')
                 if selector in ['ESTB', 'ML', 'SL']:  # Essay, Multi-line, Single-line
                     var_name = q_info.export_tag if q_info.export_tag else q_id
+                    # v1.2.5.1: Skip demographics detected by selector
+                    _sel_lower = var_name.lower().replace(' ', '_')
+                    if any(p in _sel_lower for p in _demo_id_patterns):
+                        continue
                     if var_name not in open_ended:
                         open_ended.append(var_name)
                         self._log(
