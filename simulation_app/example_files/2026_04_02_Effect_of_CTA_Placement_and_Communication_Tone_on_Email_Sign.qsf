@@ -1,0 +1,385 @@
+{
+  "SurveyEntry": {
+    "SurveyID": "SV_builder_39940d4a",
+    "SurveyName": "Effect of CTA Placement and Communication Tone on Email Signup Intent, Perceived Annoyance, and Brand Trust",
+    "SurveyDescription": "This study examines how CTA placement (static bottom vs. scroll pop-up) and communication tone (supportive vs. expert) influence users’ email signup intent, perceived annoyance, and brand trust on a landing page.\n\nWe use a 2×2 between-subjects experimental design with four conditions: (1) static + supportive, (2) static + expert, (3) pop-up + supportive, and (4) pop-up + expert. Participants are randomly assigned to one condition and asked to browse a mock website before answering survey questions.\n\nThe primary outcome is conversion intent, measured on a 7-point Likert scale. Secondary outcomes include perceived annoyance and brand trust. Additional manipulation checks assess whether participants correctly perceived the tone and placement differences.\n\nWe also include a scenario-based screener to ensure participants can relate to the pet care context. The goal is to simulate realistic user responses and test the expected effects before collecting real data.",
+    "SurveyLanguage": "EN",
+    "SurveyStatus": "Inactive",
+    "SurveyStartDate": "2026-04-02 19:12:22",
+    "CreatorID": "conversational_builder"
+  },
+  "SurveyElements": [
+    {
+      "Element": "BL",
+      "PrimaryAttribute": "Survey Blocks",
+      "Payload": [
+        {
+          "Type": "Default",
+          "Description": "Shared Measures",
+          "ID": "BL_shared",
+          "BlockElements": [
+            {
+              "Type": "Question",
+              "QuestionID": "QID1"
+            },
+            {
+              "Type": "Question",
+              "QuestionID": "QID2"
+            },
+            {
+              "Type": "Question",
+              "QuestionID": "QID3"
+            }
+          ]
+        },
+        {
+          "Type": "Standard",
+          "Description": "Static + Supportive Tone",
+          "ID": "BL_Static___Supportive_Tone",
+          "BlockElements": []
+        },
+        {
+          "Type": "Standard",
+          "Description": "Static + Expert Tone",
+          "ID": "BL_Static___Expert_Tone",
+          "BlockElements": []
+        },
+        {
+          "Type": "Standard",
+          "Description": "Scroll Pop-up + Supportive Tone",
+          "ID": "BL_Scroll_Pop_up___Supportive_Ton",
+          "BlockElements": []
+        },
+        {
+          "Type": "Standard",
+          "Description": "Scroll Pop-up + Expert Tone",
+          "ID": "BL_Scroll_Pop_up___Expert_Tone",
+          "BlockElements": []
+        }
+      ]
+    },
+    {
+      "Element": "FL",
+      "PrimaryAttribute": "Survey Flow",
+      "Payload": {
+        "Type": "Root",
+        "FlowID": "FL_1",
+        "Flow": [
+          {
+            "Type": "EmbeddedData",
+            "FlowID": "FL_embed",
+            "EmbeddedData": [
+              {
+                "Description": "study_domain",
+                "Value": "consumer behavior"
+              },
+              {
+                "Description": "design_type",
+                "Value": "between"
+              },
+              {
+                "Description": "source",
+                "Value": "conversational_builder"
+              }
+            ]
+          },
+          {
+            "Type": "BlockRandomizer",
+            "SubSet": 1,
+            "EvenPresentation": true,
+            "ID": "BR_conditions",
+            "Description": "Condition Assignment",
+            "Flow": [
+              {
+                "Type": "Block",
+                "ID": "BL_Static___Supportive_Tone"
+              },
+              {
+                "Type": "Block",
+                "ID": "BL_Static___Expert_Tone"
+              },
+              {
+                "Type": "Block",
+                "ID": "BL_Scroll_Pop_up___Supportive_Ton"
+              },
+              {
+                "Type": "Block",
+                "ID": "BL_Scroll_Pop_up___Expert_Tone"
+              }
+            ]
+          },
+          {
+            "Type": "Block",
+            "ID": "BL_shared"
+          }
+        ]
+      }
+    },
+    {
+      "Element": "SQ",
+      "PrimaryAttribute": "QID1",
+      "Payload": {
+        "QuestionID": "QID1",
+        "QuestionType": "MC",
+        "Selector": "SAVR",
+        "QuestionText": "Conversion intent, 1 item, 1-7 Likert",
+        "DataExportTag": "Conversion_intent",
+        "Choices": {
+          "1": {
+            "Display": "1"
+          },
+          "2": {
+            "Display": "2"
+          },
+          "3": {
+            "Display": "3"
+          },
+          "4": {
+            "Display": "4"
+          },
+          "5": {
+            "Display": "5"
+          },
+          "6": {
+            "Display": "6"
+          },
+          "7": {
+            "Display": "7"
+          }
+        },
+        "ChoiceOrder": [
+          "1",
+          "2",
+          "3",
+          "4",
+          "5",
+          "6",
+          "7"
+        ],
+        "Validation": {
+          "Settings": {
+            "ForceResponse": "ON",
+            "Type": "None"
+          }
+        }
+      }
+    },
+    {
+      "Element": "SQ",
+      "PrimaryAttribute": "QID2",
+      "Payload": {
+        "QuestionID": "QID2",
+        "QuestionType": "MC",
+        "Selector": "SAVR",
+        "QuestionText": "Perceived annoyance, 1 item, 1-7 Likert",
+        "DataExportTag": "Perceived_annoyance",
+        "Choices": {
+          "1": {
+            "Display": "1"
+          },
+          "2": {
+            "Display": "2"
+          },
+          "3": {
+            "Display": "3"
+          },
+          "4": {
+            "Display": "4"
+          },
+          "5": {
+            "Display": "5"
+          },
+          "6": {
+            "Display": "6"
+          },
+          "7": {
+            "Display": "7"
+          }
+        },
+        "ChoiceOrder": [
+          "1",
+          "2",
+          "3",
+          "4",
+          "5",
+          "6",
+          "7"
+        ],
+        "Validation": {
+          "Settings": {
+            "ForceResponse": "ON",
+            "Type": "None"
+          }
+        }
+      }
+    },
+    {
+      "Element": "SQ",
+      "PrimaryAttribute": "QID3",
+      "Payload": {
+        "QuestionID": "QID3",
+        "QuestionType": "Matrix",
+        "Selector": "Likert",
+        "QuestionText": "Brand trust, 1 item, 1-7 Likert",
+        "DataExportTag": "Brand_trust",
+        "Choices": {
+          "1": {
+            "Display": "Brand trust item 1"
+          },
+          "2": {
+            "Display": "Brand trust item 2"
+          },
+          "3": {
+            "Display": "Brand trust item 3"
+          },
+          "4": {
+            "Display": "Brand trust item 4"
+          },
+          "5": {
+            "Display": "Brand trust item 5"
+          }
+        },
+        "ChoiceOrder": [
+          "1",
+          "2",
+          "3",
+          "4",
+          "5"
+        ],
+        "Validation": {
+          "Settings": {
+            "ForceResponse": "ON",
+            "Type": "None"
+          }
+        },
+        "SubSelector": "SingleAnswer",
+        "Answers": {
+          "1": {
+            "Display": "1"
+          },
+          "2": {
+            "Display": "2"
+          },
+          "3": {
+            "Display": "3"
+          },
+          "4": {
+            "Display": "4"
+          },
+          "5": {
+            "Display": "5"
+          },
+          "6": {
+            "Display": "6"
+          },
+          "7": {
+            "Display": "7"
+          }
+        },
+        "AnswerOrder": [
+          "1",
+          "2",
+          "3",
+          "4",
+          "5",
+          "6",
+          "7"
+        ]
+      }
+    }
+  ],
+  "_builder_metadata": {
+    "generated_at": "2026-04-02T19:12:22.184036+00:00",
+    "source": "conversational_builder",
+    "design_type": "between",
+    "conditions": [
+      "Static + Supportive Tone",
+      "Static + Expert Tone",
+      "Scroll Pop-up + Supportive Tone",
+      "Scroll Pop-up + Expert Tone"
+    ],
+    "scales": [
+      "Conversion intent",
+      "Perceived annoyance",
+      "Brand trust"
+    ],
+    "open_ended": [],
+    "factors": [
+      {
+        "name": "Factor_1",
+        "levels": [
+          "Scroll Pop-up",
+          "Static"
+        ]
+      },
+      {
+        "name": "Factor_2",
+        "levels": [
+          "Expert Tone",
+          "Supportive Tone"
+        ]
+      }
+    ],
+    "domain": "consumer behavior",
+    "sample_size": 100,
+    "participant_characteristics": "",
+    "raw_inputs": {
+      "conditions_text": "Static + Supportive Tone, Static + Expert Tone, Scroll Pop-up + Supportive Tone, Scroll Pop-up + Expert Tone",
+      "scales_text": "Conversion intent, 1 item, 1-7 Likert\nPerceived annoyance, 1 item, 1-7 Likert\nBrand trust, 1 item, 1-7 Likert",
+      "open_ended_text": "",
+      "study_title": "Effect of CTA Placement and Communication Tone on Email Signup Intent, Perceived Annoyance, and Brand Trust",
+      "study_description": "This study examines how CTA placement (static bottom vs. scroll pop-up) and communication tone (supportive vs. expert) influence users’ email signup intent, perceived annoyance, and brand trust on a landing page.\n\nWe use a 2×2 between-subjects experimental design with four conditions: (1) static + supportive, (2) static + expert, (3) pop-up + supportive, and (4) pop-up + expert. Participants are randomly assigned to one condition and asked to browse a mock website before answering survey questions.\n\nThe primary outcome is conversion intent, measured on a 7-point Likert scale. Secondary outcomes include perceived annoyance and brand trust. Additional manipulation checks assess whether participants correctly perceived the tone and placement differences.\n\nWe also include a scenario-based screener to ensure participants can relate to the pet care context. The goal is to simulate realistic user responses and test the expected effects before collecting real data.",
+      "participant_desc": "",
+      "design_type": "between",
+      "sample_size": 100
+    },
+    "parsed_scales_detail": [
+      {
+        "name": "Conversion intent",
+        "variable_name": "Conversion_intent",
+        "scale_type": "likert",
+        "num_items": 1,
+        "scale_min": 1,
+        "scale_max": 7,
+        "description": "Conversion intent, 1 item, 1-7 Likert"
+      },
+      {
+        "name": "Perceived annoyance",
+        "variable_name": "Perceived_annoyance",
+        "scale_type": "likert",
+        "num_items": 1,
+        "scale_min": 1,
+        "scale_max": 7,
+        "description": "Perceived annoyance, 1 item, 1-7 Likert"
+      },
+      {
+        "name": "Brand trust",
+        "variable_name": "Brand_trust",
+        "scale_type": "likert",
+        "num_items": 5,
+        "scale_min": 1,
+        "scale_max": 7,
+        "description": "Brand trust, 1 item, 1-7 Likert"
+      }
+    ],
+    "parsed_conditions_detail": [
+      {
+        "name": "Static + Supportive Tone",
+        "description": ""
+      },
+      {
+        "name": "Static + Expert Tone",
+        "description": ""
+      },
+      {
+        "name": "Scroll Pop-up + Supportive Tone",
+        "description": ""
+      },
+      {
+        "name": "Scroll Pop-up + Expert Tone",
+        "description": ""
+      }
+    ],
+    "parsed_open_ended_detail": []
+  }
+}
