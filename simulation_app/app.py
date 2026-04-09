@@ -54,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.2.5.3"
-BUILD_ID = "20260409-v12053-factor-level-dv-improvements"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.2.5.4"
+BUILD_ID = "20260409-v12054-normalize-instructor-report-fixes"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -118,7 +118,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.2.5.3"  # v1.2.5.3: Factor level manual input, DV type editing, scale anchors, DV context
+APP_VERSION = "1.2.5.4"  # v1.2.5.4: normalize_scale_specs fix, instructor report LLM detection, scale_min bipolar fix
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -785,11 +785,17 @@ def _normalize_scale_specs(scales: List[Any]) -> List[Dict[str, Any]]:
                     "variable_name": var_name.replace(" ", "_"),
                     "num_items": max(1, num_items),
                     "scale_points": max(2, min(1001, scale_points)),
-                    "scale_min": max(0, scale_min),  # v1.2.1: Preserve scale_min
-                    "scale_max": max(1, scale_max),  # v1.2.1: Preserve scale_max
+                    "scale_min": scale_min,  # v1.2.5.4: Allow negative for bipolar scales
+                    "scale_max": max(scale_min + 1, scale_max),  # v1.2.5.4: Ensure max > min
                     "reverse_items": scale.get("reverse_items", []) or [],
                     "type": mapped_type,  # v1.4.0: Mapped from builder types to engine types
                     "_validated": True,
+                    # v1.2.5.4: Preserve fields for simulation intelligence and display
+                    "dv_description": str(scale.get("dv_description", "")),
+                    "scale_anchors": scale.get("scale_anchors", {}) or {},
+                    "item_names": scale.get("item_names", []) or [],
+                    "question_text": str(scale.get("question_text", "")),
+                    "detected_from_qsf": scale.get("detected_from_qsf", False),
                 }
             )
 

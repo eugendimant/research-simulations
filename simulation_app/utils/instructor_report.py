@@ -788,17 +788,18 @@ class InstructorReportGenerator:
             _is_adaptive_engine = _gen_method in ('experimental', 'abe_v2')
             _is_template_engine = _gen_method == 'template'
             _is_abe3 = _gen_method == 'abe3'
+            # v1.2.5.4: Recognize free_llm and own_api as AI-powered methods
+            _is_llm_method = _gen_method in ('free_llm', 'own_api')
 
             if pool_size > 0:
                 # AI-generated responses were actually produced and used
-                if _is_abe3:
-                    lines.append("**Generation approach:** Adaptive Behavioral Engine 3.0 + AI-Powered LLM")
-                elif _is_adaptive_engine:
+                if _is_abe3 or _is_adaptive_engine or _is_llm_method:
+                    # v1.2.5.4: All AI methods (free_llm, own_api, abe3, abe_v2) use ABE 3.0 engine
                     lines.append("**Generation approach:** Adaptive Behavioral Engine 3.0 + AI-Powered LLM")
                 else:
                     lines.append("**Generation approach:** AI-Powered (Language Model)")
                 lines.append("")
-                if _is_abe3:
+                if _is_abe3 or _is_llm_method:
                     lines.append("- **Engine:** Adaptive Behavioral Engine 3.0 with census-weighted demographics and deep persona coherence")
                     lines.append("- Open-text responses powered by real-time LLM generation with stylometric fingerprinting")
                 elif _is_adaptive_engine:
@@ -821,10 +822,9 @@ class InstructorReportGenerator:
                 # v1.1.0.5: Consistent labeling — when AI was attempted but failed,
                 # clearly state Template Engine was used. Match the badge label from
                 # metadata['generation_method_label'] for zero confusion.
-                if _is_abe3:
-                    lines.append("**Generation approach:** Adaptive Behavioral Engine 3.0 (template-backed)")
-                elif _is_adaptive_engine:
-                    lines.append("**Generation approach:** Adaptive Behavioral Engine 3.0 (template-backed)")
+                if _is_abe3 or _is_adaptive_engine or _is_llm_method:
+                    # v1.2.5.4: All AI methods fall back to ABE 3.0 template-backed
+                    lines.append("**Generation approach:** Adaptive Behavioral Engine 3.0 (template-backed, AI unavailable)")
                 elif _is_template_engine:
                     lines.append("**Generation approach:** Template Engine (225+ Research Domains)")
                 else:
@@ -854,7 +854,8 @@ class InstructorReportGenerator:
                 lines.append("- No successful API outputs were recorded; rerun with valid API connectivity")
             else:
                 # v1.0.9.2: Correctly label based on user-selected method
-                if _is_abe3:
+                if _is_abe3 or _is_llm_method:
+                    # v1.2.5.4: free_llm/own_api with no OE questions still uses ABE 3.0 for numeric data
                     lines.append("**Generation approach:** Adaptive Behavioral Engine 3.0")
                     lines.append("")
                     lines.append("- **Engine:** Adaptive Behavioral Engine 3.0 with census-weighted demographics and deep persona coherence")
@@ -862,6 +863,10 @@ class InstructorReportGenerator:
                     lines.append("- Stylometric voice fingerprinting ensures consistent writing style per participant")
                     lines.append("- Self-validating output against human-realism benchmarks")
                     lines.append("- Cross-DV coherence: numeric ratings and open-text responses tell a consistent story")
+                    if _is_llm_method:
+                        lines.append(f"- **Selected method:** {_gen_method_label}")
+                        if pool_size == 0 and llm_calls == 0 and llm_attempts == 0:
+                            lines.append("- No open-ended questions detected; AI generation was not needed for this run")
                 elif _is_adaptive_engine:
                     lines.append("**Generation approach:** Adaptive Behavioral Engine 3.0")
                     lines.append("")
@@ -2563,13 +2568,12 @@ class ComprehensiveInstructorReport:
         _is_adaptive_comp = _gen_method_comp in ('experimental', 'abe_v2')
         _is_template_comp = _gen_method_comp == 'template'
         _is_abe3_comp = _gen_method_comp == 'abe3'
+        _is_llm_comp = _gen_method_comp in ('free_llm', 'own_api')  # v1.2.5.4
         if open_ended_qs:
             lines.append("### Response Generation Method")
             lines.append("")
             if pool_size > 0:
-                if _is_abe3_comp:
-                    lines.append("**Generation approach:** Adaptive Behavioral Engine 3.0 + AI-Powered LLM")
-                elif _is_adaptive_comp:
+                if _is_abe3_comp or _is_adaptive_comp or _is_llm_comp:
                     lines.append("**Generation approach:** Adaptive Behavioral Engine 3.0 + AI-Powered LLM")
                 else:
                     lines.append("**Generation approach:** AI-Powered (Language Model)")
@@ -2583,10 +2587,8 @@ class ComprehensiveInstructorReport:
                 else:
                     lines.append("- **Template fallback:** None needed (all AI-generated)")
             elif llm_calls > 0 or llm_attempts > 0:
-                if _is_abe3_comp:
-                    lines.append("**Generation approach:** Adaptive Behavioral Engine 3.0 (template-backed)")
-                elif _is_adaptive_comp:
-                    lines.append("**Generation approach:** Adaptive Behavioral Engine 3.0 (template-backed)")
+                if _is_abe3_comp or _is_adaptive_comp or _is_llm_comp:
+                    lines.append("**Generation approach:** Adaptive Behavioral Engine 3.0 (template-backed, AI unavailable)")
                 else:
                     lines.append("**Generation approach:** Template Engine (AI providers were unavailable)")
                 lines.append("")
@@ -2594,11 +2596,14 @@ class ComprehensiveInstructorReport:
                 lines.append(f"- {_api_req_count} API request(s) were sent but all providers were unavailable or returned errors")
                 lines.append("- All open-ended responses were generated using the built-in template engine")
             else:
-                if _is_abe3_comp:
+                if _is_abe3_comp or _is_llm_comp:
                     lines.append("**Generation approach:** Adaptive Behavioral Engine 3.0")
                     lines.append("")
                     lines.append("Responses were generated using the Adaptive Behavioral Engine 3.0 with census-weighted demographics,")
                     lines.append("calibrated error rates, and stylometric voice fingerprinting for each participant.")
+                    if _is_llm_comp:
+                        _comp_label = metadata.get('generation_method_label', _gen_method_comp)
+                        lines.append(f"**Selected method:** {_comp_label}")
                 elif _is_adaptive_comp:
                     lines.append("**Generation approach:** Adaptive Behavioral Engine 3.0")
                 elif _is_template_comp:
@@ -4856,13 +4861,13 @@ class ComprehensiveInstructorReport:
         _is_adaptive_h = _gen_method_h in ('experimental', 'abe_v2')
         _is_template_h = _gen_method_h == 'template'
         _is_abe3_h = _gen_method_h == 'abe3'
+        # v1.2.5.4: Recognize free_llm and own_api as AI-powered methods
+        _is_llm_method_h = _gen_method_h in ('free_llm', 'own_api')
 
         if oe_questions:
             html_parts.append("<h3 style='margin-top:20px;'>Response Generation Method</h3>")
             if pool_size_h > 0:
-                if _is_abe3_h:
-                    html_parts.append("<p><strong>Generation approach:</strong> Adaptive Behavioral Engine 3.0 + AI-Powered LLM</p>")
-                elif _is_adaptive_h:
+                if _is_abe3_h or _is_adaptive_h or _is_llm_method_h:
                     html_parts.append("<p><strong>Generation approach:</strong> Adaptive Behavioral Engine 3.0 + AI-Powered LLM</p>")
                 else:
                     html_parts.append("<p><strong>Generation approach:</strong> AI-Powered (Language Model)</p>")
@@ -4875,10 +4880,8 @@ class ComprehensiveInstructorReport:
                 else:
                     html_parts.append("<p><strong>Template fallback:</strong> None needed (all AI-generated)</p>")
             elif llm_calls_html > 0 or llm_attempts_html > 0:
-                if _is_abe3_h:
-                    html_parts.append("<p><strong>Generation approach:</strong> Adaptive Behavioral Engine 3.0 (template-backed)</p>")
-                elif _is_adaptive_h:
-                    html_parts.append("<p><strong>Generation approach:</strong> Adaptive Behavioral Engine 3.0 (template-backed)</p>")
+                if _is_abe3_h or _is_adaptive_h or _is_llm_method_h:
+                    html_parts.append("<p><strong>Generation approach:</strong> Adaptive Behavioral Engine 3.0 (template-backed, AI unavailable)</p>")
                 elif _is_template_h:
                     html_parts.append("<p><strong>Generation approach:</strong> Template Engine (225+ Research Domains)</p>")
                 else:
@@ -4900,11 +4903,15 @@ class ComprehensiveInstructorReport:
                 html_parts.append("<p><strong>Generation approach:</strong> LLM-first strict mode</p>")
                 html_parts.append("<p>Template fallback was disabled and no successful API output was recorded; rerun with valid API connectivity.</p>")
             else:
-                if _is_abe3_h:
+                if _is_abe3_h or _is_llm_method_h:
+                    # v1.2.5.4: free_llm/own_api with no OE still use ABE 3.0 for numeric
                     html_parts.append("<p><strong>Generation approach:</strong> Adaptive Behavioral Engine 3.0</p>")
                     html_parts.append("<p>Census-weighted demographics with deep persona coherence. "
                                      "Calibrated error rates by education level (Frederick 2005). "
                                      "Stylometric voice fingerprinting ensures consistent writing style per participant.</p>")
+                    if _is_llm_method_h:
+                        _gen_label_h = metadata.get('generation_method_label', _gen_method_h)
+                        html_parts.append(f"<p><strong>Selected method:</strong> {_gen_label_h}</p>")
                 elif _is_adaptive_h:
                     html_parts.append("<p><strong>Generation approach:</strong> Adaptive Behavioral Engine 3.0</p>")
                     html_parts.append("<p>50+ persona archetypes with 7-dimensional trait profiles. "
