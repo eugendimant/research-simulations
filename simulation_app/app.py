@@ -54,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.2.5.6"
-BUILD_ID = "20260409-v12056-factor-mapping-ux-improvements"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.2.5.7"
+BUILD_ID = "20260409-v12057-mediator-moderator-variables"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -118,7 +118,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.2.5.6"  # v1.2.5.6: Factor-condition mapping fix, condition descriptions UX, validation warnings
+APP_VERSION = "1.2.5.7"  # v1.2.5.7: Mediator/moderator variable section with correlation patterns
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -10392,6 +10392,172 @@ if active_page == 2:
             )
         st.session_state["scales_confirmed"] = scales_confirmed
 
+        # ── Mediator / Moderator Variables ─────────────────────────────
+        # v1.2.5.7: Section for specifying mediating and moderating variables.
+        # These are measured variables (like DVs) but with a specific role
+        # in the theoretical model. They get added to the simulation as
+        # additional scales with appropriate correlation patterns.
+        st.markdown("")
+        _med_version = st.session_state.get("_med_version", 0)
+
+        if "confirmed_mediators" not in st.session_state:
+            st.session_state["confirmed_mediators"] = []
+
+        confirmed_mediators = st.session_state.get("confirmed_mediators", [])
+        _med_count = len(confirmed_mediators)
+        st.markdown(f"#### Mediator / Moderator Variables ({_med_count})")
+        st.caption(
+            "Add variables that mediate (explain *why* IV→DV) or moderate (change *when/how strongly* IV→DV) "
+            "your treatment effect. These will be simulated as measured scales with appropriate correlations."
+        )
+
+        med_to_remove = []
+
+        if confirmed_mediators:
+            # Column headers
+            _mh1, _mh2, _mh3, _mh4, _mh5, _mh6 = st.columns([2.0, 1.0, 0.6, 0.6, 1.5, 0.4])
+            _mh1.markdown("**Name**")
+            _mh2.markdown("**Role**")
+            _mh3.markdown("**Min**")
+            _mh4.markdown("**Max**")
+            _mh5.markdown("**Items**")
+            _mh6.caption("")
+
+            for mi, med_var in enumerate(confirmed_mediators):
+                with st.container():
+                    _mc1, _mc2, _mc3, _mc4, _mc5, _mc6 = st.columns([2.0, 1.0, 0.6, 0.6, 1.5, 0.4])
+
+                    with _mc1:
+                        med_name = st.text_input(
+                            f"M/M {mi+1} Name",
+                            value=med_var.get("name", f"Mediator_{mi+1}"),
+                            key=f"med_name_v{_med_version}_{mi}",
+                            label_visibility="collapsed",
+                            placeholder="e.g., Psychological Ownership"
+                        )
+
+                    with _mc2:
+                        _role_options = ["mediator", "moderator"]
+                        _cur_role = med_var.get("role", "mediator")
+                        _role_idx = _role_options.index(_cur_role) if _cur_role in _role_options else 0
+                        med_role = st.selectbox(
+                            "Role",
+                            options=_role_options,
+                            format_func=lambda x: "Mediator" if x == "mediator" else "Moderator",
+                            index=_role_idx,
+                            key=f"med_role_v{_med_version}_{mi}",
+                            label_visibility="collapsed",
+                        )
+
+                    with _mc3:
+                        med_min = st.number_input(
+                            "Min", min_value=-1000, max_value=1000,
+                            value=int(med_var.get("scale_min", 1)),
+                            key=f"med_min_v{_med_version}_{mi}",
+                        )
+
+                    with _mc4:
+                        med_max = st.number_input(
+                            "Max", min_value=1, max_value=10000,
+                            value=int(med_var.get("scale_max", 7)),
+                            key=f"med_max_v{_med_version}_{mi}",
+                        )
+
+                    with _mc5:
+                        med_items = st.number_input(
+                            "Items", min_value=1, max_value=50,
+                            value=int(med_var.get("num_items", 1)),
+                            key=f"med_items_v{_med_version}_{mi}",
+                        )
+
+                    with _mc6:
+                        if st.button("✕", key=f"rm_med_v{_med_version}_{mi}", help="Remove this variable"):
+                            med_to_remove.append(mi)
+
+                    # Description and connected DV
+                    _desc_col, _dv_col = st.columns([2, 2])
+                    with _desc_col:
+                        med_desc = st.text_input(
+                            "What does this measure?",
+                            value=st.session_state.get(f"med_desc_v{_med_version}_{mi}", med_var.get("dv_description", "")),
+                            key=f"med_desc_v{_med_version}_{mi}",
+                            placeholder="e.g., Sense of ownership over the product (1=none, 7=very strong)",
+                        )
+                    with _dv_col:
+                        # Which DV(s) is this connected to?
+                        _dv_names = [s.get("name", s.get("variable_name", "")) for s in updated_scales] if updated_scales else []
+                        _saved_connected = med_var.get("connected_dvs", [])
+                        connected_dvs = st.multiselect(
+                            "Connected DV(s)",
+                            options=_dv_names,
+                            default=[d for d in _saved_connected if d in _dv_names],
+                            key=f"med_connected_v{_med_version}_{mi}",
+                            placeholder="Select DV(s) this variable relates to...",
+                            help="For mediators: the DV this variable mediates. For moderators: the DV whose effect is moderated.",
+                        )
+
+                    # Store updated values (avoid appending if being removed)
+                    if mi not in med_to_remove:
+                        confirmed_mediators[mi] = {
+                            "name": med_name.strip() or f"Mediator_{mi+1}",
+                            "variable_name": (med_name.strip() or f"Mediator_{mi+1}").replace(" ", "_"),
+                            "role": med_role,
+                            "num_items": med_items,
+                            "scale_min": med_min,
+                            "scale_max": med_max,
+                            "scale_points": med_max,
+                            "type": "single_item" if med_items == 1 else "numbered_items",
+                            "dv_description": med_desc,
+                            "connected_dvs": connected_dvs,
+                            "reverse_items": [],
+                            "detected_from_qsf": False,
+                            "item_names": [],
+                            "scale_anchors": {},
+                            "_validated": True,
+                            "_is_mediator_moderator": True,
+                        }
+
+        # Handle removals
+        if med_to_remove:
+            _removed_med_names = [confirmed_mediators[i].get("name", f"M/M {i+1}") for i in med_to_remove if i < len(confirmed_mediators)]
+            confirmed_mediators = [m for i, m in enumerate(confirmed_mediators) if i not in med_to_remove]
+            # Clean up widget state
+            for _ci in range(max(10, _med_count)):
+                for _prefix in ("med_name_v", "med_role_v", "med_min_v", "med_max_v", "med_items_v", "med_desc_v", "med_connected_v"):
+                    st.session_state.pop(f"{_prefix}{_med_version}_{_ci}", None)
+            st.session_state["confirmed_mediators"] = confirmed_mediators
+            st.session_state["_med_version"] = _med_version + 1
+            st.info(f"Removed: {', '.join(_removed_med_names)}")
+            st.rerun()
+
+        # Add button
+        if st.button("+ Add Mediator/Moderator", key=f"add_med_btn_v{_med_version}",
+                      help="Add a mediating or moderating variable (measured, not a condition)."):
+            new_med = {
+                "name": f"Mediator_{_med_count+1}",
+                "variable_name": f"Mediator_{_med_count+1}",
+                "role": "mediator",
+                "num_items": 1,
+                "scale_min": 1,
+                "scale_max": 7,
+                "scale_points": 7,
+                "type": "single_item",
+                "dv_description": "",
+                "connected_dvs": [],
+                "reverse_items": [],
+                "detected_from_qsf": False,
+                "item_names": [],
+                "scale_anchors": {},
+                "_validated": True,
+                "_is_mediator_moderator": True,
+            }
+            confirmed_mediators.append(new_med)
+            st.session_state["confirmed_mediators"] = confirmed_mediators
+            st.session_state["_med_version"] = _med_version + 1
+            st.rerun()
+
+        st.session_state["confirmed_mediators"] = confirmed_mediators
+
         # ========================================
         # STEP 4b: DEMOGRAPHIC VARIABLES
         # v1.2.0.9: Age and Gender pre-populated as editable entries.
@@ -11211,6 +11377,29 @@ if active_page == 2:
                 final_conditions = all_conditions
             final_factors = _normalize_factor_specs(factors, final_conditions)
             final_scales = _normalize_scale_specs(scales)
+
+            # v1.2.5.7: Merge mediator/moderator variables into scales for simulation
+            _med_vars = st.session_state.get("confirmed_mediators", [])
+            if _med_vars:
+                _med_scales = _normalize_scale_specs(_med_vars)
+                final_scales = final_scales + _med_scales
+
+                # Build correlation matrix: mediators should correlate with their connected DVs
+                # Mediator: r ≈ 0.40-0.55 with DV (typical partial mediation)
+                # Moderator: r ≈ 0.10-0.20 with DV (weak direct, interaction drives effect)
+                _corr_entries = st.session_state.get("_engine_corr_matrix_entries", [])
+                for _mv in _med_vars:
+                    _mv_name = (_mv.get("variable_name") or _mv.get("name", "")).replace(" ", "_")
+                    _connected = _mv.get("connected_dvs", [])
+                    _role = _mv.get("role", "mediator")
+                    for _dv_name in _connected:
+                        _dv_clean = _dv_name.replace(" ", "_")
+                        if _role == "mediator":
+                            _corr_entries.append({"var1": _mv_name, "var2": _dv_clean, "r": 0.45})
+                        else:  # moderator
+                            _corr_entries.append({"var1": _mv_name, "var2": _dv_clean, "r": 0.15})
+                st.session_state["_engine_corr_matrix_entries"] = _corr_entries
+
             # Use user-confirmed open-ended questions instead of auto-detected
             final_open_ended = st.session_state.get("confirmed_open_ended", inferred.get("open_ended_questions", []))
 
@@ -11256,6 +11445,23 @@ if active_page == 2:
                     st.session_state["_auto_corr_matrix"] = _corr_matrix
                     st.session_state["_auto_corr_names"] = _corr_names
                     st.session_state["_auto_construct_types"] = _construct_types
+
+                    # v1.2.5.7: Inject mediator/moderator correlation entries into matrix
+                    _med_corr_entries = st.session_state.get("_engine_corr_matrix_entries", [])
+                    if _med_corr_entries and _corr_names:
+                        _name_to_idx = {n.lower().replace(" ", "_"): i for i, n in enumerate(_corr_names)}
+                        for _entry in _med_corr_entries:
+                            _i = _name_to_idx.get(_entry["var1"].lower().replace(" ", "_"))
+                            _j = _name_to_idx.get(_entry["var2"].lower().replace(" ", "_"))
+                            if _i is not None and _j is not None and _i != _j:
+                                _corr_matrix[_i, _j] = _entry["r"]
+                                _corr_matrix[_j, _i] = _entry["r"]
+                        # Ensure positive definite after modifications
+                        try:
+                            from utils.correlation_matrix import nearest_positive_definite
+                            _corr_matrix = nearest_positive_definite(_corr_matrix)
+                        except Exception:
+                            pass  # Keep as-is if PD correction unavailable
 
                     # Store in inferred_design for engine use
                     st.session_state["inferred_design"]["correlation_matrix"] = _corr_matrix.tolist()
