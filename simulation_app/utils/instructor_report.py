@@ -6,7 +6,7 @@ Generates comprehensive instructor-facing reports for student simulations.
 """
 
 # Version identifier to help track deployed code
-__version__ = "1.2.5.6"  # v1.2.5.6: Factor mapping fix, UX improvements
+__version__ = "1.2.5.7"  # v1.2.5.7: Mediator/moderator variables
 
 from dataclasses import dataclass
 from datetime import datetime
