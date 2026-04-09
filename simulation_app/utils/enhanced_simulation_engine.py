@@ -2836,12 +2836,22 @@ class EnhancedSimulationEngine:
         self.factors = _normalize_factors(factors, self.conditions)
         self.scales = _normalize_scales(scales)
         # v1.2.5.3: Build DV description lookup for condition effect intelligence
+        # v1.2.5.5: Store BOTH space and underscore variants so lookup always matches
+        # (variable names may arrive as "trust scale" or "trust_scale" depending on path)
         self._dv_descriptions: Dict[str, str] = {}
         for _sc in self.scales:
             _var = str(_sc.get("variable_name", _sc.get("name", ""))).lower().strip()
             _desc = str(_sc.get("dv_description", ""))
             if _var and _desc:
                 self._dv_descriptions[_var] = _desc
+                # Store underscore variant for cleaned column names
+                _var_underscore = _var.replace(" ", "_").replace("-", "_")
+                if _var_underscore != _var:
+                    self._dv_descriptions[_var_underscore] = _desc
+                # Store space variant for original names
+                _var_space = _var.replace("_", " ")
+                if _var_space != _var:
+                    self._dv_descriptions[_var_space] = _desc
         self.additional_vars = additional_vars or []
         self.demographics = demographics or {}
         self.attention_rate = float(attention_rate)
