@@ -54,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.2.5.8"
-BUILD_ID = "20260409-v12058-mediator-bugfixes-report"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.2.5.9"
+BUILD_ID = "20260409-v12059-mediator-engine-integration-fix"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -118,7 +118,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.2.5.8"  # v1.2.5.8: Mediator bugfixes, report integration, correlation accumulation fix
+APP_VERSION = "1.2.5.9"  # v1.2.5.9: Critical mediator engine fix, orphaned ref cleanup, UX warnings
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -10331,6 +10331,13 @@ if active_page == 2:
             st.session_state["confirmed_scales"] = updated_scales
             st.session_state["_dv_version"] = dv_version + 1
             st.session_state["_dv_removal_notice"] = f"Removed: {', '.join(_removed_names)}"
+            # v1.2.5.9: Clean up orphaned mediator references to removed DVs
+            _removed_set = set(_removed_names)
+            _meds = st.session_state.get("confirmed_mediators", [])
+            if _meds and _removed_set:
+                for _m in _meds:
+                    _m["connected_dvs"] = [d for d in _m.get("connected_dvs", []) if d not in _removed_set]
+                st.session_state["confirmed_mediators"] = _meds
             # v1.0.1.4: Use st.rerun() to avoid scroll-to-top on DV removal
             st.rerun()
 
@@ -10414,6 +10421,14 @@ if active_page == 2:
             "Add variables that mediate (explain *why* IV→DV) or moderate (change *when/how strongly* IV→DV) "
             "your treatment effect. These will be simulated as measured scales with appropriate correlations."
         )
+
+        # v1.2.5.9: Warn if no DVs defined but mediators exist
+        if _med_count > 0 and not updated_scales and not confirmed_scales:
+            st.warning("No DVs defined yet. Mediators/moderators need DVs to connect to. Add DVs above first.")
+        # Warn about mediators with no connected DVs
+        _unconnected = [m.get("name", "?") for m in confirmed_mediators if not m.get("connected_dvs")]
+        if _unconnected:
+            st.info(f"Unconnected: {', '.join(_unconnected)}. Select connected DV(s) for each variable to enable correlation patterns.")
 
         med_to_remove = []
 
@@ -13068,6 +13083,22 @@ if active_page == 3:
             else:
                 # Fallback to inferred scales if no confirmation (shouldn't happen with new UI)
                 clean_scales = _normalize_scale_specs(inferred.get("scales", []))
+
+            # v1.2.5.9: Merge mediator/moderator variables into clean_scales at generation time
+            # This is the CRITICAL integration point — mediators must be in clean_scales
+            # for the engine to actually simulate them as data columns.
+            _gen_med_vars = st.session_state.get("confirmed_mediators", [])
+            if _gen_med_vars:
+                _existing_names = {s.get("variable_name", s.get("name", "")).lower().replace(" ", "_") for s in clean_scales}
+                _med_to_add = []
+                for _mv in _gen_med_vars:
+                    _mv_key = (_mv.get("variable_name") or _mv.get("name", "")).lower().replace(" ", "_")
+                    if _mv_key and _mv_key not in _existing_names:
+                        _med_to_add.append(_mv)
+                        _existing_names.add(_mv_key)
+                if _med_to_add:
+                    _med_scales = _normalize_scale_specs(_med_to_add)
+                    clean_scales = clean_scales + _med_scales
 
             # Additional validation: warn if no scales detected
             if not clean_scales:

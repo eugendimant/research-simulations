@@ -6,7 +6,7 @@ Generates comprehensive instructor-facing reports for student simulations.
 """
 
 # Version identifier to help track deployed code
-__version__ = "1.2.5.8"  # v1.2.5.8: Mediator report integration
+__version__ = "1.2.5.9"  # v1.2.5.9: Mediator report integration
 
 from dataclasses import dataclass
 from datetime import datetime
