@@ -54,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.2.5.5"
-BUILD_ID = "20260409-v12055-dv-desc-lookup-fix"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.2.5.6"
+BUILD_ID = "20260409-v12056-factor-mapping-ux-improvements"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -118,7 +118,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.2.5.5"  # v1.2.5.5: DV description lookup fix, anchors safety, cell_map cleanup
+APP_VERSION = "1.2.5.6"  # v1.2.5.6: Factor-condition mapping fix, condition descriptions UX, validation warnings
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -4288,6 +4288,21 @@ def _render_factorial_design_table(
 
         # Replace crossed_conditions with mapped conditions for downstream use
         has_mappings = any(cell_condition_map.get(c, c) != c for c in crossed_conditions)
+        _n_mapped = sum(1 for c in crossed_conditions if cell_condition_map.get(c, c) != c)
+        _n_total = len(crossed_conditions)
+
+        # v1.2.5.6: Validation warnings for partial mapping or duplicate mapping
+        if has_mappings and _n_mapped < _n_total:
+            st.warning(
+                f"Only {_n_mapped} of {_n_total} cells are mapped to detected conditions. "
+                f"Unmapped cells will use the factorial label as the condition name. "
+                f"Map all cells for best results."
+            )
+        if has_mappings:
+            _mapped_vals = [cell_condition_map.get(c, c) for c in crossed_conditions]
+            _dupes = [v for v in _mapped_vals if _mapped_vals.count(v) > 1]
+            if _dupes:
+                st.error(f"Duplicate mapping detected: {', '.join(set(_dupes))}. Each cell should map to a unique condition.")
 
         st.markdown("**Resulting condition combinations:**")
         with st.expander(f"View all {len(crossed_conditions)} conditions", expanded=True):
@@ -4305,6 +4320,20 @@ def _render_factorial_design_table(
         # If user mapped cells to detected conditions, use those as the final conditions
         if has_mappings:
             crossed_conditions = final_conditions
+            # v1.2.5.6: Rebuild factors so engine can match levels to conditions.
+            # When cells are mapped to flat condition names (e.g., "Block DS"),
+            # the typed factor levels ("Demand-led") won't appear in condition text.
+            # Pass a single factor with the mapped condition names as levels so
+            # the engine treats this as between-subjects with those conditions.
+            factors = [
+                {"name": "Condition", "levels": list(dict.fromkeys(final_conditions))},
+            ]
+            # Save the original factorial structure for display/reference
+            st.session_state[f"{session_key_prefix}_factor_label_map"] = {
+                "factor1": {"name": factor1_name, "original_levels": factor1_levels},
+                "factor2": {"name": factor2_name, "original_levels": factor2_levels},
+                "cell_map": dict(cell_condition_map),
+            }
 
     else:
         # Helpful validation message
@@ -9519,11 +9548,35 @@ if active_page == 2:
             if "builder_condition_descriptions" not in st.session_state:
                 st.session_state["builder_condition_descriptions"] = {}
             _qsf_cond_descs = st.session_state["builder_condition_descriptions"]
-            with st.expander("Describe your conditions (recommended for better simulation)", expanded=False):
+            # v1.2.5.6: Auto-expand when conditions have cryptic names (Block XX, QID, etc.)
+            _has_cryptic = any(
+                _clean_condition_name(c).lower().startswith(("block ", "qid", "fl_", "bl_"))
+                for c in all_conditions
+            )
+            _any_described = any(bool(v) for v in _qsf_cond_descs.values())
+            _expand_desc = _has_cryptic and not _any_described
+            with st.expander("Describe your conditions (recommended for better simulation)", expanded=_expand_desc):
                 st.caption(
                     "Briefly describe what participants experience in each condition. "
                     "This helps the simulator choose appropriate behavioral patterns and effect sizes."
                 )
+                if _has_cryptic:
+                    st.info(
+                        "Your condition names look like block codes. Describing what each condition "
+                        "does (e.g., 'High scarcity + standard cover') helps generate more realistic data."
+                    )
+                # v1.2.5.6: Show factorial mapping hint if available
+                _label_map = st.session_state.get("factorial_design_factor_label_map", {})
+                if _label_map and _label_map.get("cell_map"):
+                    _map_hints = _label_map["cell_map"]
+                    _f1_name = _label_map.get("factor1", {}).get("name", "Factor 1")
+                    _f2_name = _label_map.get("factor2", {}).get("name", "Factor 2")
+                    _hint_lines = [f"**Factorial mapping** ({_f1_name} × {_f2_name}):"]
+                    for _fl, _mc in _map_hints.items():
+                        if _fl != _mc:
+                            _hint_lines.append(f"- {_fl} → **{_mc}**")
+                    if len(_hint_lines) > 1:
+                        st.caption("\n".join(_hint_lines))
                 for _ci, _cond in enumerate(all_conditions):
                     _c_clean = _clean_condition_name(_cond)
                     _existing_d = _qsf_cond_descs.get(_cond, "")
@@ -9531,7 +9584,7 @@ if active_page == 2:
                         f"{_c_clean}",
                         value=_existing_d,
                         key=f"qsf_cond_desc_{_ci}",
-                        placeholder="e.g., Participants read a positive framing of the product",
+                        placeholder="e.g., Participants see a high-scarcity framing with standard product cover",
                     )
                     if _new_d != _existing_d:
                         _qsf_cond_descs[_cond] = _new_d

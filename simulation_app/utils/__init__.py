@@ -2,7 +2,7 @@
 """
 Utility modules for the Behavioral Experiment Simulation Tool.
 
-Version: 1.2.5.5 - DV description lookup fix, anchors safety, cell_map cleanup
+Version: 1.2.5.6 - Factor mapping fix, condition descriptions UX, validation
 
 Changes (v1.0.0 - 20 Iterations of Comprehensive Improvements):
     === ENHANCED SCALE/MATRIX DETECTION ===
@@ -65,7 +65,7 @@ Modules:
 """
 
 # Package version - should match all module versions
-__version__ = "1.2.5.5"
+__version__ = "1.2.5.6"
 
 
 # =============================================================================
