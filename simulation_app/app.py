@@ -54,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.2.5.4"
-BUILD_ID = "20260409-v12054-normalize-instructor-report-fixes"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.2.5.5"
+BUILD_ID = "20260409-v12055-dv-desc-lookup-fix"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -118,7 +118,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.2.5.4"  # v1.2.5.4: normalize_scale_specs fix, instructor report LLM detection, scale_min bipolar fix
+APP_VERSION = "1.2.5.5"  # v1.2.5.5: DV description lookup fix, anchors safety, cell_map cleanup
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -4194,8 +4194,17 @@ def _render_factorial_design_table(
             st.markdown(f"**Design Table** ({factor1_name} × {factor2_name}):")
             st.caption("Map each cell to a detected condition from your survey, or leave as the factorial label.")
 
-            # Options for cell mapping: factorial label + all detected conditions + "Custom..."
+            # Options for cell mapping: factorial label + all detected conditions
             _mapping_options = ["(use factorial label)"] + clean_conditions
+
+            # v1.2.5.5: Clean up stale cell_map keys from previous design size
+            _prev_cell_count = st.session_state.get(f"{session_key_prefix}_prev_cell_count", 0)
+            _current_cell_count = len(factor1_levels) * len(factor2_levels)
+            if _prev_cell_count > _current_cell_count:
+                for _stale_i in range(_current_cell_count + 1, _prev_cell_count + 1):
+                    st.session_state.pop(f"{session_key_prefix}_cell_map_{_stale_i}", None)
+                    st.session_state.pop(f"{session_key_prefix}_cell_map_select_{_stale_i}", None)
+            st.session_state[f"{session_key_prefix}_prev_cell_count"] = _current_cell_count
 
             # Build the table with interactive dropdowns
             # Header row
@@ -10031,6 +10040,8 @@ if active_page == 2:
                 scale_min = scale.get("scale_min", 1)
                 scale_max = scale.get("scale_max", scale.get("scale_points", 7))
                 scale_anchors = scale.get("scale_anchors", {})
+                if not isinstance(scale_anchors, dict):
+                    scale_anchors = {}  # v1.2.5.5: Defensive guard against non-dict leakage
 
                 with st.container():
                     # Main row: Name, # Items, Scale Min, Scale Max, Type, Remove

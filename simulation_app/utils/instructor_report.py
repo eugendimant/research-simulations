@@ -6,7 +6,7 @@ Generates comprehensive instructor-facing reports for student simulations.
 """
 
 # Version identifier to help track deployed code
-__version__ = "1.2.5.0"  # v1.2.5.0: ABE 3.0 rebrand
+__version__ = "1.2.5.5"  # v1.2.5.5: LLM detection fix, DV description pipeline
 
 from dataclasses import dataclass
 from datetime import datetime
