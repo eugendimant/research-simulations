@@ -1,0 +1,214 @@
+{
+  "SurveyEntry": {
+    "SurveyID": "SV_builder_24fcc555",
+    "SurveyName": "1",
+    "SurveyDescription": "1",
+    "SurveyLanguage": "EN",
+    "SurveyStatus": "Inactive",
+    "SurveyStartDate": "2026-04-09 00:59:06",
+    "CreatorID": "conversational_builder"
+  },
+  "SurveyElements": [
+    {
+      "Element": "BL",
+      "PrimaryAttribute": "Survey Blocks",
+      "Payload": [
+        {
+          "Type": "Default",
+          "Description": "Shared Measures",
+          "ID": "BL_shared",
+          "BlockElements": [
+            {
+              "Type": "Question",
+              "QuestionID": "QID1"
+            }
+          ]
+        },
+        {
+          "Type": "Standard",
+          "Description": "1",
+          "ID": "BL_1",
+          "BlockElements": []
+        },
+        {
+          "Type": "Standard",
+          "Description": "2",
+          "ID": "BL_2",
+          "BlockElements": []
+        }
+      ]
+    },
+    {
+      "Element": "FL",
+      "PrimaryAttribute": "Survey Flow",
+      "Payload": {
+        "Type": "Root",
+        "FlowID": "FL_1",
+        "Flow": [
+          {
+            "Type": "EmbeddedData",
+            "FlowID": "FL_embed",
+            "EmbeddedData": [
+              {
+                "Description": "study_domain",
+                "Value": "social psychology"
+              },
+              {
+                "Description": "design_type",
+                "Value": "between"
+              },
+              {
+                "Description": "source",
+                "Value": "conversational_builder"
+              }
+            ]
+          },
+          {
+            "Type": "BlockRandomizer",
+            "SubSet": 1,
+            "EvenPresentation": true,
+            "ID": "BR_conditions",
+            "Description": "Condition Assignment",
+            "Flow": [
+              {
+                "Type": "Block",
+                "ID": "BL_1"
+              },
+              {
+                "Type": "Block",
+                "ID": "BL_2"
+              }
+            ]
+          },
+          {
+            "Type": "Block",
+            "ID": "BL_shared"
+          }
+        ]
+      }
+    },
+    {
+      "Element": "SQ",
+      "PrimaryAttribute": "QID1",
+      "Payload": {
+        "QuestionID": "QID1",
+        "QuestionType": "Matrix",
+        "Selector": "Likert",
+        "QuestionText": "Trust Scale (5 items, 1-7 Likert) — Interpersonal or institutional trust",
+        "DataExportTag": "Trust_Interpersonal_or_institu",
+        "Choices": {
+          "1": {
+            "Display": "Trust — Interpersonal or institutional trust item 1"
+          },
+          "2": {
+            "Display": "Trust — Interpersonal or institutional trust item 2"
+          },
+          "3": {
+            "Display": "Trust — Interpersonal or institutional trust item 3"
+          },
+          "4": {
+            "Display": "Trust — Interpersonal or institutional trust item 4"
+          },
+          "5": {
+            "Display": "Trust — Interpersonal or institutional trust item 5"
+          }
+        },
+        "ChoiceOrder": [
+          "1",
+          "2",
+          "3",
+          "4",
+          "5"
+        ],
+        "Validation": {
+          "Settings": {
+            "ForceResponse": "ON",
+            "Type": "None"
+          }
+        },
+        "SubSelector": "SingleAnswer",
+        "Answers": {
+          "1": {
+            "Display": "1"
+          },
+          "2": {
+            "Display": "2"
+          },
+          "3": {
+            "Display": "3"
+          },
+          "4": {
+            "Display": "4"
+          },
+          "5": {
+            "Display": "5"
+          },
+          "6": {
+            "Display": "6"
+          },
+          "7": {
+            "Display": "7"
+          }
+        },
+        "AnswerOrder": [
+          "1",
+          "2",
+          "3",
+          "4",
+          "5",
+          "6",
+          "7"
+        ]
+      }
+    }
+  ],
+  "_builder_metadata": {
+    "generated_at": "2026-04-09T00:59:06.851886+00:00",
+    "source": "conversational_builder",
+    "design_type": "between",
+    "conditions": [
+      "1",
+      "2"
+    ],
+    "scales": [
+      "Trust — Interpersonal or institutional trust"
+    ],
+    "open_ended": [],
+    "factors": [],
+    "domain": "social psychology",
+    "sample_size": 100,
+    "participant_characteristics": "",
+    "raw_inputs": {
+      "conditions_text": "1, 2",
+      "scales_text": "Trust Scale (5 items, 1-7 Likert) — Interpersonal or institutional trust\n",
+      "open_ended_text": "",
+      "study_title": "1",
+      "study_description": "1",
+      "participant_desc": "",
+      "design_type": "between",
+      "sample_size": 100
+    },
+    "parsed_scales_detail": [
+      {
+        "name": "Trust — Interpersonal or institutional trust",
+        "variable_name": "Trust_Interpersonal_or_institu",
+        "scale_type": "likert",
+        "num_items": 5,
+        "scale_min": 1,
+        "scale_max": 7,
+        "description": "Trust Scale (5 items, 1-7 Likert) — Interpersonal or institutional trust"
+      }
+    ],
+    "parsed_conditions_detail": [
+      {
+        "name": "1",
+        "description": ""
+      },
+      {
+        "name": "2",
+        "description": ""
+      }
+    ],
+    "parsed_open_ended_detail": []
+  }
+}
