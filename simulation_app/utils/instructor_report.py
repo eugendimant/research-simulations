@@ -6,7 +6,7 @@ Generates comprehensive instructor-facing reports for student simulations.
 """
 
 # Version identifier to help track deployed code
-__version__ = "1.2.5.7"  # v1.2.5.7: Mediator/moderator variables
+__version__ = "1.2.5.9"  # v1.2.5.9: Mediator report integration
 
 from dataclasses import dataclass
 from datetime import datetime
@@ -1256,6 +1256,31 @@ class InstructorReportGenerator:
                 lines.append("")
             else:
                 lines.append("_No scales/DVs listed in metadata. This may indicate a configuration issue._")
+                lines.append("")
+
+            # v1.2.5.8: Mediator/Moderator variables section
+            _med_mod_vars = metadata.get("mediator_moderator_variables", [])
+            if _med_mod_vars:
+                lines.append("### Mediator / Moderator Variables")
+                lines.append("")
+                lines.append("| Variable | Role | Connected DV(s) | Items | Range | Description |")
+                lines.append("|----------|------|----------------|-------|-------|-------------|")
+                for _mm in _med_mod_vars:
+                    _mm_name = _mm.get("name", "?")
+                    _mm_role = _mm.get("role", "mediator").title()
+                    _mm_dvs = ", ".join(_mm.get("connected_dvs", [])) or "—"
+                    _mm_items = _mm.get("num_items", 1)
+                    _mm_range = f"{_mm.get('scale_min', 1)}-{_mm.get('scale_max', 7)}"
+                    _mm_desc = _mm.get("description", "")[:60]
+                    lines.append(f"| {_mm_name} | {_mm_role} | {_mm_dvs} | {_mm_items} | {_mm_range} | {_mm_desc} |")
+                lines.append("")
+                lines.append("**Simulation approach:**")
+                _n_mediators = sum(1 for m in _med_mod_vars if m.get("role") == "mediator")
+                _n_moderators = sum(1 for m in _med_mod_vars if m.get("role") == "moderator")
+                if _n_mediators > 0:
+                    lines.append(f"- {_n_mediators} mediator(s): simulated with condition effects + r≈0.45 correlation with connected DVs")
+                if _n_moderators > 0:
+                    lines.append(f"- {_n_moderators} moderator(s): simulated with r≈0.15 correlation with connected DVs")
                 lines.append("")
 
         # === v1.2.4: PRACTICAL DATA INTERPRETATION GUIDE ===
