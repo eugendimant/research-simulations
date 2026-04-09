@@ -54,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.2.5.7"
-BUILD_ID = "20260409-v12057-mediator-moderator-variables"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.2.5.8"
+BUILD_ID = "20260409-v12058-mediator-bugfixes-report"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -118,7 +118,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.2.5.7"  # v1.2.5.7: Mediator/moderator variable section with correlation patterns
+APP_VERSION = "1.2.5.8"  # v1.2.5.8: Mediator bugfixes, report integration, correlation accumulation fix
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -796,6 +796,10 @@ def _normalize_scale_specs(scales: List[Any]) -> List[Dict[str, Any]]:
                     "item_names": scale.get("item_names", []) or [],
                     "question_text": str(scale.get("question_text", "")),
                     "detected_from_qsf": scale.get("detected_from_qsf", False),
+                    # v1.2.5.8: Preserve mediator/moderator metadata
+                    "_is_mediator_moderator": scale.get("_is_mediator_moderator", False),
+                    "role": scale.get("role", ""),
+                    "connected_dvs": scale.get("connected_dvs", []),
                 }
             )
 
@@ -10485,7 +10489,9 @@ if active_page == 2:
                         )
                     with _dv_col:
                         # Which DV(s) is this connected to?
-                        _dv_names = [s.get("name", s.get("variable_name", "")) for s in updated_scales] if updated_scales else []
+                        # v1.2.5.8: Use updated_scales if available, fall back to confirmed_scales
+                        _dv_source = updated_scales if updated_scales else confirmed_scales
+                        _dv_names = [s.get("name", s.get("variable_name", "")) for s in _dv_source] if _dv_source else []
                         _saved_connected = med_var.get("connected_dvs", [])
                         connected_dvs = st.multiselect(
                             "Connected DV(s)",
@@ -11387,7 +11393,8 @@ if active_page == 2:
                 # Build correlation matrix: mediators should correlate with their connected DVs
                 # Mediator: r ≈ 0.40-0.55 with DV (typical partial mediation)
                 # Moderator: r ≈ 0.10-0.20 with DV (weak direct, interaction drives effect)
-                _corr_entries = st.session_state.get("_engine_corr_matrix_entries", [])
+                # v1.2.5.8: Rebuild fresh each time (don't accumulate across reruns)
+                _corr_entries = []
                 for _mv in _med_vars:
                     _mv_name = (_mv.get("variable_name") or _mv.get("name", "")).replace(" ", "_")
                     _connected = _mv.get("connected_dvs", [])
@@ -11399,6 +11406,9 @@ if active_page == 2:
                         else:  # moderator
                             _corr_entries.append({"var1": _mv_name, "var2": _dv_clean, "r": 0.15})
                 st.session_state["_engine_corr_matrix_entries"] = _corr_entries
+            else:
+                # No mediators — clear any stale entries
+                st.session_state.pop("_engine_corr_matrix_entries", None)
 
             # Use user-confirmed open-ended questions instead of auto-detected
             final_open_ended = st.session_state.get("confirmed_open_ended", inferred.get("open_ended_questions", []))
@@ -13969,6 +13979,22 @@ if active_page == 3:
             metadata['generation_method_label'] = _gen_method_labels.get(
                 _user_gen_method, _user_gen_method)
             metadata['app_version'] = APP_VERSION
+
+            # v1.2.5.8: Include mediator/moderator info in metadata for reports
+            _med_vars_for_report = st.session_state.get("confirmed_mediators", [])
+            if _med_vars_for_report:
+                metadata['mediator_moderator_variables'] = [
+                    {
+                        "name": m.get("name", ""),
+                        "role": m.get("role", "mediator"),
+                        "connected_dvs": m.get("connected_dvs", []),
+                        "description": m.get("dv_description", ""),
+                        "num_items": m.get("num_items", 1),
+                        "scale_min": m.get("scale_min", 1),
+                        "scale_max": m.get("scale_max", 7),
+                    }
+                    for m in _med_vars_for_report
+                ]
 
             # v1.1.0.5: Override generation_method_label to reflect ACTUAL outcome.
             # If user selected AI but all providers failed, label should say
