@@ -33,7 +33,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 # Version identifier to help track deployed code
-__version__ = "1.2.5.2"  # v1.2.5.0: ABE 3.0 rebrand
+__version__ = "1.2.5.3"  # v1.2.5.3: Factor level & DV improvements
 
 
 # ============================================================================

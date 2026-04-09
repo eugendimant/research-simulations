@@ -54,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.2.5.2"
-BUILD_ID = "20260402-v12052-qsf-parser-instructor-fix"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.2.5.3"
+BUILD_ID = "20260409-v12053-factor-level-dv-improvements"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -118,7 +118,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.2.5.2"  # v1.2.5.1: Deploy fix — version bump for cache invalidation
+APP_VERSION = "1.2.5.3"  # v1.2.5.3: Factor level manual input, DV type editing, scale anchors, DV context
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -3967,6 +3967,8 @@ def _render_factorial_design_table(
     Returns factors and crossed condition names, saved to session state for persistence.
 
     Features:
+    - Manual text input for factor levels (type or select from detected conditions)
+    - Design table with dropdown mapping of cells to detected conditions
     - Color-coded factor assignment
     - Real-time condition count
     - Visual crossing table
@@ -3977,6 +3979,18 @@ def _render_factorial_design_table(
 
     # Clean condition names
     clean_conditions = [_clean_condition_name(c) for c in detected_conditions]
+
+    # Helper: parse semicolon/comma-separated text into level list
+    def _parse_levels(text: str) -> List[str]:
+        """Parse 'Demand-led; Supply-led' or 'Demand-led, Supply-led' into list."""
+        if not text or not text.strip():
+            return []
+        # Try semicolon first, then comma
+        if ";" in text:
+            parts = [p.strip() for p in text.split(";")]
+        else:
+            parts = [p.strip() for p in text.split(",")]
+        return [p for p in parts if p]
 
     # Header with design type selector
     st.markdown("**Configure your factorial design:**")
@@ -4000,6 +4014,21 @@ def _render_factorial_design_table(
 
     st.markdown("---")
 
+    # v1.2.5.3: Factor level input mode — manual text OR select from conditions
+    _input_mode_key = f"{session_key_prefix}_level_input_mode"
+    # Default to "manual" since that's what users expect
+    _saved_mode = st.session_state.get(_input_mode_key, "manual")
+    level_input_mode = st.radio(
+        "How to specify factor levels",
+        options=["manual", "select"],
+        format_func=lambda x: "Type levels manually" if x == "manual" else "Select from detected conditions",
+        index=0 if _saved_mode == "manual" else 1,
+        horizontal=True,
+        key=f"{session_key_prefix}_level_input_mode_radio",
+        help="Manual: type level names separated by semicolons (e.g., 'Demand-led; Supply-led'). Select: pick from auto-detected conditions."
+    )
+    st.session_state[_input_mode_key] = level_input_mode
+
     # Factor 1 Configuration - with visual indicator
     st.markdown("**Factor 1** (rows in design table)")
     col_f1_name, col_f1_levels = st.columns([1, 3])
@@ -4009,19 +4038,38 @@ def _render_factorial_design_table(
             value=st.session_state.get(f"{session_key_prefix}_f1_name", "Factor 1"),
             key=f"{session_key_prefix}_f1_name_input",
             label_visibility="collapsed",
-            placeholder="e.g., Game Type"
+            placeholder="e.g., Scarcity Type"
         )
         st.session_state[f"{session_key_prefix}_f1_name"] = factor1_name
     with col_f1_levels:
-        factor1_levels = st.multiselect(
-            "Levels",
-            options=clean_conditions,
-            default=st.session_state.get(f"{session_key_prefix}_factor1_levels", []),
-            key=f"{session_key_prefix}_f1_levels_select",
-            label_visibility="collapsed",
-            placeholder="Select levels for Factor 1..."
-        )
-        st.session_state[f"{session_key_prefix}_factor1_levels"] = factor1_levels
+        if level_input_mode == "manual":
+            # v1.2.5.3: Free text input for factor levels
+            _f1_text_default = st.session_state.get(f"{session_key_prefix}_f1_levels_text", "")
+            # If switching from select mode, pre-populate from selected levels
+            if not _f1_text_default and st.session_state.get(f"{session_key_prefix}_factor1_levels"):
+                _f1_text_default = "; ".join(st.session_state.get(f"{session_key_prefix}_factor1_levels", []))
+            factor1_text = st.text_input(
+                "Levels",
+                value=_f1_text_default,
+                key=f"{session_key_prefix}_f1_levels_text_input",
+                label_visibility="collapsed",
+                placeholder="e.g., Demand-led; Supply-led"
+            )
+            st.session_state[f"{session_key_prefix}_f1_levels_text"] = factor1_text
+            factor1_levels = _parse_levels(factor1_text)
+            st.session_state[f"{session_key_prefix}_factor1_levels"] = factor1_levels
+            if clean_conditions:
+                st.caption(f"Detected conditions: {', '.join(clean_conditions[:6])}{'...' if len(clean_conditions) > 6 else ''}")
+        else:
+            factor1_levels = st.multiselect(
+                "Levels",
+                options=clean_conditions,
+                default=st.session_state.get(f"{session_key_prefix}_factor1_levels", []),
+                key=f"{session_key_prefix}_f1_levels_select",
+                label_visibility="collapsed",
+                placeholder="Select levels for Factor 1..."
+            )
+            st.session_state[f"{session_key_prefix}_factor1_levels"] = factor1_levels
     if factor1_levels:
         st.caption(f"✓ {len(factor1_levels)} level(s): {', '.join(factor1_levels)}")
 
@@ -4035,19 +4083,34 @@ def _render_factorial_design_table(
             value=st.session_state.get(f"{session_key_prefix}_f2_name", "Factor 2"),
             key=f"{session_key_prefix}_f2_name_input",
             label_visibility="collapsed",
-            placeholder="e.g., Partner Type"
+            placeholder="e.g., Cover Type"
         )
         st.session_state[f"{session_key_prefix}_f2_name"] = factor2_name
     with col_f2_levels:
-        factor2_levels = st.multiselect(
-            "Levels",
-            options=remaining_conditions,
-            default=[c for c in st.session_state.get(f"{session_key_prefix}_factor2_levels", []) if c in remaining_conditions],
-            key=f"{session_key_prefix}_f2_levels_select",
-            label_visibility="collapsed",
-            placeholder="Select levels for Factor 2..."
-        )
-        st.session_state[f"{session_key_prefix}_factor2_levels"] = factor2_levels
+        if level_input_mode == "manual":
+            _f2_text_default = st.session_state.get(f"{session_key_prefix}_f2_levels_text", "")
+            if not _f2_text_default and st.session_state.get(f"{session_key_prefix}_factor2_levels"):
+                _f2_text_default = "; ".join(st.session_state.get(f"{session_key_prefix}_factor2_levels", []))
+            factor2_text = st.text_input(
+                "Levels",
+                value=_f2_text_default,
+                key=f"{session_key_prefix}_f2_levels_text_input",
+                label_visibility="collapsed",
+                placeholder="e.g., Standard; Blind-box"
+            )
+            st.session_state[f"{session_key_prefix}_f2_levels_text"] = factor2_text
+            factor2_levels = _parse_levels(factor2_text)
+            st.session_state[f"{session_key_prefix}_factor2_levels"] = factor2_levels
+        else:
+            factor2_levels = st.multiselect(
+                "Levels",
+                options=remaining_conditions,
+                default=[c for c in st.session_state.get(f"{session_key_prefix}_factor2_levels", []) if c in remaining_conditions],
+                key=f"{session_key_prefix}_f2_levels_select",
+                label_visibility="collapsed",
+                placeholder="Select levels for Factor 2..."
+            )
+            st.session_state[f"{session_key_prefix}_factor2_levels"] = factor2_levels
     if factor2_levels:
         st.caption(f"✓ {len(factor2_levels)} level(s): {', '.join(factor2_levels)}")
 
@@ -4068,15 +4131,30 @@ def _render_factorial_design_table(
             )
             st.session_state[f"{session_key_prefix}_f3_name"] = factor3_name
         with col_f3_levels:
-            factor3_levels = st.multiselect(
-                "Levels",
-                options=remaining_for_f3,
-                default=[c for c in st.session_state.get(f"{session_key_prefix}_factor3_levels", []) if c in remaining_for_f3],
-                key=f"{session_key_prefix}_f3_levels_select",
-                label_visibility="collapsed",
-                placeholder="Select levels for Factor 3..."
-            )
-            st.session_state[f"{session_key_prefix}_factor3_levels"] = factor3_levels
+            if level_input_mode == "manual":
+                _f3_text_default = st.session_state.get(f"{session_key_prefix}_f3_levels_text", "")
+                if not _f3_text_default and st.session_state.get(f"{session_key_prefix}_factor3_levels"):
+                    _f3_text_default = "; ".join(st.session_state.get(f"{session_key_prefix}_factor3_levels", []))
+                factor3_text = st.text_input(
+                    "Levels",
+                    value=_f3_text_default,
+                    key=f"{session_key_prefix}_f3_levels_text_input",
+                    label_visibility="collapsed",
+                    placeholder="e.g., Positive; Negative; Neutral"
+                )
+                st.session_state[f"{session_key_prefix}_f3_levels_text"] = factor3_text
+                factor3_levels = _parse_levels(factor3_text)
+                st.session_state[f"{session_key_prefix}_factor3_levels"] = factor3_levels
+            else:
+                factor3_levels = st.multiselect(
+                    "Levels",
+                    options=remaining_for_f3,
+                    default=[c for c in st.session_state.get(f"{session_key_prefix}_factor3_levels", []) if c in remaining_for_f3],
+                    key=f"{session_key_prefix}_f3_levels_select",
+                    label_visibility="collapsed",
+                    placeholder="Select levels for Factor 3..."
+                )
+                st.session_state[f"{session_key_prefix}_factor3_levels"] = factor3_levels
         if factor3_levels:
             st.caption(f"✓ {len(factor3_levels)} level(s): {', '.join(factor3_levels)}")
 
@@ -4106,42 +4184,112 @@ def _render_factorial_design_table(
             design_str = f"{len(factor1_levels)}×{len(factor2_levels)}"
             st.success(f"**{design_str} Factorial Design = {len(crossed_conditions)} conditions**")
 
-            # Build enhanced visual table with condition names
+            # v1.2.5.3: Interactive design table with condition mapping dropdowns
             st.markdown(f"**Design Table** ({factor1_name} × {factor2_name}):")
+            st.caption("Map each cell to a detected condition from your survey, or leave as the factorial label.")
 
-            # Create table header
-            header_row = f"| **{factor1_name}** \\ **{factor2_name}** |"
-            for f2_level in factor2_levels:
-                header_row += f" {f2_level} |"
-            separator = "|" + "---|" * (len(factor2_levels) + 1)
+            # Options for cell mapping: factorial label + all detected conditions + "Custom..."
+            _mapping_options = ["(use factorial label)"] + clean_conditions
 
-            table_md = header_row + "\n" + separator + "\n"
+            # Build the table with interactive dropdowns
+            # Header row
+            _header_cols = st.columns([1.5] + [1.5] * len(factor2_levels))
+            _header_cols[0].markdown(f"**{factor1_name} \\ {factor2_name}**")
+            for j, f2_level in enumerate(factor2_levels):
+                _header_cols[j + 1].markdown(f"**{f2_level}**")
 
-            # Create table rows with cell numbers
             cell_num = 1
+            cell_condition_map = {}  # {factorial_label: mapped_condition}
             for f1_level in factor1_levels:
-                row = f"| **{f1_level}** |"
-                for f2_level in factor2_levels:
-                    row += f" Cell {cell_num} |"
+                _row_cols = st.columns([1.5] + [1.5] * len(factor2_levels))
+                _row_cols[0].markdown(f"**{f1_level}**")
+                for j, f2_level in enumerate(factor2_levels):
+                    factorial_label = f"{f1_level} × {f2_level}"
+                    _map_key = f"{session_key_prefix}_cell_map_{cell_num}"
+                    _saved_map = st.session_state.get(_map_key, "(use factorial label)")
+                    # Ensure saved value is still valid
+                    _default_idx = 0
+                    if _saved_map in _mapping_options:
+                        _default_idx = _mapping_options.index(_saved_map)
+                    with _row_cols[j + 1]:
+                        mapped = st.selectbox(
+                            f"Cell {cell_num}",
+                            options=_mapping_options,
+                            index=_default_idx,
+                            key=f"{session_key_prefix}_cell_map_select_{cell_num}",
+                            label_visibility="collapsed",
+                        )
+                        st.session_state[_map_key] = mapped
+                    if mapped and mapped != "(use factorial label)":
+                        cell_condition_map[factorial_label] = mapped
+                    else:
+                        cell_condition_map[factorial_label] = factorial_label
                     cell_num += 1
-                table_md += row + "\n"
 
-            st.markdown(table_md)
+            # Save cell mapping to session state
+            st.session_state[f"{session_key_prefix}_cell_condition_map"] = cell_condition_map
 
         elif num_factors == 3 and factor1_levels and factor2_levels and factor3_levels:
             design_str = f"{len(factor1_levels)}×{len(factor2_levels)}×{len(factor3_levels)}"
             st.success(f"**{design_str} Factorial Design = {len(crossed_conditions)} conditions**")
             st.caption(f"Factors: {factor1_name} × {factor2_name} × {factor3_name}")
 
-        # Show resulting conditions in expandable section
+            # For 3-factor designs, show mapping in expander to save space
+            _mapping_options_3 = ["(use factorial label)"] + clean_conditions
+            cell_condition_map = {}
+            with st.expander("Map cells to detected conditions", expanded=False):
+                cell_num = 1
+                for combo in all_combos:
+                    factorial_label = " × ".join(combo)
+                    _map_key = f"{session_key_prefix}_cell_map_{cell_num}"
+                    _saved_map = st.session_state.get(_map_key, "(use factorial label)")
+                    _default_idx = 0
+                    if _saved_map in _mapping_options_3:
+                        _default_idx = _mapping_options_3.index(_saved_map)
+                    _c1, _c2 = st.columns([2, 2])
+                    _c1.markdown(f"**{cell_num}.** {factorial_label}")
+                    mapped = _c2.selectbox(
+                        f"Cell {cell_num}",
+                        options=_mapping_options_3,
+                        index=_default_idx,
+                        key=f"{session_key_prefix}_cell_map_select_{cell_num}",
+                        label_visibility="collapsed",
+                    )
+                    st.session_state[_map_key] = mapped
+                    if mapped and mapped != "(use factorial label)":
+                        cell_condition_map[factorial_label] = mapped
+                    else:
+                        cell_condition_map[factorial_label] = factorial_label
+                    cell_num += 1
+            st.session_state[f"{session_key_prefix}_cell_condition_map"] = cell_condition_map
+
+        # v1.2.5.3: Show resulting conditions using mapped names
+        cell_condition_map = st.session_state.get(f"{session_key_prefix}_cell_condition_map", {})
+        # Build final condition list using mappings
+        final_conditions = []
+        for combo in crossed_conditions:
+            mapped = cell_condition_map.get(combo, combo)
+            final_conditions.append(mapped)
+
+        # Replace crossed_conditions with mapped conditions for downstream use
+        has_mappings = any(cell_condition_map.get(c, c) != c for c in crossed_conditions)
+
         st.markdown("**Resulting condition combinations:**")
         with st.expander(f"View all {len(crossed_conditions)} conditions", expanded=True):
             # Display in columns for better readability
             n_cols = min(3, len(crossed_conditions))
             cols = st.columns(n_cols)
             for i, combo in enumerate(crossed_conditions):
+                mapped = cell_condition_map.get(combo, combo)
                 with cols[i % n_cols]:
-                    st.markdown(f"**{i+1}.** {combo}")
+                    if has_mappings and mapped != combo:
+                        st.markdown(f"**{i+1}.** {combo} → **{mapped}**")
+                    else:
+                        st.markdown(f"**{i+1}.** {combo}")
+
+        # If user mapped cells to detected conditions, use those as the final conditions
+        if has_mappings:
+            crossed_conditions = final_conditions
 
     else:
         # Helpful validation message
@@ -9985,38 +10133,86 @@ if active_page == 2:
                     scale_points = new_scale_max  # Used for data generation
 
                     with col4:
-                        # Type badge with descriptive tooltip
-                        type_descriptions = {
-                            'matrix': 'Multi-item scale detected as a matrix (e.g., 5-item attitude battery)',
-                            'numbered_items': 'Scale detected from numbered items (e.g., Scale_1, Scale_2)',
-                            'likert': 'Likert-type scale with multiple response options',
-                            'slider': 'Visual analog scale or slider (typically 0-100)',
-                            'single_item': 'Single standalone question',
-                            'numeric_input': 'Open-ended numeric input (e.g., WTP, quantity)',
-                            'constant_sum': 'Constant sum allocation task',
-                        }
-                        type_desc = type_descriptions.get(dv_type, 'Scale type')
-                        st.markdown(
-                            f'<small title="{type_desc}">{type_badge}</small>',
-                            unsafe_allow_html=True
+                        # v1.2.5.3: Editable DV type dropdown
+                        _dv_type_options = list(type_badges.keys())
+                        _dv_type_labels = list(type_badges.values())
+                        _current_type_idx = _dv_type_options.index(dv_type) if dv_type in _dv_type_options else 0
+                        _type_key = f"dv_type_v{dv_version}_{i}"
+                        selected_type = st.selectbox(
+                            "Type",
+                            options=_dv_type_options,
+                            format_func=lambda x: type_badges.get(x, x),
+                            index=_current_type_idx,
+                            key=_type_key,
+                            label_visibility="collapsed",
+                            help="Change the DV type if auto-detection was wrong."
                         )
-                        if scale.get("detected_from_qsf", True):
-                            st.caption("*Auto-detected*")
+                        # Override dv_type with user selection
+                        if selected_type != dv_type:
+                            dv_type = selected_type
+                            type_badge = type_badges.get(dv_type, "📊 Scale")
 
                     with col5:
                         # Remove button with clear help text
                         if st.button("✕", key=f"rm_dv_v{dv_version}_{i}", help="Remove this DV from the simulation. Click to delete."):
                             scales_to_remove.append(i)
 
-                    # Show scale anchors if available
-                    if scale_anchors:
+                    # v1.2.5.3: Editable scale anchor labels
+                    if dv_type in ('likert', 'single_item', 'matrix', 'numbered_items', 'slider'):
+                        _anchor_exp_key = f"dv_anchor_exp_v{dv_version}_{i}"
+                        with st.expander("📏 Scale anchors (click to edit)", expanded=False):
+                            _anch_col1, _anch_col2 = st.columns(2)
+                            _existing_low = scale_anchors.get(str(new_scale_min), scale_anchors.get(new_scale_min, ""))
+                            _existing_high = scale_anchors.get(str(new_scale_max), scale_anchors.get(new_scale_max, ""))
+                            with _anch_col1:
+                                low_label = st.text_input(
+                                    f"Low end ({new_scale_min})",
+                                    value=st.session_state.get(f"dv_anchor_low_v{dv_version}_{i}", _existing_low),
+                                    key=f"dv_anchor_low_v{dv_version}_{i}",
+                                    placeholder="e.g., Strongly disagree"
+                                )
+                            with _anch_col2:
+                                high_label = st.text_input(
+                                    f"High end ({new_scale_max})",
+                                    value=st.session_state.get(f"dv_anchor_high_v{dv_version}_{i}", _existing_high),
+                                    key=f"dv_anchor_high_v{dv_version}_{i}",
+                                    placeholder="e.g., Strongly agree"
+                                )
+                            # Update scale_anchors with user input
+                            if low_label:
+                                scale_anchors[str(new_scale_min)] = low_label
+                            if high_label:
+                                scale_anchors[str(new_scale_max)] = high_label
+                            if scale_anchors:
+                                anchor_preview = " | ".join([f"{k}={v}" for k, v in sorted(scale_anchors.items(), key=lambda x: str(x[0])) if v])
+                                if anchor_preview:
+                                    st.caption(f"Preview: {anchor_preview}")
+                    elif scale_anchors:
                         anchor_text = " | ".join([f"{k}={v}" for k, v in sorted(scale_anchors.items(), key=lambda x: str(x[0]))])
                         if anchor_text:
                             st.caption(f"📏 *Scale: {anchor_text}*")
 
-                    # Show question text if available
+                    # v1.2.5.3: DV description/context — tells the simulation what this DV measures
+                    _dv_desc_default = scale.get("dv_description", "")
+                    if not _dv_desc_default:
+                        # Auto-generate a hint from question_text if available
+                        _dv_desc_default = scale.get("question_text", "")
+                    dv_description = st.text_input(
+                        "What does this DV measure?",
+                        value=st.session_state.get(f"dv_desc_v{dv_version}_{i}", _dv_desc_default),
+                        key=f"dv_desc_v{dv_version}_{i}",
+                        placeholder="e.g., Perceived prestige of the product (1=very low, 7=very high)",
+                        help="Describe what this variable measures and how it relates to your conditions. "
+                             "This helps the simulation generate more realistic data. For example: "
+                             "'Willingness to pay in dollars for the product' or "
+                             "'Perceived scarcity level (1=not scarce at all, 7=extremely scarce)'."
+                    )
+                    # Save it back into the scale dict for downstream
+                    scale["dv_description"] = dv_description
+
+                    # Show question text if available (but not if same as description)
                     q_text = scale.get("question_text", "")
-                    if q_text and not item_names:
+                    if q_text and q_text != dv_description and not item_names:
                         st.caption(f"*\"{q_text[:80]}{'...' if len(q_text) > 80 else ''}\"*")
 
                     # Show individual items in an expander if there are multiple items
@@ -10036,15 +10232,17 @@ if active_page == 2:
                         "items": num_items,
                         "num_items": num_items,  # Keep both for compatibility
                         "scale_points": scale_points,  # Max value for data generation
-                        "type": dv_type,
+                        "type": dv_type,  # v1.2.5.3: Now reflects user-selected type
                         "reverse_items": scale.get("reverse_items", []),
                         "detected_from_qsf": scale.get("detected_from_qsf", True),
                         # Preserve new fields for item display and simulation accuracy
                         "item_names": scale.get("item_names", []),
-                        "scale_anchors": scale.get("scale_anchors", {}),
+                        "scale_anchors": scale_anchors,  # v1.2.5.3: Updated with user-edited anchors
                         # v1.2.0: Save user-specified min/max for accurate simulation
                         "scale_min": new_scale_min,
                         "scale_max": new_scale_max,
+                        # v1.2.5.3: DV description/context for simulation intelligence
+                        "dv_description": scale.get("dv_description", ""),
                     })
         else:
             st.warning("No DVs auto-detected. Click **+ Add DV** below to define them manually.")
@@ -10054,7 +10252,7 @@ if active_page == 2:
             _removed_names = [confirmed_scales[i].get("name", f"DV {i+1}") for i in scales_to_remove if i < len(confirmed_scales)]
             # v1.0.6.1: Clean up orphaned widget state from old version to prevent memory bloat
             for _ci in range(max(10, len(confirmed_scales))):
-                for _prefix in ("dv_name_v", "dv_items_v", "dv_min_v", "dv_max_v", "dv_type_v"):
+                for _prefix in ("dv_name_v", "dv_items_v", "dv_min_v", "dv_max_v", "dv_type_v", "dv_desc_v", "dv_anchor_low_v", "dv_anchor_high_v"):
                     st.session_state.pop(f"{_prefix}{dv_version}_{_ci}", None)
             st.session_state["confirmed_scales"] = updated_scales
             st.session_state["_dv_version"] = dv_version + 1
@@ -10084,6 +10282,7 @@ if active_page == 2:
                 "scale_anchors": {},
                 "scale_min": 1,
                 "scale_max": 7,
+                "dv_description": "",
             }
             confirmed_scales.append(new_dv)
             st.session_state["confirmed_scales"] = confirmed_scales

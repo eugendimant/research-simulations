@@ -547,6 +547,9 @@ def _normalize_scales(scales: Optional[List[Any]]) -> List[Dict[str, Any]]:
                     "item_names": scale.get("item_names", []),
                     # v1.4.0: Preserve scale type for downstream use
                     "type": str(scale.get("type", "matrix")),
+                    # v1.2.5.3: Preserve DV description and scale anchors for simulation context
+                    "dv_description": str(scale.get("dv_description", "")),
+                    "scale_anchors": scale.get("scale_anchors", {}),
                 })
                 continue
 
@@ -587,6 +590,9 @@ def _normalize_scales(scales: Optional[List[Any]]) -> List[Dict[str, Any]]:
                     "item_names": scale.get("item_names", []),
                     # v1.4.0: Preserve scale type for downstream use
                     "type": str(scale.get("type", "matrix")),
+                    # v1.2.5.3: Preserve DV description and scale anchors
+                    "dv_description": str(scale.get("dv_description", "")),
+                    "scale_anchors": scale.get("scale_anchors", {}),
                 }
             )
     return normalized
@@ -2829,6 +2835,13 @@ class EnhancedSimulationEngine:
             self.conditions = ["Condition A"]
         self.factors = _normalize_factors(factors, self.conditions)
         self.scales = _normalize_scales(scales)
+        # v1.2.5.3: Build DV description lookup for condition effect intelligence
+        self._dv_descriptions: Dict[str, str] = {}
+        for _sc in self.scales:
+            _var = str(_sc.get("variable_name", _sc.get("name", ""))).lower().strip()
+            _desc = str(_sc.get("dv_description", ""))
+            if _var and _desc:
+                self._dv_descriptions[_var] = _desc
         self.additional_vars = additional_vars or []
         self.demographics = demographics or {}
         self.attention_rate = float(attention_rate)
@@ -3828,7 +3841,9 @@ class EnhancedSimulationEngine:
         _cond_desc_text = ""
         if self.condition_descriptions:
             _cond_desc_text = " ".join(str(d).lower() for d in self.condition_descriptions.values() if d)
-        _full_context = _all_conds_text + " " + _study_text + " " + variable_lower + " " + _cond_desc_text
+        # v1.2.5.3: Include DV description for richer semantic context
+        _dv_desc = self._dv_descriptions.get(variable_lower, "")
+        _full_context = _all_conds_text + " " + _study_text + " " + variable_lower + " " + _cond_desc_text + " " + _dv_desc.lower()
 
         # Default medium effect size parameters
         default_d = 0.5

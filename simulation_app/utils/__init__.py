@@ -2,7 +2,7 @@
 """
 Utility modules for the Behavioral Experiment Simulation Tool.
 
-Version: 1.2.5.2 - Adaptive Behavioral Engine 3.0 integration
+Version: 1.2.5.3 - Factor level manual input, DV type editing, scale anchors, DV context
 
 Changes (v1.0.0 - 20 Iterations of Comprehensive Improvements):
     === ENHANCED SCALE/MATRIX DETECTION ===
@@ -65,7 +65,7 @@ Modules:
 """
 
 # Package version - should match all module versions
-__version__ = "1.2.5.2"
+__version__ = "1.2.5.3"
 
 
 # =============================================================================
