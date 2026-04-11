@@ -54,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.2.5.9"
-BUILD_ID = "20260409-v12059-mediator-engine-integration-fix"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.2.6.0"
+BUILD_ID = "20260411-v12060-comprehension-checks"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -118,7 +118,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.2.5.9"  # v1.2.5.9: Critical mediator engine fix, orphaned ref cleanup, UX warnings
+APP_VERSION = "1.2.6.0"  # v1.2.6.0: Comprehension checks with correct answer and pass rate
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -11337,6 +11337,120 @@ if active_page == 2:
 
             # Context input for simulation
             st.markdown("---")
+
+            # v1.2.6.0: Comprehension Checks section
+            st.markdown("**Comprehension Checks**")
+            st.caption(
+                "Add questions that test whether participants understood the study manipulation or instructions. "
+                "Provide the correct answer so the simulator generates mostly correct responses (with realistic errors)."
+            )
+
+            # Initialize from QSF parser if available
+            if "confirmed_comprehension_checks" not in st.session_state:
+                _raw_comp = []
+                if preview and hasattr(preview, 'comprehension_checks'):
+                    for _cc in (preview.comprehension_checks or []):
+                        _raw_comp.append({
+                            "name": _cc.get("export_tag", _cc.get("question_id", "CompCheck")),
+                            "question_text": _cc.get("question_text", ""),
+                            "correct_answer": str(_cc.get("expected_answer", "")),
+                            "answer_options": "",  # User can specify: "Option A; Option B; Option C"
+                            "pass_rate": 0.90,
+                        })
+                st.session_state["confirmed_comprehension_checks"] = _raw_comp
+
+            _confirmed_comp = st.session_state.get("confirmed_comprehension_checks", [])
+            _comp_count = len(_confirmed_comp)
+
+            if _confirmed_comp:
+                _comp_to_remove = []
+                for _ci_comp, _ccheck in enumerate(_confirmed_comp):
+                    with st.container():
+                        _cc1, _cc2, _cc3, _cc4 = st.columns([2, 2, 1, 0.4])
+                        with _cc1:
+                            _cc_name = st.text_input(
+                                "Variable name",
+                                value=_ccheck.get("name", f"CompCheck_{_ci_comp+1}"),
+                                key=f"comp_name_v{_checks_version}_{_ci_comp}",
+                                label_visibility="collapsed",
+                                placeholder="e.g., ComprehensionQ1",
+                            )
+                        with _cc2:
+                            _cc_correct = st.text_input(
+                                "Correct answer",
+                                value=st.session_state.get(f"comp_correct_v{_checks_version}_{_ci_comp}", _ccheck.get("correct_answer", "")),
+                                key=f"comp_correct_v{_checks_version}_{_ci_comp}",
+                                placeholder="e.g., Option B  or  3",
+                                help="The correct answer. For multiple choice: the exact text or number. Most participants will give this answer.",
+                            )
+                        with _cc3:
+                            _cc_rate = st.number_input(
+                                "Pass %",
+                                min_value=50, max_value=100,
+                                value=int(_ccheck.get("pass_rate", 0.90) * 100),
+                                key=f"comp_rate_v{_checks_version}_{_ci_comp}",
+                                help="Percentage of participants who answer correctly (typical: 85-95%)",
+                            )
+                        with _cc4:
+                            if st.button("✕", key=f"rm_comp_v{_checks_version}_{_ci_comp}", help="Remove"):
+                                _comp_to_remove.append(_ci_comp)
+
+                        # Question text and answer options
+                        _qc1, _qc2 = st.columns(2)
+                        with _qc1:
+                            _cc_qtext = st.text_input(
+                                "Question text",
+                                value=st.session_state.get(f"comp_qtext_v{_checks_version}_{_ci_comp}", _ccheck.get("question_text", "")),
+                                key=f"comp_qtext_v{_checks_version}_{_ci_comp}",
+                                placeholder="e.g., In the scenario, was the product described as...",
+                                help="The question text (for reference and report).",
+                            )
+                        with _qc2:
+                            _cc_options = st.text_input(
+                                "Answer options (semicolon-separated)",
+                                value=st.session_state.get(f"comp_opts_v{_checks_version}_{_ci_comp}", _ccheck.get("answer_options", "")),
+                                key=f"comp_opts_v{_checks_version}_{_ci_comp}",
+                                placeholder="e.g., Limited supply; High demand; Both; Neither",
+                                help="All possible answer options, separated by semicolons. The correct answer should be one of these.",
+                            )
+
+                        # Update the check dict
+                        if _ci_comp not in _comp_to_remove:
+                            _confirmed_comp[_ci_comp] = {
+                                "name": _cc_name.strip() or f"CompCheck_{_ci_comp+1}",
+                                "question_text": _cc_qtext,
+                                "correct_answer": _cc_correct.strip(),
+                                "answer_options": _cc_options.strip(),
+                                "pass_rate": _cc_rate / 100.0,
+                            }
+
+                if _comp_to_remove:
+                    _confirmed_comp = [c for i, c in enumerate(_confirmed_comp) if i not in _comp_to_remove]
+                    # Clean up widget state
+                    for _ci_c in range(max(10, _comp_count)):
+                        for _pfx in ("comp_name_v", "comp_correct_v", "comp_rate_v", "comp_qtext_v", "comp_opts_v"):
+                            st.session_state.pop(f"{_pfx}{_checks_version}_{_ci_c}", None)
+                    st.session_state["confirmed_comprehension_checks"] = _confirmed_comp
+                    st.session_state["_checks_version"] = _checks_version + 1
+                    st.rerun()
+            else:
+                st.caption("None yet — add below if your study has comprehension checks")
+
+            if st.button("+ Add Comprehension Check", key=f"add_comp_btn_v{_checks_version}"):
+                _confirmed_comp.append({
+                    "name": f"CompCheck_{_comp_count + 1}",
+                    "question_text": "",
+                    "correct_answer": "",
+                    "answer_options": "",
+                    "pass_rate": 0.90,
+                })
+                st.session_state["confirmed_comprehension_checks"] = _confirmed_comp
+                st.session_state["_checks_version"] = _checks_version + 1
+                st.rerun()
+
+            st.session_state["confirmed_comprehension_checks"] = _confirmed_comp
+
+            st.markdown("---")
             st.markdown("**Simulation context** *(optional)*")
             st.caption("Add any additional context the simulation should consider (e.g., study setting, participant population, special instructions).")
             _sim_context_existing = st.session_state.get("simulation_additional_context", "")
@@ -13882,6 +13996,61 @@ if active_page == 3:
             with st.spinner(""):
                 progress_bar.progress(25, text="")
                 df, metadata = engine.generate()
+
+            # v1.2.6.0: Generate comprehension check columns post-engine
+            # Each check produces a column where most participants give the correct answer
+            _gen_comp_checks = st.session_state.get("confirmed_comprehension_checks", [])
+            if _gen_comp_checks and df is not None and len(df) > 0:
+                import numpy as _np_comp
+                _comp_rng = _np_comp.random.RandomState(42)
+                for _gc in _gen_comp_checks:
+                    _gc_name = (_gc.get("name") or "CompCheck").replace(" ", "_")
+                    _gc_correct = _gc.get("correct_answer", "").strip()
+                    _gc_rate = float(_gc.get("pass_rate", 0.90))
+                    _gc_options_str = _gc.get("answer_options", "").strip()
+
+                    if not _gc_correct:
+                        continue  # Skip checks with no correct answer defined
+
+                    # Parse answer options
+                    _gc_options = [o.strip() for o in _gc_options_str.split(";") if o.strip()] if _gc_options_str else []
+
+                    # Determine wrong answers
+                    _gc_wrong = [o for o in _gc_options if o != _gc_correct] if _gc_options else []
+
+                    n_rows = len(df)
+                    _gc_responses = []
+                    for _ri in range(n_rows):
+                        # Use participant's attention trait if available
+                        _attn_col = [c for c in df.columns if 'attention_pass' in c.lower()]
+                        _participant_attentive = True
+                        if _attn_col:
+                            _participant_attentive = df[_attn_col[0]].iloc[_ri] >= 0.5
+
+                        # Probability of correct answer (base rate × attention modifier)
+                        _p_correct = _gc_rate if _participant_attentive else _gc_rate * 0.6
+                        if _comp_rng.random() < _p_correct:
+                            _gc_responses.append(_gc_correct)
+                        else:
+                            # Wrong answer
+                            if _gc_wrong:
+                                _gc_responses.append(_comp_rng.choice(_gc_wrong))
+                            else:
+                                # No wrong options defined — use generic wrong answer
+                                _gc_responses.append(f"Wrong_{_gc_correct}")
+
+                    df[_gc_name] = _gc_responses
+                    # Add pass/fail flag column
+                    df[f"{_gc_name}_Pass"] = [1 if r == _gc_correct else 0 for r in _gc_responses]
+
+                # Store in metadata
+                metadata['comprehension_checks'] = [
+                    {"name": c.get("name", ""), "correct_answer": c.get("correct_answer", ""),
+                     "pass_rate_configured": c.get("pass_rate", 0.90),
+                     "pass_rate_actual": sum(1 for r in df.get(c.get("name", "").replace(" ", "_"), []) if r == c.get("correct_answer", "")) / max(1, len(df))
+                    }
+                    for c in _gen_comp_checks if c.get("correct_answer", "").strip()
+                ]
 
             # v1.2.0.8: Validate engine output before proceeding.
             # Engine may return (None, metadata) if it encounters an unrecoverable
