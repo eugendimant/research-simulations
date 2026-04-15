@@ -54,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.2.6.0"
-BUILD_ID = "20260411-v12060-comprehension-checks"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.2.6.1"
+BUILD_ID = "20260415-v12061-dv-type-reset-binary-fix"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -118,7 +118,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.2.6.0"  # v1.2.6.0: Comprehension checks with correct answer and pass rate
+APP_VERSION = "1.2.6.1"  # v1.2.6.1: Fix DV type reset on add, allow Max=1 for binary, version-increment fixes
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -10189,13 +10189,14 @@ if active_page == 2:
                                 help="Maximum value (e.g., 100 for percentage, 1000 for WTP)"
                             )
                         else:
+                            # v1.2.6.1: Allow min_value=1 for binary items (0/1 scales)
                             new_scale_max = st.number_input(
                                 "Max",
-                                min_value=2,
+                                min_value=1,
                                 max_value=100,
-                                value=min(current_max, 100),  # Cap at 100 for display
+                                value=min(max(1, current_max), 100),  # Cap at 100, floor at 1
                                 key=f"dv_max_v{dv_version}_{i}",
-                                help="Maximum scale value (e.g., 5, 7, 10, 100)"
+                                help="Maximum scale value (e.g., 1 for binary, 5, 7, 10, 100)"
                             )
 
                     # v1.8.9: Validate min < max and warn user
@@ -10367,7 +10368,9 @@ if active_page == 2:
             }
             confirmed_scales.append(new_dv)
             st.session_state["confirmed_scales"] = confirmed_scales
-            st.session_state["_dv_version"] = dv_version + 1
+            # v1.2.6.1: Do NOT increment _dv_version on add — only on removal.
+            # Incrementing version resets ALL widget keys (type, description, anchors)
+            # for existing DVs, losing user selections.
             # v1.0.1.4: Use st.rerun() to avoid scroll-to-top on DV add
             st.rerun()
 
@@ -10574,7 +10577,7 @@ if active_page == 2:
             }
             confirmed_mediators.append(new_med)
             st.session_state["confirmed_mediators"] = confirmed_mediators
-            st.session_state["_med_version"] = _med_version + 1
+            # v1.2.6.1: Do NOT increment version on add — only on removal
             st.rerun()
 
         st.session_state["confirmed_mediators"] = confirmed_mediators
@@ -11445,7 +11448,7 @@ if active_page == 2:
                     "pass_rate": 0.90,
                 })
                 st.session_state["confirmed_comprehension_checks"] = _confirmed_comp
-                st.session_state["_checks_version"] = _checks_version + 1
+                # v1.2.6.1: Do NOT increment _checks_version on add — only on removal
                 st.rerun()
 
             st.session_state["confirmed_comprehension_checks"] = _confirmed_comp

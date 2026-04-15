@@ -2,7 +2,7 @@
 """
 Utility modules for the Behavioral Experiment Simulation Tool.
 
-Version: 1.2.6.0 - Comprehension checks, mediator engine fix
+Version: 1.2.6.1 - DV type reset fix, binary Max=1, version-increment fixes
 
 Changes (v1.0.0 - 20 Iterations of Comprehensive Improvements):
     === ENHANCED SCALE/MATRIX DETECTION ===
@@ -65,7 +65,7 @@ Modules:
 """
 
 # Package version - should match all module versions
-__version__ = "1.2.6.0"
+__version__ = "1.2.6.1"
 
 
 # =============================================================================
