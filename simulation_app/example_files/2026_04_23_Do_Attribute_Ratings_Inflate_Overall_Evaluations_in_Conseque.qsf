@@ -1,0 +1,315 @@
+{
+  "SurveyEntry": {
+    "SurveyID": "SV_builder_b7c298e5",
+    "SurveyName": "Do Attribute Ratings Inflate Overall Evaluations in Consequential Contexts?",
+    "SurveyDescription": "Study Purpose\nThe study tests whether negative redundancy avoidance (NRA) — a cognitive bias where people avoid repeating negative information across multiple rating channels — persists in high-stakes professional evaluation contexts. Specifically, it asks: Does asking patients to rate specific physician attributes (communication, empathy, wait time, professionalism) alongside an overall rating inflate the overall rating compared to asking for an overall rating alone?\nManipulation: 2×2 Between-Subjects Design\nTwo factors are independently varied:\n•\tExperience Valence (Good vs. Subpar): Participants read a vignette of an annual physical. The good encounter features a ~10-minute wait, attentive listening, clear explanations, and warm presence. The subpar encounter features a ~35-minute wait, occasional interruptions, brief answers, and minimal engagement.\n•\tRating Format (Overall Only vs. Overall + Attributes): Participants either give a single 1–5 star rating, or first rate four attributes (communication, empathy, wait time, professionalism) and then give an overall rating.\nThis produces four conditions: C1 (Good/Overall Only), C2 (Good/Overall + Attributes), C3 (Subpar/Overall Only), C4 (Subpar/Overall + Attributes).\nPrimary Outcome — Overall Physician Rating (H1)\nThe key prediction is an interaction: in the subpar condition, overall ratings should be higher when attributes are also elicited (C4 > C3), because negative information gets \"absorbed\" into the attribute ratings, softening the overall judgment. In the good condition, format shouldn't matter much (C1 ≈ C2).\nSecondary Outcomes — Behavioral Measures (H2)\nTwo incentive-compatible behavioral measures are expected to show the opposite pattern from the ratings:\n•\tRecommendation likelihood (1–5 Likert): In the subpar condition, participants in the overall-only format (C3) are expected to be more willing to recommend than those who rated attributes (C4), because attribute rating makes negative dimensions more salient.\n•\tToken allocation (0–10): Participants split 10 tokens between themselves (lottery entries for a $50 gift card) and the physician (charitable donation in physician's name). The prediction is C3 > C4 in the subpar condition — attribute elicitation reduces generosity toward the physician despite inflating stated ratings.\nThe Key Divergence\nThe theoretically interesting finding would be a dissociation: attribute-based rating formats simultaneously inflate reported satisfaction while reducing behavioral generosity, suggesting that overall star ratings and revealed preferences can point in opposite directions depending on how the rating system is structured.",
+    "SurveyLanguage": "EN",
+    "SurveyStatus": "Inactive",
+    "SurveyStartDate": "2026-04-23 02:05:43",
+    "CreatorID": "conversational_builder"
+  },
+  "SurveyElements": [
+    {
+      "Element": "BL",
+      "PrimaryAttribute": "Survey Blocks",
+      "Payload": [
+        {
+          "Type": "Default",
+          "Description": "Shared Measures",
+          "ID": "BL_shared",
+          "BlockElements": [
+            {
+              "Type": "Question",
+              "QuestionID": "QID1"
+            },
+            {
+              "Type": "Question",
+              "QuestionID": "QID2"
+            },
+            {
+              "Type": "Question",
+              "QuestionID": "QID3"
+            }
+          ]
+        },
+        {
+          "Type": "Standard",
+          "Description": "Good_Overall",
+          "ID": "BL_Good_Overall",
+          "BlockElements": []
+        },
+        {
+          "Type": "Standard",
+          "Description": "Good_Attributes+Overall",
+          "ID": "BL_Good_Attributes_Overall",
+          "BlockElements": []
+        },
+        {
+          "Type": "Standard",
+          "Description": "Subpar_Overall",
+          "ID": "BL_Subpar_Overall",
+          "BlockElements": []
+        },
+        {
+          "Type": "Standard",
+          "Description": "Subpar_Attributes+Overal",
+          "ID": "BL_Subpar_Attributes_Overal",
+          "BlockElements": []
+        }
+      ]
+    },
+    {
+      "Element": "FL",
+      "PrimaryAttribute": "Survey Flow",
+      "Payload": {
+        "Type": "Root",
+        "FlowID": "FL_1",
+        "Flow": [
+          {
+            "Type": "EmbeddedData",
+            "FlowID": "FL_embed",
+            "EmbeddedData": [
+              {
+                "Description": "study_domain",
+                "Value": "cognitive psychology"
+              },
+              {
+                "Description": "design_type",
+                "Value": "between"
+              },
+              {
+                "Description": "source",
+                "Value": "conversational_builder"
+              }
+            ]
+          },
+          {
+            "Type": "BlockRandomizer",
+            "SubSet": 1,
+            "EvenPresentation": true,
+            "ID": "BR_conditions",
+            "Description": "Condition Assignment",
+            "Flow": [
+              {
+                "Type": "Block",
+                "ID": "BL_Good_Overall"
+              },
+              {
+                "Type": "Block",
+                "ID": "BL_Good_Attributes_Overall"
+              },
+              {
+                "Type": "Block",
+                "ID": "BL_Subpar_Overall"
+              },
+              {
+                "Type": "Block",
+                "ID": "BL_Subpar_Attributes_Overal"
+              }
+            ]
+          },
+          {
+            "Type": "Block",
+            "ID": "BL_shared"
+          }
+        ]
+      }
+    },
+    {
+      "Element": "SQ",
+      "PrimaryAttribute": "QID1",
+      "Payload": {
+        "QuestionID": "QID1",
+        "QuestionType": "MC",
+        "Selector": "SAVR",
+        "QuestionText": "Overall_Rating, 1 item, 1-5 stars",
+        "DataExportTag": "Overall_stars",
+        "Choices": {
+          "1": {
+            "Display": "1"
+          },
+          "2": {
+            "Display": "2"
+          },
+          "3": {
+            "Display": "3"
+          },
+          "4": {
+            "Display": "4"
+          },
+          "5": {
+            "Display": "5"
+          }
+        },
+        "ChoiceOrder": [
+          "1",
+          "2",
+          "3",
+          "4",
+          "5"
+        ],
+        "Validation": {
+          "Settings": {
+            "ForceResponse": "ON",
+            "Type": "None"
+          }
+        }
+      }
+    },
+    {
+      "Element": "SQ",
+      "PrimaryAttribute": "QID2",
+      "Payload": {
+        "QuestionID": "QID2",
+        "QuestionType": "MC",
+        "Selector": "SAVR",
+        "QuestionText": "Recommendation_Likelihood, 1 item, 1-5 Likert (1=Very unlikely, 5=Very likely)",
+        "DataExportTag": "RecommendationLikelihood",
+        "Choices": {
+          "1": {
+            "Display": "1"
+          },
+          "2": {
+            "Display": "2"
+          },
+          "3": {
+            "Display": "3"
+          },
+          "4": {
+            "Display": "4"
+          },
+          "5": {
+            "Display": "5"
+          }
+        },
+        "ChoiceOrder": [
+          "1",
+          "2",
+          "3",
+          "4",
+          "5"
+        ],
+        "Validation": {
+          "Settings": {
+            "ForceResponse": "ON",
+            "Type": "None"
+          }
+        }
+      }
+    },
+    {
+      "Element": "SQ",
+      "PrimaryAttribute": "QID3",
+      "Payload": {
+        "QuestionID": "QID3",
+        "QuestionType": "TE",
+        "Selector": "SL",
+        "QuestionText": "Token_Allocation, 1 item, 0-10 numeric (tokens allocated to physician out of 10)",
+        "DataExportTag": "TokenAllocation_numeric_tokens",
+        "Choices": {},
+        "ChoiceOrder": [],
+        "Validation": {
+          "Settings": {
+            "ForceResponse": "ON",
+            "Type": "None"
+          }
+        }
+      }
+    }
+  ],
+  "_builder_metadata": {
+    "generated_at": "2026-04-23T02:05:43.391089+00:00",
+    "source": "conversational_builder",
+    "design_type": "between",
+    "conditions": [
+      "Good_Overall",
+      "Good_Attributes+Overall",
+      "Subpar_Overall",
+      "Subpar_Attributes+Overal"
+    ],
+    "scales": [
+      "Overall_ stars",
+      "Recommendation_Likelihood",
+      "Token_Allocation numeric tokens allocated to physician ou..."
+    ],
+    "open_ended": [],
+    "factors": [
+      {
+        "name": "Factor_1",
+        "levels": [
+          "Good",
+          "Subpar"
+        ]
+      },
+      {
+        "name": "Factor_2",
+        "levels": [
+          "Attributes+Overal",
+          "Attributes+Overall",
+          "Overall"
+        ]
+      }
+    ],
+    "domain": "cognitive psychology",
+    "sample_size": 1400,
+    "participant_characteristics": "",
+    "raw_inputs": {
+      "conditions_text": "Good_Overall, Good_Attributes+Overall, Subpar_Overall, Subpar_Attributes+Overal",
+      "scales_text": "Overall_Rating, 1 item, 1-5 stars\nRecommendation_Likelihood, 1 item, 1-5 Likert (1=Very unlikely, 5=Very likely)\nToken_Allocation, 1 item, 0-10 numeric (tokens allocated to physician out of 10)",
+      "open_ended_text": "",
+      "study_title": "Do Attribute Ratings Inflate Overall Evaluations in Consequential Contexts?",
+      "study_description": "Study Purpose\nThe study tests whether negative redundancy avoidance (NRA) — a cognitive bias where people avoid repeating negative information across multiple rating channels — persists in high-stakes professional evaluation contexts. Specifically, it asks: Does asking patients to rate specific physician attributes (communication, empathy, wait time, professionalism) alongside an overall rating inflate the overall rating compared to asking for an overall rating alone?\nManipulation: 2×2 Between-Subjects Design\nTwo factors are independently varied:\n•\tExperience Valence (Good vs. Subpar): Participants read a vignette of an annual physical. The good encounter features a ~10-minute wait, attentive listening, clear explanations, and warm presence. The subpar encounter features a ~35-minute wait, occasional interruptions, brief answers, and minimal engagement.\n•\tRating Format (Overall Only vs. Overall + Attributes): Participants either give a single 1–5 star rating, or first rate four attributes (communication, empathy, wait time, professionalism) and then give an overall rating.\nThis produces four conditions: C1 (Good/Overall Only), C2 (Good/Overall + Attributes), C3 (Subpar/Overall Only), C4 (Subpar/Overall + Attributes).\nPrimary Outcome — Overall Physician Rating (H1)\nThe key prediction is an interaction: in the subpar condition, overall ratings should be higher when attributes are also elicited (C4 > C3), because negative information gets \"absorbed\" into the attribute ratings, softening the overall judgment. In the good condition, format shouldn't matter much (C1 ≈ C2).\nSecondary Outcomes — Behavioral Measures (H2)\nTwo incentive-compatible behavioral measures are expected to show the opposite pattern from the ratings:\n•\tRecommendation likelihood (1–5 Likert): In the subpar condition, participants in the overall-only format (C3) are expected to be more willing to recommend than those who rated attributes (C4), because attribute rating makes negative dimensions more salient.\n•\tToken allocation (0–10): Participants split 10 tokens between themselves (lottery entries for a $50 gift card) and the physician (charitable donation in physician's name). The prediction is C3 > C4 in the subpar condition — attribute elicitation reduces generosity toward the physician despite inflating stated ratings.\nThe Key Divergence\nThe theoretically interesting finding would be a dissociation: attribute-based rating formats simultaneously inflate reported satisfaction while reducing behavioral generosity, suggesting that overall star ratings and revealed preferences can point in opposite directions depending on how the rating system is structured.",
+      "participant_desc": "",
+      "design_type": "between",
+      "sample_size": 1400
+    },
+    "parsed_scales_detail": [
+      {
+        "name": "Overall_ stars",
+        "variable_name": "Overall_stars",
+        "scale_type": "likert",
+        "num_items": 1,
+        "scale_min": 1,
+        "scale_max": 5,
+        "description": "Overall_Rating, 1 item, 1-5 stars"
+      },
+      {
+        "name": "Recommendation_Likelihood",
+        "variable_name": "RecommendationLikelihood",
+        "scale_type": "likert",
+        "num_items": 1,
+        "scale_min": 1,
+        "scale_max": 5,
+        "description": "Recommendation_Likelihood, 1 item, 1-5 Likert (1=Very unlikely, 5=Very likely)"
+      },
+      {
+        "name": "Token_Allocation numeric tokens allocated to physician ou...",
+        "variable_name": "TokenAllocation_numeric_tokens",
+        "scale_type": "numeric",
+        "num_items": 1,
+        "scale_min": 0,
+        "scale_max": 10,
+        "description": "Token_Allocation, 1 item, 0-10 numeric (tokens allocated to physician out of 10)"
+      }
+    ],
+    "parsed_conditions_detail": [
+      {
+        "name": "Good_Overall",
+        "description": ""
+      },
+      {
+        "name": "Good_Attributes+Overall",
+        "description": ""
+      },
+      {
+        "name": "Subpar_Overall",
+        "description": ""
+      },
+      {
+        "name": "Subpar_Attributes+Overal",
+        "description": ""
+      }
+    ],
+    "parsed_open_ended_detail": []
+  }
+}
