@@ -1,0 +1,259 @@
+{
+  "SurveyEntry": {
+    "SurveyID": "SV_builder_5943eb65",
+    "SurveyName": "The Interactive Eﬀects of Brand Nickname Usage and Source on Consumer Evaluation",
+    "SurveyDescription": "This study aims to investigate the causal role of information sources in the use of brand nicknames and to clarify when informal brand language can strengthen consumer connections versus when it backfires. More broadly, the project helps distinguish whether the original nickname-branding effect reflects nickname usage itself or the social meaning of brand-led adoption. Findings from this study will provide actionable recommendations for brands employing informal communication strategies, demonstrating that the effective use of brand nicknames depends not only on whether they are used, but also on who uses them.",
+    "SurveyLanguage": "EN",
+    "SurveyStatus": "Inactive",
+    "SurveyStartDate": "2026-04-25 19:20:20",
+    "CreatorID": "conversational_builder"
+  },
+  "SurveyElements": [
+    {
+      "Element": "BL",
+      "PrimaryAttribute": "Survey Blocks",
+      "Payload": [
+        {
+          "Type": "Default",
+          "Description": "Shared Measures",
+          "ID": "BL_shared",
+          "BlockElements": [
+            {
+              "Type": "Question",
+              "QuestionID": "QID1"
+            }
+          ]
+        },
+        {
+          "Type": "Standard",
+          "Description": "Original Website",
+          "ID": "BL_Original_Website",
+          "BlockElements": []
+        },
+        {
+          "Type": "Standard",
+          "Description": "Brand+Formal Name",
+          "ID": "BL_Brand_Formal_Name",
+          "BlockElements": []
+        },
+        {
+          "Type": "Standard",
+          "Description": "Brand+Nickname",
+          "ID": "BL_Brand_Nickname",
+          "BlockElements": []
+        },
+        {
+          "Type": "Standard",
+          "Description": "Influencer+Formal Name",
+          "ID": "BL_Influencer_Formal_Name",
+          "BlockElements": []
+        },
+        {
+          "Type": "Standard",
+          "Description": "Influencer+Nickname",
+          "ID": "BL_Influencer_Nickname",
+          "BlockElements": []
+        }
+      ]
+    },
+    {
+      "Element": "FL",
+      "PrimaryAttribute": "Survey Flow",
+      "Payload": {
+        "Type": "Root",
+        "FlowID": "FL_1",
+        "Flow": [
+          {
+            "Type": "EmbeddedData",
+            "FlowID": "FL_embed",
+            "EmbeddedData": [
+              {
+                "Description": "study_domain",
+                "Value": "consumer behavior"
+              },
+              {
+                "Description": "design_type",
+                "Value": "between"
+              },
+              {
+                "Description": "source",
+                "Value": "conversational_builder"
+              }
+            ]
+          },
+          {
+            "Type": "BlockRandomizer",
+            "SubSet": 1,
+            "EvenPresentation": true,
+            "ID": "BR_conditions",
+            "Description": "Condition Assignment",
+            "Flow": [
+              {
+                "Type": "Block",
+                "ID": "BL_Original_Website"
+              },
+              {
+                "Type": "Block",
+                "ID": "BL_Brand_Formal_Name"
+              },
+              {
+                "Type": "Block",
+                "ID": "BL_Brand_Nickname"
+              },
+              {
+                "Type": "Block",
+                "ID": "BL_Influencer_Formal_Name"
+              },
+              {
+                "Type": "Block",
+                "ID": "BL_Influencer_Nickname"
+              }
+            ]
+          },
+          {
+            "Type": "Block",
+            "ID": "BL_shared"
+          }
+        ]
+      }
+    },
+    {
+      "Element": "SQ",
+      "PrimaryAttribute": "QID1",
+      "Payload": {
+        "QuestionID": "QID1",
+        "QuestionType": "Matrix",
+        "Selector": "Likert",
+        "QuestionText": "Brand Attitude (5 items, 1-7 Likert)",
+        "DataExportTag": "Brand_Attitude",
+        "Choices": {
+          "1": {
+            "Display": "Brand Attitude item 1"
+          },
+          "2": {
+            "Display": "Brand Attitude item 2"
+          },
+          "3": {
+            "Display": "Brand Attitude item 3"
+          },
+          "4": {
+            "Display": "Brand Attitude item 4"
+          },
+          "5": {
+            "Display": "Brand Attitude item 5"
+          }
+        },
+        "ChoiceOrder": [
+          "1",
+          "2",
+          "3",
+          "4",
+          "5"
+        ],
+        "Validation": {
+          "Settings": {
+            "ForceResponse": "ON",
+            "Type": "None"
+          }
+        },
+        "SubSelector": "SingleAnswer",
+        "Answers": {
+          "1": {
+            "Display": "1"
+          },
+          "2": {
+            "Display": "2"
+          },
+          "3": {
+            "Display": "3"
+          },
+          "4": {
+            "Display": "4"
+          },
+          "5": {
+            "Display": "5"
+          },
+          "6": {
+            "Display": "6"
+          },
+          "7": {
+            "Display": "7"
+          }
+        },
+        "AnswerOrder": [
+          "1",
+          "2",
+          "3",
+          "4",
+          "5",
+          "6",
+          "7"
+        ]
+      }
+    }
+  ],
+  "_builder_metadata": {
+    "generated_at": "2026-04-25T19:20:20.554102+00:00",
+    "source": "conversational_builder",
+    "design_type": "between",
+    "conditions": [
+      "Original Website",
+      "Brand+Formal Name",
+      "Brand+Nickname",
+      "Influencer+Formal Name",
+      "Influencer+Nickname"
+    ],
+    "scales": [
+      "Brand Attitude"
+    ],
+    "open_ended": [],
+    "factors": [],
+    "domain": "consumer behavior",
+    "sample_size": 320,
+    "participant_characteristics": "",
+    "raw_inputs": {
+      "conditions_text": "Original Website, Brand+Formal Name, Brand+Nickname, Influencer+Formal Name, Influencer+Nickname",
+      "scales_text": "Brand Attitude (5 items, 1-7 Likert)\n",
+      "open_ended_text": "",
+      "study_title": "The Interactive Eﬀects of Brand Nickname Usage and Source on Consumer Evaluation",
+      "study_description": "This study aims to investigate the causal role of information sources in the use of brand nicknames and to clarify when informal brand language can strengthen consumer connections versus when it backfires. More broadly, the project helps distinguish whether the original nickname-branding effect reflects nickname usage itself or the social meaning of brand-led adoption. Findings from this study will provide actionable recommendations for brands employing informal communication strategies, demonstrating that the effective use of brand nicknames depends not only on whether they are used, but also on who uses them.",
+      "participant_desc": "",
+      "design_type": "between",
+      "sample_size": 320
+    },
+    "parsed_scales_detail": [
+      {
+        "name": "Brand Attitude",
+        "variable_name": "Brand_Attitude",
+        "scale_type": "likert",
+        "num_items": 5,
+        "scale_min": 1,
+        "scale_max": 7,
+        "description": "Brand Attitude (5 items, 1-7 Likert)"
+      }
+    ],
+    "parsed_conditions_detail": [
+      {
+        "name": "Original Website",
+        "description": ""
+      },
+      {
+        "name": "Brand+Formal Name",
+        "description": ""
+      },
+      {
+        "name": "Brand+Nickname",
+        "description": ""
+      },
+      {
+        "name": "Influencer+Formal Name",
+        "description": ""
+      },
+      {
+        "name": "Influencer+Nickname",
+        "description": ""
+      }
+    ],
+    "parsed_open_ended_detail": []
+  }
+}
