@@ -54,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.2.6.3"
-BUILD_ID = "20260530-v12063-opus-review-fixes"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.2.6.5"
+BUILD_ID = "20260530-v12065-persona-diversity-improvements"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -118,7 +118,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.2.6.3"  # v1.2.6.3: Opus review fixes — condition-aware manip checks, binary attn checks, perf + collision fixes
+APP_VERSION = "1.2.6.5"  # v1.2.6.5: Persona diversity improvements (Barrie & Cerina 2026, Paglieri et al. 2026)
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -13467,7 +13467,15 @@ if active_page == 3:
             # exceeds this, force the LLM generator to permanently disable and let
             # template fallback finish the remaining participants. This prevents the
             # scenario where the UI spinner shows "Generating..." for 12+ hours.
-            _GLOBAL_GENERATION_TIMEOUT = 600.0  # 10 minutes absolute max
+            # v1.2.6.4: The global timeout is now a PROGRESS-AWARE absolute ceiling,
+            # not a hard wall-clock cap. Generation is NEVER killed while it is still
+            # making progress (progress callbacks keep arriving). It is only stopped
+            # when EITHER (a) a genuine stall is detected — no progress for
+            # _STALL_TIMEOUT seconds — OR (b) the absolute ceiling is hit AND no
+            # recent progress. Large legitimate runs (e.g., N=10,000 non-LLM, or many
+            # LLM open-ended questions) can run as long as they keep moving.
+            _GLOBAL_GENERATION_TIMEOUT = 1800.0  # 30 min absolute backstop (progress-aware)
+            _STALL_TIMEOUT = 120.0               # kill only if no progress for 120s
             _generation_timed_out = [False]  # mutable ref for closure
 
             # v1.1.1.5: Define these BEFORE the callback closure so they're guaranteed
@@ -13505,11 +13513,14 @@ if active_page == 3:
                     _last_progress_time[0] = _now
                     _last_progress_phase[0] = phase
 
-                    # v1.1.1.0: Global generation timeout enforcement.
-                    # If total elapsed exceeds the hard limit, permanently disable LLM
-                    # so remaining participants use fast template fallback instead of
-                    # continuing to hammer dead API providers.
-                    if _elapsed > _GLOBAL_GENERATION_TIMEOUT and not _generation_timed_out[0]:
+                    # v1.2.6.4: Progress-aware global timeout. Because THIS callback
+                    # IS a progress signal, reaching here means generation just made
+                    # progress — so we do NOT treat the absolute ceiling as a failure
+                    # while work is actively moving. The ceiling only matters as a
+                    # backstop checked by the watchdog thread (which sees staleness).
+                    # We intentionally do nothing here on elapsed-time alone; genuine
+                    # hangs are caught by the watchdog's stall detector.
+                    if False:  # disabled elapsed-only kill — see watchdog stall logic
                         _generation_timed_out[0] = True
                         import logging as _cb_logging
                         _cb_logging.getLogger(__name__).warning(
@@ -13959,26 +13970,30 @@ if active_page == 3:
                     # Check if generation has completed (flag set by main thread)
                     if _generation_timed_out[0]:
                         return  # Already handled
-                    if _wd_elapsed > _GLOBAL_GENERATION_TIMEOUT:
+                    # v1.2.6.4: Progress-aware. Compute time since last progress FIRST.
+                    _since_last_progress = __import__('time').time() - _last_progress_time[0]
+                    # Absolute backstop: only fire if the ceiling is exceeded AND
+                    # generation is no longer making progress. A long run that keeps
+                    # producing progress callbacks is NEVER killed by the ceiling.
+                    if _wd_elapsed > _GLOBAL_GENERATION_TIMEOUT and _since_last_progress > _STALL_TIMEOUT:
                         _generation_timed_out[0] = True
                         import logging as _wd_logging
                         _wd_logging.getLogger(__name__).warning(
-                            "WATCHDOG: Global timeout (%.0fs) exceeded — "
-                            "force-disabling LLM generator",
-                            _GLOBAL_GENERATION_TIMEOUT,
+                            "WATCHDOG: Global backstop (%.0fs) exceeded with stall "
+                            "(%.0fs no progress) — force-disabling LLM generator",
+                            _GLOBAL_GENERATION_TIMEOUT, _since_last_progress,
                         )
                         try:
                             if hasattr(engine, 'llm_generator') and engine.llm_generator is not None:
                                 engine.llm_generator.disable_permanently(
-                                    f"watchdog: global timeout ({_GLOBAL_GENERATION_TIMEOUT:.0f}s)"
+                                    f"watchdog: global backstop ({_GLOBAL_GENERATION_TIMEOUT:.0f}s) + stall"
                                 )
                         except Exception as _wd_exc:
                             _wd_logging.getLogger(__name__).error(
                                 "WATCHDOG: disable_permanently failed: %s", _wd_exc)
                         return
-                    # Also check stall: no progress callback for 120s
-                    _since_last_progress = __import__('time').time() - _last_progress_time[0]
-                    if _since_last_progress > 120.0:
+                    # Primary protection: stall detection — no progress for _STALL_TIMEOUT
+                    if _since_last_progress > _STALL_TIMEOUT:
                         import logging as _wd_logging2
                         _wd_logging2.getLogger(__name__).warning(
                             "WATCHDOG: No progress for %.0fs (phase=%s) — "

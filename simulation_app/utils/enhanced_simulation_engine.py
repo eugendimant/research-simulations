@@ -365,6 +365,15 @@ class LLMExhaustedMidGeneration(Exception):
         self.generation_source_map = generation_source_map
 
 
+# v1.2.6.4 PERFORMANCE: Cache compiled regex patterns. _word_in/_stem_in are
+# called millions of times during large-N generation; re.search recompiles the
+# pattern on every call (Python's internal cache is small and thrashes when many
+# distinct keywords are used). An explicit module-level cache keyed on the raw
+# keyword eliminates repeated compilation — the dominant cost in profiling.
+_WORD_PATTERN_CACHE: Dict[str, "re.Pattern"] = {}
+_STEM_PATTERN_CACHE: Dict[str, "re.Pattern"] = {}
+
+
 def _word_in(keyword: str, text: str) -> bool:
     """Check if keyword appears in text as a whole word (word-boundary matching).
 
@@ -373,8 +382,13 @@ def _word_in(keyword: str, text: str) -> bool:
 
     v1.0.1.3: Added to fix substring false-positive keyword matching throughout
     the semantic effect engine.
+    v1.2.6.4: Compiled-pattern cache for performance.
     """
-    return bool(re.search(r'\b' + re.escape(keyword) + r'\b', text))
+    _pat = _WORD_PATTERN_CACHE.get(keyword)
+    if _pat is None:
+        _pat = re.compile(r'\b' + re.escape(keyword) + r'\b')
+        _WORD_PATTERN_CACHE[keyword] = _pat
+    return bool(_pat.search(text))
 
 
 def _stem_in(stem: str, text: str) -> bool:
@@ -382,8 +396,13 @@ def _stem_in(stem: str, text: str) -> bool:
 
     For intentional prefix matches like 'automat' -> 'automated'/'automation',
     'reciproc' -> 'reciprocity'/'reciprocal', 'promot' -> 'promote'/'promotion'.
+    v1.2.6.4: Compiled-pattern cache for performance.
     """
-    return bool(re.search(r'\b' + re.escape(stem), text))
+    _pat = _STEM_PATTERN_CACHE.get(stem)
+    if _pat is None:
+        _pat = re.compile(r'\b' + re.escape(stem))
+        _STEM_PATTERN_CACHE[stem] = _pat
+    return bool(_pat.search(text))
 
 
 def _any_word_in(keywords: list, text: str) -> bool:
@@ -3670,7 +3689,31 @@ class EnhancedSimulationEngine:
 
         BUT we need stronger effects for pilot simulations where users expect
         to see differences. Use amplified conversion factor.
+
+        v1.2.6.4 PERFORMANCE: This method is deterministic for a given
+        (condition, variable) pair within a single run — effect_sizes,
+        conditions, and study context do not change during generation. It is
+        called once per participant per scale item (N × items times), each
+        doing heavy regex/string matching. Memoize the result so the expensive
+        computation runs once per unique (condition, variable) pair instead of
+        tens of thousands of times. This is the single largest hot-path cost
+        for large-N simulations.
         """
+        # v1.2.6.4: Memoization cache keyed on (condition, variable)
+        _cache = getattr(self, "_effect_cache", None)
+        if _cache is None:
+            _cache = {}
+            self._effect_cache = _cache
+        _cache_key = (str(condition), str(variable))
+        if _cache_key in _cache:
+            return _cache[_cache_key]
+        _result = self._compute_effect_for_condition(condition, variable)
+        _cache[_cache_key] = _result
+        return _result
+
+    def _compute_effect_for_condition(self, condition: str, variable: str) -> float:
+        """v1.2.6.4: Uncached implementation of effect computation (see
+        _get_effect_for_condition for memoization wrapper and docs)."""
         # v1.4.11: Recalibrated effect multiplier for accuracy
         # Converts Cohen's d to a 0-1 normalized shift
         # d=0.5 -> 0.15 shift -> ~0.9 points on 7-point scale (observed d ≈ 0.5-0.7)
@@ -7686,6 +7729,19 @@ class EnhancedSimulationEngine:
             base_tendency = modified_traits.get("scale_use_breadth", 0.58)
         base_tendency = _safe_trait_value(base_tendency, 0.58)
 
+        # v1.2.6.5: Per-scale diversity noise (Barrie & Cerina 2026 correction)
+        # A single response_tendency driving all scales makes attitudes
+        # co-move too tightly (over-constraint). Real people evaluate different
+        # constructs partially independently. Add per-scale noise drawn from
+        # a distribution seeded on (participant, variable) so it's reproducible
+        # but varies across scales for the same person.
+        _scale_noise_seed = _stable_int_hash(f"{participant_seed}_{variable_name}") % (2**31)
+        _scale_noise_rng = np.random.RandomState(_scale_noise_seed)
+        _per_scale_noise = _scale_noise_rng.normal(0, 0.18)
+        _secondary_z = traits.get('_secondary_diversity_z', 0.0)
+        _per_scale_noise += _secondary_z * 0.08 * (1 if _scale_noise_rng.random() > 0.5 else -1)
+        base_tendency = base_tendency + _per_scale_noise
+
         # v1.0.8.6: For bipolar scales, START at the true midpoint (0.5 = zero)
         # instead of the default positivity-biased 0.58. Positivity bias is a
         # Likert-scale artifact (Diener et al., 1999) that doesn't apply to
@@ -8052,7 +8108,11 @@ class EnhancedSimulationEngine:
             else:
                 _g_loading = 0.15  # Default: moderate loading
 
-            _g_effect = _g_factor_z * _g_strength * _g_loading
+            # v1.2.6.5: Add per-scale jitter to g-factor loading to prevent
+            # all constructs from moving in lockstep. Real CMV varies within
+            # a person across different constructs (Barrie & Cerina 2026).
+            _g_jitter = rng.normal(0, _g_loading * 0.3)
+            _g_effect = _g_factor_z * _g_strength * (_g_loading + _g_jitter)
             adjusted_tendency = float(np.clip(
                 adjusted_tendency + _g_effect, _bound_low, _bound_high
             ))
@@ -11369,7 +11429,10 @@ class EnhancedSimulationEngine:
             # This adds realistic Cronbach's alpha while preserving per-item
             # condition effects, persona variation, and calibration.
             if num_items >= 3:
-                target_alpha = float(scale.get("reliability", 0.85))
+                # v1.2.6.5: Reduced default from 0.85 to 0.78 — real scales
+                # typically have alpha 0.70-0.85; the injection function was
+                # overshooting, producing inter-item r ≈ 0.94 (unrealistic).
+                target_alpha = float(scale.get("reliability", 0.78))
                 item_col_names = [f"{scale_name}_{j+1}" for j in range(num_items)]
                 try:
                     _item_matrix = np.array(
