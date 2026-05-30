@@ -2,7 +2,7 @@
 """
 Utility modules for the Behavioral Experiment Simulation Tool.
 
-Version: 1.2.6.4 - Robustness fixes: political same-valence ingroup, bipolar recode scale points, NaN-safe validator/charts
+Version: 1.2.6.5 - Robustness fixes + behavioral DV recovery; exclude PII/admin free-text from open-ended recovery
 
 Changes (v1.0.0 - 20 Iterations of Comprehensive Improvements):
     === ENHANCED SCALE/MATRIX DETECTION ===
@@ -65,7 +65,7 @@ Modules:
 """
 
 # Package version - should match all module versions
-__version__ = "1.2.6.4"
+__version__ = "1.2.6.5"
 
 
 # =============================================================================

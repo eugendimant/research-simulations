@@ -54,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.2.6.4"
-BUILD_ID = "20260530-v12064-robustness-fixes"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.2.6.5"
+BUILD_ID = "20260530-v12065-pii-oe-exclusion"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -118,7 +118,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.2.6.4"  # v1.2.6.4: Robustness fixes — political same-valence ingroup, bipolar recode scale points, NaN-safe validator/charts
+APP_VERSION = "1.2.6.5"  # v1.2.6.5: Exclude PII/admin free-text from open-ended recovery (v1.2.6.4 robustness + behavioral DV recovery)
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -4503,6 +4503,13 @@ def _preview_to_engine_inputs(preview: QSFPreviewResult) -> Dict[str, Any]:
     if not open_ended and not _had_detected_scales:
         _skip_oe_block = ("consent", "demographic", "debrief", "intro", "instruction",
                           "attention", "comprehension", "captcha")
+        # Admin/PII free-text fields (worker IDs, emails, payment/zip codes) are
+        # not open-ended DVs — never fabricate an essay for them.
+        _pii_ct = ("email", "phone", "zip", "postal")
+        _pii_kw = ("mturk", "prolific", "paypal", "venmo", "worker id", "worker number",
+                   "participant id", "email address", "phone number", "zip code",
+                   "postal code", "mailing address", "completion code",
+                   "confirmation code", "amazon id")
         _recovered_oe: List[str] = []
         for te in (getattr(preview, "text_entry_questions", None) or []):
             if te.get("is_comprehension_check"):
@@ -4513,9 +4520,12 @@ def _preview_to_engine_inputs(preview: QSFPreviewResult) -> Dict[str, Any]:
             if (te.get("number_min") is not None or te.get("number_max") is not None
                     or any(t in _ct for t in ("number", "numb", "money", "decimal", "integer"))):
                 continue
+            if any(t in _ct for t in _pii_ct):
+                continue
             _qt = str(te.get("question_text") or "").strip()
-            if _qt:
-                _recovered_oe.append(_qt)
+            if not _qt or any(kw in _qt.lower() for kw in _pii_kw):
+                continue
+            _recovered_oe.append(_qt)
             if len(_recovered_oe) >= 10:
                 break
         open_ended = _recovered_oe
