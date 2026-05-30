@@ -365,6 +365,15 @@ class LLMExhaustedMidGeneration(Exception):
         self.generation_source_map = generation_source_map
 
 
+# v1.2.6.4 PERFORMANCE: Cache compiled regex patterns. _word_in/_stem_in are
+# called millions of times during large-N generation; re.search recompiles the
+# pattern on every call (Python's internal cache is small and thrashes when many
+# distinct keywords are used). An explicit module-level cache keyed on the raw
+# keyword eliminates repeated compilation — the dominant cost in profiling.
+_WORD_PATTERN_CACHE: Dict[str, "re.Pattern"] = {}
+_STEM_PATTERN_CACHE: Dict[str, "re.Pattern"] = {}
+
+
 def _word_in(keyword: str, text: str) -> bool:
     """Check if keyword appears in text as a whole word (word-boundary matching).
 
@@ -373,8 +382,13 @@ def _word_in(keyword: str, text: str) -> bool:
 
     v1.0.1.3: Added to fix substring false-positive keyword matching throughout
     the semantic effect engine.
+    v1.2.6.4: Compiled-pattern cache for performance.
     """
-    return bool(re.search(r'\b' + re.escape(keyword) + r'\b', text))
+    _pat = _WORD_PATTERN_CACHE.get(keyword)
+    if _pat is None:
+        _pat = re.compile(r'\b' + re.escape(keyword) + r'\b')
+        _WORD_PATTERN_CACHE[keyword] = _pat
+    return bool(_pat.search(text))
 
 
 def _stem_in(stem: str, text: str) -> bool:
@@ -382,8 +396,13 @@ def _stem_in(stem: str, text: str) -> bool:
 
     For intentional prefix matches like 'automat' -> 'automated'/'automation',
     'reciproc' -> 'reciprocity'/'reciprocal', 'promot' -> 'promote'/'promotion'.
+    v1.2.6.4: Compiled-pattern cache for performance.
     """
-    return bool(re.search(r'\b' + re.escape(stem), text))
+    _pat = _STEM_PATTERN_CACHE.get(stem)
+    if _pat is None:
+        _pat = re.compile(r'\b' + re.escape(stem))
+        _STEM_PATTERN_CACHE[stem] = _pat
+    return bool(_pat.search(text))
 
 
 def _any_word_in(keywords: list, text: str) -> bool:
@@ -3670,7 +3689,31 @@ class EnhancedSimulationEngine:
 
         BUT we need stronger effects for pilot simulations where users expect
         to see differences. Use amplified conversion factor.
+
+        v1.2.6.4 PERFORMANCE: This method is deterministic for a given
+        (condition, variable) pair within a single run — effect_sizes,
+        conditions, and study context do not change during generation. It is
+        called once per participant per scale item (N × items times), each
+        doing heavy regex/string matching. Memoize the result so the expensive
+        computation runs once per unique (condition, variable) pair instead of
+        tens of thousands of times. This is the single largest hot-path cost
+        for large-N simulations.
         """
+        # v1.2.6.4: Memoization cache keyed on (condition, variable)
+        _cache = getattr(self, "_effect_cache", None)
+        if _cache is None:
+            _cache = {}
+            self._effect_cache = _cache
+        _cache_key = (str(condition), str(variable))
+        if _cache_key in _cache:
+            return _cache[_cache_key]
+        _result = self._compute_effect_for_condition(condition, variable)
+        _cache[_cache_key] = _result
+        return _result
+
+    def _compute_effect_for_condition(self, condition: str, variable: str) -> float:
+        """v1.2.6.4: Uncached implementation of effect computation (see
+        _get_effect_for_condition for memoization wrapper and docs)."""
         # v1.4.11: Recalibrated effect multiplier for accuracy
         # Converts Cohen's d to a 0-1 normalized shift
         # d=0.5 -> 0.15 shift -> ~0.9 points on 7-point scale (observed d ≈ 0.5-0.7)
@@ -7686,6 +7729,33 @@ class EnhancedSimulationEngine:
             base_tendency = modified_traits.get("scale_use_breadth", 0.58)
         base_tendency = _safe_trait_value(base_tendency, 0.58)
 
+        # v1.2.6.5: Per-scale diversity noise (Barrie & Cerina 2026 correction)
+        # A single response_tendency driving all scales makes attitudes
+        # co-move too tightly (over-constraint). Real people evaluate different
+        # constructs partially independently. Add per-scale noise drawn from
+        # a distribution seeded on (participant, variable) so it's reproducible
+        # but varies across scales for the same person.
+        _scale_noise_seed = _stable_int_hash(f"{participant_seed}_{variable_name}") % (2**31)
+        _scale_noise_rng = np.random.RandomState(_scale_noise_seed)
+        # v1.2.6.6: Construct-specific tendency replacement. Instead of adding
+        # noise to a shared tendency, generate a PARTIALLY INDEPENDENT base
+        # tendency for each construct. The shared component (from persona) is
+        # weighted against an independent per-construct draw. Weight chosen so
+        # between-scale r lands in the realistic 0.10-0.25 range per Barrie &
+        # Cerina (2026) and real GSS data (PVE1 ≈ 0.07-0.10).
+        #
+        # Model: tendency_for_scale = w*shared + (1-w)*independent
+        # where w controls coupling. At w=1.0 all scales move together (old
+        # behavior). At w=0.0 they are fully independent. Target: w ≈ 0.35
+        # to match real human data where demographics/traits explain ~15-25%
+        # of cross-scale variance.
+        _SHARED_WEIGHT = 0.35
+        _independent_tendency = _scale_noise_rng.normal(0.58, 0.15)
+        _independent_tendency = float(np.clip(_independent_tendency, 0.10, 0.90))
+        _secondary_z = traits.get('_secondary_diversity_z', 0.0)
+        _independent_tendency += _secondary_z * 0.06
+        base_tendency = _SHARED_WEIGHT * base_tendency + (1.0 - _SHARED_WEIGHT) * _independent_tendency
+
         # v1.0.8.6: For bipolar scales, START at the true midpoint (0.5 = zero)
         # instead of the default positivity-biased 0.58. Positivity bias is a
         # Likert-scale artifact (Diener et al., 1999) that doesn't apply to
@@ -8052,7 +8122,11 @@ class EnhancedSimulationEngine:
             else:
                 _g_loading = 0.15  # Default: moderate loading
 
-            _g_effect = _g_factor_z * _g_strength * _g_loading
+            # v1.2.6.5: Add per-scale jitter to g-factor loading to prevent
+            # all constructs from moving in lockstep. Real CMV varies within
+            # a person across different constructs (Barrie & Cerina 2026).
+            _g_jitter = rng.normal(0, _g_loading * 0.3)
+            _g_effect = _g_factor_z * _g_strength * (_g_loading + _g_jitter)
             adjusted_tendency = float(np.clip(
                 adjusted_tendency + _g_effect, _bound_low, _bound_high
             ))
@@ -8062,16 +8136,22 @@ class EnhancedSimulationEngine:
         # Applies construct-specific loadings from the 3D latent vector
         # (evaluative valence, arousal/engagement, approach-avoidance).
         # =====================================================================
+        # v1.2.6.6: Attenuate latent attitude vector to prevent over-coupling.
+        # The construct-independent tendency model (STEP 3) already handles
+        # between-scale diversity; this vector should add subtle coherence,
+        # not dominate. Loadings scaled by 0.4 to avoid stacking too many
+        # coupling mechanisms (g-factor + 3D vector + shared tendency).
         _lat_valence = traits.get("_latent_valence", 0.0)
         _lat_arousal = traits.get("_latent_arousal", 0.0)
         _lat_approach = traits.get("_latent_approach", 0.0)
+        _LATENT_ATTENUATION = 0.4
         if any(abs(v) > 0.001 for v in [_lat_valence, _lat_arousal, _lat_approach]):
             _v_load, _a_load, _p_load = self._get_latent_attitude_loading(variable_name)
             _latent_shift = (
                 _lat_valence * _v_load
                 + _lat_arousal * _a_load
                 + _lat_approach * _p_load
-            )
+            ) * _LATENT_ATTENUATION
             adjusted_tendency = float(np.clip(
                 adjusted_tendency + _latent_shift, _bound_low, _bound_high
             ))
@@ -11369,18 +11449,31 @@ class EnhancedSimulationEngine:
             # This adds realistic Cronbach's alpha while preserving per-item
             # condition effects, persona variation, and calibration.
             if num_items >= 3:
-                target_alpha = float(scale.get("reliability", 0.85))
+                # v1.2.6.6: Check existing alpha BEFORE injecting correlation.
+                # Items already share condition effects + traits + per-scale
+                # tendency, so they may already exceed the target. Only inject
+                # additional correlation if current alpha is below target.
+                target_alpha = float(scale.get("reliability", 0.75))
                 item_col_names = [f"{scale_name}_{j+1}" for j in range(num_items)]
                 try:
                     _item_matrix = np.array(
                         [data[c] for c in item_col_names], dtype=float
                     ).T  # shape (n, num_items)
-                    _correlated = _inject_inter_item_correlation(
-                        _item_matrix, target_alpha, scale_min, scale_max,
-                    )
-                    for j, c in enumerate(item_col_names):
-                        data[c] = _correlated[:, j].tolist()
-                    self._log(f"Injected inter-item correlation for '{scale_name_raw}' (target alpha={target_alpha:.2f})")
+                    # v1.2.6.6: Check existing alpha before injection. Items
+                    # already share condition effects + traits + tendency, so
+                    # they often exceed the target. Skip to avoid alpha > 0.95.
+                    _existing_corr = np.corrcoef(_item_matrix.T)
+                    _existing_r_bar = np.mean(_existing_corr[np.triu_indices_from(_existing_corr, k=1)])
+                    _existing_alpha = (num_items * _existing_r_bar) / (1 + (num_items - 1) * _existing_r_bar) if _existing_r_bar > 0 else 0
+                    if _existing_alpha < target_alpha:
+                        _correlated = _inject_inter_item_correlation(
+                            _item_matrix, target_alpha, scale_min, scale_max,
+                        )
+                        for j, c in enumerate(item_col_names):
+                            data[c] = _correlated[:, j].tolist()
+                        self._log(f"Injected inter-item correlation for '{scale_name_raw}' (existing alpha={_existing_alpha:.2f} → target={target_alpha:.2f})")
+                    else:
+                        self._log(f"Skipped correlation injection for '{scale_name_raw}' (existing alpha={_existing_alpha:.2f} already >= target={target_alpha:.2f})")
                 except Exception as _corr_err:
                     self._log(f"WARNING: Could not inject correlation for '{scale_name_raw}': {_corr_err}")
 

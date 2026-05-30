@@ -3892,6 +3892,56 @@ class PersonaLibrary:
             traits[trait_name] = float(np.clip(value, 0.01, 0.99))
 
         # ================================================================
+        # v1.2.6.5 CROSS-CUTTING DIVERSITY (Barrie & Cerina 2026; Paglieri et al. 2026)
+        # ================================================================
+        # Real humans hold messy, partially inconsistent, multi-dimensional
+        # views. Demographics predict SOME attitudes but never entire profiles.
+        # LLM/algorithmic personas tend to be over-constrained: attitudes
+        # co-move too strongly along a single ideological axis, and beliefs
+        # become too predictable from demographics (Barrie & Cerina 2026).
+        #
+        # To mitigate this, we inject cross-cutting noise that:
+        # (a) Partially decouples some traits from the persona's modal profile,
+        #     simulating the "messy" structure of real belief systems
+        # (b) Adds a secondary orthogonal diversity axis so participants don't
+        #     all vary along a single dimension
+        # (c) Ensures rare/extreme trait combinations appear in the population
+        #     (Paglieri et al. 2026: support coverage over density matching)
+        #
+        # Calibration: real GSS data shows PVE1 ≈ 0.07 (7% on first PC).
+        # Over-constrained synthetic data shows PVE1 ≈ 0.30-0.60.
+        # Our target: PVE1 ≈ 0.08-0.15 through controlled noise injection.
+        # ================================================================
+
+        # (a) Cross-cutting trait perturbation: randomly flip 1-2 traits away
+        # from their persona-predicted direction. ~20% of participants get a
+        # cross-cutting view on at least one dimension.
+        _cross_cut_traits = ['response_tendency', 'acquiescence', 'social_desirability']
+        _p_cross_cut = 0.20
+        if rng.random() < _p_cross_cut:
+            _flip_trait = rng.choice([t for t in _cross_cut_traits if t in traits])
+            _current = traits[_flip_trait]
+            _flipped = 1.0 - _current + rng.normal(0, 0.08)
+            traits[_flip_trait] = float(np.clip(_flipped, 0.05, 0.95))
+
+        # (b) Secondary diversity axis: an independent latent factor orthogonal
+        # to the g-factor. This prevents all variance from collapsing onto a
+        # single dimension (the core problem identified by Barrie & Cerina).
+        _secondary_z = float(rng.normal(0.0, 1.0))
+        traits['_secondary_diversity_z'] = _secondary_z
+
+        # (c) Anti-modal injection: ~5% of participants get trait profiles
+        # that are partially inverted from their persona's modal values.
+        # This populates the "long tail" of the trait space (Paglieri et al.).
+        _p_antimodal = 0.05
+        if rng.random() < _p_antimodal:
+            for _t_name in ['response_tendency', 'extremity']:
+                if _t_name in traits:
+                    _base = traits[_t_name]
+                    _inverted = 0.5 + (0.5 - _base) * rng.uniform(0.5, 1.0)
+                    traits[_t_name] = float(np.clip(_inverted, 0.05, 0.95))
+
+        # ================================================================
         # G-FACTOR: General Evaluation Tendency (Podsakoff et al., 2003)
         # ================================================================
         # Each participant has a stable general evaluation tendency (g-factor)

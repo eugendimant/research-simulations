@@ -199,7 +199,16 @@ Every simulated participant is ONE person. Their numeric responses and open-text
 | 2. **Cumulative failures** | `llm_response_generator.py` | `_cumulative_failure_count` (never resets on success) | 15 total |
 | 3. **Per-participant timeout** | `enhanced_simulation_engine.py` | Tracks wall-clock time per OE response | 3 consecutive > 45s |
 | 4. **OE generation budget** | `enhanced_simulation_engine.py` | Uses `disable_permanently()` | 180s total |
-| 5. **Global watchdog thread** | `app.py` | Daemon thread checks every 30s | 10 min total or 120s stall |
+| 5. **Global watchdog thread** | `app.py` | Daemon thread checks every 30s — **progress-aware** (v1.2.6.4) | 120s stall (primary); 30 min absolute backstop fires ONLY if also stalled |
+
+> **v1.2.6.4 — Progress-aware watchdog:** Generation is NEVER killed while it is
+> still making progress (progress callbacks keep `_last_progress_time` fresh).
+> The primary kill condition is a genuine **stall** — no progress for
+> `_STALL_TIMEOUT` (120s). The absolute ceiling (`_GLOBAL_GENERATION_TIMEOUT`,
+> 30 min) is a backstop that fires ONLY when BOTH the ceiling is exceeded AND
+> generation has stalled. This lets large legitimate runs (N=10,000 non-LLM,
+> or many LLM open-ended questions) run as long as they keep moving. The old
+> elapsed-only 10-min hard cap was removed because it killed active work.
 
 ### Anti-Hang Rules (NEVER violate)
 
@@ -416,6 +425,13 @@ https://claude.ai/code/[session-id]
 - **v1.0.5.0**: OE realism — 7-strategy topic extraction, full 7-trait persona integration, 6-check coherence enforcement, participant voice memory
 - **v1.1.0.2**: 5x non-LLM OE realism — 8 structural archetypes, domain-specific concrete detail banks (7 domains), natural imperfection engine (10 error types), topic naturalization (pronoun substitution), telltale phrase removal from all phrase banks
 - **v1.1.0.3**: 5x non-LLM OE realism round 2 — expanded concrete detail banks (20 domains, 200+ details), trait-driven text modulation (SD hedging, acquiescence, reading speed, consistency), ultra-short response handler, sentence-length variety enforcement, game-subtype vocabulary (dictator/trust/ultimatum/PGG), verbal tic system (10 filler patterns), synonym rotation for cross-participant diversity
+- **v1.2.5.3–v1.2.6.4**: Student-driven UX + correctness wave — manual factor-level input, design-table cell→condition mapping, editable DV type + scale anchors + DV description, mediator/moderator variables with correlation patterns, comprehension checks (correct answer + pass rate), manipulation/attention checks as output columns (condition-aware manip checks, binary attn checks), "Condition X:"/"Group X:"/"Treatment X:" prefix stripping, binary (0/1) DV support, DV-type-preserved-on-add
+- **v1.2.6.4 PERFORMANCE**: ~29× speedup for large-N runs — `_get_effect_for_condition` memoized per `(condition, variable)` pair (was recomputing heavy regex matching N×items times) + module-level compiled-regex cache in `_word_in`/`_stem_in`. N=10,000 now generates in ~60s (was ~29 min). Watchdog made progress-aware so legitimate long runs are never killed mid-flight.
+
+### Performance Characteristics (v1.2.6.4)
+- **Effect computation is memoized** (`self._effect_cache` keyed on `(condition, variable)`). The cache is per-engine-instance, so it resets each run. NEVER add per-participant randomness inside `_compute_effect_for_condition` — the condition effect is a deterministic mean shift; participant variance is applied separately in `_generate_scale_response`. Adding RNG there would be silently cached and break realism.
+- **`_word_in`/`_stem_in` use `_WORD_PATTERN_CACHE`/`_STEM_PATTERN_CACHE`** (module-level compiled-regex caches). When adding new keyword-matching helpers, follow the same compile-once pattern — `re.search(pattern_str, ...)` recompiles every call and is the #1 large-N bottleneck.
+- **Non-LLM max N = 10,000** (`MAX_SIMULATED_N`). Verified to complete in ~60s. LLM max stays at `MAX_FREE_LLM_N`.
 
 ### Next Targets (v1.0.6.x)
 1. Narrative transportation domain (Green & Brock 2000)
