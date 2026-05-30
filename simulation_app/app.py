@@ -54,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.2.6.5"
-BUILD_ID = "20260530-v12065-persona-diversity-improvements"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.2.6.6"
+BUILD_ID = "20260530-v12066-construct-independent-persona-model"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -118,7 +118,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.2.6.5"  # v1.2.6.5: Persona diversity improvements (Barrie & Cerina 2026, Paglieri et al. 2026)
+APP_VERSION = "1.2.6.6"  # v1.2.6.6: Construct-independent tendency model, multi-domain persona calibration
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -10535,7 +10535,7 @@ if active_page == 2:
                             "num_items": med_items,
                             "scale_min": med_min,
                             "scale_max": med_max,
-                            "scale_points": med_max,
+                            "scale_points": med_max - med_min + 1,
                             "type": "single_item" if med_items == 1 else "numbered_items",
                             "dv_description": med_desc,
                             "connected_dvs": connected_dvs,
@@ -11307,7 +11307,6 @@ if active_page == 2:
                     if _add_attn_name.strip():
                         _confirmed_attn.append(_add_attn_name.strip())
                         st.session_state["confirmed_attention_checks"] = _confirmed_attn
-                        st.session_state["_checks_version"] = _checks_version + 1
                         st.rerun()
 
             # --- Manipulation Checks column ---
@@ -11341,7 +11340,6 @@ if active_page == 2:
                     if _add_manip_name.strip():
                         _confirmed_manip.append(_add_manip_name.strip())
                         st.session_state["confirmed_manipulation_checks"] = _confirmed_manip
-                        st.session_state["_checks_version"] = _checks_version + 1
                         st.rerun()
 
             # Context input for simulation
@@ -14063,7 +14061,7 @@ if active_page == 3:
                 metadata['comprehension_checks'] = [
                     {"name": c.get("name", ""), "correct_answer": c.get("correct_answer", "").strip(),
                      "pass_rate_configured": c.get("pass_rate", 0.90),
-                     "pass_rate_actual": sum(1 for r in df.get(re.sub(r'[^\w]', '_', c.get("name", "")), []) if r == c.get("correct_answer", "").strip()) / max(1, len(df))
+                     "pass_rate_actual": sum(1 for r in df.get((c.get("name") or "").replace(" ", "_"), []) if r == c.get("correct_answer", "").strip()) / max(1, len(df))
                     }
                     for c in _gen_comp_checks if c.get("correct_answer", "").strip()
                 ]
