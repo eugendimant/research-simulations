@@ -365,6 +365,15 @@ class LLMExhaustedMidGeneration(Exception):
         self.generation_source_map = generation_source_map
 
 
+# v1.2.6.4 PERFORMANCE: Cache compiled regex patterns. _word_in/_stem_in are
+# called millions of times during large-N generation; re.search recompiles the
+# pattern on every call (Python's internal cache is small and thrashes when many
+# distinct keywords are used). An explicit module-level cache keyed on the raw
+# keyword eliminates repeated compilation — the dominant cost in profiling.
+_WORD_PATTERN_CACHE: Dict[str, "re.Pattern"] = {}
+_STEM_PATTERN_CACHE: Dict[str, "re.Pattern"] = {}
+
+
 def _word_in(keyword: str, text: str) -> bool:
     """Check if keyword appears in text as a whole word (word-boundary matching).
 
@@ -373,8 +382,13 @@ def _word_in(keyword: str, text: str) -> bool:
 
     v1.0.1.3: Added to fix substring false-positive keyword matching throughout
     the semantic effect engine.
+    v1.2.6.4: Compiled-pattern cache for performance.
     """
-    return bool(re.search(r'\b' + re.escape(keyword) + r'\b', text))
+    _pat = _WORD_PATTERN_CACHE.get(keyword)
+    if _pat is None:
+        _pat = re.compile(r'\b' + re.escape(keyword) + r'\b')
+        _WORD_PATTERN_CACHE[keyword] = _pat
+    return bool(_pat.search(text))
 
 
 def _stem_in(stem: str, text: str) -> bool:
@@ -382,8 +396,13 @@ def _stem_in(stem: str, text: str) -> bool:
 
     For intentional prefix matches like 'automat' -> 'automated'/'automation',
     'reciproc' -> 'reciprocity'/'reciprocal', 'promot' -> 'promote'/'promotion'.
+    v1.2.6.4: Compiled-pattern cache for performance.
     """
-    return bool(re.search(r'\b' + re.escape(stem), text))
+    _pat = _STEM_PATTERN_CACHE.get(stem)
+    if _pat is None:
+        _pat = re.compile(r'\b' + re.escape(stem))
+        _STEM_PATTERN_CACHE[stem] = _pat
+    return bool(_pat.search(text))
 
 
 def _any_word_in(keywords: list, text: str) -> bool:
@@ -3670,7 +3689,31 @@ class EnhancedSimulationEngine:
 
         BUT we need stronger effects for pilot simulations where users expect
         to see differences. Use amplified conversion factor.
+
+        v1.2.6.4 PERFORMANCE: This method is deterministic for a given
+        (condition, variable) pair within a single run — effect_sizes,
+        conditions, and study context do not change during generation. It is
+        called once per participant per scale item (N × items times), each
+        doing heavy regex/string matching. Memoize the result so the expensive
+        computation runs once per unique (condition, variable) pair instead of
+        tens of thousands of times. This is the single largest hot-path cost
+        for large-N simulations.
         """
+        # v1.2.6.4: Memoization cache keyed on (condition, variable)
+        _cache = getattr(self, "_effect_cache", None)
+        if _cache is None:
+            _cache = {}
+            self._effect_cache = _cache
+        _cache_key = (str(condition), str(variable))
+        if _cache_key in _cache:
+            return _cache[_cache_key]
+        _result = self._compute_effect_for_condition(condition, variable)
+        _cache[_cache_key] = _result
+        return _result
+
+    def _compute_effect_for_condition(self, condition: str, variable: str) -> float:
+        """v1.2.6.4: Uncached implementation of effect computation (see
+        _get_effect_for_condition for memoization wrapper and docs)."""
         # v1.4.11: Recalibrated effect multiplier for accuracy
         # Converts Cohen's d to a 0-1 normalized shift
         # d=0.5 -> 0.15 shift -> ~0.9 points on 7-point scale (observed d ≈ 0.5-0.7)
