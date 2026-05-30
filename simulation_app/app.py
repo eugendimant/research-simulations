@@ -54,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.2.6.6"
-BUILD_ID = "20260530-v12066-additive-slider-dv"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.2.6.7"
+BUILD_ID = "20260530-v12067-trash-block-exclusion"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -118,7 +118,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.2.6.6"  # v1.2.6.6: Additive (capped ~15) slider/numeric DV recovery for surveys with detected scales
+APP_VERSION = "1.2.6.7"  # v1.2.6.7: Exclude trash/unused blocks from slider/numeric DV recovery
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -4438,8 +4438,17 @@ def _preview_to_engine_inputs(preview: QSFPreviewResult) -> Dict[str, Any]:
     # consent / demographic / debrief blocks are excluded.
     _recover_budget = 25 if not _had_detected_scales else 15
     _n_recovered = 0
+    # Junk/admin block-name tokens to skip. These mirror the junk the rest of the
+    # codebase excludes (qsf_preview._is_excluded_block_name) so trash/unused/
+    # deprecated questions are never recovered as DVs. We deliberately do NOT call
+    # the parser's full _is_excluded_block_name here because it also drops
+    # legitimate behavioural DV blocks like "Dictator Game" or "Block N" (correct
+    # for CONDITION detection, wrong for DV recovery). Every token below is
+    # junk-only and never appears in a real DV block name.
     _skip_block = ("consent", "demographic", "debrief", "intro", "instruction",
-                   "attention", "comprehension", "captcha", "manipulation check")
+                   "attention", "comprehension", "captcha", "manipulation check",
+                   "trash", "unused", "deleted", "archived", "deprecated", "obsolete",
+                   "junk", "do not use", "not used", "not in use", "scratch", "backup")
 
     def _block_ok(_bn: Any) -> bool:
         return not any(tok in str(_bn or "").lower() for tok in _skip_block)
@@ -4507,8 +4516,8 @@ def _preview_to_engine_inputs(preview: QSFPreviewResult) -> Dict[str, Any]:
     # and free-text in consent/demographic/debrief blocks. Scoped to fully-
     # behavioural surveys (no detected scales) so existing schemas never change.
     if not open_ended and not _had_detected_scales:
-        _skip_oe_block = ("consent", "demographic", "debrief", "intro", "instruction",
-                          "attention", "comprehension", "captcha")
+        # Reuse the same junk/admin block exclusions as the DV recovery above
+        # (includes trash/unused/deprecated) so no divergent skip list can drift.
         # Admin/PII free-text fields (worker IDs, emails, payment/zip codes) are
         # not open-ended DVs — never fabricate an essay for them.
         _pii_ct = ("email", "phone", "zip", "postal")
@@ -4520,7 +4529,7 @@ def _preview_to_engine_inputs(preview: QSFPreviewResult) -> Dict[str, Any]:
         for te in (getattr(preview, "text_entry_questions", None) or []):
             if te.get("is_comprehension_check"):
                 continue
-            if any(tok in str(te.get("block_name") or "").lower() for tok in _skip_oe_block):
+            if any(tok in str(te.get("block_name") or "").lower() for tok in _skip_block):
                 continue
             _ct = str(te.get("content_type") or "").lower()
             if (te.get("number_min") is not None or te.get("number_max") is not None

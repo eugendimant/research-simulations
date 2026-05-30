@@ -2,7 +2,7 @@
 """
 Utility modules for the Behavioral Experiment Simulation Tool.
 
-Version: 1.2.6.6 - Additive capped slider/numeric DV recovery for surveys with detected scales
+Version: 1.2.6.7 - Exclude trash/unused blocks from slider/numeric DV recovery
 
 Changes (v1.0.0 - 20 Iterations of Comprehensive Improvements):
     === ENHANCED SCALE/MATRIX DETECTION ===
@@ -65,7 +65,7 @@ Modules:
 """
 
 # Package version - should match all module versions
-__version__ = "1.2.6.6"
+__version__ = "1.2.6.7"
 
 
 # =============================================================================
