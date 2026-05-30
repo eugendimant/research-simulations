@@ -2,7 +2,7 @@
 """
 Utility modules for the Behavioral Experiment Simulation Tool.
 
-Version: 1.2.6.4 - 29x perf speedup, progress-aware watchdog, N=10000 support
+Version: 1.2.6.5 - Persona diversity (cross-cutting, anti-modal, per-scale noise)
 
 Changes (v1.0.0 - 20 Iterations of Comprehensive Improvements):
     === ENHANCED SCALE/MATRIX DETECTION ===
@@ -65,7 +65,7 @@ Modules:
 """
 
 # Package version - should match all module versions
-__version__ = "1.2.6.4"
+__version__ = "1.2.6.5"
 
 
 # =============================================================================

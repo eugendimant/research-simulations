@@ -7729,6 +7729,19 @@ class EnhancedSimulationEngine:
             base_tendency = modified_traits.get("scale_use_breadth", 0.58)
         base_tendency = _safe_trait_value(base_tendency, 0.58)
 
+        # v1.2.6.5: Per-scale diversity noise (Barrie & Cerina 2026 correction)
+        # A single response_tendency driving all scales makes attitudes
+        # co-move too tightly (over-constraint). Real people evaluate different
+        # constructs partially independently. Add per-scale noise drawn from
+        # a distribution seeded on (participant, variable) so it's reproducible
+        # but varies across scales for the same person.
+        _scale_noise_seed = _stable_int_hash(f"{participant_seed}_{variable_name}") % (2**31)
+        _scale_noise_rng = np.random.RandomState(_scale_noise_seed)
+        _per_scale_noise = _scale_noise_rng.normal(0, 0.18)
+        _secondary_z = traits.get('_secondary_diversity_z', 0.0)
+        _per_scale_noise += _secondary_z * 0.08 * (1 if _scale_noise_rng.random() > 0.5 else -1)
+        base_tendency = base_tendency + _per_scale_noise
+
         # v1.0.8.6: For bipolar scales, START at the true midpoint (0.5 = zero)
         # instead of the default positivity-biased 0.58. Positivity bias is a
         # Likert-scale artifact (Diener et al., 1999) that doesn't apply to
@@ -8095,7 +8108,11 @@ class EnhancedSimulationEngine:
             else:
                 _g_loading = 0.15  # Default: moderate loading
 
-            _g_effect = _g_factor_z * _g_strength * _g_loading
+            # v1.2.6.5: Add per-scale jitter to g-factor loading to prevent
+            # all constructs from moving in lockstep. Real CMV varies within
+            # a person across different constructs (Barrie & Cerina 2026).
+            _g_jitter = rng.normal(0, _g_loading * 0.3)
+            _g_effect = _g_factor_z * _g_strength * (_g_loading + _g_jitter)
             adjusted_tendency = float(np.clip(
                 adjusted_tendency + _g_effect, _bound_low, _bound_high
             ))
@@ -11412,7 +11429,10 @@ class EnhancedSimulationEngine:
             # This adds realistic Cronbach's alpha while preserving per-item
             # condition effects, persona variation, and calibration.
             if num_items >= 3:
-                target_alpha = float(scale.get("reliability", 0.85))
+                # v1.2.6.5: Reduced default from 0.85 to 0.78 — real scales
+                # typically have alpha 0.70-0.85; the injection function was
+                # overshooting, producing inter-item r ≈ 0.94 (unrealistic).
+                target_alpha = float(scale.get("reliability", 0.78))
                 item_col_names = [f"{scale_name}_{j+1}" for j in range(num_items)]
                 try:
                     _item_matrix = np.array(
