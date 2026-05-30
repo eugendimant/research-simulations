@@ -54,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.2.6.5"
-BUILD_ID = "20260530-v12065-pii-oe-exclusion"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.2.6.6"
+BUILD_ID = "20260530-v12066-additive-slider-dv"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -118,7 +118,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.2.6.5"  # v1.2.6.5: Exclude PII/admin free-text from open-ended recovery (v1.2.6.4 robustness + behavioral DV recovery)
+APP_VERSION = "1.2.6.6"  # v1.2.6.6: Additive (capped ~15) slider/numeric DV recovery for surveys with detected scales
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -4422,73 +4422,79 @@ def _preview_to_engine_inputs(preview: QSFPreviewResult) -> Dict[str, Any]:
             }
         )
 
-    # Record whether the survey exposed any standard scales BEFORE recovery, so
-    # the slider/essay fallbacks below stay strictly scoped to fully-behavioural
-    # surveys (no detected scales) and never alter a survey that already works.
+    # Record whether the survey exposed any standard scales BEFORE recovery.
     _had_detected_scales = bool(scales)
 
-    # v1.2.6.4: If NO Likert/matrix scales were detected, recover the survey's
-    # actual DVs from slider questions (feeling thermometers, allocations, WTP)
-    # and numeric text-entry (amounts). Many behavioural-economics designs
-    # (dictator/public-goods games, norm elicitation, slider-based attitude
-    # studies) carry their primary DV in these item types; without this they
-    # simulate only a single generic "Main_DV", losing the real measure.
-    # Strictly scoped to the no-scale case, so surveys that DO have detected
-    # scales are completely unchanged (no regression).
-    if not scales:
-        _skip_block = ("consent", "demographic", "debrief", "intro", "instruction",
-                       "attention", "comprehension", "captcha", "manipulation check")
+    # v1.2.6.4 / v1.2.6.6: Recover behavioural DVs from slider questions (feeling
+    # thermometers, allocations, WTP) and numeric text-entry (amounts).
+    #  - No detected Likert scales: these become the PRIMARY DVs (otherwise only a
+    #    single generic "Main_DV" would be simulated) — budget 25.
+    #  - Detected scales present: added as ADDITIONAL DVs (deduped), because
+    #    slider measures are frequently the real DV in consumer/behavioural
+    #    designs — budget 15 (user-selected: additive, capped). The cap also
+    #    stops a giant slider battery from exploding the column count.
+    # Dedup is by normalized name against seen_scale_names, so sliders already
+    # folded into detected scales are never double-counted. Manipulation-check /
+    # consent / demographic / debrief blocks are excluded.
+    _recover_budget = 25 if not _had_detected_scales else 15
+    _n_recovered = 0
+    _skip_block = ("consent", "demographic", "debrief", "intro", "instruction",
+                   "attention", "comprehension", "captcha", "manipulation check")
 
-        def _block_ok(_bn: Any) -> bool:
-            _bn = str(_bn or "").lower()
-            return not any(tok in _bn for tok in _skip_block)
+    def _block_ok(_bn: Any) -> bool:
+        return not any(tok in str(_bn or "").lower() for tok in _skip_block)
 
-        def _finite(val: Any, default: float) -> float:
-            try:
-                f = float(val)
-                return f if np.isfinite(f) else default
-            except (TypeError, ValueError):
-                return default
+    def _finite(val: Any, default: float) -> float:
+        try:
+            f = float(val)
+            return f if np.isfinite(f) else default
+        except (TypeError, ValueError):
+            return default
 
-        def _add_numeric_dv(vname: str, lo: float, hi: float, dv_type: str) -> None:
-            key = vname.lower().replace(" ", "_").replace("-", "_")
-            if key in seen_scale_names:
-                return
-            seen_scale_names.add(key)
-            if hi <= lo:
-                lo, hi = 0.0, 100.0
-            scales.append({
-                "name": vname, "variable_name": vname, "num_items": 1,
-                "scale_points": max(2, min(1001, int(round(hi - lo)) + 1)),
-                "scale_min": lo, "scale_max": hi, "reverse_items": [],
-                "type": dv_type, "detected_from_qsf": True, "_validated": True,
-            })
+    def _make_numeric_dv(vname: str, lo: float, hi: float, dv_type: str):
+        key = vname.lower().replace(" ", "_").replace("-", "_")
+        if not key or key in seen_scale_names:
+            return None
+        seen_scale_names.add(key)
+        if hi <= lo:
+            lo, hi = 0.0, 100.0
+        return {
+            "name": vname, "variable_name": vname, "num_items": 1,
+            "scale_points": max(2, min(1001, int(round(hi - lo)) + 1)),
+            "scale_min": lo, "scale_max": hi, "reverse_items": [],
+            "type": dv_type, "detected_from_qsf": True, "_validated": True,
+        }
 
-        for sl in (getattr(preview, "slider_questions", None) or []):
-            if len(scales) >= 25:
-                break
-            if not _block_ok(sl.get("block_name")):
-                continue
-            _vn = str(sl.get("export_tag") or sl.get("question_id") or "Slider").strip() or "Slider"
-            _add_numeric_dv(_vn, _finite(sl.get("slider_min"), 0.0),
-                            _finite(sl.get("slider_max"), 100.0), "slider")
+    for sl in (getattr(preview, "slider_questions", None) or []):
+        if _n_recovered >= _recover_budget:
+            break
+        if not _block_ok(sl.get("block_name")):
+            continue
+        _vn = str(sl.get("export_tag") or sl.get("question_id") or "Slider").strip() or "Slider"
+        _dv = _make_numeric_dv(_vn, _finite(sl.get("slider_min"), 0.0),
+                               _finite(sl.get("slider_max"), 100.0), "slider")
+        if _dv is not None:
+            scales.append(_dv)
+            _n_recovered += 1
 
-        for te in (getattr(preview, "text_entry_questions", None) or []):
-            if len(scales) >= 25:
-                break
-            if te.get("is_comprehension_check") or not _block_ok(te.get("block_name")):
-                continue
-            _ct = str(te.get("content_type") or "").lower()
-            _is_numeric = (te.get("number_min") is not None or te.get("number_max") is not None
-                           or any(t in _ct for t in ("number", "numb", "money", "decimal", "integer")))
-            if not _is_numeric:
-                continue
-            _vn = str(te.get("export_tag") or te.get("question_id") or "Numeric").strip() or "Numeric"
-            _add_numeric_dv(_vn, _finite(te.get("number_min"), 0.0),
-                            _finite(te.get("number_max"), 100.0), "numeric")
+    for te in (getattr(preview, "text_entry_questions", None) or []):
+        if _n_recovered >= _recover_budget:
+            break
+        if te.get("is_comprehension_check") or not _block_ok(te.get("block_name")):
+            continue
+        _ct = str(te.get("content_type") or "").lower()
+        _is_numeric = (te.get("number_min") is not None or te.get("number_max") is not None
+                       or any(t in _ct for t in ("number", "numb", "money", "decimal", "integer")))
+        if not _is_numeric:
+            continue
+        _vn = str(te.get("export_tag") or te.get("question_id") or "Numeric").strip() or "Numeric"
+        _dv = _make_numeric_dv(_vn, _finite(te.get("number_min"), 0.0),
+                               _finite(te.get("number_max"), 100.0), "numeric")
+        if _dv is not None:
+            scales.append(_dv)
+            _n_recovered += 1
 
-    # Only add default if NO scales were detected at all (and none recovered above)
-    # This prevents fabricating extra DVs
+    # Only add the generic default if NO scales were detected AND none recovered.
     if not scales:
         scales = [{"name": "Main_DV", "variable_name": "Main_DV", "num_items": 5, "scale_points": 7, "scale_min": 1, "scale_max": 7, "type": "likert", "reverse_items": [], "detected_from_qsf": False, "_validated": True}]
 

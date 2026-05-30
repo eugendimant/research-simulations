@@ -33,7 +33,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 # Version identifier to help track deployed code
-__version__ = "1.2.6.5"  # v1.2.6.5: bipolar recode scale points + robustness fixes
+__version__ = "1.2.6.6"  # v1.2.6.6: bipolar recode scale points + robustness fixes
 
 
 # ============================================================================
