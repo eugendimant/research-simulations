@@ -54,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.2.6.1"
-BUILD_ID = "20260415-v12061-dv-type-reset-binary-fix"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.2.6.3"
+BUILD_ID = "20260530-v12063-opus-review-fixes"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -118,7 +118,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.2.6.1"  # v1.2.6.1: Fix DV type reset on add, allow Max=1 for binary, version-increment fixes
+APP_VERSION = "1.2.6.3"  # v1.2.6.3: Opus review fixes — condition-aware manip checks, binary attn checks, perf + collision fixes
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -3489,6 +3489,9 @@ def _clean_condition_name(condition: str) -> str:
 
     # Remove common Qualtrics block prefixes
     prefix_patterns = [
+        r'^Condition\s*\d+\s*[-:．]\s*',     # Condition 1: or Condition 1-
+        r'^Group\s*\d+\s*[-:．]\s*',         # Group 1:
+        r'^Treatment\s*\d+\s*[-:．]\s*',     # Treatment 1:
         r'^Block\s*\d+\s*[-:]\s*',           # Block 1:
         r'^BL_\w+\s*[-:]\s*',                # BL_abc123:
         r'^FL_\w+\s*[-:]\s*',                # FL_abc123:
@@ -4333,11 +4336,14 @@ def _render_factorial_design_table(
                 {"name": "Condition", "levels": list(dict.fromkeys(final_conditions))},
             ]
             # Save the original factorial structure for display/reference
-            st.session_state[f"{session_key_prefix}_factor_label_map"] = {
+            _label_map = {
                 "factor1": {"name": factor1_name, "original_levels": factor1_levels},
                 "factor2": {"name": factor2_name, "original_levels": factor2_levels},
                 "cell_map": dict(cell_condition_map),
             }
+            if factor3_levels:
+                _label_map["factor3"] = {"name": factor3_name, "original_levels": factor3_levels}
+            st.session_state[f"{session_key_prefix}_factor_label_map"] = _label_map
 
     else:
         # Helpful validation message
@@ -14000,60 +14006,95 @@ if active_page == 3:
                 progress_bar.progress(25, text="")
                 df, metadata = engine.generate()
 
-            # v1.2.6.0: Generate comprehension check columns post-engine
-            # Each check produces a column where most participants give the correct answer
+            # v1.2.6.3: Generate comprehension check columns post-engine
             _gen_comp_checks = st.session_state.get("confirmed_comprehension_checks", [])
             if _gen_comp_checks and df is not None and len(df) > 0:
                 import numpy as _np_comp
                 _comp_rng = _np_comp.random.RandomState(42)
+                # v1.2.6.3: Move attn_col lookup OUTSIDE the row loop (O(m) not O(n*m))
+                _comp_attn_col = [c for c in df.columns if 'attention_pass' in c.lower()]
                 for _gc in _gen_comp_checks:
-                    _gc_name = (_gc.get("name") or "CompCheck").replace(" ", "_")
+                    _gc_name = re.sub(r'[^\w]', '_', _gc.get("name") or "CompCheck").strip('_')
                     _gc_correct = _gc.get("correct_answer", "").strip()
                     _gc_rate = float(_gc.get("pass_rate", 0.90))
                     _gc_options_str = _gc.get("answer_options", "").strip()
 
                     if not _gc_correct:
-                        continue  # Skip checks with no correct answer defined
+                        continue
+                    # v1.2.6.3: Column collision guard
+                    if _gc_name in df.columns or f"{_gc_name}_Pass" in df.columns:
+                        continue
 
-                    # Parse answer options
                     _gc_options = [o.strip() for o in _gc_options_str.split(";") if o.strip()] if _gc_options_str else []
-
-                    # Determine wrong answers
                     _gc_wrong = [o for o in _gc_options if o != _gc_correct] if _gc_options else []
 
                     n_rows = len(df)
                     _gc_responses = []
                     for _ri in range(n_rows):
-                        # Use participant's attention trait if available
-                        _attn_col = [c for c in df.columns if 'attention_pass' in c.lower()]
                         _participant_attentive = True
-                        if _attn_col:
-                            _participant_attentive = df[_attn_col[0]].iloc[_ri] >= 0.5
-
-                        # Probability of correct answer (base rate × attention modifier)
+                        if _comp_attn_col:
+                            _participant_attentive = df[_comp_attn_col[0]].iloc[_ri] >= 0.5
                         _p_correct = _gc_rate if _participant_attentive else _gc_rate * 0.6
                         if _comp_rng.random() < _p_correct:
                             _gc_responses.append(_gc_correct)
+                        elif _gc_wrong:
+                            _gc_responses.append(_comp_rng.choice(_gc_wrong))
                         else:
-                            # Wrong answer
-                            if _gc_wrong:
-                                _gc_responses.append(_comp_rng.choice(_gc_wrong))
-                            else:
-                                # No wrong options defined — use generic wrong answer
-                                _gc_responses.append(f"Wrong_{_gc_correct}")
+                            _gc_responses.append(f"Wrong_{_gc_correct}")
 
                     df[_gc_name] = _gc_responses
-                    # Add pass/fail flag column
                     df[f"{_gc_name}_Pass"] = [1 if r == _gc_correct else 0 for r in _gc_responses]
 
-                # Store in metadata
                 metadata['comprehension_checks'] = [
-                    {"name": c.get("name", ""), "correct_answer": c.get("correct_answer", ""),
+                    {"name": c.get("name", ""), "correct_answer": c.get("correct_answer", "").strip(),
                      "pass_rate_configured": c.get("pass_rate", 0.90),
-                     "pass_rate_actual": sum(1 for r in df.get(c.get("name", "").replace(" ", "_"), []) if r == c.get("correct_answer", "")) / max(1, len(df))
+                     "pass_rate_actual": sum(1 for r in df.get(re.sub(r'[^\w]', '_', c.get("name", "")), []) if r == c.get("correct_answer", "").strip()) / max(1, len(df))
                     }
                     for c in _gen_comp_checks if c.get("correct_answer", "").strip()
                 ]
+
+            # v1.2.6.3: Generate manipulation check columns post-engine
+            # Manipulation checks should show condition differences — non-control
+            # conditions get higher scores (successful manipulation).
+            _gen_manip_checks = st.session_state.get("confirmed_manipulation_checks", [])
+            if _gen_manip_checks and df is not None and len(df) > 0:
+                import numpy as _np_manip
+                _manip_rng = _np_manip.random.RandomState(123)
+                _cond_col = "CONDITION" if "CONDITION" in df.columns else None
+                for _mc_name_raw in _gen_manip_checks:
+                    _mc_name = re.sub(r'[^\w]', '_', str(_mc_name_raw)).strip('_') or "ManipCheck"
+                    if not _mc_name or _mc_name in df.columns:
+                        continue
+                    n_rows = len(df)
+                    _mc_values = []
+                    for _ri in range(n_rows):
+                        _cond_effect = 0.0
+                        if _cond_col:
+                            _p_cond = str(df[_cond_col].iloc[_ri]).lower()
+                            if 'control' not in _p_cond and 'baseline' not in _p_cond:
+                                _cond_effect = 1.5
+                        _base = 4.0 + _cond_effect + _manip_rng.normal(0, 1.2)
+                        _mc_values.append(int(max(1, min(7, round(_base)))))
+                    df[_mc_name] = _mc_values
+                metadata['manipulation_checks_generated'] = list(_gen_manip_checks)
+
+            # v1.2.6.3: Ensure confirmed attention checks appear as named binary columns
+            _gen_attn_checks = st.session_state.get("confirmed_attention_checks", [])
+            if _gen_attn_checks and df is not None and len(df) > 0:
+                import numpy as _np_attn
+                _attn_pass_col = [c for c in df.columns if 'attention_pass' in c.lower()]
+                _base_pass_rate = df[_attn_pass_col[0]].values if _attn_pass_col else None
+                _rate = float(st.session_state.get("attention_rate", 0.95) or 0.95)
+                for _ai_idx, _ac_name_raw in enumerate(_gen_attn_checks):
+                    _ac_name = re.sub(r'[^\w]', '_', str(_ac_name_raw)).strip('_') or f"AttnCheck_{_ai_idx+1}"
+                    if not _ac_name or _ac_name in df.columns:
+                        continue
+                    _attn_rng = _np_attn.random.RandomState(456 + _ai_idx * 17)
+                    if _base_pass_rate is not None:
+                        df[_ac_name] = [1 if _attn_rng.random() < float(p) else 0 for p in _base_pass_rate]
+                    else:
+                        df[_ac_name] = [1 if _attn_rng.random() < _rate else 0 for _ in range(len(df))]
+                metadata['attention_checks_generated'] = list(_gen_attn_checks)
 
             # v1.2.0.8: Validate engine output before proceeding.
             # Engine may return (None, metadata) if it encounters an unrecoverable
