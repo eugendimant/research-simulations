@@ -60,6 +60,11 @@ def create_bar_chart_svg(
     conditions = list(data.keys())
     means = [data[c][0] for c in conditions]
     errors = [data[c][1] for c in conditions]
+    # Guard against NaN/inf (e.g. an empty condition group yields a NaN mean):
+    # these would propagate through the min/max scaling below and emit invalid
+    # SVG coordinates, defeating this module's "always render something" purpose.
+    means = [m if isinstance(m, (int, float)) and math.isfinite(m) else 0.0 for m in means]
+    errors = [e if isinstance(e, (int, float)) and math.isfinite(e) else 0.0 for e in errors]
 
     n_bars = len(conditions)
     if n_bars == 0:

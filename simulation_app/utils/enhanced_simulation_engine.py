@@ -3888,9 +3888,6 @@ class EnhancedSimulationEngine:
                               'desantis', 'sanders', 'pelosi', 'mcconnell']
         _political_labels = ['republican', 'democrat', 'liberal', 'conservative',
                              'left', 'right', 'progressive', 'maga']
-        _political_attitudes = ['lover', 'hater', 'supporter', 'opponent',
-                                'fan', 'critic', 'admirer', 'detractor',
-                                'pro', 'anti']
         _identity_keywords = ['identity', 'political', 'partisan', 'party']
 
         # Check if this is a political identity study
@@ -3920,13 +3917,14 @@ class EnhancedSimulationEngine:
                                ['no identity', 'control', 'unknown', 'no info',
                                 'anonymous', 'no political'])
 
-            # Count how many political attitude words appear in this condition
-            # If condition has BOTH lover AND hater → it's describing a MIXED/OUTGROUP pairing
-            _attitude_count = sum(1 for att in _political_attitudes
-                                  if _word_in(att, condition_lower))
-
-            if _attitude_count >= 2:
-                # Condition contains multiple political attitudes (e.g., "trump lover, trump hater")
+            # If the condition pairs BOTH a positive AND a negative attitude
+            # (e.g., "trump lover vs trump hater") it describes a MIXED/OUTGROUP
+            # pairing. It must be OPPOSITE valences — two same-valence words such
+            # as "supporter and fan" are INGROUP and are handled by the elif below.
+            # (Previously this used a count of >=2 attitude words, which wrongly
+            # flagged same-valence conditions like "pro-Trump fan" as outgroup.)
+            if _has_lover and _has_hater:
+                # Condition pairs a positive and a negative attitude →
                 # This is an OUTGROUP MATCHING condition
                 # Iyengar & Westwood (2015): d > 0.5 for affective polarization
                 # Fershtman & Gneezy (2001): ~20-30% less generous to outgroup
@@ -4023,27 +4021,29 @@ class EnhancedSimulationEngine:
         # SKIP if already handled by relational parsing above
         # =====================================================================
 
+        # Valence keyword banks — defined UNCONDITIONALLY so the factorial-design
+        # parsing block further below can reference them even when STEP 1 is
+        # skipped because the condition was already handled by relational parsing.
+        # Without this, a condition that is BOTH relational and factorial (e.g. an
+        # MGP-Trump "ingroup × high-stakes" cell) raised UnboundLocalError.
+        # NOTE: 'lover', 'hater' removed to prevent false positives in political
+        # identity conditions (handled in STEP 0).
+        positive_keywords = [
+            'friend', 'positive', 'high', 'good', 'best', 'strong',
+            'success', 'win', 'gain', 'benefit', 'reward', 'pleasant',
+            'like', 'love', 'favor', 'approve', 'support', 'prosocial',
+            'cooperative', 'trust', 'warm', 'kind', 'helpful', 'generous',
+            'optimistic', 'confident', 'empowered', 'satisfied'
+        ]
+        negative_keywords = [
+            'enemy', 'negative', 'low', 'bad', 'worst', 'weak',
+            'failure', 'lose', 'loss', 'cost', 'punish', 'unpleasant',
+            'dislike', 'hate', 'oppose', 'disapprove', 'reject', 'antisocial',
+            'competitive', 'distrust', 'cold', 'hostile', 'harmful', 'selfish',
+            'pessimistic', 'anxious', 'threatened', 'dissatisfied'
+        ]
+
         if not _handled_by_relational:
-            # Strong positive valence keywords → positive effect
-            # NOTE: 'lover', 'hater' removed to prevent false positives
-            # in political identity conditions (handled in STEP 0)
-            positive_keywords = [
-                'friend', 'positive', 'high', 'good', 'best', 'strong',
-                'success', 'win', 'gain', 'benefit', 'reward', 'pleasant',
-                'like', 'love', 'favor', 'approve', 'support', 'prosocial',
-                'cooperative', 'trust', 'warm', 'kind', 'helpful', 'generous',
-                'optimistic', 'confident', 'empowered', 'satisfied'
-            ]
-
-            # Strong negative valence keywords → negative effect
-            negative_keywords = [
-                'enemy', 'negative', 'low', 'bad', 'worst', 'weak',
-                'failure', 'lose', 'loss', 'cost', 'punish', 'unpleasant',
-                'dislike', 'hate', 'oppose', 'disapprove', 'reject', 'antisocial',
-                'competitive', 'distrust', 'cold', 'hostile', 'harmful', 'selfish',
-                'pessimistic', 'anxious', 'threatened', 'dissatisfied'
-            ]
-
             # Neutral/baseline keywords → zero effect
             neutral_keywords = [
                 'unknown', 'control', 'baseline', 'neutral', 'moderate',

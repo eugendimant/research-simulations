@@ -6,7 +6,7 @@ Generates comprehensive instructor-facing reports for student simulations.
 """
 
 # Version identifier to help track deployed code
-__version__ = "1.2.6.3"  # v1.2.6.3: Opus review fixes
+__version__ = "1.2.6.4"  # v1.2.6.4: robustness fixes (report-facing version stamp)
 
 from dataclasses import dataclass
 from datetime import datetime
@@ -5241,6 +5241,8 @@ class ComprehensiveInstructorReport:
                         conds = list(clean_chart_data.keys())
                         means = [clean_chart_data[c][0] for c in conds]
                         max_mean = max(means) if means else 1
+                        if not max_mean or max_mean <= 0:
+                            max_mean = 1  # avoid div-by-zero when all means are 0/negative
 
                         svg_lines = [
                             '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 300" style="max-width:100%;height:auto;background:#fff;font-family:Arial,sans-serif;">',
@@ -5254,7 +5256,7 @@ class ComprehensiveInstructorReport:
 
                         for i, (cond, mean) in enumerate(zip(conds, means)):
                             x = 50 + spacing * i + spacing/2 - bar_width/2
-                            bar_height = (mean / max_mean) * 180
+                            bar_height = max(0, (mean / max_mean) * 180)  # clamp: no negative-height rects
                             y = 250 - bar_height
                             color = colors[i % len(colors)]
                             label = cond[:10] if len(cond) > 10 else cond

@@ -54,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.2.6.3"
-BUILD_ID = "20260530-v12063-opus-review-fixes"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.2.6.4"
+BUILD_ID = "20260530-v12064-robustness-fixes"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -118,7 +118,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.2.6.3"  # v1.2.6.3: Opus review fixes — condition-aware manip checks, binary attn checks, perf + collision fixes
+APP_VERSION = "1.2.6.4"  # v1.2.6.4: Robustness fixes — political same-valence ingroup, bipolar recode scale points, NaN-safe validator/charts
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -4422,12 +4422,103 @@ def _preview_to_engine_inputs(preview: QSFPreviewResult) -> Dict[str, Any]:
             }
         )
 
-    # Only add default if NO scales were detected at all
+    # Record whether the survey exposed any standard scales BEFORE recovery, so
+    # the slider/essay fallbacks below stay strictly scoped to fully-behavioural
+    # surveys (no detected scales) and never alter a survey that already works.
+    _had_detected_scales = bool(scales)
+
+    # v1.2.6.4: If NO Likert/matrix scales were detected, recover the survey's
+    # actual DVs from slider questions (feeling thermometers, allocations, WTP)
+    # and numeric text-entry (amounts). Many behavioural-economics designs
+    # (dictator/public-goods games, norm elicitation, slider-based attitude
+    # studies) carry their primary DV in these item types; without this they
+    # simulate only a single generic "Main_DV", losing the real measure.
+    # Strictly scoped to the no-scale case, so surveys that DO have detected
+    # scales are completely unchanged (no regression).
+    if not scales:
+        _skip_block = ("consent", "demographic", "debrief", "intro", "instruction",
+                       "attention", "comprehension", "captcha", "manipulation check")
+
+        def _block_ok(_bn: Any) -> bool:
+            _bn = str(_bn or "").lower()
+            return not any(tok in _bn for tok in _skip_block)
+
+        def _finite(val: Any, default: float) -> float:
+            try:
+                f = float(val)
+                return f if np.isfinite(f) else default
+            except (TypeError, ValueError):
+                return default
+
+        def _add_numeric_dv(vname: str, lo: float, hi: float, dv_type: str) -> None:
+            key = vname.lower().replace(" ", "_").replace("-", "_")
+            if key in seen_scale_names:
+                return
+            seen_scale_names.add(key)
+            if hi <= lo:
+                lo, hi = 0.0, 100.0
+            scales.append({
+                "name": vname, "variable_name": vname, "num_items": 1,
+                "scale_points": max(2, min(1001, int(round(hi - lo)) + 1)),
+                "scale_min": lo, "scale_max": hi, "reverse_items": [],
+                "type": dv_type, "detected_from_qsf": True, "_validated": True,
+            })
+
+        for sl in (getattr(preview, "slider_questions", None) or []):
+            if len(scales) >= 25:
+                break
+            if not _block_ok(sl.get("block_name")):
+                continue
+            _vn = str(sl.get("export_tag") or sl.get("question_id") or "Slider").strip() or "Slider"
+            _add_numeric_dv(_vn, _finite(sl.get("slider_min"), 0.0),
+                            _finite(sl.get("slider_max"), 100.0), "slider")
+
+        for te in (getattr(preview, "text_entry_questions", None) or []):
+            if len(scales) >= 25:
+                break
+            if te.get("is_comprehension_check") or not _block_ok(te.get("block_name")):
+                continue
+            _ct = str(te.get("content_type") or "").lower()
+            _is_numeric = (te.get("number_min") is not None or te.get("number_max") is not None
+                           or any(t in _ct for t in ("number", "numb", "money", "decimal", "integer")))
+            if not _is_numeric:
+                continue
+            _vn = str(te.get("export_tag") or te.get("question_id") or "Numeric").strip() or "Numeric"
+            _add_numeric_dv(_vn, _finite(te.get("number_min"), 0.0),
+                            _finite(te.get("number_max"), 100.0), "numeric")
+
+    # Only add default if NO scales were detected at all (and none recovered above)
     # This prevents fabricating extra DVs
     if not scales:
         scales = [{"name": "Main_DV", "variable_name": "Main_DV", "num_items": 5, "scale_points": 7, "scale_min": 1, "scale_max": 7, "type": "likert", "reverse_items": [], "detected_from_qsf": False, "_validated": True}]
 
     open_ended = getattr(preview, "open_ended_questions", None) or []
+
+    # v1.2.6.4: If no dedicated open-ended questions were detected but the survey
+    # has free-text essay entries (e.g. "explain your choice"), surface those so
+    # the participant's reasoning is simulated rather than dropped. Numeric
+    # entries are excluded (those become DVs above), as are comprehension checks
+    # and free-text in consent/demographic/debrief blocks. Scoped to fully-
+    # behavioural surveys (no detected scales) so existing schemas never change.
+    if not open_ended and not _had_detected_scales:
+        _skip_oe_block = ("consent", "demographic", "debrief", "intro", "instruction",
+                          "attention", "comprehension", "captcha")
+        _recovered_oe: List[str] = []
+        for te in (getattr(preview, "text_entry_questions", None) or []):
+            if te.get("is_comprehension_check"):
+                continue
+            if any(tok in str(te.get("block_name") or "").lower() for tok in _skip_oe_block):
+                continue
+            _ct = str(te.get("content_type") or "").lower()
+            if (te.get("number_min") is not None or te.get("number_max") is not None
+                    or any(t in _ct for t in ("number", "numb", "money", "decimal", "integer"))):
+                continue
+            _qt = str(te.get("question_text") or "").strip()
+            if _qt:
+                _recovered_oe.append(_qt)
+            if len(_recovered_oe) >= 10:
+                break
+        open_ended = _recovered_oe
 
     # Extract detailed open-ended info for context-aware text generation
     open_ended_details = getattr(preview, "open_ended_details", None) or []

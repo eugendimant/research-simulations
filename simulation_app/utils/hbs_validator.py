@@ -931,9 +931,16 @@ class HBSValidator:
             if v is None:
                 continue
             try:
-                result.append(float(v))
+                fv = float(v)
             except (TypeError, ValueError):
-                pass
+                continue
+            # Skip NaN/inf: float('nan') does not raise, so without this guard a
+            # NaN reaching int()-based scale checks (e.g. _find_scale_columns) on
+            # the dict-of-lists code path would raise ValueError, and NaN would
+            # also corrupt timing percentile math.
+            if math.isnan(fv) or math.isinf(fv):
+                continue
+            result.append(fv)
         return result
 
     def _col_values_str(self, df: Any, col: str) -> List[str]:
