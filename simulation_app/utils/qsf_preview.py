@@ -33,7 +33,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 # Version identifier to help track deployed code
-__version__ = "1.2.6.6"  # v1.2.6.5: Persona diversity
+__version__ = "1.2.6.9"  # v1.2.6.9: matrix DVs in content blocks + attention-check filter
 
 
 # ============================================================================
@@ -213,6 +213,24 @@ class QSFPreviewResult:
     block_questions: Dict[str, List[str]] = field(default_factory=dict)  # block_id -> list of question_ids
     # v1.0.0: Questions that ALL conditions see (shared questions like demographics)
     shared_questions: List[str] = field(default_factory=list)  # question_ids visible to all conditions
+
+
+# v1.2.6.9: Tight pattern for attention-check INSTRUCTION items ("Please select
+# 'Agree' for this question", "select X to show you are paying attention"). These
+# use real Likert anchors so they otherwise look like a DV. The pattern requires
+# an imperative (select/choose/...) plus a tell-phrase, so it does NOT match real
+# DVs such as feeling thermometers, agreement matrices, or scenario vignettes.
+# Calibrated across the 291 example QSFs: removes only genuine attention checks,
+# zero legitimate DVs.
+_ATTENTION_CHECK_INSTRUCTION_RE = re.compile(
+    r"\b(select|choose|pick|mark|click|check)\b[^.?!\n]{0,45}\bfor this (question|item|one)\b"
+    r"|\bto show (that )?(you|we)('| a)?re? (paying attention|reading)"
+    r"|\bif you('| a)?re? (reading|paying attention)"
+    r"|\bthis is an? attention\W+check"
+    r"|\battention\W+check\b[^.?!\n]{0,30}\b(select|choose|please)"
+    r"|\b(select|choose|mark)\b[^.?!\n]{0,30}\bto (confirm|verify|prove|show)\b[^.?!\n]{0,30}\b(attention|reading)",
+    re.IGNORECASE,
+)
 
 
 class QSFPreviewParser:
@@ -1292,13 +1310,18 @@ class QSFPreviewParser:
         # Source 3: RecodeValues can indicate scale structure
         recode_values = payload.get('RecodeValues', {})
         if isinstance(recode_values, dict) and len(recode_values) >= 2:
-            # Check if it's a numeric scale
-            try:
-                values = [int(v) for v in recode_values.values() if str(v).isdigit()]
-                if values:
-                    return max(values) - min(values) + 1 if max(values) != min(values) else len(recode_values)
-            except (ValueError, TypeError):
-                pass
+            # Check if it's a numeric scale. Parse each value individually so
+            # negative recode values (e.g., -3..+3 bipolar/semantic-differential
+            # scales) are included — str.isdigit() returns False for "-3" and
+            # would have under-counted the scale range.
+            values = []
+            for v in recode_values.values():
+                try:
+                    values.append(int(str(v).strip()))
+                except (ValueError, TypeError):
+                    pass
+            if values:
+                return max(values) - min(values) + 1 if max(values) != min(values) else len(recode_values)
             return len(recode_values)
 
         # Source 4: Choices for MC/single choice questions
@@ -2782,14 +2805,27 @@ class QSFPreviewParser:
         # Track potential single-item DVs (questions with scale responses but no numbering)
         single_item_dvs = []
 
+        # v1.2.6.9: Generic CONTENT block names that live in EXCLUDED_BLOCK_NAMES so
+        # they are never mistaken for experimental CONDITIONS, but which routinely
+        # hold the actual DVs. They must NOT be skipped during DV detection —
+        # otherwise a main "Questionnaire"/"Survey" block of Likert matrices is
+        # silently dropped (e.g. Coffee_Shop_Loyalty's 5-item, 7-point loyalty scale).
+        _dv_content_blocks = {'questionnaire', 'survey', 'main', 'main block',
+                              'questions', 'measures', 'scales', 'main study',
+                              'main survey', 'main questionnaire'}
+
         for q_id, q_info in questions_map.items():
             # Skip descriptive text, instructions, etc.
             if q_info.question_type in ['Descriptive Text', 'DB ()', 'Timing']:
                 continue
 
             # v1.2.5.1: Skip questions from excluded blocks (demographics, consent, debrief, etc.)
+            # v1.2.6.9: ...but keep generic CONTENT blocks ("Questionnaire", "Survey",
+            # "Main", ...) which hold real DVs even though they're excluded from
+            # CONDITION detection. (.strip() also normalizes trailing NBSP/whitespace.)
             _block_name = getattr(q_info, 'block_name', '') or ''
-            if _block_name and self._is_excluded_block_name(_block_name):
+            if (_block_name and self._is_excluded_block_name(_block_name)
+                    and _block_name.strip().lower() not in _dv_content_blocks):
                 continue
 
             # v1.0.0: Skip placeholder/template questions with generic text
@@ -2801,6 +2837,12 @@ class QSFPreviewParser:
                 "default question block",
                 "",
             ):
+                continue
+
+            # v1.2.6.9: Skip attention-check INSTRUCTION items (e.g. "Please select
+            # 'Agree' for this question"). They use real Likert anchors so they look
+            # like a DV; the tight pattern matches only genuine attention checks.
+            if _ATTENTION_CHECK_INSTRUCTION_RE.search(q_info.question_text or ""):
                 continue
 
             # 1. Matrix questions are scales (multi-item)

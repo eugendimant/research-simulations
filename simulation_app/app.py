@@ -54,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.2.6.6"
-BUILD_ID = "20260530-v12066-construct-independent-persona-model"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.2.6.9"
+BUILD_ID = "20260531-v12069-dv-detection-quality"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -118,7 +118,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.2.6.6"  # v1.2.6.6: Construct-independent tendency model, multi-domain persona calibration
+APP_VERSION = "1.2.6.9"  # v1.2.6.9: DV-detection quality — matrices in content blocks + attention-check filter
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -4422,12 +4422,128 @@ def _preview_to_engine_inputs(preview: QSFPreviewResult) -> Dict[str, Any]:
             }
         )
 
-    # Only add default if NO scales were detected at all
-    # This prevents fabricating extra DVs
+    # Record whether the survey exposed any standard scales BEFORE recovery.
+    _had_detected_scales = bool(scales)
+
+    # v1.2.6.4 / v1.2.6.6: Recover behavioural DVs from slider questions (feeling
+    # thermometers, allocations, WTP) and numeric text-entry (amounts).
+    #  - No detected Likert scales: these become the PRIMARY DVs (otherwise only a
+    #    single generic "Main_DV" would be simulated) — budget 25.
+    #  - Detected scales present: added as ADDITIONAL DVs (deduped), because
+    #    slider measures are frequently the real DV in consumer/behavioural
+    #    designs — budget 15 (user-selected: additive, capped). The cap also
+    #    stops a giant slider battery from exploding the column count.
+    # Dedup is by normalized name against seen_scale_names, so sliders already
+    # folded into detected scales are never double-counted. Manipulation-check /
+    # consent / demographic / debrief blocks are excluded.
+    _recover_budget = 25 if not _had_detected_scales else 15
+    _n_recovered = 0
+    # Junk/admin block-name tokens to skip. These mirror the junk the rest of the
+    # codebase excludes (qsf_preview._is_excluded_block_name) so trash/unused/
+    # deprecated questions are never recovered as DVs. We deliberately do NOT call
+    # the parser's full _is_excluded_block_name here because it also drops
+    # legitimate behavioural DV blocks like "Dictator Game" or "Block N" (correct
+    # for CONDITION detection, wrong for DV recovery). Every token below is
+    # junk-only and never appears in a real DV block name.
+    _skip_block = ("consent", "demographic", "debrief", "intro", "instruction",
+                   "attention", "comprehension", "captcha", "manipulation check",
+                   "trash", "unused", "deleted", "archived", "deprecated", "obsolete",
+                   "junk", "do not use", "not used", "not in use", "scratch", "backup")
+
+    def _block_ok(_bn: Any) -> bool:
+        return not any(tok in str(_bn or "").lower() for tok in _skip_block)
+
+    def _finite(val: Any, default: float) -> float:
+        try:
+            f = float(val)
+            return f if np.isfinite(f) else default
+        except (TypeError, ValueError):
+            return default
+
+    def _make_numeric_dv(vname: str, lo: float, hi: float, dv_type: str):
+        key = vname.lower().replace(" ", "_").replace("-", "_")
+        if not key or key in seen_scale_names:
+            return None
+        seen_scale_names.add(key)
+        if hi <= lo:
+            lo, hi = 0.0, 100.0
+        return {
+            "name": vname, "variable_name": vname, "num_items": 1,
+            "scale_points": max(2, min(1001, int(round(hi - lo)) + 1)),
+            "scale_min": lo, "scale_max": hi, "reverse_items": [],
+            "type": dv_type, "detected_from_qsf": True, "_validated": True,
+        }
+
+    for sl in (getattr(preview, "slider_questions", None) or []):
+        if _n_recovered >= _recover_budget:
+            break
+        if not _block_ok(sl.get("block_name")):
+            continue
+        _vn = str(sl.get("export_tag") or sl.get("question_id") or "Slider").strip() or "Slider"
+        _dv = _make_numeric_dv(_vn, _finite(sl.get("slider_min"), 0.0),
+                               _finite(sl.get("slider_max"), 100.0), "slider")
+        if _dv is not None:
+            scales.append(_dv)
+            _n_recovered += 1
+
+    for te in (getattr(preview, "text_entry_questions", None) or []):
+        if _n_recovered >= _recover_budget:
+            break
+        if te.get("is_comprehension_check") or not _block_ok(te.get("block_name")):
+            continue
+        _ct = str(te.get("content_type") or "").lower()
+        _is_numeric = (te.get("number_min") is not None or te.get("number_max") is not None
+                       or any(t in _ct for t in ("number", "numb", "money", "decimal", "integer")))
+        if not _is_numeric:
+            continue
+        _vn = str(te.get("export_tag") or te.get("question_id") or "Numeric").strip() or "Numeric"
+        _dv = _make_numeric_dv(_vn, _finite(te.get("number_min"), 0.0),
+                               _finite(te.get("number_max"), 100.0), "numeric")
+        if _dv is not None:
+            scales.append(_dv)
+            _n_recovered += 1
+
+    # Only add the generic default if NO scales were detected AND none recovered.
     if not scales:
         scales = [{"name": "Main_DV", "variable_name": "Main_DV", "num_items": 5, "scale_points": 7, "scale_min": 1, "scale_max": 7, "type": "likert", "reverse_items": [], "detected_from_qsf": False, "_validated": True}]
 
     open_ended = getattr(preview, "open_ended_questions", None) or []
+
+    # v1.2.6.4: If no dedicated open-ended questions were detected but the survey
+    # has free-text essay entries (e.g. "explain your choice"), surface those so
+    # the participant's reasoning is simulated rather than dropped. Numeric
+    # entries are excluded (those become DVs above), as are comprehension checks
+    # and free-text in consent/demographic/debrief blocks. Scoped to fully-
+    # behavioural surveys (no detected scales) so existing schemas never change.
+    if not open_ended and not _had_detected_scales:
+        # Reuse the same junk/admin block exclusions as the DV recovery above
+        # (includes trash/unused/deprecated) so no divergent skip list can drift.
+        # Admin/PII free-text fields (worker IDs, emails, payment/zip codes) are
+        # not open-ended DVs — never fabricate an essay for them.
+        _pii_ct = ("email", "phone", "zip", "postal")
+        _pii_kw = ("mturk", "prolific", "paypal", "venmo", "worker id", "worker number",
+                   "participant id", "email address", "phone number", "zip code",
+                   "postal code", "mailing address", "completion code",
+                   "confirmation code", "amazon id")
+        _recovered_oe: List[str] = []
+        for te in (getattr(preview, "text_entry_questions", None) or []):
+            if te.get("is_comprehension_check"):
+                continue
+            if any(tok in str(te.get("block_name") or "").lower() for tok in _skip_block):
+                continue
+            _ct = str(te.get("content_type") or "").lower()
+            if (te.get("number_min") is not None or te.get("number_max") is not None
+                    or any(t in _ct for t in ("number", "numb", "money", "decimal", "integer"))):
+                continue
+            if any(t in _ct for t in _pii_ct):
+                continue
+            _qt = str(te.get("question_text") or "").strip()
+            if not _qt or any(kw in _qt.lower() for kw in _pii_kw):
+                continue
+            _recovered_oe.append(_qt)
+            if len(_recovered_oe) >= 10:
+                break
+        open_ended = _recovered_oe
 
     # Extract detailed open-ended info for context-aware text generation
     open_ended_details = getattr(preview, "open_ended_details", None) or []
