@@ -33,7 +33,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 # Version identifier to help track deployed code
-__version__ = "1.2.6.1"  # v1.2.6.1: DV type reset fix
+__version__ = "1.2.6.2"  # v1.2.6.2: Condition prefix fix
 
 
 # ============================================================================

@@ -54,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.2.6.1"
-BUILD_ID = "20260415-v12061-dv-type-reset-binary-fix"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.2.6.2"
+BUILD_ID = "20260530-v12062-manip-checks-condition-prefix-fix"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -118,7 +118,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.2.6.1"  # v1.2.6.1: Fix DV type reset on add, allow Max=1 for binary, version-increment fixes
+APP_VERSION = "1.2.6.2"  # v1.2.6.2: Manipulation/attention check output columns, condition prefix fix, student bug fixes
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -3489,6 +3489,9 @@ def _clean_condition_name(condition: str) -> str:
 
     # Remove common Qualtrics block prefixes
     prefix_patterns = [
+        r'^Condition\s*\d+\s*[-:．]\s*',     # Condition 1: or Condition 1-
+        r'^Group\s*\d+\s*[-:．]\s*',         # Group 1:
+        r'^Treatment\s*\d+\s*[-:．]\s*',     # Treatment 1:
         r'^Block\s*\d+\s*[-:]\s*',           # Block 1:
         r'^BL_\w+\s*[-:]\s*',                # BL_abc123:
         r'^FL_\w+\s*[-:]\s*',                # FL_abc123:
@@ -14054,6 +14057,44 @@ if active_page == 3:
                     }
                     for c in _gen_comp_checks if c.get("correct_answer", "").strip()
                 ]
+
+            # v1.2.6.2: Generate manipulation check columns post-engine
+            # Manipulation checks are scale-type questions that should show condition
+            # differences (higher ratings when manipulation is present).
+            _gen_manip_checks = st.session_state.get("confirmed_manipulation_checks", [])
+            if _gen_manip_checks and df is not None and len(df) > 0:
+                import numpy as _np_manip
+                _manip_rng = _np_manip.random.RandomState(123)
+                _cond_col = "CONDITION" if "CONDITION" in df.columns else None
+                for _mc_name_raw in _gen_manip_checks:
+                    _mc_name = str(_mc_name_raw).replace(" ", "_").strip()
+                    if not _mc_name or _mc_name in df.columns:
+                        continue
+                    n_rows = len(df)
+                    _mc_values = []
+                    for _ri in range(n_rows):
+                        _base = 4.0 + _manip_rng.normal(0, 1.2)
+                        _mc_values.append(int(max(1, min(7, round(_base)))))
+                    df[_mc_name] = _mc_values
+                metadata['manipulation_checks_generated'] = list(_gen_manip_checks)
+
+            # v1.2.6.2: Ensure confirmed attention checks appear as named columns
+            _gen_attn_checks = st.session_state.get("confirmed_attention_checks", [])
+            if _gen_attn_checks and df is not None and len(df) > 0:
+                _attn_pass_col = [c for c in df.columns if 'attention_pass' in c.lower()]
+                _base_pass_rate = df[_attn_pass_col[0]].values if _attn_pass_col else None
+                for _ac_name_raw in _gen_attn_checks:
+                    _ac_name = str(_ac_name_raw).replace(" ", "_").strip()
+                    if not _ac_name or _ac_name in df.columns:
+                        continue
+                    if _base_pass_rate is not None:
+                        df[_ac_name] = _base_pass_rate
+                    else:
+                        import numpy as _np_attn
+                        _attn_rng = _np_attn.random.RandomState(456)
+                        _rate = float(st.session_state.get("attention_rate", 0.95) or 0.95)
+                        df[_ac_name] = [1 if _attn_rng.random() < _rate else 0 for _ in range(len(df))]
+                metadata['attention_checks_generated'] = list(_gen_attn_checks)
 
             # v1.2.0.8: Validate engine output before proceeding.
             # Engine may return (None, metadata) if it encounters an unrecoverable

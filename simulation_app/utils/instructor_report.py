@@ -6,7 +6,7 @@ Generates comprehensive instructor-facing reports for student simulations.
 """
 
 # Version identifier to help track deployed code
-__version__ = "1.2.6.1"  # v1.2.6.1: DV type reset fix
+__version__ = "1.2.6.2"  # v1.2.6.2: Manipulation check output
 
 from dataclasses import dataclass
 from datetime import datetime
