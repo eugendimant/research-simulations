@@ -7737,10 +7737,24 @@ class EnhancedSimulationEngine:
         # but varies across scales for the same person.
         _scale_noise_seed = _stable_int_hash(f"{participant_seed}_{variable_name}") % (2**31)
         _scale_noise_rng = np.random.RandomState(_scale_noise_seed)
-        _per_scale_noise = _scale_noise_rng.normal(0, 0.18)
+        # v1.2.6.6: Construct-specific tendency replacement. Instead of adding
+        # noise to a shared tendency, generate a PARTIALLY INDEPENDENT base
+        # tendency for each construct. The shared component (from persona) is
+        # weighted against an independent per-construct draw. Weight chosen so
+        # between-scale r lands in the realistic 0.10-0.25 range per Barrie &
+        # Cerina (2026) and real GSS data (PVE1 ≈ 0.07-0.10).
+        #
+        # Model: tendency_for_scale = w*shared + (1-w)*independent
+        # where w controls coupling. At w=1.0 all scales move together (old
+        # behavior). At w=0.0 they are fully independent. Target: w ≈ 0.35
+        # to match real human data where demographics/traits explain ~15-25%
+        # of cross-scale variance.
+        _SHARED_WEIGHT = 0.35
+        _independent_tendency = _scale_noise_rng.normal(0.58, 0.15)
+        _independent_tendency = float(np.clip(_independent_tendency, 0.10, 0.90))
         _secondary_z = traits.get('_secondary_diversity_z', 0.0)
-        _per_scale_noise += _secondary_z * 0.08 * (1 if _scale_noise_rng.random() > 0.5 else -1)
-        base_tendency = base_tendency + _per_scale_noise
+        _independent_tendency += _secondary_z * 0.06
+        base_tendency = _SHARED_WEIGHT * base_tendency + (1.0 - _SHARED_WEIGHT) * _independent_tendency
 
         # v1.0.8.6: For bipolar scales, START at the true midpoint (0.5 = zero)
         # instead of the default positivity-biased 0.58. Positivity bias is a

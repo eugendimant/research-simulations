@@ -2,7 +2,7 @@
 """
 Utility modules for the Behavioral Experiment Simulation Tool.
 
-Version: 1.2.6.5 - Persona diversity (cross-cutting, anti-modal, per-scale noise)
+Version: 1.2.6.6 - Construct-independent tendency model, multi-domain persona calibration
 
 Changes (v1.0.0 - 20 Iterations of Comprehensive Improvements):
     === ENHANCED SCALE/MATRIX DETECTION ===
@@ -65,7 +65,7 @@ Modules:
 """
 
 # Package version - should match all module versions
-__version__ = "1.2.6.5"
+__version__ = "1.2.6.6"
 
 
 # =============================================================================
