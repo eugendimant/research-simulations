@@ -6,7 +6,7 @@ Generates comprehensive instructor-facing reports for student simulations.
 """
 
 # Version identifier to help track deployed code
-__version__ = "1.2.6.2"  # v1.2.6.2: Manipulation check output
+__version__ = "1.2.6.3"  # v1.2.6.3: Opus review fixes
 
 from dataclasses import dataclass
 from datetime import datetime
