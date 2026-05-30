@@ -84,6 +84,44 @@ def test_hbs_validator_handles_nan_dict_path():
     assert isinstance(cols, list)
 
 
+# ── Fix (v1.2.6.9): Likert matrix in a generic CONTENT block is detected ─────────
+def test_matrix_dv_in_questionnaire_block_detected():
+    """A Likert matrix in a block named 'Questionnaire'/'Survey'/'Main' must be
+    detected as a DV scale — those names are excluded from CONDITION detection but
+    routinely hold the real DVs (regression: Coffee_Shop loyalty matrix was dropped)."""
+    import os
+    from utils.qsf_preview import QSFPreviewParser
+    qsf = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..",
+                       "simulation_app", "example_files",
+                       "Coffee_Shop_Loyalty_Programs.qsf")
+    if not os.path.exists(qsf):
+        return  # corpus file not present in this checkout
+    res = QSFPreviewParser().parse(open(qsf, "rb").read())
+    matrices = [s for s in res.detected_scales if s.get("type") == "matrix"]
+    assert matrices, f"expected a matrix DV, got {[s.get('type') for s in res.detected_scales]}"
+    loyalty = next((s for s in matrices if "loyalty" in str(s.get("variable_name", "")).lower()), None)
+    assert loyalty is not None, "LoyaltyQuestions matrix not detected"
+    assert loyalty.get("items") == 5 and loyalty.get("scale_points") == 7
+
+
+def test_attention_check_instruction_not_detected_as_dv():
+    """Attention-check instruction items ("Please select 'Agree' for this question")
+    must NOT be detected as DVs even though they use real Likert anchors."""
+    import os
+    from utils.qsf_preview import QSFPreviewParser
+    qsf = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..",
+                       "simulation_app", "example_files", "Group #13 - Survey.qsf")
+    if not os.path.exists(qsf):
+        return
+    res = QSFPreviewParser().parse(open(qsf, "rb").read())
+    names = [str(s.get("variable_name", "")).lower() for s in res.detected_scales]
+    assert "ac2" not in names, f"attention check ac2 wrongly detected as DV: {names}"
+    # and no detected DV is an attention-check instruction
+    for s in res.detected_scales:
+        t = str(s.get("question_text", "")).lower()
+        assert "for this question" not in t or "select" not in t, f"attn-check leaked: {t}"
+
+
 # ── Fix 4: svg chart NaN robustness ─────────────────────────────────────────────
 def test_svg_bar_chart_nan_robust():
     from utils.svg_charts import create_bar_chart_svg
