@@ -8136,16 +8136,22 @@ class EnhancedSimulationEngine:
         # Applies construct-specific loadings from the 3D latent vector
         # (evaluative valence, arousal/engagement, approach-avoidance).
         # =====================================================================
+        # v1.2.6.6: Attenuate latent attitude vector to prevent over-coupling.
+        # The construct-independent tendency model (STEP 3) already handles
+        # between-scale diversity; this vector should add subtle coherence,
+        # not dominate. Loadings scaled by 0.4 to avoid stacking too many
+        # coupling mechanisms (g-factor + 3D vector + shared tendency).
         _lat_valence = traits.get("_latent_valence", 0.0)
         _lat_arousal = traits.get("_latent_arousal", 0.0)
         _lat_approach = traits.get("_latent_approach", 0.0)
+        _LATENT_ATTENUATION = 0.4
         if any(abs(v) > 0.001 for v in [_lat_valence, _lat_arousal, _lat_approach]):
             _v_load, _a_load, _p_load = self._get_latent_attitude_loading(variable_name)
             _latent_shift = (
                 _lat_valence * _v_load
                 + _lat_arousal * _a_load
                 + _lat_approach * _p_load
-            )
+            ) * _LATENT_ATTENUATION
             adjusted_tendency = float(np.clip(
                 adjusted_tendency + _latent_shift, _bound_low, _bound_high
             ))
@@ -11443,21 +11449,31 @@ class EnhancedSimulationEngine:
             # This adds realistic Cronbach's alpha while preserving per-item
             # condition effects, persona variation, and calibration.
             if num_items >= 3:
-                # v1.2.6.5: Reduced default from 0.85 to 0.78 — real scales
-                # typically have alpha 0.70-0.85; the injection function was
-                # overshooting, producing inter-item r ≈ 0.94 (unrealistic).
-                target_alpha = float(scale.get("reliability", 0.78))
+                # v1.2.6.6: Check existing alpha BEFORE injecting correlation.
+                # Items already share condition effects + traits + per-scale
+                # tendency, so they may already exceed the target. Only inject
+                # additional correlation if current alpha is below target.
+                target_alpha = float(scale.get("reliability", 0.75))
                 item_col_names = [f"{scale_name}_{j+1}" for j in range(num_items)]
                 try:
                     _item_matrix = np.array(
                         [data[c] for c in item_col_names], dtype=float
                     ).T  # shape (n, num_items)
-                    _correlated = _inject_inter_item_correlation(
-                        _item_matrix, target_alpha, scale_min, scale_max,
-                    )
-                    for j, c in enumerate(item_col_names):
-                        data[c] = _correlated[:, j].tolist()
-                    self._log(f"Injected inter-item correlation for '{scale_name_raw}' (target alpha={target_alpha:.2f})")
+                    # v1.2.6.6: Check existing alpha before injection. Items
+                    # already share condition effects + traits + tendency, so
+                    # they often exceed the target. Skip to avoid alpha > 0.95.
+                    _existing_corr = np.corrcoef(_item_matrix.T)
+                    _existing_r_bar = np.mean(_existing_corr[np.triu_indices_from(_existing_corr, k=1)])
+                    _existing_alpha = (num_items * _existing_r_bar) / (1 + (num_items - 1) * _existing_r_bar) if _existing_r_bar > 0 else 0
+                    if _existing_alpha < target_alpha:
+                        _correlated = _inject_inter_item_correlation(
+                            _item_matrix, target_alpha, scale_min, scale_max,
+                        )
+                        for j, c in enumerate(item_col_names):
+                            data[c] = _correlated[:, j].tolist()
+                        self._log(f"Injected inter-item correlation for '{scale_name_raw}' (existing alpha={_existing_alpha:.2f} → target={target_alpha:.2f})")
+                    else:
+                        self._log(f"Skipped correlation injection for '{scale_name_raw}' (existing alpha={_existing_alpha:.2f} already >= target={target_alpha:.2f})")
                 except Exception as _corr_err:
                     self._log(f"WARNING: Could not inject correlation for '{scale_name_raw}': {_corr_err}")
 
