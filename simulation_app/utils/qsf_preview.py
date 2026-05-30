@@ -33,7 +33,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 # Version identifier to help track deployed code
-__version__ = "1.2.6.6"  # v1.2.6.5: Persona diversity
+__version__ = "1.2.6.8"  # v1.2.6.8: bipolar recode scale points + robustness fixes
 
 
 # ============================================================================
@@ -1292,13 +1292,18 @@ class QSFPreviewParser:
         # Source 3: RecodeValues can indicate scale structure
         recode_values = payload.get('RecodeValues', {})
         if isinstance(recode_values, dict) and len(recode_values) >= 2:
-            # Check if it's a numeric scale
-            try:
-                values = [int(v) for v in recode_values.values() if str(v).isdigit()]
-                if values:
-                    return max(values) - min(values) + 1 if max(values) != min(values) else len(recode_values)
-            except (ValueError, TypeError):
-                pass
+            # Check if it's a numeric scale. Parse each value individually so
+            # negative recode values (e.g., -3..+3 bipolar/semantic-differential
+            # scales) are included — str.isdigit() returns False for "-3" and
+            # would have under-counted the scale range.
+            values = []
+            for v in recode_values.values():
+                try:
+                    values.append(int(str(v).strip()))
+                except (ValueError, TypeError):
+                    pass
+            if values:
+                return max(values) - min(values) + 1 if max(values) != min(values) else len(recode_values)
             return len(recode_values)
 
         # Source 4: Choices for MC/single choice questions
