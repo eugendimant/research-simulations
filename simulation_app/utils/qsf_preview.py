@@ -33,7 +33,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 # Version identifier to help track deployed code
-__version__ = "1.2.6.9"  # v1.2.6.9: matrix DVs in content blocks + attention-check filter
+__version__ = "1.2.7.0"  # v1.2.7.0: coverage expansion
 
 
 # ============================================================================

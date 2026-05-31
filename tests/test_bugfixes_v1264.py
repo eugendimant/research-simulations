@@ -104,6 +104,50 @@ def test_matrix_dv_in_questionnaire_block_detected():
     assert loyalty.get("items") == 5 and loyalty.get("scale_points") == 7
 
 
+def _sim_typed_dv(dv_type, num_items, lo, hi):
+    from utils.enhanced_simulation_engine import EnhancedSimulationEngine
+    eng = EnhancedSimulationEngine(
+        study_title="Typed DV", study_description="typed dv study", sample_size=25,
+        conditions=[{"name": "A"}, {"name": "B"}], factors=[],
+        scales=[{"name": "DV", "variable_name": "DV", "type": dv_type,
+                 "num_items": num_items, "items": num_items,
+                 "scale_points": hi - lo + 1, "scale_min": lo, "scale_max": hi}],
+        additional_vars=[], demographics={"gender_quota": 50, "age_mean": 35, "age_sd": 12},
+        seed=3)
+    if getattr(eng, "llm_generator", None) is not None:
+        eng.llm_generator.disable_permanently("test")
+    df, _ = eng.generate()
+    return df, [c for c in df.columns if c.startswith("DV_") and not c.endswith("_mean")]
+
+
+def test_constant_sum_rows_sum_to_total():
+    """Constant-sum DV: every participant's allocations must sum EXACTLY to the
+    total (was 0% before v1.2.7.0 — independent integers)."""
+    df, cols = _sim_typed_dv("constant_sum", 3, 0, 100)
+    assert len(cols) == 3
+    sums = df[cols].sum(axis=1)
+    assert (sums == 100).all(), f"rows must sum to 100; got {sorted(set(sums))[:5]}"
+    assert "DV_mean" not in df.columns  # meaningless composite suppressed
+
+
+def test_rank_order_rows_are_valid_permutations():
+    """Rank-order DV: each row must be a permutation of 1..k (was 0% valid before
+    v1.2.7.0 — duplicate ranks)."""
+    df, cols = _sim_typed_dv("rank_order", 4, 1, 4)
+    assert len(cols) == 4
+    for _, row in df[cols].iterrows():
+        assert sorted(int(x) for x in row) == [1, 2, 3, 4], f"not a permutation: {list(row)}"
+    assert "DV_mean" not in df.columns
+
+
+def test_likert_dv_unaffected_by_typed_dispatch():
+    """A normal Likert DV must be unchanged (composite mean present, values in range)."""
+    df, cols = _sim_typed_dv("likert", 4, 1, 7)
+    assert "DV_mean" in df.columns
+    for c in cols:
+        assert df[c].between(1, 7).all()
+
+
 def test_attention_check_instruction_not_detected_as_dv():
     """Attention-check instruction items ("Please select 'Agree' for this question")
     must NOT be detected as DVs even though they use real Likert anchors."""
