@@ -23,6 +23,7 @@ References:
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
 import random
@@ -35,6 +36,14 @@ import pandas as pd
 logger = logging.getLogger(__name__)
 
 __all__ = ["HBSEngine"]
+
+
+def _stable_int_hash(value: str) -> int:
+    """Process-stable hash for seeding. Python's built-in hash() is salted per
+    process (PYTHONHASHSEED), so the same seed could yield different results after
+    an app restart — unacceptable for reproducible scientific simulation."""
+    digest = hashlib.sha256(str(value).encode("utf-8")).hexdigest()[:12]
+    return int(digest, 16)
 
 
 class HBSEngine:
@@ -234,12 +243,12 @@ class HBSEngine:
         self.validation_log = getattr(self._base_engine, "validation_log", [])
         self.column_info = getattr(self._base_engine, "column_info", [])
 
-        # Step 2b: Override _Generation_Source to reflect HBS method
+        # Step 2b: Record HBS as the simulation METHOD without erasing the base
+        # engine's row-level provenance. v1.2.7.5: previously this overwrote
+        # _Generation_Source, losing which rows came from LLM vs template.
         if "_Generation_Source" in df.columns:
-            df["_Generation_Source"] = "Human Behavior Simulator (HBS)"
-        else:
-            # Ensure the column exists even when no OE questions generated it
-            df["_Generation_Source"] = "Human Behavior Simulator (HBS)"
+            df["_Base_Generation_Source"] = df["_Generation_Source"]
+        df["_Simulation_Method"] = "Human Behavior Simulator (HBS)"
 
         # Step 3: Enrich demographics
         df = self._enrich_demographics(df)
@@ -431,7 +440,7 @@ class HBSEngine:
 
                 try:
                     modified = self._stylometric_engine.apply_fingerprint(
-                        text, fp, rng=random.Random(self._seed + i + hash(col)),
+                        text, fp, rng=random.Random(self._seed + i + _stable_int_hash(col)),
                     )
                     if modified and modified.strip():
                         df.at[i, col] = modified

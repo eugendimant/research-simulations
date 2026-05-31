@@ -10,11 +10,40 @@ __version__ = "2.2.0"  # Comprehensive update - all modules synced
 
 import hashlib
 import json
+import os
+import tempfile
 import threading
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+
+
+def _atomic_write_json(path, payload) -> None:
+    """Atomically write ``payload`` as JSON to ``path``.
+
+    Writes to a temp file in the same directory, fsyncs it, then os.replace()s
+    it over the destination so a crash mid-write can never leave a truncated or
+    corrupt JSON file. Behavior on success is identical to a plain dump.
+    """
+    path = Path(path)
+    directory = path.parent
+    directory.mkdir(parents=True, exist_ok=True)
+    fd, tmp_path = tempfile.mkstemp(dir=str(directory), prefix=".tmp-", suffix=".json")
+    try:
+        with os.fdopen(fd, 'w') as f:
+            json.dump(payload, f, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp_path, str(path))
+    except BaseException:
+        # Clean up the temp file if anything went wrong before the replace.
+        try:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+        except OSError:
+            pass
+        raise
 
 
 @dataclass
@@ -100,8 +129,8 @@ class GroupManager:
             data['groups'][str(group_num)] = group_dict
 
         try:
-            with open(self.storage_path, 'w') as f:
-                json.dump(data, f, indent=2)
+            # Atomic write: never leave a half-written/corrupt groups file.
+            _atomic_write_json(self.storage_path, data)
         except (IOError, OSError) as e:
             print(f"Warning: Could not save groups file: {e}")
 
@@ -302,7 +331,25 @@ class APIKeyManager:
         self.config_path = Path(config_path)
         self.config_path.parent.mkdir(parents=True, exist_ok=True)
 
+        # The live API key is kept ONLY in memory for this process; it is never
+        # persisted to disk. Only a hash + timestamp are written to config.
+        self._runtime_api_key: str = ""
+
         self._config = self._load_config()
+
+        # Migration / safety: an older build may have persisted the raw key under
+        # 'api_key'. Move it into runtime memory and strip it from the on-disk
+        # config so it is never re-saved in plaintext.
+        legacy_key = self._config.pop('api_key', None)
+        if legacy_key:
+            self._runtime_api_key = legacy_key
+            # Ensure a hash exists for verification/UI display.
+            if not self._config.get('api_key_hash'):
+                self._config['api_key_hash'] = hashlib.sha256(
+                    legacy_key.encode()
+                ).hexdigest()[:16]
+            # Rewrite config without the raw key.
+            self._save_config()
 
     def _load_config(self) -> Dict[str, Any]:
         """Load configuration from file."""
@@ -316,8 +363,8 @@ class APIKeyManager:
 
     def _save_config(self):
         """Save configuration to file."""
-        with open(self.config_path, 'w') as f:
-            json.dump(self._config, f, indent=2)
+        # Atomic write: never leave a half-written/corrupt config file.
+        _atomic_write_json(self.config_path, self._config)
 
     def set_api_key(self, api_key: str) -> Tuple[bool, str]:
         """
@@ -332,28 +379,42 @@ class APIKeyManager:
         if not api_key or not api_key.startswith('sk-ant-'):
             return False, "Invalid API key format. Should start with 'sk-ant-'"
 
-        # Store hash of key for verification (not the key itself in logs)
+        # Store ONLY a hash of the key on disk (for verification/UI). The raw
+        # key is kept in memory for this process and never persisted.
         key_hash = hashlib.sha256(api_key.encode()).hexdigest()[:16]
 
-        self._config['api_key'] = api_key
+        self._runtime_api_key = api_key
         self._config['api_key_hash'] = key_hash
         self._config['api_key_set_at'] = datetime.now().isoformat()
+        # Defensive: make sure no raw key lingers in the persisted config.
+        self._config.pop('api_key', None)
 
         self._save_config()
         return True, f"API key set successfully (hash: {key_hash}...)"
 
     def get_api_key(self) -> Optional[str]:
-        """Get the stored API key."""
-        return self._config.get('api_key')
+        """Get the live API key for this process.
+
+        The raw key is never read from disk; it lives only in memory. Returns
+        "" if no key has been set in this process (e.g. after a restart).
+        """
+        return self._runtime_api_key or ""
 
     def is_api_key_set(self) -> bool:
-        """Check if API key is configured."""
-        return bool(self._config.get('api_key'))
+        """Check if a usable API key is configured for this process.
+
+        Requires the live in-memory key — a persisted hash alone is not enough
+        to actually call the API.
+        """
+        return bool(self._runtime_api_key)
 
     def clear_api_key(self) -> Tuple[bool, str]:
-        """Clear the stored API key."""
-        if 'api_key' in self._config:
-            del self._config['api_key']
+        """Clear the stored API key (both runtime and any persisted hash)."""
+        had_key = bool(self._runtime_api_key) or bool(self._config.get('api_key_hash'))
+        self._runtime_api_key = ""
+        self._config.pop('api_key', None)  # legacy safety
+        self._config.pop('api_key_hash', None)
+        if had_key:
             self._config['api_key_cleared_at'] = datetime.now().isoformat()
             self._save_config()
             return True, "API key cleared"
@@ -437,8 +498,8 @@ def create_sample_groups_file(storage_path: str = None) -> str:
         }
     }
 
-    with open(storage_path, 'w') as f:
-        json.dump(sample_data, f, indent=2)
+    # Atomic write: never leave a half-written/corrupt sample groups file.
+    _atomic_write_json(storage_path, sample_data)
 
     return str(storage_path)
 

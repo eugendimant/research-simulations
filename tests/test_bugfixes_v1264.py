@@ -264,6 +264,68 @@ def test_svg_bar_chart_nan_robust():
     assert "nan" not in svg.lower(), "SVG must not contain NaN coordinates"
 
 
+# ── Codex audit v1.2.7.5 fixes ─────────────────────────────────────────────────
+def test_open_ended_variable_name_dict_generates_column():
+    """Audit 3.1: an open-ended spec keyed by variable_name (not name/question_id)
+    must NOT be dropped."""
+    from utils.enhanced_simulation_engine import _normalize_open_ended
+    out = _normalize_open_ended([{"variable_name": "explain", "question_text": "Why?"}])
+    assert out and out[0]["name"] == "explain"
+    assert out[0]["variable_name"] == "explain"
+    # export_tag / question_id also accepted
+    assert _normalize_open_ended([{"export_tag": "q5"}])[0]["name"] == "q5"
+    assert _normalize_open_ended([{"question_id": "QID9"}])[0]["name"] == "QID9"
+
+
+def test_scale_items_list_sets_num_items_and_names():
+    """Audit 3.2: a list-valued `items` defines the item count and names (was
+    ignored → defaulted to 5 items, empty item_names)."""
+    from utils.enhanced_simulation_engine import _normalize_scales
+    out = _normalize_scales([{"name": "Trust", "variable_name": "trust",
+                              "items": ["A", "B", "C"], "scale_min": 1, "scale_max": 7}])
+    assert out[0]["num_items"] == 3
+    assert out[0]["item_names"] == ["A", "B", "C"]
+
+
+def test_hbs_stable_hash_is_process_stable():
+    """Audit 3.4: seeded hashing must not use Python's salted hash()."""
+    from utils.hbs_engine import _stable_int_hash
+    assert _stable_int_hash("col") == _stable_int_hash("col")
+    assert isinstance(_stable_int_hash("col"), int)
+
+
+def test_engine_does_not_seed_global_rng():
+    """Audit 3.5: constructing the engine must not mutate global np.random/random
+    state (cross-session side effect in multi-user Streamlit)."""
+    import numpy as np, random
+    from utils.enhanced_simulation_engine import EnhancedSimulationEngine
+    np.random.seed(123); random.seed(123)
+    np_before = np.random.get_state()[1][0]
+    py_before = random.random()
+    random.seed(123)  # reset py rng so we can compare the next draw
+    EnhancedSimulationEngine(
+        study_title="S", study_description="s", sample_size=10,
+        conditions=[{"name": "A"}], factors=[],
+        scales=[{"name": "X", "variable_name": "X", "num_items": 1, "scale_min": 1, "scale_max": 7}],
+        additional_vars=[], demographics={"gender_quota": 50, "age_mean": 35, "age_sd": 12},
+        seed=999)  # different seed — must NOT reseed globals
+    assert np.random.get_state()[1][0] == np_before, "engine init reseeded global np.random"
+    assert random.random() == py_before, "engine init reseeded global random"
+
+
+def test_socsim_cli_compiles_and_has_main():
+    """Audit 1.1: the experimental CLI must compile and expose main()."""
+    import py_compile, os
+    cli = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..",
+                       "simulation_app", "experimental_features",
+                       "self-learning simulator", "socsim", "cli.py")
+    if not os.path.exists(cli):
+        return
+    py_compile.compile(cli, doraise=True)  # raises on IndentationError/SyntaxError
+    src = open(cli, encoding="utf-8").read()
+    assert "def main(" in src
+
+
 if __name__ == "__main__":
     import traceback
     fns = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]

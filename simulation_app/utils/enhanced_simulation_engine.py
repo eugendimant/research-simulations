@@ -4,7 +4,8 @@ from __future__ import annotations
 Enhanced Simulation Engine for Behavioral Experiment Simulation Tool
 =============================================================================
 
-Version 1.6.1 - Critical fixes, visual polish, heading consistency
+Module version: see __version__ below (the app-wide version is tracked in
+utils/__init__.py and app.py; this engine carries its own internal __version__).
 
 Advanced simulation engine with:
 - Theory-grounded persona library integration (7 persona dimensions)
@@ -617,16 +618,23 @@ def _normalize_scales(scales: Optional[List[Any]]) -> List[Dict[str, Any]]:
                     pts = 7
             pts = max(2, min(1001, pts))
 
+            # v1.2.7.5: a LIST-valued items/num_items defines the item NAMES and
+            # count. Previously a list fell through int() and defaulted to 5 with
+            # empty item_names — e.g. items=["A","B","C"] wrongly became 5 items.
+            item_names = list(scale.get("item_names") or [])
             raw_items = scale.get("num_items")
             if raw_items is None:
                 raw_items = scale.get("items")  # QSF detection compatibility
-            if raw_items is None:
-                n_items = 5
+            if isinstance(raw_items, (list, tuple)):
+                item_names = [str(x) for x in raw_items if str(x).strip()]
+                n_items = len(item_names)
+            elif raw_items is None:
+                n_items = len(item_names) if item_names else 5
             else:
                 try:
                     n_items = int(raw_items)
                 except (ValueError, TypeError):
-                    n_items = 5
+                    n_items = len(item_names) if item_names else 5
             n_items = max(1, n_items)
 
             normalized.append(
@@ -640,7 +648,7 @@ def _normalize_scales(scales: Optional[List[Any]]) -> List[Dict[str, Any]]:
                     # v1.2.3: Force scale_min/scale_max to ints (prevents dict leakage)
                     "scale_min": _safe_numeric(scale.get("scale_min", 1), default=1, as_int=True),
                     "scale_max": _safe_numeric(scale.get("scale_max", pts), default=pts, as_int=True),
-                    "item_names": scale.get("item_names", []),
+                    "item_names": item_names,
                     # v1.4.0: Preserve scale type for downstream use
                     "type": str(scale.get("type", "matrix")),
                     # v1.2.5.3: Preserve DV description and scale anchors
@@ -681,14 +689,23 @@ def _normalize_open_ended(open_ended: Optional[List[Any]]) -> List[Dict[str, Any
                 normalized.append({"name": name, "type": "text", "question_text": name})
             continue
         if isinstance(item, dict):
-            # Support both "name" and "question_id" keys (QSF uses question_id)
-            name = str(item.get("name", item.get("question_id", ""))).strip()
+            # v1.2.7.5: accept name from any of these keys (QSF/builder paths use
+            # different ones). Previously only name/question_id were honored, so a
+            # spec like {"variable_name": "explain", ...} was silently DROPPED.
+            name = str(
+                item.get("name")
+                or item.get("variable_name")
+                or item.get("export_tag")
+                or item.get("question_id")
+                or ""
+            ).strip()
             if name:
                 # Preserve question_text, display_logic, and condition info for survey flow
                 normalized_item = dict(item)
                 # Ensure name is set (for column naming)
-                if not normalized_item.get("name"):
-                    normalized_item["name"] = name
+                normalized_item["name"] = name
+                # Preserve the chosen variable name for export/column naming
+                normalized_item.setdefault("variable_name", name)
                 # Ensure question_text is set for unique response generation
                 if not normalized_item.get("question_text"):
                     normalized_item["question_text"] = name
@@ -2954,8 +2971,11 @@ class EnhancedSimulationEngine:
 
         self.run_id = f"{self.mode.upper()}_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{self.seed % 10000:04d}"
 
-        np.random.seed(self.seed)
-        random.seed(self.seed)
+        # v1.2.7.5: Do NOT seed the GLOBAL np.random / random here. All generation
+        # uses per-call seeded RandomState/random.Random(self.seed + ...) instances,
+        # so global seeding was both redundant and a cross-session side effect in
+        # multi-user Streamlit (one run reseeding global state used by another).
+        # Verified: output is identical with the global state arbitrarily perturbed.
 
         self.persona_library = PersonaLibrary(seed=self.seed)
 
@@ -3637,10 +3657,16 @@ class EnhancedSimulationEngine:
                     name = safe_str(scale.get("name"), "Scale")
                     pts = safe_int(scale.get("scale_points"), 7)
                     pts = max(2, min(1001, pts))
+                    # v1.2.7.5: list-valued items/num_items define the item names + count
+                    item_names = list(scale.get("item_names") or [])
                     raw_items = scale.get("num_items")
                     if raw_items is None:
                         raw_items = scale.get("items")  # QSF detection key
-                    n_items = safe_int(raw_items, 5)
+                    if isinstance(raw_items, (list, tuple)):
+                        item_names = [str(x) for x in raw_items if str(x).strip()]
+                        n_items = len(item_names)
+                    else:
+                        n_items = safe_int(raw_items, len(item_names) if item_names else 5)
                     n_items = max(1, n_items)
                     normalized.append({
                         "name": name,
@@ -3648,6 +3674,7 @@ class EnhancedSimulationEngine:
                         "num_items": n_items,
                         "scale_points": pts,
                         "reverse_items": list(scale.get("reverse_items") or []),
+                        "item_names": item_names,
                         "_validated": True,
                     })
             else:
@@ -12593,7 +12620,9 @@ class EnhancedSimulationEngine:
                         "I would add that ", "On another note, ", "I also think that ",
                         "From a different perspective, ", "More specifically, "
                     ]
-                    modifier_idx = (i + hash(dup_col) % 100) % len(modifiers)
+                    # v1.2.7.5: _stable_int_hash (not salted built-in hash()) so the
+                    # chosen modifier is reproducible across processes for a given seed.
+                    modifier_idx = (i + _stable_int_hash(dup_col) % 100) % len(modifiers)
                     if original_response and len(original_response) > 10:
                         # Modify the beginning
                         modified = modifiers[modifier_idx] + original_response[0].lower() + original_response[1:]

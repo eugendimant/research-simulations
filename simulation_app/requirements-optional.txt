@@ -1,0 +1,26 @@
+# Optional dependencies — the app runs WITHOUT these (each import is guarded with
+# a try/except ImportError and a graceful fallback). Install to enable the extra
+# features noted. Core runtime deps are in simulation_app/requirements.txt.
+
+# Interactive Plotly charts in the report UI (falls back to SVG charts).
+plotly>=5.0.0
+
+# Exact statistical p-values in schema validation (falls back to approximations).
+scipy>=1.10.0
+
+# Matplotlib charts in instructor reports (falls back to pure-SVG charts).
+matplotlib>=3.7.0
+
+# PDF text extraction for uploaded study materials / pre-registrations
+# (multiple backends are tried; any one is sufficient).
+pdfplumber>=0.10.0
+PyMuPDF>=1.23.0        # imported as `fitz`
+
+# GitHub QSF collection + token validation (disabled by default; admin opt-in).
+requests>=2.31.0
+
+# Spreadsheet export of generated data.
+openpyxl>=3.1.0
+
+# JSON-schema validation of configs (falls back to built-in checks).
+jsonschema>=4.0.0

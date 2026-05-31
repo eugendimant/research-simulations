@@ -74,7 +74,8 @@ def _validate_token_format(token: str) -> Tuple[bool, str]:
     if len(token) == 40 and token.isalnum():
         return True, "Legacy token format detected (may be deprecated)"
 
-    return False, f"Unknown token format. Token should start with 'ghp_' (classic) or 'github_pat_' (fine-grained). Got: {token[:10]}..."
+    # Do NOT echo any part of the token (even a prefix) — avoids leaking secrets in error messages/logs.
+    return False, "Unknown token format. Token should start with 'ghp_' (classic) or 'github_pat_' (fine-grained)."
 
 
 def _get_config() -> dict:
