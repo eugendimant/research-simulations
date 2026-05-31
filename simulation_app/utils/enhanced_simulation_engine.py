@@ -55,6 +55,8 @@ _JOINT_DV_TYPES = frozenset({
     "rank_order", "ranking", "rank order",
     "constant_sum", "constant sum", "constantsum",
 })
+# Numeric-DV money/count classification cues are compiled once, just after the
+# `import re` below (see _MONEY_CUE_RE / _COUNT_CUE_RE / _RATING_CTX_RE).
 
 # =============================================================================
 # SCIENTIFIC FOUNDATIONS FOR SIMULATION
@@ -228,6 +230,26 @@ import time
 
 import numpy as np
 import pandas as pd
+
+# v1.2.7.4: numeric-DV money/count classification cues, compiled ONCE. Letter-
+# boundary matching ((?<![a-z])...(?![a-z])) so cues fire on underscore-normalized
+# names ("wtp dollars") but never inside other words ('times'∉"sometimes",
+# 'cost'∉"costly", 'bid'∉"bidding", 'invest'∉"investment attitude" — the last is
+# also caught by the rating-context guard).
+_LB = lambda body: r'(?<![a-z])(?:' + body + r')(?![a-z])'
+_MONEY_CUE_RE = re.compile(
+    _LB(r'wtp|willing to pay|willingness|prices?|priced|pay|paid|paying|'
+        r'spend|spent|spending|donat[a-z]*|bids?|costs?|amounts?|dollars?|'
+        r'contribut[a-z]*|invest|invests|invested|investment|budget|'
+        r'wages?|salary|salaries') + r'|\$', re.IGNORECASE)
+_COUNT_CUE_RE = re.compile(
+    _LB(r'number of|how many|count|times|frequency|'
+        r'per (?:week|day|month|year)|visits?|purchases?|how often'), re.IGNORECASE)
+# Rating/attitude contexts are NOT money/count even if a cue word appears.
+_RATING_CTX_RE = re.compile(
+    _LB(r'agree|disagree|satisf[a-z]*|attitude|opinion|rate|rating|extent|'
+        r'how much do you|likelihood|likely|confiden[a-z]*|important|'
+        r'favorab[a-z]*|to what extent'), re.IGNORECASE)
 
 from .persona_library import (
     PersonaLibrary,
@@ -11224,6 +11246,134 @@ class EnhancedSimulationEngine:
             "engagement_category": _eng_cat,
         }
 
+    # ------------------------------------------------------------------
+    # v1.2.7.x DV-type-aware post-processing helpers (called from generate())
+    # ------------------------------------------------------------------
+    def _apply_joint_dv_structure(self, data, scale_log, n):
+        """Convert independently-generated rank-order / constant-sum items into
+        their correct JOINT structure (a valid 1..k permutation; or an allocation
+        summing exactly to the total). The per-item values already carry condition
+        effects + persona variation, so we only reshape — we don't re-roll.
+
+        Returns the set of column-prefixes whose composite ``_mean`` is meaningless
+        (so generate() can skip it). Also records ``self._typed_dv_columns`` so the
+        consistency audit / bounds-clipping skip these jointly-constrained columns.
+        Every non-joint DV type is left byte-identical (gated on ``_JOINT_DV_TYPES``).
+        """
+        typed_dv_scales: set = set()
+        self._typed_dv_columns = set()
+        for log_entry in scale_log:
+            dv_type = log_entry.get("type", "")
+            icols = log_entry.get("columns_generated", [])
+            k = len(icols)
+            if k < 2 or dv_type not in _JOINT_DV_TYPES:
+                continue
+            if any(c not in data or len(data[c]) < n for c in icols):
+                continue
+            self._typed_dv_columns.update(icols)
+            try:
+                M = np.array([data[c] for c in icols], dtype=float).T  # (n, k)
+                smin = float(log_entry.get("scale_min", 1))
+                smax = float(log_entry.get("scale_max", k))
+                prefix = icols[0].rsplit("_", 1)[0]
+                if dv_type in ("rank_order", "ranking", "rank order"):
+                    # Latent preference = generated value + small STABLE per-item base
+                    # → argsort to a valid 1..k permutation (rank 1 = most preferred).
+                    # Plackett-Luce/Thurstonian flavour: systematic item preference +
+                    # idiosyncratic per-participant variation.
+                    base = np.array([(_stable_int_hash(c) % 997) / 997.0 for c in icols])
+                    util = M + base[None, :] * max(1.0, (smax - smin)) * 0.20
+                    order = np.argsort(-util, axis=1, kind="stable")  # most→least
+                    ranks = np.empty((n, k), dtype=int)
+                    rows = np.arange(n)
+                    for pos in range(k):
+                        ranks[rows, order[:, pos]] = pos + 1
+                    for j, c in enumerate(icols):
+                        data[c] = ranks[:, j].tolist()
+                else:  # constant-sum: renormalize each row to sum EXACTLY to total
+                    total = int(round(smax)) if smax and smax >= k else 100
+                    W = np.clip(M - smin + 0.5, 0.01, None)  # values as positive weights
+                    alloc = W / W.sum(axis=1, keepdims=True) * total
+                    floor = np.floor(alloc).astype(int)
+                    for ri in range(n):  # largest-remainder rounding to hit total exactly
+                        resid = total - int(floor[ri].sum())
+                        if resid != 0:
+                            frac_order = np.argsort(-(alloc[ri] - floor[ri]))
+                            for t in range(abs(resid)):
+                                floor[ri, frac_order[t % k]] += 1 if resid > 0 else -1
+                            np.clip(floor[ri], 0, total, out=floor[ri])
+                    for j, c in enumerate(icols):
+                        data[c] = floor[:, j].tolist()
+                typed_dv_scales.add(prefix)
+                self._log(f"Applied {dv_type} joint structure to '{log_entry.get('name')}' ({k} items)")
+            except Exception as err:
+                self._log(f"WARNING: joint-DV transform failed for '{log_entry.get('name')}': {err}")
+        return typed_dv_scales
+
+    @staticmethod
+    def _numeric_dv_kind(log_entry):
+        """Classify a numeric DV as 'money', 'count', or None using DV-SPECIFIC text
+        ONLY (name/columns/question_text/description/anchors/item_names) — never the
+        study title/description. Rating/attitude items are never money/count even if
+        a cue word appears. Returns 'money' | 'count' | None."""
+        if str(log_entry.get("type", "")).lower() not in ("numeric", "numeric_input"):
+            return None
+        ctx = " ".join([
+            str(log_entry.get("name", "")),
+            " ".join(log_entry.get("columns_generated", []) or []),
+            str(log_entry.get("question_text", "")),
+            str(log_entry.get("dv_description", "")),
+            " ".join(str(x) for x in (log_entry.get("item_names") or [])),
+            " ".join(str(v) for v in (log_entry.get("scale_anchors") or {}).values()),
+        ]).replace("_", " ").replace("-", " ")  # expose cues at letter boundaries
+        if _RATING_CTX_RE.search(ctx):
+            return None
+        if _MONEY_CUE_RE.search(ctx):
+            return "money"
+        if _COUNT_CUE_RE.search(ctx):
+            return "count"
+        return None
+
+    def _apply_numeric_distribution_realism(self, data, scale_log):
+        """Reshape money/WTP/count numeric DVs to a realistic RIGHT-SKEWED marginal
+        (money: log-normal + ~12% floor spike; count: gamma, mode low). Uses
+        rank-assignment so the condition/persona ordering — hence treatment effects —
+        is preserved. Generic numeric DVs (age, temperature, …) are left untouched."""
+        for log_entry in scale_log:
+            kind = self._numeric_dv_kind(log_entry)
+            if kind is None:
+                continue
+            icols = log_entry.get("columns_generated", [])
+            if not icols or any(c not in data or len(data[c]) < 8 for c in icols):
+                continue  # need enough rows for a stable marginal
+            smin = float(log_entry.get("scale_min", 0))
+            smax = float(log_entry.get("scale_max", 100))
+            span = smax - smin
+            if span <= 0:
+                continue
+            try:
+                for c in icols:
+                    cur = np.asarray(data[c], dtype=float)
+                    nn = len(cur)
+                    rng = np.random.RandomState((self.seed + _stable_int_hash(c)) % (2**31))
+                    if kind == "money":
+                        # log-normal scaled to a target MEDIAN (~30% of span) so the
+                        # long upper tail survives; then a floor spike (~12% at min).
+                        samp = np.sort(rng.lognormal(mean=0.0, sigma=0.9, size=nn))
+                        target = smin + samp * (span * 0.30)
+                        n_floor = int(round(nn * 0.12))
+                        if n_floor > 0:
+                            target[:n_floor] = smin
+                    else:  # count/frequency → right-skewed, mode low
+                        samp = np.sort(rng.gamma(shape=1.6, scale=1.0, size=nn))
+                        target = smin + samp * (span * 0.18)
+                    # rank-assignment: smallest current value → smallest target value.
+                    ranks = np.argsort(np.argsort(cur, kind="stable"))
+                    data[c] = np.clip(np.round(target[ranks]), smin, smax).astype(int).tolist()
+                self._log(f"Applied {kind} right-skew realism to numeric DV '{log_entry.get('name')}'")
+            except Exception as err:
+                self._log(f"WARNING: numeric realism transform failed for '{log_entry.get('name')}': {err}")
+
     def generate(self) -> Tuple[pd.DataFrame, Dict[str, Any]]:
         n = self.sample_size
         data: Dict[str, Any] = {}
@@ -11656,166 +11806,13 @@ class EnhancedSimulationEngine:
         # Store generation log for post-generation verification
         self._scale_generation_log = _scale_generation_log
 
-        # =====================================================================
-        # v1.2.7.0: TYPE-AWARE DV POST-PROCESSING (rank-order, constant-sum)
-        # The per-item loop above emits one INDEPENDENT value per item — correct
-        # for Likert/slider/matrix/numbered/single-item DVs. But rank-order and
-        # constant-sum items are JOINTLY constrained (a permutation; or an
-        # allocation summing to a fixed total). Without this, a detected
-        # rank-order DV emitted DUPLICATE ranks and a constant-sum DV emitted
-        # rows that did NOT sum to the total — silently invalid data. Here we
-        # transform the already-generated per-item values (which already carry
-        # condition effects + persona variation) into the correct joint
-        # structure. Every other DV type is left byte-identical (gated below).
-        # =====================================================================
-        _typed_dv_scales: set = set()  # prefixes whose composite _mean is not meaningful
-        self._typed_dv_columns: set = set()  # exact columns to exempt from downstream mutation
-        for _log_entry in _scale_generation_log:
-            _dv_type = _log_entry.get("type", "")
-            _icols = _log_entry.get("columns_generated", [])
-            _k = len(_icols)
-            if _k < 2 or _dv_type not in _JOINT_DV_TYPES:
-                continue
-            if any(c not in data or len(data[c]) < n for c in _icols):
-                continue
-            self._typed_dv_columns.update(_icols)
-            try:
-                _M = np.array([data[c] for c in _icols], dtype=float).T  # (n, k)
-                _smin = float(_log_entry.get("scale_min", 1))
-                _smax = float(_log_entry.get("scale_max", _k))
-                _prefix = _icols[0].rsplit("_", 1)[0]
-                if _dv_type in ("rank_order", "ranking", "rank order"):
-                    # Latent preference = generated value + small STABLE per-item
-                    # base → argsort to a valid 1..k permutation (rank 1 = most
-                    # preferred). Plackett-Luce/Thurstonian flavour: systematic
-                    # item preference + idiosyncratic per-participant variation.
-                    _base = np.array([(_stable_int_hash(c) % 997) / 997.0 for c in _icols])
-                    _util = _M + _base[None, :] * max(1.0, (_smax - _smin)) * 0.20
-                    _order = np.argsort(-_util, axis=1, kind="stable")  # most→least
-                    _ranks = np.empty((n, _k), dtype=int)
-                    _rows = np.arange(n)
-                    for _pos in range(_k):
-                        _ranks[_rows, _order[:, _pos]] = _pos + 1
-                    for _j, _c in enumerate(_icols):
-                        data[_c] = _ranks[:, _j].tolist()
-                else:  # constant-sum
-                    _total = int(round(_smax)) if _smax and _smax >= _k else 100
-                    # Treat values as positive weights; renormalize each row to sum
-                    # EXACTLY to the total (largest-remainder rounding).
-                    _W = np.clip(_M - _smin + 0.5, 0.01, None)
-                    _alloc = _W / _W.sum(axis=1, keepdims=True) * _total
-                    _floor = np.floor(_alloc).astype(int)
-                    for _ri in range(n):
-                        _resid = _total - int(_floor[_ri].sum())
-                        if _resid != 0:
-                            _frac_order = np.argsort(-(_alloc[_ri] - _floor[_ri]))
-                            for _t in range(abs(_resid)):
-                                _floor[_ri, _frac_order[_t % _k]] += 1 if _resid > 0 else -1
-                            np.clip(_floor[_ri], 0, _total, out=_floor[_ri])
-                    for _j, _c in enumerate(_icols):
-                        data[_c] = _floor[:, _j].tolist()
-                _typed_dv_scales.add(_prefix)
-                self._log(f"Applied {_dv_type} joint structure to '{_log_entry.get('name')}' ({_k} items)")
-            except Exception as _typed_err:
-                self._log(f"WARNING: type-aware DV transform failed for '{_log_entry.get('name')}': {_typed_err}")
-
-        # =====================================================================
-        # v1.2.7.2: NUMERIC DV DISTRIBUTION REALISM (money / WTP / counts)
-        # The numeric path produces ~symmetric values around the midpoint
-        # (verified skew≈0). Real money DVs (willingness-to-pay, price, donation,
-        # bid, spend) are RIGHT-SKEWED with a spike at the floor ($0); count /
-        # frequency DVs are right-skewed (Poisson/NB-like). We reshape each
-        # flagged numeric column's MARGINAL via rank-assignment, which PRESERVES
-        # the condition/persona ordering (treatment effects survive) while fixing
-        # the shape. Strictly gated on numeric type + money/count name cues, so
-        # generic numeric DVs (age, temperature, quantity) are byte-identical.
-        # =====================================================================
-        # v1.2.7.4: word-boundary cues (stems use \w* so 'donat'->'donate/donation',
-        # 'invest'->'investment'). Matched with re (not substring `in`) so 'times'
-        # no longer fires on "sometimes", 'cost' on "costly", 'bid' on "bidding",
-        # 'invest' on an "investment knowledge" RATING, etc.
-        # Letter-boundary matching ((?<![a-z])...(?![a-z])) so cues fire on
-        # underscore-normalized names ("wtp dollars") but NOT inside other words
-        # ('times'∉"sometimes", 'cost'∉"costly", 'bid'∉"bidding").
-        _lb = lambda body: r'(?<![a-z])(?:' + body + r')(?![a-z])'
-        _money_cue_re = re.compile(
-            _lb(r'wtp|willing to pay|willingness|prices?|priced|pay|paid|paying|'
-                r'spend|spent|spending|donat[a-z]*|bids?|costs?|amounts?|dollars?|'
-                r'contribut[a-z]*|invest|invests|invested|investment|budget|'
-                r'wages?|salary|salaries') + r'|\$', re.IGNORECASE)
-        _count_cue_re = re.compile(
-            _lb(r'number of|how many|count|times|frequency|'
-                r'per (?:week|day|month|year)|visits?|purchases?|how often'),
-            re.IGNORECASE)
-        # Rating/attitude contexts that are NOT money/count even if a cue appears
-        # (e.g. "how much do you agree", a 0-100 "investment attitude" rating).
-        _rating_ctx_re = re.compile(
-            _lb(r'agree|disagree|satisf[a-z]*|attitude|opinion|rate|rating|extent|'
-                r'how much do you|likelihood|likely|confiden[a-z]*|important|'
-                r'favorab[a-z]*|to what extent'), re.IGNORECASE)
-        for _log_entry in _scale_generation_log:
-            if str(_log_entry.get("type", "")).lower() not in ("numeric", "numeric_input"):
-                continue
-            _icols = _log_entry.get("columns_generated", [])
-            if not _icols or any(c not in data or len(data[c]) < 8 for c in _icols):
-                continue  # need enough rows for a stable marginal
-            # v1.2.7.3: classify on DV-SPECIFIC text ONLY — the variable/column
-            # names, this DV's question text, and its description/anchors. We do
-            # NOT use study title/description here: a money/frequency mention at
-            # the study level previously reshaped EVERY numeric DV (incl. age,
-            # temperature, generic scores), and a numeric input whose cue lives in
-            # its question text was missed when the study text was neutral.
-            _anchor_txt = ' '.join(str(v) for v in (_log_entry.get("scale_anchors") or {}).values())
-            _name_ctx = ' '.join([
-                str(_log_entry.get("name", "")),
-                ' '.join(_icols),
-                str(_log_entry.get("question_text", "")),
-                str(_log_entry.get("dv_description", "")),
-                ' '.join(str(x) for x in (_log_entry.get("item_names") or [])),
-                _anchor_txt,
-            ])
-            # Normalize underscores/hyphens to spaces so column/variable names like
-            # "WTP_dollars" expose their cue words at letter boundaries (the cue
-            # regexes use letter-boundary matching, so "wtp_dollars" wouldn't match
-            # otherwise, while "random_score" correctly still won't match).
-            _name_ctx = _name_ctx.replace("_", " ").replace("-", " ")
-            # Rating/attitude items are never money/count DVs even if a cue word
-            # appears (e.g. a 0-100 "investment attitude" agreement rating).
-            if _rating_ctx_re.search(_name_ctx):
-                continue
-            _is_money = bool(_money_cue_re.search(_name_ctx))
-            _is_count = (not _is_money) and bool(_count_cue_re.search(_name_ctx))
-            if not (_is_money or _is_count):
-                continue  # generic numeric → leave exactly as-is (no regression)
-            _smin = float(_log_entry.get("scale_min", 0))
-            _smax = float(_log_entry.get("scale_max", 100))
-            _span = _smax - _smin
-            if _span <= 0:
-                continue
-            try:
-                for _c in _icols:
-                    _cur = np.asarray(data[_c], dtype=float)
-                    _nn = len(_cur)
-                    _rng = np.random.RandomState((self.seed + _stable_int_hash(_c)) % (2**31))
-                    if _is_money:
-                        # Right-skewed log-normal scaled by a target MEDIAN (~30% of
-                        # span) so the long upper tail survives; then floor spike.
-                        _samp = np.sort(_rng.lognormal(mean=0.0, sigma=0.9, size=_nn))
-                        _target = _smin + _samp * (_span * 0.30)
-                        _n_floor = int(round(_nn * 0.12))  # ~12% report the floor (e.g. $0)
-                        if _n_floor > 0:
-                            _target[:_n_floor] = _smin
-                    else:  # count / frequency → right-skewed, mode low
-                        _samp = np.sort(_rng.gamma(shape=1.6, scale=1.0, size=_nn))
-                        _target = _smin + _samp * (_span * 0.18)
-                    # rank-assignment: smallest current value → smallest target value,
-                    # so condition/persona ordering (hence the treatment effect) is kept.
-                    _ranks = np.argsort(np.argsort(_cur, kind="stable"))
-                    data[_c] = np.clip(np.round(_target[_ranks]), _smin, _smax).astype(int).tolist()
-                self._log(f"Applied {'money' if _is_money else 'count'} right-skew realism to "
-                          f"numeric DV '{_log_entry.get('name')}'")
-            except Exception as _num_err:
-                self._log(f"WARNING: numeric realism transform failed for '{_log_entry.get('name')}': {_num_err}")
+        # v1.2.7.x: DV-type-aware post-processing. The per-item loop above emits
+        # INDEPENDENT values (correct for Likert/slider/matrix/numbered/single-item).
+        # These two helpers fix the cases that need joint structure or a realistic
+        # marginal; every other DV type is left byte-identical. Extracted into named
+        # methods (v1.2.7.4) to keep generate() readable.
+        _typed_dv_scales = self._apply_joint_dv_structure(data, _scale_generation_log, n)
+        self._apply_numeric_distribution_realism(data, _scale_generation_log)
 
         # =====================================================================
         # v1.4.3: COMPOSITE MEAN COLUMNS FOR MULTI-ITEM SCALES
