@@ -1,0 +1,87 @@
+app imported OK
+has _preview_to_engine_inputs: True
+=== BRIDGE SOURCE (first 4000 chars) ===
+def _preview_to_engine_inputs(preview: QSFPreviewResult) -> Dict[str, Any]:
+    """
+    Convert QSFPreviewResult to engine-ready inputs with minimal assumptions.
+
+    IMPORTANT: Only includes scales actually detected from QSF - does NOT fabricate DVs.
+    Scale points are preserved from QSF detection; only defaults when truly unknown.
+    """
+    conditions = (preview.detected_conditions or [])[:]
+    if not conditions:
+        conditions = ["Condition A"]
+
+    factors = _infer_factors_from_conditions(conditions)
+
+    scales: List[Dict[str, Any]] = []
+    seen_scale_names: set = set()  # Track to prevent duplicates
+
+    for s in (preview.detected_scales or []):
+        # Use variable_name if available (more precise), fall back to name
+        name = str(s.get("variable_name", s.get("name", "Scale"))).strip() or "Scale"
+        display_name = str(s.get("name", name)).strip() or name
+
+        # Deduplicate by normalized name
+        name_key = name.lower().replace(" ", "_").replace("-", "_")
+        if name_key in seen_scale_names:
+            continue
+        seen_scale_names.add(name_key)
+
+        # Use detected values, with reasonable defaults only when truly missing
+        # Check BOTH "items" (QSF detection key) and "num_items" (engine key)
+        num_items = s.get("num_items")
+        if num_items is None:
+            num_items = s.get("items")  # QSF detection uses "items" key
+        if num_items is None or (isinstance(num_items, float) and np.isnan(num_items)):
+            num_items = 5  # Default only if truly not detected
+        else:
+            try:
+                num_items = int(num_items)
+            except (ValueError, TypeError):
+                num_items = 5
+
+        scale_points = s.get("scale_points")
+        if scale_points is None or (isinstance(scale_points, float) and np.isnan(scale_points)):
+            # IMPORTANT: Default to 7 only when QSF doesn't specify
+            scale_points = 7
+        else:
+            try:
+                scale_points = int(scale_points)
+            except (ValueError, TypeError):
+                scale_points = 7
+
+        scales.append(
+            {
+                "name": display_name,
+                "variable_name": name,
+                "num_items": max(1, num_items),
+                "scale_points": max(2, min(1001, scale_points)),
+                "scale_min": s.get("scale_min", 1),
+                "scale_max": s.get("scale_max", scale_points),
+                "reverse_items": s.get("reverse_items", []) or [],
+                "type": s.get("type", "likert"),
+                # v1.2.7.3: carry the DV's own question text/description/anchors so
+                # numeric-realism classification uses DV-specific cues, not study-level
+                # text. A QSF numeric input named e.g. "QID17" carries its money cue
+                # ("how much would you pay") only in its question text.
+                "question_text": s.get("question_text", "") or "",
+                "dv_description": s.get("dv_description", s.get("description", "")) or "",
+                "scale_anchors": s.get("scale_anchors", {}) or {},
+                "item_names": s.get("item_names", []) or [],
+                "detected_from_qsf": s.get("scale_points") is not None,
+                "_validated": True,
+            }
+        )
+
+    # Record whether the survey exposed any standard scales BEFORE recovery.
+    _had_detected_scales = bool(scales)
+
+    # v1.2.6.4 / v1.2.6.6: Recover behavioural DVs from slider questions (feeling
+    # thermometers, allocations, WTP) and numeric text-entry (amounts).
+    #  - No detected Likert scales: these become the PRIMARY DVs (otherwise only a
+    #    single generic "Main_DV" would be simulated) — budget 25.
+    #  - Detected scales present: added as ADDITIONAL DVs (deduped), because
+    #    slider measures are frequently the real DV in consumer/behavioural
+    #    designs — budget 15 (user-selected: additive, capped). The cap also
+    #    stops a giant slider battery

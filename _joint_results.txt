@@ -1,0 +1,13 @@
+JOINT[1] 2026_02_27_Intergenerational_transmission_Par ok=True cs_bad=[] ro_bad=[] cs_groups={} ro_groups={'Q3': 11, 'Q4': 11} oor=0
+JOINT[2] 2026_04_16_AI_Simulation_Adoption_Barriers_Su ok=True cs_bad=[] ro_bad=[] cs_groups={} ro_groups={} oor=0
+JOINT[3] 2026_04_16_Receiver_Randomized.qsf            ok=True cs_bad=[] ro_bad=[] cs_groups={'QID5': 4, 'QID8': 4} ro_groups={} oor=0
+JOINT[4] 2026_04_17_Receiver_Randomized.qsf            ok=True cs_bad=[] ro_bad=[] cs_groups={'QID5': 4, 'QID8': 4} ro_groups={} oor=0
+JOINT[5] 2026_04_18_Group6_Charity_Review_Experiment.q ok=True cs_bad=[] ro_bad=[] cs_groups={} ro_groups={} oor=0
+JOINT[6] 2026_04_21_Group6_Charity_Review_Experiment.q ok=True cs_bad=[] ro_bad=[] cs_groups={} ro_groups={} oor=0
+JOINT[7] 2026_04_22_Group6_Charity_Review_Experiment.q ok=True cs_bad=[] ro_bad=[] cs_groups={} ro_groups={} oor=0
+JOINT[8] 2026_04_23_Group6_Charity_Review_Experiment.q ok=True cs_bad=[] ro_bad=[] cs_groups={} ro_groups={} oor=0
+JOINT[9] 5010_Scientific_pitch-woke_advertisement (1). ok=True cs_bad=[] ro_bad=[] cs_groups={} ro_groups={'Q45': 3, 'Q85': 3, 'Q22': 3, 'Q52': 3, 'Q53': 3, 'Q93': 3, 'Q11': 3, 'Q60': 3, 'Q21': 3, 'Q59': 3, 'Q49': 3, 'Q89': 3} oor=0
+JOINT[10] Group #4 - Qualtrics.qsf                      ok=True cs_bad=[] ro_bad=[] cs_groups={} ro_groups={'Q45': 3, 'Q85': 3, 'Q22': 3, 'Q52': 3, 'Q53': 3, 'Q93': 3, 'Q11': 3, 'Q60': 3, 'Q21': 3, 'Q59': 3, 'Q49': 3, 'Q89': 3} oor=0
+JOINT[11] Measuring_Norm_Pluralism_and_Perceived_Polari ok=True cs_bad=[] ro_bad=[] cs_groups={'MBESA': 10, 'SSBESA': 10, 'ABESA': 10, 'SBESA': 10, 'GBESA': 10, 'IBESA': 10, 'EBESA': 10} ro_groups={} oor=0
+JOINT[12] Pilot - Valentina (No Smartriqs).qsf          ok=True cs_bad=[] ro_bad=[] cs_groups={} ro_groups={} oor=0
+JOINT[13] Pilot - Valentina (Smartriqs).qsf             ok=True cs_bad=[] ro_bad=[] cs_groups={} ro_groups={} oor=0

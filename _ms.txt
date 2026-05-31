@@ -1,0 +1,1 @@
+has _apply_money_shaping: False

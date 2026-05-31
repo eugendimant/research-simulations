@@ -1,0 +1,36 @@
+================================================================
+QA CORPUS REPORT (N=30/file, seed=7, LLM disabled)
+================================================================
+Total result records:      61
+Bad JSON lines (skipped):  0
+Simulated OK:              61
+Crashes/exceptions:        0
+NaN-all / inf columns:     0
+Invalid joint-DV:          0
+Out-of-range numeric DV:   0
+Zero-variance DV cols:     1
+Duplicate column names:    0
+Missing CONDITION column:  0
+
+Crash type tally: {}
+Crash stage tally: {}
+
+### CRASHES (0)
+
+### INVALID JOINT-DV (constant_sum/rank_order) (0)
+
+### OUT-OF-RANGE numeric DV [col, seenmin, seenmax, smin, smax, nbad] (0)
+
+### NaN-all / inf columns (0)
+
+### ZERO-VARIANCE DV columns [col, value, type] (1)
+  2026_04_16_AI_Simulation_Adoption_Barrie | [["Control_1", 20.0, "single_item"]]
+
+### DUPLICATE column names (0)
+
+### MISSING CONDITION column (n_conditions>1) (0)
+
+### Corpus stats
+  rows: all == 30? True (min=30 max=30)
+  cols: min=27 max=129
+  slowest files: [(9.0, '2026_03_25_Qualtrics_Survey_Karlijn'), (8.9, '2026_02_20_Qualtrics_Survey_Karlijn'), (8.7, '2026_04_15_Qualtrics_Survey_Karlijn'), (8.3, '2026_03_18_Group_12_MTurk_1_.qsf'), (8.3, '2026_02_09_Qualtrics_Survey_Karlijn'), (8.1, '2026_02_16_Qualtrics_Survey_Karlijn'), (8.0, '2026_02_23_BDS5010_G12.qsf'), (8.0, '2026_02_13_Qualtrics_Survey_Karlijn')]

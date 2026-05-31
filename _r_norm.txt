@@ -1,0 +1,5 @@
+FILE Measuring_Norm_Pluralism_and_Perceived_Polarization_in_US_Politics.qsf  N=300
+  [missing col MFEXP_4]
+  [missing col MFEXP_1]
+  [missing col MFEXP_2]
+  [missing col MFEXP_3]

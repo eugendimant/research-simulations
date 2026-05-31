@@ -1,0 +1,20 @@
+TOTAL=80 OK=80 CRASHED=0
+
+== CRASHES (0) ==
+
+== OUT-OF-RANGE (0 files) [col, seenmin, seenmax, smin, smax, nbad of 30] ==
+
+== ZERO-VARIANCE (1 files) [col, constant_value, type] ==
+  2026_04_16_AI_Simulation_Adoption_Barriers | ['Control_1', 20.0, 'single_item']
+
+== INVALID JOINT-DV (0) ==
+
+== NAN-ALL / INF (0) ==
+
+== DUPLICATE COLS (0) ==
+
+== MISSING CONDITION COL (0) ==
+
+== CORPUS ==
+rows all 30? True; cols min=26 max=129
+slowest: [(9.0, '2026_03_25_Qualtrics_Survey_Ka'), (8.9, '2026_02_20_Qualtrics_Survey_Ka'), (8.7, '2026_04_15_Qualtrics_Survey_Ka'), (8.3, '2026_03_18_Group_12_MTurk_1_.q'), (8.3, '2026_02_09_Qualtrics_Survey_Ka'), (8.1, '2026_02_16_Qualtrics_Survey_Ka')]

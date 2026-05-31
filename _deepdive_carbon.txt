@@ -1,0 +1,8 @@
+file: Q_Carbon_Tax_Framing.qsf
+ok: False shape: None
+scale_specs:
+cs_groups: None
+ro_groups: None
+cs_bad: None
+ro_bad: None
+columns: None

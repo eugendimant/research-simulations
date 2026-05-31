@@ -1,0 +1,2 @@
+FILE 2026_04_16_Receiver_Randomized.qsf  N=300
+  [missing col Conspiracy_Solicitat_1]

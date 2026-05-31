@@ -211,12 +211,21 @@ def _sim_numeric_qt(varname, lo, hi, study_desc, question_text, N=400):
 def test_numeric_skew_classified_by_dv_specific_text_not_study_level():
     """Codex P1#1: a money/frequency mention in the STUDY description must NOT
     reshape an UNRELATED numeric DV (was: study-level cue reshaped every numeric DV)."""
-    v_neutral = _sim_numeric("random_score", 0, 100, "a neutral attitudes survey")
-    v_moneyctx = _sim_numeric("random_score", 0, 100, "a study of willingness to pay dollars")
-    assert abs(v_neutral.skew() - v_moneyctx.skew()) < 0.25, (
+    # The KEY invariant: the SAME unrelated DV must be generated IDENTICALLY
+    # regardless of whether the STUDY description mentions money. (We do not assert
+    # a particular skew for the generic distribution — only that study-level text
+    # does not change it.)
+    _, v_neutral = _sim_numeric("random_score", 0, 100, "a neutral attitudes survey")
+    _, v_moneyctx = _sim_numeric("random_score", 0, 100, "a study of willingness to pay dollars")
+    # The numeric right-skew reshape is DV-gated, so study-level money wording must
+    # not change the DISTRIBUTION SHAPE of an unrelated DV. (Other generation stages
+    # legitimately read study context, so individual values may differ by ±1; the
+    # marginal shape — skew and mean — must not.)
+    assert abs(v_neutral.skew() - v_moneyctx.skew()) < 0.20, (
         f"unrelated DV reshaped by study-level cue: neutral skew={v_neutral.skew():.2f} "
         f"vs money-desc skew={v_moneyctx.skew():.2f}")
-    assert abs(v_moneyctx.skew()) < 0.6, "unrelated numeric DV must stay ~symmetric"
+    assert abs(v_neutral.mean() - v_moneyctx.mean()) < 0.05 * (v_neutral.max() - v_neutral.min()), (
+        "unrelated numeric DV mean shifted by study-level wording (should be ~unchanged)")
 
 
 def test_numeric_skew_detects_cue_in_question_text():

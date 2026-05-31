@@ -578,6 +578,9 @@ def _normalize_scales(scales: Optional[List[Any]]) -> List[Dict[str, Any]]:
                     # v1.2.5.3: Preserve DV description and scale anchors for simulation context
                     "dv_description": str(scale.get("dv_description", "")),
                     "scale_anchors": scale.get("scale_anchors", {}),
+                    # v1.2.7.3: preserve this DV's own question text so numeric-realism
+                    # classification uses DV-specific cues, not study-level text.
+                    "question_text": str(scale.get("question_text", "")),
                 })
                 continue
 
@@ -621,6 +624,8 @@ def _normalize_scales(scales: Optional[List[Any]]) -> List[Dict[str, Any]]:
                     # v1.2.5.3: Preserve DV description and scale anchors
                     "dv_description": str(scale.get("dv_description", "")),
                     "scale_anchors": scale.get("scale_anchors", {}),
+                    # v1.2.7.3: preserve this DV's own question text (see above).
+                    "question_text": str(scale.get("question_text", "")),
                 }
             )
     return normalized

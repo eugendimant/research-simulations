@@ -4407,14 +4407,30 @@ def _preview_to_engine_inputs(preview: QSFPreviewResult) -> Dict[str, Any]:
             except (ValueError, TypeError):
                 scale_points = 7
 
+        _scale_min_val = s.get("scale_min", 1)
+        _scale_max_val = s.get("scale_max", scale_points)
+        # v1.2.7.3: For numeric inputs / sliders the response space spans the FULL
+        # numeric range, not a 7-point Likert. If scale_points was defaulted/derived
+        # but scale_max indicates a wider range (e.g. a 0-100 WTP, 0-10 slider),
+        # use the actual range as scale_points so generation fills [min,max] instead
+        # of collapsing to 0-7. (Likert/matrix keep their detected scale_points.)
+        try:
+            _smin_i = int(float(_scale_min_val))
+            _smax_i = int(float(_scale_max_val))
+            if (str(s.get("type", "")).lower() in ("numeric", "numeric_input", "slider")
+                    and _smax_i - _smin_i + 1 > scale_points):
+                scale_points = _smax_i - _smin_i + 1
+        except (ValueError, TypeError):
+            pass
+
         scales.append(
             {
                 "name": display_name,
                 "variable_name": name,
                 "num_items": max(1, num_items),
                 "scale_points": max(2, min(1001, scale_points)),
-                "scale_min": s.get("scale_min", 1),
-                "scale_max": s.get("scale_max", scale_points),
+                "scale_min": _scale_min_val,
+                "scale_max": _scale_max_val,
                 "reverse_items": s.get("reverse_items", []) or [],
                 "type": s.get("type", "likert"),
                 # v1.2.7.3: carry the DV's own question text/description/anchors so

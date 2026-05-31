@@ -1,0 +1,2 @@
+FILE Final - Group 7.qsf  N=300
+  [missing col Q19]
