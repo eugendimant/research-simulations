@@ -11505,6 +11505,8 @@ class EnhancedSimulationEngine:
                 "scale_max": scale_max,
                 "num_items": num_items,
                 "type": str(scale.get("type", "")).lower(),
+                "question_text": str(scale.get("question_text", "")),
+                "dv_description": str(scale.get("dv_description", "")),
                 "columns_generated": [],
             })
 
@@ -11724,16 +11726,27 @@ class EnhancedSimulationEngine:
         _count_cues = ('number of', 'how many', 'count', 'times', 'frequency',
                        'per week', 'per day', 'per month', 'visits', 'purchases',
                        '# of', 'how often')
-        _num_ctx = (str(getattr(self, 'study_description', '')) + ' '
-                    + str(getattr(self, 'study_title', ''))).lower()
         for _log_entry in _scale_generation_log:
             if str(_log_entry.get("type", "")).lower() not in ("numeric", "numeric_input"):
                 continue
             _icols = _log_entry.get("columns_generated", [])
             if not _icols or any(c not in data or len(data[c]) < 8 for c in _icols):
                 continue  # need enough rows for a stable marginal
-            _name_ctx = (str(_log_entry.get("name", "")) + ' ' + ' '.join(_icols)
-                         + ' ' + _num_ctx).lower()
+            # v1.2.7.3: classify on DV-SPECIFIC text ONLY — the variable/column
+            # names, this DV's question text, and its description/anchors. We do
+            # NOT use study title/description here: a money/frequency mention at
+            # the study level previously reshaped EVERY numeric DV (incl. age,
+            # temperature, generic scores), and a numeric input whose cue lives in
+            # its question text was missed when the study text was neutral.
+            _anchor_txt = ' '.join(str(v) for v in (_log_entry.get("scale_anchors") or {}).values())
+            _name_ctx = ' '.join([
+                str(_log_entry.get("name", "")),
+                ' '.join(_icols),
+                str(_log_entry.get("question_text", "")),
+                str(_log_entry.get("dv_description", "")),
+                ' '.join(str(x) for x in (_log_entry.get("item_names") or [])),
+                _anchor_txt,
+            ]).lower()
             _is_money = any(k in _name_ctx for k in _money_cues)
             _is_count = (not _is_money) and any(k in _name_ctx for k in _count_cues)
             if not (_is_money or _is_count):

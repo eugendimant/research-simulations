@@ -190,6 +190,44 @@ def test_generic_numeric_dv_untouched():
     assert abs(v.skew()) < 0.6, f"generic numeric must stay ~symmetric, got skew={v.skew():.2f}"
 
 
+def _sim_numeric_qt(varname, lo, hi, study_desc, question_text, N=400):
+    """Numeric DV whose money/count cue lives in its question_text, not its name."""
+    from utils.enhanced_simulation_engine import EnhancedSimulationEngine
+    eng = EnhancedSimulationEngine(
+        study_title="Survey", study_description=study_desc, sample_size=N,
+        conditions=[{"name": "A"}], factors=[],
+        scales=[{"name": varname, "variable_name": varname, "type": "numeric_input",
+                 "num_items": 1, "items": 1, "scale_min": lo, "scale_max": hi,
+                 "scale_points": hi - lo + 1, "question_text": question_text}],
+        additional_vars=[], demographics={"gender_quota": 50, "age_mean": 35, "age_sd": 12},
+        seed=4)
+    if getattr(eng, "llm_generator", None) is not None:
+        eng.llm_generator.disable_permanently("test")
+    df, _ = eng.generate()
+    c = [x for x in df.columns if x.startswith(varname) and not x.endswith("_mean")][0]
+    return df[c].astype(float)
+
+
+def test_numeric_skew_classified_by_dv_specific_text_not_study_level():
+    """Codex P1#1: a money/frequency mention in the STUDY description must NOT
+    reshape an UNRELATED numeric DV (was: study-level cue reshaped every numeric DV)."""
+    v_neutral = _sim_numeric("random_score", 0, 100, "a neutral attitudes survey")
+    v_moneyctx = _sim_numeric("random_score", 0, 100, "a study of willingness to pay dollars")
+    assert abs(v_neutral.skew() - v_moneyctx.skew()) < 0.25, (
+        f"unrelated DV reshaped by study-level cue: neutral skew={v_neutral.skew():.2f} "
+        f"vs money-desc skew={v_moneyctx.skew():.2f}")
+    assert abs(v_moneyctx.skew()) < 0.6, "unrelated numeric DV must stay ~symmetric"
+
+
+def test_numeric_skew_detects_cue_in_question_text():
+    """Codex P1#2: a numeric input whose money cue is in its QUESTION TEXT (name is a
+    bare QID, study text neutral) must still be reshaped right-skewed."""
+    v = _sim_numeric_qt("QID17", 0, 100, "a general survey",
+                        "How much would you be willing to pay for this product?")
+    assert v.skew() > 0.4, f"cue in question_text was ignored, skew={v.skew():.2f}"
+    assert (v == 0).mean() > 0.03, "expected a floor spike"
+
+
 def test_attention_check_instruction_not_detected_as_dv():
     """Attention-check instruction items ("Please select 'Agree' for this question")
     must NOT be detected as DVs even though they use real Likert anchors."""

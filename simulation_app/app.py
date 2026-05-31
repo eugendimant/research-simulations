@@ -54,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.2.7.2"
-BUILD_ID = "20260531-v12072-numeric-dv-realism"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.2.7.3"
+BUILD_ID = "20260531-v12073-dv-specific-skew-cues"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -118,7 +118,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.2.7.2"  # v1.2.7.2: Numeric money/count DV right-skew realism (detection->generation seam)
+APP_VERSION = "1.2.7.3"  # v1.2.7.3: Classify numeric skew by DV-specific text (Codex fix); preserve question_text
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -4417,6 +4417,14 @@ def _preview_to_engine_inputs(preview: QSFPreviewResult) -> Dict[str, Any]:
                 "scale_max": s.get("scale_max", scale_points),
                 "reverse_items": s.get("reverse_items", []) or [],
                 "type": s.get("type", "likert"),
+                # v1.2.7.3: carry the DV's own question text/description/anchors so
+                # numeric-realism classification uses DV-specific cues, not study-level
+                # text. A QSF numeric input named e.g. "QID17" carries its money cue
+                # ("how much would you pay") only in its question text.
+                "question_text": s.get("question_text", "") or "",
+                "dv_description": s.get("dv_description", s.get("description", "")) or "",
+                "scale_anchors": s.get("scale_anchors", {}) or {},
+                "item_names": s.get("item_names", []) or [],
                 "detected_from_qsf": s.get("scale_points") is not None,
                 "_validated": True,
             }
