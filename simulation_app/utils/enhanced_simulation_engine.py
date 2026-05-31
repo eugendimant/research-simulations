@@ -47,6 +47,15 @@ This module is designed to run inside a `utils/` package (i.e., imported as
 # Version identifier to help track deployed code
 __version__ = "1.0.9.5"  # v1.0.9.5: ABE 3.0 — 5 consistency improvements + HBS merge
 
+# v1.2.7.0: DV types whose item columns are JOINTLY constrained (a permutation;
+# or an allocation summing to a fixed total). Their columns must be exempted from
+# any downstream per-item mutation (alpha re-correlation, anti-straight-line
+# jitter, bounds-clipping) that would silently break the joint constraint.
+_JOINT_DV_TYPES = frozenset({
+    "rank_order", "ranking", "rank order",
+    "constant_sum", "constant sum", "constantsum",
+})
+
 # =============================================================================
 # SCIENTIFIC FOUNDATIONS FOR SIMULATION
 # =============================================================================
@@ -4152,6 +4161,12 @@ class EnhancedSimulationEngine:
             21: {'positive_psychology', 'health_psychology'},
             22: {'moral_psychology', 'deontology_utilitarianism'},
             23: {'technology', 'cognitive_psychology'},
+            # v1.2.7.0: new domains 39-43
+            39: {'social_psychology', 'health_psychology'},                       # emotion induction/regulation
+            40: {'media_communication', 'accuracy_misinformation', 'political_psychology'},  # misinformation/truth
+            41: {'social_psychology'},                                           # aggression/provocation
+            42: {'behavioral_economics', 'organizational_behavior'},             # negotiation/bargaining
+            43: {'behavioral_economics', 'moral_psychology', 'social_psychology'},  # charitable giving
         }
 
         def _domain_is_relevant(domain_num: int) -> bool:
@@ -5859,6 +5874,107 @@ class EnhancedSimulationEngine:
             semantic_effect -= 0.10
 
         # =====================================================================
+        # DOMAIN 39: EMOTION INDUCTION & REGULATION (v1.2.7.0)
+        # Effect on affect/evaluation DVs (positive = more favorable affect).
+        # Regulation: Webb, Miles & Sheeran (2012, Psych Bulletin) meta —
+        # reappraisal down-regulates negative affect (d≈0.45); suppression is
+        # ineffective/costly. Discrete inductions: Lerner & Keltner (2001);
+        # Lerner et al. (2004). Disgust→judgment contested (Landy & Goodwin 2015)
+        # → kept small.
+        # =====================================================================
+        if _any_word_in(['reappraisal', 'reappraise', 'cognitive reappraisal',
+                         'reframing'], condition_lower):
+            semantic_effect += 0.20
+        elif _any_word_in(['suppress emotion', 'emotion suppression',
+                           'hide your feelings', 'conceal emotion'], condition_lower):
+            semantic_effect -= 0.12
+        if _any_word_in(['anger induction', 'angry mood', 'sadness induction',
+                         'sad film', 'grief induction', 'fear induction',
+                         'anxiety induction', 'disgust induction'], condition_lower):
+            semantic_effect -= 0.15
+        elif _any_word_in(['happy mood induction', 'positive mood induction',
+                           'amusing film', 'joy induction'], condition_lower):
+            semantic_effect += 0.15
+
+        # =====================================================================
+        # DOMAIN 40: MISINFORMATION & TRUTH JUDGMENT (v1.2.7.0)
+        # Effect on belief-accuracy / sharing-discernment DVs (positive = more
+        # accurate). Prebunking/inoculation: Roozenbeek et al. (2022, Sci. Adv.,
+        # d≈0.40). Correction/fact-check: Walter & Murphy (2018) meta (partial,
+        # continued-influence). Accuracy nudges: Pennycook et al. (2021, Nature) —
+        # small/contested. Illusory truth (repetition): Hassan & Barber (2021).
+        # =====================================================================
+        if _any_word_in(['prebunk', 'prebunking', 'inoculation', 'forewarning'],
+                        condition_lower):
+            semantic_effect += 0.18
+        elif _any_word_in(['correction', 'debunk', 'fact-check', 'fact check',
+                           'corrective'], condition_lower):
+            semantic_effect += 0.12
+        elif _any_word_in(['accuracy prompt', 'accuracy nudge', 'consider accuracy'],
+                          condition_lower):
+            semantic_effect += 0.10  # small/contested
+        elif _any_word_in(['repeated claim', 'illusory truth', 'familiar claim'],
+                          condition_lower):
+            semantic_effect -= 0.12  # inflated believability of repeated falsehoods
+
+        # =====================================================================
+        # DOMAIN 41: AGGRESSION & PROVOCATION (v1.2.7.0)
+        # Effect on aggression/hostility DVs (positive = more aggression).
+        # Provocation is the strongest moderator (Bettencourt & Miller 1996 meta).
+        # Violent media (Anderson et al. 2010) and weapons priming (Benjamin et
+        # al. 2018) are real but small/contested → kept small.
+        # =====================================================================
+        if _any_word_in(['provocation', 'provoked', 'insulted', 'frustration induction',
+                         'taunt'], condition_lower):
+            semantic_effect += 0.22
+        elif _any_word_in(['violent media', 'violent video game', 'violent film'],
+                          condition_lower):
+            semantic_effect += 0.10  # small/contested
+        elif _any_word_in(['weapon prime', 'weapons prime', 'weapon present'],
+                          condition_lower):
+            semantic_effect += 0.08  # small (Benjamin 2018)
+        elif _any_word_in(['de-escalation', 'cooperation prime', 'conciliatory'],
+                          condition_lower):
+            semantic_effect -= 0.12
+
+        # =====================================================================
+        # DOMAIN 42: NEGOTIATION & BARGAINING (v1.2.7.0)
+        # Effect on negotiation-outcome DVs (positive = better outcome for the
+        # focal party). First-offer anchoring (Galinsky & Mussweiler 2001 —
+        # robust, large). Integrative vs distributive framing (Pruitt 1981).
+        # =====================================================================
+        if _any_word_in(['first offer', 'opening offer', 'high anchor offer',
+                         'aggressive first offer'], condition_lower):
+            semantic_effect += 0.22
+        elif _any_word_in(['integrative', 'win-win', 'interest-based',
+                           'value creation'], condition_lower):
+            semantic_effect += 0.18
+        elif _any_word_in(['distributive', 'zero-sum', 'positional',
+                           'competitive negotiation'], condition_lower):
+            semantic_effect -= 0.12
+
+        # =====================================================================
+        # DOMAIN 43: CHARITABLE GIVING (v1.2.7.0)
+        # Effect on donation/giving DVs (positive = more giving). Matching
+        # (Karlan & List 2007). Identifiable victim (Small, Loewenstein & Slovic
+        # 2007). Overhead aversion (Gneezy, Keenan & Gneezy 2014). Social
+        # information (Frey & Meier 2004). One dominant cue fires (elif) to avoid
+        # over-stacking; the ±0.50 cap bounds any residual.
+        # =====================================================================
+        if _any_word_in(['matching donation', 'matched donation', 'donation match',
+                         'matching gift'], condition_lower):
+            semantic_effect += 0.15
+        elif _any_word_in(['identifiable victim', 'named beneficiary',
+                           'identified victim'], condition_lower):
+            semantic_effect += 0.12
+        elif _any_word_in(['others donated', 'social information about giving',
+                           'most people donate'], condition_lower):
+            semantic_effect += 0.12
+        elif _any_word_in(['low overhead', 'no overhead', 'efficient charity',
+                           'overhead covered'], condition_lower):
+            semantic_effect += 0.10
+
+        # =====================================================================
         # v1.0.4.6: DOMAIN-AWARE EFFECT STACKING GUARD
         #
         # After all STEP 2 domains have been checked, apply two safeguards:
@@ -6987,7 +7103,14 @@ class EnhancedSimulationEngine:
                 'gratitude': 'gratitude_gq6', 'grateful': 'gratitude_gq6',
                 'resilien': 'resilience_cd_risc', 'cd_risc': 'resilience_cd_risc',
                 'moral_identity': 'moral_identity_aquino', 'narcissi': 'narcissism_npi',
-                'npi': 'narcissism_npi', 'attachment_anx': 'attachment_anxiety_ecr',
+                'npi': 'narcissism_npi',
+                # v1.2.7.0: wire the dormant Dark Triad norms (SD3; Jones & Paulhus 2014)
+                # so Machiavellianism/psychopathy DVs get their (right-skewed, low-mean)
+                # baseline instead of a generic midpoint.
+                'machiavellian': 'dark_triad_machiavellianism', 'machiavell': 'dark_triad_machiavellianism',
+                'psychopath': 'dark_triad_psychopathy', 'dark_triad': 'dark_triad_machiavellianism',
+                'dark triad': 'dark_triad_machiavellianism', 'sd3': 'dark_triad_machiavellianism',
+                'attachment_anx': 'attachment_anxiety_ecr',
                 'attachment_avoid': 'attachment_avoidance_ecr', 'ecr': 'attachment_anxiety_ecr',
                 'need_for_cognition': 'need_for_cognition', 'nfc': 'need_for_cognition',
                 'conspiracy': 'conspiracy_beliefs_gcbs', 'disgust': 'disgust_sensitivity_dsr',
@@ -8925,6 +9048,9 @@ class EnhancedSimulationEngine:
             cols = log_entry.get("columns_generated", [])
             if len(cols) < 3:
                 continue  # Need ≥3 items for alpha
+            if str(log_entry.get("type", "")).lower() in _JOINT_DV_TYPES:
+                continue  # v1.2.7.0: rank-order/constant-sum are jointly constrained;
+                          # re-injecting inter-item correlation would break the constraint
 
             audit_report["total_checks"] += 1
             try:
@@ -8990,6 +9116,9 @@ class EnhancedSimulationEngine:
         audit_report["total_checks"] += 1
         all_scale_cols = []
         for log_entry in scale_generation_log:
+            if str(log_entry.get("type", "")).lower() in _JOINT_DV_TYPES:
+                continue  # v1.2.7.0: exclude rank-order/constant-sum from anti-straight-line
+                          # jitter — ±1 noise on a near-uniform allocation breaks the sum
             all_scale_cols.extend(log_entry.get("columns_generated", []))
 
         if len(all_scale_cols) >= 3:
@@ -11375,6 +11504,7 @@ class EnhancedSimulationEngine:
                 "scale_min": scale_min,
                 "scale_max": scale_max,
                 "num_items": num_items,
+                "type": str(scale.get("type", "")).lower(),
                 "columns_generated": [],
             })
 
@@ -11515,6 +11645,69 @@ class EnhancedSimulationEngine:
         self._scale_generation_log = _scale_generation_log
 
         # =====================================================================
+        # v1.2.7.0: TYPE-AWARE DV POST-PROCESSING (rank-order, constant-sum)
+        # The per-item loop above emits one INDEPENDENT value per item — correct
+        # for Likert/slider/matrix/numbered/single-item DVs. But rank-order and
+        # constant-sum items are JOINTLY constrained (a permutation; or an
+        # allocation summing to a fixed total). Without this, a detected
+        # rank-order DV emitted DUPLICATE ranks and a constant-sum DV emitted
+        # rows that did NOT sum to the total — silently invalid data. Here we
+        # transform the already-generated per-item values (which already carry
+        # condition effects + persona variation) into the correct joint
+        # structure. Every other DV type is left byte-identical (gated below).
+        # =====================================================================
+        _typed_dv_scales: set = set()  # prefixes whose composite _mean is not meaningful
+        self._typed_dv_columns: set = set()  # exact columns to exempt from downstream mutation
+        for _log_entry in _scale_generation_log:
+            _dv_type = _log_entry.get("type", "")
+            _icols = _log_entry.get("columns_generated", [])
+            _k = len(_icols)
+            if _k < 2 or _dv_type not in _JOINT_DV_TYPES:
+                continue
+            if any(c not in data or len(data[c]) < n for c in _icols):
+                continue
+            self._typed_dv_columns.update(_icols)
+            try:
+                _M = np.array([data[c] for c in _icols], dtype=float).T  # (n, k)
+                _smin = float(_log_entry.get("scale_min", 1))
+                _smax = float(_log_entry.get("scale_max", _k))
+                _prefix = _icols[0].rsplit("_", 1)[0]
+                if _dv_type in ("rank_order", "ranking", "rank order"):
+                    # Latent preference = generated value + small STABLE per-item
+                    # base → argsort to a valid 1..k permutation (rank 1 = most
+                    # preferred). Plackett-Luce/Thurstonian flavour: systematic
+                    # item preference + idiosyncratic per-participant variation.
+                    _base = np.array([(_stable_int_hash(c) % 997) / 997.0 for c in _icols])
+                    _util = _M + _base[None, :] * max(1.0, (_smax - _smin)) * 0.20
+                    _order = np.argsort(-_util, axis=1, kind="stable")  # most→least
+                    _ranks = np.empty((n, _k), dtype=int)
+                    _rows = np.arange(n)
+                    for _pos in range(_k):
+                        _ranks[_rows, _order[:, _pos]] = _pos + 1
+                    for _j, _c in enumerate(_icols):
+                        data[_c] = _ranks[:, _j].tolist()
+                else:  # constant-sum
+                    _total = int(round(_smax)) if _smax and _smax >= _k else 100
+                    # Treat values as positive weights; renormalize each row to sum
+                    # EXACTLY to the total (largest-remainder rounding).
+                    _W = np.clip(_M - _smin + 0.5, 0.01, None)
+                    _alloc = _W / _W.sum(axis=1, keepdims=True) * _total
+                    _floor = np.floor(_alloc).astype(int)
+                    for _ri in range(n):
+                        _resid = _total - int(_floor[_ri].sum())
+                        if _resid != 0:
+                            _frac_order = np.argsort(-(_alloc[_ri] - _floor[_ri]))
+                            for _t in range(abs(_resid)):
+                                _floor[_ri, _frac_order[_t % _k]] += 1 if _resid > 0 else -1
+                            np.clip(_floor[_ri], 0, _total, out=_floor[_ri])
+                    for _j, _c in enumerate(_icols):
+                        data[_c] = _floor[:, _j].tolist()
+                _typed_dv_scales.add(_prefix)
+                self._log(f"Applied {_dv_type} joint structure to '{_log_entry.get('name')}' ({_k} items)")
+            except Exception as _typed_err:
+                self._log(f"WARNING: type-aware DV transform failed for '{_log_entry.get('name')}': {_typed_err}")
+
+        # =====================================================================
         # v1.4.3: COMPOSITE MEAN COLUMNS FOR MULTI-ITEM SCALES
         # For each scale with > 1 item, compute a _mean column as the row-wise
         # average across all items. This is the standard composite score used
@@ -11522,6 +11715,8 @@ class EnhancedSimulationEngine:
         # =====================================================================
         for log_entry in _scale_generation_log:
             item_cols = log_entry["columns_generated"]
+            if item_cols and item_cols[0].rsplit("_", 1)[0] in _typed_dv_scales:
+                continue  # rank-order/constant-sum: a row-mean is not a meaningful composite
             if len(item_cols) > 1:
                 # v1.2.0.8: Validate all columns exist and have n rows before computing mean.
                 # If generation was interrupted, some columns may be missing or incomplete.
@@ -12420,6 +12615,9 @@ class EnhancedSimulationEngine:
             self._log(f"POST-GENERATION VALIDATION: {len(validation_issues)} issue(s) found, auto-correcting")
             for issue in validation_issues:
                 col = issue["column"]
+                if col in getattr(self, "_typed_dv_columns", set()):
+                    continue  # v1.2.7.0: joint-constrained DV (rank-order/constant-sum) —
+                              # per-cell clipping would break the permutation/total
                 col_min = issue["expected_min"]
                 col_max = issue["expected_max"]
                 # Auto-correct out-of-bounds values (preserve NaN from missing data)
