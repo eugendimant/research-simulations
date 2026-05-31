@@ -54,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.2.7.2"
-BUILD_ID = "20260531-v12072-numeric-dv-realism"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.2.7.4"
+BUILD_ID = "20260531-v12074-scale-bounds-cue-boundaries"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -118,7 +118,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.2.7.2"  # v1.2.7.2: Numeric money/count DV right-skew realism (detection->generation seam)
+APP_VERSION = "1.2.7.4"  # v1.2.7.4: Fix scale-bound derivation (non-1-based IDs, fractional/huge sliders) + word-boundary numeric cues
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -4407,16 +4407,40 @@ def _preview_to_engine_inputs(preview: QSFPreviewResult) -> Dict[str, Any]:
             except (ValueError, TypeError):
                 scale_points = 7
 
+        _scale_min_val = s.get("scale_min", 1)
+        _scale_max_val = s.get("scale_max", scale_points)
+        # v1.2.7.3: For numeric inputs / sliders the response space spans the FULL
+        # numeric range, not a 7-point Likert. If scale_points was defaulted/derived
+        # but scale_max indicates a wider range (e.g. a 0-100 WTP, 0-10 slider),
+        # use the actual range as scale_points so generation fills [min,max] instead
+        # of collapsing to 0-7. (Likert/matrix keep their detected scale_points.)
+        try:
+            _smin_i = int(float(_scale_min_val))
+            _smax_i = int(float(_scale_max_val))
+            if (str(s.get("type", "")).lower() in ("numeric", "numeric_input", "slider")
+                    and _smax_i - _smin_i + 1 > scale_points):
+                scale_points = _smax_i - _smin_i + 1
+        except (ValueError, TypeError):
+            pass
+
         scales.append(
             {
                 "name": display_name,
                 "variable_name": name,
                 "num_items": max(1, num_items),
                 "scale_points": max(2, min(1001, scale_points)),
-                "scale_min": s.get("scale_min", 1),
-                "scale_max": s.get("scale_max", scale_points),
+                "scale_min": _scale_min_val,
+                "scale_max": _scale_max_val,
                 "reverse_items": s.get("reverse_items", []) or [],
                 "type": s.get("type", "likert"),
+                # v1.2.7.3: carry the DV's own question text/description/anchors so
+                # numeric-realism classification uses DV-specific cues, not study-level
+                # text. A QSF numeric input named e.g. "QID17" carries its money cue
+                # ("how much would you pay") only in its question text.
+                "question_text": s.get("question_text", "") or "",
+                "dv_description": s.get("dv_description", s.get("description", "")) or "",
+                "scale_anchors": s.get("scale_anchors", {}) or {},
+                "item_names": s.get("item_names", []) or [],
                 "detected_from_qsf": s.get("scale_points") is not None,
                 "_validated": True,
             }
@@ -4465,12 +4489,25 @@ def _preview_to_engine_inputs(preview: QSFPreviewResult) -> Dict[str, Any]:
         if not key or key in seen_scale_names:
             return None
         seen_scale_names.add(key)
+        # v1.2.7.4: produce INTEGER bounds the engine can actually fill across.
+        # Two degenerate cases were collapsing sliders to a constant:
+        #   - fractional range (e.g. 0-0.25): int() truncation made min==max==0.
+        #   - huge range (e.g. 0-100000 income): scale_points capped at 1001 while
+        #     scale_max stayed 100000, pinning every value to the cap (1001).
+        # Fix: keep small integer ranges as-is; otherwise normalize to a 0-100
+        # integer grid (a slider's absolute scale is arbitrary for simulation —
+        # what matters is realistic spread across its range).
         if hi <= lo:
             lo, hi = 0.0, 100.0
+        span = hi - lo
+        if float(lo).is_integer() and float(hi).is_integer() and 1 < span <= 1000:
+            s_min, s_max = int(lo), int(hi)            # already a clean integer range
+        else:
+            s_min, s_max = 0, 100                      # fractional or huge → 0-100 grid
         return {
             "name": vname, "variable_name": vname, "num_items": 1,
-            "scale_points": max(2, min(1001, int(round(hi - lo)) + 1)),
-            "scale_min": lo, "scale_max": hi, "reverse_items": [],
+            "scale_points": max(2, min(1001, s_max - s_min + 1)),
+            "scale_min": s_min, "scale_max": s_max, "reverse_items": [],
             "type": dv_type, "detected_from_qsf": True, "_validated": True,
         }
 

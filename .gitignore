@@ -10,3 +10,13 @@ build/
 .pytest_cache/
 *.log
 .DS_Store
+
+# Scratch/probe files from analysis (never commit)
+/_*.py
+/_*.txt
+/_*.json
+/_*.jsonl
+/_*.pyc
+/_seg*
+/_qa_*
+/_audit_*

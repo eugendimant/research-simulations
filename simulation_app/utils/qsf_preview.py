@@ -33,7 +33,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 # Version identifier to help track deployed code
-__version__ = "1.2.7.2"  # v1.2.7.2: coverage expansion
+__version__ = "1.2.7.4"  # v1.2.7.4: scale-bound derivation fix
 
 
 # ============================================================================
@@ -1580,7 +1580,27 @@ class QSFPreviewParser:
                         # Handle non-numeric keys (e.g., "NA", "DK")
                         pass
                 if numeric_keys:
-                    return min(numeric_keys), max(numeric_keys)
+                    lo, hi = min(numeric_keys), max(numeric_keys)
+                    # v1.2.7.4: Qualtrics recode keys are sometimes arbitrary,
+                    # non-1-based CHOICE IDs (e.g. 14-18, 20-24, 40-44) rather than
+                    # the 1..N values that appear in exported data. Using them
+                    # verbatim yields nonsense ("40" on a 5-point scale) and a DV
+                    # pinned to a constant. Trust the anchor keys ONLY when they
+                    # look like a real response scale:
+                    #   - start near the bottom (0 or 1), OR
+                    #   - are symmetric around 0 (bipolar, e.g. -3..+3).
+                    # Otherwise treat them as positional IDs and fall back to the
+                    # canonical 1..scale_points range.
+                    _looks_like_scale = (
+                        lo in (0, 1)
+                        or (lo < 0 and hi > 0 and abs(lo + hi) <= 1)  # symmetric bipolar
+                    )
+                    if _looks_like_scale:
+                        return lo, hi
+                    if scale_points is not None and scale_points >= 2:
+                        return 1, scale_points
+                    # No reliable scale_points: normalize the count of keys to 1..N.
+                    return 1, max(2, len(numeric_keys))
             except Exception:
                 pass
 

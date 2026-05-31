@@ -21,12 +21,30 @@ express.
 
 ---
 
-## ✅ Fixed — closing the detection↔generation seam (v1.2.7.0–1.2.7.2)
+## ✅ Fixed — closing the detection↔generation seam (v1.2.7.0–1.2.7.4)
 
 The root issue: **the parser detects rich DV types, but the generation engine
 funneled almost everything through one numeric Likert pathway** (it never
 branched on `scale["type"]`). So question types the tool *detects* produced
-silently-invalid data. Verified across the 291-QSF corpus, the DV types that
+silently-invalid data.
+
+**v1.2.7.3–1.2.7.4 (from Codex review + a 3-agent hyper-audit) — additional
+data-validity fixes:**
+- **Numeric skew is classified on DV-specific text only** (the DV's own
+  name/question_text/description/anchors), never the study title/description —
+  so a money mention at the study level no longer reshapes *unrelated* numeric
+  DVs, and a money cue living in a numeric input's own question text is honored
+  (preserved end-to-end through QSF→bridge→engine).
+- **Cue matching is word-boundary** (not substring): `'times'`∉"sometimes",
+  `'cost'`∉"costly", `'invest'`∉"investment attitude" (also guarded by a
+  rating/attitude-context exclusion) — neutral rating DVs stay symmetric.
+- **Scale-bound derivation fixed** for two corpus defects that produced
+  constant/implausible columns: (a) non-1-based Qualtrics choice IDs (14–18,
+  40–44) are normalized to 1..N instead of emitting "40" on a 5-point scale;
+  (b) fractional (0–0.25) and huge (0–100000) slider ranges no longer collapse
+  to a constant — they fill a clean integer grid with realistic spread.
+- **Streamlined:** the type-aware post-processing was extracted from the giant
+  `generate()` into three named helpers; classification regexes compile once. Verified across the 291-QSF corpus, the DV types that
 actually occur are: `matrix(1808), single_item(921), numbered_items(154),
 numeric_input(52), slider(29), constant_sum(8), rank_order(5), likert(4),
 numbered(1)`. (Types like `single_choice`/`best_worst`/`paired_comparison`/

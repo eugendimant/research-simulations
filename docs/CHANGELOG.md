@@ -1,4 +1,35 @@
 
+## 2026-05-31 — v1.2.7.0–v1.2.7.4
+### Detection↔generation seam: valid joint/numeric DVs, 5 effect domains, data-validity fixes
+
+Closed the core architectural gap where the parser detected rich DV types but
+the engine funneled them all through one numeric-Likert pathway, producing
+*silently-invalid* data for the types it claimed to detect.
+
+- **Rank-order DVs** now emit valid 1..k permutations (were independent integers
+  with duplicate ranks — 0% valid before).
+- **Constant-sum DVs** now sum exactly to the total per row (were independent
+  integers — 0% valid before), and are exempted from downstream consistency
+  audit / bounds-clipping that previously re-broke the sum 2–7% of the time.
+- **Numeric money/WTP/count DVs** are reshaped to realistic right-skewed
+  marginals (money: log-normal + ~12% floor spike; counts: gamma) via
+  rank-assignment that preserves condition/persona ordering (treatment effects
+  survive). Classified on DV-specific text only, with word-boundary cue matching
+  and a rating-context guard so neutral rating DVs stay untouched.
+- **Scale-bound derivation** fixed: non-1-based Qualtrics choice IDs (e.g.
+  14–18, 40–44) normalize to 1..N; fractional (0–0.25) and huge (0–100000)
+  slider ranges no longer collapse to a constant.
+- **+5 literature-grounded effect domains** (emotion induction/regulation,
+  misinformation/illusory-truth, aggression/provocation, negotiation, charitable
+  giving), contested effects kept conservative; **Dark Triad** norms wired in.
+- **Behavioral DV recovery**: sliders / numeric-entry / essays are recovered as
+  DVs/OE (with PII and trash-block exclusions) so behavioural-economics surveys
+  simulate their real measures instead of a generic placeholder.
+- Validated across all 291 example QSFs (0 crashes), the 10 most-recent student
+  QSFs (0 issues), 17 regression tests, and a 2,592-combo effect fuzz; the
+  type-aware logic was streamlined into named helpers. See
+  `docs/COVERAGE_ROADMAP.md` for the full audit and remaining roadmap.
+
 ## 2026-02-13 — v1.0.8.1
 ### Generation Method Chooser, Real-Time Progress Counter, SocSim Integration
 
