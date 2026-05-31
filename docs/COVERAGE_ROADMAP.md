@@ -21,19 +21,32 @@ express.
 
 ---
 
-## ✅ Fixed in this pass (v1.2.7.0)
+## ✅ Fixed — closing the detection↔generation seam (v1.2.7.0–1.2.7.2)
+
+The root issue: **the parser detects rich DV types, but the generation engine
+funneled almost everything through one numeric Likert pathway** (it never
+branched on `scale["type"]`). So question types the tool *detects* produced
+silently-invalid data. Verified across the 291-QSF corpus, the DV types that
+actually occur are: `matrix(1808), single_item(921), numbered_items(154),
+numeric_input(52), slider(29), constant_sum(8), rank_order(5), likert(4),
+numbered(1)`. (Types like `single_choice`/`best_worst`/`paired_comparison`/
+`hot_spot` have parser code paths but **0 occurrences** in real QSFs — non-issues.)
 
 | Area | Was | Now |
 |------|-----|-----|
-| **Constant-sum DVs** | Items generated independently — rows summed to anything (0% summed to 100) | Renormalized to sum **exactly** to the total (Dirichlet-style allocation) |
-| **Rank-order DVs** | Independent integers — duplicate ranks (0% valid permutations) | Valid **1..k permutations** via latent-utility argsort (Plackett-Luce flavor) |
-| **Topical breadth** | 38 effect domains | **+5 domains**: emotion induction/regulation, misinformation/illusory-truth, aggression/provocation, negotiation, charitable giving — literature-grounded, contested effects kept small, bounded by the ±0.50 cap |
-| **Dark Triad DVs** | Mach/psychopathy DVs got no construct calibration | Dormant SD3 norms wired into `_construct_map` (small downward calibration nudge) |
+| **Constant-sum DVs** | Items generated independently — **0%** of rows summed to the total | Renormalized to sum **exactly** to the total (largest-remainder); 100% valid k=2..10 |
+| **Rank-order DVs** | Independent integers — **0%** valid permutations (duplicate ranks) | Valid **1..k permutations** via latent-utility argsort (Plackett-Luce flavor) |
+| **Numeric money/WTP DVs** | ~symmetric around the midpoint (skew≈0, no floor) | **Right-skewed** log-normal (skew≈+1.0), ~12% floor spike at $0, treatment effect preserved |
+| **Numeric count/frequency DVs** | ~symmetric | **Right-skewed** (mode low, long tail) |
+| **Joint-DV downstream safety** | consistency-audit + bounds-clip silently re-broke constant-sum 2–7% of the time | joint-constrained DVs exempted from alpha-repair, anti-straight-line jitter, and bounds-clipping |
+| **Topical breadth** | 38 effect domains | **+5 domains**: emotion, misinformation/illusory-truth, aggression, negotiation, charitable giving — grounded, contested effects kept small, bounded by ±0.50 cap |
+| **Dark Triad DVs** | no construct calibration | dormant SD3 norms wired into `_construct_map` |
 
-All changes are **additive and gated** — every existing survey/DV produces
-byte-identical output (validated: 12 regression tests, effect fuzz of 2,592
-condition×variable combos, 0 crashes across 291 real QSFs, 0 issues across 10
-student QSFs).
+The seam is now **correct for every DV type that occurs in real QSFs**. All
+changes are **additive and gated on `type` + name cues**, so generic numeric
+(age/temperature) and all Likert/matrix/slider DVs are **byte-identical**.
+Validated: 15 regression tests, effect fuzz (2,592 combos), 0 crashes across 291
+QSFs, 0 issues across 10 student QSFs, e2e all-pass.
 
 ---
 
@@ -43,16 +56,20 @@ Ordered by (frequency of need × value ÷ risk). These are larger, mostly
 **structural** additions that need their own design + validation passes.
 
 ### Tier A — High value, medium risk (next)
-1. **WTP / numeric DV realism** — right-skewed (log-normal) with a point-mass at
-   the floor (~$0) and anchoring; today numeric inputs are bounded-uniform-ish.
-   *(Distribution model ready; localized change.)*
-2. **More joint DV types** — best-worst/MaxDiff counts, paired-comparison &
-   2AFC (logistic latent-difference), multiple-response check-all (correlated
-   Bernoullis). Detection already exists for several; only generation is missing.
-3. **Within-subjects done properly** — `design_type="within"/"mixed"` is currently
+1. **Within-subjects done properly** — `design_type="within"/"mixed"` is currently
    structurally simulated as between-subjects. Needs repeated DV columns
    (`DV_T1/T2…`) from a shared per-participant latent + level shift, giving
-   realistic test-retest r≈0.5–0.7.
+   realistic test-retest r≈0.5–0.7. *(Highest-value remaining design gap.)*
+2. **Slider continuous realism** — sliders (29 in corpus) generate as bounded
+   integers; feeling-thermometers/VAS could use finer granularity + endpoint
+   heaping. Low risk, modest value.
+3. **WTP anchoring** — extend the new money right-skew to shift toward an explicit
+   anchor value when one appears in the question text (Tversky & Kahneman 1974).
+
+> ✅ **Done (v1.2.7.2):** WTP/money + count numeric realism (right-skew + floor
+> spike). The other "joint DV types" (best-worst/paired-comparison/2AFC/
+> multiple-response) were investigated and **do not occur in real QSFs**, so they
+> are deprioritized — the seam is correct for every type that actually appears.
 
 ### Tier B — High value, high risk (structural output modes)
 4. **Long-format / round-level data** for iterated games (PD/PGG/trust) with

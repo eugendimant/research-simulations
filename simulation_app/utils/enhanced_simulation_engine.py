@@ -11708,6 +11708,67 @@ class EnhancedSimulationEngine:
                 self._log(f"WARNING: type-aware DV transform failed for '{_log_entry.get('name')}': {_typed_err}")
 
         # =====================================================================
+        # v1.2.7.2: NUMERIC DV DISTRIBUTION REALISM (money / WTP / counts)
+        # The numeric path produces ~symmetric values around the midpoint
+        # (verified skew≈0). Real money DVs (willingness-to-pay, price, donation,
+        # bid, spend) are RIGHT-SKEWED with a spike at the floor ($0); count /
+        # frequency DVs are right-skewed (Poisson/NB-like). We reshape each
+        # flagged numeric column's MARGINAL via rank-assignment, which PRESERVES
+        # the condition/persona ordering (treatment effects survive) while fixing
+        # the shape. Strictly gated on numeric type + money/count name cues, so
+        # generic numeric DVs (age, temperature, quantity) are byte-identical.
+        # =====================================================================
+        _money_cues = ('wtp', 'willing to pay', 'willingness', 'price', ' pay',
+                       'spend', 'donat', 'bid', 'cost', 'amount', 'dollar', '$',
+                       'contribut', 'invest', 'budget', 'wage', 'salary')
+        _count_cues = ('number of', 'how many', 'count', 'times', 'frequency',
+                       'per week', 'per day', 'per month', 'visits', 'purchases',
+                       '# of', 'how often')
+        _num_ctx = (str(getattr(self, 'study_description', '')) + ' '
+                    + str(getattr(self, 'study_title', ''))).lower()
+        for _log_entry in _scale_generation_log:
+            if str(_log_entry.get("type", "")).lower() not in ("numeric", "numeric_input"):
+                continue
+            _icols = _log_entry.get("columns_generated", [])
+            if not _icols or any(c not in data or len(data[c]) < 8 for c in _icols):
+                continue  # need enough rows for a stable marginal
+            _name_ctx = (str(_log_entry.get("name", "")) + ' ' + ' '.join(_icols)
+                         + ' ' + _num_ctx).lower()
+            _is_money = any(k in _name_ctx for k in _money_cues)
+            _is_count = (not _is_money) and any(k in _name_ctx for k in _count_cues)
+            if not (_is_money or _is_count):
+                continue  # generic numeric → leave exactly as-is (no regression)
+            _smin = float(_log_entry.get("scale_min", 0))
+            _smax = float(_log_entry.get("scale_max", 100))
+            _span = _smax - _smin
+            if _span <= 0:
+                continue
+            try:
+                for _c in _icols:
+                    _cur = np.asarray(data[_c], dtype=float)
+                    _nn = len(_cur)
+                    _rng = np.random.RandomState((self.seed + _stable_int_hash(_c)) % (2**31))
+                    if _is_money:
+                        # Right-skewed log-normal scaled by a target MEDIAN (~30% of
+                        # span) so the long upper tail survives; then floor spike.
+                        _samp = np.sort(_rng.lognormal(mean=0.0, sigma=0.9, size=_nn))
+                        _target = _smin + _samp * (_span * 0.30)
+                        _n_floor = int(round(_nn * 0.12))  # ~12% report the floor (e.g. $0)
+                        if _n_floor > 0:
+                            _target[:_n_floor] = _smin
+                    else:  # count / frequency → right-skewed, mode low
+                        _samp = np.sort(_rng.gamma(shape=1.6, scale=1.0, size=_nn))
+                        _target = _smin + _samp * (_span * 0.18)
+                    # rank-assignment: smallest current value → smallest target value,
+                    # so condition/persona ordering (hence the treatment effect) is kept.
+                    _ranks = np.argsort(np.argsort(_cur, kind="stable"))
+                    data[_c] = np.clip(np.round(_target[_ranks]), _smin, _smax).astype(int).tolist()
+                self._log(f"Applied {'money' if _is_money else 'count'} right-skew realism to "
+                          f"numeric DV '{_log_entry.get('name')}'")
+            except Exception as _num_err:
+                self._log(f"WARNING: numeric realism transform failed for '{_log_entry.get('name')}': {_num_err}")
+
+        # =====================================================================
         # v1.4.3: COMPOSITE MEAN COLUMNS FOR MULTI-ITEM SCALES
         # For each scale with > 1 item, compute a _mean column as the row-wise
         # average across all items. This is the standard composite score used

@@ -152,6 +152,44 @@ def test_likert_dv_unaffected_by_typed_dispatch():
         assert df[c].between(1, 7).all()
 
 
+def _sim_numeric(varname, lo, hi, desc, N=400):
+    from utils.enhanced_simulation_engine import EnhancedSimulationEngine
+    eng = EnhancedSimulationEngine(
+        study_title="S", study_description=desc, sample_size=N,
+        conditions=[{"name": "Control"}, {"name": "Treatment"}], factors=[],
+        scales=[{"name": varname, "variable_name": varname, "type": "numeric",
+                 "num_items": 1, "items": 1, "scale_min": lo, "scale_max": hi,
+                 "scale_points": hi - lo + 1}],
+        additional_vars=[], demographics={"gender_quota": 50, "age_mean": 35, "age_sd": 12},
+        seed=4)
+    if getattr(eng, "llm_generator", None) is not None:
+        eng.llm_generator.disable_permanently("test")
+    df, _ = eng.generate()
+    c = [x for x in df.columns if x.startswith(varname) and not x.endswith("_mean")][0]
+    return df, df[c].astype(float)
+
+
+def test_numeric_money_dv_is_right_skewed():
+    """Money/WTP numeric DVs must be RIGHT-skewed with a floor spike (was symmetric,
+    skew~0, before v1.2.7.2)."""
+    df, v = _sim_numeric("WTP_dollars", 0, 100, "willingness to pay dollars for the product")
+    assert v.skew() > 0.4, f"WTP should be right-skewed, got skew={v.skew():.2f}"
+    assert v.median() < v.mean(), "right-skew => median < mean"
+    assert (v == 0).mean() > 0.03, "should have a floor spike (~12% at $0)"
+    assert v.min() >= 0 and v.max() <= 100
+
+
+def test_numeric_count_dv_is_right_skewed():
+    df, v = _sim_numeric("number_of_visits", 0, 30, "number of store visits per month count")
+    assert v.skew() > 0.3, f"counts should be right-skewed, got skew={v.skew():.2f}"
+
+
+def test_generic_numeric_dv_untouched():
+    """A numeric DV with no money/count cue must NOT be reshaped (stays ~symmetric)."""
+    df, v = _sim_numeric("room_temperature", 60, 80, "a general attitudes survey")
+    assert abs(v.skew()) < 0.6, f"generic numeric must stay ~symmetric, got skew={v.skew():.2f}"
+
+
 def test_attention_check_instruction_not_detected_as_dv():
     """Attention-check instruction items ("Please select 'Agree' for this question")
     must NOT be detected as DVs even though they use real Likert anchors."""

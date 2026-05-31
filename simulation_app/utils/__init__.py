@@ -2,7 +2,7 @@
 """
 Utility modules for the Behavioral Experiment Simulation Tool.
 
-Version: 1.2.7.1 - Coverage expansion; exempt joint-constrained DVs from downstream audit/bounds mutation
+Version: 1.2.7.2 - Numeric money/count DV right-skew realism; detection->generation seam complete for real types
 
 Changes (v1.0.0 - 20 Iterations of Comprehensive Improvements):
     === ENHANCED SCALE/MATRIX DETECTION ===
@@ -65,7 +65,7 @@ Modules:
 """
 
 # Package version - should match all module versions
-__version__ = "1.2.7.1"
+__version__ = "1.2.7.2"
 
 
 # =============================================================================
