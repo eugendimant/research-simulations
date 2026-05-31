@@ -1,7 +1,0 @@
-progress_lines=1
-ok_count=1
-non_ok_count=0
-run_done=0
---- any non-OK lines ---
---- slowest 6 ---
-1.6 

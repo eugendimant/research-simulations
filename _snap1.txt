@@ -1,9 +1,0 @@
-progress_count=4
-results_lines=4
-done_marker=0
---- last 6 progress ---
-PROGRESS 1/291 !!Human-AI_Interaction_Template.qsf [1.6s] OK
-PROGRESS 2/291 03 Group 1 Qualtrics Survey.qsf [1.9s] OK
-PROGRESS 3/291 0401_Backlash_aftermath_performance_pilo [3.8s] OK
-PROGRESS 4/291 2026_02_07_Hate_Trumps_Love.qsf [1.5s] OK
---- ERR lines so far ---
