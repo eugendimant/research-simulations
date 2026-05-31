@@ -54,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.2.7.3"
-BUILD_ID = "20260531-v12073-dv-specific-skew-cues"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.2.7.4"
+BUILD_ID = "20260531-v12074-scale-bounds-cue-boundaries"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -118,7 +118,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.2.7.3"  # v1.2.7.3: Classify numeric skew by DV-specific text (Codex fix); preserve question_text
+APP_VERSION = "1.2.7.4"  # v1.2.7.4: Fix scale-bound derivation (non-1-based IDs, fractional/huge sliders) + word-boundary numeric cues
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -4489,12 +4489,25 @@ def _preview_to_engine_inputs(preview: QSFPreviewResult) -> Dict[str, Any]:
         if not key or key in seen_scale_names:
             return None
         seen_scale_names.add(key)
+        # v1.2.7.4: produce INTEGER bounds the engine can actually fill across.
+        # Two degenerate cases were collapsing sliders to a constant:
+        #   - fractional range (e.g. 0-0.25): int() truncation made min==max==0.
+        #   - huge range (e.g. 0-100000 income): scale_points capped at 1001 while
+        #     scale_max stayed 100000, pinning every value to the cap (1001).
+        # Fix: keep small integer ranges as-is; otherwise normalize to a 0-100
+        # integer grid (a slider's absolute scale is arbitrary for simulation —
+        # what matters is realistic spread across its range).
         if hi <= lo:
             lo, hi = 0.0, 100.0
+        span = hi - lo
+        if float(lo).is_integer() and float(hi).is_integer() and 1 < span <= 1000:
+            s_min, s_max = int(lo), int(hi)            # already a clean integer range
+        else:
+            s_min, s_max = 0, 100                      # fractional or huge → 0-100 grid
         return {
             "name": vname, "variable_name": vname, "num_items": 1,
-            "scale_points": max(2, min(1001, int(round(hi - lo)) + 1)),
-            "scale_min": lo, "scale_max": hi, "reverse_items": [],
+            "scale_points": max(2, min(1001, s_max - s_min + 1)),
+            "scale_min": s_min, "scale_max": s_max, "reverse_items": [],
             "type": dv_type, "detected_from_qsf": True, "_validated": True,
         }
 

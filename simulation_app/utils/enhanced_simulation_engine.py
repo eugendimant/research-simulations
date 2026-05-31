@@ -11512,6 +11512,11 @@ class EnhancedSimulationEngine:
                 "type": str(scale.get("type", "")).lower(),
                 "question_text": str(scale.get("question_text", "")),
                 "dv_description": str(scale.get("dv_description", "")),
+                # v1.2.7.4: store anchors + item names so numeric-realism
+                # classification can actually read them (previously read but never
+                # stored — a money cue living only in an anchor label was missed).
+                "scale_anchors": scale.get("scale_anchors", {}) or {},
+                "item_names": scale.get("item_names", []) or [],
                 "columns_generated": [],
             })
 
@@ -11725,12 +11730,29 @@ class EnhancedSimulationEngine:
         # the shape. Strictly gated on numeric type + money/count name cues, so
         # generic numeric DVs (age, temperature, quantity) are byte-identical.
         # =====================================================================
-        _money_cues = ('wtp', 'willing to pay', 'willingness', 'price', ' pay',
-                       'spend', 'donat', 'bid', 'cost', 'amount', 'dollar', '$',
-                       'contribut', 'invest', 'budget', 'wage', 'salary')
-        _count_cues = ('number of', 'how many', 'count', 'times', 'frequency',
-                       'per week', 'per day', 'per month', 'visits', 'purchases',
-                       '# of', 'how often')
+        # v1.2.7.4: word-boundary cues (stems use \w* so 'donat'->'donate/donation',
+        # 'invest'->'investment'). Matched with re (not substring `in`) so 'times'
+        # no longer fires on "sometimes", 'cost' on "costly", 'bid' on "bidding",
+        # 'invest' on an "investment knowledge" RATING, etc.
+        # Letter-boundary matching ((?<![a-z])...(?![a-z])) so cues fire on
+        # underscore-normalized names ("wtp dollars") but NOT inside other words
+        # ('times'∉"sometimes", 'cost'∉"costly", 'bid'∉"bidding").
+        _lb = lambda body: r'(?<![a-z])(?:' + body + r')(?![a-z])'
+        _money_cue_re = re.compile(
+            _lb(r'wtp|willing to pay|willingness|prices?|priced|pay|paid|paying|'
+                r'spend|spent|spending|donat[a-z]*|bids?|costs?|amounts?|dollars?|'
+                r'contribut[a-z]*|invest|invests|invested|investment|budget|'
+                r'wages?|salary|salaries') + r'|\$', re.IGNORECASE)
+        _count_cue_re = re.compile(
+            _lb(r'number of|how many|count|times|frequency|'
+                r'per (?:week|day|month|year)|visits?|purchases?|how often'),
+            re.IGNORECASE)
+        # Rating/attitude contexts that are NOT money/count even if a cue appears
+        # (e.g. "how much do you agree", a 0-100 "investment attitude" rating).
+        _rating_ctx_re = re.compile(
+            _lb(r'agree|disagree|satisf[a-z]*|attitude|opinion|rate|rating|extent|'
+                r'how much do you|likelihood|likely|confiden[a-z]*|important|'
+                r'favorab[a-z]*|to what extent'), re.IGNORECASE)
         for _log_entry in _scale_generation_log:
             if str(_log_entry.get("type", "")).lower() not in ("numeric", "numeric_input"):
                 continue
@@ -11751,9 +11773,18 @@ class EnhancedSimulationEngine:
                 str(_log_entry.get("dv_description", "")),
                 ' '.join(str(x) for x in (_log_entry.get("item_names") or [])),
                 _anchor_txt,
-            ]).lower()
-            _is_money = any(k in _name_ctx for k in _money_cues)
-            _is_count = (not _is_money) and any(k in _name_ctx for k in _count_cues)
+            ])
+            # Normalize underscores/hyphens to spaces so column/variable names like
+            # "WTP_dollars" expose their cue words at letter boundaries (the cue
+            # regexes use letter-boundary matching, so "wtp_dollars" wouldn't match
+            # otherwise, while "random_score" correctly still won't match).
+            _name_ctx = _name_ctx.replace("_", " ").replace("-", " ")
+            # Rating/attitude items are never money/count DVs even if a cue word
+            # appears (e.g. a 0-100 "investment attitude" agreement rating).
+            if _rating_ctx_re.search(_name_ctx):
+                continue
+            _is_money = bool(_money_cue_re.search(_name_ctx))
+            _is_count = (not _is_money) and bool(_count_cue_re.search(_name_ctx))
             if not (_is_money or _is_count):
                 continue  # generic numeric → leave exactly as-is (no regression)
             _smin = float(_log_entry.get("scale_min", 0))

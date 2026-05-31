@@ -2,7 +2,7 @@
 """
 Utility modules for the Behavioral Experiment Simulation Tool.
 
-Version: 1.2.7.3 - Numeric skew classified by DV-specific text (not study-level); preserve per-DV question_text
+Version: 1.2.7.4 - Fix scale-bound derivation (non-1-based IDs, fractional/huge sliders); word-boundary numeric cues
 
 Changes (v1.0.0 - 20 Iterations of Comprehensive Improvements):
     === ENHANCED SCALE/MATRIX DETECTION ===
@@ -65,7 +65,7 @@ Modules:
 """
 
 # Package version - should match all module versions
-__version__ = "1.2.7.3"
+__version__ = "1.2.7.4"
 
 
 # =============================================================================
