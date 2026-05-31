@@ -122,12 +122,16 @@ def _sim_typed_dv(dv_type, num_items, lo, hi):
 
 def test_constant_sum_rows_sum_to_total():
     """Constant-sum DV: every participant's allocations must sum EXACTLY to the
-    total (was 0% before v1.2.7.0 — independent integers)."""
-    df, cols = _sim_typed_dv("constant_sum", 3, 0, 100)
-    assert len(cols) == 3
-    sums = df[cols].sum(axis=1)
-    assert (sums == 100).all(), f"rows must sum to 100; got {sorted(set(sums))[:5]}"
-    assert "DV_mean" not in df.columns  # meaningless composite suppressed
+    total. Tests k=5 and k=10 specifically — the downstream consistency audit
+    (alpha-repair + anti-straight-line jitter) silently broke the sum 2-7% of
+    the time for k>=4 until the joint-DV exemption (v1.2.7.0)."""
+    for k in (3, 5, 10):
+        df, cols = _sim_typed_dv("constant_sum", k, 0, 100)
+        assert len(cols) == k
+        sums = df[cols].sum(axis=1)
+        assert (sums == 100).all(), f"k={k}: rows must sum to 100; got {sorted(set(sums))[:6]}"
+        assert (df[cols] >= 0).all().all(), f"k={k}: allocations must be non-negative"
+        assert "DV_mean" not in df.columns  # meaningless composite suppressed
 
 
 def test_rank_order_rows_are_valid_permutations():

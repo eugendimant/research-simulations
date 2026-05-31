@@ -47,6 +47,15 @@ This module is designed to run inside a `utils/` package (i.e., imported as
 # Version identifier to help track deployed code
 __version__ = "1.0.9.5"  # v1.0.9.5: ABE 3.0 — 5 consistency improvements + HBS merge
 
+# v1.2.7.0: DV types whose item columns are JOINTLY constrained (a permutation;
+# or an allocation summing to a fixed total). Their columns must be exempted from
+# any downstream per-item mutation (alpha re-correlation, anti-straight-line
+# jitter, bounds-clipping) that would silently break the joint constraint.
+_JOINT_DV_TYPES = frozenset({
+    "rank_order", "ranking", "rank order",
+    "constant_sum", "constant sum", "constantsum",
+})
+
 # =============================================================================
 # SCIENTIFIC FOUNDATIONS FOR SIMULATION
 # =============================================================================
@@ -7098,7 +7107,7 @@ class EnhancedSimulationEngine:
                 # v1.2.7.0: wire the dormant Dark Triad norms (SD3; Jones & Paulhus 2014)
                 # so Machiavellianism/psychopathy DVs get their (right-skewed, low-mean)
                 # baseline instead of a generic midpoint.
-                'machiavellian': 'dark_triad_machiavellianism', 'mach': 'dark_triad_machiavellianism',
+                'machiavellian': 'dark_triad_machiavellianism', 'machiavell': 'dark_triad_machiavellianism',
                 'psychopath': 'dark_triad_psychopathy', 'dark_triad': 'dark_triad_machiavellianism',
                 'dark triad': 'dark_triad_machiavellianism', 'sd3': 'dark_triad_machiavellianism',
                 'attachment_anx': 'attachment_anxiety_ecr',
@@ -9039,6 +9048,9 @@ class EnhancedSimulationEngine:
             cols = log_entry.get("columns_generated", [])
             if len(cols) < 3:
                 continue  # Need ≥3 items for alpha
+            if str(log_entry.get("type", "")).lower() in _JOINT_DV_TYPES:
+                continue  # v1.2.7.0: rank-order/constant-sum are jointly constrained;
+                          # re-injecting inter-item correlation would break the constraint
 
             audit_report["total_checks"] += 1
             try:
@@ -9104,6 +9116,9 @@ class EnhancedSimulationEngine:
         audit_report["total_checks"] += 1
         all_scale_cols = []
         for log_entry in scale_generation_log:
+            if str(log_entry.get("type", "")).lower() in _JOINT_DV_TYPES:
+                continue  # v1.2.7.0: exclude rank-order/constant-sum from anti-straight-line
+                          # jitter — ±1 noise on a near-uniform allocation breaks the sum
             all_scale_cols.extend(log_entry.get("columns_generated", []))
 
         if len(all_scale_cols) >= 3:
@@ -11642,17 +11657,16 @@ class EnhancedSimulationEngine:
         # structure. Every other DV type is left byte-identical (gated below).
         # =====================================================================
         _typed_dv_scales: set = set()  # prefixes whose composite _mean is not meaningful
+        self._typed_dv_columns: set = set()  # exact columns to exempt from downstream mutation
         for _log_entry in _scale_generation_log:
             _dv_type = _log_entry.get("type", "")
             _icols = _log_entry.get("columns_generated", [])
             _k = len(_icols)
-            if _k < 2 or _dv_type not in (
-                "rank_order", "ranking", "rank order",
-                "constant_sum", "constant sum", "constantsum",
-            ):
+            if _k < 2 or _dv_type not in _JOINT_DV_TYPES:
                 continue
             if any(c not in data or len(data[c]) < n for c in _icols):
                 continue
+            self._typed_dv_columns.update(_icols)
             try:
                 _M = np.array([data[c] for c in _icols], dtype=float).T  # (n, k)
                 _smin = float(_log_entry.get("scale_min", 1))
@@ -12601,6 +12615,9 @@ class EnhancedSimulationEngine:
             self._log(f"POST-GENERATION VALIDATION: {len(validation_issues)} issue(s) found, auto-correcting")
             for issue in validation_issues:
                 col = issue["column"]
+                if col in getattr(self, "_typed_dv_columns", set()):
+                    continue  # v1.2.7.0: joint-constrained DV (rank-order/constant-sum) —
+                              # per-cell clipping would break the permutation/total
                 col_min = issue["expected_min"]
                 col_max = issue["expected_max"]
                 # Auto-correct out-of-bounds values (preserve NaN from missing data)

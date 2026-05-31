@@ -6,7 +6,7 @@ Generates comprehensive instructor-facing reports for student simulations.
 """
 
 # Version identifier to help track deployed code
-__version__ = "1.2.7.0"  # v1.2.7.0: coverage expansion (report-facing version stamp)
+__version__ = "1.2.7.1"  # v1.2.7.1: coverage expansion (report-facing version stamp)
 
 from dataclasses import dataclass
 from datetime import datetime
