@@ -494,6 +494,29 @@ gated by a grep signature + an automated test in step 2–3.
     + the scale-generation suite's 2-point binary test — exactly the kind of bug a
     7-point-only happy path hides.*
 
+19. **A single top-level import crashes the WHOLE app (P0, production-down).**
+    `app.py` did `from utils.group_management import GroupManager, APIKeyManager,
+    _atomic_write_json`. The instant `app.py` and `group_management` drift out of
+    sync (partial deploy, stale build, version skew, a rename), that ONE line
+    raises `ImportError` and Streamlit shows a redacted broken-red page — the
+    entire tool is DOWN, and the user can't even see why (Streamlit redacts the
+    message). Importing a `_private` cross-module symbol made it worse: underscore
+    names are internal and can vanish without notice. → (1) NEVER hard-import a
+    `_private` symbol from another module at top level — wrap in
+    `try/except ImportError` with a local fallback so the app still loads. (2) Ship
+    an app-load SMOKE TEST that execs `app.py` exactly as Streamlit does and fails
+    on ANY unresolved top-level import (`tests/test_app_import_safety.py`) — run it
+    before every push; it's release-blocking. (3) A symbol an entry point imports
+    is part of the contract: rename/move/delete it and ALL import sites in the SAME
+    commit, never split across commits/branches. Grep signature for the offender:
+    `grep -nE "^from [\w.]+ import .*\b_[a-z]" simulation_app/app.py`. Tests:
+    `test_app_imports_without_error`, `test_app_survives_missing_private_atomic_helper`,
+    `test_app_has_no_toplevel_private_cross_module_imports`.
+    *Found by: the USER, on the live site (broken-red ImportError page) — the worst
+    way to find out. This is now a CLAUDE.md ABSOLUTE RULE ("Import Resilience").
+    Production-down is the highest-severity class; the app-load smoke test is the
+    gate that must catch it before deploy.*
+
 #### Conscious trade-off (NOT a bug): global-RNG lock vs. multi-user throughput
 The `_GLOBAL_RNG_LOCK` is held across the WHOLE generation body, including LLM
 network I/O, so two concurrent users fully serialize. This is a deliberate

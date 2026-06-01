@@ -1,4 +1,38 @@
 
+## 2026-06-01 — v1.2.8.2
+### PRODUCTION-DOWN FIX: one bad import no longer crashes the whole app
+
+The live app went down with a redacted `ImportError` at `app.py:66`
+(`from utils.group_management import GroupManager, APIKeyManager,
+_atomic_write_json`). Root cause: a **hard top-level import of a `_private`
+cross-module symbol**. The instant `app.py` and `group_management.py` drift out of
+sync (partial deploy, stale build, version skew, a rename), that single line takes
+down the ENTIRE Streamlit app — and Streamlit redacts the message, so users can't
+self-diagnose. Highest-severity class (P0).
+
+- **Fix:** `_atomic_write_json` is now imported **defensively** (`try/except
+  ImportError` with a local fallback that writes JSON atomically), so the app
+  always loads even against an older/mismatched `group_management`. Verified by
+  simulating the broken state (group_management without the helper) → app loads via
+  fallback instead of crashing.
+- **Permanent safeguards (so it never happens again):**
+  - New app-load **smoke test** `tests/test_app_import_safety.py` —
+    `test_app_imports_without_error` execs `app.py` exactly as Streamlit does and
+    fails on ANY unresolved top-level import; `test_app_survives_missing_private_atomic_helper`
+    proves the fallback; `test_app_has_no_toplevel_private_cross_module_imports`
+    forbids new `from x import _private` at module scope. Run before every push.
+  - New **CLAUDE.md ABSOLUTE RULE "Import Resilience"** + Self-Audit Bug-Class #19:
+    never hard-import a `_private` symbol across modules; a symbol an entry point
+    imports is part of the contract (rename/move/delete it and all import sites in
+    the SAME commit).
+
+> **To restore the live site:** deploy this branch (merge to the branch Streamlit
+> Cloud tracks, then reboot the app). The fix makes `app.py` resilient to the
+> version skew that caused the outage.
+
+**Validation:** compileall exit 0; app-load smoke test (4) + full suite pass;
+version synced (1.2.8.2).
+
 ## 2026-06-01 — v1.2.8.1
 ### Numeric realism: heterogeneous item loadings + narrow-scale bounds fix
 
