@@ -473,6 +473,27 @@ gated by a grep signature + an automated test in step 2–3.
     *Found by: my own offline OE quality scan (",," at 14%, "and why" leak at 68%) —
     the self-audit loop catching a realism bug class before any external reviewer.*
 
+18. **Default-bounded post-processing violates NARROW scales; uniform structure is a
+    realism tell.** Two numeric-side classes from one self-audit pass:
+    (a) **Bounds bug** — a post-generation perturbation (anti-straight-line jitter)
+    inferred the scale ceiling with a hard floor (`scale_hi = max(observed, 5)`) and,
+    in the engine's copy, from a LEAKED loop variable (the last scale). A 2-point
+    item became `2+1=3`. → Per-item post-processing MUST clamp to EACH column's own
+    range (a per-column observed-min/max map), never a default (5/7) or another
+    scale's bounds. Test narrow scales explicitly (2- and 3-point) for
+    `min>=1 and max<=scale_points` AND `unique ⊆ {1..points}` — a 7-point-only test
+    would never have caught it. (b) **Uniform structure** — mixing every scale item
+    toward the common factor with the SAME weight makes all inter-item correlations
+    ≈ identical, a structural "looks generated" tell (Xie et al. 2026). → Vary
+    per-item loadings (scale-stable, applied column-wise so they don't average out;
+    centered on the uniform value so the MEAN correlation / Cronbach's α and the
+    condition effect are preserved). Test: inter-item correlation SPREAD exceeds a
+    threshold while the MEAN stays realistic and the effect direction survives; and
+    same-seed output stays byte-identical across PYTHONHASHSEED.
+    *Found by: my own statistical-realism probe (validated against Xie et al. 2026)
+    + the scale-generation suite's 2-point binary test — exactly the kind of bug a
+    7-point-only happy path hides.*
+
 #### Conscious trade-off (NOT a bug): global-RNG lock vs. multi-user throughput
 The `_GLOBAL_RNG_LOCK` is held across the WHOLE generation body, including LLM
 network I/O, so two concurrent users fully serialize. This is a deliberate

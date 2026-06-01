@@ -606,6 +606,61 @@ def test_v1280_offline_oe_has_no_glitches_or_instruction_leak():
     assert len(set(vals)) / len(vals) > 0.9, "offline OE responses not diverse enough"
 
 
+def test_v1281_inter_item_correlations_are_heterogeneous():
+    """v1.2.8.1: a multi-item scale must NOT have near-identical inter-item
+    correlations (a structural 'looks generated' tell — Xie et al. 2026). Per-item
+    loading heterogeneity gives a realistic spread while preserving the mean
+    (Cronbach's alpha) and the condition effect's direction."""
+    import re, numpy as np
+    from utils.enhanced_simulation_engine import EnhancedSimulationEngine
+    eng = EnhancedSimulationEngine(
+        study_title="Polarization", study_description="political polarization and outgroup attitudes",
+        sample_size=400, conditions=[{"name": "Ingroup match"}, {"name": "Outgroup match"}], factors=[],
+        scales=[{"name": "Warmth", "variable_name": "Warmth", "type": "matrix",
+                 "num_items": 5, "items": 5, "scale_min": 1, "scale_max": 7}],
+        additional_vars=[], demographics={"gender_quota": 50, "age_mean": 45, "age_sd": 16},
+        open_ended_questions=[], seed=2024)
+    if getattr(eng, "llm_generator", None) is not None:
+        eng.llm_generator.disable_permanently("offline")
+    df, _ = eng.generate()
+    items = [c for c in df.columns if re.match(r'Warmth_\d+$', c)]
+    assert len(items) == 5
+    corr = df[items].astype(float).corr().values
+    off = corr[np.triu_indices_from(corr, k=1)]
+    spread = float(off.max() - off.min())
+    assert spread > 0.12, f"inter-item correlations too uniform (spread={spread:.3f}) — structural tell"
+    assert 0.3 < off.mean() < 0.92, f"mean inter-item r out of realistic range: {off.mean():.2f}"
+    pm = df[items].astype(float).mean(axis=1)
+    g1 = pm[df['CONDITION'].astype(str).str.contains('Ingroup')].mean()
+    g2 = pm[df['CONDITION'].astype(str).str.contains('Outgroup')].mean()
+    assert g1 > g2, "ingroup warmth should exceed outgroup (discrimination effect lost)"
+
+
+def test_v1281_narrow_scales_never_exceed_bounds():
+    """v1.2.8.1: the straight-line correction (HBS validator + engine audit) must
+    respect EACH column's true scale range. A bug forced scale_hi>=5, so a 2-point
+    item could become 3. Verify binary and 3-point scales stay in [1, scale_points]."""
+    from utils.enhanced_simulation_engine import EnhancedSimulationEngine
+    for pts in (2, 3):
+        eng = EnhancedSimulationEngine(
+            study_title="T", study_description="t", sample_size=120,
+            conditions=["Control", "Treatment"], factors=[],
+            scales=[{"name": f"S{pts}", "num_items": 4, "scale_points": pts,
+                     "reverse_items": [], "_validated": True}],
+            additional_vars=[], demographics={"age_mean": 35, "age_sd": 10},
+            attention_rate=0.95, random_responder_rate=0.02, effect_sizes=[],
+            open_ended_questions=[], seed=42)
+        if getattr(eng, "llm_generator", None) is not None:
+            eng.llm_generator.disable_permanently("offline")
+        df, _ = eng.generate()
+        for i in range(1, 5):
+            col = f"S{pts}_{i}"
+            assert df[col].min() >= 1, f"{col} min={df[col].min()} < 1"
+            assert df[col].max() <= pts, f"{col} max={df[col].max()} > {pts} (bounds violation)"
+            assert set(df[col].unique()).issubset(set(range(1, pts + 1))), \
+                f"{col} has out-of-range values: {sorted(set(df[col].unique()))}"
+
+
 def test_socsim_cli_compiles_and_has_main():
     """Audit 1.1: the experimental CLI must compile and expose main()."""
     import py_compile, os

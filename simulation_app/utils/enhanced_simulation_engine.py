@@ -1389,6 +1389,7 @@ def _inject_inter_item_correlation(
     target_alpha: float,
     scale_min: int,
     scale_max: int,
+    seed: Optional[int] = None,
 ) -> np.ndarray:
     """Inject inter-item correlation into independently generated scale items.
 
@@ -1398,6 +1399,17 @@ def _inject_inter_item_correlation(
 
     v1.4.11: Called after independent per-item generation to add realistic
     internal consistency without losing condition effects or persona variation.
+
+    v1.2.8.1: per-item mixing weights so inter-item correlations are
+    HETEROGENEOUS (real scales: some items load on the construct more strongly
+    than others — a uniform weight makes every pair correlate ~identically, a
+    structural "looks generated" tell flagged by Xie et al. 2026). Because this
+    operates column-wise over the WHOLE matrix, the per-item weights are
+    scale-stable (identical for every participant), so they produce genuine
+    heterogeneity in the OBSERVED correlations rather than averaging out. The
+    weights are centered on the uniform value, so the MEAN inter-item correlation
+    — hence Cronbach's alpha — is preserved; per-item mean/SD restoration below
+    keeps marginals (and condition effects) intact. Deterministic from `seed`.
     """
     n, k = item_matrix.shape
     if k <= 1 or n <= 1:
@@ -1412,11 +1424,20 @@ def _inject_inter_item_correlation(
     # Correlation between items ≈ w², so w = sqrt(r_bar)
     w = float(np.sqrt(r_bar))
 
+    # v1.2.8.1: spread per-item weights ±~22% around w (corr(i,j) ≈ w_i·w_j), so
+    # some item pairs correlate more than others. Centered on w → mean r ≈ r_bar.
+    if seed is not None and k >= 3:
+        _wr = np.random.RandomState(int(seed) & 0x7FFFFFFF)
+        _wj = w * (1.0 + _wr.uniform(-0.22, 0.22, size=k))
+        _wj = np.clip(_wj, 0.12, 0.97)
+    else:
+        _wj = np.full(k, w)
+
     # Common factor = row mean
     row_means = item_matrix.mean(axis=1, keepdims=True)
 
-    # Blend each item with the common factor
-    mixed = w * row_means + (1.0 - w) * item_matrix
+    # Blend each item with the common factor using its OWN weight
+    mixed = _wj[np.newaxis, :] * row_means + (1.0 - _wj)[np.newaxis, :] * item_matrix
 
     # Restore original per-item means and SDs
     for j in range(k):
@@ -9149,8 +9170,11 @@ class EnhancedSimulationEngine:
                         _item_mat = np.array(
                             [data[c] for c in cols], dtype=float
                         ).T
+                        # v1.2.8.1: scale-stable per-item loading heterogeneity.
+                        _iic_seed = _stable_int_hash(f"{scale_name}|iic_loadings")
                         _repaired = _inject_inter_item_correlation(
                             _item_mat, target_alpha, scale_min, scale_max,
+                            seed=_iic_seed,
                         )
                         for j, c in enumerate(cols):
                             data[c] = _repaired[:, j].tolist()
@@ -9190,6 +9214,18 @@ class EnhancedSimulationEngine:
         if len(all_scale_cols) >= 3:
             existing_cols = [c for c in all_scale_cols if c in df.columns]
             if len(existing_cols) >= 3:
+                # v1.2.8.1 (bugfix): map EACH column to its OWN scale's bounds.
+                # The old code read scale_min/scale_max from `log_entry`, a LEAKED
+                # loop variable holding the LAST scale (and defaulting scale_max to
+                # 7), so jittering a 2-point item produced 2+1=3 — a scale-bounds
+                # violation. With a per-column map every item is clipped to its own
+                # range, and multi-scale surveys no longer cross-contaminate bounds.
+                _col_bounds: Dict[str, Tuple[int, int]] = {}
+                for _le in scale_generation_log:
+                    _bmin = int(_le.get("scale_min", 1))
+                    _bmax = int(_le.get("scale_max", _le.get("scale_points", 7)))
+                    for _bc in _le.get("columns_generated", []):
+                        _col_bounds[_bc] = (_bmin, _bmax)
                 for i in range(n):
                     vals = [float(df.iloc[i][c]) for c in existing_cols
                             if pd.notna(df.iloc[i][c])]
@@ -9208,8 +9244,7 @@ class EnhancedSimulationEngine:
                             for jc in _jitter_cols:
                                 _old_val = int(df.at[i, jc]) if i in df.index else int(data[jc][i])
                                 _noise = int(_rng.choice([-1, 1]))
-                                _s_min = log_entry.get("scale_min", 1)
-                                _s_max = log_entry.get("scale_max", 7)
+                                _s_min, _s_max = _col_bounds.get(jc, (1, 7))
                                 _new_val = max(_s_min, min(_s_max, _old_val + _noise))
                                 if jc in df.columns:
                                     df.at[i, jc] = _new_val
@@ -11860,8 +11895,12 @@ class EnhancedSimulationEngine:
                     _existing_r_bar = np.mean(_existing_corr[np.triu_indices_from(_existing_corr, k=1)])
                     _existing_alpha = (num_items * _existing_r_bar) / (1 + (num_items - 1) * _existing_r_bar) if _existing_r_bar > 0 else 0
                     if _existing_alpha < target_alpha:
+                        # v1.2.8.1: scale-stable seed → per-item loading
+                        # heterogeneity that is reproducible and distinct per scale.
+                        _iic_seed = _stable_int_hash(f"{scale_name}|iic_loadings")
                         _correlated = _inject_inter_item_correlation(
                             _item_matrix, target_alpha, scale_min, scale_max,
+                            seed=_iic_seed,
                         )
                         for j, c in enumerate(item_col_names):
                             data[c] = _correlated[:, j].tolist()

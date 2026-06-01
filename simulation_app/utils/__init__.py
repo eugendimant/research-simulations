@@ -2,7 +2,7 @@
 """
 Utility modules for the Behavioral Experiment Simulation Tool.
 
-Version: 1.2.8.0 - Offline OE realism: deterministically repair mechanical punctuation artifacts left by the tic/filler stages (",," etc., ~14% of offline responses), and strip instruction tails ("...the candidate and why" -> "the candidate") and leading imperatives ("Describe the tax plan" -> "the tax plan") from the extracted topic so the survey instruction no longer bleeds into responses. Builds on v1.2.7.9 audit fixes (unified LLM pool key, recoverable throttle latch, reuse reproducibility, bounded dedup memory)
+Version: 1.2.8.1 - Numeric realism: heterogeneous per-item factor loadings so inter-item correlations vary realistically (vs a uniform value — a structural "looks generated" tell per Xie et al. 2026), preserving Cronbach's alpha and condition effects; and fix a narrow-scale bounds violation where straight-line correction forced scale_hi>=5 (a 2-point item could become 3). Builds on v1.2.8.0 offline OE realism
 
 Changes (v1.0.0 - 20 Iterations of Comprehensive Improvements):
     === ENHANCED SCALE/MATRIX DETECTION ===
@@ -65,7 +65,7 @@ Modules:
 """
 
 # Package version - should match all module versions
-__version__ = "1.2.8.0"
+__version__ = "1.2.8.1"
 
 
 # =============================================================================

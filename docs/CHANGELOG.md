@@ -1,4 +1,36 @@
 
+## 2026-06-01 — v1.2.8.1
+### Numeric realism: heterogeneous item loadings + narrow-scale bounds fix
+
+Two numeric-side improvements found by a self-audit statistical-realism probe
+(validated against Xie et al. 2026) and the scale-generation test suite.
+
+- **Heterogeneous inter-item correlations (Xie et al. structural-uniformity tell).**
+  `_inject_inter_item_correlation` mixed every item toward the row mean with the
+  SAME weight, so all inter-item correlations clustered at ~one value (range 0.64–
+  0.72) — a "looks generated" signature. It now uses per-item mixing weights
+  (corr(i,j) ≈ wᵢ·wⱼ), scale-stable (derived from a per-scale `_stable_int_hash`
+  seed, applied column-wise so they don't average out) and centered on the uniform
+  value so the MEAN correlation — hence Cronbach's alpha — and per-item means/SDs
+  (condition effects) are preserved. Result: correlation spread 0.08 → **0.25**
+  (range 0.56–0.81), alpha and ingroup>outgroup effect (d≈0.9) unchanged.
+- **Narrow-scale (2/3-point) bounds violation (correctness bug).** The
+  straight-lining correction in `hbs_validator._correct_straightlining` inferred
+  `scale_hi` from the straight-liner's own (constant) row and FORCED it ≥ 5, so a
+  2-point item could be perturbed to `2 + 1 = 3` — out of bounds (caught by
+  `test_2_point_binary`). It now clamps to each column's FULL observed range, so
+  binary/3-point scales stay in `[1, scale_points]`. The engine's own
+  anti-straight-line jitter (`_audit_individual_consistency`) had the same class of
+  latent bug — it read bounds from a leaked loop variable (the last scale, default
+  7) — now fixed with a per-column bounds map.
+
+**New tests:** `test_v1281_inter_item_correlations_are_heterogeneous`,
+`test_v1281_narrow_scales_never_exceed_bounds` (+ `test_2_point_binary` now passes).
+**Validation:** compileall exit 0; 51 tests (bugfix + e2e + scale-gen) pass;
+cross-process determinism byte-identical across PYTHONHASHSEED (incl. a mixed
+7-point + binary design); random N=200 across 10 QSFs all-pass; version synced
+(1.2.8.1). Bug-class #18 added.
+
 ## 2026-06-01 — v1.2.8.0
 ### Offline open-ended realism: punctuation repair + instruction-free topic extraction
 
