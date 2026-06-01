@@ -368,6 +368,14 @@ STOP when: all tests pass, all edge cases handled, intra-subject consistency ver
 13. **Calibrate or justify** — use real human data when available; when not, cite the published norm or benchmark you are targeting
 14. **No regressions** — every run must score ≥ the previous run; if it doesn't, diagnose and fix before delivering
 15. **Archive everything** — every simulation run is a training sample; auto-commit to GitHub
+16. **Run the self-audit bug-class catalog before every commit** — see the
+    "Self-Audit Bug-Class Catalog" in `references/continuous-learning.md`. It lists
+    every bug class an external reviewer has ever caught (salted hash, global RNG,
+    narrow verification scope, normalization drops, pandas dtype, provenance
+    overwrite, compile-the-whole-tree, secret/PII exposure, scratch-file hygiene,
+    silent downstream re-corruption) with a grep signature + automated check for
+    each. The catalog is append-only: any new external finding MUST be added with a
+    matching test so it can never recur. Target: external review finds nothing.
 
 ## References
 

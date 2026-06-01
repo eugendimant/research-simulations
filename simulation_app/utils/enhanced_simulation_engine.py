@@ -9680,9 +9680,14 @@ class EnhancedSimulationEngine:
         # to comprehensive_generator for correct source tracking and efficiency.
         # v1.4.9: Try LLM generator first (question-specific, persona-aligned)
         _llm_force_off = getattr(self.llm_generator, '_force_disabled', False) if self.llm_generator else True
+        # v1.2.7.7: also skip the LLM for this participant when the free tier is
+        # throttled/exhausted right now (fast bail-out, recoverable) — avoids an
+        # on-demand call per participant when providers are all rate-limited.
+        _llm_throttled_now = getattr(self.llm_generator, 'free_tier_exhausted_now', False) if self.llm_generator else False
         _should_try_llm = (
             self.llm_generator is not None
             and not _llm_force_off
+            and not _llm_throttled_now
             and (not self.allow_template_fallback or self.free_llm_oe_cap > 0)
         )
         if _should_try_llm:
@@ -11402,6 +11407,30 @@ class EnhancedSimulationEngine:
                 self._log(f"WARNING: numeric realism transform failed for '{log_entry.get('name')}': {err}")
 
     def generate(self) -> Tuple[pd.DataFrame, Dict[str, Any]]:
+        # v1.2.7.6: Seed the GLOBAL np.random/random from self.seed for the DURATION
+        # of generation, then ALWAYS restore the caller's prior global state (even on
+        # exception). WHY: several downstream fallback/repair paths use bare
+        # random.*/np.random.* (text_generator's last-resort templates, the
+        # consistency audit's straight-line/duplicate-OE/OE-length repairs,
+        # HBSValidator). Those need a deterministic global RNG for same-seed
+        # reproducibility across processes. Save+restore keeps that determinism
+        # WITHOUT cross-session pollution (one run never leaves the global RNG
+        # reseeded for another Streamlit session). try/finally guarantees restore
+        # even if generation raises midway.
+        _prev_np_state = np.random.get_state()
+        _prev_py_state = random.getstate()
+        np.random.seed(self.seed)
+        random.seed(self.seed)
+        try:
+            return self._generate_body()
+        finally:
+            try:
+                np.random.set_state(_prev_np_state)
+                random.setstate(_prev_py_state)
+            except Exception:
+                pass
+
+    def _generate_body(self) -> Tuple[pd.DataFrame, Dict[str, Any]]:
         n = self.sample_size
         data: Dict[str, Any] = {}
 
@@ -11979,6 +12008,15 @@ class EnhancedSimulationEngine:
                     # v1.0.7.1: If API was disabled during prefill, stop immediately
                     if not self.llm_generator.is_llm_available:
                         self._log("LLM prefill: API unavailable — switching to template fallback")
+                        break
+                    # v1.2.7.7: Fast bail-out — if the free tier is saturated right now
+                    # (several consecutive all-throttled batches), don't burn the rest of
+                    # the prefill budget; switch to templates so the user isn't left
+                    # waiting. (Recoverable signal; distinct from the permanent kill switch.)
+                    if getattr(self.llm_generator, "free_tier_exhausted_now", False):
+                        self._log("LLM prefill: free tier throttled/exhausted right now — "
+                                  "switching to template fallback to avoid a long wait")
+                        _prefill_timed_out = True
                         break
                     _q_text = str(oq.get("question_text", oq.get("name", "")))
                     _q_ctx = str(oq.get("question_context", "")).strip()
@@ -13113,9 +13151,29 @@ class EnhancedSimulationEngine:
         metadata["generation_method"] = "abe_v3"
         metadata["generation_method_label"] = "Adaptive Behavioral Engine 3.0"
 
-        # Set generation source column
-        if "_Generation_Source" in df.columns:
-            df["_Generation_Source"] = "Adaptive Behavioral Engine 3.0 (Non-LLM)"
+        # Set generation source column.
+        # v1.2.7.7 BUGFIX: do NOT clobber the per-participant AI/Template/Mixed
+        # provenance that the OE loop already computed (it was being overwritten
+        # with a hardcoded "Non-LLM" label for EVERY row — so LLM-generated open-
+        # ended text was mislabeled as Non-LLM, making it look like the free LLM
+        # never ran even when it produced every response). Numeric data always
+        # comes from ABE 3.0; the open-ended TEXT source is what this column tracks.
+        _existing_src = df["_Generation_Source"] if "_Generation_Source" in df.columns else None
+        _has_real_provenance = (
+            _existing_src is not None
+            and _existing_src.astype(str).isin(["AI", "Template", "Mixed"]).any()
+        )
+        if _has_real_provenance:
+            # Map the per-participant OE source to a clear label; keep ABE 3.0 as
+            # the numeric engine, annotate the open-ended text source.
+            _label_map = {
+                "AI": "ABE 3.0 numeric + AI open-ended",
+                "Mixed": "ABE 3.0 numeric + mixed AI/template open-ended",
+                "Template": "Adaptive Behavioral Engine 3.0 (Non-LLM)",
+                "N/A": "Adaptive Behavioral Engine 3.0 (Non-LLM)",
+            }
+            df["_Generation_Source"] = _existing_src.astype(str).map(
+                lambda s: _label_map.get(s, "Adaptive Behavioral Engine 3.0 (Non-LLM)"))
         else:
             df["_Generation_Source"] = "Adaptive Behavioral Engine 3.0 (Non-LLM)"
 

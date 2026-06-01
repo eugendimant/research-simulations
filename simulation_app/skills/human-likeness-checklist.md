@@ -93,3 +93,44 @@ When using the Adaptive Behavioral Engine 3.0, these additional checks apply:
 | Error calibration | Typo rate, reading speed vary by education | Frederick 2005, ABE 3.0 benchmarks |
 | Completion time | Right-skewed, N(840,120)s clipped [480,1500] | ABE 3.0 ParticipantState defaults |
 | Self-validation | Validator passes all 5 checks (timing, OE uniqueness, straightlining, OE length, rating-text coherence) | ABE 3.0 benchmark battery |
+
+---
+
+## Population-Level Statistical Realism (Xie et al. 2026, PNAS — SSDataBench)
+
+A PNAS benchmark of LLM-generated social-science data found that LLMs **compress
+real-world heterogeneity into simplified "typological" profiles**. Whether or not
+generation is LLM-based, the simulator MUST avoid these three failure modes
+(verify them in the self-validation battery and in any new feature):
+
+1. **Univariate distributions collapse toward typical profiles** — the single
+   biggest tell. Synthetic values cluster near the modal/typical response and
+   under-use the full range. → Preserve heterogeneity: realistic SD, genuine use
+   of scale extremes, multimodality where real data is bimodal. Check: a DV whose
+   real-world analog has wide spread must NOT come out with compressed variance.
+   (This is why the persona variance layer, extremity trait, and the numeric
+   right-skew realism exist — and why "data that looks the same across
+   participants" is unacceptable.)
+
+2. **Bivariate associations are systematically EXAGGERATED** — LLMs produce
+   relationships stronger than reality (correlations/effect sizes too large).
+   → Keep condition effects and inter-construct correlations within published
+   bounds; never let an effect or a cross-DV correlation exceed plausible meta-
+   analytic magnitudes. The ±0.50 effect cap and the construct-independent
+   tendency model guard this. When adding effects, prefer conservative sizes and
+   flag contested ones.
+
+3. **Life-course / sequential dependencies are under-represented** — sequences of
+   life events and their covariate associations are hard to reproduce. → For any
+   longitudinal/repeated-measures feature, model realistic within-person
+   dependency (test-retest r, autoregressive drift), not independent draws.
+
+Roadmap directions the paper validates (already partially implemented here):
+richer per-participant input/conditioning, qualitative context, and
+domain-specific calibration against published norms — continue grounding every
+calibration in a cited benchmark rather than scaling generic generation.
+
+**Self-audit hook:** when validating output, compute each DV's variance and
+extreme-use rate; flag "heterogeneity compression" if variance is implausibly
+low or extremes are unused. Treat exaggerated condition effects / inter-item
+correlations as a realism regression, not a feature.

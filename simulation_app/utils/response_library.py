@@ -63,7 +63,7 @@ association, impression, perception, feedback, comment, observation, general
 Version: 1.8.5 - Improved domain detection with weighted scoring and disambiguation
 """
 
-__version__ = "1.2.7.5"
+__version__ = "1.2.7.7"
 
 import random
 import re
@@ -7720,8 +7720,26 @@ class ComprehensiveResponseGenerator:
 
         response = ""
         if _subject or question_text:
-            _adaptive_topic = _subject or question_text[:80]
+            # v1.2.7.7: Never use the raw question_text as the topic — it bleeds the
+            # literal question into responses ("...black and white with Why did you
+            # rate your trust in the advisor that way?"). When subject extraction
+            # fails, distill a clean keyword phrase from the question (drop the
+            # interrogative/stopwords) and require it to be intelligible.
+            _adaptive_topic = _subject
+            if not _adaptive_topic and question_text:
+                _q_stop = {'this', 'that', 'about', 'what', 'why', 'how', 'when',
+                           'where', 'which', 'who', 'your', 'you', 'please', 'did',
+                           'do', 'does', 'rate', 'rated', 'rating', 'describe',
+                           'explain', 'question', 'context', 'study', 'topic',
+                           'the', 'and', 'for', 'any', 'have', 'has', 'feel',
+                           'think', 'way', 'that', 'with', 'are', 'was', 'were'}
+                _qw = [w for w in re.findall(r'\b[a-zA-Z]{3,}\b', question_text.lower())
+                       if w not in _q_stop][:4]
+                _cand = ' '.join(_qw)
+                _adaptive_topic = _cand if (_cand and self._is_topic_intelligible(_cand)) else ""
             try:
+                if not _adaptive_topic:
+                    raise ValueError("no intelligible topic")  # -> template fallback below
                 response = self._build_adaptive_response(
                     topic=_adaptive_topic,
                     sentiment=sentiment,
@@ -8626,6 +8644,17 @@ class ComprehensiveResponseGenerator:
             else:
                 _sources.append(_qt)
 
+        # v1.2.7.7: an interrogative phrase is NOT a usable topic — interpolating it
+        # bleeds the literal question into responses ("...both sides of Why did you
+        # rate your trust in the advisor that way?"). Detect and reject these.
+        _interrog = re.compile(r'^\s*(why|what|how|when|where|which|who|do|does|did|'
+                               r'are|is|was|were|would|could|should|can|will|have|has)\b',
+                               re.IGNORECASE)
+
+        def _usable(_t: str) -> bool:
+            return (self._is_topic_intelligible(_t) and len(_t) > 4
+                    and '?' not in _t and not _interrog.match(_t))
+
         for _src in _sources:
             # Clean up variable-name-style text
             _clean = _src
@@ -8641,16 +8670,16 @@ class ComprehensiveResponseGenerator:
             )
             if _about_match:
                 _candidate = _about_match.group(1).strip()
-                if self._is_topic_intelligible(_candidate) and len(_candidate) > 4:
+                if _usable(_candidate):
                     return _candidate
 
-            # Try the full source if it's intelligible
-            if self._is_topic_intelligible(_clean) and len(_clean) > 4:
+            # Try the full source if it's intelligible AND not an interrogative
+            if _usable(_clean):
                 # Truncate very long sources to a usable topic
                 if len(_clean) > 80:
                     # Take first meaningful clause
                     _clause = re.split(r'[.!?,;]', _clean)[0].strip()
-                    if self._is_topic_intelligible(_clause) and len(_clause) > 4:
+                    if _usable(_clause):
                         return _clause
                 else:
                     return _clean
@@ -13819,7 +13848,9 @@ class ComprehensiveResponseGenerator:
 
         # ── 11. VERBAL TICS (per-participant filler words) ────────────
         # v1.1.0.3: Assign a consistent verbal tic per participant
-        _seed_val = hash(text[:20]) if text else 0  # Deterministic from content
+        # v1.2.7.6: stable ordinal hash (built-in hash() is salted per process,
+        # which made the chosen tic — hence OE text — non-reproducible across runs).
+        _seed_val = sum(ord(c) * (i + 1) * 31 for i, c in enumerate(text[:20])) if text else 0
         if formality < 0.55 and rng.random() < 0.35:
             text = self._apply_verbal_tic(text, _seed_val, formality, rng)
 

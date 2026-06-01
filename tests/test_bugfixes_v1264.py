@@ -313,6 +313,99 @@ def test_engine_does_not_seed_global_rng():
     assert random.random() == py_before, "engine init reseeded global random"
 
 
+def test_generate_is_cross_process_deterministic_and_restores_global_rng():
+    """v1.2.7.6 (Codex P1): same seed -> identical output (numeric AND open-ended)
+    regardless of process hash seed / prior global RNG activity, AND generate()
+    restores the caller's global RNG state (no cross-session pollution).
+
+    Note on the contract: generate() seeds the GLOBAL np.random/random for its own
+    duration (downstream fallback/repair paths use bare random.*), then restores
+    the prior global state. So determinism does NOT depend on ambient state, and
+    other sessions are unaffected.
+    """
+    import numpy as np, random, hashlib
+    from utils.enhanced_simulation_engine import EnhancedSimulationEngine
+
+    def run():
+        eng = EnhancedSimulationEngine(
+            study_title="Trust", study_description="trust in AI for a decision",
+            sample_size=25, conditions=[{"name": "A"}, {"name": "B"}], factors=[],
+            scales=[{"name": "Trust", "variable_name": "Trust", "type": "matrix",
+                     "num_items": 3, "items": 3, "scale_min": 1, "scale_max": 7}],
+            additional_vars=[], demographics={"gender_quota": 50, "age_mean": 35, "age_sd": 12},
+            open_ended_questions=[{"variable_name": "why", "question_text": "Why did you rate it that way?"}],
+            seed=7)
+        if getattr(eng, "llm_generator", None) is not None:
+            eng.llm_generator.disable_permanently("test")
+        df, _ = eng.generate()
+        num = "|".join(str(x) for x in df["Trust_1"])
+        oe_col = next((c for c in df.columns if "why" in c.lower()), None)
+        oe = "|".join(str(x) for x in df[oe_col]) if oe_col else ""
+        return hashlib.md5((num + "##" + oe).encode()).hexdigest()
+
+    # Run twice with DIFFERENT ambient global RNG state — output must be identical.
+    np.random.seed(11111); random.seed(11111); [random.random() for _ in range(500)]
+    h1 = run()
+    np.random.seed(22222); random.seed(22222); [np.random.random() for _ in range(500)]
+    h2 = run()
+    assert h1 == h2, "generate() output depends on ambient global RNG state (non-reproducible)"
+
+    # And the caller's global state is restored across a generate() call.
+    np.random.seed(33333); random.seed(33333)
+    np_marker = [np.random.randint(0, 10**6) for _ in range(3)]
+    py_marker = [random.randint(0, 10**6) for _ in range(3)]
+    np.random.seed(33333); random.seed(33333)
+    run()
+    assert [np.random.randint(0, 10**6) for _ in range(3)] == np_marker, "global np.random not restored"
+    assert [random.randint(0, 10**6) for _ in range(3)] == py_marker, "global random not restored"
+
+    # And restored even when generation raises midway (try/finally contract).
+    eng = EnhancedSimulationEngine(
+        study_title="S", study_description="s", sample_size=10,
+        conditions=[{"name": "A"}], factors=[],
+        scales=[{"name": "X", "variable_name": "X", "num_items": 1, "scale_min": 1, "scale_max": 7}],
+        additional_vars=[], demographics={"gender_quota": 50, "age_mean": 35, "age_sd": 12},
+        seed=1)
+    if getattr(eng, "llm_generator", None) is not None:
+        eng.llm_generator.disable_permanently("test")
+    np.random.seed(44444); random.seed(44444)
+    np_m = [np.random.randint(0, 10**6) for _ in range(3)]
+    np.random.seed(44444); random.seed(44444)
+    eng._generate_body = lambda: (_ for _ in ()).throw(RuntimeError("forced"))
+    try:
+        eng.generate()
+    except RuntimeError:
+        pass
+    assert [np.random.randint(0, 10**6) for _ in range(3)] == np_m, "global RNG not restored after exception"
+
+
+def test_open_ended_does_not_leak_question_text():
+    """v1.2.7.7: the literal (interrogative) question must NOT bleed into OE
+    responses (topic extraction previously fell back to raw question_text)."""
+    import re
+    from utils.enhanced_simulation_engine import EnhancedSimulationEngine
+    eng = EnhancedSimulationEngine(
+        study_title="AI Advisor Trust", study_description="trust in an AI vs human advisor",
+        sample_size=60, conditions=[{"name": "Human advisor"}, {"name": "AI advisor"}], factors=[],
+        scales=[{"name": "Trust", "variable_name": "Trust", "type": "matrix",
+                 "num_items": 3, "items": 3, "scale_min": 1, "scale_max": 7}],
+        additional_vars=[], demographics={"gender_quota": 50, "age_mean": 40, "age_sd": 13},
+        open_ended_questions=[
+            {"variable_name": "why_trust", "question_text": "Why did you rate your trust in the advisor that way?"},
+            {"variable_name": "howdecide", "question_text": "How did you decide whether to follow the advice?"},
+        ], seed=2024)
+    if getattr(eng, "llm_generator", None) is not None:
+        eng.llm_generator.disable_permanently("offline template path")
+    df, _ = eng.generate()
+    leak_re = re.compile(r"\b(why did you|how did you decide|rate your trust in the advisor)\b", re.IGNORECASE)
+    for oc in ("why_trust", "howdecide"):
+        col = next((c for c in df.columns if c.lower().startswith(oc)), None)
+        assert col, f"OE column {oc} missing"
+        vals = [str(v) for v in df[col] if isinstance(v, str) and v.strip()]
+        leaks = [v for v in vals if leak_re.search(v)]
+        assert not leaks, f"{oc}: question text leaked into {len(leaks)} responses, e.g. {leaks[:1]}"
+
+
 def test_socsim_cli_compiles_and_has_main():
     """Audit 1.1: the experimental CLI must compile and expose main()."""
     import py_compile, os
