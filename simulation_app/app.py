@@ -54,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.2.8.4"
-BUILD_ID = "20260601-v12084-deserialize-runs-per-instance-rng"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.2.8.5"
+BUILD_ID = "20260601-v12085-mobile-hero-subtitle-wrap"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -146,7 +146,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.2.8.4"  # v1.2.8.4: Codex P2 — de-serialize concurrent runs (per-instance RNG, no run-wide lock across LLM I/O) + preserve "and how" topical clauses in topic extraction
+APP_VERSION = "1.2.8.5"  # v1.2.8.5: Mobile UI — landing hero subtitle wraps responsively (removed hard <br>, text-wrap:balance + mobile font-size) so no word is stranded on its own line on phones
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -6677,6 +6677,7 @@ details[data-testid="stExpander"][open] {
     letter-spacing: -0.035em;
     margin: 0 0 18px 0;
     line-height: 1.08;
+    text-wrap: balance;
     background: linear-gradient(135deg, #0F172A 0%, #1E293B 40%, #334155 100%);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
@@ -6686,8 +6687,13 @@ details[data-testid="stExpander"][open] {
     font-size: 1.2rem;
     color: #6B7280;
     font-weight: 400;
-    margin: 0 0 8px 0;
+    margin: 0 auto 8px;
     line-height: 1.6;
+    max-width: 38ch;
+    /* v1.2.8.5: balance the lines so the subtitle never strands a single word
+       ("test"/"data") on its own line when it wraps on narrow (mobile) viewports.
+       Replaces a hard-coded <br> that broke badly once the line was re-wrapped. */
+    text-wrap: balance;
 }
 .landing-hero .creator {
     font-size: 0.85rem;
@@ -7418,6 +7424,7 @@ div[data-testid="stAlert"] {
     .hiw-arrow { transform: rotate(90deg); }
     .landing-hero h1 { font-size: 1.8rem; }
     .landing-hero { padding: 32px 16px 24px; }
+    .landing-hero .subtitle { font-size: 1.05rem; line-height: 1.5; max-width: 30ch; }
     .research-section { padding: 20px 16px; }
 }
 
@@ -8743,7 +8750,7 @@ if active_page == -1:
     st.markdown(
         '<div class="landing-hero">'
         '<h1>Behavioral Experiment<br>Simulation Tool</h1>'
-        '<p class="subtitle">Generate realistic pilot datasets to build and test<br>'
+        '<p class="subtitle">Generate realistic pilot datasets to build and test '
         'your analysis pipeline before collecting real data</p>'
         '<p class="creator">Created by Dr. <a href="https://eugendimant.github.io/">Eugen Dimant</a></p>'
         '</div>',

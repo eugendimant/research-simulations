@@ -1,4 +1,17 @@
 
+## 2026-06-01 — v1.2.8.5
+### Mobile UI: landing-hero subtitle wraps cleanly on phones
+
+On a narrow phone the landing-page subtitle wrapped badly, stranding single words
+("test", "data") on their own lines. Cause: a hard-coded `<br>` after "…to build
+and test" that split the line for desktop, then re-wrapped awkwardly once the
+remaining text no longer fit the mobile width. Fix: removed the `<br>` so the text
+flows naturally, and made the subtitle wrap responsively — `text-wrap: balance`
+(even line lengths, no orphan words), a tighter measure (`max-width`), and a smaller
+mobile font-size in the `@media (max-width:768px)` block. Also added
+`text-wrap: balance` to the H1. App-load smoke test + compile pass; version synced
+(1.2.8.5).
+
 ## 2026-06-01 — v1.2.8.4
 ### Codex review: de-serialize concurrent runs + preserve "and how" topical clauses
 
