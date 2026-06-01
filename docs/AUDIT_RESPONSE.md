@@ -67,3 +67,33 @@ bytecode.
 22 regression tests · effect fuzz (2,592 combos) · **0 crashes across all 291
 example QSFs** · **0 issues across the 10 student QSFs** · e2e all-pass ·
 `compileall` clean · version synced (1.2.7.5).
+
+---
+
+# Deep adversarial re-audit (v1.2.7.9)
+
+After the v1.2.7.8 concurrency fixes, an independent adversarial agent traced the
+generation/parsing/LLM/state surface end-to-end and **reproduced** four defects the
+earlier passes missed. Each was verified against the code before fixing. It also
+confirmed the v1.2.7.8 fixes (lock, per-instance OE state, non-cached parser) are
+correct, and that `GroupManager`/`APIKeyManager` sharing is out of the data path.
+
+| ID | Sev | Issue | Fix | Test |
+|----|-----|-------|-----|------|
+| H1 | HIGH | LLM pool key drift: prefill omitted the `\nCondition:`/`\nAdditional context:` suffixes the per-participant path adds, so every prefilled draw missed when `question_context` was set (prefill budget silently wasted; anti-pattern #29). | Single shared `_build_enriched_question_text()` builds the key for BOTH paths → byte-identical keys. | `test_h1_prefill_runtime_pool_key_match` |
+| M1 | MED | `free_tier_exhausted_now` latched permanently for the run (its counter only reset inside a function every caller then skipped), contradicting its "recoverable" docstring. | Reset `_consecutive_transient_batches` in `reset_providers()` and per OE question. | `test_m1_transient_latch_resets_on_reset_providers` |
+| M2 | MED | Reused engine produced different OE text on the same seed — only `text_generator` was reset, not the primary `comprehensive_generator`. | Added `reset()` to `ComprehensiveResponseGenerator` + ABE-v2 wrapper; called each run. | `test_m2_reused_engine_is_reproducible_non_llm` |
+| L1 | LOW | `_used_responses`/`_used_sentences` unbounded at N=10,000 × many OE questions. | FIFO-bounded via companion `deque`s with **deterministic** oldest-first eviction (never `set.pop()`). | covered by cross-process determinism battery |
+
+**Conscious trade-off (not a defect):** the `_GLOBAL_RNG_LOCK` is held across LLM
+network I/O, so concurrent users serialize. Eliminating global seeding (routing ~70
+RNG sites — engine `rng = np.random` ×15 + `text_generator` `random.*` ×58 — through
+injected per-run RNGs) is deferred as its own verified change; it risks the
+reproducibility just confirmed, and real-world impact is low (free-tier rate limits
+serialize concurrent LLM users anyway; non-LLM N=10,000 ≈ 60s). Recorded in the
+Self-Audit Bug-Class Catalog alongside new classes #13–16.
+
+## Validation (v1.2.7.9)
+29 bugfix regressions + 6 e2e = **35 pass** · cross-process determinism
+byte-identical across `PYTHONHASHSEED` ∈ {0,1,42,31337} · random **N=200** across 10
+QSFs all-pass · `compileall` exit 0 · version synced (1.2.7.9).

@@ -54,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.2.7.7"
-BUILD_ID = "20260601-v12077-llm-source-label-and-failover"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.2.8.2"
+BUILD_ID = "20260601-v12082-import-resilience-production-fix"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -63,7 +63,35 @@ BUILD_ID = "20260601-v12077-llm-source-label-and-failover"  # Change this to for
 # v1.4.3.1 — the version-check on line ~103 already warns on mismatch, and
 # BUILD_ID changes handle cache invalidation safely.
 
-from utils.group_management import GroupManager, APIKeyManager, _atomic_write_json
+from utils.group_management import GroupManager, APIKeyManager
+# v1.2.8.2 (PRODUCTION-DOWN GUARD): import the private atomic-write helper
+# DEFENSIVELY. A hard top-level import of a cross-module *private* symbol takes
+# down the ENTIRE app with a redacted ImportError the instant the two files drift
+# out of sync (partial deploy, stale build, version skew, a rename) — exactly the
+# outage this guards against. If the helper is ever missing, fall back to a local
+# equivalent so the app still loads. NEVER hard-import a `_private` symbol from
+# another module at top level; see CLAUDE.md "Import resilience".
+try:
+    from utils.group_management import _atomic_write_json
+except ImportError:
+    def _atomic_write_json(path, payload) -> None:
+        """Local fallback mirroring group_management._atomic_write_json — write a
+        JSON file atomically (temp file + os.replace) so a crash never leaves a
+        half-written/corrupt file."""
+        import tempfile
+        _dir = os.path.dirname(os.path.abspath(path)) or "."
+        os.makedirs(_dir, exist_ok=True)
+        _fd, _tmp = tempfile.mkstemp(dir=_dir, suffix=".tmp")
+        try:
+            with os.fdopen(_fd, "w", encoding="utf-8") as _f:
+                json.dump(payload, _f, indent=2, default=str)
+            os.replace(_tmp, path)
+        except Exception:
+            try:
+                os.unlink(_tmp)
+            except OSError:
+                pass
+            raise
 from utils.qsf_preview import QSFPreviewParser, QSFPreviewResult
 from utils.schema_validator import validate_schema
 from utils.github_qsf_collector import collect_qsf_async, is_collection_enabled
@@ -118,7 +146,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.2.7.7"  # v1.2.7.7: LLM fixes — correct AI/Template source label, batch-JSON parse, _ext crash, newest free model + transient failover; OE question-leak fix
+APP_VERSION = "1.2.8.2"  # v1.2.8.2: PRODUCTION-DOWN FIX — defensive import of _atomic_write_json (one bad top-level import no longer crashes the whole app) + app-load smoke test + import-resilience rule
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -4621,8 +4649,13 @@ def _get_api_key_manager() -> APIKeyManager:
     return APIKeyManager()
 
 
-@st.cache_resource
 def _get_qsf_preview_parser() -> QSFPreviewParser:
+    # v1.2.7.8: NOT @st.cache_resource. The parser holds per-parse mutable state
+    # (log_entries/errors/warnings, reset at the top of parse()), so a single shared
+    # cached instance would let two concurrent Streamlit sessions corrupt each
+    # other's parse (session B's reset/append racing session A's parse). __init__ is
+    # trivial (three empty lists), so a fresh per-call instance is the correct,
+    # cost-free fix.
     return QSFPreviewParser()
 
 

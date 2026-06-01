@@ -406,6 +406,261 @@ def test_open_ended_does_not_leak_question_text():
         assert not leaks, f"{oc}: question text leaked into {len(leaks)} responses, e.g. {leaks[:1]}"
 
 
+def test_concurrent_generation_is_reproducible():
+    """v1.2.7.8 (Codex P1): concurrent generate() calls with the same seed must
+    produce IDENTICAL output. Guards two cross-session hazards: (a) the global-RNG
+    temporary-seeding region (serialized by _GLOBAL_RNG_LOCK) and (b) the OE
+    uniqueness fingerprints (now per-instance, not class-level shared)."""
+    import threading, hashlib
+    from utils.enhanced_simulation_engine import EnhancedSimulationEngine
+
+    def _fp(seed):
+        eng = EnhancedSimulationEngine(
+            study_title="S", study_description="trust study", sample_size=20,
+            conditions=[{"name": "A"}], factors=[],
+            scales=[{"name": "T", "variable_name": "T", "type": "matrix",
+                     "num_items": 3, "items": 3, "scale_min": 1, "scale_max": 7}],
+            additional_vars=[], demographics={"gender_quota": 50, "age_mean": 35, "age_sd": 12},
+            open_ended_questions=[{"variable_name": "why", "question_text": "Why did you rate it that way?"}],
+            seed=seed)
+        if getattr(eng, "llm_generator", None) is not None:
+            eng.llm_generator.disable_permanently("offline")
+        df, _ = eng.generate()
+        return hashlib.md5(("|".join(map(str, df["T_1"])) + "##"
+                            + "|".join(map(str, df["why"]))).encode()).hexdigest()
+
+    solo = _fp(7)
+    results = set()
+
+    def worker():
+        for _ in range(3):
+            results.add(_fp(7))
+
+    def perturb():
+        for s in (11, 99, 55):
+            _fp(s)
+
+    threads = [threading.Thread(target=worker) for _ in range(4)] + \
+              [threading.Thread(target=perturb) for _ in range(2)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert results == {solo}, (
+        f"concurrent same-seed generation diverged: {len(results)} distinct outputs "
+        f"(cross-session RNG or shared OE-state race)")
+
+
+def test_comprehensive_generator_state_is_per_instance():
+    """v1.2.7.8: the OE uniqueness sets must be per-instance, not class-level shared
+    (class-level state leaked fingerprints across concurrent sessions)."""
+    from utils.response_library import ComprehensiveResponseGenerator as C
+    a = C(seed=1)
+    b = C(seed=2)
+    a._used_responses.add("fingerprint_x")
+    assert "fingerprint_x" not in b._used_responses, "OE state is shared across instances"
+
+
+def test_h1_prefill_runtime_pool_key_match():
+    """v1.2.7.9 (H1): the enriched question_text used to KEY the response pool must
+    be byte-identical between the prefill path and the per-participant path,
+    otherwise every pool draw misses and the prefill budget is silently wasted.
+    Both paths now route through _build_enriched_question_text."""
+    from utils.enhanced_simulation_engine import EnhancedSimulationEngine
+    from utils.llm_response_generator import _ResponsePool
+    import random as _r
+
+    eng = EnhancedSimulationEngine.__new__(EnhancedSimulationEngine)
+    eng.study_title = "Attitudes toward the candidate"
+    eng.study_description = ""
+    eng.study_context = {"additional_context": "Pre-election wave, US adults"}
+
+    q_raw, q_ctx, cond = "explain_feel", "How do you feel about the candidate?", "Treatment_A"
+    prefill_text = eng._build_enriched_question_text(q_raw, q_ctx, cond)
+    runtime_text = eng._build_enriched_question_text(q_raw, q_ctx, cond)
+    assert prefill_text == runtime_text
+    # The enriched text must carry BOTH the suffixes that previously diverged.
+    assert "\nCondition: Treatment_A" in runtime_text
+    assert "\nAdditional context:" in runtime_text
+
+    # End-to-end: a response prefilled under the prefill key must be drawable
+    # under the runtime key (this was the silent miss the audit reproduced).
+    pool = _ResponsePool()
+    pool.add(prefill_text, cond, "neutral", ["alpha", "beta"])
+    drawn = pool.draw_with_replacement(runtime_text, cond, "neutral", _r.Random(1))
+    assert drawn is not None, "prefilled pool MISS — H1 pool-key drift regressed"
+
+
+def test_m1_transient_latch_resets_on_reset_providers():
+    """v1.2.7.9 (M1): free_tier_exhausted_now must be recoverable. Once the
+    transient-throttle latch is set, every caller skips _generate_batch, so the
+    counter can only be cleared by reset_providers()/per-question reset."""
+    from utils.llm_response_generator import LLMResponseGenerator
+    g = LLMResponseGenerator()
+    g._consecutive_transient_batches = g._transient_giveup_threshold
+    assert g.free_tier_exhausted_now is True
+    g.reset_providers()
+    assert g._consecutive_transient_batches == 0
+    assert g.free_tier_exhausted_now is False
+
+
+def test_m2_reused_engine_is_reproducible_non_llm():
+    """v1.2.7.9 (M2): calling generate() twice on the SAME engine must produce
+    byte-identical OE output on the same seed (reproducibility contract). The
+    primary non-LLM OE generator's dedup state is now reset each run."""
+    import hashlib
+    from utils.enhanced_simulation_engine import EnhancedSimulationEngine
+
+    def _build():
+        eng = EnhancedSimulationEngine(
+            study_title="Reuse", study_description="trust in advisor study",
+            sample_size=40, conditions=[{"name": "A"}, {"name": "B"}], factors=[],
+            scales=[{"name": "T", "variable_name": "T", "type": "matrix",
+                     "num_items": 3, "items": 3, "scale_min": 1, "scale_max": 7}],
+            additional_vars=[],
+            demographics={"gender_quota": 50, "age_mean": 35, "age_sd": 12},
+            open_ended_questions=[
+                {"variable_name": "why", "question_text": "Why did you rate it that way?"}],
+            seed=321)
+        if getattr(eng, "llm_generator", None) is not None:
+            eng.llm_generator.disable_permanently("offline")
+        return eng
+
+    def _oe_hash(df):
+        col = next(c for c in df.columns if c.lower().startswith("why"))
+        return hashlib.md5("|".join(map(str, df[col])).encode()).hexdigest()
+
+    eng = _build()
+    h1 = _oe_hash(eng.generate()[0])     # first run on this engine
+    h2 = _oe_hash(eng.generate()[0])     # REUSED engine, same seed
+    h3 = _oe_hash(_build().generate()[0])  # fresh engine, same seed
+    assert h1 == h2 == h3, (
+        f"reused-engine OE output diverged: first={h1[:8]} reuse={h2[:8]} fresh={h3[:8]} "
+        f"(comprehensive_generator dedup state not reset between runs)")
+
+
+def test_v1280_normalize_punctuation_repairs_only_mechanical_glitches():
+    """v1.2.8.0: the punctuation normalizer fixes ',,'/' ,'/' .'/',.' but PRESERVES
+    intentional realism (typos, lowercase 'i', '...' ellipsis, '!!' emphasis)."""
+    from utils.response_library import ComprehensiveResponseGenerator as C
+    f = C._normalize_punctuation
+    assert f("like,, I think") == "like, I think"
+    assert f("the reason like, like,, I mean") == "the reason like, like, I mean"
+    assert f("I mean . really") == "I mean. really"
+    assert f("well, . that's it") == "well. that's it"          # ',.' -> '.'
+    assert f("hmm , maybe") == "hmm, maybe"                      # ' ,' -> ','
+    # preserved:
+    assert f("well... maybe") == "well... maybe"                 # ellipsis intact
+    assert f("no way!! seriously") == "no way!! seriously"       # emphasis intact
+    assert f("i thibk so") == "i thibk so"                       # typo + lowercase 'i' intact
+    assert f("like like, yeah") == "like like, yeah"             # word repetition intact
+
+
+def test_v1280_strips_instruction_tail_keeps_conjunctive_topics():
+    """v1.2.8.0: 'Explain ... the candidate and why' must yield topic 'the candidate'
+    (not 'the candidate and why'), while real conjunctions are preserved."""
+    from utils.response_library import ComprehensiveResponseGenerator as C
+    g = C(seed=1)
+    def topic(ctx):
+        return g._extract_response_subject(f"Question: q\nContext: {ctx}", ctx).lower()
+    assert topic("Explain your view of the candidate and why.") == "the candidate"
+    assert topic("How do you feel about the new policy and why?") == "the new policy"
+    assert topic("Describe the tax plan and explain your reasoning.") == "the tax plan"
+    # leading imperative with no preposition, and lead-in phrase:
+    assert topic("In your own words, describe the onboarding process.").rstrip(".") == "the onboarding process"
+    assert topic("Discuss the merger between the two companies.").rstrip(".") == "the merger between the two companies"
+    # genuine conjunctive topics and embedded prepositions preserved:
+    assert topic("Tell us about crime and punishment.") == "crime and punishment"
+    assert topic("Share your opinion on guns and butter.") == "guns and butter"
+    assert topic("Your information on the merger.") == "the merger"
+    # must NOT over-strip a real topic that merely contains 'in ... society':
+    assert topic("Crime and punishment in modern society.").rstrip(".") == "crime and punishment in modern society"
+
+
+def test_v1280_offline_oe_has_no_glitches_or_instruction_leak():
+    """v1.2.8.0: end-to-end, the offline OE path produces no ',,', no space-before-
+    punctuation, and never leaks the instruction tail ('and why') into responses."""
+    import re
+    from utils.enhanced_simulation_engine import EnhancedSimulationEngine
+    eng = EnhancedSimulationEngine(
+        study_title="Candidate Attitudes", study_description="feelings about a candidate",
+        sample_size=120, conditions=[{"name": "Treatment"}, {"name": "Control"}], factors=[],
+        scales=[{"name": "Feel", "variable_name": "Feel", "type": "matrix",
+                 "num_items": 3, "items": 3, "scale_min": 1, "scale_max": 7}],
+        additional_vars=[], demographics={"gender_quota": 50, "age_mean": 40, "age_sd": 13},
+        open_ended_questions=[{"variable_name": "explain", "question_text": "explain",
+                               "question_context": "Explain your view of the candidate and why."}],
+        seed=2024)
+    if getattr(eng, "llm_generator", None) is not None:
+        eng.llm_generator.disable_permanently("offline")
+    df, _ = eng.generate()
+    col = next(c for c in df.columns if c.lower().startswith("explain"))
+    vals = [str(v) for v in df[col] if isinstance(v, str) and v.strip()]
+    assert vals, "no OE responses generated"
+    bad_comma = [v for v in vals if re.search(r",\s*,", v)]
+    bad_space = [v for v in vals if re.search(r"\s+[,.!?]", v)]
+    leak = [v for v in vals if re.search(r"\band why\b", v, re.I)]
+    assert not bad_comma, f"',,'in {len(bad_comma)} responses, e.g. {bad_comma[:1]}"
+    assert not bad_space, f"space-before-punct in {len(bad_space)}, e.g. {bad_space[:1]}"
+    assert not leak, f"instruction tail leaked into {len(leak)} responses, e.g. {leak[:1]}"
+    assert len(set(vals)) / len(vals) > 0.9, "offline OE responses not diverse enough"
+
+
+def test_v1281_inter_item_correlations_are_heterogeneous():
+    """v1.2.8.1: a multi-item scale must NOT have near-identical inter-item
+    correlations (a structural 'looks generated' tell — Xie et al. 2026). Per-item
+    loading heterogeneity gives a realistic spread while preserving the mean
+    (Cronbach's alpha) and the condition effect's direction."""
+    import re, numpy as np
+    from utils.enhanced_simulation_engine import EnhancedSimulationEngine
+    eng = EnhancedSimulationEngine(
+        study_title="Polarization", study_description="political polarization and outgroup attitudes",
+        sample_size=400, conditions=[{"name": "Ingroup match"}, {"name": "Outgroup match"}], factors=[],
+        scales=[{"name": "Warmth", "variable_name": "Warmth", "type": "matrix",
+                 "num_items": 5, "items": 5, "scale_min": 1, "scale_max": 7}],
+        additional_vars=[], demographics={"gender_quota": 50, "age_mean": 45, "age_sd": 16},
+        open_ended_questions=[], seed=2024)
+    if getattr(eng, "llm_generator", None) is not None:
+        eng.llm_generator.disable_permanently("offline")
+    df, _ = eng.generate()
+    items = [c for c in df.columns if re.match(r'Warmth_\d+$', c)]
+    assert len(items) == 5
+    corr = df[items].astype(float).corr().values
+    off = corr[np.triu_indices_from(corr, k=1)]
+    spread = float(off.max() - off.min())
+    assert spread > 0.12, f"inter-item correlations too uniform (spread={spread:.3f}) — structural tell"
+    assert 0.3 < off.mean() < 0.92, f"mean inter-item r out of realistic range: {off.mean():.2f}"
+    pm = df[items].astype(float).mean(axis=1)
+    g1 = pm[df['CONDITION'].astype(str).str.contains('Ingroup')].mean()
+    g2 = pm[df['CONDITION'].astype(str).str.contains('Outgroup')].mean()
+    assert g1 > g2, "ingroup warmth should exceed outgroup (discrimination effect lost)"
+
+
+def test_v1281_narrow_scales_never_exceed_bounds():
+    """v1.2.8.1: the straight-line correction (HBS validator + engine audit) must
+    respect EACH column's true scale range. A bug forced scale_hi>=5, so a 2-point
+    item could become 3. Verify binary and 3-point scales stay in [1, scale_points]."""
+    from utils.enhanced_simulation_engine import EnhancedSimulationEngine
+    for pts in (2, 3):
+        eng = EnhancedSimulationEngine(
+            study_title="T", study_description="t", sample_size=120,
+            conditions=["Control", "Treatment"], factors=[],
+            scales=[{"name": f"S{pts}", "num_items": 4, "scale_points": pts,
+                     "reverse_items": [], "_validated": True}],
+            additional_vars=[], demographics={"age_mean": 35, "age_sd": 10},
+            attention_rate=0.95, random_responder_rate=0.02, effect_sizes=[],
+            open_ended_questions=[], seed=42)
+        if getattr(eng, "llm_generator", None) is not None:
+            eng.llm_generator.disable_permanently("offline")
+        df, _ = eng.generate()
+        for i in range(1, 5):
+            col = f"S{pts}_{i}"
+            assert df[col].min() >= 1, f"{col} min={df[col].min()} < 1"
+            assert df[col].max() <= pts, f"{col} max={df[col].max()} > {pts} (bounds violation)"
+            assert set(df[col].unique()).issubset(set(range(1, pts + 1))), \
+                f"{col} has out-of-range values: {sorted(set(df[col].unique()))}"
+
+
 def test_socsim_cli_compiles_and_has_main():
     """Audit 1.1: the experimental CLI must compile and expose main()."""
     import py_compile, os
