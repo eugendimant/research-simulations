@@ -63,7 +63,7 @@ association, impression, perception, feedback, comment, observation, general
 Version: 1.8.5 - Improved domain detection with weighted scoring and disambiguation
 """
 
-__version__ = "1.2.8.3"
+__version__ = "1.2.8.4"
 
 import random
 import re
@@ -7543,11 +7543,22 @@ class ComprehensiveResponseGenerator:
         if not text:
             return text
         import re as _re
+        # (a) Bare "and why / and how / and how so" ONLY at the very end (a pure
+        #     instruction tail with nothing meaningful after it). Codex P2: do NOT
+        #     strip "and how it affects your work" / "and how people vote" — those
+        #     are topical CLAUSES, not instructions. The end-anchor ([?.!]*\s*$)
+        #     guarantees we only drop a dangling "...and why?" / "...and how.".
+        _t = _re.sub(r'[\s,]+and\s+(?:why|how(?:\s+so)?)\s*[?.!]*\s*$',
+                     '', text, flags=_re.IGNORECASE).strip()
+        # (b) Explicit instructional VERB tails ("...and explain your reasoning",
+        #     "...and justify it") — always instructions, so strip through the end.
+        #     (No bare "how"/"why" here — those are handled, end-anchored, in (a) so
+        #     a following topical clause is preserved.)
         _t = _re.sub(
-            r'[\s,]+and\s+(?:why|how|how\s+so|explain|elaborate|justify|describe|'
-            r'tell\s+us(?:\s+why)?|the\s+reasons?|your\s+reasons?|the\s+reasoning|'
-            r'because)\b.*$',
-            '', text, flags=_re.IGNORECASE).strip()
+            r'[\s,]+and\s+(?:explain|elaborate|justify|describe|'
+            r'tell\s+us(?:\s+why)?|give\s+(?:your\s+)?reasons?|'
+            r'the\s+reasons?|your\s+reasons?|the\s+reasoning)\b.*$',
+            '', _t, flags=_re.IGNORECASE).strip()
         return _t or text
 
     @staticmethod

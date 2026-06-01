@@ -227,22 +227,18 @@ import hashlib
 import os
 import random
 import re
-import threading
 import time
 
 import numpy as np
 import pandas as pd
 
-# v1.2.7.8: Process-wide lock serializing the global-RNG temporary-seeding region
-# inside generate(). The engine seeds the GLOBAL np.random/random for the duration
-# of a run (downstream fallback/repair paths use bare random.*), then restores the
-# prior state. Without this lock, two concurrent Streamlit sessions racing through
-# generate() would interleave their seed/restore operations — one session consuming
-# another's RNG stream and an out-of-order restore leaving global state corrupted,
-# breaking same-seed reproducibility. The lock makes each run own the global RNG
-# exclusively. (The proper long-term fix is per-engine RNG instances threaded
-# through all 57+ bare-random call sites; this lock is the safe, correct interim.)
-_GLOBAL_RNG_LOCK = threading.RLock()
+# v1.2.8.4 (Codex P2): the process-wide _GLOBAL_RNG_LOCK was REMOVED. The engine no
+# longer seeds the global np.random/random — every draw uses a per-instance RNG
+# (local np.random.RandomState seeded from self.seed/participant_seed for numerics;
+# HBSValidator(seed=...) and LLMResponseGenerator._rng for the former global
+# consumers). With no shared global RNG state there is nothing to serialize, so
+# concurrent Streamlit sessions now run fully in parallel (no run-wide lock held
+# across LLM network I/O) while staying byte-identical for the same seed.
 
 # v1.2.7.4: numeric-DV money/count classification cues, compiled ONCE. Letter-
 # boundary matching ((?<![a-z])...(?![a-z])) so cues fire on underscore-normalized
@@ -11475,30 +11471,18 @@ class EnhancedSimulationEngine:
                 self._log(f"WARNING: numeric realism transform failed for '{log_entry.get('name')}': {err}")
 
     def generate(self) -> Tuple[pd.DataFrame, Dict[str, Any]]:
-        # v1.2.7.6/.8: Seed the GLOBAL np.random/random from self.seed for the
-        # DURATION of generation, then ALWAYS restore the caller's prior global state
-        # (even on exception). WHY: several downstream fallback/repair paths use bare
-        # random.*/np.random.* (text_generator's last-resort templates, the
-        # consistency audit's straight-line/duplicate-OE/OE-length repairs,
-        # HBSValidator). Those need a deterministic global RNG for same-seed
-        # reproducibility. Save+restore avoids cross-session pollution; the
-        # _GLOBAL_RNG_LOCK serializes this region so concurrent Streamlit sessions
-        # can't interleave their seed/restore (which would otherwise let one run
-        # consume another's RNG stream and corrupt the restored state). try/finally
-        # guarantees restore even if generation raises midway.
-        with _GLOBAL_RNG_LOCK:
-            _prev_np_state = np.random.get_state()
-            _prev_py_state = random.getstate()
-            np.random.seed(self.seed)
-            random.seed(self.seed)
-            try:
-                return self._generate_body()
-            finally:
-                try:
-                    np.random.set_state(_prev_np_state)
-                    random.setstate(_prev_py_state)
-                except Exception:
-                    pass
+        # v1.2.8.4 (Codex P2 — de-serialize multi-user runs): generation no longer
+        # seeds the process-GLOBAL np.random/random, so it no longer needs a
+        # process-wide lock held across the WHOLE run (including LLM network I/O).
+        # Reproducibility is now fully PER-INSTANCE: every numeric draw uses a local
+        # np.random.RandomState seeded from self.seed/participant_seed (23 sites);
+        # the only previously-global consumers in the generation path —
+        # HBSValidator and the LLM backoff jitter — were migrated to per-instance
+        # RNGs (HBSValidator(seed=self.seed); LLMResponseGenerator._rng). Two
+        # concurrent Streamlit sessions therefore run fully in parallel with
+        # identical same-seed output and zero cross-session interference. Verified by
+        # the cross-process determinism battery + a concurrent-generation test.
+        return self._generate_body()
 
     def _generate_body(self) -> Tuple[pd.DataFrame, Dict[str, Any]]:
         n = self.sample_size
@@ -13200,7 +13184,10 @@ class EnhancedSimulationEngine:
         _validation_report: Dict[str, Any] = {}
         if HAS_HBS_VALIDATOR:
             try:
-                _validator = HBSValidator()
+                # v1.2.8.4: seed the validator per-run so its perturbations are
+                # reproducible WITHOUT seeding the process-global RNG (which let us
+                # drop the run-wide _GLOBAL_RNG_LOCK that serialized concurrent users).
+                _validator = HBSValidator(seed=self.seed)
                 df, _validation_report = _validator.validate_and_correct(df)
                 self._log(f"ABE 3.0: Validation complete — {_validation_report.get('summary', 'ok')}")
             except Exception as _val_err:

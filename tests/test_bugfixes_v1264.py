@@ -575,6 +575,12 @@ def test_v1280_strips_instruction_tail_keeps_conjunctive_topics():
     assert topic("Your information on the merger.") == "the merger"
     # must NOT over-strip a real topic that merely contains 'in ... society':
     assert topic("Crime and punishment in modern society.").rstrip(".") == "crime and punishment in modern society"
+    # Codex P2 (v1.2.8.4): a topical clause beginning with "and how" is NOT an
+    # instruction tail and must be preserved — only a DANGLING "...and why/how" is stripped.
+    assert topic("Describe your experience with depression and how it affects your work").rstrip(".") \
+        == "depression and how it affects your work"
+    # the 'and how people vote' clause must survive (not chopped off as an instruction):
+    assert "how people vote" in topic("Describe the policy and how people vote.").lower()
 
 
 def test_v1280_offline_oe_has_no_glitches_or_instruction_leak():
@@ -659,6 +665,54 @@ def test_v1281_narrow_scales_never_exceed_bounds():
             assert df[col].max() <= pts, f"{col} max={df[col].max()} > {pts} (bounds violation)"
             assert set(df[col].unique()).issubset(set(range(1, pts + 1))), \
                 f"{col} has out-of-range values: {sorted(set(df[col].unique()))}"
+
+
+def test_v1284_generation_is_not_globally_serialized():
+    """v1.2.8.4 (Codex P2): generate() must NOT hold a process-wide lock across the
+    whole run (the old _GLOBAL_RNG_LOCK serialized concurrent users — including
+    across LLM network I/O). Verify multiple threads can be INSIDE generation at the
+    same time. (Reproducibility under concurrency is covered separately by
+    test_concurrent_generation_is_reproducible.)"""
+    import threading, time
+    from utils.enhanced_simulation_engine import EnhancedSimulationEngine
+    _peak = {"n": 0, "cur": 0}
+    _lk = threading.Lock()
+    _orig = EnhancedSimulationEngine._generate_body
+
+    def _wrapped(self):
+        with _lk:
+            _peak["cur"] += 1
+            _peak["n"] = max(_peak["n"], _peak["cur"])
+        time.sleep(0.20)  # GIL-releasing window so genuine overlap is observable
+        try:
+            return _orig(self)
+        finally:
+            with _lk:
+                _peak["cur"] -= 1
+
+    EnhancedSimulationEngine._generate_body = _wrapped
+    try:
+        def _run():
+            eng = EnhancedSimulationEngine(
+                study_title="C", study_description="trust study", sample_size=10,
+                conditions=[{"name": "A"}], factors=[],
+                scales=[{"name": "T", "variable_name": "T", "type": "matrix",
+                         "num_items": 3, "items": 3, "scale_min": 1, "scale_max": 7}],
+                additional_vars=[], demographics={"gender_quota": 50, "age_mean": 35, "age_sd": 12},
+                open_ended_questions=[], seed=5)
+            if getattr(eng, "llm_generator", None) is not None:
+                eng.llm_generator.disable_permanently("x")
+            eng.generate()
+        threads = [threading.Thread(target=_run) for _ in range(4)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        assert _peak["n"] >= 2, (
+            "generation appears serialized — concurrent runs never overlapped "
+            "(was the run-wide _GLOBAL_RNG_LOCK re-introduced?)")
+    finally:
+        EnhancedSimulationEngine._generate_body = _orig
 
 
 def test_socsim_cli_compiles_and_has_main():

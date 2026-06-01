@@ -2944,7 +2944,7 @@ class LLMResponseGenerator:
         else:
             # v1.0.8.2: Reduced max sleep from 5s → 2s to prevent UI hangs
             _base = min(1.0 * self._batch_failure_count, 2.0)
-            _jitter = random.uniform(0, 0.5)
+            _jitter = self._rng.uniform(0, 0.5)  # v1.2.8.4: per-instance RNG (no global)
             _backoff_secs = _base + _jitter
             logger.info("Batch %d/%d failed, sleeping %.1fs before retry",
                         self._batch_failure_count, 3, _backoff_secs)
