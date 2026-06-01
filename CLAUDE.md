@@ -79,6 +79,49 @@ The app uses `importlib.reload(utils)` as a safe self-healing mechanism when a m
 
 ---
 
+## ABSOLUTE RULE: Import Resilience — One Bad Import Must NEVER Take Down the App
+
+**A single failed top-level import in `app.py` (or anything it transitively imports)
+crashes the ENTIRE Streamlit app with a redacted `ImportError` — users see a broken
+red page, the whole tool is DOWN.** This is the highest-severity failure class
+(P0, production-down). It happened once (`from utils.group_management import ...,
+_atomic_write_json` when the two files drifted out of sync across a deploy). It MUST
+NEVER happen again.
+
+### Hard rules
+1. **NEVER hard-import a `_private` symbol from another module at top level.**
+   A `_underscore` name is an internal detail that can be renamed/removed without
+   notice; importing it across modules is a landmine. If you must, wrap it:
+   ```python
+   try:
+       from utils.x import _helper
+   except ImportError:
+       def _helper(...): ...   # local fallback so the app still loads
+   ```
+   Guarded by `test_app_has_no_toplevel_private_cross_module_imports`.
+2. **Run the app-load smoke test before EVERY push.** `python3 -m pytest
+   tests/test_app_import_safety.py -q` imports `app.py` exactly as Streamlit does
+   and fails the instant any top-level import cannot be resolved. Treat a failure
+   as release-blocking. Also run a bare `cd simulation_app && python3 -c "import
+   importlib.util,sys; sys.path.insert(0,'.'); …exec app.py…"` if unsure.
+3. **Symbols an entry point imports are part of the contract.** If you rename,
+   move, or delete a function/class that `app.py` (or any imported module)
+   references, update EVERY import site in the SAME commit — never split an
+   import and its definition across commits/branches (that creates the exact
+   drift that downed the app on a partial deploy).
+4. **Prefer public, stable names across module boundaries.** If a helper is used
+   by another module, it is part of that module's public API — give it a
+   non-underscore name or re-export it intentionally.
+
+### Why redacted errors make this worse
+Streamlit redacts the error message on deployed apps ("recorded in the logs"), so
+users can't self-diagnose. The crash itself must be prevented — a clearer message
+is not enough. When the app is reported down, reproduce the import locally first
+(`pytest tests/test_app_import_safety.py`), fix the root cause, and verify with the
+smoke test before pushing.
+
+---
+
 ## ABSOLUTE RULE: Page Layout — Next at Top, Scroll at Bottom
 
 - **"Continue to..." button**: TOP of page only, right under the stepper (1-2-3-4). Never at the bottom.

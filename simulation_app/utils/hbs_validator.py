@@ -611,6 +611,28 @@ class HBSValidator:
         n_rows = self._nrows(df)
         _perturbed_count = 0
 
+        # v1.2.8.1 (bugfix): infer each column's bounds from its FULL observed
+        # range. The old code derived scale_hi from the straight-liner's own
+        # (constant) row and FORCED scale_hi >= 5, so perturbing a 2-point item
+        # produced 2 + 1 = 3 — a scale-bounds violation. A column's observed
+        # min/max never exceeds its true scale range, so clamping to them is safe
+        # for narrow (binary / 3-point) scales while still allowing perturbation.
+        _col_lo: Dict[str, int] = {}
+        _col_hi: Dict[str, int] = {}
+        for _col in scale_cols:
+            _cvals: List[float] = []
+            for _r in range(n_rows):
+                _cv = self._cell_value(df, _r, _col)
+                if _cv is None:
+                    continue
+                try:
+                    _cvals.append(float(_cv))
+                except (TypeError, ValueError):
+                    pass
+            if _cvals:
+                _col_lo[_col] = int(min(_cvals))
+                _col_hi[_col] = int(max(_cvals))
+
         for row_idx in range(n_rows):
             row_vals: List[Tuple[str, float]] = []
             for col in scale_cols:
@@ -635,14 +657,14 @@ class HBSValidator:
 
             for idx in indices:
                 col_name, old_val = row_vals[idx]
+                # Clamp to the column's OBSERVED range so narrow scales (binary,
+                # 3-point) are never pushed out of bounds (v1.2.8.1).
+                scale_lo = _col_lo.get(col_name, 1)
+                scale_hi = _col_hi.get(col_name, scale_lo + 1)
+                if scale_hi <= scale_lo:
+                    continue  # degenerate column — cannot perturb without leaving range
                 direction = random.choice([-1, 1])
                 new_val = old_val + direction
-                # Clamp to scale bounds (infer from actual data range)
-                max_val = max(vals_only)
-                scale_lo = 1
-                scale_hi = int(max_val) if max_val > 5 else 5
-                if scale_hi < 5:
-                    scale_hi = 5
                 new_val = max(scale_lo, min(scale_hi, new_val))
                 self._set_cell(df, row_idx, col_name, int(new_val))
                 _perturbed_count += 1

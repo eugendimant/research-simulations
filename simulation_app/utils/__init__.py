@@ -2,7 +2,7 @@
 """
 Utility modules for the Behavioral Experiment Simulation Tool.
 
-Version: 1.2.7.7 - LLM source-label fix (AI vs Non-LLM), batch-JSON parse, _ext crash fix, gemini-3.1-flash-lite primary + transient/allowlist failover, OE question-leak fix; Xie et al. 2026 realism principles
+Version: 1.2.8.2 - PRODUCTION-DOWN FIX: app.py imported the private helper _atomic_write_json hard at top level, so a version skew between app.py and group_management crashed the ENTIRE app with a redacted ImportError. Now imported defensively with a local fallback; added an app-load smoke test (tests/test_app_import_safety.py) and a CLAUDE.md "Import Resilience" ABSOLUTE RULE so one bad import can never take the app down again. Builds on v1.2.8.1 numeric realism
 
 Changes (v1.0.0 - 20 Iterations of Comprehensive Improvements):
     === ENHANCED SCALE/MATRIX DETECTION ===
@@ -65,7 +65,7 @@ Modules:
 """
 
 # Package version - should match all module versions
-__version__ = "1.2.7.7"
+__version__ = "1.2.8.2"
 
 
 # =============================================================================

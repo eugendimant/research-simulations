@@ -377,3 +377,158 @@ gated by a grep signature + an automated test in step 2–3.
     *Found by: my own N=100 free-LLM smoke test (the offline template fallback
     leaked the question into 54/100 responses) — exactly the kind of realism bug
     the self-audit should catch before shipping.*
+
+12. **Thread-unsafe global state under concurrent Streamlit sessions.** Two
+    sessions calling generate() at once race on (a) the process-global RNG
+    temporary-seeding region and (b) any CLASS-LEVEL or MODULE-LEVEL mutable state
+    (sets/dicts) in the generation path. One session consumes another's RNG
+    stream, or sees another's accumulated fingerprints, breaking same-seed
+    reproducibility. → (1) Serialize any global-RNG seed/restore region with a
+    process lock. (2) NEVER keep run-scoped mutable state at class/module level —
+    use per-instance attributes set in __init__. Grep signatures:
+    `grep -nE '^    _[a-z_]+ *(:.*)?= *(set\(\)|\{\}|\[\])'` for class-level mutable
+    decls; `grep -nE '[A-Z][A-Za-z]+\._[a-z_]+\.(add|append|update|clear)\('` for
+    cross-instance mutation. Test: run N concurrent same-seed generations in
+    threads (+ perturbing different-seed threads) and assert ONE identical output.
+    *Found by: Codex PR review P1 — my seed-restore fix was exception-safe but not
+    thread-safe, and ComprehensiveResponseGenerator kept _used_responses at class
+    level. I should have caught both: "multi-user Streamlit" is in the threat model.*
+
+13. **Two code paths that MUST agree, maintained separately, drift.** A cache key
+    (or any value that two paths must compute identically) is built by two
+    copy-pasted blocks; one path later gains an extra suffix the other doesn't.
+    The keys silently stop matching → the cache always misses, defeating an
+    optimization with NO error. Here: the LLM response-pool key is
+    `md5(question_text[:200]|condition|sentiment)`; the prefill path built
+    `question_text` WITHOUT the `\nCondition:`/`\nAdditional context:` suffixes the
+    per-participant path appended, so every prefilled draw missed (prefill budget
+    silently wasted — anti-pattern #29). → ANY value two paths must agree on
+    (cache keys, hashes, IDs, signatures) MUST come from ONE shared helper, never
+    two parallel blocks. Grep for the same f-string skeleton in 2+ places;
+    extract a helper. Test: assert the two paths produce byte-identical keys AND
+    that a value stored by path A is retrievable by path B. This class hides in
+    NON-default paths (only fires when `question_context` is set), so the test must
+    exercise the enriched path, not the bare one.
+    *Found by: deep adversarial audit H1 — highest-value find because it produced
+    no error and only triggered on the (encouraged) question-context path.*
+
+14. **A "recoverable" latch with no path to reset.** A flag documented as
+    "resets on success" only resets inside a function that, once the flag is set,
+    every caller SKIPS. So the flag is effectively permanent for the rest of the
+    run, contradicting its docstring. Here: `free_tier_exhausted_now` reads
+    `_consecutive_transient_batches`, which only reset inside `_generate_batch` —
+    but once exhausted, prefill fast-bails and the OE loop sets `_llm_throttled_now`,
+    so `_generate_batch` is never called again → the free tier is abandoned for the
+    whole run even if it recovers seconds later. → For every "recoverable"/"resets
+    on X" flag, trace whether X is still REACHABLE once the flag is set. If the
+    flag gates the only path to X, add an explicit reset at a genuine retry
+    boundary (here: `reset_providers()` and per-OE-question). Test: set the latch,
+    call the documented recovery boundary, assert the latch cleared.
+    *Found by: deep adversarial audit M1 — the docstring asserted an invariant the
+    control flow couldn't deliver.*
+
+15. **Incomplete "fresh run" reset on a reused stateful object.** The engine reset
+    ONE OE generator's dedup state (`text_generator`) but not the PRIMARY one
+    (`comprehensive_generator`), so a REUSED engine produced different OE text on
+    the same seed — a reproducibility-contract break that's latent only because the
+    UI happens to rebuild the engine each run (SDK/batch/"regenerate" reuse would
+    hit it). → When you reset run-scoped state "for a fresh dataset", enumerate
+    EVERY object that accumulates run-scoped state (all OE generators, pools,
+    recent-start buffers) and reset all of them — and give each a single `reset()`
+    method so the list can't go stale. Test: call generate() TWICE on the same
+    engine + once on a fresh engine, assert all three OE hashes equal.
+    *Found by: deep adversarial audit M2 — I reset the fallback generator but
+    overlooked the primary one right next to it.*
+
+16. **Unbounded run-scoped accumulator at max N.** Dedup `set`s grew one
+    fingerprint + N sentences per response with no cap; at `MAX_SIMULATED_N=10,000`
+    × multiple OE questions that's hundreds of thousands of strings. → Bound any
+    per-run accumulator that scales with N. CRITICAL: evict DETERMINISTICALLY
+    (FIFO via a companion `deque`, oldest-first) — never `set.pop()` an arbitrary
+    element, because str hash order depends on `PYTHONHASHSEED` and would
+    reintroduce cross-process non-determinism (bug-class #1/#2). Test: the bounded
+    structure stays ≤ cap at large N AND same-seed output is byte-identical across
+    `PYTHONHASHSEED` values with eviction active.
+    *Found by: deep adversarial audit L1.*
+
+17. **Mechanical artifacts from text-mutation stages, and instruction text in the
+    extracted topic (offline OE realism).** Two classes my OWN N=200 offline scan
+    caught (the kind a reviewer/user would flag as "this data looks fake"):
+    (a) the verbal-tic / filler / hedge inserters append punctuation next to
+    existing punctuation, producing `",,"` (~14% of responses) — a mechanical glitch,
+    NOT a realistic human typo. (b) topic extraction from `question_context` grabbed
+    the instruction, not the subject: "Explain your view of the candidate **and
+    why**" → topic "the candidate and why" → "I feel good about the candidate and
+    why is straightforward" (68% of responses); and leading imperatives with no
+    preposition ("Describe the tax plan") kept the verb. → (a) Add a DETERMINISTIC
+    final-pass punctuation normalizer (pure function, no RNG, preserves `...`/`!!`/
+    typos) at the single OE return point. (b) Strip instruction TAILS ("and why/how/
+    explain...") and leading imperative PREFIXES ("describe/explain/list/rate/in your
+    own words...") from the extracted topic — but conservatively, so real conjunctive
+    topics ("crime and punishment", "crime ... in modern society") and embedded
+    prepositions ("opini-on") are preserved. Test: scan offline OE at N≥120 for `,,`,
+    space-before-punct, and instruction-tail leakage (assert 0); unit-test the topic
+    extractor on tail/prefix/conjunctive/embedded-prep cases; confirm same-seed output
+    stays byte-identical across PYTHONHASHSEED (the fixes are deterministic).
+    *Found by: my own offline OE quality scan (",," at 14%, "and why" leak at 68%) —
+    the self-audit loop catching a realism bug class before any external reviewer.*
+
+18. **Default-bounded post-processing violates NARROW scales; uniform structure is a
+    realism tell.** Two numeric-side classes from one self-audit pass:
+    (a) **Bounds bug** — a post-generation perturbation (anti-straight-line jitter)
+    inferred the scale ceiling with a hard floor (`scale_hi = max(observed, 5)`) and,
+    in the engine's copy, from a LEAKED loop variable (the last scale). A 2-point
+    item became `2+1=3`. → Per-item post-processing MUST clamp to EACH column's own
+    range (a per-column observed-min/max map), never a default (5/7) or another
+    scale's bounds. Test narrow scales explicitly (2- and 3-point) for
+    `min>=1 and max<=scale_points` AND `unique ⊆ {1..points}` — a 7-point-only test
+    would never have caught it. (b) **Uniform structure** — mixing every scale item
+    toward the common factor with the SAME weight makes all inter-item correlations
+    ≈ identical, a structural "looks generated" tell (Xie et al. 2026). → Vary
+    per-item loadings (scale-stable, applied column-wise so they don't average out;
+    centered on the uniform value so the MEAN correlation / Cronbach's α and the
+    condition effect are preserved). Test: inter-item correlation SPREAD exceeds a
+    threshold while the MEAN stays realistic and the effect direction survives; and
+    same-seed output stays byte-identical across PYTHONHASHSEED.
+    *Found by: my own statistical-realism probe (validated against Xie et al. 2026)
+    + the scale-generation suite's 2-point binary test — exactly the kind of bug a
+    7-point-only happy path hides.*
+
+19. **A single top-level import crashes the WHOLE app (P0, production-down).**
+    `app.py` did `from utils.group_management import GroupManager, APIKeyManager,
+    _atomic_write_json`. The instant `app.py` and `group_management` drift out of
+    sync (partial deploy, stale build, version skew, a rename), that ONE line
+    raises `ImportError` and Streamlit shows a redacted broken-red page — the
+    entire tool is DOWN, and the user can't even see why (Streamlit redacts the
+    message). Importing a `_private` cross-module symbol made it worse: underscore
+    names are internal and can vanish without notice. → (1) NEVER hard-import a
+    `_private` symbol from another module at top level — wrap in
+    `try/except ImportError` with a local fallback so the app still loads. (2) Ship
+    an app-load SMOKE TEST that execs `app.py` exactly as Streamlit does and fails
+    on ANY unresolved top-level import (`tests/test_app_import_safety.py`) — run it
+    before every push; it's release-blocking. (3) A symbol an entry point imports
+    is part of the contract: rename/move/delete it and ALL import sites in the SAME
+    commit, never split across commits/branches. Grep signature for the offender:
+    `grep -nE "^from [\w.]+ import .*\b_[a-z]" simulation_app/app.py`. Tests:
+    `test_app_imports_without_error`, `test_app_survives_missing_private_atomic_helper`,
+    `test_app_has_no_toplevel_private_cross_module_imports`.
+    *Found by: the USER, on the live site (broken-red ImportError page) — the worst
+    way to find out. This is now a CLAUDE.md ABSOLUTE RULE ("Import Resilience").
+    Production-down is the highest-severity class; the app-load smoke test is the
+    gate that must catch it before deploy.*
+
+#### Conscious trade-off (NOT a bug): global-RNG lock vs. multi-user throughput
+The `_GLOBAL_RNG_LOCK` is held across the WHOLE generation body, including LLM
+network I/O, so two concurrent users fully serialize. This is a deliberate
+correctness-over-throughput choice: the alternative (removing global seeding
+entirely) requires routing ~70 call sites — the engine's `rng = np.random`
+aliases (×15) AND `text_generator`'s bare `random.*` (×58) — through injected
+per-run RNGs, a cross-module refactor that risks reintroducing the
+non-reproducibility just verified correct (anti-pattern #1: big-bang rewrite).
+Real-world impact is low: the free-tier API rate-limits already serialize
+concurrent LLM users upstream, and non-LLM runs finish in ~60s at N=10,000. If
+multi-user LLM throughput ever becomes a priority, do the RNG injection as its
+own carefully-verified change (cross-process determinism battery + concurrency
+test must both stay green), THEN narrow the lock to the seed/restore window.
+*Surfaced by: deep adversarial audit (classified as a scalability trade-off,
+not a correctness defect).*
