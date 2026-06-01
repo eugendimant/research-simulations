@@ -266,3 +266,100 @@ Over time, accumulated fixes and optimizations can interact in unexpected ways. 
 2. **Run the full quality battery on every run** — not just the checks relevant to the latest change.
 3. **Maintain a "golden set"** — a small set of simulation configs (3-5) that are re-run periodically as regression tests. If quality drops on these, something broke.
 4. **Version everything** — prompts, templates, parameters, covariance matrices. Any change can be reverted.
+
+---
+
+## Self-Audit Bug-Class Catalog (learn from every external finding)
+
+**Goal: catch these classes myself before any commit, so external review (Codex,
+users) finds nothing.** Every time an external reviewer or a later iteration finds
+a bug I missed, add its *class* here and add a matching automated check. This list
+is append-only and is the single most important regression-prevention asset.
+
+### Pre-commit self-audit checklist (run mentally + with grep/tests on EVERY change)
+
+1. **Reproducibility (salted hash).** Bare `hash()` is salted per process
+   (`PYTHONHASHSEED`), so any seeded path using it is non-reproducible across
+   restarts. → `grep -nE "[^_a-zA-Z]hash\(" <changed files>` ; replace with a
+   SHA-256 / ordinal stable hash in ANY seeding/selection context.
+   *Found by: Codex audit 3.4 (and a follow-up: 3 more sites I missed the first time).*
+
+2. **Reproducibility (global RNG).** `np.random.seed()` / `random.seed()` mutate
+   GLOBAL state (cross-session pollution in multi-user Streamlit). But REMOVING
+   them breaks any downstream code that uses bare `random.*`/`np.random.*` and
+   relied on that seed. → Before removing a global seed, grep the WHOLE call tree
+   reached by `generate()` for bare `random.`/`np.random.` (not just the file you
+   edited): text generators, validators, repair/audit passes. If any exist, use
+   the **seed-then-save/restore** pattern (seed globals at the top of the run,
+   restore prior state in a `finally`/before return) instead of deleting the seed.
+   *Found by: Codex audit 3.5 + the P1 follow-up — my first fix only checked the
+   numeric path and missed the OE/fallback/validator paths.*
+
+3. **Verification scope.** When claiming "X is unaffected/identical", the test must
+   exercise EVERY code path, not the convenient one. A matrix-only determinism test
+   does NOT prove the open-ended/fallback/repair paths are deterministic. → Make
+   the verifying test hit the broadest realistic config (multi-item scale + numeric
+   DV + open-ended question + conditions), and diff a HASH of the full output, not
+   one column.
+   *Found by: Codex P1 — my "output identical" claim was scoped too narrowly.*
+
+4. **Normalization drops valid input.** Input-normalizing functions that read only
+   one key (`name`) silently drop valid specs keyed differently (`variable_name`,
+   `export_tag`, `question_id`). And `int()` on a list-valued field silently
+   defaults instead of using the list. → For every normalizer, test the dict/list
+   variants of each field, assert nothing is dropped, assert list→count+names.
+   *Found by: Codex audit 3.1, 3.2.*
+
+5. **pandas dtype mutation.** Writing a float into an int column
+   (`df.iat[...] = float`) raises a FutureWarning now and will hard-fail later.
+   → Widen the column dtype first; test under `python -W error::FutureWarning`.
+   *Found by: Codex audit 3.3.*
+
+6. **Provenance overwrite.** Post-processing that overwrites a column the base
+   layer set (e.g. `_Generation_Source`) erases row-level provenance. → Add a
+   `_Base_*` column or a separate `_Method` column; never overwrite.
+   *Found by: Codex audit 3.6.*
+
+7. **Compile the WHOLE tree.** A syntax/indentation error in a sub-package (even
+   experimental) ships in the release. → `python -m compileall -q simulation_app`
+   must exit 0 as a pre-commit gate. Add an import/compile test for CLI entry points.
+   *Found by: Codex audit 1.1.*
+
+8. **Secret/PII exposure.** Never echo token/key prefixes, never persist raw keys
+   to JSON, never surface raw SMTP/host errors to users. → grep changed files for
+   `token[:`, `api_key'] =`, `st.error(.*exc`, key/print/log of secrets.
+   *Found by: Codex audit 2.2, 2.5, 9.1.*
+
+9. **Scratch-file hygiene.** Never `git add -A` after analysis — agents/probes
+   leave `_*.py`/`.pyc` scratch. → `git status` review; `.gitignore` covers
+   `/_*` and all bytecode; stage explicit paths.
+   *Found by: my own repeated mistake (committed 59 scratch + 32 .pyc files).*
+
+10. **Silent-corruption from downstream passes.** A correct transform can be
+    re-broken by a LATER pass that's unaware of its invariant (e.g. the
+    consistency-audit re-correlating constant-sum columns). → After adding any
+    joint/structured output, grep every post-processing pass that mutates those
+    columns and exempt them; test the invariant on the FINAL dataframe, at the
+    item counts where the later pass actually fires (k≥4, not just k=3).
+    *Found by: an earlier adversarial review (constant-sum 2–7% invalid at k≥4).*
+
+### The self-audit work loop (run before every "done")
+
+```
+FOR each change set, before committing:
+  1. grep the changed files for each bug-class signature above.
+  2. For RNG/seed/hash changes: run a CROSS-PROCESS determinism test
+     (two subprocesses, different PYTHONHASHSEED) hashing the FULL output,
+     AND a global-state-restored test.
+  3. Run the full battery: compileall (exit 0), pytest regressions,
+     effect fuzz, qsf_robustness (0 crashes / all example QSFs),
+     random_qsf_n200 (N=200), e2e sim.
+  4. Spawn an independent adversarial review agent on the diff; treat any
+     reproduced finding as real; verify-then-fix; re-run the battery.
+  5. If the agent (or a user) finds a class NOT in this catalog, ADD IT here
+     and add an automated check, so it can never be missed again.
+```
+
+The catalog grows monotonically. The target end-state: the adversarial agent and
+external reviewers find **nothing**, because every class they would find is already
+gated by a grep signature + an automated test in step 2–3.

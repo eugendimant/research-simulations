@@ -63,7 +63,7 @@ association, impression, perception, feedback, comment, observation, general
 Version: 1.8.5 - Improved domain detection with weighted scoring and disambiguation
 """
 
-__version__ = "1.2.7.5"
+__version__ = "1.2.7.6"
 
 import random
 import re
@@ -13819,7 +13819,9 @@ class ComprehensiveResponseGenerator:
 
         # ── 11. VERBAL TICS (per-participant filler words) ────────────
         # v1.1.0.3: Assign a consistent verbal tic per participant
-        _seed_val = hash(text[:20]) if text else 0  # Deterministic from content
+        # v1.2.7.6: stable ordinal hash (built-in hash() is salted per process,
+        # which made the chosen tic — hence OE text — non-reproducible across runs).
+        _seed_val = sum(ord(c) * (i + 1) * 31 for i, c in enumerate(text[:20])) if text else 0
         if formality < 0.55 and rng.random() < 0.35:
             text = self._apply_verbal_tic(text, _seed_val, formality, rng)
 

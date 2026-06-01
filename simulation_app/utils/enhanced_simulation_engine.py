@@ -11402,6 +11402,30 @@ class EnhancedSimulationEngine:
                 self._log(f"WARNING: numeric realism transform failed for '{log_entry.get('name')}': {err}")
 
     def generate(self) -> Tuple[pd.DataFrame, Dict[str, Any]]:
+        # v1.2.7.6: Seed the GLOBAL np.random/random from self.seed for the DURATION
+        # of generation, then ALWAYS restore the caller's prior global state (even on
+        # exception). WHY: several downstream fallback/repair paths use bare
+        # random.*/np.random.* (text_generator's last-resort templates, the
+        # consistency audit's straight-line/duplicate-OE/OE-length repairs,
+        # HBSValidator). Those need a deterministic global RNG for same-seed
+        # reproducibility across processes. Save+restore keeps that determinism
+        # WITHOUT cross-session pollution (one run never leaves the global RNG
+        # reseeded for another Streamlit session). try/finally guarantees restore
+        # even if generation raises midway.
+        _prev_np_state = np.random.get_state()
+        _prev_py_state = random.getstate()
+        np.random.seed(self.seed)
+        random.seed(self.seed)
+        try:
+            return self._generate_body()
+        finally:
+            try:
+                np.random.set_state(_prev_np_state)
+                random.setstate(_prev_py_state)
+            except Exception:
+                pass
+
+    def _generate_body(self) -> Tuple[pd.DataFrame, Dict[str, Any]]:
         n = self.sample_size
         data: Dict[str, Any] = {}
 
