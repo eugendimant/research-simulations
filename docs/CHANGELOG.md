@@ -1,4 +1,17 @@
 
+## 2026-06-01 — v1.2.8.3
+### UX: one-click "Clear all" for auto-detected open-ended questions
+
+When a QSF is uploaded, the app auto-detects open-ended questions and lists them for
+review. A "Remove All" button existed, but only at the **bottom** of the section —
+below the full list — so users scrolled past it and removed questions one-by-one via
+the per-item ✕. Added a prominent **"🗑️ Clear all N"** button at the **top** of the
+section (right of the header), so "clear everything the app detected, then add my
+own" is a single click up front. Mirrors the existing remove-all logic (bumps the OE
+widget-version, keeps the expander open, shows a confirmation notice); the bottom
+"Remove All (N)" button next to "Add Open-Ended Question" is unchanged. App-load
+smoke test + full suite pass; version synced (1.2.8.3).
+
 ## 2026-06-01 — v1.2.8.2
 ### PRODUCTION-DOWN FIX: one bad import no longer crashes the whole app
 

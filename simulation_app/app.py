@@ -54,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.2.8.2"
-BUILD_ID = "20260601-v12082-import-resilience-production-fix"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.2.8.3"
+BUILD_ID = "20260601-v12083-oe-clear-all-top-button"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -146,7 +146,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.2.8.2"  # v1.2.8.2: PRODUCTION-DOWN FIX — defensive import of _atomic_write_json (one bad top-level import no longer crashes the whole app) + app-load smoke test + import-resilience rule
+APP_VERSION = "1.2.8.3"  # v1.2.8.3: UX — prominent top-of-section "Clear all" button for auto-detected open-ended questions (start fresh without clicking every X)
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -11242,7 +11242,29 @@ if active_page == 2:
             if confirmed_open_ended:
                 _ctx_count = sum(1 for _oe in confirmed_open_ended if _oe.get("question_context", "").strip())
                 _missing_ctx = len(confirmed_open_ended) - _ctx_count
-                st.markdown(f"**{len(confirmed_open_ended)} open-ended question(s):**")
+                _oe_hdr_col, _oe_clear_col = st.columns([2.2, 1])
+                with _oe_hdr_col:
+                    st.markdown(f"**{len(confirmed_open_ended)} open-ended question(s):**")
+                with _oe_clear_col:
+                    # v1.2.8.3: Prominent "start fresh" button at the TOP of the section.
+                    # The Remove All button lives at the bottom (next to "Add"), but it
+                    # sits below the full list and was easy to miss — so users were
+                    # clicking the ✕ on every question. This makes "clear everything the
+                    # app auto-detected, then add my own" a one-click action up front.
+                    if st.button(
+                        f"🗑️ Clear all {len(confirmed_open_ended)}",
+                        key=f"rm_all_oe_top_v{oe_version}",
+                        help="Remove every auto-detected open-ended question at once, then add your own below.",
+                        use_container_width=True,
+                    ):
+                        _n_removed = len(confirmed_open_ended)
+                        st.session_state["confirmed_open_ended"] = []
+                        st.session_state["_oe_version"] = oe_version + 1
+                        st.session_state["_oe_removal_notice"] = (
+                            f"Cleared all {_n_removed} open-ended question(s) — add your own below."
+                        )
+                        st.session_state["_oe_keep_expanded"] = True
+                        st.rerun()
                 st.caption("Add context (1-2 sentences) to each question to improve AI response quality.")
 
                 # v1.1.1.3: Purpose options for open-ended questions
