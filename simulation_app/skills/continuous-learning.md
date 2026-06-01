@@ -517,18 +517,23 @@ gated by a grep signature + an automated test in step 2–3.
     Production-down is the highest-severity class; the app-load smoke test is the
     gate that must catch it before deploy.*
 
-#### Conscious trade-off (NOT a bug): global-RNG lock vs. multi-user throughput
-The `_GLOBAL_RNG_LOCK` is held across the WHOLE generation body, including LLM
-network I/O, so two concurrent users fully serialize. This is a deliberate
-correctness-over-throughput choice: the alternative (removing global seeding
-entirely) requires routing ~70 call sites — the engine's `rng = np.random`
-aliases (×15) AND `text_generator`'s bare `random.*` (×58) — through injected
-per-run RNGs, a cross-module refactor that risks reintroducing the
-non-reproducibility just verified correct (anti-pattern #1: big-bang rewrite).
-Real-world impact is low: the free-tier API rate-limits already serialize
-concurrent LLM users upstream, and non-LLM runs finish in ~60s at N=10,000. If
-multi-user LLM throughput ever becomes a priority, do the RNG injection as its
-own carefully-verified change (cross-process determinism battery + concurrency
-test must both stay green), THEN narrow the lock to the seed/restore window.
-*Surfaced by: deep adversarial audit (classified as a scalability trade-off,
-not a correctness defect).*
+#### RESOLVED (v1.2.8.4): global-RNG lock vs. multi-user throughput
+The `_GLOBAL_RNG_LOCK` used to be held across the WHOLE generation body (incl. LLM
+network I/O), serializing concurrent users. Codex re-flagged it (PR #352 P2), so it
+was **removed entirely** rather than left as a trade-off. The feared "~70 sites"
+turned out to be a mis-estimate: the engine's numeric draws ALREADY use per-call
+`np.random.RandomState` (23 sites, seeded from `self.seed`/`participant_seed`), and
+`text_generator`'s 58 bare-`random.*` calls are in `OpenEndedTextGenerator`, which
+the engine does NOT use (it uses `persona_library.TextResponseGenerator`, 0 global).
+The ONLY global-RNG consumers in the generation path were `HBSValidator` (7 sites)
+and the LLM backoff jitter (1) — both migrated to per-instance RNGs
+(`HBSValidator(seed=...)`, `LLMResponseGenerator._rng`). Then global seeding + the
+lock were deleted. Verified: same-seed output byte-identical across
+`PYTHONHASHSEED ∈ {0,1,42,31337,271828}` with global seeding REMOVED (complete proof
+no global RNG affects data) + `test_v1284_generation_is_not_globally_serialized`.
+> **Lesson:** before deferring a fix as a "big refactor", MEASURE the actual call
+> sites in the real path — a comprehensive grep (`grep -rE "random\.<draw>|np\.random\.<draw>"`
+> across every module, then checking which are reachable from `generate()`) showed
+> the scope was 8 sites, not 70. The "conscious trade-off" was real but the cost
+> estimate that justified deferring it was wrong; an external reviewer was right to
+> push. Don't let a guessed-high estimate excuse leaving a flagged issue unfixed.

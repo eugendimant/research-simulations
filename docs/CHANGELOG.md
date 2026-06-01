@@ -1,4 +1,38 @@
 
+## 2026-06-01 — v1.2.8.4
+### Codex review: de-serialize concurrent runs + preserve "and how" topical clauses
+
+Two issues from the chatgpt-codex-connector review on PR #352, both fixed with
+regression tests.
+
+- **P2 — Avoid serializing complete simulation runs.** The v1.2.7.8
+  `_GLOBAL_RNG_LOCK` (added to make the global-RNG seed/restore safe under
+  concurrency) was held across the WHOLE run — including LLM prefill and
+  per-participant network calls — so two Streamlit sessions ran strictly one at a
+  time. **Resolved by removing the lock entirely:** the engine's numeric draws
+  already use per-call `np.random.RandomState` (23 sites, seeded from
+  `self.seed`/`participant_seed`), and the *only* remaining global-RNG consumers in
+  the generation path — `HBSValidator` (straight-line/coherence perturbations) and
+  the LLM backoff jitter — were migrated to per-instance RNGs
+  (`HBSValidator(seed=self.seed)`; `LLMResponseGenerator._rng`). The engine no
+  longer seeds the process-global RNG, so there is nothing to serialize. **Proof:**
+  same-seed output is byte-identical across `PYTHONHASHSEED ∈ {0,1,42,31337,271828}`
+  with global seeding *removed* (complete evidence that no global RNG affects data),
+  and a new test (`test_v1284_generation_is_not_globally_serialized`) confirms
+  multiple threads now execute generation concurrently. This supersedes the
+  "conscious trade-off" noted in v1.2.7.9.
+- **P2 — Preserve topical clauses beginning with "and how".** `_strip_instruction_tail`
+  removed everything after "and why/how", so "Describe your experience with
+  depression **and how it affects your work**" lost the meaningful clause (→ topic
+  "depression"). Now bare "and why/how" is stripped **only when it dangles at the
+  very end** ("…and why?"); an "and how <clause>" that continues is preserved, and
+  explicit instructional verb tails ("and explain your reasoning") are still
+  stripped. New assertions in `test_v1280_strips_instruction_tail_keeps_conjunctive_topics`.
+
+**Validation:** compileall exit 0; 56 tests pass; cross-process determinism
+byte-identical across 5 `PYTHONHASHSEED` values; random N=200 across 10 QSFs
+all-pass; version synced (1.2.8.4).
+
 ## 2026-06-01 — v1.2.8.3
 ### UX: one-click "Clear all" for auto-detected open-ended questions
 

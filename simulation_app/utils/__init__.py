@@ -2,7 +2,7 @@
 """
 Utility modules for the Behavioral Experiment Simulation Tool.
 
-Version: 1.2.8.3 - UX: prominent top-of-section "Clear all" button for the auto-detected open-ended questions (QSF path) so users can start fresh in one click instead of clicking the X on every question. Builds on v1.2.8.2 import resilience
+Version: 1.2.8.4 - Codex P2 fixes: (1) de-serialize concurrent generation — removed the run-wide _GLOBAL_RNG_LOCK by migrating the only global-RNG consumers (HBSValidator, LLM backoff jitter) to per-instance RNGs, so multi-user sessions run in parallel (no lock held across LLM network I/O) yet stay byte-identical for the same seed; (2) topic extraction preserves topical clauses beginning with "and how" (e.g. "depression and how it affects your work") — only a dangling instruction tail is stripped. Builds on v1.2.8.3
 
 Changes (v1.0.0 - 20 Iterations of Comprehensive Improvements):
     === ENHANCED SCALE/MATRIX DETECTION ===
@@ -65,7 +65,7 @@ Modules:
 """
 
 # Package version - should match all module versions
-__version__ = "1.2.8.3"
+__version__ = "1.2.8.4"
 
 
 # =============================================================================
