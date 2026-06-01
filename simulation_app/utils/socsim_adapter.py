@@ -11,12 +11,18 @@ from __future__ import annotations
 
 __version__ = "1.1.0.7"
 
+import hashlib
 import json
 import logging
 import re
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+
+
+def _stable_int_hash(value: str) -> int:
+    """Process-stable hash for seeding (built-in hash() is salted per process)."""
+    return int(hashlib.sha256(str(value).encode("utf-8")).hexdigest()[:12], 16)
 
 import numpy as np
 
@@ -349,7 +355,7 @@ def run_socsim_enrichment(
 
                 # Run socsim simulation
                 # v1.1.1.5: Guard against None seed (edge case from engine init)
-                _cond_seed = (seed or 0) + abs(hash(condition)) % 10000
+                _cond_seed = (seed or 0) + _stable_int_hash(condition) % 10000
                 result: SimulationResult = simulate(
                     spec=spec,
                     n=n_cond,

@@ -282,9 +282,10 @@ class PersonaLibrary:
     def __init__(self, seed: Optional[int] = None):
         """Initialize the persona library with optional seed for reproducibility."""
         self.seed = seed
-        if seed:
-            np.random.seed(seed)
-            random.seed(seed)
+        # v1.2.7.5: do NOT seed the GLOBAL np.random/random here. This library's
+        # generation uses seeded local instances, so global seeding was redundant
+        # and a cross-session side effect in multi-user Streamlit. Verified: no bare
+        # global RNG calls in this module besides this (removed) seed.
 
         self.personas = self._build_persona_library()
         self.domain_keywords = self._build_domain_keywords()

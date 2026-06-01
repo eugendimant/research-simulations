@@ -20,3 +20,7 @@ build/
 /_seg*
 /_qa_*
 /_audit_*
+
+# Python bytecode anywhere (never commit)
+**/*.pyc
+**/__pycache__/

@@ -913,6 +913,12 @@ class HBSValidator:
         """Set value at (row, col) in-place."""
         if HAS_PANDAS and isinstance(df, pd.DataFrame):
             try:
+                # v1.2.7.5: writing a float into an int column is deprecated and
+                # will be rejected by future pandas. Widen the column to float first
+                # so the assignment is dtype-compatible (no silent truncation/error).
+                if (col in df.columns and isinstance(value, float)
+                        and pd.api.types.is_integer_dtype(df[col].dtype)):
+                    df[col] = df[col].astype(float)
                 df.iat[row, df.columns.get_loc(col)] = value
             except (IndexError, KeyError):
                 pass

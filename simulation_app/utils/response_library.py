@@ -63,7 +63,7 @@ association, impression, perception, feedback, comment, observation, general
 Version: 1.8.5 - Improved domain detection with weighted scoring and disambiguation
 """
 
-__version__ = "1.2.7.4"
+__version__ = "1.2.7.5"
 
 import random
 import re
@@ -7234,8 +7234,10 @@ class ComprehensiveResponseGenerator:
     ]
 
     def __init__(self, seed: Optional[int] = None):
-        if seed is not None:
-            random.seed(seed)
+        self.seed = seed
+        # v1.2.7.5: do NOT seed the GLOBAL random here — this generator uses no
+        # bare global RNG calls (verified), so global seeding was redundant and a
+        # cross-session side effect. (text_generator still seeds globally by design.)
         self.study_context: Dict[str, Any] = {}
         # Initialize fresh session for uniqueness tracking
         ComprehensiveResponseGenerator._session_id += 1

@@ -54,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.2.7.4"
-BUILD_ID = "20260531-v12074-scale-bounds-cue-boundaries"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.2.7.5"
+BUILD_ID = "20260531-v12075-codex-audit-fixes"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -63,7 +63,7 @@ BUILD_ID = "20260531-v12074-scale-bounds-cue-boundaries"  # Change this to force
 # v1.4.3.1 — the version-check on line ~103 already warns on mismatch, and
 # BUILD_ID changes handle cache invalidation safely.
 
-from utils.group_management import GroupManager, APIKeyManager
+from utils.group_management import GroupManager, APIKeyManager, _atomic_write_json
 from utils.qsf_preview import QSFPreviewParser, QSFPreviewResult
 from utils.schema_validator import validate_schema
 from utils.github_qsf_collector import collect_qsf_async, is_collection_enabled
@@ -118,7 +118,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.2.7.4"  # v1.2.7.4: Fix scale-bound derivation (non-1-based IDs, fractional/huge sliders) + word-boundary numeric cues
+APP_VERSION = "1.2.7.5"  # v1.2.7.5: Codex audit fixes — CLI compile, normalize bugs, stable-hash reproducibility, no global RNG, security/email
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -435,9 +435,8 @@ def _increment_usage_counter(
         if len(stats["run_log"]) > 200:
             stats["run_log"] = stats["run_log"][-200:]
 
-        # Save to file
-        with open(USAGE_COUNTER_FILE, "w") as f:
-            json.dump(stats, f, indent=2)
+        # Save to file (atomic write: never leave a half-written/corrupt counter file)
+        _atomic_write_json(USAGE_COUNTER_FILE, stats)
 
         return stats
     except Exception as e:
@@ -3413,18 +3412,28 @@ def _send_email_with_smtp(
         return True, "Email sent successfully!"
 
     except smtplib.SMTPAuthenticationError as e:
+        # Log the technical detail server-side; do NOT surface raw exception text to the user.
+        _app_logging.getLogger(__name__).error("SMTP authentication error: %s", e)
         error_msg = str(e)
         if "Username and Password not accepted" in error_msg or "535" in error_msg:
             return False, "Authentication failed. For Gmail/Google Workspace: use an App Password (not your regular password). Go to Google Account > Security > App passwords."
-        return False, f"Authentication failed: {error_msg}"
-    except smtplib.SMTPConnectError:
-        return False, f"Could not connect to {smtp_server}:{smtp_port}. Check server settings."
-    except smtplib.SMTPRecipientsRefused:
-        return False, f"Recipient address rejected: {to_email}"
+        return False, "Email could not be sent. Please check the configuration and try again."
+    except smtplib.SMTPConnectError as e:
+        # Avoid leaking the SMTP hostname/port in the user-facing message.
+        _app_logging.getLogger(__name__).error(
+            "SMTP connect error (%s:%s): %s", smtp_server, smtp_port, e
+        )
+        return False, "Email could not be sent. Please check the configuration and try again."
+    except smtplib.SMTPRecipientsRefused as e:
+        _app_logging.getLogger(__name__).error("SMTP recipient refused: %s", e)
+        return False, "Email could not be sent. Please check the configuration and try again."
     except ssl.SSLError as e:
-        return False, f"SSL/TLS error: {str(e)}. Try changing SMTP_PORT to 465."
+        _app_logging.getLogger(__name__).error("SMTP SSL/TLS error: %s", e)
+        return False, "Email could not be sent. Please check the configuration and try again."
     except Exception as e:
-        return False, f"Email failed: {str(e)}"
+        # Log full technical detail server-side; return a generic message to the user.
+        _app_logging.getLogger(__name__).error("SMTP send failed: %s", e)
+        return False, "Email could not be sent. Please check the configuration and try again."
 
 
 def _send_email(

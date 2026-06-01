@@ -2,7 +2,7 @@
 """
 Utility modules for the Behavioral Experiment Simulation Tool.
 
-Version: 1.2.7.4 - Fix scale-bound derivation (non-1-based IDs, fractional/huge sliders); word-boundary numeric cues
+Version: 1.2.7.5 - Codex audit fixes: CLI compile, open-ended/scale normalization, stable-hash reproducibility, no global RNG mutation, security/email hardening
 
 Changes (v1.0.0 - 20 Iterations of Comprehensive Improvements):
     === ENHANCED SCALE/MATRIX DETECTION ===
@@ -65,7 +65,7 @@ Modules:
 """
 
 # Package version - should match all module versions
-__version__ = "1.2.7.4"
+__version__ = "1.2.7.5"
 
 
 # =============================================================================

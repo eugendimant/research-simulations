@@ -18,7 +18,7 @@ Architecture:
   the existing template-based ComprehensiveResponseGenerator
 - Never hard-stops: always walks user through options when APIs fail
 
-Version: 1.2.2.9
+Version: 1.2.5.0
 """
 
 __version__ = "1.2.5.0"
