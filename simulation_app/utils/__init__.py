@@ -2,7 +2,7 @@
 """
 Utility modules for the Behavioral Experiment Simulation Tool.
 
-Version: 1.2.8.4 - Codex P2 fixes: (1) de-serialize concurrent generation — removed the run-wide _GLOBAL_RNG_LOCK by migrating the only global-RNG consumers (HBSValidator, LLM backoff jitter) to per-instance RNGs, so multi-user sessions run in parallel (no lock held across LLM network I/O) yet stay byte-identical for the same seed; (2) topic extraction preserves topical clauses beginning with "and how" (e.g. "depression and how it affects your work") — only a dangling instruction tail is stripped. Builds on v1.2.8.3
+Version: 1.2.8.5 - Mobile UI fix: the landing-page hero subtitle had a hard-coded <br> that, on narrow phone viewports, re-wrapped badly and stranded single words ("test"/"data") on their own lines. Removed the <br> and made the subtitle wrap responsively (text-wrap:balance + a mobile font-size), with text-wrap:balance on the H1 too. Builds on v1.2.8.4
 
 Changes (v1.0.0 - 20 Iterations of Comprehensive Improvements):
     === ENHANCED SCALE/MATRIX DETECTION ===
@@ -65,7 +65,7 @@ Modules:
 """
 
 # Package version - should match all module versions
-__version__ = "1.2.8.4"
+__version__ = "1.2.8.5"
 
 
 # =============================================================================
