@@ -379,6 +379,33 @@ def test_generate_is_cross_process_deterministic_and_restores_global_rng():
     assert [np.random.randint(0, 10**6) for _ in range(3)] == np_m, "global RNG not restored after exception"
 
 
+def test_open_ended_does_not_leak_question_text():
+    """v1.2.7.7: the literal (interrogative) question must NOT bleed into OE
+    responses (topic extraction previously fell back to raw question_text)."""
+    import re
+    from utils.enhanced_simulation_engine import EnhancedSimulationEngine
+    eng = EnhancedSimulationEngine(
+        study_title="AI Advisor Trust", study_description="trust in an AI vs human advisor",
+        sample_size=60, conditions=[{"name": "Human advisor"}, {"name": "AI advisor"}], factors=[],
+        scales=[{"name": "Trust", "variable_name": "Trust", "type": "matrix",
+                 "num_items": 3, "items": 3, "scale_min": 1, "scale_max": 7}],
+        additional_vars=[], demographics={"gender_quota": 50, "age_mean": 40, "age_sd": 13},
+        open_ended_questions=[
+            {"variable_name": "why_trust", "question_text": "Why did you rate your trust in the advisor that way?"},
+            {"variable_name": "howdecide", "question_text": "How did you decide whether to follow the advice?"},
+        ], seed=2024)
+    if getattr(eng, "llm_generator", None) is not None:
+        eng.llm_generator.disable_permanently("offline template path")
+    df, _ = eng.generate()
+    leak_re = re.compile(r"\b(why did you|how did you decide|rate your trust in the advisor)\b", re.IGNORECASE)
+    for oc in ("why_trust", "howdecide"):
+        col = next((c for c in df.columns if c.lower().startswith(oc)), None)
+        assert col, f"OE column {oc} missing"
+        vals = [str(v) for v in df[col] if isinstance(v, str) and v.strip()]
+        leaks = [v for v in vals if leak_re.search(v)]
+        assert not leaks, f"{oc}: question text leaked into {len(leaks)} responses, e.g. {leaks[:1]}"
+
+
 def test_socsim_cli_compiles_and_has_main():
     """Audit 1.1: the experimental CLI must compile and expose main()."""
     import py_compile, os

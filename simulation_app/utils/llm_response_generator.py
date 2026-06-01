@@ -47,8 +47,14 @@ GROQ_MODEL = "llama-3.3-70b-versatile"
 # (/v1beta/openai/chat/completions) — only Gemini models are supported there.
 # This was the root cause of 404 errors reported via Google AI Studio.
 GOOGLE_AI_API_URL = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
-GOOGLE_AI_MODEL = "gemini-2.5-flash-lite"          # 30 RPM, 250K TPM (cost-efficient)
-GOOGLE_AI_MODEL_HIGHVOL = "gemini-2.5-flash"        # 15 RPM, 1M TPM (high-quality volume)
+# v1.2.7.7: Primary = newest free-tier "best bang for buck" model. Probed the live
+# key: gemini-3.1-flash-lite is the newest-generation (3.1) LITE model that the free
+# key can call, is stable (3/3), token-efficient (~30-40 completion tokens, no wasted
+# "thinking" tokens), and the lite tier has the highest free RPM. Pinned (not the
+# moving "-latest" alias) for reproducibility. 2.5-flash/-lite remain as fallback.
+GOOGLE_AI_MODEL_PRIMARY = "gemini-3.1-flash-lite"   # newest free lite — primary
+GOOGLE_AI_MODEL = "gemini-2.5-flash-lite"           # 30 RPM, 250K TPM (cost-efficient fallback)
+GOOGLE_AI_MODEL_HIGHVOL = "gemini-2.5-flash"        # 15 RPM, 1M TPM (high-quality volume fallback)
 
 CEREBRAS_API_URL = "https://api.cerebras.ai/v1/chat/completions"
 CEREBRAS_MODEL = "llama-3.3-70b"
@@ -823,6 +829,14 @@ def _build_batch_prompt(
         f = spec.get("formality", 0.5)
         e = spec.get("engagement", 0.5)
         s = spec.get("sentiment", "neutral")
+        # v1.2.7.7: extremity is used by the style-example block below regardless of
+        # whether a behavioral profile is present. Bind it at loop scope (it was
+        # only assigned inside the `if _beh:` block, causing UnboundLocalError on
+        # the no-behavioral-profile path — e.g. direct single-response generation).
+        _ext = spec.get("extremity")
+        if _ext is None:
+            _beh_tp = spec.get("behavioral_profile") or {}
+            _ext = (_beh_tp.get("trait_profile", {}) or {}).get("extremity", 0.4)
 
         length_hint = (
             "1-2 short sentences (3-15 words)" if v < 0.2
@@ -1394,6 +1408,16 @@ def _build_batch_prompt(
     return prompt
 
 
+# v1.2.7.7: Sentinel returned by _call_llm_api on a TRANSIENT failure (HTTP 429
+# rate-limit, 503 unavailable, timeout, connection error). The caller fails over to
+# the next provider immediately but does NOT count it toward the provider's
+# consecutive-failure disable threshold — a throttled provider still works and must
+# stay in rotation, which is the whole point of having multiple free providers for
+# a few-hundred-response batch. (A hard error — 4xx auth/404, bad JSON — still
+# returns None and DOES count toward disabling.)
+_RATE_LIMITED = "\x00__RATE_LIMITED__\x00"
+
+
 # ---------------------------------------------------------------------------
 # LLM API caller (generic OpenAI-compatible endpoint)
 # ---------------------------------------------------------------------------
@@ -1472,11 +1496,12 @@ def _call_llm_api(
             logger.warning("LLM API returned 200 but empty content: %s (model: %s)",
                            api_url[:50], model)
             return None
-        elif resp.status_code == 429:
+        elif resp.status_code in (429, 503):
             retry_after = resp.headers.get("Retry-After", "unknown")
-            logger.warning("LLM API rate-limited (429) %s model=%s retry-after=%s",
+            logger.warning("LLM API transient (%d) %s model=%s retry-after=%s — failing "
+                           "over without penalizing provider", resp.status_code,
                            api_url[:50], model, retry_after)
-            return None
+            return _RATE_LIMITED  # transient: fail over, do NOT disable the provider
         elif resp.status_code == 404:
             _body_preview = resp.text[:200] if resp.text else "(empty)"
             logger.warning("LLM API model not found (404) %s model=%s — model may be "
@@ -1485,6 +1510,15 @@ def _call_llm_api(
             return None
         elif resp.status_code in (401, 403):
             _body_preview = resp.text[:200] if resp.text else "(empty)"
+            # v1.2.7.7: distinguish a NETWORK/egress block (e.g. a sandbox/firewall
+            # "host not in allowlist") from a genuine bad key. The former is not an
+            # auth problem and is transient w.r.t. this environment — fail over to the
+            # next provider without claiming the key is invalid (which is misleading).
+            if "allowlist" in _body_preview.lower() or "not in allow" in _body_preview.lower():
+                logger.warning("LLM API host blocked by network policy (%d) %s — provider "
+                               "unreachable from this environment, failing over. Response: %s",
+                               resp.status_code, api_url[:50], _body_preview)
+                return _RATE_LIMITED  # treat as transient/unreachable, not a hard auth failure
             logger.warning("LLM API auth error (%d) %s model=%s — key may be invalid. "
                            "Response: %s", resp.status_code, api_url[:50], model, _body_preview)
             return None
@@ -1497,7 +1531,7 @@ def _call_llm_api(
         pass  # Fall through to urllib
     except _requests.exceptions.Timeout:
         logger.warning("LLM API timeout (%ds) %s model=%s", timeout, api_url[:50], model)
-        return None
+        return _RATE_LIMITED  # transient: fail over without penalizing the provider
     except _requests.exceptions.ConnectionError as exc:
         logger.warning("LLM API connection error %s model=%s: %s", api_url[:50], model, exc)
         return None
@@ -1567,11 +1601,31 @@ def _parse_json_responses(raw: str, expected_n: int) -> List[str]:
         return []
 
     cleaned = raw.strip()
-    # Strip markdown code fences
-    if cleaned.startswith("```"):
-        cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned)
-        cleaned = re.sub(r"\s*```\s*$", "", cleaned)
+    # Strip markdown code fences (anywhere, not just at the very start — some models
+    # prepend prose before the fence). v1.2.7.7: also handle fences mid-string.
+    if "```" in cleaned:
+        _fence = re.search(r"```(?:json)?\s*(.*?)```", cleaned, re.DOTALL)
+        if _fence and _fence.group(1).strip():
+            cleaned = _fence.group(1).strip()
+        else:
+            cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned)
+            cleaned = re.sub(r"\s*```\s*$", "", cleaned)
     cleaned = cleaned.strip()
+
+    # v1.2.7.7: Some models emit comma-separated quoted strings WITHOUT the array
+    # brackets (e.g. `"resp1",\n"resp2"`). Wrap them so Strategy 1 parses cleanly.
+    # (This was the #1 real cause of free-LLM batches silently falling back to
+    # templates — the engine logged "expected N" and discarded valid responses.)
+    if not cleaned.startswith("[") and re.match(r'^\s*["\']', cleaned):
+        _wrapped = "[" + cleaned.rstrip().rstrip(",") + "]"
+        try:
+            parsed = json.loads(_wrapped)
+            if isinstance(parsed, list):
+                result = [str(r).strip() for r in parsed if str(r).strip()]
+                if result:
+                    return result
+        except json.JSONDecodeError:
+            pass
 
     # Strategy 1: Standard JSON parse
     try:
@@ -2123,12 +2177,17 @@ class _LLMProvider:
         # Total max sleep per provider: 1.5s (down from 4.5s)
         result = None
         _call_start = time.time()
+        _transient = False  # v1.2.7.7: rate-limit / 503 / timeout — fail over, no penalty
         for attempt in range(2):  # v1.0.7.1: 2 attempts (down from 3) — fail fast
             result = _call_llm_api(
                 self.api_url, self.api_key, self.model,
                 system_prompt, user_prompt, temperature, max_tokens,
                 timeout=timeout,
             )
+            if result is _RATE_LIMITED or result == _RATE_LIMITED:
+                _transient = True
+                result = None
+                break  # transient → don't burn a retry; fail over to the next provider
             if result is not None:
                 break
             if attempt < 1:
@@ -2140,6 +2199,14 @@ class _LLMProvider:
         _call_duration = time.time() - _call_start
         self.call_count += 1
         self._daily_call_count += 1
+        # v1.2.7.7: a transient (throttled/unavailable) provider stays in rotation —
+        # do NOT count it toward the consecutive-failure disable threshold. With
+        # several free providers, the batch loop just moves to the next one and the
+        # throttled provider is retried on the next call. This is what lets N=100+
+        # complete instead of all providers getting disabled under burst load.
+        self._last_call_transient = _transient  # v1.2.7.7: batch loop reads this
+        if _transient:
+            return None
 
         # v1.0.7.0: Log call result for admin diagnostics
         _log_entry = {
@@ -2248,6 +2315,13 @@ class LLMResponseGenerator:
         self._cumulative_failure_count: int = 0
         _CUMULATIVE_FAILURE_LIMIT = 15  # After 15 total failures, give up for good
         self._cumulative_failure_limit: int = _CUMULATIVE_FAILURE_LIMIT
+        # v1.2.7.7: consecutive batches where EVERY tried provider was merely
+        # throttled (429/503/timeout). Used to bail out FAST to templates when the
+        # free tier is exhausted right now — so the user doesn't wait through the
+        # whole prefill budget. (Distinct from the permanent kill switch, which
+        # transient failures intentionally do NOT advance.) Resets on any success.
+        self._consecutive_transient_batches: int = 0
+        self._transient_giveup_threshold: int = 4
         # v1.0.5.8: Track provider exhaustion events for admin analytics
         self._provider_exhaustion_count: int = 0  # Times ALL providers failed in a batch
         self._user_key_activations: int = 0  # Times a user-provided key was activated mid-session
@@ -2279,6 +2353,10 @@ class LLMResponseGenerator:
         # v1.1.0.7: Replaced gemma-3-27b-it (404 on OpenAI endpoint) with gemini-2.5-flash.
         # v1.2.1.2: Added SambaNova + Mistral AI as built-in; reordered by free-tier value.
         _builtin_providers = [
+            # v1.2.7.7: newest free lite model first (best free-tier value, fewest
+            # wasted tokens), then 2.5 flash/lite as fallback within Google.
+            ("google_ai_3_lite", GOOGLE_AI_API_URL, GOOGLE_AI_MODEL_PRIMARY,
+             _DEFAULT_GOOGLE_AI_KEY, 28, 1500, 20),
             ("google_ai_flash", GOOGLE_AI_API_URL, GOOGLE_AI_MODEL_HIGHVOL,
              _DEFAULT_GOOGLE_AI_KEY, 14, 1500, 20),
             ("google_ai_lite", GOOGLE_AI_API_URL, GOOGLE_AI_MODEL,
@@ -2381,6 +2459,15 @@ class LLMResponseGenerator:
         logger.info("LLM provider chain: %s | api_available=%s",
                     " → ".join(_provider_summary) if _provider_summary else "(empty)",
                     self._api_available)
+
+    @property
+    def free_tier_exhausted_now(self) -> bool:
+        """v1.2.7.7: True when several consecutive batches ALL failed purely due to
+        transient throttling (429/503/timeout) — i.e. the free tier is saturated
+        right now. Callers (prefill/OE loop) use this to switch to templates FAST
+        instead of burning the whole time budget retrying. This is recoverable
+        (resets on any success), unlike the permanent kill switch."""
+        return self._consecutive_transient_batches >= self._transient_giveup_threshold
 
     @property
     def is_llm_available(self) -> bool:
@@ -2623,6 +2710,14 @@ class LLMResponseGenerator:
                             "remaining sentiments use template fallback",
                             max_time, total)
                 break
+            # v1.2.7.7: fast bail-out when the free tier is throttled/exhausted right
+            # now — stop prefilling immediately instead of grinding through every
+            # sentiment×retry, so the caller switches to templates without a long wait.
+            if self.free_tier_exhausted_now:
+                logger.info("Prefill aborted: free tier throttled/exhausted right now "
+                            "(%d consecutive all-transient batches) — using templates",
+                            self._consecutive_transient_batches)
+                break
             already_have = self._pool.available(question_text, condition, sentiment)
             needed = max(0, count_per_sentiment - already_have)
             retries = 0
@@ -2630,6 +2725,9 @@ class LLMResponseGenerator:
                 # v1.0.7.1: Also check time budget inside retry loop
                 if time.time() - _prefill_start >= max_time:
                     logger.info("Prefill time budget exceeded mid-retry (sentiment=%s)", sentiment)
+                    break
+                # v1.2.7.7: stop retrying the moment the free tier is clearly throttled
+                if self.free_tier_exhausted_now:
                     break
                 retries += 1
                 # Adaptive batch size: use active provider's max_batch_size if available
@@ -2736,6 +2834,8 @@ class LLMResponseGenerator:
         # returned the same (first available) provider after a failure because
         # a single batch failure doesn't set available=False (needs multiple).
         # Now we iterate the full chain so every provider gets a chance.
+        _n_tried = 0
+        _n_transient = 0  # v1.2.7.7: count providers that were merely throttled
         for provider in self._providers:
             if not provider.available or not provider.api_key:
                 continue
@@ -2745,8 +2845,11 @@ class LLMResponseGenerator:
             _call_timeout = 20  # v1.0.8.2: Per-provider timeout (seconds)
             if "gemma" in provider.model.lower():
                 _max_tokens = 2500  # ~3K prompt + 2.5K response ≈ 5.5K < 15K TPM
+            _n_tried += 1
             raw = provider.call(SYSTEM_PROMPT, prompt, max_tokens=_max_tokens,
                                 timeout=_call_timeout)
+            if raw is None and getattr(provider, "_last_call_transient", False):
+                _n_transient += 1
 
             if raw is not None:
                 responses = _parse_json_responses(raw, len(persona_specs))
@@ -2767,6 +2870,7 @@ class LLMResponseGenerator:
                         _filtered.append(r)
                     if _filtered:
                         self._batch_failure_count = 0  # Reset on success
+                        self._consecutive_transient_batches = 0
                         return _filtered
                     # v1.1.1.0: If ALL responses failed quality check but we got
                     # non-empty responses from a correctly-prompted LLM, accept them
@@ -2779,6 +2883,7 @@ class LLMResponseGenerator:
                             provider.name, _rejected_count, len(_non_empty),
                         )
                         self._batch_failure_count = 0
+                        self._consecutive_transient_batches = 0
                         return _non_empty
                 logger.warning("Provider '%s' returned unparseable response, trying next...",
                                provider.name)
@@ -2789,8 +2894,17 @@ class LLMResponseGenerator:
         # v1.0.5.5: Increased threshold from 5→12 to tolerate transient rate-limit
         # storms.  Also add a brief sleep so providers have time to recover.
         self._batch_failure_count += 1
-        # v1.1.1.0: Track cumulative failures (never resets) for permanent kill switch
-        self._cumulative_failure_count += 1
+        # v1.1.1.0: Track cumulative failures (never resets) for permanent kill switch.
+        # v1.2.7.7: BUT if the whole batch failed only because every tried provider was
+        # transiently throttled (429/503/timeout) — not a hard error — do NOT advance
+        # the PERMANENT kill switch. Throttling is exactly what multiple free providers
+        # are meant to ride out; a burst of rate-limits must not permanently disable LLM.
+        _all_transient = (_n_tried > 0 and _n_transient >= _n_tried)
+        if not _all_transient:
+            self._cumulative_failure_count += 1
+            self._consecutive_transient_batches = 0  # a hard failure resets the transient streak
+        else:
+            self._consecutive_transient_batches += 1
         # v1.0.5.8: Track each provider exhaustion event for admin analytics
         self._provider_exhaustion_count += 1
         self._exhaustion_timestamps.append(time.time())

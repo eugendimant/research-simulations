@@ -363,3 +363,17 @@ FOR each change set, before committing:
 The catalog grows monotonically. The target end-state: the adversarial agent and
 external reviewers find **nothing**, because every class they would find is already
 gated by a grep signature + an automated test in step 2–3.
+
+11. **Question text bleeding into open-ended responses.** When subject/topic
+    extraction falls back to the raw `question_text`, the literal (often
+    interrogative) question gets interpolated into a template ("...I see both
+    sides of Why did you rate your trust in the advisor that way?"). An
+    interrogative phrase is NOT a usable topic. → Topic extractors must reject
+    candidates that start with an interrogative (why/what/how/when/where/which/
+    who/do/did/is/are/...) or contain `?`, and never use `question_text[:N]`
+    verbatim as the topic — distill clean keywords instead. Test: generate OE for
+    several interrogative questions and assert NO response contains the literal
+    question phrasing.
+    *Found by: my own N=100 free-LLM smoke test (the offline template fallback
+    leaked the question into 54/100 responses) — exactly the kind of realism bug
+    the self-audit should catch before shipping.*

@@ -2,7 +2,7 @@
 """
 Utility modules for the Behavioral Experiment Simulation Tool.
 
-Version: 1.2.7.6 - Full cross-process reproducibility: generate() seeds+restores global RNG (covers OE/fallback/repair paths); stable OE verbal-tic hash; exception-safe restore
+Version: 1.2.7.7 - LLM source-label fix (AI vs Non-LLM), batch-JSON parse, _ext crash fix, gemini-3.1-flash-lite primary + transient/allowlist failover, OE question-leak fix; Xie et al. 2026 realism principles
 
 Changes (v1.0.0 - 20 Iterations of Comprehensive Improvements):
     === ENHANCED SCALE/MATRIX DETECTION ===
@@ -65,7 +65,7 @@ Modules:
 """
 
 # Package version - should match all module versions
-__version__ = "1.2.7.6"
+__version__ = "1.2.7.7"
 
 
 # =============================================================================
