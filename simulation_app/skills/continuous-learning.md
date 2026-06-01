@@ -451,6 +451,28 @@ gated by a grep signature + an automated test in step 2–3.
     `PYTHONHASHSEED` values with eviction active.
     *Found by: deep adversarial audit L1.*
 
+17. **Mechanical artifacts from text-mutation stages, and instruction text in the
+    extracted topic (offline OE realism).** Two classes my OWN N=200 offline scan
+    caught (the kind a reviewer/user would flag as "this data looks fake"):
+    (a) the verbal-tic / filler / hedge inserters append punctuation next to
+    existing punctuation, producing `",,"` (~14% of responses) — a mechanical glitch,
+    NOT a realistic human typo. (b) topic extraction from `question_context` grabbed
+    the instruction, not the subject: "Explain your view of the candidate **and
+    why**" → topic "the candidate and why" → "I feel good about the candidate and
+    why is straightforward" (68% of responses); and leading imperatives with no
+    preposition ("Describe the tax plan") kept the verb. → (a) Add a DETERMINISTIC
+    final-pass punctuation normalizer (pure function, no RNG, preserves `...`/`!!`/
+    typos) at the single OE return point. (b) Strip instruction TAILS ("and why/how/
+    explain...") and leading imperative PREFIXES ("describe/explain/list/rate/in your
+    own words...") from the extracted topic — but conservatively, so real conjunctive
+    topics ("crime and punishment", "crime ... in modern society") and embedded
+    prepositions ("opini-on") are preserved. Test: scan offline OE at N≥120 for `,,`,
+    space-before-punct, and instruction-tail leakage (assert 0); unit-test the topic
+    extractor on tail/prefix/conjunctive/embedded-prep cases; confirm same-seed output
+    stays byte-identical across PYTHONHASHSEED (the fixes are deterministic).
+    *Found by: my own offline OE quality scan (",," at 14%, "and why" leak at 68%) —
+    the self-audit loop catching a realism bug class before any external reviewer.*
+
 #### Conscious trade-off (NOT a bug): global-RNG lock vs. multi-user throughput
 The `_GLOBAL_RNG_LOCK` is held across the WHOLE generation body, including LLM
 network I/O, so two concurrent users fully serialize. This is a deliberate

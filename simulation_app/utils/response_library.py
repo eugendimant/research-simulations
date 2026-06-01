@@ -63,7 +63,7 @@ association, impression, perception, feedback, comment, observation, general
 Version: 1.8.5 - Improved domain detection with weighted scoring and disambiguation
 """
 
-__version__ = "1.2.7.9"
+__version__ = "1.2.8.0"
 
 import random
 import re
@@ -7502,6 +7502,78 @@ class ComprehensiveResponseGenerator:
 
         return ' '.join(result_sentences)
 
+    @staticmethod
+    def _normalize_punctuation(text: str) -> str:
+        """v1.2.8.0: Deterministically clean up MECHANICAL punctuation artifacts the
+        verbal-tic / filler / hedge insertion stages can leave behind — chiefly a tic
+        that appended ',' next to an existing comma, producing ',,' (~14% of offline
+        responses before this fix). It repairs ONLY punctuation adjacency, never
+        touching letters, so intentional realism is preserved: typos, lowercase 'i',
+        word repetition ('like like'), '...' ellipsis and '!!' emphasis all survive.
+        Pure function (no RNG) → same-seed output stays byte-identical across
+        processes."""
+        if not text:
+            return text
+        import re as _re
+        # Collapse runs of commas (",,", ", ,", ", , ,") to one comma.
+        text = _re.sub(r',(?:\s*,)+', ',', text)
+        # Remove whitespace before , ; : ! ?  (ellipsis handled separately below).
+        text = _re.sub(r'\s+([,;:!?])', r'\1', text)
+        # Remove whitespace before a LONE period (keep '...' ellipsis intact).
+        text = _re.sub(r'\s+\.(?!\.)', '.', text)
+        # A comma immediately before a sentence-ender collapses to the ender (",." → ".").
+        text = _re.sub(r',\s*([.!?])', r'\1', text)
+        # Drop a leading orphan comma/semicolon left by the collapses above.
+        text = _re.sub(r'^\s*[,;:]+\s*', '', text)
+        # Collapse runs of spaces.
+        text = _re.sub(r' {2,}', ' ', text)
+        return text.strip()
+
+    @staticmethod
+    def _strip_instruction_tail(text: str) -> str:
+        """v1.2.8.0: Strip a trailing INSTRUCTION fragment that isn't part of the
+        topic ('...the candidate and why' → '...the candidate'; '...the policy and
+        explain your reasoning' → '...the policy'). Without it, an instruction like
+        'Explain your view of the candidate and why' yielded the topic 'the
+        candidate and why', which read as broken grammar when slotted into templates
+        ('I feel good about the candidate and why is straightforward' — 68% of
+        offline responses for that question). Only strips 'and <instruction-word>'
+        so genuine conjunctive topics ('crime and punishment', 'guns and butter')
+        are preserved."""
+        if not text:
+            return text
+        import re as _re
+        _t = _re.sub(
+            r'[\s,]+and\s+(?:why|how|how\s+so|explain|elaborate|justify|describe|'
+            r'tell\s+us(?:\s+why)?|the\s+reasons?|your\s+reasons?|the\s+reasoning|'
+            r'because)\b.*$',
+            '', text, flags=_re.IGNORECASE).strip()
+        return _t or text
+
+    @staticmethod
+    def _strip_instruction_prefix(text: str) -> str:
+        """v1.2.8.0: Strip a leading imperative/instruction lead-in that has no
+        preposition to anchor noun-phrase extraction ('Describe the tax plan' →
+        'the tax plan'; 'List the options' → 'the options'). Only consumes the verb
+        + connective filler ('your'/'us'/'me'/'about'/'on'/'of'); it deliberately
+        does NOT eat the article 'the', so the topic stays natural. Used only as the
+        no-preposition fallback, so preposition cases ('view of X') are unaffected."""
+        if not text:
+            return text
+        import re as _re
+        _t = _re.sub(
+            r'^\s*(?:please\s+|kindly\s+|briefly\s+|'
+            r'in\s+(?:a\s+few\s+|your\s+own\s+)?words[,:\s]+)*'
+            r'(?:describe|explain|discuss|list|name|identify|rate|elaborate|reflect|'
+            r'comment|consider|evaluate|assess|summari[sz]e|outline|state|provide|'
+            r'give|share|tell\s+us|tell\s+me|write\s+about|talk\s+about)\b'
+            r'(?:\s+(?:your|us|me|about|on|of))*[\s,:]*',
+            '', text, flags=_re.IGNORECASE).strip()
+        # Drop a trailing sentence terminator so the topic interpolates cleanly
+        # ("the merger." → "the merger") without harming mid-string punctuation.
+        _t = _t.rstrip(' \t.!?;:,')
+        return _t or text
+
     def _ensure_unique_response(self, response: str, local_rng: random.Random, max_attempts: int = 8) -> str:
         """Ensure response is unique within the dataset by varying if needed.
 
@@ -7901,6 +7973,10 @@ class ComprehensiveResponseGenerator:
         # improvement that prevents the exact same sentences from appearing
         # across different responses in a dataset.
         response = self._enforce_sentence_uniqueness(response, local_rng)
+
+        # v1.2.8.0: LAST step — repair mechanical punctuation artifacts (",," etc.)
+        # left by the tic/filler/hedge stages. Deterministic; preserves realism.
+        response = self._normalize_punctuation(response)
 
         return response
 
@@ -8708,18 +8784,29 @@ class ComprehensiveResponseGenerator:
             _clean = _src
             if ' ' not in _clean:
                 _clean = re.sub(r'[_\-]+', ' ', _clean).strip()
+            # v1.2.8.0: drop trailing instruction fragments ("...and why") BEFORE
+            # noun-phrase extraction, so the topic is "the candidate", not
+            # "the candidate and why".
+            _clean = self._strip_instruction_tail(_clean)
 
             # Try to extract the core noun phrase from question text
             # "What do you think about climate change?" → "climate change"
             # "How do you feel about the new policy?" → "the new policy"
+            # v1.2.8.0: \b so a preposition embedded in a word ("opini-on",
+            # "informati-on") can't match and capture a leading "on ...".
             _about_match = re.search(
-                r'(?:about|regarding|toward[s]?|on|of|with)\s+(.+?)(?:\?|$|\.|,)',
+                r'\b(?:about|regarding|toward[s]?|on|of|with)\s+(.+?)(?:\?|$|\.|,)',
                 _clean, re.IGNORECASE,
             )
             if _about_match:
                 _candidate = _about_match.group(1).strip()
                 if _usable(_candidate):
                     return _candidate
+
+            # v1.2.8.0: no preposition matched — strip a leading imperative lead-in
+            # ("Describe the tax plan" → "the tax plan") so the topic doesn't carry
+            # the instruction verb into templates ("I feel about describe the...").
+            _clean = self._strip_instruction_prefix(_clean)
 
             # Try the full source if it's intelligible AND not an interrogative
             if _usable(_clean):

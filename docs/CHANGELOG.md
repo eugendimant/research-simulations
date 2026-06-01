@@ -1,4 +1,38 @@
 
+## 2026-06-01 — v1.2.8.0
+### Offline open-ended realism: punctuation repair + instruction-free topic extraction
+
+A self-audit scan of the offline (non-LLM) open-ended path at N=200 surfaced two
+realism defects — the kind a reviewer would flag as "this data looks generated".
+Both are now fixed deterministically (no RNG, so same-seed output stays
+byte-identical across processes; the fixes improve a given seed's text, they don't
+make it non-reproducible).
+
+- **Mechanical punctuation artifacts (`",,"`, ~14% of responses).** The verbal-tic /
+  filler / hedge insertion stages append a comma next to an existing comma. A final
+  pure-function `_normalize_punctuation()` pass now repairs `",,"`, space-before-
+  punctuation, and `",."` — while PRESERVING intentional realism (`...` ellipsis,
+  `!!` emphasis, typos, lowercase "i", word repetition like "like like").
+- **Instruction text bleeding into the extracted topic (68% of responses for a
+  context-bearing question).** Topic extraction from `question_context` returned the
+  instruction, not the subject: "Explain your view of the candidate **and why**" →
+  topic "the candidate and why" → "I feel good about the candidate and why is
+  straightforward". Now `_strip_instruction_tail()` removes trailing "and why / and
+  how / and explain ..." and `_strip_instruction_prefix()` removes leading
+  imperatives ("Describe the tax plan" → "the tax plan"; "In your own words,
+  describe X" → "X") — conservatively, so genuine conjunctive topics ("crime and
+  punishment", "crime ... in modern society") and embedded prepositions ("opini-on")
+  are preserved. Added a `\b` anchor so a preposition inside a word can't capture a
+  spurious leading "on ...".
+
+**Result (offline, N=200):** `",,"` 29→0, space-before-punct 2→0, "and why" leak
+136→0; 100% unique responses, 22–282 char length spread. **New tests:**
+`test_v1280_normalize_punctuation_repairs_only_mechanical_glitches`,
+`test_v1280_strips_instruction_tail_keeps_conjunctive_topics`,
+`test_v1280_offline_oe_has_no_glitches_or_instruction_leak`. **Validation:**
+compileall exit 0; 38 tests (bugfix + e2e) pass; cross-process determinism
+byte-identical across PYTHONHASHSEED; version synced (1.2.8.0). Bug-class #17 added.
+
 ## 2026-06-01 — v1.2.7.9
 ### Deep adversarial audit: LLM pool-key drift, recoverable latch, reuse reproducibility, bounded memory
 

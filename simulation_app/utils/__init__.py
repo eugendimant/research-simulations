@@ -2,7 +2,7 @@
 """
 Utility modules for the Behavioral Experiment Simulation Tool.
 
-Version: 1.2.7.9 - Audit fixes: unify LLM response-pool key so prefill==runtime (stop silently wasting the prefill budget when question_context is set), recoverable transient-throttle latch (free tier can be re-used per OE question), reset the primary non-LLM OE generator's dedup state on engine reuse (reproducibility), bound dedup memory at large N
+Version: 1.2.8.0 - Offline OE realism: deterministically repair mechanical punctuation artifacts left by the tic/filler stages (",," etc., ~14% of offline responses), and strip instruction tails ("...the candidate and why" -> "the candidate") and leading imperatives ("Describe the tax plan" -> "the tax plan") from the extracted topic so the survey instruction no longer bleeds into responses. Builds on v1.2.7.9 audit fixes (unified LLM pool key, recoverable throttle latch, reuse reproducibility, bounded dedup memory)
 
 Changes (v1.0.0 - 20 Iterations of Comprehensive Improvements):
     === ENHANCED SCALE/MATRIX DETECTION ===
@@ -65,7 +65,7 @@ Modules:
 """
 
 # Package version - should match all module versions
-__version__ = "1.2.7.9"
+__version__ = "1.2.8.0"
 
 
 # =============================================================================

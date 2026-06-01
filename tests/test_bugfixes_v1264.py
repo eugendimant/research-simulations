@@ -539,6 +539,73 @@ def test_m2_reused_engine_is_reproducible_non_llm():
         f"(comprehensive_generator dedup state not reset between runs)")
 
 
+def test_v1280_normalize_punctuation_repairs_only_mechanical_glitches():
+    """v1.2.8.0: the punctuation normalizer fixes ',,'/' ,'/' .'/',.' but PRESERVES
+    intentional realism (typos, lowercase 'i', '...' ellipsis, '!!' emphasis)."""
+    from utils.response_library import ComprehensiveResponseGenerator as C
+    f = C._normalize_punctuation
+    assert f("like,, I think") == "like, I think"
+    assert f("the reason like, like,, I mean") == "the reason like, like, I mean"
+    assert f("I mean . really") == "I mean. really"
+    assert f("well, . that's it") == "well. that's it"          # ',.' -> '.'
+    assert f("hmm , maybe") == "hmm, maybe"                      # ' ,' -> ','
+    # preserved:
+    assert f("well... maybe") == "well... maybe"                 # ellipsis intact
+    assert f("no way!! seriously") == "no way!! seriously"       # emphasis intact
+    assert f("i thibk so") == "i thibk so"                       # typo + lowercase 'i' intact
+    assert f("like like, yeah") == "like like, yeah"             # word repetition intact
+
+
+def test_v1280_strips_instruction_tail_keeps_conjunctive_topics():
+    """v1.2.8.0: 'Explain ... the candidate and why' must yield topic 'the candidate'
+    (not 'the candidate and why'), while real conjunctions are preserved."""
+    from utils.response_library import ComprehensiveResponseGenerator as C
+    g = C(seed=1)
+    def topic(ctx):
+        return g._extract_response_subject(f"Question: q\nContext: {ctx}", ctx).lower()
+    assert topic("Explain your view of the candidate and why.") == "the candidate"
+    assert topic("How do you feel about the new policy and why?") == "the new policy"
+    assert topic("Describe the tax plan and explain your reasoning.") == "the tax plan"
+    # leading imperative with no preposition, and lead-in phrase:
+    assert topic("In your own words, describe the onboarding process.").rstrip(".") == "the onboarding process"
+    assert topic("Discuss the merger between the two companies.").rstrip(".") == "the merger between the two companies"
+    # genuine conjunctive topics and embedded prepositions preserved:
+    assert topic("Tell us about crime and punishment.") == "crime and punishment"
+    assert topic("Share your opinion on guns and butter.") == "guns and butter"
+    assert topic("Your information on the merger.") == "the merger"
+    # must NOT over-strip a real topic that merely contains 'in ... society':
+    assert topic("Crime and punishment in modern society.").rstrip(".") == "crime and punishment in modern society"
+
+
+def test_v1280_offline_oe_has_no_glitches_or_instruction_leak():
+    """v1.2.8.0: end-to-end, the offline OE path produces no ',,', no space-before-
+    punctuation, and never leaks the instruction tail ('and why') into responses."""
+    import re
+    from utils.enhanced_simulation_engine import EnhancedSimulationEngine
+    eng = EnhancedSimulationEngine(
+        study_title="Candidate Attitudes", study_description="feelings about a candidate",
+        sample_size=120, conditions=[{"name": "Treatment"}, {"name": "Control"}], factors=[],
+        scales=[{"name": "Feel", "variable_name": "Feel", "type": "matrix",
+                 "num_items": 3, "items": 3, "scale_min": 1, "scale_max": 7}],
+        additional_vars=[], demographics={"gender_quota": 50, "age_mean": 40, "age_sd": 13},
+        open_ended_questions=[{"variable_name": "explain", "question_text": "explain",
+                               "question_context": "Explain your view of the candidate and why."}],
+        seed=2024)
+    if getattr(eng, "llm_generator", None) is not None:
+        eng.llm_generator.disable_permanently("offline")
+    df, _ = eng.generate()
+    col = next(c for c in df.columns if c.lower().startswith("explain"))
+    vals = [str(v) for v in df[col] if isinstance(v, str) and v.strip()]
+    assert vals, "no OE responses generated"
+    bad_comma = [v for v in vals if re.search(r",\s*,", v)]
+    bad_space = [v for v in vals if re.search(r"\s+[,.!?]", v)]
+    leak = [v for v in vals if re.search(r"\band why\b", v, re.I)]
+    assert not bad_comma, f"',,'in {len(bad_comma)} responses, e.g. {bad_comma[:1]}"
+    assert not bad_space, f"space-before-punct in {len(bad_space)}, e.g. {bad_space[:1]}"
+    assert not leak, f"instruction tail leaked into {len(leak)} responses, e.g. {leak[:1]}"
+    assert len(set(vals)) / len(vals) > 0.9, "offline OE responses not diverse enough"
+
+
 def test_socsim_cli_compiles_and_has_main():
     """Audit 1.1: the experimental CLI must compile and expose main()."""
     import py_compile, os
