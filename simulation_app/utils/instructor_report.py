@@ -6,7 +6,7 @@ Generates comprehensive instructor-facing reports for student simulations.
 """
 
 # Version identifier to help track deployed code
-__version__ = "1.2.7.7"  # v1.2.7.7: LLM + realism fixes (report-facing version stamp)
+__version__ = "1.2.8.5"  # v1.2.8.5: mobile hero subtitle wrap (report-facing version stamp)
 
 from dataclasses import dataclass
 from datetime import datetime
@@ -4264,9 +4264,12 @@ class ComprehensiveInstructorReport:
                 cap.set_linewidth(1.5)
 
             # Add individual data points with jitter
+            # v1.2.8.4: local RandomState (not global np.random) so the plot is
+            # deterministic without relying on the engine seeding the global RNG.
+            _jit_rng = np.random.RandomState(20260601)
             for i, (pos, data) in enumerate(zip(positions, box_data)):
                 if len(data) > 0:
-                    jitter = np.random.normal(0, 0.04, len(data))
+                    jitter = _jit_rng.normal(0, 0.04, len(data))
                     ax.scatter(pos + jitter, data, alpha=0.4, s=20,
                               color=colors[i % len(colors)], edgecolor='white', linewidth=0.5,
                               zorder=3)

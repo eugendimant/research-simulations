@@ -54,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.2.7.7"
-BUILD_ID = "20260601-v12077-llm-source-label-and-failover"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.2.8.5"
+BUILD_ID = "20260601-v12085-mobile-hero-subtitle-wrap"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -63,7 +63,35 @@ BUILD_ID = "20260601-v12077-llm-source-label-and-failover"  # Change this to for
 # v1.4.3.1 — the version-check on line ~103 already warns on mismatch, and
 # BUILD_ID changes handle cache invalidation safely.
 
-from utils.group_management import GroupManager, APIKeyManager, _atomic_write_json
+from utils.group_management import GroupManager, APIKeyManager
+# v1.2.8.2 (PRODUCTION-DOWN GUARD): import the private atomic-write helper
+# DEFENSIVELY. A hard top-level import of a cross-module *private* symbol takes
+# down the ENTIRE app with a redacted ImportError the instant the two files drift
+# out of sync (partial deploy, stale build, version skew, a rename) — exactly the
+# outage this guards against. If the helper is ever missing, fall back to a local
+# equivalent so the app still loads. NEVER hard-import a `_private` symbol from
+# another module at top level; see CLAUDE.md "Import resilience".
+try:
+    from utils.group_management import _atomic_write_json
+except ImportError:
+    def _atomic_write_json(path, payload) -> None:
+        """Local fallback mirroring group_management._atomic_write_json — write a
+        JSON file atomically (temp file + os.replace) so a crash never leaves a
+        half-written/corrupt file."""
+        import tempfile
+        _dir = os.path.dirname(os.path.abspath(path)) or "."
+        os.makedirs(_dir, exist_ok=True)
+        _fd, _tmp = tempfile.mkstemp(dir=_dir, suffix=".tmp")
+        try:
+            with os.fdopen(_fd, "w", encoding="utf-8") as _f:
+                json.dump(payload, _f, indent=2, default=str)
+            os.replace(_tmp, path)
+        except Exception:
+            try:
+                os.unlink(_tmp)
+            except OSError:
+                pass
+            raise
 from utils.qsf_preview import QSFPreviewParser, QSFPreviewResult
 from utils.schema_validator import validate_schema
 from utils.github_qsf_collector import collect_qsf_async, is_collection_enabled
@@ -118,7 +146,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.2.7.7"  # v1.2.7.7: LLM fixes — correct AI/Template source label, batch-JSON parse, _ext crash, newest free model + transient failover; OE question-leak fix
+APP_VERSION = "1.2.8.5"  # v1.2.8.5: Mobile UI — landing hero subtitle wraps responsively (removed hard <br>, text-wrap:balance + mobile font-size) so no word is stranded on its own line on phones
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -4621,8 +4649,13 @@ def _get_api_key_manager() -> APIKeyManager:
     return APIKeyManager()
 
 
-@st.cache_resource
 def _get_qsf_preview_parser() -> QSFPreviewParser:
+    # v1.2.7.8: NOT @st.cache_resource. The parser holds per-parse mutable state
+    # (log_entries/errors/warnings, reset at the top of parse()), so a single shared
+    # cached instance would let two concurrent Streamlit sessions corrupt each
+    # other's parse (session B's reset/append racing session A's parse). __init__ is
+    # trivial (three empty lists), so a fresh per-call instance is the correct,
+    # cost-free fix.
     return QSFPreviewParser()
 
 
@@ -6644,6 +6677,7 @@ details[data-testid="stExpander"][open] {
     letter-spacing: -0.035em;
     margin: 0 0 18px 0;
     line-height: 1.08;
+    text-wrap: balance;
     background: linear-gradient(135deg, #0F172A 0%, #1E293B 40%, #334155 100%);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
@@ -6653,8 +6687,13 @@ details[data-testid="stExpander"][open] {
     font-size: 1.2rem;
     color: #6B7280;
     font-weight: 400;
-    margin: 0 0 8px 0;
+    margin: 0 auto 8px;
     line-height: 1.6;
+    max-width: 38ch;
+    /* v1.2.8.5: balance the lines so the subtitle never strands a single word
+       ("test"/"data") on its own line when it wraps on narrow (mobile) viewports.
+       Replaces a hard-coded <br> that broke badly once the line was re-wrapped. */
+    text-wrap: balance;
 }
 .landing-hero .creator {
     font-size: 0.85rem;
@@ -7385,6 +7424,7 @@ div[data-testid="stAlert"] {
     .hiw-arrow { transform: rotate(90deg); }
     .landing-hero h1 { font-size: 1.8rem; }
     .landing-hero { padding: 32px 16px 24px; }
+    .landing-hero .subtitle { font-size: 1.05rem; line-height: 1.5; max-width: 30ch; }
     .research-section { padding: 20px 16px; }
 }
 
@@ -8710,7 +8750,7 @@ if active_page == -1:
     st.markdown(
         '<div class="landing-hero">'
         '<h1>Behavioral Experiment<br>Simulation Tool</h1>'
-        '<p class="subtitle">Generate realistic pilot datasets to build and test<br>'
+        '<p class="subtitle">Generate realistic pilot datasets to build and test '
         'your analysis pipeline before collecting real data</p>'
         '<p class="creator">Created by Dr. <a href="https://eugendimant.github.io/">Eugen Dimant</a></p>'
         '</div>',
@@ -11209,7 +11249,29 @@ if active_page == 2:
             if confirmed_open_ended:
                 _ctx_count = sum(1 for _oe in confirmed_open_ended if _oe.get("question_context", "").strip())
                 _missing_ctx = len(confirmed_open_ended) - _ctx_count
-                st.markdown(f"**{len(confirmed_open_ended)} open-ended question(s):**")
+                _oe_hdr_col, _oe_clear_col = st.columns([2.2, 1])
+                with _oe_hdr_col:
+                    st.markdown(f"**{len(confirmed_open_ended)} open-ended question(s):**")
+                with _oe_clear_col:
+                    # v1.2.8.3: Prominent "start fresh" button at the TOP of the section.
+                    # The Remove All button lives at the bottom (next to "Add"), but it
+                    # sits below the full list and was easy to miss — so users were
+                    # clicking the ✕ on every question. This makes "clear everything the
+                    # app auto-detected, then add my own" a one-click action up front.
+                    if st.button(
+                        f"🗑️ Clear all {len(confirmed_open_ended)}",
+                        key=f"rm_all_oe_top_v{oe_version}",
+                        help="Remove every auto-detected open-ended question at once, then add your own below.",
+                        use_container_width=True,
+                    ):
+                        _n_removed = len(confirmed_open_ended)
+                        st.session_state["confirmed_open_ended"] = []
+                        st.session_state["_oe_version"] = oe_version + 1
+                        st.session_state["_oe_removal_notice"] = (
+                            f"Cleared all {_n_removed} open-ended question(s) — add your own below."
+                        )
+                        st.session_state["_oe_keep_expanded"] = True
+                        st.rerun()
                 st.caption("Add context (1-2 sentences) to each question to improve AI response quality.")
 
                 # v1.1.1.3: Purpose options for open-ended questions

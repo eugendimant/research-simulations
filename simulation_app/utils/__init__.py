@@ -2,7 +2,7 @@
 """
 Utility modules for the Behavioral Experiment Simulation Tool.
 
-Version: 1.2.7.7 - LLM source-label fix (AI vs Non-LLM), batch-JSON parse, _ext crash fix, gemini-3.1-flash-lite primary + transient/allowlist failover, OE question-leak fix; Xie et al. 2026 realism principles
+Version: 1.2.8.5 - Mobile UI fix: the landing-page hero subtitle had a hard-coded <br> that, on narrow phone viewports, re-wrapped badly and stranded single words ("test"/"data") on their own lines. Removed the <br> and made the subtitle wrap responsively (text-wrap:balance + a mobile font-size), with text-wrap:balance on the H1 too. Builds on v1.2.8.4
 
 Changes (v1.0.0 - 20 Iterations of Comprehensive Improvements):
     === ENHANCED SCALE/MATRIX DETECTION ===
@@ -65,7 +65,7 @@ Modules:
 """
 
 # Package version - should match all module versions
-__version__ = "1.2.7.7"
+__version__ = "1.2.8.5"
 
 
 # =============================================================================
