@@ -2586,6 +2586,14 @@ class LLMResponseGenerator:
             p.reset()
         self._batch_failure_count = 0
         self._api_disabled_time = 0.0
+        # v1.2.7.9 (M1 fix): Clear the recoverable transient-throttle latch too.
+        # free_tier_exhausted_now reads _consecutive_transient_batches, but that
+        # counter only ever reset INSIDE _generate_batch — and once the latch is
+        # set every caller skips _generate_batch, so it could never drop back below
+        # threshold. That stranded the LLM on templates for the rest of the run
+        # even after the free tier recovered. reset_providers() is a genuine
+        # "fresh attempt" boundary, so clearing it here restores recoverability.
+        self._consecutive_transient_batches = 0
         self._api_available = any(p.available and p.api_key for p in self._providers)
 
     def health_check(self, timeout: int = 12) -> Dict[str, Any]:

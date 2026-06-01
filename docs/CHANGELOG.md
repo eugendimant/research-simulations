@@ -1,4 +1,83 @@
 
+## 2026-06-01 — v1.2.7.9
+### Deep adversarial audit: LLM pool-key drift, recoverable latch, reuse reproducibility, bounded memory
+
+A second independent adversarial audit of the concurrency/state surface (after the
+v1.2.7.8 fixes) surfaced four genuine defects — all verified against the code, all
+now fixed with regression tests. Three hid in non-default paths and produced **no
+error**, exactly the profile that slips past testing.
+
+- **H1 (HIGH) — LLM response-pool key drift.** The prefill path and the
+  per-participant path built the enriched `question_text` (which seeds the pool
+  cache key `md5(question_text[:200]|condition|sentiment)`) from two separately
+  maintained blocks. The per-participant block appended `\nCondition:` and
+  `\nAdditional context:`; the prefill block did not. Whenever the user filled the
+  encouraged Design-page **question-context** field, the two keys diverged within
+  the first 200 chars, so **every prefilled pool draw missed** — silently wasting
+  the prefill budget and forcing an expensive on-demand LLM call per participant
+  (CLAUDE.md anti-pattern #29). Both paths now route through ONE shared helper,
+  `_build_enriched_question_text()`, so the keys are byte-identical.
+- **M1 (MEDIUM) — `free_tier_exhausted_now` was a one-way latch.** Documented as
+  "resets on any success", but `_consecutive_transient_batches` only reset inside
+  `_generate_batch` — and once the latch tripped, every caller skipped
+  `_generate_batch`, so it could never clear. A single burst of transient
+  429/503/timeout abandoned the LLM for the **rest of the run** even after the free
+  tier recovered seconds later. Now cleared in `reset_providers()` and at the start
+  of each new OE question, so a recovered free tier is genuinely re-used.
+- **M2 (MEDIUM) — incomplete reuse reset broke reproducibility.** `_generate_body`
+  reset the fallback OE generator (`text_generator`) but not the PRIMARY one
+  (`comprehensive_generator`), so calling `generate()` twice on the same engine
+  produced **different** OE text on the same seed. Latent under the Streamlit UI
+  (which rebuilds the engine each run) but a contract break for SDK/batch/regenerate
+  reuse. Added `reset()` to `ComprehensiveResponseGenerator` (and the
+  `AdaptiveBehavioralEngineV2` wrapper) and call it each run.
+- **L1 (LOW) — unbounded dedup memory at max N.** `_used_responses`/`_used_sentences`
+  grew without bound (hundreds of thousands of strings at N=10,000 × many OE
+  questions). Now FIFO-bounded via companion `deque`s with **deterministic**
+  oldest-first eviction (never `set.pop()` — that would reintroduce
+  `PYTHONHASHSEED`-dependent non-determinism).
+
+**Conscious trade-off (documented, not a bug):** the `_GLOBAL_RNG_LOCK` is held
+across LLM network I/O, so concurrent users serialize. Removing global seeding
+entirely would mean routing ~70 RNG call sites (engine `rng = np.random` ×15 +
+`text_generator` bare `random.*` ×58) through injected per-run RNGs — a cross-module
+refactor that risks the reproducibility just verified correct. Deferred as its own
+staged change; real-world impact is low (free-tier rate limits already serialize
+concurrent LLM users; non-LLM N=10,000 finishes in ~60s).
+
+**New regression tests:** `test_h1_prefill_runtime_pool_key_match`,
+`test_m1_transient_latch_resets_on_reset_providers`,
+`test_m2_reused_engine_is_reproducible_non_llm` (29 in `test_bugfixes_v1264.py`).
+**Validation:** compileall exit 0 · 35 tests (bugfix + e2e) pass · cross-process
+determinism byte-identical across PYTHONHASHSEED ∈ {0,1,42,31337} · random N=200
+across 10 QSFs all-pass · version synced (1.2.7.9). Four new bug-classes (#13–16)
++ the lock trade-off recorded in the Self-Audit Bug-Class Catalog.
+
+## 2026-06-01 — v1.2.7.5–v1.2.7.8
+### Codex audit fixes + cross-process reproducibility + concurrency safety
+
+- **v1.2.7.5 (Codex audit):** re-indented `socsim/cli.py` into `main()` (whole-tree
+  `compileall` now exits 0); replaced salted `hash()` with SHA-256 `_stable_int_hash`
+  in `hbs_engine`/`socsim_adapter`; removed a global-seed side effect in
+  `persona_library`; widened int→float columns before float writes in
+  `hbs_validator`; preserved `_Base_Generation_Source`/`_Simulation_Method`
+  provenance; sanitized a token-prefix echo; documented optional deps.
+- **v1.2.7.6:** full **cross-process reproducibility** — same seed → byte-identical
+  output across `PYTHONHASHSEED` values (replaced remaining salted hashes in seeding
+  contexts with stable ordinal/SHA-256 hashing); established the Self-Audit
+  Bug-Class Catalog.
+- **v1.2.7.7:** fixed `_Generation_Source` being hardcoded to "Non-LLM" (it
+  overwrote real per-participant AI/Template provenance — the reason every prior
+  free-LLM run showed "100% Non-LLM"); robust batch-JSON parsing (fenced /
+  bracket-less payloads); hoisted an `_ext` UnboundLocalError; put the newest free
+  Gemini model in front with transient-vs-hard failover; rejected interrogative
+  question text from OE topic extraction (question-leak fix).
+- **v1.2.7.8 (Codex P1):** serialized the global-RNG temporary-seeding region with a
+  process `RLock`; made `ComprehensiveResponseGenerator`'s uniqueness sets
+  per-instance (were class-level, leaking fingerprints across concurrent sessions);
+  removed `@st.cache_resource` from the QSF parser (per-parse mutable state). Result:
+  concurrent same-seed generation → one identical output.
+
 ## 2026-05-31 — v1.2.7.0–v1.2.7.4
 ### Detection↔generation seam: valid joint/numeric DVs, 5 effect domains, data-validity fixes
 

@@ -406,6 +406,139 @@ def test_open_ended_does_not_leak_question_text():
         assert not leaks, f"{oc}: question text leaked into {len(leaks)} responses, e.g. {leaks[:1]}"
 
 
+def test_concurrent_generation_is_reproducible():
+    """v1.2.7.8 (Codex P1): concurrent generate() calls with the same seed must
+    produce IDENTICAL output. Guards two cross-session hazards: (a) the global-RNG
+    temporary-seeding region (serialized by _GLOBAL_RNG_LOCK) and (b) the OE
+    uniqueness fingerprints (now per-instance, not class-level shared)."""
+    import threading, hashlib
+    from utils.enhanced_simulation_engine import EnhancedSimulationEngine
+
+    def _fp(seed):
+        eng = EnhancedSimulationEngine(
+            study_title="S", study_description="trust study", sample_size=20,
+            conditions=[{"name": "A"}], factors=[],
+            scales=[{"name": "T", "variable_name": "T", "type": "matrix",
+                     "num_items": 3, "items": 3, "scale_min": 1, "scale_max": 7}],
+            additional_vars=[], demographics={"gender_quota": 50, "age_mean": 35, "age_sd": 12},
+            open_ended_questions=[{"variable_name": "why", "question_text": "Why did you rate it that way?"}],
+            seed=seed)
+        if getattr(eng, "llm_generator", None) is not None:
+            eng.llm_generator.disable_permanently("offline")
+        df, _ = eng.generate()
+        return hashlib.md5(("|".join(map(str, df["T_1"])) + "##"
+                            + "|".join(map(str, df["why"]))).encode()).hexdigest()
+
+    solo = _fp(7)
+    results = set()
+
+    def worker():
+        for _ in range(3):
+            results.add(_fp(7))
+
+    def perturb():
+        for s in (11, 99, 55):
+            _fp(s)
+
+    threads = [threading.Thread(target=worker) for _ in range(4)] + \
+              [threading.Thread(target=perturb) for _ in range(2)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert results == {solo}, (
+        f"concurrent same-seed generation diverged: {len(results)} distinct outputs "
+        f"(cross-session RNG or shared OE-state race)")
+
+
+def test_comprehensive_generator_state_is_per_instance():
+    """v1.2.7.8: the OE uniqueness sets must be per-instance, not class-level shared
+    (class-level state leaked fingerprints across concurrent sessions)."""
+    from utils.response_library import ComprehensiveResponseGenerator as C
+    a = C(seed=1)
+    b = C(seed=2)
+    a._used_responses.add("fingerprint_x")
+    assert "fingerprint_x" not in b._used_responses, "OE state is shared across instances"
+
+
+def test_h1_prefill_runtime_pool_key_match():
+    """v1.2.7.9 (H1): the enriched question_text used to KEY the response pool must
+    be byte-identical between the prefill path and the per-participant path,
+    otherwise every pool draw misses and the prefill budget is silently wasted.
+    Both paths now route through _build_enriched_question_text."""
+    from utils.enhanced_simulation_engine import EnhancedSimulationEngine
+    from utils.llm_response_generator import _ResponsePool
+    import random as _r
+
+    eng = EnhancedSimulationEngine.__new__(EnhancedSimulationEngine)
+    eng.study_title = "Attitudes toward the candidate"
+    eng.study_description = ""
+    eng.study_context = {"additional_context": "Pre-election wave, US adults"}
+
+    q_raw, q_ctx, cond = "explain_feel", "How do you feel about the candidate?", "Treatment_A"
+    prefill_text = eng._build_enriched_question_text(q_raw, q_ctx, cond)
+    runtime_text = eng._build_enriched_question_text(q_raw, q_ctx, cond)
+    assert prefill_text == runtime_text
+    # The enriched text must carry BOTH the suffixes that previously diverged.
+    assert "\nCondition: Treatment_A" in runtime_text
+    assert "\nAdditional context:" in runtime_text
+
+    # End-to-end: a response prefilled under the prefill key must be drawable
+    # under the runtime key (this was the silent miss the audit reproduced).
+    pool = _ResponsePool()
+    pool.add(prefill_text, cond, "neutral", ["alpha", "beta"])
+    drawn = pool.draw_with_replacement(runtime_text, cond, "neutral", _r.Random(1))
+    assert drawn is not None, "prefilled pool MISS — H1 pool-key drift regressed"
+
+
+def test_m1_transient_latch_resets_on_reset_providers():
+    """v1.2.7.9 (M1): free_tier_exhausted_now must be recoverable. Once the
+    transient-throttle latch is set, every caller skips _generate_batch, so the
+    counter can only be cleared by reset_providers()/per-question reset."""
+    from utils.llm_response_generator import LLMResponseGenerator
+    g = LLMResponseGenerator()
+    g._consecutive_transient_batches = g._transient_giveup_threshold
+    assert g.free_tier_exhausted_now is True
+    g.reset_providers()
+    assert g._consecutive_transient_batches == 0
+    assert g.free_tier_exhausted_now is False
+
+
+def test_m2_reused_engine_is_reproducible_non_llm():
+    """v1.2.7.9 (M2): calling generate() twice on the SAME engine must produce
+    byte-identical OE output on the same seed (reproducibility contract). The
+    primary non-LLM OE generator's dedup state is now reset each run."""
+    import hashlib
+    from utils.enhanced_simulation_engine import EnhancedSimulationEngine
+
+    def _build():
+        eng = EnhancedSimulationEngine(
+            study_title="Reuse", study_description="trust in advisor study",
+            sample_size=40, conditions=[{"name": "A"}, {"name": "B"}], factors=[],
+            scales=[{"name": "T", "variable_name": "T", "type": "matrix",
+                     "num_items": 3, "items": 3, "scale_min": 1, "scale_max": 7}],
+            additional_vars=[],
+            demographics={"gender_quota": 50, "age_mean": 35, "age_sd": 12},
+            open_ended_questions=[
+                {"variable_name": "why", "question_text": "Why did you rate it that way?"}],
+            seed=321)
+        if getattr(eng, "llm_generator", None) is not None:
+            eng.llm_generator.disable_permanently("offline")
+        return eng
+
+    def _oe_hash(df):
+        col = next(c for c in df.columns if c.lower().startswith("why"))
+        return hashlib.md5("|".join(map(str, df[col])).encode()).hexdigest()
+
+    eng = _build()
+    h1 = _oe_hash(eng.generate()[0])     # first run on this engine
+    h2 = _oe_hash(eng.generate()[0])     # REUSED engine, same seed
+    h3 = _oe_hash(_build().generate()[0])  # fresh engine, same seed
+    assert h1 == h2 == h3, (
+        f"reused-engine OE output diverged: first={h1[:8]} reuse={h2[:8]} fresh={h3[:8]} "
+        f"(comprehensive_generator dedup state not reset between runs)")
+
+
 def test_socsim_cli_compiles_and_has_main():
     """Audit 1.1: the experimental CLI must compile and expose main()."""
     import py_compile, os

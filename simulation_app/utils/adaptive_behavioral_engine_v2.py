@@ -1280,5 +1280,17 @@ class AdaptiveBehavioralEngineV2:
         """Reset uniqueness tracking for a new generation run."""
         self._used_sentences.clear()
         self._generation_count = 0
-        if self._base_generator is not None and hasattr(self._base_generator, '_used_sentences'):
-            self._base_generator._used_sentences.clear()
+        # v1.2.7.9 (M2 fix): Fully reset the wrapped base generator — previously
+        # only its _used_sentences was cleared, leaving _used_responses and
+        # _used_corpus_indices populated, so a reused engine produced different
+        # output on the same seed. Delegate to its complete reset().
+        if self._base_generator is not None:
+            if hasattr(self._base_generator, 'reset'):
+                self._base_generator.reset()
+            elif hasattr(self._base_generator, '_used_sentences'):
+                self._base_generator._used_sentences.clear()
+
+    def reset(self) -> None:
+        """v1.2.7.9: Uniform reset alias so callers can treat this wrapper and
+        the bare ComprehensiveResponseGenerator identically."""
+        self.reset_uniqueness()

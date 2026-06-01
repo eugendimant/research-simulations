@@ -377,3 +377,92 @@ gated by a grep signature + an automated test in step 2–3.
     *Found by: my own N=100 free-LLM smoke test (the offline template fallback
     leaked the question into 54/100 responses) — exactly the kind of realism bug
     the self-audit should catch before shipping.*
+
+12. **Thread-unsafe global state under concurrent Streamlit sessions.** Two
+    sessions calling generate() at once race on (a) the process-global RNG
+    temporary-seeding region and (b) any CLASS-LEVEL or MODULE-LEVEL mutable state
+    (sets/dicts) in the generation path. One session consumes another's RNG
+    stream, or sees another's accumulated fingerprints, breaking same-seed
+    reproducibility. → (1) Serialize any global-RNG seed/restore region with a
+    process lock. (2) NEVER keep run-scoped mutable state at class/module level —
+    use per-instance attributes set in __init__. Grep signatures:
+    `grep -nE '^    _[a-z_]+ *(:.*)?= *(set\(\)|\{\}|\[\])'` for class-level mutable
+    decls; `grep -nE '[A-Z][A-Za-z]+\._[a-z_]+\.(add|append|update|clear)\('` for
+    cross-instance mutation. Test: run N concurrent same-seed generations in
+    threads (+ perturbing different-seed threads) and assert ONE identical output.
+    *Found by: Codex PR review P1 — my seed-restore fix was exception-safe but not
+    thread-safe, and ComprehensiveResponseGenerator kept _used_responses at class
+    level. I should have caught both: "multi-user Streamlit" is in the threat model.*
+
+13. **Two code paths that MUST agree, maintained separately, drift.** A cache key
+    (or any value that two paths must compute identically) is built by two
+    copy-pasted blocks; one path later gains an extra suffix the other doesn't.
+    The keys silently stop matching → the cache always misses, defeating an
+    optimization with NO error. Here: the LLM response-pool key is
+    `md5(question_text[:200]|condition|sentiment)`; the prefill path built
+    `question_text` WITHOUT the `\nCondition:`/`\nAdditional context:` suffixes the
+    per-participant path appended, so every prefilled draw missed (prefill budget
+    silently wasted — anti-pattern #29). → ANY value two paths must agree on
+    (cache keys, hashes, IDs, signatures) MUST come from ONE shared helper, never
+    two parallel blocks. Grep for the same f-string skeleton in 2+ places;
+    extract a helper. Test: assert the two paths produce byte-identical keys AND
+    that a value stored by path A is retrievable by path B. This class hides in
+    NON-default paths (only fires when `question_context` is set), so the test must
+    exercise the enriched path, not the bare one.
+    *Found by: deep adversarial audit H1 — highest-value find because it produced
+    no error and only triggered on the (encouraged) question-context path.*
+
+14. **A "recoverable" latch with no path to reset.** A flag documented as
+    "resets on success" only resets inside a function that, once the flag is set,
+    every caller SKIPS. So the flag is effectively permanent for the rest of the
+    run, contradicting its docstring. Here: `free_tier_exhausted_now` reads
+    `_consecutive_transient_batches`, which only reset inside `_generate_batch` —
+    but once exhausted, prefill fast-bails and the OE loop sets `_llm_throttled_now`,
+    so `_generate_batch` is never called again → the free tier is abandoned for the
+    whole run even if it recovers seconds later. → For every "recoverable"/"resets
+    on X" flag, trace whether X is still REACHABLE once the flag is set. If the
+    flag gates the only path to X, add an explicit reset at a genuine retry
+    boundary (here: `reset_providers()` and per-OE-question). Test: set the latch,
+    call the documented recovery boundary, assert the latch cleared.
+    *Found by: deep adversarial audit M1 — the docstring asserted an invariant the
+    control flow couldn't deliver.*
+
+15. **Incomplete "fresh run" reset on a reused stateful object.** The engine reset
+    ONE OE generator's dedup state (`text_generator`) but not the PRIMARY one
+    (`comprehensive_generator`), so a REUSED engine produced different OE text on
+    the same seed — a reproducibility-contract break that's latent only because the
+    UI happens to rebuild the engine each run (SDK/batch/"regenerate" reuse would
+    hit it). → When you reset run-scoped state "for a fresh dataset", enumerate
+    EVERY object that accumulates run-scoped state (all OE generators, pools,
+    recent-start buffers) and reset all of them — and give each a single `reset()`
+    method so the list can't go stale. Test: call generate() TWICE on the same
+    engine + once on a fresh engine, assert all three OE hashes equal.
+    *Found by: deep adversarial audit M2 — I reset the fallback generator but
+    overlooked the primary one right next to it.*
+
+16. **Unbounded run-scoped accumulator at max N.** Dedup `set`s grew one
+    fingerprint + N sentences per response with no cap; at `MAX_SIMULATED_N=10,000`
+    × multiple OE questions that's hundreds of thousands of strings. → Bound any
+    per-run accumulator that scales with N. CRITICAL: evict DETERMINISTICALLY
+    (FIFO via a companion `deque`, oldest-first) — never `set.pop()` an arbitrary
+    element, because str hash order depends on `PYTHONHASHSEED` and would
+    reintroduce cross-process non-determinism (bug-class #1/#2). Test: the bounded
+    structure stays ≤ cap at large N AND same-seed output is byte-identical across
+    `PYTHONHASHSEED` values with eviction active.
+    *Found by: deep adversarial audit L1.*
+
+#### Conscious trade-off (NOT a bug): global-RNG lock vs. multi-user throughput
+The `_GLOBAL_RNG_LOCK` is held across the WHOLE generation body, including LLM
+network I/O, so two concurrent users fully serialize. This is a deliberate
+correctness-over-throughput choice: the alternative (removing global seeding
+entirely) requires routing ~70 call sites — the engine's `rng = np.random`
+aliases (×15) AND `text_generator`'s bare `random.*` (×58) — through injected
+per-run RNGs, a cross-module refactor that risks reintroducing the
+non-reproducibility just verified correct (anti-pattern #1: big-bang rewrite).
+Real-world impact is low: the free-tier API rate-limits already serialize
+concurrent LLM users upstream, and non-LLM runs finish in ~60s at N=10,000. If
+multi-user LLM throughput ever becomes a priority, do the RNG injection as its
+own carefully-verified change (cross-process determinism battery + concurrency
+test must both stay green), THEN narrow the lock to the seed/restore window.
+*Surfaced by: deep adversarial audit (classified as a scalability trade-off,
+not a correctness defect).*

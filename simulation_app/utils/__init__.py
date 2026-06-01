@@ -2,7 +2,7 @@
 """
 Utility modules for the Behavioral Experiment Simulation Tool.
 
-Version: 1.2.7.7 - LLM source-label fix (AI vs Non-LLM), batch-JSON parse, _ext crash fix, gemini-3.1-flash-lite primary + transient/allowlist failover, OE question-leak fix; Xie et al. 2026 realism principles
+Version: 1.2.7.9 - Audit fixes: unify LLM response-pool key so prefill==runtime (stop silently wasting the prefill budget when question_context is set), recoverable transient-throttle latch (free tier can be re-used per OE question), reset the primary non-LLM OE generator's dedup state on engine reuse (reproducibility), bound dedup memory at large N
 
 Changes (v1.0.0 - 20 Iterations of Comprehensive Improvements):
     === ENHANCED SCALE/MATRIX DETECTION ===
@@ -65,7 +65,7 @@ Modules:
 """
 
 # Package version - should match all module versions
-__version__ = "1.2.7.7"
+__version__ = "1.2.7.9"
 
 
 # =============================================================================

@@ -54,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.2.7.7"
-BUILD_ID = "20260601-v12077-llm-source-label-and-failover"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.2.7.9"
+BUILD_ID = "20260601-v12079-pool-key-latch-reset"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -118,7 +118,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.2.7.7"  # v1.2.7.7: LLM fixes — correct AI/Template source label, batch-JSON parse, _ext crash, newest free model + transient failover; OE question-leak fix
+APP_VERSION = "1.2.7.9"  # v1.2.7.9: Audit fixes — unify LLM pool key (prefill==runtime), recoverable transient-throttle latch, reset reused-engine OE dedup, bound dedup memory
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -4621,8 +4621,13 @@ def _get_api_key_manager() -> APIKeyManager:
     return APIKeyManager()
 
 
-@st.cache_resource
 def _get_qsf_preview_parser() -> QSFPreviewParser:
+    # v1.2.7.8: NOT @st.cache_resource. The parser holds per-parse mutable state
+    # (log_entries/errors/warnings, reset at the top of parse()), so a single shared
+    # cached instance would let two concurrent Streamlit sessions corrupt each
+    # other's parse (session B's reset/append racing session A's parse). __init__ is
+    # trivial (three empty lists), so a fresh per-call instance is the correct,
+    # cost-free fix.
     return QSFPreviewParser()
 
 

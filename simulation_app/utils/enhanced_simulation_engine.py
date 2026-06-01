@@ -227,10 +227,22 @@ import hashlib
 import os
 import random
 import re
+import threading
 import time
 
 import numpy as np
 import pandas as pd
+
+# v1.2.7.8: Process-wide lock serializing the global-RNG temporary-seeding region
+# inside generate(). The engine seeds the GLOBAL np.random/random for the duration
+# of a run (downstream fallback/repair paths use bare random.*), then restores the
+# prior state. Without this lock, two concurrent Streamlit sessions racing through
+# generate() would interleave their seed/restore operations — one session consuming
+# another's RNG stream and an out-of-order restore leaving global state corrupted,
+# breaking same-seed reproducibility. The lock makes each run own the global RNG
+# exclusively. (The proper long-term fix is per-engine RNG instances threaded
+# through all 57+ bare-random call sites; this lock is the safe, correct interim.)
+_GLOBAL_RNG_LOCK = threading.RLock()
 
 # v1.2.7.4: numeric-DV money/count classification cues, compiled ONCE. Letter-
 # boundary matching ((?<![a-z])...(?![a-z])) so cues fire on underscore-normalized
@@ -9505,6 +9517,54 @@ class EnhancedSimulationEngine:
         }
         return report
 
+    def _build_enriched_question_text(
+        self, question_text: str, question_context: str, condition: str
+    ) -> str:
+        """Build the enriched question text used for BOTH the LLM prompt and the
+        response-pool cache key.
+
+        v1.2.7.9 (H1 fix): The prefill path and the per-participant path used to
+        build this string with two separately-maintained code blocks that had
+        drifted: the per-participant block appended ``\\nCondition:`` and
+        ``\\nAdditional context:`` while the prefill block did not. Because the
+        pool key is ``md5(question_text[:200] | condition | sentiment)``, the two
+        strings hashed differently whenever the divergence fell inside the first
+        200 chars (typical for short variable-name questions with brief context),
+        so every per-participant pool draw MISSED the prefilled pool — silently
+        defeating the prefill budget (CLAUDE.md anti-pattern #29) and forcing an
+        expensive on-demand call per participant. Routing both paths through this
+        single helper guarantees byte-identical keys so the pool is actually hit.
+        """
+        import re as _re
+        _qt = str(question_text or "")
+        _ctx = str(question_context or "").strip()
+        if _ctx:
+            _humanized = (_re.sub(r'[_\-]+', ' ', _qt).strip()
+                          if _qt and " " not in _qt.strip() else _qt)
+            _study_topic = self.study_title or self.study_description or ""
+            _out = f"Question: {_humanized}\nContext: {_ctx}"
+            if _study_topic:
+                _out += f"\nStudy topic: {_study_topic}"
+            # Include condition for tighter prompt grounding (it is ALSO a separate
+            # pool-key component, but must be embedded identically in both paths).
+            if condition:
+                _out += f"\nCondition: {condition}"
+            _add_ctx = self.study_context.get("additional_context", "")
+            if _add_ctx:
+                _out += f"\nAdditional context: {_add_ctx[:200]}"
+            return _out
+        if _qt and " " not in _qt.strip():
+            # Variable-name-looking question with no context: build a richer prompt
+            # from study context. (No condition embedded here — mirrors prior
+            # behavior; condition still varies the pool key as a separate field.)
+            _humanized = _re.sub(r'[_\-]+', ' ', _qt).strip()
+            _study_topic = self.study_title or self.study_description or ""
+            if _study_topic:
+                return (f"In the context of a study about {_study_topic}, "
+                        f"please share your thoughts on: {_humanized}")
+            return f"Please share your thoughts on: {_humanized}"
+        return _qt
+
     def _generate_open_response(
         self,
         question_spec: Dict[str, Any],
@@ -9542,42 +9602,15 @@ class EnhancedSimulationEngine:
         context_type = str(question_spec.get("context_type", "general"))
         question_context = str(question_spec.get("question_context", "")).strip()
 
-        # v1.0.1.2: Use user-provided question context to enrich the prompt.
-        # This is critical for questions like "explain_feel_donald" where
-        # the variable name alone doesn't convey what's really being asked.
-        # Enhanced: include condition and study topic for full context chain.
-        if question_context:
-            # User provided explicit context — use it directly
-            import re as _re
-            _humanized = _re.sub(r'[_\-]+', ' ', question_text).strip() if question_text and " " not in question_text.strip() else question_text
-            _study_topic = self.study_title or self.study_description or ""
-            question_text = (
-                f"Question: {_humanized}\n"
-                f"Context: {question_context}"
-            )
-            if _study_topic:
-                question_text += f"\nStudy topic: {_study_topic}"
-            # v1.0.1.2: Include condition in context for tighter prompt grounding
-            if condition:
-                question_text += f"\nCondition: {condition}"
-            # v1.0.9.1: Include additional simulation context if provided
-            _add_ctx = self.study_context.get("additional_context", "")
-            if _add_ctx:
-                question_text += f"\nAdditional context: {_add_ctx[:200]}"
-        elif question_text and " " not in question_text.strip():
-            # v1.4.11: If question_text looks like a variable name (no spaces),
-            # build a richer question from study context so LLM/template can
-            # generate contextually relevant responses.
-            import re as _re
-            _humanized = _re.sub(r'[_\-]+', ' ', question_text).strip()
-            _study_topic = self.study_title or self.study_description or ""
-            if _study_topic:
-                question_text = (
-                    f"In the context of a study about {_study_topic}, "
-                    f"please share your thoughts on: {_humanized}"
-                )
-            else:
-                question_text = f"Please share your thoughts on: {_humanized}"
+        # v1.0.1.2 / v1.2.7.9: Enrich the prompt with user-provided context,
+        # study topic, condition, and additional context. This is critical for
+        # questions like "explain_feel_donald" where the variable name alone
+        # doesn't convey what's really being asked. Built via the SHARED helper so
+        # the resulting string is byte-identical to the prefill path's pool key
+        # (H1 fix — see _build_enriched_question_text).
+        question_text = self._build_enriched_question_text(
+            question_text, question_context, condition
+        )
 
         rng = np.random.RandomState(participant_seed)
 
@@ -11407,28 +11440,30 @@ class EnhancedSimulationEngine:
                 self._log(f"WARNING: numeric realism transform failed for '{log_entry.get('name')}': {err}")
 
     def generate(self) -> Tuple[pd.DataFrame, Dict[str, Any]]:
-        # v1.2.7.6: Seed the GLOBAL np.random/random from self.seed for the DURATION
-        # of generation, then ALWAYS restore the caller's prior global state (even on
-        # exception). WHY: several downstream fallback/repair paths use bare
+        # v1.2.7.6/.8: Seed the GLOBAL np.random/random from self.seed for the
+        # DURATION of generation, then ALWAYS restore the caller's prior global state
+        # (even on exception). WHY: several downstream fallback/repair paths use bare
         # random.*/np.random.* (text_generator's last-resort templates, the
         # consistency audit's straight-line/duplicate-OE/OE-length repairs,
         # HBSValidator). Those need a deterministic global RNG for same-seed
-        # reproducibility across processes. Save+restore keeps that determinism
-        # WITHOUT cross-session pollution (one run never leaves the global RNG
-        # reseeded for another Streamlit session). try/finally guarantees restore
-        # even if generation raises midway.
-        _prev_np_state = np.random.get_state()
-        _prev_py_state = random.getstate()
-        np.random.seed(self.seed)
-        random.seed(self.seed)
-        try:
-            return self._generate_body()
-        finally:
+        # reproducibility. Save+restore avoids cross-session pollution; the
+        # _GLOBAL_RNG_LOCK serializes this region so concurrent Streamlit sessions
+        # can't interleave their seed/restore (which would otherwise let one run
+        # consume another's RNG stream and corrupt the restored state). try/finally
+        # guarantees restore even if generation raises midway.
+        with _GLOBAL_RNG_LOCK:
+            _prev_np_state = np.random.get_state()
+            _prev_py_state = random.getstate()
+            np.random.seed(self.seed)
+            random.seed(self.seed)
             try:
-                np.random.set_state(_prev_np_state)
-                random.setstate(_prev_py_state)
-            except Exception:
-                pass
+                return self._generate_body()
+            finally:
+                try:
+                    np.random.set_state(_prev_np_state)
+                    random.setstate(_prev_py_state)
+                except Exception:
+                    pass
 
     def _generate_body(self) -> Tuple[pd.DataFrame, Dict[str, Any]]:
         n = self.sample_size
@@ -11436,6 +11471,17 @@ class EnhancedSimulationEngine:
 
         # Reset text generator's used responses for fresh dataset
         self.text_generator.reset_used_responses()
+        # v1.2.7.9 (M2 fix): Also reset the PRIMARY non-LLM OE generator's dedup
+        # state. Previously only text_generator (the fallback) was reset, so a
+        # REUSED engine produced different OE text on the same seed because
+        # comprehensive_generator's _used_responses/_used_sentences carried over.
+        # The Streamlit UI rebuilds the engine each run (so this was latent), but
+        # the reproducibility contract must hold for SDK/batch reuse too.
+        if self.comprehensive_generator is not None and hasattr(self.comprehensive_generator, 'reset'):
+            try:
+                self.comprehensive_generator.reset()
+            except Exception:
+                pass
 
         data["PARTICIPANT_ID"] = list(range(1, n + 1))
         data["RUN_ID"] = [self.run_id] * n
@@ -12018,24 +12064,8 @@ class EnhancedSimulationEngine:
                                   "switching to template fallback to avoid a long wait")
                         _prefill_timed_out = True
                         break
-                    _q_text = str(oq.get("question_text", oq.get("name", "")))
+                    _q_raw = str(oq.get("question_text", oq.get("name", "")))
                     _q_ctx = str(oq.get("question_context", "")).strip()
-                    # v1.0.1.2: Enrich pool pre-fill with user-provided context + condition
-                    if _q_ctx:
-                        import re as _re_pool
-                        _humanized_pool = _re_pool.sub(r'[_\-]+', ' ', _q_text).strip() if _q_text and " " not in _q_text.strip() else _q_text
-                        _topic_pool = self.study_title or self.study_description or ""
-                        _q_text = f"Question: {_humanized_pool}\nContext: {_q_ctx}"
-                        if _topic_pool:
-                            _q_text += f"\nStudy topic: {_topic_pool}"
-                    elif _q_text and " " not in _q_text.strip():
-                        import re as _re_pool
-                        _humanized_pool = _re_pool.sub(r'[_\-]+', ' ', _q_text).strip()
-                        _topic_pool = self.study_title or self.study_description or ""
-                        if _topic_pool:
-                            _q_text = f"In the context of a study about {_topic_pool}, please share your thoughts on: {_humanized_pool}"
-                        else:
-                            _q_text = f"Please share your thoughts on: {_humanized_pool}"
                     for _cond in _unique_conditions:
                         # v1.0.7.1: Check budget and API status before each condition
                         if time.time() - _prefill_wall_start >= _PREFILL_TOTAL_BUDGET:
@@ -12046,6 +12076,12 @@ class EnhancedSimulationEngine:
                         if self.survey_flow_handler.is_question_visible(
                             _clean_column_name(str(oq.get("name", ""))), _cond
                         ):
+                            # v1.2.7.9 (H1 fix): Build the enriched text via the SHARED
+                            # helper, per-condition, so the prefill pool key is
+                            # byte-identical to the per-participant draw key. Previously
+                            # this path omitted the \nCondition:/\nAdditional context:
+                            # suffixes the runtime path adds, so every draw missed.
+                            _q_text = self._build_enriched_question_text(_q_raw, _q_ctx, _cond)
                             # Per-call budget = remaining total budget
                             _remaining = max(5.0, _PREFILL_TOTAL_BUDGET - (time.time() - _prefill_wall_start))
                             self.llm_generator.prefill_pool(
@@ -12203,6 +12239,16 @@ class EnhancedSimulationEngine:
                 self._log(f"OE Q{_oe_idx+1}/{_total_oe}: Re-enabling LLM (was force-disabled by previous question)")
                 self.llm_generator._force_disabled = False
                 self.llm_generator._api_available = True
+            # v1.2.7.9 (M1 fix): Give each NEW OE question a fresh transient-throttle
+            # budget. free_tier_exhausted_now latches once _consecutive_transient_batches
+            # hits the threshold and — because every caller then skips _generate_batch —
+            # it can never reset itself mid-run. Clearing it per-question lets a free
+            # tier that recovered between questions be used again, while the cumulative
+            # OE cap (_disabled_by_cap) still wins so we never over-spend the budget.
+            if (self.llm_generator
+                    and not _disabled_by_cap
+                    and getattr(self.llm_generator, '_consecutive_transient_batches', 0)):
+                self.llm_generator._consecutive_transient_batches = 0
             # v1.1.1.2: Per-question progress so UI shows "Text question 2/3"
             _report_progress("open_ended_question", _oe_idx, _total_oe)
             # v1.4.3: Use _clean_column_name for scientific column naming
