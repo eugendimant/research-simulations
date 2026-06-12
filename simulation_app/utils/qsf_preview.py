@@ -33,7 +33,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 # Version identifier to help track deployed code
-__version__ = "1.2.8.5"  # v1.2.8.5: mobile hero subtitle wrap
+__version__ = "1.2.8.6"  # v1.2.8.6: document recursive strategic reasoning
 
 
 # ============================================================================

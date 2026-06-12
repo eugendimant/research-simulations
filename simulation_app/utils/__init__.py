@@ -2,7 +2,7 @@
 """
 Utility modules for the Behavioral Experiment Simulation Tool.
 
-Version: 1.2.8.5 - Mobile UI fix: the landing-page hero subtitle had a hard-coded <br> that, on narrow phone viewports, re-wrapped badly and stranded single words ("test"/"data") on their own lines. Removed the <br> and made the subtitle wrap responsively (text-wrap:balance + a mobile font-size), with text-wrap:balance on the H1 too. Builds on v1.2.8.4
+Version: 1.2.8.6 - Docs: surfaced the recursive strategic reasoning that already exists in the SocSim economic-game module — Level-k (each level best-responds to the level below; Stahl & Wilson 1994, Nagel 1995) and Cognitive Hierarchy (Poisson thinking levels; Camerer, Ho & Chong 2004), driven by each persona's strategic_depth. Added to the README and PR. Builds on v1.2.8.5
 
 Changes (v1.0.0 - 20 Iterations of Comprehensive Improvements):
     === ENHANCED SCALE/MATRIX DETECTION ===
@@ -65,7 +65,7 @@ Modules:
 """
 
 # Package version - should match all module versions
-__version__ = "1.2.8.5"
+__version__ = "1.2.8.6"
 
 
 # =============================================================================

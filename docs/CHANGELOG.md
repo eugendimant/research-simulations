@@ -1,4 +1,19 @@
 
+## 2026-06-01 — v1.2.8.6
+### Docs: surface the recursive strategic reasoning (Level-k + Cognitive Hierarchy)
+
+The SocSim economic-game module already models **recursive strategic reasoning** —
+for strategic games (beauty contest, money-request/11-20, stag hunt, minimum-effort
+coordination, Tullock contest, …) simulated players reason recursively about other
+players' reasoning. Two literature-grounded models: **Level-k** (Level-0 random →
+Level-1 best-responds to Level-0 → Level-k best-responds to Level-(k-1); Stahl &
+Wilson 1994, Nagel 1995, Costa-Gomes & Crawford 2006) and **Cognitive Hierarchy**
+(Poisson-distributed thinking levels τ, each best-responding to the full distribution
+of lower levels; Camerer, Ho & Chong 2004). Each persona's `strategic_depth`
+parameter controls recursion depth. This was undocumented user-facing behavior —
+now described in the README (Adaptive Behavioral Engine 3.0 section) and the PR.
+Docs-only change; version synced (1.2.8.6).
+
 ## 2026-06-01 — v1.2.8.5
 ### Mobile UI: landing-hero subtitle wraps cleanly on phones
 
