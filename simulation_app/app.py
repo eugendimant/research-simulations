@@ -54,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.2.8.5"
-BUILD_ID = "20260601-v12085-mobile-hero-subtitle-wrap"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.2.8.6"
+BUILD_ID = "20260601-v12086-document-recursive-strategic-reasoning"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -146,7 +146,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.2.8.5"  # v1.2.8.5: Mobile UI — landing hero subtitle wraps responsively (removed hard <br>, text-wrap:balance + mobile font-size) so no word is stranded on its own line on phones
+APP_VERSION = "1.2.8.6"  # v1.2.8.6: Docs — document the recursive strategic reasoning (Level-k + Cognitive Hierarchy) already in the SocSim economic-game module
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")

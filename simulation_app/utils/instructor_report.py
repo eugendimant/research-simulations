@@ -6,7 +6,7 @@ Generates comprehensive instructor-facing reports for student simulations.
 """
 
 # Version identifier to help track deployed code
-__version__ = "1.2.8.5"  # v1.2.8.5: mobile hero subtitle wrap (report-facing version stamp)
+__version__ = "1.2.8.6"  # v1.2.8.6: document recursive strategic reasoning (report-facing version stamp)
 
 from dataclasses import dataclass
 from datetime import datetime
