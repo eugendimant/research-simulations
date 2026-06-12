@@ -2,7 +2,7 @@
 """
 Utility modules for the Behavioral Experiment Simulation Tool.
 
-Version: 1.2.7.7 - LLM source-label fix (AI vs Non-LLM), batch-JSON parse, _ext crash fix, gemini-3.1-flash-lite primary + transient/allowlist failover, OE question-leak fix; Xie et al. 2026 realism principles
+Version: 1.2.8.6 - Docs: surfaced the recursive strategic reasoning that already exists in the SocSim economic-game module — Level-k (each level best-responds to the level below; Stahl & Wilson 1994, Nagel 1995) and Cognitive Hierarchy (Poisson thinking levels; Camerer, Ho & Chong 2004), driven by each persona's strategic_depth. Added to the README and PR. Builds on v1.2.8.5
 
 Changes (v1.0.0 - 20 Iterations of Comprehensive Improvements):
     === ENHANCED SCALE/MATRIX DETECTION ===
@@ -65,7 +65,7 @@ Modules:
 """
 
 # Package version - should match all module versions
-__version__ = "1.2.7.7"
+__version__ = "1.2.8.6"
 
 
 # =============================================================================

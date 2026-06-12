@@ -15,7 +15,7 @@ Benchmark axes:
 Version: 1.2.5.0
 """
 
-__version__ = "1.2.5.0"
+__version__ = "1.2.8.4"
 
 __all__ = ["HBSValidator"]
 
@@ -117,12 +117,20 @@ class HBSValidator:
     # Construction
     # ------------------------------------------------------------------
 
-    def __init__(self, benchmarks: Optional[Dict[str, Dict[str, Any]]] = None) -> None:
+    def __init__(self, benchmarks: Optional[Dict[str, Dict[str, Any]]] = None,
+                 seed: Optional[int] = None) -> None:
         """Initialise the validator, optionally overriding default benchmarks.
 
         Args:
             benchmarks: Optional dict to merge with / override ``BENCHMARKS``.
+            seed: Optional RNG seed. v1.2.8.4: the validator's perturbations now use
+                a PER-INSTANCE ``random.Random`` instead of the process-global
+                ``random`` module, so the engine no longer has to seed the global
+                RNG (and hold a process-wide lock across the whole run) just to keep
+                this validator reproducible. Same seed → same perturbations, with
+                zero cross-session interference (Codex P2: de-serialize multi-user runs).
         """
+        self._rng = random.Random(seed)
         self._benchmarks = dict(self.BENCHMARKS)
         if benchmarks:
             for key, val in benchmarks.items():
@@ -589,7 +597,7 @@ class HBSValidator:
 
             if val < lo or val > hi:
                 # Re-sample with a log-normal-ish distribution centred on ~720s
-                new_val = random.gauss(mu=720, sigma=200)
+                new_val = self._rng.gauss(mu=720, sigma=200)
                 new_val = max(lo, min(hi, new_val))
                 self._set_cell(df, row_idx, timing_col, round(new_val, 1))
 
@@ -611,6 +619,28 @@ class HBSValidator:
         n_rows = self._nrows(df)
         _perturbed_count = 0
 
+        # v1.2.8.1 (bugfix): infer each column's bounds from its FULL observed
+        # range. The old code derived scale_hi from the straight-liner's own
+        # (constant) row and FORCED scale_hi >= 5, so perturbing a 2-point item
+        # produced 2 + 1 = 3 — a scale-bounds violation. A column's observed
+        # min/max never exceeds its true scale range, so clamping to them is safe
+        # for narrow (binary / 3-point) scales while still allowing perturbation.
+        _col_lo: Dict[str, int] = {}
+        _col_hi: Dict[str, int] = {}
+        for _col in scale_cols:
+            _cvals: List[float] = []
+            for _r in range(n_rows):
+                _cv = self._cell_value(df, _r, _col)
+                if _cv is None:
+                    continue
+                try:
+                    _cvals.append(float(_cv))
+                except (TypeError, ValueError):
+                    pass
+            if _cvals:
+                _col_lo[_col] = int(min(_cvals))
+                _col_hi[_col] = int(max(_cvals))
+
         for row_idx in range(n_rows):
             row_vals: List[Tuple[str, float]] = []
             for col in scale_cols:
@@ -630,19 +660,19 @@ class HBSValidator:
                 continue
 
             # Perturb 2-3 randomly chosen items by +/-1
-            n_perturb = min(random.choice([2, 3]), len(row_vals))
-            indices = random.sample(range(len(row_vals)), n_perturb)
+            n_perturb = min(self._rng.choice([2, 3]), len(row_vals))
+            indices = self._rng.sample(range(len(row_vals)), n_perturb)
 
             for idx in indices:
                 col_name, old_val = row_vals[idx]
-                direction = random.choice([-1, 1])
+                # Clamp to the column's OBSERVED range so narrow scales (binary,
+                # 3-point) are never pushed out of bounds (v1.2.8.1).
+                scale_lo = _col_lo.get(col_name, 1)
+                scale_hi = _col_hi.get(col_name, scale_lo + 1)
+                if scale_hi <= scale_lo:
+                    continue  # degenerate column — cannot perturb without leaving range
+                direction = self._rng.choice([-1, 1])
                 new_val = old_val + direction
-                # Clamp to scale bounds (infer from actual data range)
-                max_val = max(vals_only)
-                scale_lo = 1
-                scale_hi = int(max_val) if max_val > 5 else 5
-                if scale_hi < 5:
-                    scale_hi = 5
                 new_val = max(scale_lo, min(scale_hi, new_val))
                 self._set_cell(df, row_idx, col_name, int(new_val))
                 _perturbed_count += 1
@@ -680,7 +710,7 @@ class HBSValidator:
                 normalised = text.lower()
                 if normalised in seen:
                     # This is a duplicate — append filler to make unique
-                    filler = random.choice(_filler_phrases)
+                    filler = self._rng.choice(_filler_phrases)
                     # Vary by adding count to avoid re-duplication
                     count = seen[normalised]
                     suffix = filler if count == 1 else f"{filler} ({count})"
@@ -736,7 +766,7 @@ class HBSValidator:
                 for row_idx, text in texts:
                     words = text.split()
                     if len(words) > hi:
-                        truncated = " ".join(words[:random.randint(lo, hi)])
+                        truncated = " ".join(words[:self._rng.randint(lo, hi)])
                         if not truncated.endswith("."):
                             truncated += "."
                         self._set_cell(df, row_idx, col, truncated)
@@ -746,7 +776,7 @@ class HBSValidator:
                 for row_idx, text in texts:
                     words = text.split()
                     if len(words) < lo:
-                        extension = random.choice(_extension_phrases)
+                        extension = self._rng.choice(_extension_phrases)
                         new_text = text.rstrip(".") + ". " + extension
                         self._set_cell(df, row_idx, col, new_text)
 

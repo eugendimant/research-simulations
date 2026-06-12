@@ -63,10 +63,11 @@ association, impression, perception, feedback, comment, observation, general
 Version: 1.8.5 - Improved domain detection with weighted scoring and disambiguation
 """
 
-__version__ = "1.2.7.7"
+__version__ = "1.2.8.6"
 
 import random
 import re
+from collections import deque
 from typing import Dict, List, Optional, Tuple, Any
 from dataclasses import dataclass
 from enum import Enum
@@ -7195,10 +7196,9 @@ class ComprehensiveResponseGenerator:
     - Scientific grounding with research-based language patterns
     """
 
-    # Class-level response fingerprint tracking for dataset uniqueness
-    _used_responses: set = set()
-    _used_sentences: set = set()
-    _session_id: int = 0
+    # v1.2.7.8: response-fingerprint uniqueness tracking is PER-INSTANCE (set in
+    # __init__), NOT class-level — class-level state was shared across concurrent
+    # Streamlit sessions and broke same-seed reproducibility under multi-user load.
 
     # v1.1.0.3: Sentence starters cleaned — removed academic patterns
     # ("Upon consideration,", "In my estimation,", "My position is that").
@@ -7239,12 +7239,60 @@ class ComprehensiveResponseGenerator:
         # bare global RNG calls (verified), so global seeding was redundant and a
         # cross-session side effect. (text_generator still seeds globally by design.)
         self.study_context: Dict[str, Any] = {}
-        # Initialize fresh session for uniqueness tracking
-        ComprehensiveResponseGenerator._session_id += 1
-        ComprehensiveResponseGenerator._used_responses = set()
-        ComprehensiveResponseGenerator._used_sentences = set()
+        # v1.2.7.8: uniqueness-tracking state is now PER-INSTANCE (was class-level
+        # shared across ALL sessions, which made concurrent Streamlit runs leak each
+        # other's fingerprints — one session's dedup diverted another's OE text,
+        # breaking same-seed reproducibility under multi-user load). Each engine run
+        # builds its own generator, so per-instance sets give within-run dataset
+        # uniqueness without cross-run/cross-session interference.
+        self._used_responses: set = set()
+        self._used_sentences: set = set()
+        # v1.2.7.9 (L1 fix): Bound the dedup memory so a single large-N run
+        # (MAX_SIMULATED_N=10,000 × multiple OE questions) cannot grow these to
+        # hundreds of thousands of strings. FIFO eviction via a companion deque
+        # keeps the cap DETERMINISTIC (oldest-first) so same-seed reproducibility
+        # is preserved — never pop arbitrary set elements (str hash order depends
+        # on PYTHONHASHSEED and would reintroduce cross-process non-determinism).
+        self._used_responses_order: deque = deque()
+        self._used_sentences_order: deque = deque()
+        self._MAX_USED_RESPONSES = 8000
+        self._MAX_USED_SENTENCES = 30000
         # v1.1.0.4: Track used corpus responses to prevent repetition
         self._used_corpus_indices: Dict[str, set] = {}  # key: domain|sentiment → set of indices
+
+    def _remember_response(self, fingerprint: str) -> None:
+        """Record a response fingerprint with bounded FIFO eviction (L1)."""
+        if not fingerprint or fingerprint in self._used_responses:
+            return
+        self._used_responses.add(fingerprint)
+        self._used_responses_order.append(fingerprint)
+        if len(self._used_responses_order) > self._MAX_USED_RESPONSES:
+            _old = self._used_responses_order.popleft()
+            self._used_responses.discard(_old)
+
+    def _remember_sentence(self, normalized: str) -> None:
+        """Record a normalized sentence with bounded FIFO eviction (L1)."""
+        if not normalized or normalized in self._used_sentences:
+            return
+        self._used_sentences.add(normalized)
+        self._used_sentences_order.append(normalized)
+        if len(self._used_sentences_order) > self._MAX_USED_SENTENCES:
+            _old = self._used_sentences_order.popleft()
+            self._used_sentences.discard(_old)
+
+    def reset(self) -> None:
+        """v1.2.7.9 (M2 fix): Clear all per-run dedup state so a REUSED engine
+        produces byte-identical output on the same seed (reproducibility
+        contract). The engine calls this at the start of every generate() run,
+        next to text_generator.reset_used_responses(). Previously this
+        generator's _used_responses/_used_sentences carried over between runs on
+        a reused engine and forced spurious "duplicate" variation on the 2nd run.
+        """
+        self._used_responses.clear()
+        self._used_sentences.clear()
+        self._used_responses_order.clear()
+        self._used_sentences_order.clear()
+        self._used_corpus_indices.clear()
 
     def set_study_context(self, context: Dict[str, Any]):
         """Set the study context for context-aware generation."""
@@ -7297,7 +7345,7 @@ class ComprehensiveResponseGenerator:
         duplicate_count = 0
         for sentence in sentences:
             norm = self._normalize_sentence(sentence)
-            if norm and norm in ComprehensiveResponseGenerator._used_sentences:
+            if norm and norm in self._used_sentences:
                 duplicate_count += 1
 
         overlap_ratio = duplicate_count / len(sentences)
@@ -7332,7 +7380,7 @@ class ComprehensiveResponseGenerator:
                 if len(stripped) >= 2:
                     varied = starter + stripped[0].lower() + stripped[1:]
                     norm = self._normalize_sentence(varied)
-                    if norm not in ComprehensiveResponseGenerator._used_sentences:
+                    if norm not in self._used_sentences:
                         return varied
 
             elif strategy == 1:
@@ -7348,7 +7396,7 @@ class ComprehensiveResponseGenerator:
                 qualifier = local_rng.choice(qualifiers)
                 varied = qualifier + sentence[0].lower() + sentence[1:] if len(sentence) >= 2 else sentence
                 norm = self._normalize_sentence(varied)
-                if norm not in ComprehensiveResponseGenerator._used_sentences:
+                if norm not in self._used_sentences:
                     return varied
 
             elif strategy == 2:
@@ -7394,7 +7442,7 @@ class ComprehensiveResponseGenerator:
                         break
                 if varied != sentence:
                     norm = self._normalize_sentence(varied)
-                    if norm not in ComprehensiveResponseGenerator._used_sentences:
+                    if norm not in self._used_sentences:
                         return varied
 
             elif strategy == 3:
@@ -7410,7 +7458,7 @@ class ComprehensiveResponseGenerator:
                 suffix = local_rng.choice(suffixes)
                 varied = base + suffix + '.'
                 norm = self._normalize_sentence(varied)
-                if norm not in ComprehensiveResponseGenerator._used_sentences:
+                if norm not in self._used_sentences:
                     return varied
 
         # Fallback: just prepend a unique hedge word
@@ -7440,19 +7488,102 @@ class ComprehensiveResponseGenerator:
         result_sentences: List[str] = []
         for sentence in sentences:
             norm = self._normalize_sentence(sentence)
-            if norm and norm in ComprehensiveResponseGenerator._used_sentences:
+            if norm and norm in self._used_sentences:
                 # This sentence was already used - replace with a varied version
                 varied = self._vary_single_sentence(sentence, local_rng)
                 varied_norm = self._normalize_sentence(varied)
-                ComprehensiveResponseGenerator._used_sentences.add(varied_norm)
+                self._remember_sentence(varied_norm)
                 result_sentences.append(varied)
             else:
                 # Sentence is unique - register it and keep as-is
                 if norm:
-                    ComprehensiveResponseGenerator._used_sentences.add(norm)
+                    self._remember_sentence(norm)
                 result_sentences.append(sentence)
 
         return ' '.join(result_sentences)
+
+    @staticmethod
+    def _normalize_punctuation(text: str) -> str:
+        """v1.2.8.0: Deterministically clean up MECHANICAL punctuation artifacts the
+        verbal-tic / filler / hedge insertion stages can leave behind — chiefly a tic
+        that appended ',' next to an existing comma, producing ',,' (~14% of offline
+        responses before this fix). It repairs ONLY punctuation adjacency, never
+        touching letters, so intentional realism is preserved: typos, lowercase 'i',
+        word repetition ('like like'), '...' ellipsis and '!!' emphasis all survive.
+        Pure function (no RNG) → same-seed output stays byte-identical across
+        processes."""
+        if not text:
+            return text
+        import re as _re
+        # Collapse runs of commas (",,", ", ,", ", , ,") to one comma.
+        text = _re.sub(r',(?:\s*,)+', ',', text)
+        # Remove whitespace before , ; : ! ?  (ellipsis handled separately below).
+        text = _re.sub(r'\s+([,;:!?])', r'\1', text)
+        # Remove whitespace before a LONE period (keep '...' ellipsis intact).
+        text = _re.sub(r'\s+\.(?!\.)', '.', text)
+        # A comma immediately before a sentence-ender collapses to the ender (",." → ".").
+        text = _re.sub(r',\s*([.!?])', r'\1', text)
+        # Drop a leading orphan comma/semicolon left by the collapses above.
+        text = _re.sub(r'^\s*[,;:]+\s*', '', text)
+        # Collapse runs of spaces.
+        text = _re.sub(r' {2,}', ' ', text)
+        return text.strip()
+
+    @staticmethod
+    def _strip_instruction_tail(text: str) -> str:
+        """v1.2.8.0: Strip a trailing INSTRUCTION fragment that isn't part of the
+        topic ('...the candidate and why' → '...the candidate'; '...the policy and
+        explain your reasoning' → '...the policy'). Without it, an instruction like
+        'Explain your view of the candidate and why' yielded the topic 'the
+        candidate and why', which read as broken grammar when slotted into templates
+        ('I feel good about the candidate and why is straightforward' — 68% of
+        offline responses for that question). Only strips 'and <instruction-word>'
+        so genuine conjunctive topics ('crime and punishment', 'guns and butter')
+        are preserved."""
+        if not text:
+            return text
+        import re as _re
+        # (a) Bare "and why / and how / and how so" ONLY at the very end (a pure
+        #     instruction tail with nothing meaningful after it). Codex P2: do NOT
+        #     strip "and how it affects your work" / "and how people vote" — those
+        #     are topical CLAUSES, not instructions. The end-anchor ([?.!]*\s*$)
+        #     guarantees we only drop a dangling "...and why?" / "...and how.".
+        _t = _re.sub(r'[\s,]+and\s+(?:why|how(?:\s+so)?)\s*[?.!]*\s*$',
+                     '', text, flags=_re.IGNORECASE).strip()
+        # (b) Explicit instructional VERB tails ("...and explain your reasoning",
+        #     "...and justify it") — always instructions, so strip through the end.
+        #     (No bare "how"/"why" here — those are handled, end-anchored, in (a) so
+        #     a following topical clause is preserved.)
+        _t = _re.sub(
+            r'[\s,]+and\s+(?:explain|elaborate|justify|describe|'
+            r'tell\s+us(?:\s+why)?|give\s+(?:your\s+)?reasons?|'
+            r'the\s+reasons?|your\s+reasons?|the\s+reasoning)\b.*$',
+            '', _t, flags=_re.IGNORECASE).strip()
+        return _t or text
+
+    @staticmethod
+    def _strip_instruction_prefix(text: str) -> str:
+        """v1.2.8.0: Strip a leading imperative/instruction lead-in that has no
+        preposition to anchor noun-phrase extraction ('Describe the tax plan' →
+        'the tax plan'; 'List the options' → 'the options'). Only consumes the verb
+        + connective filler ('your'/'us'/'me'/'about'/'on'/'of'); it deliberately
+        does NOT eat the article 'the', so the topic stays natural. Used only as the
+        no-preposition fallback, so preposition cases ('view of X') are unaffected."""
+        if not text:
+            return text
+        import re as _re
+        _t = _re.sub(
+            r'^\s*(?:please\s+|kindly\s+|briefly\s+|'
+            r'in\s+(?:a\s+few\s+|your\s+own\s+)?words[,:\s]+)*'
+            r'(?:describe|explain|discuss|list|name|identify|rate|elaborate|reflect|'
+            r'comment|consider|evaluate|assess|summari[sz]e|outline|state|provide|'
+            r'give|share|tell\s+us|tell\s+me|write\s+about|talk\s+about)\b'
+            r'(?:\s+(?:your|us|me|about|on|of))*[\s,:]*',
+            '', text, flags=_re.IGNORECASE).strip()
+        # Drop a trailing sentence terminator so the topic interpolates cleanly
+        # ("the merger." → "the merger") without harming mid-string punctuation.
+        _t = _t.rstrip(' \t.!?;:,')
+        return _t or text
 
     def _ensure_unique_response(self, response: str, local_rng: random.Random, max_attempts: int = 8) -> str:
         """Ensure response is unique within the dataset by varying if needed.
@@ -7472,30 +7603,30 @@ class ComprehensiveResponseGenerator:
         fingerprint = self._get_response_fingerprint(response)
 
         # Check both fingerprint uniqueness AND sentence-level overlap
-        is_fingerprint_dup = fingerprint in ComprehensiveResponseGenerator._used_responses
+        is_fingerprint_dup = fingerprint in self._used_responses
         is_sentence_dup = self._has_high_sentence_overlap(response)
 
         if not is_fingerprint_dup and not is_sentence_dup:
-            ComprehensiveResponseGenerator._used_responses.add(fingerprint)
+            self._remember_response(fingerprint)
             # Register individual sentences for future overlap checks
             for sentence in self._split_into_sentences(response):
                 norm = self._normalize_sentence(sentence)
                 if norm:
-                    ComprehensiveResponseGenerator._used_sentences.add(norm)
+                    self._remember_sentence(norm)
             return response
 
         # Response is a duplicate (by fingerprint or sentence overlap) - vary it
         for attempt in range(max_attempts):
             varied = self._vary_response(response, local_rng, attempt)
             new_fingerprint = self._get_response_fingerprint(varied)
-            new_is_fingerprint_dup = new_fingerprint in ComprehensiveResponseGenerator._used_responses
+            new_is_fingerprint_dup = new_fingerprint in self._used_responses
             new_is_sentence_dup = self._has_high_sentence_overlap(varied)
             if not new_is_fingerprint_dup and not new_is_sentence_dup:
-                ComprehensiveResponseGenerator._used_responses.add(new_fingerprint)
+                self._remember_response(new_fingerprint)
                 for sentence in self._split_into_sentences(varied):
                     norm = self._normalize_sentence(sentence)
                     if norm:
-                        ComprehensiveResponseGenerator._used_sentences.add(norm)
+                        self._remember_sentence(norm)
                 return varied
 
         # Fallback: add a natural-sounding unique suffix (not academic)
@@ -7505,11 +7636,11 @@ class ComprehensiveResponseGenerator:
             " that's really all I have to say", " for what it's worth",
         ])
         final = response.rstrip('.!?') + '.' + unique_suffix
-        ComprehensiveResponseGenerator._used_responses.add(self._get_response_fingerprint(final))
+        self._remember_response(self._get_response_fingerprint(final))
         for sentence in self._split_into_sentences(final):
             norm = self._normalize_sentence(sentence)
             if norm:
-                ComprehensiveResponseGenerator._used_sentences.add(norm)
+                self._remember_sentence(norm)
         return final
 
     def _vary_response(self, response: str, local_rng: random.Random, variation_level: int = 0) -> str:
@@ -7853,6 +7984,10 @@ class ComprehensiveResponseGenerator:
         # improvement that prevents the exact same sentences from appearing
         # across different responses in a dataset.
         response = self._enforce_sentence_uniqueness(response, local_rng)
+
+        # v1.2.8.0: LAST step — repair mechanical punctuation artifacts (",," etc.)
+        # left by the tic/filler/hedge stages. Deterministic; preserves realism.
+        response = self._normalize_punctuation(response)
 
         return response
 
@@ -8660,18 +8795,29 @@ class ComprehensiveResponseGenerator:
             _clean = _src
             if ' ' not in _clean:
                 _clean = re.sub(r'[_\-]+', ' ', _clean).strip()
+            # v1.2.8.0: drop trailing instruction fragments ("...and why") BEFORE
+            # noun-phrase extraction, so the topic is "the candidate", not
+            # "the candidate and why".
+            _clean = self._strip_instruction_tail(_clean)
 
             # Try to extract the core noun phrase from question text
             # "What do you think about climate change?" → "climate change"
             # "How do you feel about the new policy?" → "the new policy"
+            # v1.2.8.0: \b so a preposition embedded in a word ("opini-on",
+            # "informati-on") can't match and capture a leading "on ...".
             _about_match = re.search(
-                r'(?:about|regarding|toward[s]?|on|of|with)\s+(.+?)(?:\?|$|\.|,)',
+                r'\b(?:about|regarding|toward[s]?|on|of|with)\s+(.+?)(?:\?|$|\.|,)',
                 _clean, re.IGNORECASE,
             )
             if _about_match:
                 _candidate = _about_match.group(1).strip()
                 if _usable(_candidate):
                     return _candidate
+
+            # v1.2.8.0: no preposition matched — strip a leading imperative lead-in
+            # ("Describe the tax plan" → "the tax plan") so the topic doesn't carry
+            # the instruction verb into templates ("I feel about describe the...").
+            _clean = self._strip_instruction_prefix(_clean)
 
             # Try the full source if it's intelligible AND not an interrogative
             if _usable(_clean):

@@ -1,6 +1,6 @@
 # Behavioral Experiment Simulation Tool
 
-**Version 1.2.7.7** | A Streamlit application for generating realistic synthetic behavioral experiment data using theory-grounded persona-driven simulation.
+**Version 1.2.8.6** | A Streamlit application for generating realistic synthetic behavioral experiment data using theory-grounded persona-driven simulation.
 
 ## What This Tool Does
 
@@ -19,7 +19,7 @@
 - **Develop analysis scripts** on properly structured data
 - **Check pre-registration consistency** before data collection
 
-## Features (v1.2.7.7)
+## Features (v1.2.8.6)
 
 ### Generation Method Chooser
 - **3 simulation methods** — all use the ABE 3.0 behavioral engine for numeric data; methods differ in open-ended text source:
@@ -42,6 +42,7 @@
 - **8 structural archetypes** with narrative-specific weighting (story_first, emotional_burst, stream, etc.)
 - **Behavioral coherence** — disengaged/straight-lined participants produce appropriately brief responses
 - Economic game modeling (Fehr-Schmidt, Engel meta-analysis) via integrated behavioral adapter
+- **Recursive strategic reasoning** — for strategic games (beauty contest, money-request/11-20, stag hunt, minimum-effort coordination, Tullock contest, etc.), simulated players reason *recursively* about other players' reasoning via two literature-grounded models: **Level-k** (Level-0 random → Level-1 best-responds to Level-0 → Level-k best-responds to Level-(k-1); Stahl & Wilson 1994, Nagel 1995, Costa-Gomes & Crawford 2006) and **Cognitive Hierarchy** (Poisson-distributed thinking levels τ, each best-responding to the full distribution of lower levels; Camerer, Ho & Chong 2004). Each persona's `strategic_depth` parameter sets how deep its recursion goes.
 - LIWC-informed linguistic profiling and cross-response voice consistency
 
 ### ABE 3.0 Advanced Realism Layers (integrated)

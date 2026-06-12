@@ -1,4 +1,258 @@
 
+## 2026-06-01 — v1.2.8.6
+### Docs: surface the recursive strategic reasoning (Level-k + Cognitive Hierarchy)
+
+The SocSim economic-game module already models **recursive strategic reasoning** —
+for strategic games (beauty contest, money-request/11-20, stag hunt, minimum-effort
+coordination, Tullock contest, …) simulated players reason recursively about other
+players' reasoning. Two literature-grounded models: **Level-k** (Level-0 random →
+Level-1 best-responds to Level-0 → Level-k best-responds to Level-(k-1); Stahl &
+Wilson 1994, Nagel 1995, Costa-Gomes & Crawford 2006) and **Cognitive Hierarchy**
+(Poisson-distributed thinking levels τ, each best-responding to the full distribution
+of lower levels; Camerer, Ho & Chong 2004). Each persona's `strategic_depth`
+parameter controls recursion depth. This was undocumented user-facing behavior —
+now described in the README (Adaptive Behavioral Engine 3.0 section) and the PR.
+Docs-only change; version synced (1.2.8.6).
+
+## 2026-06-01 — v1.2.8.5
+### Mobile UI: landing-hero subtitle wraps cleanly on phones
+
+On a narrow phone the landing-page subtitle wrapped badly, stranding single words
+("test", "data") on their own lines. Cause: a hard-coded `<br>` after "…to build
+and test" that split the line for desktop, then re-wrapped awkwardly once the
+remaining text no longer fit the mobile width. Fix: removed the `<br>` so the text
+flows naturally, and made the subtitle wrap responsively — `text-wrap: balance`
+(even line lengths, no orphan words), a tighter measure (`max-width`), and a smaller
+mobile font-size in the `@media (max-width:768px)` block. Also added
+`text-wrap: balance` to the H1. App-load smoke test + compile pass; version synced
+(1.2.8.5).
+
+## 2026-06-01 — v1.2.8.4
+### Codex review: de-serialize concurrent runs + preserve "and how" topical clauses
+
+Two issues from the chatgpt-codex-connector review on PR #352, both fixed with
+regression tests.
+
+- **P2 — Avoid serializing complete simulation runs.** The v1.2.7.8
+  `_GLOBAL_RNG_LOCK` (added to make the global-RNG seed/restore safe under
+  concurrency) was held across the WHOLE run — including LLM prefill and
+  per-participant network calls — so two Streamlit sessions ran strictly one at a
+  time. **Resolved by removing the lock entirely:** the engine's numeric draws
+  already use per-call `np.random.RandomState` (23 sites, seeded from
+  `self.seed`/`participant_seed`), and the *only* remaining global-RNG consumers in
+  the generation path — `HBSValidator` (straight-line/coherence perturbations) and
+  the LLM backoff jitter — were migrated to per-instance RNGs
+  (`HBSValidator(seed=self.seed)`; `LLMResponseGenerator._rng`). The engine no
+  longer seeds the process-global RNG, so there is nothing to serialize. **Proof:**
+  same-seed output is byte-identical across `PYTHONHASHSEED ∈ {0,1,42,31337,271828}`
+  with global seeding *removed* (complete evidence that no global RNG affects data),
+  and a new test (`test_v1284_generation_is_not_globally_serialized`) confirms
+  multiple threads now execute generation concurrently. This supersedes the
+  "conscious trade-off" noted in v1.2.7.9.
+- **P2 — Preserve topical clauses beginning with "and how".** `_strip_instruction_tail`
+  removed everything after "and why/how", so "Describe your experience with
+  depression **and how it affects your work**" lost the meaningful clause (→ topic
+  "depression"). Now bare "and why/how" is stripped **only when it dangles at the
+  very end** ("…and why?"); an "and how <clause>" that continues is preserved, and
+  explicit instructional verb tails ("and explain your reasoning") are still
+  stripped. New assertions in `test_v1280_strips_instruction_tail_keeps_conjunctive_topics`.
+
+**Validation:** compileall exit 0; 56 tests pass; cross-process determinism
+byte-identical across 5 `PYTHONHASHSEED` values; random N=200 across 10 QSFs
+all-pass; version synced (1.2.8.4).
+
+## 2026-06-01 — v1.2.8.3
+### UX: one-click "Clear all" for auto-detected open-ended questions
+
+When a QSF is uploaded, the app auto-detects open-ended questions and lists them for
+review. A "Remove All" button existed, but only at the **bottom** of the section —
+below the full list — so users scrolled past it and removed questions one-by-one via
+the per-item ✕. Added a prominent **"🗑️ Clear all N"** button at the **top** of the
+section (right of the header), so "clear everything the app detected, then add my
+own" is a single click up front. Mirrors the existing remove-all logic (bumps the OE
+widget-version, keeps the expander open, shows a confirmation notice); the bottom
+"Remove All (N)" button next to "Add Open-Ended Question" is unchanged. App-load
+smoke test + full suite pass; version synced (1.2.8.3).
+
+## 2026-06-01 — v1.2.8.2
+### PRODUCTION-DOWN FIX: one bad import no longer crashes the whole app
+
+The live app went down with a redacted `ImportError` at `app.py:66`
+(`from utils.group_management import GroupManager, APIKeyManager,
+_atomic_write_json`). Root cause: a **hard top-level import of a `_private`
+cross-module symbol**. The instant `app.py` and `group_management.py` drift out of
+sync (partial deploy, stale build, version skew, a rename), that single line takes
+down the ENTIRE Streamlit app — and Streamlit redacts the message, so users can't
+self-diagnose. Highest-severity class (P0).
+
+- **Fix:** `_atomic_write_json` is now imported **defensively** (`try/except
+  ImportError` with a local fallback that writes JSON atomically), so the app
+  always loads even against an older/mismatched `group_management`. Verified by
+  simulating the broken state (group_management without the helper) → app loads via
+  fallback instead of crashing.
+- **Permanent safeguards (so it never happens again):**
+  - New app-load **smoke test** `tests/test_app_import_safety.py` —
+    `test_app_imports_without_error` execs `app.py` exactly as Streamlit does and
+    fails on ANY unresolved top-level import; `test_app_survives_missing_private_atomic_helper`
+    proves the fallback; `test_app_has_no_toplevel_private_cross_module_imports`
+    forbids new `from x import _private` at module scope. Run before every push.
+  - New **CLAUDE.md ABSOLUTE RULE "Import Resilience"** + Self-Audit Bug-Class #19:
+    never hard-import a `_private` symbol across modules; a symbol an entry point
+    imports is part of the contract (rename/move/delete it and all import sites in
+    the SAME commit).
+
+> **To restore the live site:** deploy this branch (merge to the branch Streamlit
+> Cloud tracks, then reboot the app). The fix makes `app.py` resilient to the
+> version skew that caused the outage.
+
+**Validation:** compileall exit 0; app-load smoke test (4) + full suite pass;
+version synced (1.2.8.2).
+
+## 2026-06-01 — v1.2.8.1
+### Numeric realism: heterogeneous item loadings + narrow-scale bounds fix
+
+Two numeric-side improvements found by a self-audit statistical-realism probe
+(validated against Xie et al. 2026) and the scale-generation test suite.
+
+- **Heterogeneous inter-item correlations (Xie et al. structural-uniformity tell).**
+  `_inject_inter_item_correlation` mixed every item toward the row mean with the
+  SAME weight, so all inter-item correlations clustered at ~one value (range 0.64–
+  0.72) — a "looks generated" signature. It now uses per-item mixing weights
+  (corr(i,j) ≈ wᵢ·wⱼ), scale-stable (derived from a per-scale `_stable_int_hash`
+  seed, applied column-wise so they don't average out) and centered on the uniform
+  value so the MEAN correlation — hence Cronbach's alpha — and per-item means/SDs
+  (condition effects) are preserved. Result: correlation spread 0.08 → **0.25**
+  (range 0.56–0.81), alpha and ingroup>outgroup effect (d≈0.9) unchanged.
+- **Narrow-scale (2/3-point) bounds violation (correctness bug).** The
+  straight-lining correction in `hbs_validator._correct_straightlining` inferred
+  `scale_hi` from the straight-liner's own (constant) row and FORCED it ≥ 5, so a
+  2-point item could be perturbed to `2 + 1 = 3` — out of bounds (caught by
+  `test_2_point_binary`). It now clamps to each column's FULL observed range, so
+  binary/3-point scales stay in `[1, scale_points]`. The engine's own
+  anti-straight-line jitter (`_audit_individual_consistency`) had the same class of
+  latent bug — it read bounds from a leaked loop variable (the last scale, default
+  7) — now fixed with a per-column bounds map.
+
+**New tests:** `test_v1281_inter_item_correlations_are_heterogeneous`,
+`test_v1281_narrow_scales_never_exceed_bounds` (+ `test_2_point_binary` now passes).
+**Validation:** compileall exit 0; 51 tests (bugfix + e2e + scale-gen) pass;
+cross-process determinism byte-identical across PYTHONHASHSEED (incl. a mixed
+7-point + binary design); random N=200 across 10 QSFs all-pass; version synced
+(1.2.8.1). Bug-class #18 added.
+
+## 2026-06-01 — v1.2.8.0
+### Offline open-ended realism: punctuation repair + instruction-free topic extraction
+
+A self-audit scan of the offline (non-LLM) open-ended path at N=200 surfaced two
+realism defects — the kind a reviewer would flag as "this data looks generated".
+Both are now fixed deterministically (no RNG, so same-seed output stays
+byte-identical across processes; the fixes improve a given seed's text, they don't
+make it non-reproducible).
+
+- **Mechanical punctuation artifacts (`",,"`, ~14% of responses).** The verbal-tic /
+  filler / hedge insertion stages append a comma next to an existing comma. A final
+  pure-function `_normalize_punctuation()` pass now repairs `",,"`, space-before-
+  punctuation, and `",."` — while PRESERVING intentional realism (`...` ellipsis,
+  `!!` emphasis, typos, lowercase "i", word repetition like "like like").
+- **Instruction text bleeding into the extracted topic (68% of responses for a
+  context-bearing question).** Topic extraction from `question_context` returned the
+  instruction, not the subject: "Explain your view of the candidate **and why**" →
+  topic "the candidate and why" → "I feel good about the candidate and why is
+  straightforward". Now `_strip_instruction_tail()` removes trailing "and why / and
+  how / and explain ..." and `_strip_instruction_prefix()` removes leading
+  imperatives ("Describe the tax plan" → "the tax plan"; "In your own words,
+  describe X" → "X") — conservatively, so genuine conjunctive topics ("crime and
+  punishment", "crime ... in modern society") and embedded prepositions ("opini-on")
+  are preserved. Added a `\b` anchor so a preposition inside a word can't capture a
+  spurious leading "on ...".
+
+**Result (offline, N=200):** `",,"` 29→0, space-before-punct 2→0, "and why" leak
+136→0; 100% unique responses, 22–282 char length spread. **New tests:**
+`test_v1280_normalize_punctuation_repairs_only_mechanical_glitches`,
+`test_v1280_strips_instruction_tail_keeps_conjunctive_topics`,
+`test_v1280_offline_oe_has_no_glitches_or_instruction_leak`. **Validation:**
+compileall exit 0; 38 tests (bugfix + e2e) pass; cross-process determinism
+byte-identical across PYTHONHASHSEED; version synced (1.2.8.0). Bug-class #17 added.
+
+## 2026-06-01 — v1.2.7.9
+### Deep adversarial audit: LLM pool-key drift, recoverable latch, reuse reproducibility, bounded memory
+
+A second independent adversarial audit of the concurrency/state surface (after the
+v1.2.7.8 fixes) surfaced four genuine defects — all verified against the code, all
+now fixed with regression tests. Three hid in non-default paths and produced **no
+error**, exactly the profile that slips past testing.
+
+- **H1 (HIGH) — LLM response-pool key drift.** The prefill path and the
+  per-participant path built the enriched `question_text` (which seeds the pool
+  cache key `md5(question_text[:200]|condition|sentiment)`) from two separately
+  maintained blocks. The per-participant block appended `\nCondition:` and
+  `\nAdditional context:`; the prefill block did not. Whenever the user filled the
+  encouraged Design-page **question-context** field, the two keys diverged within
+  the first 200 chars, so **every prefilled pool draw missed** — silently wasting
+  the prefill budget and forcing an expensive on-demand LLM call per participant
+  (CLAUDE.md anti-pattern #29). Both paths now route through ONE shared helper,
+  `_build_enriched_question_text()`, so the keys are byte-identical.
+- **M1 (MEDIUM) — `free_tier_exhausted_now` was a one-way latch.** Documented as
+  "resets on any success", but `_consecutive_transient_batches` only reset inside
+  `_generate_batch` — and once the latch tripped, every caller skipped
+  `_generate_batch`, so it could never clear. A single burst of transient
+  429/503/timeout abandoned the LLM for the **rest of the run** even after the free
+  tier recovered seconds later. Now cleared in `reset_providers()` and at the start
+  of each new OE question, so a recovered free tier is genuinely re-used.
+- **M2 (MEDIUM) — incomplete reuse reset broke reproducibility.** `_generate_body`
+  reset the fallback OE generator (`text_generator`) but not the PRIMARY one
+  (`comprehensive_generator`), so calling `generate()` twice on the same engine
+  produced **different** OE text on the same seed. Latent under the Streamlit UI
+  (which rebuilds the engine each run) but a contract break for SDK/batch/regenerate
+  reuse. Added `reset()` to `ComprehensiveResponseGenerator` (and the
+  `AdaptiveBehavioralEngineV2` wrapper) and call it each run.
+- **L1 (LOW) — unbounded dedup memory at max N.** `_used_responses`/`_used_sentences`
+  grew without bound (hundreds of thousands of strings at N=10,000 × many OE
+  questions). Now FIFO-bounded via companion `deque`s with **deterministic**
+  oldest-first eviction (never `set.pop()` — that would reintroduce
+  `PYTHONHASHSEED`-dependent non-determinism).
+
+**Conscious trade-off (documented, not a bug):** the `_GLOBAL_RNG_LOCK` is held
+across LLM network I/O, so concurrent users serialize. Removing global seeding
+entirely would mean routing ~70 RNG call sites (engine `rng = np.random` ×15 +
+`text_generator` bare `random.*` ×58) through injected per-run RNGs — a cross-module
+refactor that risks the reproducibility just verified correct. Deferred as its own
+staged change; real-world impact is low (free-tier rate limits already serialize
+concurrent LLM users; non-LLM N=10,000 finishes in ~60s).
+
+**New regression tests:** `test_h1_prefill_runtime_pool_key_match`,
+`test_m1_transient_latch_resets_on_reset_providers`,
+`test_m2_reused_engine_is_reproducible_non_llm` (29 in `test_bugfixes_v1264.py`).
+**Validation:** compileall exit 0 · 35 tests (bugfix + e2e) pass · cross-process
+determinism byte-identical across PYTHONHASHSEED ∈ {0,1,42,31337} · random N=200
+across 10 QSFs all-pass · version synced (1.2.7.9). Four new bug-classes (#13–16)
++ the lock trade-off recorded in the Self-Audit Bug-Class Catalog.
+
+## 2026-06-01 — v1.2.7.5–v1.2.7.8
+### Codex audit fixes + cross-process reproducibility + concurrency safety
+
+- **v1.2.7.5 (Codex audit):** re-indented `socsim/cli.py` into `main()` (whole-tree
+  `compileall` now exits 0); replaced salted `hash()` with SHA-256 `_stable_int_hash`
+  in `hbs_engine`/`socsim_adapter`; removed a global-seed side effect in
+  `persona_library`; widened int→float columns before float writes in
+  `hbs_validator`; preserved `_Base_Generation_Source`/`_Simulation_Method`
+  provenance; sanitized a token-prefix echo; documented optional deps.
+- **v1.2.7.6:** full **cross-process reproducibility** — same seed → byte-identical
+  output across `PYTHONHASHSEED` values (replaced remaining salted hashes in seeding
+  contexts with stable ordinal/SHA-256 hashing); established the Self-Audit
+  Bug-Class Catalog.
+- **v1.2.7.7:** fixed `_Generation_Source` being hardcoded to "Non-LLM" (it
+  overwrote real per-participant AI/Template provenance — the reason every prior
+  free-LLM run showed "100% Non-LLM"); robust batch-JSON parsing (fenced /
+  bracket-less payloads); hoisted an `_ext` UnboundLocalError; put the newest free
+  Gemini model in front with transient-vs-hard failover; rejected interrogative
+  question text from OE topic extraction (question-leak fix).
+- **v1.2.7.8 (Codex P1):** serialized the global-RNG temporary-seeding region with a
+  process `RLock`; made `ComprehensiveResponseGenerator`'s uniqueness sets
+  per-instance (were class-level, leaking fingerprints across concurrent sessions);
+  removed `@st.cache_resource` from the QSF parser (per-parse mutable state). Result:
+  concurrent same-seed generation → one identical output.
+
 ## 2026-05-31 — v1.2.7.0–v1.2.7.4
 ### Detection↔generation seam: valid joint/numeric DVs, 5 effect domains, data-validity fixes
 
