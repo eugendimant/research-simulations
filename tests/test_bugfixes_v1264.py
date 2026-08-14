@@ -728,6 +728,129 @@ def test_socsim_cli_compiles_and_has_main():
     assert "def main(" in src
 
 
+def test_v1287_no_retired_provider_models():
+    """v1.2.8.7: guard against shipping a model ID the provider has retired.
+
+    Groq decommissioned `llama-3.3-70b-versatile` on 2026-08-16 and Cerebras
+    retired `llama-3.3-70b` on 2026-02-16; both were live in the failover chain
+    (Cerebras' had been dead for months without anyone noticing, because a dead
+    provider degrades silently). Any future addition to this list fails the build.
+    """
+    from utils import llm_response_generator as L
+    RETIRED = {
+        "llama-3.3-70b-versatile",   # Groq, decommissioned 2026-08-16
+        "llama-3.3-70b",             # Cerebras, retired 2026-02-16
+        "llama-3.1-70b-versatile",   # Groq, retired earlier
+        "Meta-Llama-3.1-70B-Instruct",  # SambaNova, deprecated April 2025
+        "gemma-3-27b-it",            # never worked on the OpenAI-compat endpoint
+    }
+    live = {
+        "GROQ_MODEL": L.GROQ_MODEL,
+        "GROQ_MODEL_FALLBACK": L.GROQ_MODEL_FALLBACK,
+        "CEREBRAS_MODEL": L.CEREBRAS_MODEL,
+        "SAMBANOVA_MODEL": L.SAMBANOVA_MODEL,
+        "MISTRAL_MODEL": L.MISTRAL_MODEL,
+        "OPENROUTER_MODEL": L.OPENROUTER_MODEL,
+        "GOOGLE_AI_MODEL_PRIMARY": L.GOOGLE_AI_MODEL_PRIMARY,
+    }
+    bad = {k: v for k, v in live.items() if v in RETIRED}
+    assert not bad, f"retired model ID(s) still configured: {bad}"
+
+    # The built-in failover chain must not contain one either.
+    gen = L.LLMResponseGenerator()
+    chain_bad = [(p.name, p.model) for p in gen._providers if p.model in RETIRED]
+    assert not chain_bad, f"retired model(s) in failover chain: {chain_bad}"
+    # Groq must keep two independent model lines so one retirement can't kill it.
+    groq = [p for p in gen._providers if p.name.startswith("groq")]
+    assert len({p.model for p in groq}) >= 2, \
+        f"expected >=2 distinct Groq models for resilience, got {[p.model for p in groq]}"
+
+
+def test_v1287_reasoning_models_get_low_effort():
+    """v1.2.8.7: reasoning models (GPT-OSS) must request minimal reasoning effort.
+
+    Survey answers need no chain-of-thought, and reasoning tokens are billed
+    against a tight free-tier completion budget (same rationale as the v1.2.7.7
+    Gemini-lite choice). Non-reasoning models must NOT receive the parameter.
+    """
+    import sys as _sys, types
+    from utils import llm_response_generator as L
+
+    seen = {}
+
+    class _Resp:
+        status_code = 200
+        text = "{}"
+        def json(self):
+            return {"choices": [{"message": {"content": "ok"}}]}
+
+    fake = types.ModuleType("requests")
+    fake.post = lambda url, headers=None, json=None, timeout=None: (
+        seen.clear(), seen.update(json or {}), _Resp())[-1]
+    fake.exceptions = types.SimpleNamespace(
+        Timeout=type("T", (Exception,), {}),
+        ConnectionError=type("C", (Exception,), {}),
+        SSLError=type("S", (Exception,), {}),
+    )
+    _prev = _sys.modules.get("requests")
+    _sys.modules["requests"] = fake
+    try:
+        L._call_llm_api("https://api.groq.com/x", "k" * 40, "openai/gpt-oss-120b", "s", "u")
+        assert seen.get("reasoning_effort") == "low", "gpt-oss must request low reasoning effort"
+        L._call_llm_api("https://api.cerebras.ai/x", "k" * 40, "gpt-oss-120b", "s", "u")
+        assert seen.get("reasoning_effort") == "low", "bare gpt-oss ID must match too"
+        L._call_llm_api("https://api.groq.com/x", "k" * 40, "qwen/qwen3.6-27b", "s", "u")
+        assert "reasoning_effort" not in seen, "non-reasoning model must not get the param"
+    finally:
+        if _prev is not None:
+            _sys.modules["requests"] = _prev
+        else:
+            _sys.modules.pop("requests", None)
+
+
+def test_v1287_retired_model_disables_provider_immediately():
+    """v1.2.8.7: a 404 (model retired) must retire the provider at once, and stay
+    retired across reset() — a decommissioned model never comes back, so retrying
+    it burns the 3-strike budget and wastes a call on every request."""
+    import sys as _sys, types
+    from utils import llm_response_generator as L
+
+    class _Resp404:
+        status_code = 404
+        text = '{"error":{"message":"model has been decommissioned"}}'
+        def json(self):
+            return {}
+
+    fake = types.ModuleType("requests")
+    fake.post = lambda url, headers=None, json=None, timeout=None: _Resp404()
+    fake.exceptions = types.SimpleNamespace(
+        Timeout=type("T", (Exception,), {}),
+        ConnectionError=type("C", (Exception,), {}),
+        SSLError=type("S", (Exception,), {}),
+    )
+    _prev = _sys.modules.get("requests")
+    _sys.modules["requests"] = fake
+    try:
+        assert L._call_llm_api("https://api.groq.com/x", "k" * 40, "dead", "s", "u") == L._MODEL_GONE
+        p = L._LLMProvider(name="t", api_url="https://api.groq.com/x",
+                           model="dead-model", api_key="k" * 40)
+        assert p.call("s", "u") is None
+        assert p.available is False, "provider must retire on the FIRST 404"
+        assert p._consecutive_failures == 0, "retirement must not burn the 3-strike budget"
+        p.reset()
+        assert p.available is False, "reset() must not resurrect a retired-model provider"
+        # a healthy provider must still be resettable (no regression)
+        ok = L._LLMProvider(name="ok", api_url="https://x/y", model="m", api_key="k" * 40)
+        ok.available = False
+        ok.reset()
+        assert ok.available is True
+    finally:
+        if _prev is not None:
+            _sys.modules["requests"] = _prev
+        else:
+            _sys.modules.pop("requests", None)
+
+
 if __name__ == "__main__":
     import traceback
     fns = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]

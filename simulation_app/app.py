@@ -54,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.2.8.6"
-BUILD_ID = "20260601-v12086-document-recursive-strategic-reasoning"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.2.8.7"
+BUILD_ID = "20260814-v12087-groq-cerebras-model-migration"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -146,7 +146,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.2.8.6"  # v1.2.8.6: Docs — document the recursive strategic reasoning (Level-k + Cognitive Hierarchy) already in the SocSim economic-game module
+APP_VERSION = "1.2.8.7"  # v1.2.8.7: Free-LLM model migration — Groq off decommissioned llama-3.3-70b-versatile (2026-08-16) to GPT-OSS 120B + Qwen3.6 27B; Cerebras off retired llama-3.3-70b; auto-retire providers whose model 404s
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -12789,8 +12789,8 @@ if active_page == 3:
             _provider_options = [
                 "Auto-detect from key (recommended)",
                 "Google AI (Gemini Flash) — Free",
-                "Groq (Llama 3.3 70B) — Free",
-                "Cerebras (Llama 3.3 70B) — Free",
+                "Groq (GPT-OSS 120B) — Free",
+                "Cerebras (GPT-OSS 120B) — Free",
                 "Mistral AI (Mistral Small) — Free",
                 "SambaNova (Llama 3.3 70B) — Free",
                 "OpenRouter (Mistral) — Free tier",
