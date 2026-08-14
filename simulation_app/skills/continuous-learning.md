@@ -517,6 +517,31 @@ gated by a grep signature + an automated test in step 2–3.
     Production-down is the highest-severity class; the app-load smoke test is the
     gate that must catch it before deploy.*
 
+20. **A hard-coded third-party model ID is a time bomb, and a dead provider fails
+    SILENTLY.** Groq decommissioned `llama-3.3-70b-versatile` (2026-08-16) — we only
+    learned from a vendor email. Investigating it revealed Cerebras had retired
+    `llama-3.3-70b` on **2026-02-16**, so that link in the free failover chain had
+    been dead for ~6 months and nobody noticed. That is the real lesson: a
+    well-built failover chain *hides* its own decay — each dead provider just fails
+    over, so the system looks healthy while silently losing redundancy, until the
+    last link goes and users hit template fallback with no explanation. → (1) Treat
+    every external model ID as **perishable**: pin it, comment it with its
+    provider's lifecycle, and keep a `RETIRED` set in a test that fails the build if
+    a known-dead ID is ever configured (`test_v1287_no_retired_provider_models`).
+    (2) Give critical providers **two independent model lines** so one retirement
+    degrades instead of breaking (Groq now runs GPT-OSS 120B + Qwen3.6 27B behind
+    one key). (3) Classify "model gone" (404 / `model_not_found` / decommissioned)
+    as its OWN failure class — it can never recover within a run, so retire the
+    provider on the FIRST occurrence with a loud maintainer log, rather than
+    spending the generic 3-strike budget on every call, and make sure `reset()`
+    does not resurrect it. (4) When a vendor deprecation email arrives, audit
+    **every** provider for the same base model, not just the one named. Grep
+    signature: `grep -rn "MODEL = " utils/llm_response_generator.py` then check each
+    ID against its provider's deprecation page.
+    *Found by: a Groq decommission email forwarded by the user — with 2 days'
+    notice. The second dead provider was found only because the first was
+    investigated properly instead of patched narrowly.*
+
 #### RESOLVED (v1.2.8.4): global-RNG lock vs. multi-user throughput
 The `_GLOBAL_RNG_LOCK` used to be held across the WHOLE generation body (incl. LLM
 network I/O), serializing concurrent users. Codex re-flagged it (PR #352 P2), so it

@@ -2,7 +2,7 @@
 """
 Utility modules for the Behavioral Experiment Simulation Tool.
 
-Version: 1.2.8.6 - Docs: surfaced the recursive strategic reasoning that already exists in the SocSim economic-game module — Level-k (each level best-responds to the level below; Stahl & Wilson 1994, Nagel 1995) and Cognitive Hierarchy (Poisson thinking levels; Camerer, Ho & Chong 2004), driven by each persona's strategic_depth. Added to the README and PR. Builds on v1.2.8.5
+Version: 1.2.8.7 - Free-LLM provider model migration + decommission resilience: Groq retired llama-3.3-70b-versatile on 2026-08-16 and Cerebras retired llama-3.3-70b on 2026-02-16, leaving two dead links in the free failover chain. Migrated Groq to GPT-OSS 120B with a Qwen3.6 27B second line (two independent models behind one key) and Cerebras to GPT-OSS 120B; damped reasoning tokens on GPT-OSS; a provider whose model 404s is now retired instantly for the run instead of burning the 3-strike retry budget on every call
 
 Changes (v1.0.0 - 20 Iterations of Comprehensive Improvements):
     === ENHANCED SCALE/MATRIX DETECTION ===
@@ -65,7 +65,7 @@ Modules:
 """
 
 # Package version - should match all module versions
-__version__ = "1.2.8.6"
+__version__ = "1.2.8.7"
 
 
 # =============================================================================

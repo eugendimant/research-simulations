@@ -1,4 +1,45 @@
 
+## 2026-08-14 — v1.2.8.7
+### Free-LLM model migration (Groq decommission) + decommission resilience
+
+Groq notified users that **`llama-3.3-70b-versatile` is decommissioned on
+2026-08-16** — two days out. It was the model behind our built-in Groq provider, so
+after that date every Groq call in the free failover chain would have 404'd.
+Investigating it surfaced a second, older problem: **Cerebras retired
+`llama-3.3-70b` on 2026-02-16**, so that link had already been dead for ~6 months
+without detection — a well-built failover chain hides its own decay.
+
+- **Groq migrated** to Groq's own recommended replacements: **`openai/gpt-oss-120b`**
+  (primary) with **`qwen/qwen3.6-27b`** as a second, independent model line behind
+  the same key — so a future retirement of either degrades rather than breaks the
+  provider. GPT-OSS carries an explicit ~1K/day RPD cap; Qwen keeps the standard,
+  larger allowance.
+- **Cerebras migrated** to **`gpt-oss-120b`** (Cerebras' own recommended successor;
+  note the bare ID — Cerebras does not use the `openai/` vendor prefix).
+- **SambaNova left unchanged** — `Meta-Llama-3.3-70B-Instruct` is still listed as
+  available; changing a working provider would add risk for no benefit.
+- **Reasoning-token damping:** GPT-OSS is a reasoning model that spends completion
+  tokens on internal reasoning by default. Survey answers need none, and those
+  tokens come out of a tight free-tier budget, so `reasoning_effort: "low"` is now
+  sent for the GPT-OSS family only (same rationale as the v1.2.7.7 Gemini-lite
+  choice). Non-reasoning models are untouched.
+- **New failure class — "model gone":** a 404 now returns a distinct `_MODEL_GONE`
+  sentinel and **retires that provider immediately for the run** with a loud
+  maintainer log, instead of burning the generic 3-strike consecutive-failure
+  budget on every subsequent call. `reset()` will not resurrect it (no rate-limit
+  window brings back a decommissioned model). Transient 429/503/timeout handling is
+  unchanged — verified by regression test.
+
+**New tests:** `test_v1287_no_retired_provider_models` (build fails if any known-dead
+model ID is configured, and Groq must keep ≥2 distinct model lines),
+`test_v1287_reasoning_models_get_low_effort`,
+`test_v1287_retired_model_disables_provider_immediately`.
+**Validation:** compileall exit 0; **50 tests pass** (bugfix + import-safety +
+LLM-enforcement + e2e); provider chain verified to build with 9 providers and zero
+retired IDs; bring-your-own `gsk_` key routing verified to resolve to the new model;
+version synced to 1.2.8.7 (all 9 locations). Self-Audit Bug-Class Catalog entry #20
+added (perishable third-party model IDs; silent failover decay).
+
 ## 2026-06-01 — v1.2.8.6
 ### Docs: surface the recursive strategic reasoning (Level-k + Cognitive Hierarchy)
 

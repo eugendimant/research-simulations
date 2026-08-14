@@ -5,11 +5,13 @@ Uses free LLM APIs (multi-provider with automatic failover) to generate
 realistic, question-specific, persona-aligned open-ended survey responses.
 
 Architecture:
-- Multi-provider: Google AI Studio (Gemini 2.5 Flash + Gemini 2.5 Flash Lite),
-  Groq (Llama 3.3 70B), Cerebras (Llama 3.3 70B), Mistral AI (Mistral Small),
-  SambaNova (Llama 3.3 70B), OpenRouter (Mistral Small 3.1) — with automatic
-  key detection, per-provider rate limiting, and intelligent failover.
-  Google AI prioritized for reliability.
+- Multi-provider: Google AI Studio (Gemini 3.1 Flash Lite + Gemini 2.5 Flash/Lite),
+  Groq (GPT-OSS 120B + Qwen3.6 27B), Cerebras (GPT-OSS 120B),
+  Mistral AI (Mistral Small), SambaNova (Llama 3.3 70B),
+  OpenRouter (Mistral Small 3.1) — with automatic key detection, per-provider
+  rate limiting, and intelligent failover. Google AI prioritized for reliability.
+  v1.2.8.7: migrated BOTH Llama-3.3-70B endpoints off retired model IDs —
+  Groq (decommissioned 2026-08-16) and Cerebras (retired 2026-02-16).
 - Large batch sizes: 20 responses per API call (within 32K context)
 - Smart pool scaling: calculates exact pool size needed from sample_size
 - Draw-with-replacement + deep variation: a pool of 50 base responses
@@ -38,7 +40,23 @@ logger = logging.getLogger(__name__)
 # Provider configuration
 # ---------------------------------------------------------------------------
 GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
-GROQ_MODEL = "llama-3.3-70b-versatile"
+# v1.2.8.7 (MODEL DECOMMISSION MIGRATION): Groq retired `llama-3.3-70b-versatile`
+# on 2026-08-16 (deprecation announced 2026-06-17; free/developer tiers affected).
+# After that date the endpoint returns 404 for it, which would have silently killed
+# the Groq link in the free failover chain. Groq's own recommended replacements are
+# `openai/gpt-oss-120b` and `qwen/qwen3.6-27b`; BOTH are wired in below so a single
+# future retirement cannot break this provider again. GPT-OSS 120B is primary
+# (higher capability, 130K ctx); Qwen3.6 27B is the lighter, higher-throughput
+# second line — its free-tier RPD is far more generous than GPT-OSS's ~1K/day.
+GROQ_MODEL = "openai/gpt-oss-120b"
+GROQ_MODEL_FALLBACK = "qwen/qwen3.6-27b"
+
+# v1.2.8.7: Reasoning-model families that bill "thinking" tokens against our
+# completion budget unless explicitly damped. Open-ended survey answers need no
+# chain-of-thought, so we pin the lowest reasoning effort (same token-efficiency
+# rationale as the v1.2.7.7 Gemini-lite choice). Matching is by substring so
+# provider-prefixed IDs (e.g. "openai/gpt-oss-120b") are covered.
+_LOW_REASONING_MODEL_MARKERS = ("gpt-oss",)
 
 # Additional free-tier providers for failover
 # Google AI Studio — Gemini 2.5 Flash is the high-volume workhorse: 15 RPM, 1M TPM
@@ -57,7 +75,11 @@ GOOGLE_AI_MODEL = "gemini-2.5-flash-lite"           # 30 RPM, 250K TPM (cost-eff
 GOOGLE_AI_MODEL_HIGHVOL = "gemini-2.5-flash"        # 15 RPM, 1M TPM (high-quality volume fallback)
 
 CEREBRAS_API_URL = "https://api.cerebras.ai/v1/chat/completions"
-CEREBRAS_MODEL = "llama-3.3-70b"
+# v1.2.8.7: Cerebras retired `llama-3.3-70b` on 2026-02-16 — this entry had been
+# silently dead for months (found while migrating Groq off the same base model).
+# Cerebras' own recommended successor is GPT-OSS 120B; note Cerebras uses bare
+# model IDs (no vendor prefix), unlike Groq's `openai/gpt-oss-120b`.
+CEREBRAS_MODEL = "gpt-oss-120b"
 
 OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
 OPENROUTER_MODEL = "mistralai/mistral-small-3.1-24b-instruct:free"
@@ -1417,6 +1439,16 @@ def _build_batch_prompt(
 # returns None and DOES count toward disabling.)
 _RATE_LIMITED = "\x00__RATE_LIMITED__\x00"
 
+# v1.2.8.7: Distinct sentinel for "this model no longer exists at this endpoint"
+# (HTTP 404 / model_not_found / decommissioned). Unlike a transient throttle or a
+# generic hard error, a retired model can NEVER succeed again within this run, so
+# retrying it is pure waste. Providers that return it are retired immediately for
+# the run with a loud maintainer-facing log, instead of burning the 3-strike
+# consecutive-failure budget on every call. Guards against the failure mode that
+# Groq's 2026-08-16 llama-3.3-70b-versatile decommission would otherwise have
+# introduced silently.
+_MODEL_GONE = "\x00__MODEL_GONE__\x00"
+
 
 # ---------------------------------------------------------------------------
 # LLM API caller (generic OpenAI-compatible endpoint)
@@ -1474,6 +1506,14 @@ def _call_llm_api(
         "max_tokens": max_tokens,
     }
 
+    # v1.2.8.7: Reasoning models (e.g. Groq's openai/gpt-oss-120b, the replacement
+    # for the retired llama-3.3-70b-versatile) spend completion tokens on internal
+    # reasoning by default. Generating a survey answer needs none of that, and the
+    # tokens come straight out of a tight free-tier budget, so request the lowest
+    # effort. Unknown/ignoring endpoints simply drop the field.
+    if any(_m in str(model).lower() for _m in _LOW_REASONING_MODEL_MARKERS):
+        payload["reasoning_effort"] = "low"
+
     # Strategy 1: Use 'requests' (reliable on Streamlit Cloud, handles SSL well)
     try:
         import requests as _requests
@@ -1504,10 +1544,13 @@ def _call_llm_api(
             return _RATE_LIMITED  # transient: fail over, do NOT disable the provider
         elif resp.status_code == 404:
             _body_preview = resp.text[:200] if resp.text else "(empty)"
-            logger.warning("LLM API model not found (404) %s model=%s — model may be "
-                           "retired or unsupported on this endpoint. Response: %s",
-                           api_url[:50], model, _body_preview)
-            return None
+            # v1.2.8.7: a retired/unknown model can never recover within this run —
+            # signal it distinctly so the provider is dropped at once (see _MODEL_GONE).
+            logger.error("LLM API model NOT FOUND (404) %s model=%s — the model is "
+                         "retired or unsupported on this endpoint. MAINTAINER ACTION: "
+                         "update the model ID for this provider. Response: %s",
+                         api_url[:50], model, _body_preview)
+            return _MODEL_GONE
         elif resp.status_code in (401, 403):
             _body_preview = resp.text[:200] if resp.text else "(empty)"
             # v1.2.7.7: distinguish a NETWORK/egress block (e.g. a sandbox/firewall
@@ -2119,6 +2162,7 @@ class _LLMProvider:
         self.max_rpd = max_rpd        # 0 = unlimited
         self.max_batch_size = max_batch_size
         self.available = True
+        self._model_retired = False  # v1.2.8.7: set when the model 404s (never resurrected)
         self.call_count = 0
         self.attempt_count = 0  # v1.0.6.3: Tracks ALL attempts including early-return-blocked
         self.http_request_count = 0  # v1.0.9.2: Tracks only actual HTTP requests made
@@ -2178,6 +2222,7 @@ class _LLMProvider:
         result = None
         _call_start = time.time()
         _transient = False  # v1.2.7.7: rate-limit / 503 / timeout — fail over, no penalty
+        _model_gone = False  # v1.2.8.7: model retired at this endpoint (404) — retire provider
         for attempt in range(2):  # v1.0.7.1: 2 attempts (down from 3) — fail fast
             result = _call_llm_api(
                 self.api_url, self.api_key, self.model,
@@ -2188,6 +2233,13 @@ class _LLMProvider:
                 _transient = True
                 result = None
                 break  # transient → don't burn a retry; fail over to the next provider
+            if result is _MODEL_GONE or result == _MODEL_GONE:
+                # v1.2.8.7: model retired at this endpoint — permanently unusable for
+                # this run. Retire the provider immediately rather than retrying it on
+                # every subsequent call (which a 3-strike hard-failure path would do).
+                _model_gone = True
+                result = None
+                break
             if result is not None:
                 break
             if attempt < 1:
@@ -2206,6 +2258,19 @@ class _LLMProvider:
         # complete instead of all providers getting disabled under burst load.
         self._last_call_transient = _transient  # v1.2.7.7: batch loop reads this
         if _transient:
+            return None
+
+        # v1.2.8.7: retired model → take this provider out of rotation for the whole
+        # run. Not a transient throttle (it will never recover) and not a key problem,
+        # so neither of those paths applies; the chain simply moves to the next
+        # provider and never pays for this one again.
+        if _model_gone:
+            self.available = False
+            self._model_retired = True
+            logger.error("Provider '%s' RETIRED for this run: model '%s' no longer "
+                         "exists at %s. Failing over to the next provider. MAINTAINER: "
+                         "update this provider's model ID.",
+                         self.name, self.model, self.api_url[:50])
             return None
 
         # v1.0.7.0: Log call result for admin diagnostics
@@ -2239,7 +2304,17 @@ class _LLMProvider:
         return result
 
     def reset(self) -> None:
-        """Re-enable the provider (e.g., after rate-limit window expires)."""
+        """Re-enable the provider (e.g., after rate-limit window expires).
+
+        v1.2.8.7: a provider retired because its MODEL no longer exists (404) is
+        NOT resurrected — no rate-limit window brings a decommissioned model back,
+        and re-enabling it would reintroduce the wasted-call loop this guards
+        against. Only the maintainer updating the model ID clears this state.
+        """
+        if getattr(self, "_model_retired", False):
+            logger.debug("Provider '%s' stays retired (model '%s' no longer exists)",
+                         self.name, self.model)
+            return
         self.available = True
         self._consecutive_failures = 0
         self._cooldown_seconds = 10.0  # v1.0.7.1: Match initial value (was 30.0)
@@ -2361,7 +2436,14 @@ class LLMResponseGenerator:
              _DEFAULT_GOOGLE_AI_KEY, 14, 1500, 20),
             ("google_ai_lite", GOOGLE_AI_API_URL, GOOGLE_AI_MODEL,
              _DEFAULT_GOOGLE_AI_KEY, 28, 1500, 20),
+            # v1.2.8.7: post-decommission Groq pair. GPT-OSS 120B first (capability),
+            # then Qwen3.6 27B — two independent model lines behind one key, so a
+            # future retirement of either degrades instead of breaking the link.
+            # GPT-OSS free tier is ~1K requests/day, hence the explicit RPD cap;
+            # Qwen carries the standard, far larger allowance.
             ("groq_builtin", GROQ_API_URL, GROQ_MODEL,
+             _DEFAULT_GROQ_KEY, 28, 1000, 20),
+            ("groq_qwen_builtin", GROQ_API_URL, GROQ_MODEL_FALLBACK,
              _DEFAULT_GROQ_KEY, 28, 0, 20),
             ("cerebras_builtin", CEREBRAS_API_URL, CEREBRAS_MODEL,
              _DEFAULT_CEREBRAS_KEY, 28, 0, 20),
