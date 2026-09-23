@@ -1,0 +1,270 @@
+{
+  "SurveyEntry": {
+    "SurveyID": "SV_builder_de83c6ee",
+    "SurveyName": "Does AI Undermine Trust—or Does It Depend?",
+    "SurveyDescription": "This 2 × 2 behavioral experiment tests whether the effect of AI disclosure on trust erosion depends on (1) normative framing of AI use (neutral acknowledgment vs. active encouragement) and (2) relationship type (stranger vs. thin trust). Participants act as receivers in a trust game, deciding how much to return across four sender-transfer scenarios before and after reading an AI-assisted executive summary. The primary outcome is trust_change: post-exposure total returned minus pre-exposure total returned.",
+    "SurveyLanguage": "EN",
+    "SurveyStatus": "Inactive",
+    "SurveyStartDate": "2026-09-23 22:49:25",
+    "CreatorID": "conversational_builder"
+  },
+  "SurveyElements": [
+    {
+      "Element": "BL",
+      "PrimaryAttribute": "Survey Blocks",
+      "Payload": [
+        {
+          "Type": "Default",
+          "Description": "Shared Measures",
+          "ID": "BL_shared",
+          "BlockElements": [
+            {
+              "Type": "Question",
+              "QuestionID": "QID1"
+            },
+            {
+              "Type": "Question",
+              "QuestionID": "QID2"
+            },
+            {
+              "Type": "Question",
+              "QuestionID": "QID3"
+            }
+          ]
+        },
+        {
+          "Type": "Standard",
+          "Description": "Neutral AI framing × Stranger",
+          "ID": "BL_Neutral_AI_framing___Stranger",
+          "BlockElements": []
+        },
+        {
+          "Type": "Standard",
+          "Description": "Neutral AI framing × Thin trust",
+          "ID": "BL_Neutral_AI_framing___Thin_trus",
+          "BlockElements": []
+        },
+        {
+          "Type": "Standard",
+          "Description": "Encouraged AI framing × Stranger",
+          "ID": "BL_Encouraged_AI_framing___Strang",
+          "BlockElements": []
+        },
+        {
+          "Type": "Standard",
+          "Description": "Encouraged AI framing × Thin trust",
+          "ID": "BL_Encouraged_AI_framing___Thin_t",
+          "BlockElements": []
+        }
+      ]
+    },
+    {
+      "Element": "FL",
+      "PrimaryAttribute": "Survey Flow",
+      "Payload": {
+        "Type": "Root",
+        "FlowID": "FL_1",
+        "Flow": [
+          {
+            "Type": "EmbeddedData",
+            "FlowID": "FL_embed",
+            "EmbeddedData": [
+              {
+                "Description": "study_domain",
+                "Value": "behavioral economics"
+              },
+              {
+                "Description": "design_type",
+                "Value": "between"
+              },
+              {
+                "Description": "source",
+                "Value": "conversational_builder"
+              }
+            ]
+          },
+          {
+            "Type": "BlockRandomizer",
+            "SubSet": 1,
+            "EvenPresentation": true,
+            "ID": "BR_conditions",
+            "Description": "Condition Assignment",
+            "Flow": [
+              {
+                "Type": "Block",
+                "ID": "BL_Neutral_AI_framing___Stranger"
+              },
+              {
+                "Type": "Block",
+                "ID": "BL_Neutral_AI_framing___Thin_trus"
+              },
+              {
+                "Type": "Block",
+                "ID": "BL_Encouraged_AI_framing___Strang"
+              },
+              {
+                "Type": "Block",
+                "ID": "BL_Encouraged_AI_framing___Thin_t"
+              }
+            ]
+          },
+          {
+            "Type": "Block",
+            "ID": "BL_shared"
+          }
+        ]
+      }
+    },
+    {
+      "Element": "SQ",
+      "PrimaryAttribute": "QID1",
+      "Payload": {
+        "QuestionID": "QID1",
+        "QuestionType": "TE",
+        "Selector": "SL",
+        "QuestionText": "Pre-return total: 1 item, numeric score 0-18",
+        "DataExportTag": "Prereturn_total_numeric_score",
+        "Choices": {},
+        "ChoiceOrder": [],
+        "Validation": {
+          "Settings": {
+            "ForceResponse": "ON",
+            "Type": "None"
+          }
+        }
+      }
+    },
+    {
+      "Element": "SQ",
+      "PrimaryAttribute": "QID2",
+      "Payload": {
+        "QuestionID": "QID2",
+        "QuestionType": "TE",
+        "Selector": "SL",
+        "QuestionText": "Post-return total: 1 item, numeric score 0-18",
+        "DataExportTag": "Postreturn_total_numeric_score",
+        "Choices": {},
+        "ChoiceOrder": [],
+        "Validation": {
+          "Settings": {
+            "ForceResponse": "ON",
+            "Type": "None"
+          }
+        }
+      }
+    },
+    {
+      "Element": "SQ",
+      "PrimaryAttribute": "QID3",
+      "Payload": {
+        "QuestionID": "QID3",
+        "QuestionType": "TE",
+        "Selector": "SL",
+        "QuestionText": "Trust Change Index (primary DV): 1 item, numeric score 0-36; calculate as post-return total minus pre-return total plus 18. Score 18 means no change; higher scores indicate less trust erosion",
+        "DataExportTag": "Trust_Change_Index",
+        "Choices": {},
+        "ChoiceOrder": [],
+        "Validation": {
+          "Settings": {
+            "ForceResponse": "ON",
+            "Type": "None"
+          }
+        }
+      }
+    }
+  ],
+  "_builder_metadata": {
+    "generated_at": "2026-09-23T22:49:25.059964+00:00",
+    "source": "conversational_builder",
+    "design_type": "between",
+    "conditions": [
+      "Neutral AI framing × Stranger",
+      "Neutral AI framing × Thin trust",
+      "Encouraged AI framing × Stranger",
+      "Encouraged AI framing × Thin trust"
+    ],
+    "scales": [
+      "Pre-return total numeric score",
+      "Post-return total numeric score",
+      "Trust Change Index"
+    ],
+    "open_ended": [],
+    "factors": [
+      {
+        "name": "Factor_1",
+        "levels": [
+          "Encouraged AI framing",
+          "Neutral AI framing"
+        ]
+      },
+      {
+        "name": "Factor_2",
+        "levels": [
+          "Stranger",
+          "Thin trust"
+        ]
+      }
+    ],
+    "domain": "behavioral economics",
+    "sample_size": 200,
+    "participant_characteristics": "",
+    "raw_inputs": {
+      "conditions_text": "Neutral AI framing × Stranger, Neutral AI framing × Thin trust, Encouraged AI framing × Stranger, Encouraged AI framing × Thin trust",
+      "scales_text": "Pre-return total: 1 item, numeric score 0-18\nPost-return total: 1 item, numeric score 0-18\nTrust Change Index (primary DV): 1 item, numeric score 0-36; calculate as post-return total minus pre-return total plus 18. Score 18 means no change; higher scores indicate less trust erosion",
+      "open_ended_text": "",
+      "study_title": "Does AI Undermine Trust—or Does It Depend?",
+      "study_description": "This 2 × 2 behavioral experiment tests whether the effect of AI disclosure on trust erosion depends on (1) normative framing of AI use (neutral acknowledgment vs. active encouragement) and (2) relationship type (stranger vs. thin trust). Participants act as receivers in a trust game, deciding how much to return across four sender-transfer scenarios before and after reading an AI-assisted executive summary. The primary outcome is trust_change: post-exposure total returned minus pre-exposure total returned.",
+      "participant_desc": "",
+      "design_type": "between",
+      "sample_size": 200
+    },
+    "parsed_scales_detail": [
+      {
+        "name": "Pre-return total numeric score",
+        "variable_name": "Prereturn_total_numeric_score",
+        "scale_type": "numeric",
+        "num_items": 1,
+        "scale_min": 0,
+        "scale_max": 18,
+        "description": "Pre-return total: 1 item, numeric score 0-18"
+      },
+      {
+        "name": "Post-return total numeric score",
+        "variable_name": "Postreturn_total_numeric_score",
+        "scale_type": "numeric",
+        "num_items": 1,
+        "scale_min": 0,
+        "scale_max": 18,
+        "description": "Post-return total: 1 item, numeric score 0-18"
+      },
+      {
+        "name": "Trust Change Index",
+        "variable_name": "Trust_Change_Index",
+        "scale_type": "numeric",
+        "num_items": 5,
+        "scale_min": 0,
+        "scale_max": 36,
+        "description": "Trust Change Index (primary DV): 1 item, numeric score 0-36; calculate as post-return total minus pre-return total plus 18. Score 18 means no change; higher scores indicate less trust erosion"
+      }
+    ],
+    "parsed_conditions_detail": [
+      {
+        "name": "Neutral AI framing × Stranger",
+        "description": ""
+      },
+      {
+        "name": "Neutral AI framing × Thin trust",
+        "description": ""
+      },
+      {
+        "name": "Encouraged AI framing × Stranger",
+        "description": ""
+      },
+      {
+        "name": "Encouraged AI framing × Thin trust",
+        "description": ""
+      }
+    ],
+    "parsed_open_ended_detail": []
+  }
+}
