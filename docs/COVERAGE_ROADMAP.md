@@ -63,9 +63,16 @@ grouped into `likert`/`single_item`.)
 Regenerate this census rather than editing it — the corpus grows with every
 auto-collect commit.
 
+One sharp edge for callers driving the engine directly: the constant-sum total is
+read from the scale's `scale_max` (`enhanced_simulation_engine.py:11390`), not
+from a `total` field. QSF detection sets `scale_max: 100`, so the parser path is
+fine, but a hand-built scale dict that passes `total` and omits `scale_max` falls
+back to `k` and produces rows summing to the item count. Rank-order DVs were
+re-verified the same day at 120/120 valid permutations.
+
 | Area | Was | Now |
 |------|-----|-----|
-| **Constant-sum DVs** | Items generated independently — **0%** of rows summed to the total | Renormalized to sum **exactly** to the total (largest-remainder); 100% valid k=2..10 |
+| **Constant-sum DVs** | Items generated independently — **0%** of rows summed to the total | Renormalized to sum **exactly** to the total (largest-remainder); re-verified 2026-10-06 at 100/100 rows for k=2,3,5,10 |
 | **Rank-order DVs** | Independent integers — **0%** valid permutations (duplicate ranks) | Valid **1..k permutations** via latent-utility argsort (Plackett-Luce flavor) |
 | **Numeric money/WTP DVs** | ~symmetric around the midpoint (skew≈0, no floor) | **Right-skewed** log-normal (skew ≈ +0.8 measured), 12% floor spike at $0, treatment effect preserved |
 | **Numeric count/frequency DVs** | ~symmetric | **Right-skewed** (mode low, long tail) |
