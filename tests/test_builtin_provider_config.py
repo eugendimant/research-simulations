@@ -135,3 +135,78 @@ def test_no_key_material_in_source():
     for prefix in ("gsk_", "csk-", "sk-or-", "AIzaSy", "snova-"):
         hit = re.search(re.escape(prefix) + r"[A-Za-z0-9_\-]{20,}", source)
         assert hit is None, "literal %s key found in source: %s" % (prefix, hit)
+
+
+# The failover order users rely on. v1.2.9.0 removed the committed keys but did
+# NOT change this order; pinning it here means a future key/provider edit cannot
+# silently reorder or drop a provider.
+_EXPECTED_ORDER = [
+    "google_ai_3_lite",
+    "google_ai_flash",
+    "google_ai_lite",
+    "groq_builtin",
+    "groq_qwen_builtin",
+    "cerebras_builtin",
+    "sambanova_builtin",
+    "mistral_builtin",
+    "openrouter_builtin",
+]
+
+
+def test_provider_failover_order_is_stable(no_keys, monkeypatch):
+    """With every key set, the chain must be tried in the documented order."""
+    for names in BUILTIN_PROVIDER_SECRETS.values():
+        monkeypatch.setenv(names[0], "test-key-%s" % names[0].lower())
+
+    gen = LLMResponseGenerator()
+    builtin = [p.name for p in gen._providers if p.name.endswith("_builtin")
+               or p.name.startswith("google_ai_")]
+    assert builtin == _EXPECTED_ORDER, (
+        "built-in provider order drifted: %s" % builtin
+    )
+
+
+def test_every_configured_provider_is_tried_in_order(no_keys, monkeypatch):
+    """check_connectivity must actually probe the chain, not bail out early."""
+    for names in BUILTIN_PROVIDER_SECRETS.values():
+        monkeypatch.setenv(names[0], "test-key-%s" % names[0].lower())
+
+    tried = []
+
+    def _record(api_url, api_key, model, *a, **k):
+        tried.append(model)
+        return None  # every provider "fails" so the loop runs to the end
+
+    monkeypatch.setattr(lrg, "_call_llm_api", _record)
+
+    gen = LLMResponseGenerator()
+    status = gen.check_connectivity(timeout=1)
+
+    assert status["available"] is False
+    assert status["reason"] == "unreachable"
+    expected = [p.model for p in gen._providers]
+    assert tried == expected, (
+        "providers were not tried in chain order: tried %s, chain %s"
+        % (tried, expected)
+    )
+
+
+def test_first_working_provider_wins(no_keys, monkeypatch):
+    """The chain stops at the first provider that answers."""
+    for names in BUILTIN_PROVIDER_SECRETS.values():
+        monkeypatch.setenv(names[0], "test-key-%s" % names[0].lower())
+
+    calls = []
+
+    def _first_ok(api_url, api_key, model, *a, **k):
+        calls.append(model)
+        return "OK"
+
+    monkeypatch.setattr(lrg, "_call_llm_api", _first_ok)
+
+    gen = LLMResponseGenerator()
+    status = gen.check_connectivity(timeout=1)
+
+    assert status["available"] is True
+    assert status["provider"] == _EXPECTED_ORDER[0]
+    assert len(calls) == 1, "chain kept probing after a provider answered"

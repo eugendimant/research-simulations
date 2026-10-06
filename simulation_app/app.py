@@ -13000,65 +13000,19 @@ if active_page == 3:
             )
 
         elif _current_method == "free_llm":
+            # v1.2.9.1: No warning banner and no dead-end buttons here. Built-in
+            # AI always produces data: it tries every configured provider in
+            # order, and whatever it cannot get from them comes from the built-in
+            # text engine instead. A neutral one-liner is all the user needs up
+            # front; the exact data-source breakdown is shown after generation,
+            # and per-provider detail lives in the admin diagnostics page.
             _llm_avail = _llm_status.get("available", False) if _llm_status else False
             if not _llm_avail and _has_open_ended:
-                # v1.2.9.1: Distinguish "this deployment has no built-in provider
-                # key configured" from "configured providers are down right now".
-                # Telling a user to wait a few hours for a key that was never set
-                # leaves them stuck — the two cases need different copy.
-                _llm_reason = (_llm_status or {}).get("reason", "unreachable")
-                if _llm_reason == "not_configured":
-                    _notice_title = 'Built-in AI is not configured on this deployment'
-                    _notice_body = (
-                        'No free-provider API key is set for this instance, so there is '
-                        'nothing for Built-in AI to call. Numeric data is unaffected \u2014 '
-                        'use the Adaptive Behavioral Engine 3.0 below for open-ended text, '
-                        'or paste your own free API key. If you administer this deployment, '
-                        'set the provider keys as Streamlit secrets (see the deployment notes '
-                        'in docs/DEPLOYMENT_SECRETS.md).'
-                    )
-                else:
-                    _notice_title = 'Free AI providers are currently not responding'
-                    _notice_body = (
-                        'This typically resolves within a few hours. You can still generate '
-                        'data using one of the alternatives below, or try again later.'
-                    )
-                # v1.1.0.6: Visually clean notice with action buttons instead of alarming warning
-                st.markdown(
-                    '<div style="background:linear-gradient(135deg, #FFFBEB 0%, #FEF3C7 100%);'
-                    'border:1px solid #FDE68A;border-radius:10px;'
-                    'padding:14px 18px;margin-top:6px;">'
-                    '<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">'
-                    '<span style="font-size:1.0em;">&#128268;</span>'
-                    '<span style="color:#92400e;font-size:0.88em;font-weight:600;">'
-                    f'{_notice_title}</span></div>'
-                    '<span style="color:#78350f;font-size:0.82em;line-height:1.5;">'
-                    f'{_notice_body}</span>'
-                    '</div>',
-                    unsafe_allow_html=True,
+                st.caption(
+                    "Open-ended text will come from the built-in engine for this "
+                    "run. Everything else is unchanged, and the data-source "
+                    "breakdown is shown once generation finishes."
                 )
-                _pre_c1, _pre_c2 = st.columns(2)
-                with _pre_c1:
-                    if st.button("Switch to Your API Key", key="_pre_switch_api",
-                                 type="secondary", use_container_width=True,
-                                 help="Free keys available from Groq, Google AI, etc."):
-                        st.session_state[_gen_method_key] = "own_api"
-                        st.session_state["allow_template_fallback_once"] = False
-                        st.session_state["_use_socsim_experimental"] = True
-                        st.session_state["_use_abe_v2"] = False
-                        st.session_state["_llm_connectivity_status"] = None  # v1.2.0.8: Clear stale cache
-                        st.rerun()
-                with _pre_c2:
-                    if st.button("Switch to Adaptive Behavioral Engine 3.0", key="_pre_switch_template",
-                                 type="primary" if _llm_reason == "not_configured" else "secondary",
-                                 use_container_width=True,
-                                 help="Instant generation, runs entirely offline"):
-                        st.session_state[_gen_method_key] = "abe_v2"
-                        st.session_state["allow_template_fallback_once"] = True
-                        st.session_state["_use_socsim_experimental"] = True
-                        st.session_state["_use_abe_v2"] = True
-                        st.session_state["_llm_connectivity_status"] = None  # v1.2.0.8: Clear stale cache
-                        st.rerun()
 
         # Wire method choice into engine settings
         # v1.2.3.8: Socsim always on — behavioral engine (numeric data) uses ABE 3.0
@@ -13068,7 +13022,18 @@ if active_page == 3:
         if _current_method in ("template", "abe_v2", "experimental"):
             st.session_state["allow_template_fallback_once"] = True
             st.session_state["_use_abe_v2"] = _current_method in ("abe_v2")
-        elif _current_method in ("free_llm", "own_api"):
+        elif _current_method == "free_llm":
+            # v1.2.9.1: Built-in AI must ALWAYS be able to produce data. When no
+            # provider key is configured, or every provider fails mid-run, the
+            # engine falls through to the built-in (non-LLM) text cascade instead
+            # of blocking the run or raising LLMExhaustedMidGeneration. The
+            # post-generation data-source breakdown still tells the user exactly
+            # which text came from where, so nothing is hidden — it just is not
+            # an error any more. "own_api" keeps the strict behaviour: a user who
+            # supplied their own key needs to know when that key does not work.
+            st.session_state["allow_template_fallback_once"] = True
+            st.session_state["_use_abe_v2"] = False
+        elif _current_method == "own_api":
             st.session_state["allow_template_fallback_once"] = False
             st.session_state["_use_abe_v2"] = False
 
@@ -14263,25 +14228,53 @@ if active_page == 3:
             # generation so users get immediate feedback instead of waiting minutes.
             if _is_llm_method and _has_oe_questions and hasattr(engine, 'llm_generator') and engine.llm_generator is not None:
                 progress_bar.progress(8, text="")
+                # Clear last run's fallback reason so the post-generation note
+                # describes THIS run.
+                st.session_state.pop("_builtin_ai_fell_back", None)
                 _health = engine.llm_generator.health_check(timeout=12)
-                if not _health["ok"]:
+                _preflight_method = st.session_state.get(_gen_method_key, "free_llm")
+                if not _health["ok"] and _preflight_method == "free_llm":
+                    # v1.2.9.1: Built-in AI never dead-ends. The providers were
+                    # tried in order and none answered (or none is configured),
+                    # so carry on and let the built-in text engine supply the
+                    # open-ended responses. The post-generation data-source
+                    # breakdown reports exactly what came from where; the
+                    # per-provider detail is in the admin diagnostics page.
+                    _log(
+                        "Pre-flight: built-in AI unavailable (%s) — continuing with "
+                        "the built-in text engine for open-ended responses."
+                        % _health.get("reason", "unreachable"),
+                        level="info",
+                    )
+                    st.session_state["allow_template_fallback_once"] = True
+                    engine.allow_template_fallback = True
+                    st.session_state["_builtin_ai_fell_back"] = _health.get(
+                        "reason", "unreachable")
+                    st.caption(
+                        "Open-ended text is coming from the built-in engine for "
+                        "this run. The data-source breakdown is shown below once "
+                        "generation finishes."
+                    )
+                elif not _health["ok"]:
+                    # v1.2.9.1: Only "AI (your API key)" reaches this branch —
+                    # Built-in AI falls through to the built-in engine above. A
+                    # user who supplied their own key DOES need to be told it is
+                    # not working, rather than silently getting template text.
                     progress_bar.progress(0, text="")
-                    # v1.2.9.1: "not_configured" means this deployment has no
-                    # provider key at all — retrying will never help, so say that
-                    # and point at the engine that works offline.
                     _hc_unconfigured = _health.get("reason") == "not_configured"
                     if _hc_unconfigured:
-                        _hc_title = 'Built-in AI is not configured on this deployment'
+                        _hc_title = 'No API key to use'
                         _hc_body = (
-                            'No free-provider API key is set for this instance, so there is '
-                            'nothing for Built-in AI to call. Retrying will not help. '
-                            'Pick one of these instead:'
+                            'This method needs your own API key, and none is set. '
+                            'Paste one on the method selector, or pick an engine '
+                            'that needs no key:'
                         )
                     else:
-                        _hc_title = 'AI providers are not responding'
+                        _hc_title = 'Your API key could not be used'
                         _hc_body = (
-                            'The free AI text generation service could not be reached. '
-                            'Your data quality options:'
+                            'The provider for your key did not respond. The key may be '
+                            'invalid, out of quota, or the provider may be down. '
+                            'Your options:'
                         )
                     st.markdown(
                         '<div style="background:linear-gradient(135deg, #FFF7ED 0%, #FFEDD5 100%);'
@@ -14295,13 +14288,6 @@ if active_page == 3:
                         f'{_hc_body}</span></div>',
                         unsafe_allow_html=True,
                     )
-                    if _hc_unconfigured and _health.get("missing_secrets"):
-                        st.caption(
-                            "Deployment administrators: set any of these as Streamlit "
-                            "secrets to switch Built-in AI back on \u2014 "
-                            + ", ".join(_health["missing_secrets"])
-                            + " (details in docs/DEPLOYMENT_SECRETS.md)."
-                        )
                     _hc1, _hc2, _hc3 = st.columns(3)
                     with _hc1:
                         if st.button("Try again", key="_preflight_retry",
@@ -14317,11 +14303,12 @@ if active_page == 3:
                             st.session_state["_generation_phase"] = 1
                             _navigate_to(3)
                     with _hc2:
-                        if st.button("Use my own API key", key="_preflight_own_api",
+                        if st.button("Use Built-in AI", key="_preflight_builtin_ai",
                                      type="secondary", use_container_width=True,
-                                     help="Get a free key from Groq or Google AI"):
-                            st.session_state[_gen_method_key] = "own_api"
-                            st.session_state["allow_template_fallback_once"] = False
+                                     help="Free providers, with the built-in engine as backup"):
+                            st.session_state[_gen_method_key] = "free_llm"
+                            # Built-in AI always has the built-in engine behind it.
+                            st.session_state["allow_template_fallback_once"] = True
                             st.session_state["_use_socsim_experimental"] = True
                             st.session_state["_use_abe_v2"] = False
                             st.session_state["is_generating"] = False
@@ -14788,7 +14775,17 @@ if active_page == 3:
                         # Simplified notification for non-advanced users
                         _brief_msg = "Your data was generated successfully."
                         if _ai_count == 0:
-                            _brief_msg += " AI providers were temporarily unavailable, so responses were generated using the Adaptive Behavioral Engine 3.0."
+                            # v1.2.9.1: Say WHY accurately. "Temporarily
+                            # unavailable" is wrong when this deployment simply
+                            # has no provider key configured.
+                            if st.session_state.get("_builtin_ai_fell_back") == "not_configured":
+                                _brief_msg += (
+                                    " Built-in AI has no provider key configured on this"
+                                    " deployment, so open-ended responses were generated"
+                                    " using the Adaptive Behavioral Engine 3.0."
+                                )
+                            else:
+                                _brief_msg += " AI providers were temporarily unavailable, so responses were generated using the Adaptive Behavioral Engine 3.0."
                         elif _template_count > 0:
                             _brief_msg += f" {_ai_pct_display}% of responses were AI-generated."
                         st.info(_brief_msg)
