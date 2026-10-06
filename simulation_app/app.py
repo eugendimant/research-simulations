@@ -292,8 +292,20 @@ ADVANCED_DEFAULTS = {
 # -----------------------------
 # Utilities
 # -----------------------------
+def _finite_json_value(obj: Any) -> Any:
+    """Copy of ``obj`` with every NaN/Infinity float replaced by None: ``json.dumps`` writes them
+    as the bare tokens NaN/Infinity, which are not valid JSON (R, jq and browsers reject the file)."""
+    if isinstance(obj, float):
+        return obj if obj == obj and obj not in (float("inf"), float("-inf")) else None
+    if isinstance(obj, dict):
+        return {k: _finite_json_value(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_finite_json_value(v) for v in obj]
+    return obj
+
+
 def _safe_json(obj: Any) -> str:
-    return json.dumps(obj, indent=2, ensure_ascii=False, default=str)
+    return json.dumps(_finite_json_value(obj), indent=2, ensure_ascii=False, default=str)
 
 
 # v1.5.0: Removed unused validation helpers, SimulationError class, and related

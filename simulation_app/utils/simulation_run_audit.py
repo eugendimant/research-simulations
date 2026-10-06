@@ -38,8 +38,19 @@ GENERIC_PATTERNS = (
 )
 
 
+def _finite_json_value(obj: Any) -> Any:
+    """Copy of ``obj`` with every NaN/Infinity float replaced by None (bare NaN is not valid JSON)."""
+    if isinstance(obj, float):
+        return obj if obj == obj and obj not in (float("inf"), float("-inf")) else None
+    if isinstance(obj, dict):
+        return {k: _finite_json_value(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_finite_json_value(v) for v in obj]
+    return obj
+
+
 def _safe_json(obj: Any) -> str:
-    return json.dumps(obj, ensure_ascii=False, indent=2, default=str)
+    return json.dumps(_finite_json_value(obj), ensure_ascii=False, indent=2, default=str)
 
 
 def _extract_open_ended_columns(df: pd.DataFrame) -> List[str]:
