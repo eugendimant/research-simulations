@@ -3889,6 +3889,10 @@ class ComprehensiveInstructorReport:
             if "t_test" in results:
                 t_res = results["t_test"]
                 groups = [str(g) for g in (t_res.get("groups") or [])]
+                # Raw names (cleaning can merge "Group_1" and "Group_2"), when they are the groups the test used, in its order.
+                raw = [str(c) for c, g in df.groupby("CONDITION", sort=False)[dv_column] if int(g.notna().sum()) >= 2]
+                if len(raw) == 2 and [_clean_condition_name(c) for c in raw] == groups:
+                    groups = raw
                 effect = (results.get("cohens_d") or {}).get("value")
                 row.update(
                     contrast=" - ".join(groups) if len(groups) == 2 else "condition 1 - condition 2",
@@ -4062,8 +4066,8 @@ class ComprehensiveInstructorReport:
                     intended = _fmt(row["intended"], 2, signed=True)
                 else:
                     intended = "not calibrated" if row["source"] == "inferred" else "n/a"
-                parts.append(f"<tr><td>{_esc(row['scale'])}</td><td>{_esc(_clean_condition_name(row['condition_1']))} "
-                             f"&minus; {_esc(_clean_condition_name(row['condition_2']))}</td>"
+                parts.append(f"<tr><td>{_esc(row['scale'])}</td><td>{_esc(row['condition_1'])} "
+                             f"&minus; {_esc(row['condition_2'])}</td>"
                              f"<td>{_esc(_source_label(row['source']))}</td><td>{intended}</td>"
                              f"<td>{_fmt(row['d'], 3, signed=True)}</td><td>{_esc(self._interpret_cohens_d(row['d']).capitalize())}</td></tr>")
             parts.append("</table>")

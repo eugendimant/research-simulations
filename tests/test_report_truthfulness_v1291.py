@@ -599,3 +599,19 @@ def test_open_ended_text_is_truncated_as_text_and_then_escaped():
     assert item.startswith("&lt;p style=&quot;margin:0&quot;&gt;")  # escaped, not interpreted
     assert not re.findall(r"&(?!(?:[a-z]+|#\d+|#x[0-9a-f]+);)", item), "an entity was cut in half or left bare"
     assert len(_parse("<p>" + item + "</p>").text[0].rstrip()) == 120  # 120 characters of the question text, whole
+
+
+def test_the_email_body_carries_the_key_test_table_and_claims_no_rank_tests():
+    """The markdown is pasted into the instructor email: it now has p-values, and nothing in the message
+    (or in either analysis document) advertises a test that is not shown."""
+    from utils import email_delivery
+
+    df, meta = _study(conditions=("Control", "Treatment"), n=50)
+    md, html = _reports(df, meta)
+    _subject, text, html_body = email_delivery.compose_instructor_notification(
+        title="T", team_name="Team", team_members="A", generation_label="Template", mode="pilot", metadata=meta,
+        usage_summary="", analysis_markdown=md,
+        attachment_names=["INSTRUCTOR_Statistical_Report.html", "INSTRUCTOR_Detailed_Analysis.md", "simulation_output.zip"])
+    assert "### Key Test Results" in text and re.search(r"\| Trust \| Control - Treatment \(pooled-variance t-test\) \| t = ", text)
+    for document in (text, html_body, html, md):
+        assert not re.search(r"Mann-Whitney|Wilcoxon|Kruskal|non-parametric|Welch's correction", document, flags=re.I)
