@@ -10696,6 +10696,27 @@ class EnhancedSimulationEngine:
         }
         return report
 
+    @staticmethod
+    def _readable_topic(text: Any) -> str:
+        """``text`` when it reads like words (two or more real words, no underscores, few digits), else ''.
+
+        Survey titles such as "BDS5010_G12" or "Survey_v2_FINAL" are identifiers: written into an answer
+        ("thoughts about BDS5010_G12 ...") they are an artifact, not a topic."""
+        t = re.sub(r"\s+", " ", str(text or "")).strip()
+        if not t or "_" in t:
+            return ""
+        if len(re.findall(r"[A-Za-z]{3,}", t)) < 2 or sum(c.isdigit() for c in t) > 0.15 * len(t):
+            return ""
+        return t
+
+    def _readable_study_topic(self) -> str:
+        """The study title if it reads like words, else the start of the description, else ''."""
+        title = self._readable_topic(self.study_title)
+        if title:
+            return title
+        first_sentence = re.split(r"(?<=[.!?])\s", str(self.study_description or "").strip(), maxsplit=1)[0]
+        return self._readable_topic(first_sentence[:120])
+
     def _build_enriched_question_text(
         self, question_text: str, question_context: str, condition: str
     ) -> str:
@@ -10719,13 +10740,13 @@ class EnhancedSimulationEngine:
         # usable remains, fall back to the study topic so answers still stay on topic.
         _qt = _clean_question_text(question_text)
         if not _qt:
-            _topic_fb = self.study_title or self.study_description or "the questions asked"
+            _topic_fb = self._readable_study_topic() or "the questions asked"
             _qt = f"Please share your thoughts about {_topic_fb}"
         _ctx = str(question_context or "").strip()
         if _ctx:
             _humanized = (_re.sub(r'[_\-]+', ' ', _qt).strip()
                           if _qt and " " not in _qt.strip() else _qt)
-            _study_topic = self.study_title or self.study_description or ""
+            _study_topic = self._readable_study_topic()
             _out = f"Question: {_humanized}\nContext: {_ctx}"
             if _study_topic:
                 _out += f"\nStudy topic: {_study_topic}"
@@ -10742,7 +10763,7 @@ class EnhancedSimulationEngine:
             # from study context. (No condition embedded here — mirrors prior
             # behavior; condition still varies the pool key as a separate field.)
             _humanized = _re.sub(r'[_\-]+', ' ', _qt).strip()
-            _study_topic = self.study_title or self.study_description or ""
+            _study_topic = self._readable_study_topic()
             if _study_topic:
                 return (f"In the context of a study about {_study_topic}, "
                         f"please share your thoughts on: {_humanized}")

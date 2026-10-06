@@ -53,3 +53,28 @@ def test_non_english_and_non_latin_text_is_recognised():
     assert tc.is_probably_non_english("Me parece que la política es muy importante para todos nosotros")
     assert tc.is_probably_non_english("我认为这项政策非常重要")
     assert not tc.is_probably_non_english("I think the policy is quite important for all of us")
+
+
+def _bare_engine(title, description="A pilot study of loyalty programs."):
+    from utils.enhanced_simulation_engine import EnhancedSimulationEngine
+
+    return EnhancedSimulationEngine(study_title=title, study_description=description, sample_size=10, conditions=["A", "B"],
+                                    factors=[{"name": "F", "levels": ["A", "B"]}],
+                                    scales=[{"name": "DV", "variable_name": "DV", "num_items": 2, "scale_points": 7}],
+                                    additional_vars=[], demographics={"gender_quota": 50, "age_mean": 35, "age_sd": 12},
+                                    open_ended_questions=[], seed=1, allow_template_fallback=True)
+
+
+def test_an_identifier_like_survey_title_is_never_echoed_into_a_blank_questions_topic():
+    for title in ("BDS5010_G12", "Survey_v2_FINAL", "2026_Group7"):
+        engine = _bare_engine(title)
+        for blank in ("", "Click to write the question text", "Q12"):
+            built = engine._build_enriched_question_text(blank, "", "A")
+            assert title not in built, (title, blank, built)
+        assert "loyalty programs" in engine._build_enriched_question_text("", "", "A")  # the description supplies the topic
+
+
+def test_a_readable_survey_title_is_still_the_topic():
+    built = _bare_engine("Coffee Shop Loyalty Programs")._build_enriched_question_text("", "", "A")
+    assert "Coffee Shop Loyalty Programs" in built
+    assert "the questions asked" in _bare_engine("BDS5010_G12", "")._build_enriched_question_text("", "", "A")  # last-resort wording

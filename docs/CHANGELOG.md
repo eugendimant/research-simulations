@@ -34,13 +34,25 @@ lookup) is untouched; only the text post-processing after a response is drawn ch
 - LLM answers: post-processing no longer edits random word positions or replaces substrings without
   word boundaries; it edits only at grammatical positions (`utils/text_cleanup.py`, shared by the LLM
   variation code, the template engine, the stylometric engine and the validator).
-- Numeric text boxes (2,698 of the 4,668 open-ended questions in the 302-file corpus) get numbers that
+- Numeric text boxes (2,701 of the 4,668 open-ended questions in the 302-file corpus) get numbers that
   respect Qualtrics validation: ages, years, counts, amounts, percentages, ZIP codes, and
   MTurk/Prolific/participant IDs. A text box that repeats a numeric DV is skipped. These boxes are
   exempt from every later text pass (stylometric, validator, tidy-up): before, 27 of 60 generated
   MTurk IDs were rewritten ("perhaps a6O1VU1998UHS"), and a ZIP-code box was answered with a state name.
 - Stylometric engine and validator: "it's" -> "it has", "(2)" counters on duplicates and mid-phrase
   truncation fixed.
+- An adversarial review of this pipeline found and fixed (13 of its 22 findings no longer reproduce on
+  the reviewer's own checks): the validator could treat a numbered numeric text box as a Likert item
+  (pandas 3 aborted the whole validation step, older pandas rewrote the cells); an open-ended question
+  named like a system column ("Gender", "Age") turned that column into text; fillers split phrases
+  ("for a, honestly, while"); hedges and emphatics lost sentence capitals; English openers were injected
+  into non-English answers (59 of 200 Spanish answers, now 0); a blank question made the survey title
+  ("BDS5010_G12") the topic of 8.2% of free-text answers (identifier-like titles are no longer echoed);
+  12% of generated ages were exactly 18 (1.1%); fractional and one-sided number ranges were ignored.
+  Lint over 12 corpus files (11,535 answers) stays at 0.5 flagged defects per 1,000. Known and left:
+  numeric-box recognition is wording-based (about 15 of 4,668 corpus boxes, e.g. an email box with
+  "win $50" wording, get numbers; names, email addresses and "how often does 1 occur" boxes get prose),
+  `NumDecimals` is not read (a 0-1 probability box answers 0 or 1), and a 5-digit ID box gets 6 digits.
 
 **Interface, security, docs**
 - Design step: choosing within-subjects, mixed or cluster-level randomization shows that the data are
@@ -58,8 +70,75 @@ lookup) is untouched; only the text post-processing after a response is drawn ch
   through `utils/html_safety.py`, which turns any script, iframe, form, event handler, external URL or
   `javascript:` link into visible text. A title such as `<script>...</script>` can no longer run in the
   file the owner opens, and mail filters no longer see active content in the attachment.
+- The sanitizer was red-teamed in headless Chromium (126 hand-built vectors in raw, sanitized and
+  hardened form): 0 script executions and 0 network requests with the sanitizer alone and with the
+  CSP; the CSP meta (`default-src 'none'`, inline styles and `data:` images only) is a second layer.
+  The same escaping and sanitizing applies to the student-facing `User_Study_Summary.html`.
+- A line break in a study title, scale name or condition label used to start a new statement in the
+  exported Python, R, Julia, SPSS and Stata scripts, which whoever receives the ZIP runs; text is now
+  written as one line, unsafe names are listed in a comment instead of scripted.
+- Access codes (`?admin=1`, analytics dashboard): wrong guesses are counted once per distinct text and
+  shown on the admin page, slowed by up to 2 s after many, and never lock the owner out (a first design
+  that refused everyone after 20 wrong codes let one student lock the admin out; the red-team re-check
+  caught it).
+- The student "Send ZIP via email" button has a fixed subject, mails a ZIP without uploaded source
+  files, and is limited per session, per recipient (2 a day, Gmail dots/+tags/googlemail count as one
+  mailbox) and per app (100 a day).
+- One broken optional module (`email_delivery`, `html_safety`, `correlation_matrix`) can no longer take
+  the whole app down, whatever exception it raises at import.
 - New root README, `docs/guide/how-effects-work.md`, `docs/guide/limitations.md`, `LICENSE`
   (PolyForm Noncommercial 1.0.0) and `CITATION.cff`.
+
+**Design page and uploads**
+- **Detected DVs reach the Design page.** Every uploaded QSF used to open the Design page with one
+  generic `Main_DV`, because the function that turns the QSF preview into design defaults was never
+  called from the interface; the generated columns were `Main_DV_1..5` unless students rebuilt their
+  DVs by hand. The page now starts from the survey's own DVs (8.9 per file on average, up to 51, including
+  recovered sliders and numeric boxes) and students review and delete. Rank-order, constant-sum and
+  numeric DVs keep their type; the Items/Min/Max boxes hold the range a DV arrived with. A survey with
+  nothing detectable still starts with `Main_DV`.
+- **Declared number ranges arrive.** Qualtrics nests Min/Max under `ValidNumber`, and the parser read
+  them from the wrong place, so 557 of 1,241 boxes with a declared range drew out-of-range values
+  (year of birth 2007 for a maximum of 2003, 202 for a maximum of 10); now 1, a duplicate export tag.
+  A Max-only box draws from 0..Max.
+- Uploading a different file under the same name is no longer ignored; switching to another QSF clears
+  the attention/manipulation/comprehension checks, mediators, identifiers and the previous dataset.
+- The advanced "Direction" radio is gone: with "Lower in treatment" it inverted the effect against the
+  confirmation text (observed d -1.04 for a request of +0.8). Changing the design after a dataset was
+  generated now shows a notice above the download (the old ZIP stays available).
+- The builder no longer preselects within-subjects for labels such as "Premium" or "Present";
+  inferred factor names no longer depend on the Python hash seed ("Politeness" vs "Rudeness" for the
+  same conditions); the design-structure note says what the app does.
+- QSF collection: a duplicate no longer spends the hourly upload budget, a taken name with different
+  content is stored with a hash suffix, and a zip that would expand beyond 25 MB is refused (a 199 KB
+  zip used to expand to 200 MB).
+
+**Instructor analysis (the report and the email body)**
+- A preregistration that yields a hypothesis turned BOTH comprehensive attachments into stubs on
+  262 of 262 datasets (`h.get("text")` on a string). The markdown analysis, the HTML report and the
+  student summary now fail independently, every section of both reports is guarded, and any failure
+  puts `[REPORT ERROR]` in the email subject. Text columns that share a scale prefix no longer crash
+  the range table; constant-sum and rank-order composites (59 blocks in 21 datasets) get a per-option
+  comparison instead of `nan`, `inf` and `p = 0.0000`.
+- **p-values are exact without scipy** (the deployed environment has none). t, F, chi-square,
+  Mann-Whitney, Kruskal-Wallis, Fisher and Shapiro-Wilk agree with scipy to 1e-11 or better; before,
+  errors reached 0.13, 2.0% of ANOVAs and 3.7% of regression F tests flipped at .05, and a two-group t-test
+  and ANOVA disagreed by more than .005 in 34 of 63 blocks (now 0).
+- One condition order everywhere (the design's), t and d are first minus second with the group names
+  printed, one effect-size label, `p < .001`. Regression covariates match whole words (a "controlling for
+  age" preregistration pulled nine DV-derived columns into the model, R² = 1.0), adjusted R² uses the right
+  degrees of freedom and the reference level is printed. The factorial ANOVA is Type III, takes up to three
+  factors, matches levels exactly and now renders for 47 of 80 corpus factorial designs (0 before; the
+  others print the reason). Confidence intervals use t quantiles (the old 1.96 intervals were too narrow in
+  2,147 of 2,147 rows), 2x2 tables get Yates/Fisher and a validity flag (261 blocks said "randomization
+  appears successful" with expected counts below 5), pairwise tests show Holm-adjusted p, and N is the analytic N.
+- The numbers match the data: reverse-keyed items are recoded in the instructor composites (the instructor
+  saw d = -0.31 where the data have +0.62), the effects tables come from `effect_sizes_applied`
+  (blank "Comparison" cells in 60 of 68 reports, tables of up to 12,096 rows -> 0 and at most 40), the
+  false "Welch's correction applied" and "non-parametric tests also reported" lines are gone, the markdown
+  analysis (which is also the email body) now has a key-test table with statistic, df, p and effect size,
+  and the student summary prints only settings that were recorded, the right seed and the true
+  `Attention_Check_1` coding. Every user string in the HTML report is escaped.
 
 **Email delivery**
 - The instructor notification used to be fire-and-forget: when SMTP was not configured or a send failed (message too
@@ -88,11 +167,24 @@ lookup) is untouched; only the text post-processing after a response is drawn ch
   JSONL log lives on an ephemeral disk.
 - The admin test email can carry a chosen content type (body only, `.md`, inert `.html`, `.zip`, or an
   incompressible 3 MB / 10 MB attachment), so three or four tests show which type or size the mail
-  system holds back.
+  system holds back. The tab also warns about settings that make a receiving system hold or drop
+  accepted mail (a From address on the recipient's own domain sent through another server, a From address
+  that differs from the login, a free-mail sender, TLS off) and opens with a banner when anything failed or
+  was skipped in the last 24 hours.
+- The instructor mail retries 5 times over several minutes (it runs in a background thread), is bounded to two
+  concurrent sends, falls back to a message without attachments when the server keeps rejecting the size,
+  and is limited per session (12 an hour) and per app (200 runs a day, two messages each) so a looping
+  session cannot exhaust the mailbox; an exception while preparing it and every skipped run is a row in the log.
+  Headers survive any pasted character (a U+2028 in a study title used to make the message builder raise and
+  drop the notification, leaving a log line that the admin table could not even read).
 
-**Tests:** `tests/test_effect_fidelity_v1291.py` (recovery on long/binary scales, true null, game DVs,
-metadata, seeds, reverse scoring) and `tests/test_quality_v1291.py` (text safety, numeric text
-boxes, collector hardening, exported scripts).
+**Tests:** the fast suite grew from 305 to 708 tests: `test_effect_fidelity_v1291.py` (recovery on
+long/binary scales, true null, game DVs, metadata, seeds, reverse scoring), `test_quality_v1291.py` (text
+safety, numeric text boxes, collector hardening, exported scripts), `test_email_delivery_v1291.py` and
+`test_email_app_integration_v1291.py` (message building, retries, limits, admin tab, against fake SMTP
+servers), `test_html_safety_v1291.py`, `test_export_script_safety_v1291.py`, `test_report_robustness_v1291.py`,
+`test_report_statistics_v1291.py` and `test_report_truthfulness_v1291.py` (with and without scipy),
+`test_design_wiring_v1291.py`, `test_app_hygiene_v1291.py` and `test_text_review_v1291.py`.
 
 
 ## 2026-08-14 — v1.2.8.7

@@ -24,7 +24,7 @@ This page is the plain version of the feature list. Read it before you rely on a
 | Several DVs with a correlation structure between them | Longitudinal change over time |
 | Mediator and moderator variables with a specified correlation pattern | Survey branching: display logic and skip logic in the QSF do not reach generation |
 
-Two detection limits are worth knowing. Reverse-keyed items and named instruments are **not** detected from a QSF, so mark reverse-keyed items on the Design page or describe them to the study builder. A scale detected from a QSF can also be mislabeled, so review the detected scales and conditions before generating.
+Two detection limits are worth knowing. Reverse-keyed items and named instruments are **not** detected from a QSF, and the Design page has no control for marking reverse-keyed items. To include them, describe the scale to the study builder (for example "items 3 and 5 are reverse-coded"). A scale detected from a QSF can also be mislabeled, so review the detected scales and conditions before generating.
 
 ## How effects behave
 
@@ -39,7 +39,7 @@ More detail: [How effects work](how-effects-work.md).
 ## Open-ended text
 
 - **Built-in AI** (free): text for the first 100 participants is written by free language-model providers. Participants beyond 100 receive text from the built-in template engine. Numeric data are generated for every participant either way. The `_Generation_Source` column in `Simulation_Diagnostics.csv` says which source wrote each response.
-- **Template engine**: unlimited, offline and reproducible under a seed, but more repetitive than AI text.
+- **Template engine**: up to 10,000 participants, offline and reproducible under a seed, but more repetitive than AI text.
 - **Your own API key**: lifts the free-tier cap and uses your own provider quota.
 - AI text varies between runs even under a seed, because provider output is not deterministic. Numeric data are reproducible; AI-written text is not.
 - Text is written to fit each participant's ratings and the question topic. It is suitable for testing text-processing code. It is not suitable for training or evaluating models that must tell human text from machine text.

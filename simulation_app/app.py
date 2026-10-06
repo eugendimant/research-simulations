@@ -97,13 +97,30 @@ from utils.qsf_preview import QSFPreviewParser, QSFPreviewResult
 from utils.schema_validator import validate_schema
 from utils.github_qsf_collector import collect_qsf_async, is_collection_enabled
 from utils.instructor_report import InstructorReportGenerator, ComprehensiveInstructorReport
+
+
+def _log_optional_import_failure(module: str, exc: BaseException) -> None:
+    """Record why an optional module was skipped; the app keeps loading without it."""
+    import logging
+
+    logging.getLogger("simulation_app").warning(
+        "Optional module %s is unavailable (%s: %s); continuing without it.", module, type(exc).__name__, exc
+    )
+
+
+# The three guards below cover OPTIONAL modules. A partial deploy can fail with more than an
+# ImportError (a SyntaxError in a half-copied file, an AttributeError at import time, ...), and one
+# bad optional module must never take the whole app down, so they catch Exception and log it.
 try:  # reliable, observable email delivery (v1.2.9.1); the legacy sender below is the fallback
     from utils import email_delivery as _email_delivery
-except ImportError:  # partial deploy: keep the app loading
+except Exception as _email_import_exc:  # partial deploy: keep the app loading
+    _log_optional_import_failure("utils.email_delivery", _email_import_exc)
     _email_delivery = None  # type: ignore[assignment]
 try:  # neutralises active content in generated HTML files (v1.2.9.1)
     from utils.html_safety import harden_report_html as _harden_report_html
-except ImportError:  # partial deploy: keep the app loading
+except Exception as _html_safety_import_exc:  # partial deploy: keep the app loading
+    _log_optional_import_failure("utils.html_safety", _html_safety_import_exc)
+
     def _harden_report_html(document: str) -> str:  # type: ignore[misc]
         return document
 from utils.survey_builder import SurveyDescriptionParser, ParsedDesign, ParsedCondition, ParsedScale, KNOWN_SCALES, AVAILABLE_DOMAINS, generate_qsf_from_design
@@ -144,7 +161,8 @@ try:
         get_correlation_summary,
     )
     _HAS_CORRELATION_MODULE = True
-except ImportError:
+except Exception as _correlation_import_exc:  # optional module: any import-time failure disables it
+    _log_optional_import_failure("utils.correlation_matrix", _correlation_import_exc)
     _HAS_CORRELATION_MODULE = False
 
 # Verify expected utils version.  If there is a mismatch (stale module cache
@@ -217,8 +235,8 @@ try:
     _self_heal_result = _self_heal_check(APP_VERSION)
     if _self_heal_result:
         _log(_self_heal_result, level="info")
-except Exception:
-    pass  # Self-healing must never crash the app
+except Exception as _self_heal_exc:  # Self-healing must never crash the app
+    _log(f"Self-healing check skipped: {type(_self_heal_exc).__name__}: {_self_heal_exc}", level="warning")
 
 
 # ---------------------------------------------------------------------------
@@ -260,13 +278,38 @@ def _decrypt_api_key(ciphertext_hex: str) -> str:
 
 MAX_SIMULATED_N = 10000
 MAX_FREE_LLM_N = 100  # v1.2.1.9: Cap free LLM generation to prevent API exhaustion
-# v1.2.9.1: the generator assigns each simulated participant to ONE condition. The design
-# choices below are saved in the summary, but they do not change the structure of the data.
+# v1.2.9.1: the generator assigns each simulated participant to ONE condition. The design type
+# chosen on the pages does not change the structure of the data and is not written to Metadata.json
+# (only the randomization level of the QSF path is listed in the design summary), so the note must
+# not say that the choice is recorded.
 DESIGN_STRUCTURE_NOTE = (
     "This version generates one condition per participant (between-subjects, randomized at the "
-    "participant level). Your choice is recorded in the design summary, but the generated data will "
-    "not contain repeated measures, mixed-design columns or clustered observations."
+    "participant level). The design type you choose here does not change that: the generated data "
+    "will not contain repeated measures, mixed-design columns or clustered observations."
 )
+
+# Whole-word cues in condition labels that suggest a repeated-measures ("within") or "mixed" design.
+# Matching whole words keeps "Premium", "Present" or "Prevention" from reading as "pre".
+_WITHIN_LABEL_RE = re.compile(
+    r"\b(?:pre|post|before|after|baseline|follow(?: ?ups?)?|(?:time|wave|session) ?[12])\b"
+)
+_MIXED_LABEL_RE = re.compile(r"\b(?:mixed|repeated)\b")
+
+
+def _detect_design_from_condition_names(names: Any) -> str:
+    """Suggest "within", "mixed" or "between" from condition labels (whole words only).
+
+    "Pre-test"/"Post-test", "Time 1", "Wave 2" or "Follow-up" suggest repeated measures;
+    "Premium brand", "Present" or "Prevention message" do not (a plain substring test for
+    "pre" used to match inside them).
+    """
+    text = " ".join(str(name).lower() for name in (names or []))
+    text = re.sub(r"[_\-/.:]+", " ", text)
+    if _WITHIN_LABEL_RE.search(text):
+        return "within"
+    if _MIXED_LABEL_RE.search(text):
+        return "mixed"
+    return "between"
 
 STANDARD_DEFAULTS = {
     "demographics": {"gender_quota": 50, "age_mean": 35, "age_sd": 12, "age_min": 18, "age_max": 80, "include_age_column": True, "include_gender_column": True},
@@ -2381,17 +2424,43 @@ def _merge_condition_sources(qsf_conditions: List[str], prereg_conditions: List[
     return conditions, sources
 
 
+# A real .qsf export is a few hundred KB (a very large survey a few MB). A ZIP that inflates beyond
+# this limit is refused before anything is decompressed, so a small upload cannot expand into
+# hundreds of MB of memory (a "zip bomb"). The member count bounds the directory scan the same way.
+MAX_QSF_UNZIPPED_BYTES = 25 * 1024 * 1024
+MAX_QSF_ZIP_MEMBERS = 1000
+
+
 def _extract_qsf_payload(uploaded_bytes: bytes) -> Tuple[bytes, str]:
     """
     Return JSON bytes from a QSF upload (supports raw JSON or ZIP wrappers).
+
+    Raises ValueError (shown to the user as "QSF parsing failed: ...") for a ZIP without a survey
+    file, with more than MAX_QSF_ZIP_MEMBERS entries, or whose survey file would inflate beyond
+    MAX_QSF_UNZIPPED_BYTES.
     """
     if zipfile.is_zipfile(io.BytesIO(uploaded_bytes)):
         with zipfile.ZipFile(io.BytesIO(uploaded_bytes)) as zf:
-            candidates = [n for n in zf.namelist() if n.lower().endswith((".qsf", ".json"))]
+            members = zf.infolist()
+            if len(members) > MAX_QSF_ZIP_MEMBERS:
+                raise ValueError(
+                    f"The ZIP holds {len(members):,} files; a QSF upload should contain a single survey file."
+                )
+            candidates = [m for m in members if m.filename.lower().endswith((".qsf", ".json")) and not m.is_dir()]
             if not candidates:
                 raise ValueError("ZIP did not contain a .qsf or .json file.")
             selected = candidates[0]
-            return zf.read(selected), selected
+            limit_mb = MAX_QSF_UNZIPPED_BYTES // (1024 * 1024)
+            if selected.file_size > MAX_QSF_UNZIPPED_BYTES:
+                raise ValueError(
+                    f"{selected.filename} would expand to {selected.file_size / (1024 * 1024):,.0f} MB; a survey "
+                    f"file is far smaller (limit {limit_mb} MB). Upload the .qsf file itself."
+                )
+            with zf.open(selected) as handle:
+                data = handle.read(MAX_QSF_UNZIPPED_BYTES + 1)  # bounded even if the header understates the size
+            if len(data) > MAX_QSF_UNZIPPED_BYTES:
+                raise ValueError(f"{selected.filename} expands beyond the {limit_mb} MB limit for a survey file.")
+            return data, selected.filename
     return uploaded_bytes, "uploaded.qsf"
 
 
@@ -2698,14 +2767,20 @@ def _build_variable_review_rows(
 
     # Add open-ended questions
     for q in inferred.get("open_ended_questions", []):
-        if q and q not in seen_vars:
-            seen_vars.add(q)
+        # open-ended questions are dicts ({"variable_name", "question_text", ...}) in current designs and bare names in old ones
+        if isinstance(q, dict):
+            q_name = str(q.get("variable_name") or q.get("name") or "").strip()
+            q_text = str(q.get("question_text") or "")
+        else:
+            q_name, q_text = str(q or "").strip(), ""
+        if q_name and q_name not in seen_vars:
+            seen_vars.add(q_name)
             rows.append({
-                "Variable": q,
-                "Display Name": q.replace("_", " ").title(),
+                "Variable": q_name,
+                "Display Name": q_name.replace("_", " ").title(),
                 "Type": "Survey Question",
                 "Role": "Open-ended",
-                "Question Text": "",
+                "Question Text": q_text[:60] + ("..." if len(q_text) > 60 else ""),
             })
 
     # If no rows, add a placeholder
@@ -4079,7 +4154,8 @@ def _infer_factor_name(levels: List[str]) -> str:
 
         if varying_words:
             # Use the longest varying word as potential factor name
-            best_word = max(varying_words, key=len)
+            # sorted(): ties on length must not depend on set order (it changes with PYTHONHASHSEED)
+            best_word = max(sorted(varying_words), key=len)
             if len(best_word) > 2:
                 return best_word.title()
 
@@ -4090,7 +4166,7 @@ def _infer_factor_name(levels: List[str]) -> str:
 
         if common_words:
             # Use common words as factor name
-            common_str = ' '.join(sorted(common_words, key=len, reverse=True)[:2])
+            common_str = ' '.join(sorted(common_words, key=lambda w: (-len(w), w))[:2])
             if common_str and len(common_str) > 2:
                 return common_str.title()
 
@@ -4195,7 +4271,7 @@ def _infer_factors_from_conditions(conditions: List[str]) -> List[Dict[str, Any]
     underscore_rows = [c.split('_') for c in conditions if '_' in c]
     if len(underscore_rows) >= len(conditions) - 1 and len(underscore_rows) > 1:  # Allow 1 non-matching
         parts_count = [len(r) for r in underscore_rows]
-        most_common_parts = max(set(parts_count), key=parts_count.count)
+        most_common_parts = max(sorted(set(parts_count)), key=parts_count.count)
         consistent_rows = [r for r in underscore_rows if len(r) == most_common_parts]
 
         if len(consistent_rows) >= 2 and most_common_parts > 1:
@@ -4237,10 +4313,10 @@ def _infer_factors_from_conditions(conditions: List[str]) -> List[Dict[str, Any]
             # Potential 2-factor design
             factors = []
             if len(numbers) > 1:
-                factor_name = _infer_factor_name(list(numbers))
+                factor_name = _infer_factor_name(sorted(numbers))
                 factors.append({"name": factor_name if factor_name != "Factor" else "Factor 1", "levels": sorted(list(numbers))})
             if len(suffixes) > 1:
-                factor_name = _infer_factor_name(list(suffixes))
+                factor_name = _infer_factor_name(sorted(suffixes))
                 factors.append({"name": factor_name if factor_name != "Factor" else "Factor 2", "levels": sorted(list(suffixes))})
 
             if len(factors) > 1:
@@ -5689,16 +5765,7 @@ def _render_conversational_builder() -> None:
     with _cfg_col2:
         st.markdown("#### Design Type")
         # Auto-detect design type from condition structure
-        _auto_design: str = "between"
-        if parsed_conditions:
-            cond_names_lower = " ".join(c.name.lower() for c in parsed_conditions)
-            if any(w in cond_names_lower for w in [
-                "pre", "post", "before", "after", "time 1", "time 2",
-                "baseline", "follow", "wave 1", "wave 2", "session 1", "session 2",
-            ]):
-                _auto_design = "within"
-            elif any(w in cond_names_lower for w in ["mixed", "repeated"]):
-                _auto_design = "mixed"
+        _auto_design: str = _detect_design_from_condition_names([c.name for c in parsed_conditions or []])
         if not st.session_state.get("_design_type_manually_set"):
             st.session_state["builder_design_type"] = _auto_design
 
@@ -6985,6 +7052,72 @@ def _reset_generation_state() -> None:
     # v1.2.2.8: Clear free LLM OE cap acceptance flag
     st.session_state.pop("_free_llm_oe_cap_accepted", None)
     # v1.2.5.0: Clear legacy method flags
+    st.session_state.pop("_generated_design_signature", None)
+
+
+def _canonical_for_signature(value: Any) -> Any:
+    """Reduce `value` to plain JSON types in a deterministic form.
+
+    Integral floats become ints (1.0 -> 1), sets are sorted, dataclasses become dicts and unknown
+    objects fall back to their type name, so a memory address never leaks into a fingerprint.
+    """
+    if value is None or isinstance(value, (bool, str)):
+        return value
+    if isinstance(value, float):
+        return int(value) if value == value and value not in (float("inf"), float("-inf")) and value.is_integer() else value
+    if isinstance(value, int):
+        return value
+    if isinstance(value, dict):
+        return {str(k): _canonical_for_signature(v) for k, v in sorted(value.items(), key=lambda kv: str(kv[0]))}
+    if isinstance(value, (list, tuple)):
+        return [_canonical_for_signature(v) for v in value]
+    if isinstance(value, (set, frozenset)):
+        return sorted(str(v) for v in value)
+    if hasattr(value, "__dataclass_fields__"):
+        return _canonical_for_signature(asdict(value))
+    if hasattr(value, "item"):  # numpy scalar
+        try:
+            return _canonical_for_signature(value.item())
+        except (TypeError, ValueError):
+            return type(value).__name__
+    return type(value).__name__
+
+
+def _design_signature(effect_sizes: Optional[Any] = None) -> str:
+    """Fingerprint of the design inputs that shape a generated dataset.
+
+    Stored when a dataset is generated and compared again on the Generate page, so a download
+    that no longer matches the sample size, conditions, DVs, effects or method on screen is
+    flagged instead of silently passing for the current design. Returns "" when it cannot be
+    computed (nothing is then flagged).
+    """
+    try:
+        ss = st.session_state
+        inferred = ss.get("inferred_design") or {}
+        if not isinstance(inferred, dict):
+            inferred = {}
+        try:
+            sample_size = int(ss.get("sample_size") or 0)
+        except (TypeError, ValueError):
+            sample_size = 0
+        parts = {
+            "sample_size": sample_size,
+            "title": str(ss.get("study_title") or ss.get("_p_study_title") or "").strip(),
+            "description": str(ss.get("study_description") or ss.get("_p_study_description") or "").strip(),
+            "conditions": inferred.get("conditions") or [],
+            "factors": inferred.get("factors") or [],
+            "crossed": ss.get("factorial_crossed_conditions") if ss.get("use_crossed_conditions") else None,
+            "scales": ss.get("confirmed_scales") or inferred.get("scales") or [],
+            "open_ended": ss.get("confirmed_open_ended") or inferred.get("open_ended_questions") or [],
+            "effects": list(effect_sizes or []),
+            "auto_effects": bool(ss.get("_auto_effects", True)) if ss.get("advanced_mode", False) else True,
+            "method": str(ss.get("generation_method") or ""),
+        }
+        blob = json.dumps(_canonical_for_signature(parts), sort_keys=True, ensure_ascii=False)
+        return hashlib.sha256(blob.encode("utf-8")).hexdigest()[:16]
+    except Exception as exc:  # a fingerprint problem must never break the page
+        _log(f"Design signature unavailable: {exc}", level="warning")
+        return ""
 
 
 # Session-state entries that belong to ONE uploaded QSF. A different survey must start from its own
@@ -8164,6 +8297,16 @@ def _list_stored_instructor_packages(limit: int = 15) -> List[Dict[str, Any]]:
     return found
 
 
+def _stored_package_key(prefix: str, name: str) -> str:
+    """Widget key for a stored package, derived from its folder name (not from its list position).
+
+    The newest-first list shifts whenever a run finishes, so a position-based key would send the
+    package that moved into the clicked slot. A short digest keeps two names that sanitise alike apart.
+    """
+    safe = re.sub(r"[^A-Za-z0-9_.-]", "_", str(name))[:80]
+    return f"{prefix}{safe}_{hashlib.sha256(str(name).encode('utf-8')).hexdigest()[:8]}"
+
+
 def _resend_stored_instructor_package(pkg: Dict[str, Any]) -> Any:
     """Email a stored instructor package (analyses plus the run's data CSV) to the instructor recipients."""
     folder: Path = pkg["folder"]
@@ -8288,16 +8431,16 @@ def _render_admin_email_tab() -> None:
     packages = _list_stored_instructor_packages()
     if not packages:
         st.info("No stored packages yet.")
-    for idx, pkg in enumerate(packages):
+    for pkg in packages:
         with st.expander(f"{pkg['name']}  \u00b7  {_plain_label(pkg['study'] or 'untitled study')}"):
             d1, d2, d3 = st.columns(3)
             if pkg.get("html"):
                 d1.download_button("Statistical report (HTML)", pkg["html"].read_bytes(), file_name=pkg["html"].name,
-                                   mime="text/html", key=f"_admin_pkg_html_{idx}")
+                                   mime="text/html", key=_stored_package_key("_admin_pkg_html_", pkg["name"]))
             if pkg.get("md"):
                 d2.download_button("Detailed analysis (MD)", pkg["md"].read_bytes(), file_name=pkg["md"].name,
-                                   mime="text/markdown", key=f"_admin_pkg_md_{idx}")
-            if d3.button("Email to instructor recipients", key=f"_admin_pkg_send_{idx}"):
+                                   mime="text/markdown", key=_stored_package_key("_admin_pkg_md_", pkg["name"]))
+            if d3.button("Email to instructor recipients", key=_stored_package_key("_admin_pkg_send_", pkg["name"])):
                 res = _resend_stored_instructor_package(pkg)
                 if res.ok:
                     st.success(f"Accepted by the mail server (Message-ID {res.message_id}).")
@@ -9687,7 +9830,7 @@ if active_page == -1:
             '<div class="step-detail-text"><strong>Name Your Study</strong>'
             '<span>Enter your study title and a description of your experiment\'s purpose, manipulation, '
             'and main outcomes. This information is embedded in all generated outputs (data files, '
-            'analysis scripts, reports).</span></div></div>'
+            'data-preparation scripts, reports).</span></div></div>'
 
             '<div class="step-detail-item">'
             '<div class="step-num">2</div>'
@@ -9707,7 +9850,7 @@ if active_page == -1:
             '<div class="step-num">4</div>'
             '<div class="step-detail-text"><strong>Generate & Download</strong>'
             '<span>Choose a difficulty level (easy to expert) that controls noise, attention check failure rates, '
-            'and response quality. Generate your complete data package \u2014 CSV, codebook, analysis scripts in 5 '
+            'and response quality. Generate your complete data package \u2014 CSV, codebook, data-preparation scripts in 5 '
             'languages, summary reports, and metadata.</span></div></div>'
 
             '</div>',
@@ -13262,12 +13405,11 @@ if active_page == 3:
                 else:
                     st.caption("📊 Large effect")
 
-                effect_direction = st.radio(
-                    "Direction",
-                    options=["Higher in treatment", "Lower in treatment"],
-                    key="effect_direction",
-                    horizontal=True
-                )
+                # The direction is set by the two selects below ("Higher-scoring" and
+                # "Lower-scoring" condition). A separate Higher/Lower radio used to sit here:
+                # it flipped the sign of the effect while the confirmation text still said
+                # "higher in <first condition>", so the text and the data disagreed.
+                st.caption("Which condition scores higher is chosen below.")
 
             # Level selection
             if len(factor_levels) >= 2:
@@ -13297,7 +13439,9 @@ if active_page == 3:
                             level_high=level_high,
                             level_low=level_low,
                             cohens_d=effect_d,
-                            direction="positive" if "Higher" in effect_direction else "negative",
+                            # "positive" = the higher-scoring condition scores higher (the engine
+                            # lowers the other level by the same amount).
+                            direction="positive",
                         )
                     )
                     st.success(
@@ -14080,7 +14224,7 @@ if active_page == 3:
             '<span style="font-size:1.05em;font-weight:700;color:#991B1B;">'
             'Generation encountered an unexpected error</span></div>'
             '<span style="color:#7F1D1D;font-size:0.88em;line-height:1.5;">'
-            f'The previous generation attempt using <strong>{_stale_method}</strong> '
+            f'The previous generation attempt using <strong>{html_escape(str(_stale_method))}</strong> '
             'crashed during setup. Choose how to proceed:</span></div>',
             unsafe_allow_html=True,
         )
@@ -14777,7 +14921,7 @@ if active_page == 3:
                 '<span style="font-size:1.05em;font-weight:700;color:#991B1B;">'
                 f'Setup error while preparing {_method_name}</span></div>'
                 f'<span style="color:#7F1D1D;font-size:0.88em;line-height:1.5;">'
-                f'Error during input preparation: {str(_setup_exc)[:300]}</span>'
+                f'Error during input preparation: {html_escape(str(_setup_exc)[:300])}</span>'
                 '<div style="margin-top:12px;color:#7F1D1D;font-size:0.85em;">'
                 'Try a different generation method, or click Retry.</div>'
                 '</div>',
@@ -14883,7 +15027,7 @@ if active_page == 3:
                 '<span style="font-size:1.05em;font-weight:700;color:#991B1B;">'
                 f'{_method_name} failed to initialize</span></div>'
                 f'<span style="color:#7F1D1D;font-size:0.88em;line-height:1.5;">'
-                f'Error: {str(_init_exc)[:200]}</span>'
+                f'Error: {html_escape(str(_init_exc)[:200])}</span>'
                 '<div style="margin-top:12px;color:#7F1D1D;font-size:0.85em;">'
                 'Try a different generation method, or click Generate to retry.</div>'
                 '</div>',
@@ -15919,6 +16063,8 @@ if active_page == 3:
 
             progress_bar.progress(100, text="")
             status_placeholder.success("Simulation complete.")
+            # Remember which design produced this dataset (see the notice in the download section).
+            st.session_state["_generated_design_signature"] = _design_signature(effect_sizes)
             st.session_state["has_generated"] = True
             st.session_state["is_generating"] = False
             st.session_state["_generation_phase"] = 0  # v1.1.1.3: Clean phase state
@@ -16217,6 +16363,16 @@ if active_page == 3:
             unsafe_allow_html=True,
         )
 
+        # The design on screen may have changed since this dataset was generated (sample size,
+        # conditions, DVs, effects, method). The download stays available; only warn.
+        _generated_sig = st.session_state.get("_generated_design_signature", "")
+        if _generated_sig and _generated_sig != _design_signature(effect_sizes):
+            st.warning(
+                "**The design changed after this dataset was generated.** The download below still holds "
+                "the earlier dataset (its sample size, conditions, DVs and effects). Click "
+                "**Reset & Generate New** above to generate again with the current design."
+            )
+
         # v1.0.7.1: Prominent LLM status note — shown before download, not hidden in expander
         # v1.1.1.7: Only display for AI methods — template/experimental intentionally use templates.
         _post_gen_llm_note = st.session_state.get("_gen_llm_exhaustion_note", "")
@@ -16282,7 +16438,7 @@ if active_page == 3:
             st.markdown(
                 f'<div style="background:#EEF2FF;border:1px solid #C7D2FE;border-radius:8px;'
                 f'padding:8px 14px;margin:6px 0 10px 0;font-size:0.88em;color:#3730A3;">'
-                f'{_method_icon} <strong>Generation Method:</strong> {_gen_method_label}'
+                f'{_method_icon} <strong>Generation Method:</strong> {html_escape(str(_gen_method_label))}'
                 f'</div>',
                 unsafe_allow_html=True,
             )
@@ -16332,7 +16488,7 @@ if active_page == 3:
                     st.caption(f"Top recurring issue codes: {', '.join(_dl_top_issues[:3])}")
 
         st.download_button(
-            "Download ZIP (CSV + metadata + analysis scripts)",
+            "Download ZIP (CSV + metadata + data-preparation scripts)",
             data=zip_bytes,
             file_name=f"behavioral_simulation_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip",
             mime="application/zip",
@@ -16415,7 +16571,7 @@ if active_page == 3:
                     # visitor must not be able to choose its subject or attach documents of their own.
                     subject = "[Behavioral Simulation] Your simulation output"
                     body = (
-                        "Attached is the simulation output ZIP (Simulated_Data.csv, Simulation_Diagnostics.csv, metadata, analysis scripts).\n"
+                        "Attached is the simulation output ZIP (Simulated_Data.csv, Simulation_Diagnostics.csv, metadata, data-preparation scripts).\n"
                         "Files you uploaded to the app are not included in the emailed copy; the Download button has the full package.\n\n"
                         f"Generated: {datetime.now().isoformat(timespec='seconds')}\n"
                     )
