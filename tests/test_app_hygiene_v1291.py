@@ -283,3 +283,94 @@ def test_design_signature_ignores_ordering_and_numeric_types_but_sees_real_chang
     assert app._design_signature([spec_a]) != reference and app._design_signature([spec_a]) != app._design_signature([spec_b])
     assert app._design_signature([spec_a]) == app._design_signature([EffectSizeSpec(
         variable="A", factor="c", level_high="X", level_low="Y", cohens_d=0.5)])
+
+
+# ---- 3. admin tab: a stored package is addressed by its folder name, not its list position -------
+class _FakeSMTP:
+    sent: list = []
+
+    def __init__(self, *args, **kwargs):
+        pass
+
+    def ehlo(self):
+        pass
+
+    def starttls(self, context=None):
+        pass
+
+    def login(self, user, password):
+        pass
+
+    def send_message(self, msg, from_addr=None, to_addrs=None, **kwargs):
+        _FakeSMTP.sent.append(msg)
+        return {}
+
+    def quit(self):
+        pass
+
+    def close(self):
+        pass
+
+
+def _write_package(root: Path, folder: str, study: str) -> None:
+    path = root / "data" / "simulation_runs" / folder
+    path.mkdir(parents=True, exist_ok=True)
+    (path / "INSTRUCTOR_Statistical_Report.html").write_text(f"<html><body>{study}</body></html>", encoding="utf-8")
+    (path / "INSTRUCTOR_Detailed_Analysis.md").write_text(f"# {study}\n", encoding="utf-8")
+    (path / "Metadata.json").write_text(json.dumps({"study_title": study, "run_id": folder}), encoding="utf-8")
+
+
+def _admin_email_page(monkeypatch):
+    import smtplib
+
+    from streamlit.testing.v1 import AppTest
+
+    _FakeSMTP.sent = []
+    monkeypatch.setattr(smtplib, "SMTP", _FakeSMTP)
+    monkeypatch.setattr(smtplib, "SMTP_SSL", _FakeSMTP)
+    at = AppTest.from_file(str(_APP_DIR / "app.py"), default_timeout=120)
+    for key, value in {"SMTP_SERVER": "smtp.example.org", "SMTP_USERNAME": "sender@example.org",
+                       "SMTP_PASSWORD": "secret-" + "value", "INSTRUCTOR_NOTIFICATION_EMAIL": "owner@example.edu"}.items():
+        at.secrets[key] = value
+    at.query_params["admin"] = "1"
+    at.session_state["_admin_authenticated"] = True
+    at.run()
+    assert not at.exception, [str(e.value) for e in at.exception]
+    return at
+
+
+def test_resend_button_of_a_stored_package_survives_a_new_run_finishing_before_the_click(apptest_env, monkeypatch):
+    for folder, study in (("20261006_090000__PILOT_S1", "First study"), ("20261006_100000__PILOT_S2", "Second study")):
+        _write_package(apptest_env, folder, study)
+    at = _admin_email_page(monkeypatch)
+    send_buttons = [b for b in at.button if str(b.key).startswith("_admin_pkg_send_")]
+    assert len(send_buttons) == 2
+    older = send_buttons[1]  # the second expander: the older package, "First study"
+    for prefix in ("_admin_pkg_html_", "_admin_pkg_md_"):  # the keys name the package they belong to
+        assert sum("PILOT_S1" in str(d.key) for d in at.get("download_button") if str(d.key).startswith(prefix)) == 1
+    assert "PILOT_S1" in older.key
+    # a student's run finishes while the admin page is open: the list shifts by one position
+    _write_package(apptest_env, "20261006_110000__PILOT_S3", "Third study")
+    older.click()
+    at.run()
+    assert not at.exception, [str(e.value) for e in at.exception]
+    subjects = [str(m["Subject"]) for m in _FakeSMTP.sent]
+    assert subjects and all("[RE-SENT]" in s and "First study" in s for s in subjects), subjects  # not the shifted package
+
+
+def test_stored_package_keys_are_unique_stable_and_safe():
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("_app_hygiene_keys", str(_APP_DIR / "app.py"))
+    sys.path.insert(0, str(_APP_DIR))
+    app = importlib.util.module_from_spec(spec)
+    sys.modules["_app_hygiene_keys"] = app
+    try:
+        spec.loader.exec_module(app)
+    except SystemExit:
+        pass
+    key = app._stored_package_key("_admin_pkg_send_", "20261006_100000__PILOT_S2")
+    assert key == app._stored_package_key("_admin_pkg_send_", "20261006_100000__PILOT_S2")
+    assert key.startswith("_admin_pkg_send_20261006_100000__PILOT_S2_")
+    odd_a, odd_b = (app._stored_package_key("p_", name) for name in ("run one/é", "run one/e"))
+    assert odd_a != odd_b and all(ch.isalnum() or ch in "_.-" for ch in odd_a)

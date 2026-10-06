@@ -8132,6 +8132,16 @@ def _list_stored_instructor_packages(limit: int = 15) -> List[Dict[str, Any]]:
     return found
 
 
+def _stored_package_key(prefix: str, name: str) -> str:
+    """Widget key for a stored package, derived from its folder name (not from its list position).
+
+    The newest-first list shifts whenever a run finishes, so a position-based key would send the
+    package that moved into the clicked slot. A short digest keeps two names that sanitise alike apart.
+    """
+    safe = re.sub(r"[^A-Za-z0-9_.-]", "_", str(name))[:80]
+    return f"{prefix}{safe}_{hashlib.sha256(str(name).encode('utf-8')).hexdigest()[:8]}"
+
+
 def _resend_stored_instructor_package(pkg: Dict[str, Any]) -> Any:
     """Email a stored instructor package (analyses plus the run's data CSV) to the instructor recipients."""
     folder: Path = pkg["folder"]
@@ -8256,16 +8266,16 @@ def _render_admin_email_tab() -> None:
     packages = _list_stored_instructor_packages()
     if not packages:
         st.info("No stored packages yet.")
-    for idx, pkg in enumerate(packages):
+    for pkg in packages:
         with st.expander(f"{pkg['name']}  \u00b7  {_plain_label(pkg['study'] or 'untitled study')}"):
             d1, d2, d3 = st.columns(3)
             if pkg.get("html"):
                 d1.download_button("Statistical report (HTML)", pkg["html"].read_bytes(), file_name=pkg["html"].name,
-                                   mime="text/html", key=f"_admin_pkg_html_{idx}")
+                                   mime="text/html", key=_stored_package_key("_admin_pkg_html_", pkg["name"]))
             if pkg.get("md"):
                 d2.download_button("Detailed analysis (MD)", pkg["md"].read_bytes(), file_name=pkg["md"].name,
-                                   mime="text/markdown", key=f"_admin_pkg_md_{idx}")
-            if d3.button("Email to instructor recipients", key=f"_admin_pkg_send_{idx}"):
+                                   mime="text/markdown", key=_stored_package_key("_admin_pkg_md_", pkg["name"]))
+            if d3.button("Email to instructor recipients", key=_stored_package_key("_admin_pkg_send_", pkg["name"])):
                 res = _resend_stored_instructor_package(pkg)
                 if res.ok:
                     st.success(f"Accepted by the mail server (Message-ID {res.message_id}).")
