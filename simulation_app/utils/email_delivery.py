@@ -243,7 +243,7 @@ def mask_address(address: str) -> str:
     return f"{local[0]}***{local[-1]}@{domain}"
 
 
-_CTRL_RE = re.compile(r"[\x00-\x1f\x7f\x85\u2028\u2029]+")  # C0 controls plus the other characters str.splitlines() splits on
+_CTRL_RE = re.compile(r"[\x00-\x1f\x7f\x85\u2028\u2029\u202a-\u202e\u2066-\u2069]+")  # C0 controls, the other splitlines() separators, bidi overrides
 
 
 def _clean_header(value: Any, limit: int = 250) -> str:
@@ -535,8 +535,10 @@ def send_with_retries(
     for attempt in range(1, max_attempts + 1):
         result.attempts = attempt
         server = None
+        handed_over = False
         try:
             server = _connect(config, smtp_factory)
+            handed_over = True  # from here on a dropped connection can hide an accepted message
             refused = server.send_message(msg, from_addr=config.sender_address, to_addrs=list(recipients)) or {}
             try:
                 server.quit()
@@ -558,7 +560,7 @@ def send_with_retries(
                 except Exception:
                     pass
             kind, code, detail = classify_error(exc)
-            if kind == "transient" and code is None:  # disconnect or timeout: the outcome of this attempt is unknown
+            if kind == "transient" and code is None and handed_over:  # disconnect/timeout after the hand-over: outcome unknown
                 ambiguous_failure = True
             result.error_class = type(exc).__name__
             result.error_kind = kind
@@ -714,14 +716,23 @@ def deliver(
                                     error_class="NoRecipient", error_detail="the recipient secret is empty or invalid")
         else:
             budget = config.max_message_bytes
-            stage = 0  # 0 normal, 1 halved budget, 2 body only
+            stage = 0  # 0 normal, 1 halved budget, 2 protected attachments only, 3 text only
+            previous_plan: Optional[Tuple[Tuple[str, int], ...]] = None
             while True:
                 fixed = estimate_message_bytes(body_text, body_html, [])
-                if stage >= 2:
+                if stage >= 3:
                     kept = []
                     notes = [{"name": a.name, "action": "omitted", "bytes": len(a.data)} for a in attachments]
+                elif stage == 2:
+                    kept = [a for a in attachments if a.protected]
+                    notes = [{"name": a.name, "action": "omitted", "bytes": len(a.data)} for a in attachments if not a.protected]
                 else:
                     kept, notes = fit_attachments(list(attachments), budget, fixed_bytes=fixed)
+                plan = tuple((a.name, len(a.data)) for a in kept)
+                if previous_plan is not None and plan == previous_plan and stage < 3:
+                    stage += 1  # this stage would resend the same message: go straight to the next one
+                    continue
+                previous_plan = plan
                 omitted = notes
                 body, html_body = body_text, body_html
                 if notes:
@@ -739,13 +750,11 @@ def deliver(
                                            deadline_s=deadline_s, smtp_factory=smtp_factory, sleep=sleep)
                 result.attachments = [{"name": a.name, "bytes": len(a.data)} for a in kept]
                 result.omitted = omitted
-                if result.ok or result.error_kind != "size" or stage >= 2:
+                if result.ok or result.error_kind != "size" or stage >= 3:
                     break
-                if stage == 0 and kept:  # the server's limit is lower than assumed: halve the budget once
+                if stage == 0:  # the server's limit is lower than assumed: halve the budget once
                     budget = max(1_000_000, int(min(budget, result.message_bytes or budget) * 0.5))
-                    stage = 1
-                else:  # still too large (or nothing to shrink): send the text alone
-                    stage = 2
+                stage += 1
     except Exception as exc:  # noqa: BLE001 - delivery must never crash the caller
         logger.exception("Unexpected error while preparing an email")
         result = DeliveryResult(ok=False, message="Email could not be sent. Please check the configuration and try again.",
@@ -830,7 +839,7 @@ def compose_instructor_notification(
     lines = ["INSTRUCTOR NOTIFICATION", "=" * 60, ""]
     if problem:
         lines += ["WARNING: the data were generated, but part of the instructor analysis could not be built:",
-                  f"  {problem}", "  The attachments named below may be short placeholders. The student package is not affected.", ""]
+                  f"  {problem}", "  The attachments named below may be short placeholders. The data files in the student package are complete.", ""]
     lines += [f"{k}: {v}" for k, v in facts if str(v).strip()]
     lines += ["", "ATTACHMENTS (what students do NOT receive: the analyses)", ""]
     lines += [f"- {name}" for name in attachment_names]
@@ -858,7 +867,7 @@ def compose_instructor_notification(
         "<html><body style='font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#111'>"
         f"<h2 style='margin:0 0 8px'>Instructor notification</h2>"
         + (f"<p style='color:#b00020'><b>Warning:</b> the data were generated, but part of the instructor analysis could not "
-           f"be built: {esc(problem)}. The attachments may be short placeholders. The student package is not affected.</p>"
+           f"be built: {esc(problem)}. The attachments may be short placeholders. The data files in the student package are complete.</p>"
            if problem else "")
         + f"<table>{rows}</table>"
         "<h3>Attachments</h3><ul>" + "".join(f"<li>{esc(name)}</li>" for name in attachment_names) + "</ul>"
@@ -969,8 +978,9 @@ def deliver_instructor_package(
                         host=config.server)
         return [first, skipped]
     names = ", ".join(a.name for a in slots) or "(none)"
+    facts = text[:1800].rsplit("\n", 1)[0] if len(text) > 1800 else text.split("FULL ANALYSIS", 1)[0]
     pkg_text = (f"Attachments for the previous message of this run ({subject}):\n{names}\n\n"
-                "The headline numbers and the full analysis are in the body of that message.\n")
+                "The headline numbers and the full analysis are in the body of that message.\n\n" + facts.strip() + "\n")
     headers = {"In-Reply-To": first.message_id, "References": first.message_id} if first.message_id else None
     second = deliver(config, recipients, package_subject, pkg_text, attachments=slots, kind="instructor_package",
                      log_path=log_path, smtp_factory=smtp_factory, sleep=sleep, extra_headers=headers, **retry)

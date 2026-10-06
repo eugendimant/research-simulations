@@ -33,8 +33,12 @@ __version__ = "1.2.9.1"
 # A second line of defence for the browser that opens the report: no script, no network, no frames,
 # no forms, inline styles and inline (data:) images only. Enforced by the browser itself, so it holds
 # even if a sanitiser bypass were ever found.
+# ``frame-ancestors`` is not honoured in a <meta> policy (Chromium logs an error for it), so it is not part of this one.
 CONTENT_SECURITY_POLICY = ("default-src 'none'; style-src 'unsafe-inline'; img-src data:; "
-                           "form-action 'none'; base-uri 'none'; frame-ancestors 'none'")
+                           "form-action 'none'; base-uri 'none'")
+# Policy strings written by earlier versions: a stored report carrying one keeps it as live markup instead of showing it as text.
+_LEGACY_POLICIES = ("default-src 'none'; style-src 'unsafe-inline'; img-src data:; "
+                    "form-action 'none'; base-uri 'none'; frame-ancestors 'none'",)
 
 _BLOCKED_TAGS = frozenset({
     "script", "iframe", "frame", "frameset", "object", "embed", "applet", "form", "input", "button", "select",
@@ -47,29 +51,61 @@ _URL_ATTRS = frozenset({"href", "src", "xlink:href", "action", "formaction", "ba
                         "longdesc", "usemap", "ping", "manifest"})
 _DROPPED_ATTRS = frozenset({"srcdoc", "http-equiv", "formaction", "ping"})
 _DATA_IMAGE_RE = re.compile(r"^\s*data:image/(png|jpe?g|gif|webp|svg\+xml);base64,[A-Za-z0-9+/=\s]+$", re.IGNORECASE)
-_CSS_URL_RE = re.compile(r"url\s*\(\s*(['\"]?)\s*([^)'\"]*)\1\s*\)", re.IGNORECASE)
+# Decide on the *opening* of every url( token only: no search for a closing parenthesis and no adjacent
+# whitespace quantifiers, so the cost is linear in the input (the old pattern needed a closing ")" and backtracked
+# polynomially on "url(" followed by whitespace or by many unterminated "url(" tokens). Fail closed: any url( whose
+# argument does not start with data: or # becomes an unknown function, which the browser drops with its declaration.
+_CSS_URL_OPEN_RE = re.compile(r"url\s*\(\s*(['\"]?)(?:\s*(data:|#))?", re.IGNORECASE)
 _CSS_IMPORT_RE = re.compile(r"@import[^;{}]*(;|(?=[{}]|$))", re.IGNORECASE)
+# CSS escapes (backslash + up to 6 hex digits, or backslash + any other char) let "url(" be spelled "ur\6c(",
+# defeating a literal-text search; decode them first so detection sees what the browser's CSS tokenizer sees.
+# Bounded repetition only (no nested quantifiers next to each other) - linear, not ReDoS-prone.
+_CSS_ESCAPE_RE = re.compile(r"\\([0-9a-fA-F]{1,6})[ \t\n\r\f]?|\\(.)", re.DOTALL)
+_CSS_COMMENT_RE = re.compile(r"/\*.*?\*/", re.DOTALL)
+# CSS functions other than url() that can make the browser fetch a resource.
+_CSS_FETCH_FN_RE = re.compile(r"(?<![\w-])(?:-webkit-)?(?:image-set|cross-fade|image|src)\s*\(", re.IGNORECASE)
 
 
-def _clean_css(css: str) -> str:
-    """Remove CSS constructs that fetch resources or run script."""
+def _decode_css_escapes(css: str) -> str:
+    def _repl(m: "re.Match[str]") -> str:
+        if m.group(1):
+            try:
+                return chr(int(m.group(1), 16))
+            except (ValueError, OverflowError):
+                return ""
+        return m.group(2)
+    return _CSS_ESCAPE_RE.sub(_repl, css)
+
+
+def _literal_clean(css: str) -> str:
+    """Neutralise resource-fetching and script constructs spelled out literally."""
     css = _CSS_IMPORT_RE.sub("", css)
-
-    def _url(match: "re.Match[str]") -> str:
-        target = match.group(2).strip().lower()
-        return match.group(0) if target.startswith(("data:", "#")) else "none"
-
-    css = _CSS_URL_RE.sub(_url, css)
+    css = _CSS_URL_OPEN_RE.sub(lambda m: m.group(0) if m.group(2) else "blocked(" + m.group(1), css)
+    css = _CSS_FETCH_FN_RE.sub("blocked(", css)
     css = re.sub(r"expression\s*\(", "blocked(", css, flags=re.IGNORECASE)
     css = re.sub(r"javascript\s*:", "blocked:", css, flags=re.IGNORECASE)
     css = re.sub(r"-moz-binding\s*:", "blocked:", css, flags=re.IGNORECASE)
     return css
 
 
+def _clean_css(css: str) -> str:
+    """Remove CSS constructs that fetch resources or run script."""
+    cleaned = _literal_clean(css)
+    # Fail closed: decoding CSS escapes and comments may reveal a construct the literal pass could not see
+    # ("ur\6c(", "exp\72 ession(", "url/**/(", "@\69mport"). The literal source cannot be patched in place (an
+    # escape maps to no fixed substring), so the whole declaration block is dropped. Harmless CSS - including
+    # url(data:...) - is unchanged by a second literal pass over the decoded text and therefore kept.
+    decoded = _decode_css_escapes(_CSS_COMMENT_RE.sub("", cleaned))
+    if _literal_clean(decoded) != decoded:
+        return "/* blocked */"
+    return cleaned
+
+
 def _meta_is_harmless(attrs: List[Tuple[str, Optional[str]]]) -> bool:
     lowered = {name.lower(): (value or "") for name, value in attrs}
     if set(lowered) == {"http-equiv", "content"}:  # our own policy tag survives a second pass; nothing else with http-equiv does
-        return lowered["http-equiv"].lower() == "content-security-policy" and lowered["content"] == CONTENT_SECURITY_POLICY
+        return (lowered["http-equiv"].lower() == "content-security-policy"
+                and lowered["content"] in (CONTENT_SECURITY_POLICY,) + _LEGACY_POLICIES)
     names = {name.lower() for name, _ in attrs}
     if "http-equiv" in names or "content" in names and "name" not in names:
         return False
@@ -79,11 +115,15 @@ def _meta_is_harmless(attrs: List[Tuple[str, Optional[str]]]) -> bool:
         name.lower() == "name" and (value or "").lower() == "viewport" for name, value in attrs)
 
 
+_FOREIGN_ROOTS = frozenset({"svg", "math"})  # namespaces where the browser does NOT give <style> RAWTEXT parsing
+
+
 class _Sanitizer(HTMLParser):
     def __init__(self) -> None:
         super().__init__(convert_charrefs=False)
         self.out: List[str] = []
         self._neutralised: List[str] = []  # stack of blocked elements whose content must be escaped
+        self._foreign_depth = 0  # >0 inside an <svg>/<math> subtree
         self.changed = False
 
     # ---- helpers -------------------------------------------------------------------
@@ -124,11 +164,20 @@ class _Sanitizer(HTMLParser):
             blocked = True
         if tag == "img" and not any(n.lower() == "src" and v and _DATA_IMAGE_RE.match(v) for n, v in attrs):
             blocked = True
+        # Outside foreign content, html.parser (like every HTML5 engine) gives <style> RAWTEXT parsing, so its
+        # content is just CSS text (see handle_data) and _clean_css() is the right tool. Inside <svg>/<math>,
+        # Chromium does NOT: it parses <style> children as ordinary markup, so e.g. <svg><style><img onerror=...>
+        # is a live <img>, not CSS text - CSS-cleaning that content leaves the <img> start tag untouched. Block
+        # <style> there instead so the whole subtree is escaped like any other blocked element's content.
+        if tag == "style" and self._foreign_depth > 0:
+            blocked = True
         if blocked:
             self._escaped(self.get_starttag_text())
             if tag not in _VOID_TAGS and not selfclosing:
                 self._neutralised.append(tag)
             return
+        if tag in _FOREIGN_ROOTS and not selfclosing:
+            self._foreign_depth += 1
         parts = [f"<{tag}"]
         for name, value in attrs:
             rendered = self._attr_text(name, value, tag)
@@ -150,6 +199,8 @@ class _Sanitizer(HTMLParser):
             if tag == self._neutralised[-1]:
                 self._neutralised.pop()
             return
+        if tag in _FOREIGN_ROOTS and self._foreign_depth > 0:
+            self._foreign_depth -= 1
         if tag in _BLOCKED_TAGS and tag not in _VOID_TAGS:
             self._escaped(f"</{tag}>")
             return
@@ -163,7 +214,11 @@ class _Sanitizer(HTMLParser):
             self.changed = self.changed or cleaned != data
             self.out.append(cleaned)
         else:
-            self.out.append(data)
+            # Text never carries markup. Newer Python versions hand tag-like text inside <title>/<textarea>
+            # over as data (RCDATA), and an SVG <title> is an HTML integration point in browsers, so such
+            # text could turn into a live element there. Escaping < and > makes the result independent of
+            # the parser version and of the browser's context.
+            self.out.append(data.replace("<", "&lt;").replace(">", "&gt;"))
 
     def handle_entityref(self, name: str) -> None:
         self.out.append(f"&{name};")
