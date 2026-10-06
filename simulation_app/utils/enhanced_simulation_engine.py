@@ -7845,36 +7845,6 @@ class EnhancedSimulationEngine:
                         calibration['_kb_source'] = f"ConstructNorm: {_norm_key}"
                         return calibration
 
-            # v1.2.9.1: the substring map above reaches about 40 of the 201
-            # published norms, and only when the variable name happens to contain
-            # the mapped fragment. An uploaded survey calling its items `PSS4_1`,
-            # `stress_total`, `bfi_extra_1` or `panas_pos_4` matched nothing, so the
-            # published norm went unused. Fall back to content-based matching over
-            # the whole table: instrument acronyms are matched exactly, otherwise by
-            # IDF-weighted token overlap with the variable name and question text,
-            # and an ambiguous match is treated as no match so a wrong norm is never
-            # applied.
-            if HAS_CONSTRUCT_MATCHER:
-                try:
-                    _m = _construct_matcher.match(variable_name=variable_name)
-                except Exception:
-                    _m = None
-                if _m is not None:
-                    _norm = get_construct_norm(_m.key, target_scale_points=7)
-                    if _norm:
-                        _dev = (_norm['mean'] - 4.0) / 3.0
-                        calibration['mean_adjustment'] = _dev * 0.15
-                        calibration['positivity_bias'] = max(-0.10, min(0.12, _dev * 0.10))
-                        if _norm.get('skewness', 0) > 0.3:
-                            calibration['variance_adjustment'] += 0.06
-                        elif _norm.get('skewness', 0) < -0.3:
-                            calibration['variance_adjustment'] -= 0.02
-                        calibration['_kb_source'] = (
-                            f"ConstructNorm: {_m.key} (matched on "
-                            f"{'acronym' if _m.via_acronym else 'content'})"
-                        )
-                        return calibration
-
         # ===== SATISFACTION SCALES =====
         # Oliver (1980): Satisfaction has positive skew (M ≈ 5.0-5.5)
         if any(kw in var_lower for kw in ['satisfaction', 'satisfied', 'happy', 'pleased']):
@@ -8214,6 +8184,50 @@ class EnhancedSimulationEngine:
         # condition name, a second, uncontrolled condition effect: d=0 between
         # "High" and "Low" conditions still showed d ~0.24, a configured d got an
         # unrequested boost, and names like "Paid"/"Fair"/"Maintain" matched 'ai'.
+
+        # v1.2.9.5: LAST RESORT, and it has to be last.
+        #
+        # The substring map near the top reaches about 40 of the 201 published
+        # norms, and only when the variable name happens to contain the mapped
+        # fragment. An uploaded survey calling its items `PSS4_1`, `stress_total`,
+        # `bfi_extra_1` or `panas_pos_4` matched nothing, so the published norm went
+        # unused. Content-based matching over the whole table closes that gap:
+        # instrument acronyms are matched exactly, otherwise by IDF-weighted token
+        # overlap, and an ambiguous match is treated as no match so a wrong norm is
+        # never applied.
+        #
+        # It runs AFTER every keyword branch, not before them. Placed earlier it
+        # returned first and REPLACED a richer keyword calibration with a thinner
+        # one — on an 8-item attitude scale that dropped the variance the attitude
+        # branch would have added and pushed a configured d of 0.50 up to 0.68,
+        # because d is gap over SD and the SD had been quietly narrowed. A
+        # last-resort rule that pre-empts the rules it is a fallback for is not a
+        # fallback. It now fires only where nothing else did.
+        _already_calibrated = (
+            calibration.get('_kb_source')
+            or calibration['mean_adjustment'] != 0.0
+            or calibration['variance_adjustment'] != 0.0
+            or calibration['positivity_bias'] != 0.0
+        )
+        if HAS_CONSTRUCT_MATCHER and not _already_calibrated:
+            try:
+                _m = _construct_matcher.match(variable_name=variable_name)
+            except Exception:
+                _m = None
+            if _m is not None:
+                _norm = get_construct_norm(_m.key, target_scale_points=7)
+                if _norm:
+                    _dev = (_norm['mean'] - 4.0) / 3.0
+                    calibration['mean_adjustment'] = _dev * 0.15
+                    calibration['positivity_bias'] = max(-0.10, min(0.12, _dev * 0.10))
+                    if _norm.get('skewness', 0) > 0.3:
+                        calibration['variance_adjustment'] += 0.06
+                    elif _norm.get('skewness', 0) < -0.3:
+                        calibration['variance_adjustment'] -= 0.02
+                    calibration['_kb_source'] = (
+                        f"ConstructNorm: {_m.key} (matched on "
+                        f"{'acronym' if _m.via_acronym else 'content'})"
+                    )
 
         return calibration
 
@@ -8589,6 +8603,21 @@ class EnhancedSimulationEngine:
         # Richard et al. (2003): Average d in social psychology ≈ 0.43
         # =====================================================================
         condition_effect = self._get_effect_for_condition(condition, variable_name)
+
+        # v1.2.9.5: a condition effect is specified in Cohen's d — a GAP DIVIDED BY
+        # AN SD — so it has to travel with whatever SD this variable ends up with.
+        # The domain calibration below widens or narrows the within-person SD by
+        # `variance_adjustment` (an intention scale gets +0.05, a moral-identity
+        # scale -0.02), and the effect was being added as a fixed shift regardless.
+        # The recovered d therefore moved whenever the calibration did, in the
+        # opposite direction and for no substantive reason: the same configured
+        # d = 0.50 came back as 0.50 or 0.68 depending only on which keyword branch
+        # the variable's NAME happened to hit. Scaling the shift by the same factor
+        # makes the recovered effect invariant to the calibration, which is what
+        # "configured d" has to mean if it means anything.
+        _var_adj = float(domain_calibration.get('variance_adjustment', 0.0) or 0.0)
+        if _var_adj:
+            condition_effect *= (1.0 + _var_adj)
 
         # =====================================================================
         # STEP 4a: Personality x Condition Interaction Effects

@@ -547,6 +547,46 @@ def _rank_map(values: Sequence[float], targets: Sequence[float],
     return out
 
 
+
+def _group_means(values: Sequence[float],
+                 groups: Dict[Any, List[int]]) -> Dict[Any, float]:
+    return {g: (sum(values[i] for i in ix) / len(ix)) for g, ix in groups.items() if ix}
+
+
+def _pooled_within_sd(values: Sequence[float],
+                      groups: Dict[Any, List[int]]) -> float:
+    num = 0.0
+    den = 0
+    for ix in groups.values():
+        if len(ix) < 2:
+            continue
+        m = sum(values[i] for i in ix) / len(ix)
+        num += sum((values[i] - m) ** 2 for i in ix)
+        den += len(ix) - 1
+    return math.sqrt(num / den) if den > 0 else 0.0
+
+
+def _standardised_gap(values: Sequence[float],
+                      groups: Dict[Any, List[int]]) -> Optional[float]:
+    """Spread of the group means in pooled within-group SD units.
+
+    Generalises Cohen's d to more than two conditions: with two groups it is the
+    usual |d|, with more it is the SD of the group means over the within-group SD,
+    which is the quantity that must not drift when a marginal is reshaped.
+    """
+    if len(groups) < 2:
+        return None
+    sd = _pooled_within_sd(values, groups)
+    if sd <= 0:
+        return None
+    means = _group_means(values, groups)
+    n_tot = sum(len(ix) for ix in groups.values())
+    grand = sum(len(groups[g]) * m for g, m in means.items()) / n_tot
+    spread = math.sqrt(sum(len(groups[g]) * (m - grand) ** 2
+                           for g, m in means.items()) / n_tot)
+    return spread / sd
+
+
 @dataclass
 class DispersionReport:
     adjusted_items: int = 0
@@ -645,7 +685,40 @@ def match_item_dispersion(
         target = max(0.05 * span, min(0.6 * span, target))
         probs = maxent_discrete(int(scale_min), int(scale_max), mean, target)
         targets = _quantile_targets(probs, int(scale_min), n)
-        out.append([int(round(v)) for v in _rank_map(col, targets, _rng)])
+        new_col = _rank_map(col, targets, _rng)
+
+        # Hold the standardised effect where the engine put it.
+        #
+        # Rank transport is monotone, so it cannot invent or destroy an ordering —
+        # but it is not LINEAR. A flat marginal spreads the tails further than the
+        # middle, and the treated group sits disproportionately in one tail, so the
+        # group gap grows faster than the within-group spread does. The bigger the
+        # block the worse it gets, because a longer block pins each item's rank
+        # more firmly to the condition: at 6 items the recovered effect was
+        # unchanged, at 8 items a configured d of 0.5 came back as 0.68.
+        #
+        # So after transporting, the group means are nudged back until the item's
+        # standardised effect is what it was before. The within-group distribution,
+        # which is the whole point of the pass, is untouched.
+        if groups and len(groups) >= 2:
+            d_before = _standardised_gap(col, groups)
+            d_after = _standardised_gap(new_col, groups)
+            if d_before is not None and d_after is not None and abs(d_after) > 1e-9:
+                sd_after = _pooled_within_sd(new_col, groups)
+                if sd_after > 0:
+                    wanted = {g: m for g, m in _group_means(new_col, groups).items()}
+                    grand = sum(len(ix) * wanted[g] for g, ix in groups.items()) / n
+                    scale_f = d_before / d_after
+                    # Only ever pull the effect back toward where it was; never
+                    # inflate a weak one to meet a target.
+                    if 0.0 < scale_f < 1.0:
+                        for g, ix in groups.items():
+                            shift = (wanted[g] - grand) * (scale_f - 1.0)
+                            for i in ix:
+                                new_col[i] = new_col[i] + shift
+                        new_col = [min(float(scale_max), max(float(scale_min), v))
+                                   for v in new_col]
+        out.append([int(round(v)) for v in new_col])
         rep.adjusted_items += 1
 
     rep.sd_after = sum(_sd([float(v) for v in c]) for c in out) / len(out)
