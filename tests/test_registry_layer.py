@@ -491,3 +491,105 @@ def test_an_unambiguous_acronym_still_matches():
     mbi = match(variable_name="MBI_3",
                 question_text="I feel emotionally exhausted by my work")
     assert mbi is not None and mbi.key == "burnout_emotional_exhaustion"
+
+
+# --------------------------------------------------------------------------
+# Recall tiers — a judgement from memory must never pass for a source check
+# --------------------------------------------------------------------------
+
+def test_tier_weights_decrease_monotonically_with_evidence():
+    weights = [R.TIER_WEIGHT[t] for t in R._TIER_ORDER]
+    assert all(a >= b for a, b in zip(weights, weights[1:])), weights
+    assert all(t in R.TIER_WEIGHT for t in R._TIER_ORDER)
+
+
+def test_every_recall_tier_is_weaker_than_a_real_citation_check():
+    for tier in R.RECALL_TIERS:
+        assert R.TIER_WEIGHT[tier] < R.TIER_WEIGHT[R.CITED_UNCHECKED], tier
+
+
+def test_a_recall_tier_may_never_set_a_magnitude():
+    for tier in R.RECALL_TIERS:
+        ent = R.RegistryEntry(entry_id="x", quantity="q", value=0.1,
+                              effect_scale=next(iter(R.EFFECT_SCALES)),
+                              applicability=R.Applicability(), tier=tier)
+        assert ent.may_set_magnitude is False, tier
+
+
+def test_register_recall_refuses_to_promote_past_the_recall_band():
+    for tier in (R.VERIFIED, R.MEASURED, R.CORRECTED, R.PARTIAL, "nonsense"):
+        assert R.register_recall("meta:_probe_promote", tier, "a note") is False
+    assert R.status_of("meta", "_probe_promote") == R.UNVERIFIED
+
+
+def test_register_recall_refuses_a_verdict_with_no_note():
+    assert R.register_recall("meta:_probe_silent", R.RECALL_CONSISTENT, "  ") is False
+    assert R.status_of("meta", "_probe_silent") == R.UNVERIFIED
+
+
+def test_a_recall_record_never_claims_a_source_was_read():
+    assert R.register_recall("meta:_probe_ok", R.RECALL_CONSISTENT,
+                             "Engel (2011) is the right meta-analysis here.",
+                             audited_on="2026-10-06") is True
+    prov = R.provenance_of("meta", "_probe_ok")
+    assert prov is not None
+    assert prov.status == R.RECALL_CONSISTENT
+    assert prov.quote == "" and prov.doi == "" and prov.url == ""
+    assert prov.verified_on == ""
+    assert "NOT SOURCE-VERIFIED" in prov.note
+    del R.PROVENANCE["meta:_probe_ok"]
+
+
+def test_recall_audited_entries_are_not_counted_as_sourced():
+    s = R.coverage_summary()
+    sourced = (s["by_status"][R.VERIFIED] + s["by_status"][R.CORRECTED]
+               + s["by_status"][R.PARTIAL])
+    assert s["sourced_entries"] == sourced
+    assert s["recall_audited_entries"] == sum(s["by_status"][t] for t in R.RECALL_TIERS)
+    # The headline fraction the UI shows must move only for real verification.
+    assert s["sourced_fraction"] == pytest.approx(
+        s["sourced_entries"] / s["total_entries"])
+
+
+def test_honesty_notice_separates_recall_from_verification():
+    s = R.coverage_summary()
+    note = R.honesty_notice()
+    if s["recall_audited_entries"]:
+        assert "Recall is not verification" in note
+        assert str(s["recall_audited_entries"]) in note
+
+
+def test_recall_never_overwrites_a_record_that_rests_on_evidence():
+    """The dictator SD correction was derived from the entry's own point masses.
+
+    A recall verdict arriving later must not replace it, however confident it is.
+    """
+    before = R.status_of("game", "dictator_standard")
+    assert before == R.CORRECTED
+    assert R.register_recall("game:dictator_standard", R.RECALL_CORRECTED,
+                             "recall says 0.25") is False
+    assert R.status_of("game", "dictator_standard") == R.CORRECTED
+    assert R.corrected_value("game", "dictator_standard", "sd_proportion") > 0.25
+
+
+def test_the_recall_audit_file_is_installed_and_well_formed():
+    import json
+    import os
+
+    path = os.path.join(os.path.dirname(os.path.abspath(R.__file__)),
+                        "registry", R.RECALL_AUDIT_FILE)
+    if not os.path.exists(path):          # the file is optional by design
+        pytest.skip("no recall audit installed")
+    blob = json.load(open(path, encoding="utf-8"))
+    assert blob["audited_on"] and blob["method"]
+    kinds = {"meta", "game", "norm", "culture", "rt", "order"}
+    for key, rec in blob["records"].items():
+        assert key.split(":")[0] in kinds, key
+        assert rec["tier"] in R.RECALL_TIERS, key
+        assert rec["note"].strip(), key
+        for field in (rec.get("corrected") or {}):
+            # Every applied change keeps the value it replaced, so the audit is
+            # reversible from its own record.
+            if not field.endswith(("_was", "_proposed_not_applied")):
+                assert f"{field}_was" in rec["corrected"], f"{key}.{field}"
+    assert R.RECALL_AUDIT_COUNT > 0

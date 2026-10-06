@@ -24,7 +24,11 @@ tier — not the prose around it — governs what the value may do.
 | `CORRECTED` | Checked and found wrong; the right value is in `Provenance.corrected`. | **Yes** |
 | `PARTIAL` | The source supports part of the entry. | No |
 | `CITED_UNCHECKED` | The citation is real; the numbers were not confirmed. | No |
-| `UNVERIFIED` | No record at all. The 484 entries' default. | No |
+| `RECALL_CONSISTENT` | Audited from recalled knowledge of the literature; citation recognised and the value is consistent with it. Nothing was read. | No |
+| `RECALL_CORRECTED` | Recall says a field was wrong; the entry was changed and the old value is kept in `Provenance.corrected` as `<field>_was`. | No |
+| `RECALL_UNCERTAIN` | Citation plausible, number not judgeable from memory. | No |
+| `UNVERIFIED` | No record at all. | No |
+| `UNRECOGNIZED` | The citation could not be placed at all. Ranked *below* `UNVERIFIED`: a specific-looking citation nobody can place is itself a warning sign. | No |
 
 Entries below `CORRECTED` are not discarded — they remain the best available prior and
 keep driving the engine exactly as before — but `lookup()` will not hand one back as a
@@ -33,6 +37,31 @@ magnitude, and `confidence_weight()` damps how hard it may push the data.
 **A tier claim cannot outrun its evidence.** `_parse_entry` downgrades at load time: a
 `MEASURED` entry with no script or no source files becomes `UNVERIFIED`; a `VERIFIED`
 entry with no quote becomes `CITED_UNCHECKED`.
+
+### The recall band
+
+The four recall tiers record a different kind of evidence from the five above them: a
+model that has read a great deal of this literature was asked, entry by entry, whether it
+recognises the citation and whether the stored number matches the published or
+meta-analytic estimate. That is a judgement from memory. It catches real defects — a
+replication failure still carrying its original magnitude, a meta-analytic *k*/*N* pasted
+onto a primary study, a scale whose stated response-option count is not the instrument's
+— and it is worth having. It is **not** source verification, and the two are kept
+structurally apart so they can never be confused:
+
+* `register_recall()` is the only way in, and it refuses any tier outside the recall band
+  and any verdict with no note. A data file cannot promote an entry past it.
+* `doi`, `url`, `quote` and `verified_on` are empty by construction, and every note is
+  prefixed `RECALL, NOT SOURCE-VERIFIED`.
+* Every recall tier weighs less than `CITED_UNCHECKED`, and none grants
+  `may_set_magnitude`.
+* `coverage_summary()["sourced_entries"]` and the percentage in `honesty_notice()` count
+  only `VERIFIED`/`CORRECTED`/`PARTIAL`, so a recall pass cannot move the headline number.
+
+The records live in `utils/registry/recall_audit.json` (data only) and are installed by
+`load_recall_audit()`. A `RECALL_CORRECTED` entry's **old** value is kept alongside the new
+one, so every change a recall pass made to the knowledge base is reversible from the
+record.
 
 ## Why applicability is a hard guard
 
@@ -84,6 +113,10 @@ statistics only, with the source's own terms quoted in the provenance record.
 4. State the `applicability` the source's own design supports — not the one you wish it
    supported.
 5. Run `pytest tests/test_registry_layer.py`.
+
+Promoting a recall record is the same procedure: read the source, then replace the
+`recall_*` record with a `verified` one. Do not edit the tier in
+`recall_audit.json` — `register_recall()` will refuse it.
 
 ## The one constant that touches everything
 

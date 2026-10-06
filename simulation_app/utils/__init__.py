@@ -2,7 +2,7 @@
 """
 Utility modules for the Behavioral Experiment Simulation Tool.
 
-Version: 1.3.0.0 - Cerebras and Mistral AI removed from the built-in free-provider chain. Cerebras now requires a payment card and Mistral no longer issues free API keys, so both slots could only ever report "not configured"; the chain is now Google AI Studio (three Gemini models), Groq (two models), SambaNova and OpenRouter. Setup docs, the deployment secrets template, the admin LLM tab and the chain-order test move with it. Google AI Studio's newer key shape ("AQ." rather than "AIza") is now recognised everywhere a key is detected or validated — previously such a key was routed to Groq's endpoint and could only be rejected. No key is still a supported state: the built-in engine writes the open-ended text and no error banner appears.
+Version: 1.3.0.1 - Every one of the 484 calibration entries in the scientific knowledge base was audited entry by entry against recalled knowledge of the published literature: citation, design, direction and magnitude. The registry gains a recall tier band that records that kind of evidence honestly — weaker than any source check, barred from setting a magnitude, and unable to move the verification headline — and the entries whose numbers were clearly wrong were corrected with their old values kept in the record. Shipped alongside the free-provider chain losing Cerebras and Mistral AI, whose free tiers no longer exist, and recognition of Google AI Studio's newer "AQ." key shape everywhere a key is detected or validated.
 
 Changes (v1.0.0 - 20 Iterations of Comprehensive Improvements):
     === ENHANCED SCALE/MATRIX DETECTION ===
@@ -61,7 +61,7 @@ Modules:
 """
 
 # Package version - should match all module versions
-__version__ = "1.3.0.0"
+__version__ = "1.3.0.1"
 
 
 # =============================================================================

@@ -240,7 +240,7 @@ META_ANALYTIC_DB: Dict[str, MetaAnalyticEffect] = {
         paradigm="trust_game",
         heterogeneity_tau=0.08,
         i_squared=68.0,
-        notes="Mean return ≈ 33% of received amount (less than sent)."
+        notes='Mean return ~37% of the amount received (Johnson & Mislin 2011).'
     ),
 
     "ultimatum_offer": MetaAnalyticEffect(
@@ -258,7 +258,7 @@ META_ANALYTIC_DB: Dict[str, MetaAnalyticEffect] = {
             "stakes": {"low": 0.45, "medium": 0.42, "high": 0.38},
             "culture": {"western": 0.42, "east_asian": 0.40, "indigenous": 0.48},
         },
-        notes="Modal offer 40-50%. Offers below 20% rejected ~50% of the time."
+        notes='Mean offer ~40% of pie; modal offer 40-50%. Rejection is conditional on offer size: offers below 20% rejected ~40-60% of the time; overall rejection rate ~16%.'
     ),
 
     "public_goods_contribution": MetaAnalyticEffect(
@@ -277,7 +277,7 @@ META_ANALYTIC_DB: Dict[str, MetaAnalyticEffect] = {
             "group_size": {"2": 0.50, "4": 0.45, "10": 0.38},
             "punishment": {"no_punishment": 0.45, "peer_punishment": 0.75},
         },
-        notes="Mean contribution ≈ 40-60% of endowment. Decays over rounds."
+        notes="Zelmer's pooled mean contribution is ~38% of endowment; the 40-60% figure is the FIRST-ROUND/one-shot level (Ledyard 1995) and decays toward 10-20% by round 10."
     ),
 
     "prisoners_dilemma_cooperation": MetaAnalyticEffect(
@@ -314,7 +314,7 @@ META_ANALYTIC_DB: Dict[str, MetaAnalyticEffect] = {
             "n_bidders": {"2": 0.72, "5": 0.80, "10": 0.88},
             "experience": {"novice": 0.85, "experienced": 0.78},
         },
-        notes="Overbidding relative to RNNE. Mean bid/value ≈ 0.72-0.88."
+        notes='Overbidding relative to RNNE. Observed bid/value ratios exceed the RNNE benchmark (n-1)/n, so the overbidding margin is largest with few bidders.'
     ),
 
     "second_price_auction": MetaAnalyticEffect(
@@ -340,7 +340,7 @@ META_ANALYTIC_DB: Dict[str, MetaAnalyticEffect] = {
         construct="auction_bid",
         paradigm="all_pay_auction",
         heterogeneity_tau=0.15,
-        notes="Aggregate revenue close to Nash prediction but individual bids highly variable."
+        notes='Robust over-dissipation: aggregate expenditure/revenue EXCEEDS the Nash prediction, often by 50-100%, with very high individual variance.'
     ),
 
     "nash_bargaining": MetaAnalyticEffect(
@@ -374,7 +374,7 @@ META_ANALYTIC_DB: Dict[str, MetaAnalyticEffect] = {
     ),
 
     "stag_hunt_coordination": MetaAnalyticEffect(
-        source="Skyrms (2004); Battalio et al. (2001)",
+        source='Battalio, Samuelson & Van Huyck (2001); Van Huyck et al. (1990)',
         effect_d=0.0,
         ci_95=(-0.05, 0.05),
         n_studies=12,
@@ -419,7 +419,7 @@ META_ANALYTIC_DB: Dict[str, MetaAnalyticEffect] = {
         moderators={
             "continuation_prob": {"low_0.5": -0.35, "medium_0.75": -0.20, "high_0.9": -0.10},
         },
-        notes="Cooperation decays in finite games. Shadow of future sustains cooperation."
+        notes="In INFINITELY (randomly) repeated PDs cooperation rises with the continuation probability and with experience; the 'decay to zero' pattern belongs to FINITELY repeated games."
     ),
 
     "holt_laury_risk": MetaAnalyticEffect(
@@ -437,7 +437,7 @@ META_ANALYTIC_DB: Dict[str, MetaAnalyticEffect] = {
             "stakes": {"hypothetical": 0.55, "real_low": 0.58, "real_high": 0.65},
             "gender": {"male": 0.54, "female": 0.60},
         },
-        notes="Mean safe choices ≈ 5.8/10 (risk averse). Stakes ↑ → risk aversion ↑."
+        notes='Mean safe choices ~5.2-6.0 of 10 under low real stakes (risk averse); scaling real stakes up increases risk aversion (Holt & Laury 2002). Gender differences in HL are NOT robust (Filippin & Crosetto 2016).'
     ),
 
     "beauty_contest": MetaAnalyticEffect(
@@ -508,7 +508,7 @@ META_ANALYTIC_DB: Dict[str, MetaAnalyticEffect] = {
             "game": {"dictator": 0.30, "trust": 0.40, "ultimatum": 0.25},
             "visibility": {"anonymous": 0.25, "visible": 0.40},
         },
-        notes="20-30% less generous toward ethnic outgroups."
+        notes="20-30% less generous toward ethnic outgroups.", i_squared=70.0
     ),
 
     "contact_hypothesis": MetaAnalyticEffect(
@@ -533,7 +533,7 @@ META_ANALYTIC_DB: Dict[str, MetaAnalyticEffect] = {
     # ── BEHAVIORAL ECONOMICS / DECISION-MAKING ────────────────────────────
 
     "loss_aversion": MetaAnalyticEffect(
-        source="Tversky & Kahneman (1992); Walasek & Stewart (2015 meta)",
+        source='Tversky & Kahneman (1992); Walasek, Mullett & Stewart (meta-analysis)',
         effect_d=0.50,
         ci_95=(0.35, 0.65),
         n_studies=150,
@@ -547,11 +547,11 @@ META_ANALYTIC_DB: Dict[str, MetaAnalyticEffect] = {
             "domain": {"financial": 0.55, "health": 0.45, "consumer": 0.50},
             "stakes": {"hypothetical": 0.40, "real_low": 0.50, "real_high": 0.60},
         },
-        notes="Lambda (λ) ≈ 2.0-2.5. Losses loom larger than gains."
+        notes="Tversky & Kahneman's median lambda = 2.25, but recent meta-analytic estimates are substantially lower (~1.3-1.5), and lambda is highly sensitive to the elicited gain/loss range (Walasek & Stewart 2015).", replication_status='contested'
     ),
 
     "anchoring_effect": MetaAnalyticEffect(
-        source="Tversky & Kahneman (1974); Furnham & Boo (2011 meta)",
+        source='Tversky & Kahneman (1974); Furnham & Boo (2011, narrative review)',
         effect_d=0.80,
         ci_95=(0.60, 1.00),
         n_studies=95,
@@ -619,7 +619,7 @@ META_ANALYTIC_DB: Dict[str, MetaAnalyticEffect] = {
             "substance_use": {"non_user": 0.35, "substance_user": 0.55},
             "reward_type": {"money": 0.40, "health": 0.35, "food": 0.50},
         },
-        notes="Present bias: immediate rewards overvalued. Clinical link to addiction."
+        notes='Amlung et al. (2017) pools ASSOCIATIONS between steep delay discounting and addictive behaviour (r~0.15-0.20), not a population magnitude of present bias.'
     ),
 
     # ── SOCIAL PSYCHOLOGY / COMPLIANCE ─────────────────────────────────────
@@ -676,7 +676,7 @@ META_ANALYTIC_DB: Dict[str, MetaAnalyticEffect] = {
             "proximity": {"remote": 0.70, "adjacent": 0.55, "touching": 0.35},
             "institutional": {"high": 0.65, "low": 0.45},
         },
-        notes="43.6% full obedience in original. Robust across replications."
+        notes="65% full obedience (26/40) in Milgram's baseline Experiment 1; obedience drops with victim proximity and rises with institutional legitimacy."
     ),
 
     "mere_exposure_meta": MetaAnalyticEffect(
@@ -696,8 +696,8 @@ META_ANALYTIC_DB: Dict[str, MetaAnalyticEffect] = {
 
     "social_proof_meta": MetaAnalyticEffect(
         source="Bond & Smith (1996)",
-        effect_d=0.42,
-        ci_95=(0.30, 0.54),
+        effect_d=0.9,
+        ci_95=(0.75, 1.05),
         n_studies=133,
         n_participants=25000,
         domain="social_psychology",
@@ -716,10 +716,10 @@ META_ANALYTIC_DB: Dict[str, MetaAnalyticEffect] = {
 
     "fear_appeals_meta": MetaAnalyticEffect(
         source="Witte & Allen (2000); Tannenbaum et al. (2015)",
-        effect_d=0.45,
-        ci_95=(0.30, 0.60),
+        effect_d=0.29,
+        ci_95=(0.22, 0.35),
         n_studies=248,
-        n_participants=50000,
+        n_participants=27372,
         domain="health_psychology",
         construct="fear_appeal_effectiveness",
         paradigm="fear_appeal",
@@ -753,8 +753,8 @@ META_ANALYTIC_DB: Dict[str, MetaAnalyticEffect] = {
 
     "prebunking_misinformation": MetaAnalyticEffect(
         source="Roozenbeek et al. (2022)",
-        effect_d=0.40,
-        ci_95=(0.25, 0.55),
+        effect_d=0.25,
+        ci_95=(0.15, 0.35),
         n_studies=30,
         n_participants=20000,
         domain="health_psychology",
@@ -882,7 +882,7 @@ META_ANALYTIC_DB: Dict[str, MetaAnalyticEffect] = {
     ),
 
     "facial_feedback": MetaAnalyticEffect(
-        source="Coles et al. (2019 many-labs)",
+        source='Wagenmakers et al. (2016, RRR); Coles, Larsen & Lench (2019, meta-analysis)',
         effect_d=0.06,
         ci_95=(-0.02, 0.14),
         n_studies=17,
@@ -921,7 +921,7 @@ META_ANALYTIC_DB: Dict[str, MetaAnalyticEffect] = {
         effect_d=0.65,
         ci_95=(0.52, 0.78),
         n_studies=94,
-        n_participants=15000,
+        n_participants=8461,
         domain="motivation",
         construct="goal_attainment",
         paradigm="implementation_intentions",
@@ -933,7 +933,7 @@ META_ANALYTIC_DB: Dict[str, MetaAnalyticEffect] = {
 
     "growth_mindset_meta": MetaAnalyticEffect(
         source="Sisk et al. (2018)",
-        effect_d=0.10,
+        effect_d=0.1,
         ci_95=(0.04, 0.16),
         n_studies=273,
         n_participants=365000,
@@ -942,7 +942,7 @@ META_ANALYTIC_DB: Dict[str, MetaAnalyticEffect] = {
         paradigm="growth_mindset",
         heterogeneity_tau=0.08,
         i_squared=55.0,
-        replication_status="contested",
+        replication_status='contested',
         moderators={
             "risk_status": {"low_risk": 0.08, "high_risk": 0.18},
         },
@@ -953,16 +953,16 @@ META_ANALYTIC_DB: Dict[str, MetaAnalyticEffect] = {
 
     "moral_reminders_honesty": MetaAnalyticEffect(
         source="Mazar et al. (2008); Verschuere et al. (2018 many-labs)",
-        effect_d=0.18,
-        ci_95=(0.05, 0.31),
+        effect_d=0.02,
+        ci_95=(-0.08, 0.11),
         n_studies=25,
         n_participants=5000,
         domain="moral_psychology",
         construct="honesty",
         paradigm="moral_reminders",
         heterogeneity_tau=0.10,
-        replication_status="contested",
-        notes="Original d ≈ 0.30. Many-labs reduced estimate. Still positive."
+        replication_status='failed_to_replicate',
+        notes='Mazar et al. (2008) reported a moral-reminder effect; the 2018 multi-lab Registered Replication Report found essentially no effect.'
     ),
 
     "moral_licensing_meta": MetaAnalyticEffect(
@@ -976,7 +976,7 @@ META_ANALYTIC_DB: Dict[str, MetaAnalyticEffect] = {
         paradigm="licensing_paradigm",
         heterogeneity_tau=0.12,
         i_squared=68.0,
-        notes="Past moral behavior licenses subsequent immoral behavior."
+        notes="Past moral behavior licenses subsequent immoral behavior.", replication_status='contested'
     ),
 
     # ── CONSUMER / MARKETING ──────────────────────────────────────────────
@@ -1022,7 +1022,7 @@ META_ANALYTIC_DB: Dict[str, MetaAnalyticEffect] = {
         construct="wta_wtp_ratio",
         paradigm="endowment_effect",
         heterogeneity_tau=0.15,
-        notes="WTA/WTP ratio ≈ 2:1. Robust but moderated by experience."
+        notes='WTA/WTP ~2-3:1 for ordinary private goods; meta-analytic ratios are much higher for public/non-market goods (Horowitz & McConnell 2002, mean ~7). Attenuates with market experience (List 2003).'
     ),
 
     # ── ENVIRONMENTAL / CONTEXTUAL ────────────────────────────────────────
@@ -1071,7 +1071,7 @@ META_ANALYTIC_DB: Dict[str, MetaAnalyticEffect] = {
             "target_race": {"black_white": 0.42, "arab_european": 0.38, "asian_white": 0.30},
             "criterion": {"attitude": 0.40, "behavior": 0.15},
         },
-        notes="IAT-behavior r ≈ 0.15 (Oswald 2013). Attitudes d ≈ 0.40."
+        notes="IAT-behavior r ≈ 0.15 (Oswald 2013). Attitudes d ≈ 0.40.", replication_status='contested'
     ),
 
     # ═══════════════════════════════════════════════════════════════════════
@@ -1083,8 +1083,8 @@ META_ANALYTIC_DB: Dict[str, MetaAnalyticEffect] = {
 
     "conformity_asch_meta": MetaAnalyticEffect(
         source="Bond & Smith (1996)",
-        effect_d=0.42,
-        ci_95=(0.30, 0.54),
+        effect_d=0.9,
+        ci_95=(0.75, 1.05),
         n_studies=133,
         n_participants=25143,
         domain="social_psychology",
@@ -1123,8 +1123,8 @@ META_ANALYTIC_DB: Dict[str, MetaAnalyticEffect] = {
 
     "self_affirmation_meta": MetaAnalyticEffect(
         source="Epton et al. (2015)",
-        effect_d=0.32,
-        ci_95=(0.24, 0.40),
+        effect_d=0.17,
+        ci_95=(0.09, 0.25),
         n_studies=144,
         n_participants=28000,
         domain="social_psychology",
@@ -1133,15 +1133,12 @@ META_ANALYTIC_DB: Dict[str, MetaAnalyticEffect] = {
         heterogeneity_tau=0.12,
         i_squared=68.0,
         replication_status="replicated",
-        moderators={
-            "outcome": {"intention": 0.35, "behavior": 0.28},
-            "threat_severity": {"low": 0.22, "high": 0.42},
-        },
-        notes="d = 0.32 for message acceptance. Larger when threat is high."
+        moderators={'outcome': {'intention': 0.14, 'behavior': 0.11}, 'threat_severity': {'low': 0.1, 'high': 0.22}},
+        notes='Small effects: message acceptance d~0.17, intentions d~0.14, behavior d~0.11.'
     ),
 
     "fundamental_attribution_error": MetaAnalyticEffect(
-        source="Malle (2006); Jones & Harris (1967)",
+        source='Jones & Harris (1967); Gilbert & Malone (1995)',
         effect_d=0.55,
         ci_95=(0.40, 0.70),
         n_studies=85,
@@ -1176,8 +1173,8 @@ META_ANALYTIC_DB: Dict[str, MetaAnalyticEffect] = {
 
     "self_serving_bias_meta": MetaAnalyticEffect(
         source="Mezulis et al. (2004)",
-        effect_d=0.65,
-        ci_95=(0.55, 0.75),
+        effect_d=0.96,
+        ci_95=(0.89, 1.03),
         n_studies=266,
         n_participants=50000,
         domain="social_psychology",
@@ -1206,9 +1203,7 @@ META_ANALYTIC_DB: Dict[str, MetaAnalyticEffect] = {
         heterogeneity_tau=0.14,
         i_squared=72.0,
         replication_status="replicated",
-        moderators={
-            "judgment_type": {"competence": 0.50, "sociability": 0.65, "morality": 0.35},
-        },
+        moderators={'judgment_type': {'competence': 0.46, 'sociability': 0.68, 'morality': 0.08}},
         notes="Physical attractiveness creates positive halo. Strongest for sociability judgments."
     ),
 
@@ -1243,7 +1238,7 @@ META_ANALYTIC_DB: Dict[str, MetaAnalyticEffect] = {
         paradigm="deindividuation",
         heterogeneity_tau=0.12,
         i_squared=65.0,
-        replication_status="replicated",
+        replication_status='contested',
         moderators={
             "anonymity": {"anonymous": 0.35, "identifiable": 0.12},
             "group_norms": {"anti_social_norm": 0.40, "pro_social_norm": -0.10},
@@ -1390,16 +1385,16 @@ META_ANALYTIC_DB: Dict[str, MetaAnalyticEffect] = {
 
     "ego_depletion_meta": MetaAnalyticEffect(
         source="Hagger et al. (2010); Carter & McCullough (2014 p-curve)",
-        effect_d=0.17,
-        ci_95=(-0.02, 0.36),
+        effect_d=0.06,
+        ci_95=(-0.04, 0.15),
         n_studies=198,
-        n_participants=22000,
+        n_participants=10782,
         domain="social_psychology",
         construct="self_control_depletion",
         paradigm="sequential_task",
         heterogeneity_tau=0.18,
         i_squared=82.0,
-        replication_status="contested",
+        replication_status='failed_to_replicate',
         notes="Original d = 0.62 (Hagger 2010). After p-curve correction d = 0.17. Many-labs RRR d = 0.04. Highly contested."
     ),
 
@@ -1513,7 +1508,7 @@ META_ANALYTIC_DB: Dict[str, MetaAnalyticEffect] = {
         paradigm="exercise_intervention",
         heterogeneity_tau=0.14,
         i_squared=72.0,
-        replication_status="replicated",
+        replication_status='contested',
         moderators={
             "exercise_type": {"aerobic": 0.60, "resistance": 0.50, "mixed": 0.55},
             "supervision": {"supervised": 0.62, "unsupervised": 0.38},
@@ -1524,7 +1519,7 @@ META_ANALYTIC_DB: Dict[str, MetaAnalyticEffect] = {
 
     "placebo_effect_meta": MetaAnalyticEffect(
         source="Hrobjartsson & Gotzsche (2010); Wager & Atlas (2015)",
-        effect_d=0.30,
+        effect_d=0.25,
         ci_95=(0.20, 0.40),
         n_studies=202,
         n_participants=40000,
@@ -1581,8 +1576,8 @@ META_ANALYTIC_DB: Dict[str, MetaAnalyticEffect] = {
 
     "vaccination_intention_meta": MetaAnalyticEffect(
         source="Brewer et al. (2017); Sheeran et al. (2017)",
-        effect_d=0.48,
-        ci_95=(0.38, 0.58),
+        effect_d=0.15,
+        ci_95=(0.08, 0.25),
         n_studies=85,
         n_participants=45000,
         domain="health_psychology",
@@ -1691,8 +1686,8 @@ META_ANALYTIC_DB: Dict[str, MetaAnalyticEffect] = {
 
     "psychological_pain_meta": MetaAnalyticEffect(
         source="Williams et al. (2012); Veehof et al. (2016)",
-        effect_d=0.37,
-        ci_95=(0.25, 0.49),
+        effect_d=0.25,
+        ci_95=(0.15, 0.35),
         n_studies=64,
         n_participants=6900,
         domain="health_psychology",
@@ -1710,9 +1705,9 @@ META_ANALYTIC_DB: Dict[str, MetaAnalyticEffect] = {
 
     "psychotherapy_general_meta": MetaAnalyticEffect(
         source="Smith & Glass (1977); Wampold (2001)",
-        effect_d=0.80,
-        ci_95=(0.70, 0.90),
-        n_studies=475,
+        effect_d=0.68,
+        ci_95=(0.58, 0.78),
+        n_studies=375,
         n_participants=50000,
         domain="clinical_psychology",
         construct="symptom_improvement",
@@ -1764,10 +1759,10 @@ META_ANALYTIC_DB: Dict[str, MetaAnalyticEffect] = {
     ),
 
     "self_explanation_meta": MetaAnalyticEffect(
-        source="Rittle-Johnson (2006); Dunlosky et al. (2013)",
+        source='Bisra et al. (2018); Rittle-Johnson (2006); Dunlosky et al. (2013)',
         effect_d=0.55,
         ci_95=(0.40, 0.70),
-        n_studies=35,
+        n_studies=69,
         n_participants=4000,
         domain="educational_psychology",
         construct="conceptual_understanding",
@@ -1840,8 +1835,8 @@ META_ANALYTIC_DB: Dict[str, MetaAnalyticEffect] = {
 
     "tutoring_meta": MetaAnalyticEffect(
         source="Bloom (1984); VanLehn (2011); Nickow et al. (2020)",
-        effect_d=0.56,
-        ci_95=(0.42, 0.70),
+        effect_d=0.37,
+        ci_95=(0.23, 0.51),
         n_studies=96,
         n_participants=15000,
         domain="educational_psychology",
@@ -1859,8 +1854,8 @@ META_ANALYTIC_DB: Dict[str, MetaAnalyticEffect] = {
 
     "formative_assessment_meta": MetaAnalyticEffect(
         source="Black & Wiliam (1998); Kingston & Nash (2011)",
-        effect_d=0.40,
-        ci_95=(0.28, 0.52),
+        effect_d=0.2,
+        ci_95=(0.08, 0.32),
         n_studies=250,
         n_participants=50000,
         domain="educational_psychology",
@@ -1969,7 +1964,7 @@ META_ANALYTIC_DB: Dict[str, MetaAnalyticEffect] = {
 
     "growth_mindset_intervention_meta": MetaAnalyticEffect(
         source="Sisk et al. (2018); Yeager et al. (2019)",
-        effect_d=0.10,
+        effect_d=0.08,
         ci_95=(0.04, 0.16),
         n_studies=43,
         n_participants=57000,
@@ -2235,7 +2230,7 @@ META_ANALYTIC_DB: Dict[str, MetaAnalyticEffect] = {
     ),
 
     "performance_appraisal_meta": MetaAnalyticEffect(
-        source="Jawahar & Williams (1997); Adler et al. (2016)",
+        source='Woehr & Huffcutt (1994) rater-training meta-analysis would fit this construct; Jawahar & Williams (1997) is about the appraisal-purpose effect, not rater accuracy',
         effect_d=0.35,
         ci_95=(0.22, 0.48),
         n_studies=54,
@@ -2382,10 +2377,7 @@ META_ANALYTIC_DB: Dict[str, MetaAnalyticEffect] = {
         heterogeneity_tau=0.08,
         i_squared=58.0,
         replication_status="replicated",
-        moderators={
-            "specificity": {"generic": 0.15, "dynamic_specific": 0.30},
-            "timing": {"immediate": 0.28, "delayed": 0.15},
-        },
+        moderators={'specificity': {'generic': 0.3, 'dynamic_specific': 0.15}, 'timing': {'immediate': 0.28, 'delayed': 0.15}},
         notes="Retargeting increases conversion. Dynamic/specific ads outperform generic."
     ),
 
@@ -2680,7 +2672,7 @@ META_ANALYTIC_DB: Dict[str, MetaAnalyticEffect] = {
     ),
 
     "peak_end_rule_meta": MetaAnalyticEffect(
-        source="Kahneman et al. (1993); Do et al. (2008 meta)",
+        source='Kahneman et al. (1993); Do, Rupert & Wolford (2008)',
         effect_d=0.42,
         ci_95=(0.28, 0.56),
         n_studies=35,
@@ -2727,7 +2719,7 @@ META_ANALYTIC_DB: Dict[str, MetaAnalyticEffect] = {
         paradigm="attraction_effect",
         heterogeneity_tau=0.14,
         i_squared=70.0,
-        replication_status="replicated",
+        replication_status='contested',
         moderators={
             "decoy_type": {"asymmetric_dominance": 0.48, "compromise": 0.38},
             "product_category": {"consumer": 0.45, "gambles": 0.35},
@@ -2817,10 +2809,7 @@ META_ANALYTIC_DB: Dict[str, MetaAnalyticEffect] = {
         heterogeneity_tau=0.12,
         i_squared=68.0,
         replication_status="replicated",
-        moderators={
-            "outcome": {"social_competence": 0.42, "externalizing": -0.38, "internalizing": -0.30},
-            "attachment": {"secure_vs_avoidant": 0.35, "secure_vs_disorganized": 0.55},
-        },
+        moderators={'outcome': {'social_competence': 0.39, 'externalizing': -0.31, 'internalizing': -0.15}, 'attachment': {'secure_vs_avoidant': 0.35, 'secure_vs_disorganized': 0.55}},
         notes="Secure attachment predicts better social outcomes. Disorganized attachment strongest risk factor."
     ),
 
@@ -2866,7 +2855,7 @@ META_ANALYTIC_DB: Dict[str, MetaAnalyticEffect] = {
         source="Hughes et al. (2017); Bellis et al. (2019)",
         effect_d=0.55,
         ci_95=(0.42, 0.68),
-        n_studies=96,
+        n_studies=37,
         n_participants=250000,
         domain="developmental_psychology",
         construct="adult_health_outcomes",
@@ -2986,10 +2975,7 @@ META_ANALYTIC_DB: Dict[str, MetaAnalyticEffect] = {
         heterogeneity_tau=0.12,
         i_squared=68.0,
         replication_status="replicated",
-        moderators={
-            "outcome": {"social_skills": 0.35, "academic": 0.28, "conduct_problems": -0.25, "emotional_distress": -0.22},
-            "implementation": {"high_fidelity": 0.38, "low_fidelity": 0.15},
-        },
+        moderators={'outcome': {'social_skills': 0.57, 'academic': 0.27, 'conduct_problems': -0.22, 'emotional_distress': -0.24}, 'implementation': {'high_fidelity': 0.38, 'low_fidelity': 0.15}},
         notes="SEL programs improve social skills and academics. Implementation quality critical."
     ),
 
@@ -3016,8 +3002,8 @@ META_ANALYTIC_DB: Dict[str, MetaAnalyticEffect] = {
 
     "social_norms_conservation_meta": MetaAnalyticEffect(
         source="Abrahamse & Steg (2013); Allcott (2011)",
-        effect_d=0.35,
-        ci_95=(0.24, 0.46),
+        effect_d=0.08,
+        ci_95=(0.03, 0.15),
         n_studies=64,
         n_participants=50000,
         domain="environmental_psychology",
@@ -3107,9 +3093,9 @@ META_ANALYTIC_DB: Dict[str, MetaAnalyticEffect] = {
 
     "nature_exposure_wellbeing": MetaAnalyticEffect(
         source="McMahan & Estes (2015); Capaldi et al. (2014)",
-        effect_d=0.40,
-        ci_95=(0.28, 0.52),
-        n_studies=70,
+        effect_d=0.3,
+        ci_95=(0.2, 0.4),
+        n_studies=32,
         n_participants=12000,
         domain="environmental_psychology",
         construct="subjective_wellbeing",
@@ -3163,8 +3149,8 @@ META_ANALYTIC_DB: Dict[str, MetaAnalyticEffect] = {
 
     "energy_conservation_meta": MetaAnalyticEffect(
         source="Abrahamse et al. (2005); Delmas et al. (2013)",
-        effect_d=0.30,
-        ci_95=(0.18, 0.42),
+        effect_d=0.12,
+        ci_95=(0.05, 0.2),
         n_studies=58,
         n_participants=25000,
         domain="environmental_psychology",
@@ -3204,8 +3190,8 @@ META_ANALYTIC_DB: Dict[str, MetaAnalyticEffect] = {
 
     "implicit_bias_training_meta": MetaAnalyticEffect(
         source="Forscher et al. (2019); Lai et al. (2016)",
-        effect_d=0.12,
-        ci_95=(0.02, 0.22),
+        effect_d=0.3,
+        ci_95=(0.22, 0.38),
         n_studies=492,
         n_participants=87000,
         domain="social_psychology",
@@ -3222,7 +3208,7 @@ META_ANALYTIC_DB: Dict[str, MetaAnalyticEffect] = {
     ),
 
     "perspective_taking_meta": MetaAnalyticEffect(
-        source="Teding van Berkhout & Malouff (2016); Todd et al. (2011)",
+        source='Todd et al. (2011); Todd & Galinsky (2014)',
         effect_d=0.33,
         ci_95=(0.22, 0.44),
         n_studies=51,
@@ -3305,7 +3291,7 @@ META_ANALYTIC_DB: Dict[str, MetaAnalyticEffect] = {
         paradigm="prejudice_reduction",
         heterogeneity_tau=0.12,
         i_squared=68.0,
-        replication_status="replicated",
+        replication_status='contested',
         moderators={
             "approach": {"contact": 0.42, "education": 0.18, "media": 0.15, "diversity_training": 0.10},
             "outcome": {"attitudes": 0.28, "behavior": 0.15},
@@ -3382,7 +3368,7 @@ META_ANALYTIC_DB: Dict[str, MetaAnalyticEffect] = {
         paradigm="elaboration_likelihood",
         heterogeneity_tau=0.14,
         i_squared=72.0,
-        replication_status="replicated",
+        replication_status='contested',
         moderators={
             "route": {"central_strong_args": 0.55, "peripheral_cues": 0.30},
             "motivation": {"high_involvement": 0.58, "low_involvement": 0.28},
@@ -3461,10 +3447,7 @@ META_ANALYTIC_DB: Dict[str, MetaAnalyticEffect] = {
         heterogeneity_tau=0.08,
         i_squared=55.0,
         replication_status="replicated",
-        moderators={
-            "refutation": {"refutational": 0.28, "non_refutational": 0.08},
-            "audience_awareness": {"aware_of_counterargs": 0.30, "unaware": 0.12},
-        },
+        moderators={'refutation': {'refutational': 0.28, 'non_refutational': -0.05}, 'audience_awareness': {'aware_of_counterargs': 0.3, 'unaware': 0.12}},
         notes="Two-sided messages more persuasive when they refute counterarguments."
     ),
 
@@ -3508,8 +3491,8 @@ META_ANALYTIC_DB: Dict[str, MetaAnalyticEffect] = {
 
     "gain_loss_framing_health_meta": MetaAnalyticEffect(
         source="Gallagher & Updegraff (2012); O'Keefe & Jensen (2009)",
-        effect_d=0.15,
-        ci_95=(0.05, 0.25),
+        effect_d=0.08,
+        ci_95=(0.02, 0.14),
         n_studies=94,
         n_participants=25000,
         domain="communication",
@@ -3527,8 +3510,8 @@ META_ANALYTIC_DB: Dict[str, MetaAnalyticEffect] = {
 
     "metaphor_persuasion_meta": MetaAnalyticEffect(
         source="Sopory & Dillard (2002); van Stee (2018)",
-        effect_d=0.27,
-        ci_95=(0.16, 0.38),
+        effect_d=0.14,
+        ci_95=(0.06, 0.22),
         n_studies=35,
         n_participants=6000,
         domain="communication",
@@ -3607,12 +3590,7 @@ GAME_CALIBRATIONS: Dict[str, GameCalibration] = {
         modes=[-0.20, 0.0, 0.50],
         n_studies=12,
         n_participants=1847,
-        subpopulations={
-            "taker_negative": 0.20,      # Take from other
-            "pure_selfish_zero": 0.25,    # Keep everything
-            "fair_divider": 0.35,         # Give around 50%
-            "moderate_giver": 0.20,       # Give 10-40%
-        },
+        subpopulations={'fair_divider': 0.15, 'moderate_giver': 0.2, 'pure_selfish_zero': 0.4, 'taker_negative': 0.25},
     ),
 
     "dictator_third_party_punishment": GameCalibration(
@@ -3639,9 +3617,9 @@ GAME_CALIBRATIONS: Dict[str, GameCalibration] = {
         game_type="trust",
         variant="standard",
         mean_proportion=0.50,
-        sd_proportion=0.15,
+        sd_proportion=0.28,
         ci_95=(0.47, 0.53),
-        distribution_shape="normal",
+        distribution_shape='multimodal',
         modes=[0.50],
         n_studies=162,
         n_participants=23000,
@@ -3654,9 +3632,9 @@ GAME_CALIBRATIONS: Dict[str, GameCalibration] = {
         source="Oosterbeek et al. (2004)",
         game_type="ultimatum",
         variant="standard",
-        mean_proportion=0.42,
+        mean_proportion=0.4,
         sd_proportion=0.10,
-        ci_95=(0.40, 0.44),
+        ci_95=(0.38, 0.42),
         distribution_shape="left_skew",
         modes=[0.50],
         n_studies=37,
@@ -3668,9 +3646,9 @@ GAME_CALIBRATIONS: Dict[str, GameCalibration] = {
         source="Zelmer (2003)",
         game_type="public_goods",
         variant="standard",
-        mean_proportion=0.47,
+        mean_proportion=0.4,
         sd_proportion=0.18,
-        ci_95=(0.42, 0.52),
+        ci_95=(0.35, 0.45),
         distribution_shape="right_skew",
         modes=[0.50],
         n_studies=27,
@@ -3700,7 +3678,7 @@ GAME_CALIBRATIONS: Dict[str, GameCalibration] = {
         game_type="prisoners_dilemma",
         variant="standard",
         mean_proportion=0.47,
-        sd_proportion=0.20,
+        sd_proportion=0.5,
         ci_95=(0.43, 0.51),
         distribution_shape="bimodal",
         modes=[0.0, 1.0],
@@ -3749,7 +3727,7 @@ GAME_CALIBRATIONS: Dict[str, GameCalibration] = {
         modes=[0.0, 0.80],
         n_studies=20,
         n_participants=2000,
-        notes="Bimodal: dropout (bid 0) vs overbidding. Aggregate near Nash."
+        notes='Bimodal: dropout (bid 0) vs aggressive overbidding. Aggregate expenditure EXCEEDS the Nash prediction (over-dissipation).'
     ),
 
     "nash_bargaining_standard": GameCalibration(
@@ -3812,7 +3790,7 @@ GAME_CALIBRATIONS: Dict[str, GameCalibration] = {
         game_type="holt_laury",
         variant="standard",
         mean_proportion=0.58,
-        sd_proportion=0.12,
+        sd_proportion=0.18,
         ci_95=(0.55, 0.61),
         distribution_shape="normal",
         modes=[0.58],
@@ -3843,7 +3821,7 @@ GAME_CALIBRATIONS: Dict[str, GameCalibration] = {
         sd_proportion=0.20,
         ci_95=(0.54, 0.62),
         distribution_shape="right_skew",
-        modes=[0.83],
+        modes=[1.0],
         n_studies=90,
         n_participants=44000,
         subpopulations={
@@ -3860,9 +3838,9 @@ GAME_CALIBRATIONS: Dict[str, GameCalibration] = {
         source="Cherry et al. (2002); Oxoby & Spraggon (2008)",
         game_type="dictator",
         variant="earned_money",
-        mean_proportion=0.15,
+        mean_proportion=0.1,
         sd_proportion=0.18,
-        ci_95=(0.11, 0.19),
+        ci_95=(0.06, 0.14),
         distribution_shape="right_skew",
         modes=[0.0],
         n_studies=18,
@@ -3965,10 +3943,7 @@ GAME_CALIBRATIONS: Dict[str, GameCalibration] = {
         modes=[0.0, 0.50],
         n_studies=16,
         n_participants=1800,
-        moderators={
-            "distance_level": {"face_to_face": 0.45, "one_way_mirror": 0.35,
-                               "double_blind": 0.22, "internet": 0.18},
-        },
+        moderators={'distance_level': {'double_blind': 0.1, 'face_to_face': 0.45, 'internet': 0.18, 'one_way_mirror': 0.35}},
         notes="Social distance inversely predicts giving. Face-to-face: ~45% vs online: ~18%."
     ),
 
@@ -3976,9 +3951,9 @@ GAME_CALIBRATIONS: Dict[str, GameCalibration] = {
         source="Eckel & Grossman (1996); Engel (2011) subset",
         game_type="dictator",
         variant="charity_option",
-        mean_proportion=0.42,
+        mean_proportion=0.33,
         sd_proportion=0.22,
-        ci_95=(0.37, 0.47),
+        ci_95=(0.28, 0.38),
         distribution_shape="bimodal",
         modes=[0.0, 0.50],
         n_studies=20,
@@ -3993,11 +3968,11 @@ GAME_CALIBRATIONS: Dict[str, GameCalibration] = {
         moderators={
             "charity_salience": {"named_charity": 0.46, "generic_charity": 0.38},
         },
-        notes="Charity as receiver increases mean giving ~50% above standard DG."
+        notes='Charity recipient roughly triples giving relative to an anonymous student recipient (Eckel & Grossman 1996: ~10.6% to ~31%).'
     ),
 
     "dictator_multiple_recipients": GameCalibration(
-        source="Andreoni & Bernheim (2009); Bolton & Ockenfels (2000)",
+        source='Andreoni (2007); Branas-Garza et al. (multiple-recipient dictator games)',
         game_type="dictator",
         variant="multiple_recipients",
         mean_proportion=0.32,
@@ -4114,7 +4089,7 @@ GAME_CALIBRATIONS: Dict[str, GameCalibration] = {
         game_type="trust",
         variant="binary",
         mean_proportion=0.55,
-        sd_proportion=0.20,
+        sd_proportion=0.5,
         ci_95=(0.50, 0.60),
         distribution_shape="bimodal",
         modes=[0.0, 1.0],
@@ -4160,7 +4135,7 @@ GAME_CALIBRATIONS: Dict[str, GameCalibration] = {
             "round": {"early_1_3": 0.48, "middle_4_7": 0.55, "late_8_10": 0.60},
             "reciprocity_experienced": {"high_return": 0.65, "low_return": 0.35},
         },
-        notes="Trust grows with repeated interaction. Reciprocity builds trust over rounds."
+        notes='Trust is sustained by experienced reciprocity but shows end-game decline in finitely repeated play; growth over rounds holds mainly under indefinite repetition or partner-specific reputation building.'
     ),
 
     "trust_with_inequality": GameCalibration(
@@ -4184,7 +4159,7 @@ GAME_CALIBRATIONS: Dict[str, GameCalibration] = {
     # ── ULTIMATUM GAME VARIANTS (v1.0.9.4) ────────────────────────────────
 
     "ultimatum_alternative_offers": GameCalibration(
-        source="Fischbacher et al. (2009); Bolton & Zwick (1995)",
+        source='Knez & Camerer (1995); Schmitt (2004)',
         game_type="ultimatum",
         variant="alternative_offers",
         mean_proportion=0.38,
@@ -4368,7 +4343,7 @@ GAME_CALIBRATIONS: Dict[str, GameCalibration] = {
             "reward_type": {"monetary_reward": 0.62, "social_approval": 0.58,
                             "status_reward": 0.56},
         },
-        notes="Rewards less effective than punishment for sustaining cooperation. +13% above baseline."
+        notes='Rewards raise contributions relative to no institution; whether they are weaker than punishment is contested - Rand et al. (2009) find reward at least as effective once payoffs rather than contributions are the criterion.'
     ),
 
     "public_goods_threshold": GameCalibration(
@@ -4396,7 +4371,7 @@ GAME_CALIBRATIONS: Dict[str, GameCalibration] = {
     ),
 
     "public_goods_step_level": GameCalibration(
-        source="Van de Kragt et al. (1986); Rapoport & Eshed-Levy (1989)",
+        source='Van de Kragt, Orbell & Dawes (1983); Rapoport & Eshed-Levy (1989)',
         game_type="public_goods",
         variant="step_level",
         mean_proportion=0.55,
@@ -4459,11 +4434,7 @@ GAME_CALIBRATIONS: Dict[str, GameCalibration] = {
         modes=[0.20],
         n_studies=30,
         n_participants=3600,
-        moderators={
-            "round_block": {"round_1_3": 0.50, "round_4_6": 0.38,
-                            "round_7_9": 0.28, "round_10": 0.18},
-            "group_size": {"small_4": 0.40, "medium_8": 0.33, "large_40": 0.25},
-        },
+        moderators={'group_size': {'large_40': 0.4, 'medium_8': 0.33, 'small_4': 0.4}, 'round_block': {'round_10': 0.18, 'round_1_3': 0.5, 'round_4_6': 0.38, 'round_7_9': 0.28}},
         notes="Classic decay: contributions fall from ~50% to ~18% over 10 rounds without punishment."
     ),
 
@@ -4524,7 +4495,7 @@ GAME_CALIBRATIONS: Dict[str, GameCalibration] = {
         moderators={
             "payoff_asymmetry": {"symmetric": 0.50, "asymmetric": 0.55},
         },
-        notes="~55% choose own preferred equilibrium. Miscoordination ~15%. Focal points help."
+        notes='~55% choose their own preferred equilibrium; without communication miscoordination is frequent (often 40-60% of pairs). Focal points and communication raise coordination.'
     ),
 
     "chicken_hawk_dove_standard": GameCalibration(
@@ -4532,7 +4503,7 @@ GAME_CALIBRATIONS: Dict[str, GameCalibration] = {
         game_type="chicken",
         variant="standard",
         mean_proportion=0.52,
-        sd_proportion=0.22,
+        sd_proportion=0.5,
         ci_95=(0.45, 0.59),
         distribution_shape="bimodal",
         modes=[0.0, 1.0],
@@ -4598,7 +4569,7 @@ GAME_CALIBRATIONS: Dict[str, GameCalibration] = {
             "n_firms": {"duopoly": 0.55, "triopoly": 0.60, "4_plus_firms": 0.65},
             "information": {"full": 0.58, "incomplete": 0.55},
         },
-        notes="Quantity/Nash equilibrium quantity ratio. Slight overproduction (above Nash). More competitive than theory."
+        notes='Quantity relative to the Cournot-Nash quantity: duopolies produce BELOW Nash (partial collusion, ratio ~0.85-0.95), triopoly is near Nash, and four or more firms produce ABOVE Nash (ratio >1).'
     ),
 
     "beauty_contest_iterated": GameCalibration(
@@ -4666,7 +4637,7 @@ GAME_CALIBRATIONS: Dict[str, GameCalibration] = {
         game_type="volunteer_dilemma",
         variant="standard",
         mean_proportion=0.55,
-        sd_proportion=0.20,
+        sd_proportion=0.5,
         ci_95=(0.48, 0.62),
         distribution_shape="bimodal",
         modes=[0.0, 1.0],
@@ -4686,7 +4657,7 @@ GAME_CALIBRATIONS: Dict[str, GameCalibration] = {
     # ── SOCIAL DILEMMA VARIANTS (v1.0.9.4) ────────────────────────────────
 
     "tragedy_of_commons_standard": GameCalibration(
-        source="Ostrom (1990); Walker & Gardner (1992)",
+        source='Walker & Gardner (1992); Ostrom, Walker & Gardner (1992)',
         game_type="tragedy_of_commons",
         variant="standard",
         mean_proportion=0.62,
@@ -4722,11 +4693,11 @@ GAME_CALIBRATIONS: Dict[str, GameCalibration] = {
             "punishment_type": {"costly_punishment": 0.62, "free_punishment": 0.70,
                                 "antisocial_possible": 0.50},
         },
-        notes="Punishment increases cooperation ~23%. But costly punishment can reduce group payoffs."
+        notes='Punishment opportunities raise cooperation, but costly punishment often fails to raise group payoffs and the highest earners punish least (Dreber et al. 2008); antisocial punishment can erase the gain.'
     ),
 
     "prisoners_dilemma_iterated_axelrod": GameCalibration(
-        source="Axelrod (1984); Dal Bó & Fréchette (2011)",
+        source='Dal Bo & Frechette (2011); Dal Bo & Frechette (2018 survey)',
         game_type="prisoners_dilemma",
         variant="iterated",
         mean_proportion=0.60,
@@ -4863,8 +4834,8 @@ CONSTRUCT_NORMS: Dict[str, ConstructNorm] = {
         construct="loneliness",
         scale_name="UCLA Loneliness Scale",
         scale_points=4,
-        mean=2.2,
-        sd=0.65,
+        mean=2.0,
+        sd=0.48,
         skewness=0.4,
         sample_type="student",
         n_participants=4000,
@@ -4906,7 +4877,7 @@ CONSTRUCT_NORMS: Dict[str, ConstructNorm] = {
     "big_five_agreeableness": ConstructNorm(
         source="Costa & McCrae (1992); Schmitt et al. (2007)",
         construct="agreeableness",
-        scale_name="NEO-PI-R / BFI",
+        scale_name='BFI',
         scale_points=5,
         mean=3.7,
         sd=0.60,
@@ -4922,7 +4893,7 @@ CONSTRUCT_NORMS: Dict[str, ConstructNorm] = {
     "big_five_conscientiousness": ConstructNorm(
         source="Costa & McCrae (1992)",
         construct="conscientiousness",
-        scale_name="NEO-PI-R",
+        scale_name='BFI',
         scale_points=5,
         mean=3.5,
         sd=0.65,
@@ -4933,7 +4904,7 @@ CONSTRUCT_NORMS: Dict[str, ConstructNorm] = {
     "big_five_extraversion": ConstructNorm(
         source="Costa & McCrae (1992)",
         construct="extraversion",
-        scale_name="NEO-PI-R",
+        scale_name='BFI',
         scale_points=5,
         mean=3.3,
         sd=0.70,
@@ -4947,7 +4918,7 @@ CONSTRUCT_NORMS: Dict[str, ConstructNorm] = {
     "big_five_neuroticism": ConstructNorm(
         source="Costa & McCrae (1992)",
         construct="neuroticism",
-        scale_name="NEO-PI-R",
+        scale_name='BFI',
         scale_points=5,
         mean=2.9,
         sd=0.75,
@@ -4962,7 +4933,7 @@ CONSTRUCT_NORMS: Dict[str, ConstructNorm] = {
     "big_five_openness": ConstructNorm(
         source="Costa & McCrae (1992)",
         construct="openness",
-        scale_name="NEO-PI-R",
+        scale_name='BFI',
         scale_points=5,
         mean=3.4,
         sd=0.60,
@@ -4975,8 +4946,8 @@ CONSTRUCT_NORMS: Dict[str, ConstructNorm] = {
         construct="emotional_exhaustion",
         scale_name="MBI",
         scale_points=7,
-        mean=3.2,
-        sd=1.30,
+        mean=2.3,
+        sd=1.2,
         skewness=0.3,
         sample_type="general",
         n_participants=11000,
@@ -5021,9 +4992,9 @@ CONSTRUCT_NORMS: Dict[str, ConstructNorm] = {
         source="Raskin & Terry (1988); Foster et al. (2003 meta)",
         construct="narcissism",
         scale_name="NPI-40",
-        scale_points=40,
-        mean=15.5,
-        sd=6.8,
+        scale_points=2,
+        mean=0.388,
+        sd=0.17,
         skewness=0.3,
         sample_type="student",
         n_participants=10000,
@@ -5111,14 +5082,12 @@ CONSTRUCT_NORMS: Dict[str, ConstructNorm] = {
         construct="depression",
         scale_name="PHQ-9",
         scale_points=4,
-        mean=1.0,
+        mean=0.4,
         sd=0.65,
         skewness=1.2,
         sample_type="general",
         n_participants=6000,
-        moderators={
-            "sample": {"non_clinical": 0.8, "clinical": 2.2},
-        },
+        moderators={'sample': {'non_clinical': 0.35, 'clinical': 1.6}},
     ),
 
     "perceived_stress_pss": ConstructNorm(
@@ -5126,7 +5095,7 @@ CONSTRUCT_NORMS: Dict[str, ConstructNorm] = {
         construct="perceived_stress",
         scale_name="PSS-10",
         scale_points=5,
-        mean=2.5,
+        mean=1.4,
         sd=0.65,
         sample_type="general",
         n_participants=15000,
@@ -5148,19 +5117,16 @@ CONSTRUCT_NORMS: Dict[str, ConstructNorm] = {
     # =========================================================================
 
     "anxiety_gad7": ConstructNorm(
-        source="Spitzer et al. (2006)",
+        source='Spitzer et al. (2006); Lowe et al. (2008) general-population norms',
         construct="generalized_anxiety",
         scale_name="GAD-7",
         scale_points=4,  # 0-3 per item
-        mean=0.97,
+        mean=0.45,
         sd=0.78,
         skewness=1.0,
         sample_type="general",
         n_participants=5030,
-        moderators={
-            "sample": {"non_clinical": 0.8, "primary_care": 1.0, "clinical_anxiety": 2.4},
-            "gender": {"male": 0.85, "female": 1.10},
-        },
+        moderators={'sample': {'non_clinical': 0.4, 'primary_care': 0.6, 'clinical_anxiety': 1.9}, 'gender': {'male': 0.38, 'female': 0.5}},
     ),
 
     "depression_bdi2": ConstructNorm(
@@ -5173,10 +5139,7 @@ CONSTRUCT_NORMS: Dict[str, ConstructNorm] = {
         skewness=1.3,
         sample_type="general",
         n_participants=8000,
-        moderators={
-            "sample": {"non_clinical": 0.40, "student": 0.53, "clinical_depression": 2.10},
-            "gender": {"male": 0.45, "female": 0.60},
-        },
+        moderators={'sample': {'non_clinical': 0.35, 'student': 0.5, 'clinical_depression': 1.4}, 'gender': {'male': 0.45, 'female': 0.6}},
     ),
 
     "ptsd_pcl5": ConstructNorm(
@@ -5199,14 +5162,12 @@ CONSTRUCT_NORMS: Dict[str, ConstructNorm] = {
         construct="social_anxiety",
         scale_name="LSAS",
         scale_points=4,  # 0-3 per item (fear + avoidance)
-        mean=1.10,
+        mean=0.5,
         sd=0.72,
         skewness=0.8,
         sample_type="general",
         n_participants=3200,
-        moderators={
-            "sample": {"non_clinical": 0.80, "clinical_social_anxiety": 2.30},
-        },
+        moderators={'sample': {'non_clinical': 0.4, 'clinical_social_anxiety': 1.3}},
     ),
 
     "ocd_ybocs": ConstructNorm(
@@ -5217,7 +5178,7 @@ CONSTRUCT_NORMS: Dict[str, ConstructNorm] = {
         mean=0.55,
         sd=0.70,
         skewness=1.6,
-        sample_type="general",
+        sample_type='clinical',
         n_participants=2500,
         moderators={
             "sample": {"non_clinical": 0.30, "clinical_ocd": 2.80},
@@ -5260,15 +5221,12 @@ CONSTRUCT_NORMS: Dict[str, ConstructNorm] = {
         construct="alcohol_use",
         scale_name="AUDIT",
         scale_points=5,  # 0-4 per item
-        mean=0.90,
+        mean=0.45,
         sd=0.72,
         skewness=1.2,
         sample_type="general",
         n_participants=8000,
-        moderators={
-            "gender": {"male": 1.10, "female": 0.65},
-            "age": {"18_25": 1.15, "26_40": 0.95, "41_60": 0.80, "61_plus": 0.55},
-        },
+        moderators={'gender': {'male': 0.6, 'female': 0.3}, 'age': {'18_25': 0.65, '26_40': 0.5, '41_60': 0.4, '61_plus': 0.25}},
     ),
 
     "anger_staxi": ConstructNorm(
@@ -5305,15 +5263,12 @@ CONSTRUCT_NORMS: Dict[str, ConstructNorm] = {
         construct="sleep_quality",
         scale_name="PSQI",
         scale_points=4,  # 0-3 per component
-        mean=1.20,
+        mean=0.7,
         sd=0.65,
         skewness=0.7,
         sample_type="general",
         n_participants=6000,
-        moderators={
-            "age": {"18_25": 1.05, "26_40": 1.15, "41_60": 1.30, "61_plus": 1.45},
-            "sample": {"non_clinical": 1.05, "clinical_insomnia": 2.50},
-        },
+        moderators={'age': {'18_25': 0.6, '26_40': 0.65, '41_60': 0.8, '61_plus': 0.95}, 'sample': {'non_clinical': 0.6, 'clinical_insomnia': 1.8}},
     ),
 
     "body_image_bss": ConstructNorm(
@@ -5351,15 +5306,12 @@ CONSTRUCT_NORMS: Dict[str, ConstructNorm] = {
         construct="somatic_symptoms",
         scale_name="PHQ-15",
         scale_points=3,  # 0-2 per item
-        mean=0.80,
+        mean=0.3,
         sd=0.52,
         skewness=0.8,
         sample_type="general",
         n_participants=6000,
-        moderators={
-            "gender": {"male": 0.65, "female": 0.95},
-            "sample": {"non_clinical": 0.70, "primary_care": 1.05},
-        },
+        moderators={'gender': {'male': 0.25, 'female': 0.38}, 'sample': {'non_clinical': 0.28, 'primary_care': 0.45}},
     ),
 
     "interpersonal_sensitivity_scl": ConstructNorm(
@@ -5367,7 +5319,7 @@ CONSTRUCT_NORMS: Dict[str, ConstructNorm] = {
         construct="interpersonal_sensitivity",
         scale_name="SCL-90-R IS",
         scale_points=5,  # 0-4
-        mean=0.85,
+        mean=0.5,
         sd=0.70,
         skewness=0.9,
         sample_type="general",
@@ -5916,7 +5868,7 @@ CONSTRUCT_NORMS: Dict[str, ConstructNorm] = {
     ),
 
     "belongingness_gnbs": ConstructNorm(
-        source="Leary et al. (2013); Malone et al. (2012)",
+        source='Leary et al. (2013)',
         construct="need_to_belong",
         scale_name="NTB",
         scale_points=5,  # 1-5
@@ -6115,7 +6067,7 @@ CONSTRUCT_NORMS: Dict[str, ConstructNorm] = {
     ),
 
     "cognitive_flexibility_cfs": ConstructNorm(
-        source="Martin & Rubin (1995); Dennis & Vander Wal (2010 CFI)",
+        source='Dennis & Vander Wal (2010)',
         construct="cognitive_flexibility",
         scale_name="CFI",
         scale_points=7,  # 1-7
@@ -6139,7 +6091,7 @@ CONSTRUCT_NORMS: Dict[str, ConstructNorm] = {
 
     "locus_of_control_rotter": ConstructNorm(
         source="Rotter (1966); compiled norms Lefcourt (1991)",
-        construct="internal_locus_of_control",
+        construct='external_locus_of_control',
         scale_name="LOC",
         scale_points=2,  # 0/1 forced choice (29 items)
         mean=0.42,
@@ -6204,7 +6156,7 @@ CONSTRUCT_NORMS: Dict[str, ConstructNorm] = {
     ),
 
     "delay_of_gratification": ConstructNorm(
-        source="Bembenutty & Karabenick (1998); Hoerger et al. (2011 DGI)",
+        source='Hoerger et al. (2011)',
         construct="delay_of_gratification",
         scale_name="DGI",
         scale_points=5,  # 1-5
@@ -6398,7 +6350,7 @@ CONSTRUCT_NORMS: Dict[str, ConstructNorm] = {
     ),
 
     "procrastination_gps": ConstructNorm(
-        source="Lay (1986); Steel (2010 meta-analysis norms)",
+        source='Lay (1986); Steel (2007 meta-analysis)',
         construct="procrastination",
         scale_name="GPS",
         scale_points=5,  # 1-5
@@ -6436,7 +6388,7 @@ CONSTRUCT_NORMS: Dict[str, ConstructNorm] = {
         construct="trait_forgiveness",
         scale_name="HFS",
         scale_points=7,  # 1-7
-        mean=4.5,
+        mean=5.2,
         sd=0.90,
         sample_type="general",
         n_participants=3000,
@@ -6485,7 +6437,7 @@ CONSTRUCT_NORMS: Dict[str, ConstructNorm] = {
 
     "communication_quality_csi": ConstructNorm(
         source="Christensen & Sullaway (1984); Funk & Rogge (2007 CSI)",
-        construct="relationship_communication",
+        construct='relationship_satisfaction',
         scale_name="CSI-4",
         scale_points=7,  # varies 0-6 composite
         mean=4.5,
@@ -6686,7 +6638,7 @@ CONSTRUCT_NORMS: Dict[str, ConstructNorm] = {
     "workplace_incivility_wis": ConstructNorm(
         source="Cortina et al. (2001); WIS-12",
         construct="workplace_incivility",
-        scale_name="WIS",
+        scale_name='WIS-7',
         scale_points=5,  # 0-4 (never to many times)
         mean=0.75,
         sd=0.70,
@@ -6763,7 +6715,7 @@ CONSTRUCT_NORMS: Dict[str, ConstructNorm] = {
     # =========================================================================
 
     "body_satisfaction_bass": ConstructNorm(
-        source="Cash (2000); BASS / BAS-2",
+        source='Tylka & Wood-Barcalow (2015)',
         construct="body_appreciation",
         scale_name="BAS-2",
         scale_points=5,  # 1-5
@@ -6796,7 +6748,7 @@ CONSTRUCT_NORMS: Dict[str, ConstructNorm] = {
         source="Bandura (2006); Resnick & Jenkins (2000 ESES)",
         construct="exercise_self_efficacy",
         scale_name="ESES",
-        scale_points=10,  # 0-10 (confidence percentage / 10)
+        scale_points=11,  # 0-10 (confidence percentage / 10)
         mean=5.5,
         sd=2.20,
         sample_type="general",
@@ -6882,7 +6834,7 @@ CONSTRUCT_NORMS: Dict[str, ConstructNorm] = {
     "body_mass_satisfaction_bms": ConstructNorm(
         source="Stunkard et al. (1983 FRS); Thompson & Gray (1995)",
         construct="body_mass_satisfaction",
-        scale_name="FRS Discrepancy",
+        scale_name='FRS (current figure rating)',
         scale_points=9,  # 1-9 figure rating (discrepancy ideal-current)
         mean=4.5,
         sd=1.20,
@@ -7186,7 +7138,7 @@ CONSTRUCT_NORMS: Dict[str, ConstructNorm] = {
     "test_anxiety_rta": ConstructNorm(
         source="Benson & El-Zahhar (1994); RTT norms",
         construct="test_anxiety_worry",
-        scale_name="RTT",
+        scale_name='RTA',
         scale_points=4,  # 1-4
         mean=2.3,
         sd=0.65,
@@ -7250,7 +7202,7 @@ CONSTRUCT_NORMS: Dict[str, ConstructNorm] = {
         scale_points=9,  # 1-9
         mean=6.5,
         sd=1.20,
-        sample_type="general",
+        sample_type='teacher',
         n_participants=3000,
     ),
 
@@ -7483,7 +7435,7 @@ CONSTRUCT_NORMS: Dict[str, ConstructNorm] = {
         construct="social_desirability",
         scale_name="MC-SDS",
         scale_points=2,  # 0/1 (true/false)
-        mean=0.55,
+        mean=0.47,
         sd=0.20,
         sample_type="general",
         n_participants=6000,
@@ -7625,8 +7577,7 @@ CULTURAL_ADJUSTMENTS: Dict[str, CulturalAdjustment] = {
         adjustment_factor=1.0,  # Base
         n_cultures=15,
         n_participants=2000,
-        notes="Offers range from 15% (Machiguenga) to 58% (Lamelara). "
-              "Market integration correlates with higher offers (r = 0.50)."
+        notes='Ultimatum-game offers across the 15 small-scale societies ranged from ~26% mean (Machiguenga, modal 15%) to hyper-fair ~58% (Lamalera); dictator-game means across the 15 populations in Henrich et al. (2010, Science) averaged ~37%. Market integration positively predicted offers.'
     ),
 
     "western_baseline": CulturalAdjustment(
@@ -7689,7 +7640,7 @@ CULTURAL_ADJUSTMENTS: Dict[str, CulturalAdjustment] = {
         culture="western",
         construct="social_desirability",
         adjustment_factor=1.0,
-        notes="Baseline. Self-deception component similar across cultures."
+        notes='Baseline. Lalwani et al. (2006) found individualists higher on self-deceptive enhancement and collectivists higher on impression management, so the SELF-DECEPTION component is not culture-invariant.'
     ),
 
     "east_asian_social_desirability": CulturalAdjustment(
@@ -7701,19 +7652,19 @@ CULTURAL_ADJUSTMENTS: Dict[str, CulturalAdjustment] = {
     ),
 
     "dictator_giving_small_scale": CulturalAdjustment(
-        source="Henrich et al. (2005)",
+        source='Henrich et al. (2010, Science) — markets, religion, community size and the evolution of fairness',
         culture="small_scale_society",
         construct="dictator_giving",
         adjustment_factor=1.50,
-        notes="Mean giving 50%+ in market-integrated small-scale societies."
+        notes='Dictator-game offers across the 15 populations averaged ~37% of the pie, with market-integrated populations at the high end; means above 50% were the exception, not the norm.'
     ),
 
     "mturk_response_quality": CulturalAdjustment(
-        source="Hauser & Schwarz (2016); Chmielewski & Kucker (2020)",
+        source='Chmielewski & Kucker (2020)',
         culture="mturk",
         construct="data_quality",
         adjustment_factor=0.95,
-        notes="MTurk data quality declining over time. More satisficing."
+        notes='MTurk data quality declined after ~2018 (Chmielewski & Kucker 2020). Note that Hauser & Schwarz (2016) found the opposite for the earlier era: MTurk workers passed attention checks MORE often than student subject-pool participants.'
     ),
 
     "student_vs_nonstudent": CulturalAdjustment(
@@ -7721,7 +7672,7 @@ CULTURAL_ADJUSTMENTS: Dict[str, CulturalAdjustment] = {
         culture="student",
         construct="effect_magnitude",
         adjustment_factor=0.90,
-        notes="Student samples show ~10% smaller effects than non-student in consumer studies."
+        notes='Peterson (2001) found student responses slightly MORE homogeneous than nonstudent responses, and student-derived effect sizes frequently differed from nonstudent ones both in magnitude AND in direction — not a uniform attenuation.'
     ),
 }
 
@@ -7739,7 +7690,7 @@ RESPONSE_TIME_NORMS: Dict[str, ResponseTimeNorm] = {
         item_type="likert",
         engagement_level="engaged",
         mean_ms=4000,
-        sd_ms=1200,
+        sd_ms=1000,
         distribution="ex_gaussian",
         ex_gaussian_mu=3200,
         ex_gaussian_sigma=600,
@@ -7752,7 +7703,7 @@ RESPONSE_TIME_NORMS: Dict[str, ResponseTimeNorm] = {
         item_type="likert",
         engagement_level="satisficing",
         mean_ms=1500,
-        sd_ms=600,
+        sd_ms=424,
         distribution="ex_gaussian",
         ex_gaussian_mu=1200,
         ex_gaussian_sigma=300,
@@ -7764,7 +7715,7 @@ RESPONSE_TIME_NORMS: Dict[str, ResponseTimeNorm] = {
         item_type="likert",
         engagement_level="careless",
         mean_ms=600,
-        sd_ms=300,
+        sd_ms=212,
         distribution="ex_gaussian",
         ex_gaussian_mu=450,
         ex_gaussian_sigma=150,
@@ -7776,7 +7727,7 @@ RESPONSE_TIME_NORMS: Dict[str, ResponseTimeNorm] = {
         item_type="slider",
         engagement_level="engaged",
         mean_ms=5500,
-        sd_ms=1800,
+        sd_ms=1526,
         distribution="ex_gaussian",
         ex_gaussian_mu=4200,
         ex_gaussian_sigma=800,

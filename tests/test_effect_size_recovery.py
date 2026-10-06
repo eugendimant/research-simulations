@@ -394,7 +394,9 @@ def _auto_d(title, conds, dv, n=1600, seed=7):
 @pytest.mark.parametrize("title,conds,dv,expected", [
     ("Anchoring effect on price estimates", ["High anchor", "Low anchor"], "Estimated price", 0.80),
     ("Default effect in organ donation", ["Opt-out default", "Opt-in default"], "Donation intention", 0.68),
-    ("Self-affirmation and health intentions", ["Self-affirmation", "Control"], "Intention", 0.32),
+    # 0.17, not the 0.32 this entry carried before the 2026-10-06 recall audit:
+    # Epton et al. (2015) found small effects throughout (acceptance .17).
+    ("Self-affirmation and health intentions", ["Self-affirmation", "Control"], "Intention", 0.17),
     ("Social proof marketing study", ["Many others bought", "Few others bought"], "Purchase", 0.38),
     ("Mindfulness-based intervention and distress", ["Mindfulness", "Waitlist control"], "Distress", -0.55),
 ])
@@ -461,17 +463,32 @@ def test_meta_match_has_no_false_positives(text):
     assert _match_meta_effect(text) is None
 
 
-@pytest.mark.parametrize("text,expected", [
-    ("anchoring effect on price estimates", 0.80),
-    ("default effect in organ donation: opt-out versus opt-in", 0.68),
-    ("self-affirmation and health intentions", 0.32),
+@pytest.mark.parametrize("text,kb_key", [
+    ("anchoring effect on price estimates", "anchoring_effect"),
+    ("default effect in organ donation: opt-out versus opt-in", "default_effect"),
+    ("self-affirmation and health intentions", "self_affirmation_meta"),
 ])
-def test_meta_match_finds_named_paradigms(text, expected):
+def test_meta_match_finds_named_paradigms(text, kb_key):
+    """The matcher must land on the right knowledge-base entry.
+
+    The expectation is read from the entry rather than frozen here: this test is
+    about which entry a title resolves to, and a recalibration of the entry's own
+    magnitude is not a matching bug.
+    """
+    from utils import scientific_knowledge_base as skb
     from utils.enhanced_simulation_engine import _match_meta_effect
-    assert _match_meta_effect(text) == pytest.approx(expected)
+
+    assert _match_meta_effect(text) == pytest.approx(
+        skb.META_ANALYTIC_DB[kb_key].effect_d)
 
 
 def test_meta_anchor_sign_for_consumption_dv():
-    """Norms REDUCE energy use: the treatment arm must move the DV down."""
+    """Norms REDUCE energy use: the treatment arm must move the DV down.
+
+    The magnitude band is wide and small on purpose. The 2026-10-06 recall audit
+    cut this entry from d=0.35 to 0.08 — Allcott (2011) is a 2% reduction, and the
+    entry's own notes already said so — so anything near the old 0.15 floor would
+    now be the bug.
+    """
     d = _auto_d("Social norms and energy conservation", ["Descriptive norm", "Control"], "Energy use")
-    assert d < -0.15, f"d={d:.2f}"
+    assert -0.25 < d < -0.02, f"d={d:.2f}"
