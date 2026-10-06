@@ -48,7 +48,7 @@ Hidden password-protected diagnostics page at `?admin=1`. Shows LLM provider sta
 |---|------|----------|
 | 1 | `simulation_app/app.py` | `REQUIRED_UTILS_VERSION = "X.X.X.X"` (line ~57) |
 | 2 | `simulation_app/app.py` | `APP_VERSION = "X.X.X.X"` (line ~149) |
-| 3 | `simulation_app/app.py` | `BUILD_ID = "YYYYMMDD-vXXXXX-description"` (line ~58) |
+| 3 | `simulation_app/app.py` | `BUILD_ID = "YYYYMMDD-vXXXXX-description"` (line ~58) — **not** machine-checked; the only one you must verify by eye |
 | 4 | `simulation_app/utils/__init__.py` | `__version__ = "X.X.X.X"` (line ~68) |
 | 5 | `simulation_app/utils/__init__.py` | `Version: X.X.X.X` in docstring (line ~5) |
 | 6 | `simulation_app/utils/qsf_preview.py` | `__version__ = "X.X.X.X"` (line ~36) |
@@ -68,10 +68,17 @@ Hidden password-protected diagnostics page at `?admin=1`. Shows LLM provider sta
 
 **Step 3: Update BUILD_ID** to force Streamlit cache invalidation. Format: `"YYYYMMDD-vXXXXX-short-description"`
 
-**Step 4: Verify** — grep for the old version; it should appear NOWHERE:
+**Step 4: Verify** — run the checker, then grep for the old version; it should
+appear NOWHERE:
 ```bash
+python3 scripts/check_version_sync.py   # enforces 10 of the 11 in CI
 grep -r "OLD_VERSION" simulation_app/ --include="*.py" --include="*.md"
 ```
+`scripts/check_version_sync.py` covers every location above except `BUILD_ID`,
+and CI runs it on every push (`.github/workflows/ci.yml`). If you add a version
+location, add it to that script in the same commit — an unchecked location is
+how the README citation block drifted to "Version 2.2" while the other ten
+moved together.
 
 ### Stale Module Cache Recovery (v1.0.7.7)
 The app uses `importlib.reload(utils)` as a safe self-healing mechanism when a mismatch is detected. Warning only appears if reload fails — meaning it's a genuine code-level inconsistency.

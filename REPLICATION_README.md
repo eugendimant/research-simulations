@@ -1,4 +1,4 @@
-# Replication Package — Behavioral Experiment Simulation Tool (v1.2.8.7)
+# Replication Package — Behavioral Experiment Simulation Tool (v1.2.9.0)
 
 This archive contains everything needed to run, inspect, and evaluate the
 behavioral-experiment simulation tool in its entirety.
@@ -27,7 +27,7 @@ paradata, and exclusion flags — grounded in published behavioral-science norms
 ## Setup
 ```bash
 python3 -m venv venv && source venv/bin/activate     # optional
-pip install -r simulation_app/requirements.txt        # streamlit, pandas, numpy, reportlab, pypdf, tabulate
+pip install -r simulation_app/requirements.txt        # streamlit, pandas, numpy, pypdf, tabulate, plotly
 pip install pytest                                    # for the test suite
 ```
 
@@ -79,8 +79,9 @@ print(df.shape); print(df.head())
   to force the offline (non-LLM) open-ended generator; otherwise the tool tries
   free LLM providers for open-ended text and falls back to templates.
 - **Version sync:** the app checks `REQUIRED_UTILS_VERSION == utils.__version__`
-  at startup; all 10 version locations are kept in sync (currently `1.2.8.7`). The
-  canonical list of those locations is in `CLAUDE.md`.
+  at startup; all 11 version locations are kept in sync (currently `1.2.9.0`). Ten
+  of them are enforced in CI by `scripts/check_version_sync.py`; `BUILD_ID` is the
+  eleventh and is checked by eye. The canonical list is in `CLAUDE.md`.
 - **Known remaining roadmap** (not bugs) is documented in
   `docs/COVERAGE_ROADMAP.md` — e.g. within-subjects repeated-measures done as a
   proper long format, dyadic/per-trial output modes, population-source profiles.

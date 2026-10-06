@@ -22,7 +22,7 @@ All three use the same behavioral engine for numeric data. They differ only in w
 | Method | Open-ended text | Sample size |
 |---|---|---|
 | **Adaptive Behavioral Engine 3.0** (listed first; no method is pre-selected) | ABE 3.0's own narrative engine, offline — no API calls | up to 10,000 |
-| **Built-in AI** | Free LLM providers, built-in keys, no setup | **LLM text for the first 100 participants; the compositional template engine for the rest** |
+| **Built-in AI** | Free LLM providers, keys supplied by the deployment, no setup | **LLM text for the first 100 participants; the compositional template engine for the rest** |
 | **Your API Key** | Your own provider key | up to 10,000 |
 
 The 100-participant cap on Built-in AI exists to keep shared free-tier keys from being exhausted. The app warns before generating and tells you the split afterwards. Use your own key for larger runs with AI text throughout.
@@ -99,7 +99,7 @@ pip install -r simulation_app/requirements.txt
 streamlit run simulation_app/app.py     # http://localhost:8501
 ```
 
-Optional dependencies (plotly, scipy, matplotlib, pdfplumber, PyMuPDF, requests, openpyxl, jsonschema) are in `requirements-optional.txt`. All are lazy imports with fallbacks — the core app runs without them.
+Optional dependencies (scipy, matplotlib, pdfplumber, PyMuPDF, requests, openpyxl, jsonschema) are in `requirements-optional.txt`. All are lazy imports with fallbacks — the core app runs without them. `plotly` is listed there too but is also a core requirement, so the analytics dashboard's charts work on a default install.
 
 **Streamlit Community Cloud:** fork, then point a new app at `simulation_app/app.py`.
 
@@ -143,7 +143,7 @@ research-simulations/
 ├── simulation_app/
 │   ├── app.py                      # Streamlit entry point + QSF→engine bridge
 │   ├── requirements.txt
-│   ├── utils/                      # 31 modules, including:
+│   ├── utils/                      # 27 modules, including:
 │   │   ├── enhanced_simulation_engine.py   # the simulation pipeline
 │   │   ├── adaptive_behavioral_engine_v2.py
 │   │   ├── qsf_preview.py                  # QSF parsing, DV/condition detection
