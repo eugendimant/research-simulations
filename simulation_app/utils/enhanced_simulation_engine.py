@@ -3037,8 +3037,9 @@ _GAME_Z_GAIN = 0.9
 # The floor is common-method variance between unrelated scales (Podsakoff et al. 2003:
 # r ~0.10-0.20); the slope is attenuation from imperfect scale reliability (alpha ~0.85)
 # plus within-person noise. Fitted on a grid of targets (-0.6..+0.8, 4-item scales).
-_XCORR_FLOOR = 0.10
+_XCORR_FLOOR = 0.045
 _XCORR_SLOPE = 0.76
+_XCORR_SLOPE_NEG = 0.68   # damped on the negative side (shared tendency/g-factor add positive covariance)
 
 
 def _calibrate_latent_correlation(corr: Any) -> Any:
@@ -3053,7 +3054,8 @@ def _calibrate_latent_correlation(corr: Any) -> Any:
     k = C.shape[0]
     if C.ndim != 2 or C.shape[0] != C.shape[1] or k < 2:
         return corr
-    T = np.clip((C - _XCORR_FLOOR) / _XCORR_SLOPE, -0.95, 0.95)
+    T = np.clip(np.where(C >= _XCORR_FLOOR, (C - _XCORR_FLOOR) / _XCORR_SLOPE,
+                        (C - _XCORR_FLOOR) / _XCORR_SLOPE_NEG), -0.95, 0.95)
     np.fill_diagonal(T, 1.0)
     T = (T + T.T) / 2.0
     w, V = np.linalg.eigh(T)
@@ -3074,6 +3076,96 @@ _LATENT_WEIGHT_MULT = 1.6        # multiplier on the correlated-latent weight
 _G_FACTOR_MULT = 0.5             # multiplier on the common-method g-factor strength
 _COHERENCE_MULT = 0.3            # multiplier on the running-mean cross-DV coherence pull
 _INERTIA_MULT = 0.2              # multiplier on the recent-item anchoring pull (Schwarz & Strack)
+
+# Literature anchoring of automatic effects ---------------------------------------
+# When the study text names a paradigm that has a meta-analytic estimate in
+# META_ANALYTIC_DB (anchoring, default effects, scarcity, ...), the coarse domain
+# multiplier is replaced by one derived from that estimate, so an uncalibrated
+# design gets the published magnitude rather than a generic domain guess.
+_META_GENERIC_TOKENS = frozenset({
+    "meta", "effect", "effects", "general", "expanded", "extended", "and", "the", "for", "vs",
+    "in", "of", "to",
+})
+# Reference nominal d produced by a multiplier of 1.0 (measured on the valence
+# contrast, see tests/test_effect_size_recovery.py::test_meta_anchored_effect_magnitude).
+_META_REFERENCE_D = 0.6
+_META_INDEX_CACHE: Optional[List[Tuple[str, float, Tuple[str, ...]]]] = None
+
+
+# Single-word paradigm names distinctive enough to trigger on their own; every other
+# single-token key needs one of its explicit phrase aliases below.
+_META_SINGLE_TOKEN_OK = frozenset({
+    "anchoring", "bystander", "inoculation", "endowment", "deindividuation", "spotlight",
+    "placebo", "interleaving", "retargeting", "representativeness", "decoy", "denomination",
+    "psychotherapy", "scarcity",
+})
+_META_ALIASES: Dict[str, Tuple[str, ...]] = {
+    "default_effect": ("default effect", "default option", "opt out", "opt-out", "opt in", "opt-in",
+                       "default enrollment"),
+    "framing_general_meta": ("framing effect", "message framing", "gain frame", "loss frame",
+                             "gain framing", "loss framing"),
+    "testing_effect_meta": ("testing effect", "retrieval practice"),
+}
+
+
+def _meta_index() -> List[Tuple[str, float, Tuple[Any, ...]]]:
+    """Build (key, effect_d, patterns) for contrast-type META_ANALYTIC_DB entries.
+
+    Multi-token names must occur in order within a short window (adjacent-ish), so
+    unrelated words scattered through a study text cannot assemble a paradigm.
+    """
+    global _META_INDEX_CACHE
+    if _META_INDEX_CACHE is not None:
+        return _META_INDEX_CACHE
+    out: List[Tuple[str, float, Tuple[Any, ...]]] = []
+    if HAS_KNOWLEDGE_BASE:
+        for key, entry in META_ANALYTIC_DB.items():
+            d = abs(float(getattr(entry, "effect_d", 0.0) or 0.0))
+            if d < 0.05 or "game" in key or "auction" in key or "taking" in key:
+                continue  # baselines/games are handled by GAME_CALIBRATIONS
+            toks = [t for t in re.split(r"[^a-z]+", key.lower()) if t and t not in _META_GENERIC_TOKENS]
+            if not toks or not any(len(t) >= 5 for t in toks):
+                continue
+            pats: List[Any] = []
+            if len(toks) == 1:
+                if toks[0] in _META_SINGLE_TOKEN_OK:
+                    pats.append(re.compile(r"\b" + re.escape(toks[0][:max(5, len(toks[0]) - 2)]) + r"\w*"))
+            else:
+                gap = r"[\W_]+(?:\w+[\W_]+){0,2}"
+                pats.append(re.compile(gap.join(r"\b" + re.escape(t[:max(5, len(t) - 2)]) + r"\w*" for t in toks)))
+            for al in _META_ALIASES.get(key, ()):
+                pats.append(re.compile(r"\b" + re.escape(al) + r"\b"))
+            if pats:
+                out.append((key, d, tuple(pats)))
+    _META_INDEX_CACHE = out
+    return out
+
+
+def _match_meta_effect(text: str) -> Optional[float]:
+    """Return the meta-analytic |d| for the paradigm named in ``text``, or None.
+
+    The paradigm with the most specific (longest) match wins. When several
+    different paradigms match equally well and disagree by more than 0.15 the
+    text is ambiguous and no anchoring is applied.
+    """
+    text = str(text).lower()
+    hits: List[Tuple[int, float]] = []
+    for _key, d, pats in _meta_index():
+        best = 0
+        for pat in pats:
+            m = pat.search(text)
+            if m:
+                best = max(best, len(m.group(0)))
+        if best:
+            hits.append((best, d))
+    if not hits:
+        return None
+    top = max(h[0] for h in hits)
+    ds = [d for n, d in hits if n >= top * 0.999]
+    if max(ds) - min(ds) > 0.15:
+        return None
+    return float(sum(ds) / len(ds))
+
 
 class EnhancedSimulationEngine:
     """
@@ -4160,7 +4252,7 @@ class EnhancedSimulationEngine:
         # literature value the keyword rule encodes (valence 1.3 vs ~0.6).
         return self._get_automatic_condition_effect(condition, variable) * self._explicit_effect_scale(variable)
 
-    def _get_automatic_condition_effect(self, condition: str, variable: str) -> float:
+    def _get_automatic_condition_effect(self, condition: str, variable: str, _raw: bool = False) -> float:
         """
         Generate automatic condition effects based on SEMANTIC CONTENT, not position.
 
@@ -6688,8 +6780,75 @@ class EnhancedSimulationEngine:
                      'retribution', 'deterrence']):
                 _domain_d_multiplier = 1.25
 
+        # Literature anchoring: a named paradigm with a meta-analytic estimate fixes the
+        # size of the design's main contrast (relational/economic-game designs keep their
+        # own calibrated scaling).
+        if not _raw and not _handled_by_relational and not _is_economic_game_dv:
+            _meta_d = _match_meta_effect(_study_text + " " + _all_conds_text + " " + _cond_desc_text)
+            if _meta_d is not None:
+                return self._meta_anchored_effect(condition, variable, _meta_d)
+
         # Apply Cohen's d scaling with domain-aware multiplier
         return semantic_effect * default_d * COHENS_D_TO_NORMALIZED * _domain_d_multiplier
+
+    # Tokens marking the reference arm of a control-vs-treatment design.
+    _CONTROL_ARM_WORDS = ("control", "baseline", "placebo", "waitlist", "wait-list", "wait list",
+                          "no treatment", "no intervention", "neutral", "comparison", "usual",
+                          "standard", "untreated", "none")
+    # DV-name tokens for constructs a beneficial treatment REDUCES.
+    _NEGATIVE_DV_RE = re.compile(
+        r"\b(distress|anxi|depress|stress|symptom|pain\b|burnout|prejudice|biased?\b|aggress|conflict|"
+        r"exhaust|bully|turnover|lonel|fear\b|risk behavio|misinformation|false belief|cheat|dishonest|"
+        r"use\b|usage|consumption|waste|smok|emission|intake|absentee|errors?\b|craving|relapse|"
+        r"discrimination|stigma|hostil|rumination|worry|guilt|shame)"
+    )
+
+    def _meta_anchored_effect(self, condition: str, variable: str, meta_d: float) -> float:
+        """Effect for ``condition`` when the study names a paradigm with a published estimate.
+
+        The semantic keyword machinery decides WHO is higher; the literature decides
+        HOW MUCH: the largest between-condition contrast is rescaled to ``meta_d``.
+        When the keywords carry no usable contrast (e.g. "Self-affirmation" vs
+        "Control"), the reference arm is the zero point and every other arm moves by
+        the published effect, in the direction implied by the DV (benefit raises
+        positive constructs and lowers symptom-type constructs).
+        """
+        cache = getattr(self, "_meta_anchor_cache", None)
+        if cache is None:
+            cache = self._meta_anchor_cache = {}
+        key = (str(variable), round(float(meta_d), 4), tuple(str(c) for c in (self.conditions or [])))
+        table = cache.get(key)
+        if table is None:
+            unit = 2.0 * 0.109 * float(meta_d)  # same currency as explicit specs: gap = 2*0.109*d
+            conds = [str(c) for c in (self.conditions or [])]
+            raw = {c: self._get_automatic_condition_effect(c, variable, _raw=True) for c in conds}
+            is_ctrl = {c: (any(w in c.lower() for w in self._CONTROL_ARM_WORDS)
+                           or bool(re.search(r"\b(no|without|absent|not)\b", c.lower()))) for c in conds}
+            gap = (max(raw.values()) - min(raw.values())) if raw else 0.0
+            table = {c: 0.0 for c in conds}
+            # keyword valence is a weak signal against a reference arm: require a larger
+            # semantic contrast there before trusting it over the DV-polarity rule
+            if gap >= (0.06 if any(is_ctrl.values()) else 0.03):
+                ctrl = [c for c in conds if is_ctrl[c]]
+                centre = float(np.mean([raw[c] for c in ctrl])) if ctrl else (max(raw.values()) + min(raw.values())) / 2.0
+                table = {c: (raw[c] - centre) / gap * unit for c in conds}
+            elif any(is_ctrl.values()) and not all(is_ctrl.values()):
+                _dv = (str(variable).replace("_", " ") + " " + str(self._dv_descriptions.get(str(variable).lower(), ""))).lower()
+                sign = -1.0 if bool(self._NEGATIVE_DV_RE.search(_dv)) else 1.0
+                table = {c: (0.0 if is_ctrl[c] else sign * unit) for c in conds}
+            else:
+                # No reference arm: order the arms by dose words (many/few, high/low, ...).
+                hi = {c: bool(re.search(r"\b(many|more|high|higher|large|strong|major|most|numerous|majority)\b", c.lower())) for c in conds}
+                lo = {c: bool(re.search(r"\b(few|fewer|less|low|lower|small|weak|minor|least|minority)\b", c.lower())) for c in conds}
+                if any(hi.values()) and any(lo.values()):
+                    _dv = (str(variable).replace("_", " ") + " " + str(self._dv_descriptions.get(str(variable).lower(), ""))).lower()
+                    sign = -1.0 if bool(self._NEGATIVE_DV_RE.search(_dv)) else 1.0
+                    table = {c: sign * unit / 2.0 * (1.0 if hi[c] and not lo[c] else -1.0 if lo[c] and not hi[c] else 0.0)
+                             for c in conds}
+                else:
+                    table = dict(raw)  # nothing orders the arms: keep the generic (unanchored) effects
+            cache[key] = table
+        return float(table.get(str(condition), 0.0))
 
     def _get_condition_trait_modifier(self, condition: str) -> Dict[str, float]:
         """

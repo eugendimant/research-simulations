@@ -295,13 +295,13 @@ def _two_scale_df(r, n=1500, seed=3, k=4, names=("Alpha_Scale", "Beta_Scale")):
     return eng.generate()[0], names
 
 
-@pytest.mark.parametrize("target", [-0.4, 0.0, 0.5])
+@pytest.mark.parametrize("target", [-0.5, -0.3, 0.0, 0.15, 0.5, 0.8])
 def test_cross_scale_correlation_reproduces_target(target):
     """Configured between-scale correlations (incl. negative ones) are reproduced.
     Old pipeline: realised r ~= 0.22 + 0.42 * target, so -0.4 came out ~ +0.04."""
     df, (a, b) = _two_scale_df(target)
     r = float(np.corrcoef(df[a + "_mean"].astype(float), df[b + "_mean"].astype(float))[0, 1])
-    assert abs(r - target) <= 0.12, f"target r={target:+.2f}, realised r={r:+.2f}"
+    assert abs(r - target) <= 0.09, f"target r={target:+.2f}, realised r={r:+.2f}"
 
 
 def test_multi_item_alpha_is_realistic():
@@ -348,3 +348,106 @@ def test_effect_spec_matches_display_name_with_underscored_column():
     hi = eng._compute_effect_for_condition("Human-curated", "Perceived_Quality")
     lo = eng._compute_effect_for_condition("AI-generated", "Perceived_Quality")
     assert hi > 0 > lo and abs(hi + lo) < 1e-9
+
+
+# ---------------------------------------------------------------------------
+# Automatic effects are anchored to META_ANALYTIC_DB when a paradigm is named.
+# ---------------------------------------------------------------------------
+def _auto_d(title, conds, dv, n=1600, seed=7):
+    name = dv.replace(" ", "_")
+    scales = [{"name": dv, "variable_name": name, "num_items": 4, "scale_points": 7,
+               "scale_min": 1, "scale_max": 7, "reverse_items": [], "type": "likert"}]
+    eng = EnhancedSimulationEngine(
+        study_title=title, study_description=title, sample_size=n, conditions=conds, factors=[],
+        scales=scales, additional_vars=[], demographics={"gender_quota": 50, "age_mean": 30, "age_sd": 8},
+        seed=seed)
+    df, _ = eng.generate()
+    a = df.loc[df["CONDITION"] == conds[0], f"{name}_mean"].astype(float)
+    b = df.loc[df["CONDITION"] == conds[1], f"{name}_mean"].astype(float)
+    return float((a.mean() - b.mean()) / np.sqrt((a.var() + b.var()) / 2))
+
+
+@pytest.mark.parametrize("title,conds,dv,expected", [
+    ("Anchoring effect on price estimates", ["High anchor", "Low anchor"], "Estimated price", 0.80),
+    ("Default effect in organ donation", ["Opt-out default", "Opt-in default"], "Donation intention", 0.68),
+    ("Self-affirmation and health intentions", ["Self-affirmation", "Control"], "Intention", 0.32),
+    ("Social proof marketing study", ["Many others bought", "Few others bought"], "Purchase", 0.38),
+    ("Mindfulness-based intervention and distress", ["Mindfulness", "Waitlist control"], "Distress", -0.55),
+])
+def test_meta_anchored_effect_magnitude(title, conds, dv, expected):
+    """A named paradigm gets its published magnitude (and the right sign)."""
+    d = _auto_d(title, conds, dv)
+    assert 0.7 * abs(expected) <= abs(d) <= 1.3 * abs(expected), f"d={d:.2f} vs meta {expected}"
+    assert np.sign(d) == np.sign(expected)
+
+
+def test_unmatched_paradigm_keeps_generic_scaling():
+    """No paradigm named -> no anchoring (the generic path is unchanged)."""
+    from utils.enhanced_simulation_engine import _match_meta_effect
+    assert _match_meta_effect("a survey about everyday things option a option b") is None
+
+
+def test_explicit_effect_overrides_meta_anchor():
+    d = _recovered_d_for_title("Anchoring effect on price estimates", 0.3)
+    assert 0.2 <= d <= 0.42, f"explicit d=0.3 must win over the meta value 0.8 (got {d:.2f})"
+
+
+def _recovered_d_for_title(title, target):
+    scales = [{"name": "Price", "variable_name": "Price", "num_items": 4, "scale_points": 7,
+               "scale_min": 1, "scale_max": 7, "reverse_items": [], "type": "likert"}]
+    eng = EnhancedSimulationEngine(
+        study_title=title, study_description=title, sample_size=2000,
+        conditions=["High anchor", "Low anchor"], factors=[], scales=scales, additional_vars=[],
+        demographics={"gender_quota": 50, "age_mean": 30, "age_sd": 8},
+        effect_sizes=[EffectSizeSpec(variable="Price", factor="condition", level_high="High anchor",
+                                     level_low="Low anchor", cohens_d=target, direction="positive")], seed=5)
+    df, _ = eng.generate()
+    a = df.loc[df["CONDITION"] == "High anchor", "Price_mean"].astype(float)
+    b = df.loc[df["CONDITION"] == "Low anchor", "Price_mean"].astype(float)
+    return float((a.mean() - b.mean()) / np.sqrt((a.var() + b.var()) / 2))
+
+
+def test_inferred_correlation_matrix_is_reproduced():
+    """With no user matrix, the literature-inferred correlations (6 scales) are
+    realised in the composites to within sampling + repair error."""
+    from utils.correlation_matrix import infer_correlation_matrix
+    names = ["Trust", "Satisfaction", "Anxiety", "Purchase Intention", "Loneliness", "Life Satisfaction"]
+    scales = [{"name": n, "variable_name": n.replace(" ", "_"), "num_items": 4, "scale_points": 7,
+               "scale_min": 1, "scale_max": 7, "reverse_items": [], "type": "likert"} for n in names]
+    target, _ = infer_correlation_matrix(scales)
+    eng = EnhancedSimulationEngine(
+        study_title="Customer experience survey", study_description="Customer experience survey",
+        sample_size=2000, conditions=["A", "B"], factors=[], scales=scales, additional_vars=[],
+        demographics={"gender_quota": 50, "age_mean": 30, "age_sd": 8}, seed=3)
+    df, _ = eng.generate()
+    real = np.corrcoef(np.array([df[n.replace(" ", "_") + "_mean"].astype(float) for n in names]))
+    iu = np.triu_indices(len(names), 1)
+    assert np.abs(real[iu] - target[iu]).max() <= 0.09, np.round(real - target, 2)
+    assert abs(float(np.mean(real[iu] - target[iu]))) <= 0.03
+
+
+@pytest.mark.parametrize("text", [
+    "participants see a product page with the default shipping option selected",
+    "students in a tutoring session complete homework",
+    "dictator game with an ingroup partner",
+    "a survey about attitudes toward everyday things",
+])
+def test_meta_match_has_no_false_positives(text):
+    from utils.enhanced_simulation_engine import _match_meta_effect
+    assert _match_meta_effect(text) is None
+
+
+@pytest.mark.parametrize("text,expected", [
+    ("anchoring effect on price estimates", 0.80),
+    ("default effect in organ donation: opt-out versus opt-in", 0.68),
+    ("self-affirmation and health intentions", 0.32),
+])
+def test_meta_match_finds_named_paradigms(text, expected):
+    from utils.enhanced_simulation_engine import _match_meta_effect
+    assert _match_meta_effect(text) == pytest.approx(expected)
+
+
+def test_meta_anchor_sign_for_consumption_dv():
+    """Norms REDUCE energy use: the treatment arm must move the DV down."""
+    d = _auto_d("Social norms and energy conservation", ["Descriptive norm", "Control"], "Energy use")
+    assert d < -0.15, f"d={d:.2f}"
