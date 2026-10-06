@@ -458,3 +458,67 @@ def test_no_raw_html_call_interpolates_exception_text_unescaped():
                     if looks_like_exception.search(name):
                         offenders.append((node.lineno, name))
     assert not offenders, f"unescaped exception text in raw HTML at (line, name): {offenders}"
+
+
+# ---- 5. the builder suggests a within-subjects design from whole words, not substrings -----------
+def _load_app_module(name: str):
+    import importlib.util
+
+    if str(_APP_DIR) not in sys.path:
+        sys.path.insert(0, str(_APP_DIR))
+    spec = importlib.util.spec_from_file_location(name, str(_APP_DIR / "app.py"))
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    try:
+        spec.loader.exec_module(module)
+    except SystemExit:
+        pass
+    return module
+
+
+@pytest.mark.parametrize("names, expected", [
+    (["Control", "Treatment"], "between"),
+    (["Premium brand", "Standard brand"], "between"),
+    (["Prevention message", "Promotion message"], "between"),
+    (["Present", "Absent"], "between"),
+    (["High followers", "Low followers"], "between"),
+    (["Postal service", "Courier"], "between"),
+    (["Afterthought framing", "Control"], "between"),
+    (["Pre-test", "Post-test"], "within"),
+    (["pre_treatment", "post_treatment"], "within"),
+    (["Pre", "Post"], "within"),
+    (["Time 1", "Time 2"], "within"),
+    (["Wave 1", "Wave 2"], "within"),
+    (["Before", "After"], "within"),
+    (["Treatment", "Follow-up"], "within"),
+    (["Treatment", "Followup"], "within"),
+    (["Mixed feelings", "Calm"], "mixed"),
+    (["Repeated exposure", "Single exposure"], "mixed"),
+    (["Time 12 hours", "Control"], "between"),
+    ([], "between"),
+])
+def test_design_suggestion_matches_whole_words_only(names, expected):
+    app = _load_app_module("_app_hygiene_design")
+    assert app._detect_design_from_condition_names(names) == expected
+
+
+@pytest.mark.parametrize("conditions_text, expected", [
+    ("Control\nTreatment", "between"),
+    ("Premium brand\nStandard brand", "between"),
+    ("Present\nAbsent", "between"),
+    ("Pre-test\nPost-test", "within"),
+])
+def test_builder_radio_preselects_the_design_from_the_condition_labels(apptest_env, conditions_text, expected):
+    from streamlit.testing.v1 import AppTest
+
+    at = AppTest.from_file(str(_APP_DIR / "app.py"), default_timeout=300)
+    for key, value in {"active_page": 1, "study_input_mode": "describe_study", "study_title": "T", "study_description": "D study",
+                       "builder_conditions_text": conditions_text, "builder_scales_text": "Trust (1-7 Likert, 5 items)",
+                       "cond_input_mode": "Text / Factorial notation"}.items():
+        at.session_state[key] = value
+    at.run()
+    assert not at.exception, [str(e.value) for e in at.exception]
+    radio = next(r for r in at.radio if r.key == "builder_design_type_input")
+    assert radio.value == expected
+    note = [w for w in at.warning if "one condition per participant" in w.value]
+    assert bool(note) == (expected != "between")

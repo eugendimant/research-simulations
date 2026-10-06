@@ -268,6 +268,29 @@ DESIGN_STRUCTURE_NOTE = (
     "not contain repeated measures, mixed-design columns or clustered observations."
 )
 
+# Whole-word cues in condition labels that suggest a repeated-measures ("within") or "mixed" design.
+# Matching whole words keeps "Premium", "Present" or "Prevention" from reading as "pre".
+_WITHIN_LABEL_RE = re.compile(
+    r"\b(?:pre|post|before|after|baseline|follow(?: ?ups?)?|(?:time|wave|session) ?[12])\b"
+)
+_MIXED_LABEL_RE = re.compile(r"\b(?:mixed|repeated)\b")
+
+
+def _detect_design_from_condition_names(names: Any) -> str:
+    """Suggest "within", "mixed" or "between" from condition labels (whole words only).
+
+    "Pre-test"/"Post-test", "Time 1", "Wave 2" or "Follow-up" suggest repeated measures;
+    "Premium brand", "Present" or "Prevention message" do not (a plain substring test for
+    "pre" used to match inside them).
+    """
+    text = " ".join(str(name).lower() for name in (names or []))
+    text = re.sub(r"[_\-/.:]+", " ", text)
+    if _WITHIN_LABEL_RE.search(text):
+        return "within"
+    if _MIXED_LABEL_RE.search(text):
+        return "mixed"
+    return "between"
+
 STANDARD_DEFAULTS = {
     "demographics": {"gender_quota": 50, "age_mean": 35, "age_sd": 12, "age_min": 18, "age_max": 80, "include_age_column": True, "include_gender_column": True},
     "attention_rate": 0.95,
@@ -5620,16 +5643,7 @@ def _render_conversational_builder() -> None:
     with _cfg_col2:
         st.markdown("#### Design Type")
         # Auto-detect design type from condition structure
-        _auto_design: str = "between"
-        if parsed_conditions:
-            cond_names_lower = " ".join(c.name.lower() for c in parsed_conditions)
-            if any(w in cond_names_lower for w in [
-                "pre", "post", "before", "after", "time 1", "time 2",
-                "baseline", "follow", "wave 1", "wave 2", "session 1", "session 2",
-            ]):
-                _auto_design = "within"
-            elif any(w in cond_names_lower for w in ["mixed", "repeated"]):
-                _auto_design = "mixed"
+        _auto_design: str = _detect_design_from_condition_names([c.name for c in parsed_conditions or []])
         if not st.session_state.get("_design_type_manually_set"):
             st.session_state["builder_design_type"] = _auto_design
 
