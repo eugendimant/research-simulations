@@ -904,6 +904,11 @@ def _infer_numeric_answer_spec(
         nmin, nmax = q.get("number_min"), q.get("number_max")
         if nmin is not None and nmax is not None and float(nmin) < float(nmax):
             lo_hi = (float(nmin), float(nmax))
+        elif nmin is None and nmax is not None and 0 < float(nmax) < float("inf"):
+            # Max only (Min left blank): what these boxes ask for (counts, amounts, percentages, ages, years)
+            # is never negative, so the window is 0..Max. Without this a declared "at most 2" was ignored
+            # and the draw came from the generic count distribution (0-13), or from a "(0-100)" in the text.
+            lo_hi = (0.0, float(nmax))
     except (TypeError, ValueError):
         lo_hi = None
 

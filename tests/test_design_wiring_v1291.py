@@ -201,6 +201,24 @@ def test_numeric_text_box_answers_stay_inside_the_declared_range():
         assert lo <= min(draws) and max(draws) <= hi, (tag, min(draws), max(draws))
 
 
+@pytest.mark.parametrize("text, declared, window", [
+    ("If the lottery fails and you lose, how much do you lose? (0-100)", {"number_min": None, "number_max": 2.0}, (0, 2)),
+    ("How many people live in your household?", {"number_min": None, "number_max": 10.0}, (0, 10)),
+    ("What is your year of birth?", {"number_min": None, "number_max": 2003.0}, (0, 2003)),
+    ("What is your age?", {"number_min": 18.0, "number_max": None}, (18, 120)),     # Min-only keeps its old behaviour
+])
+def test_a_one_sided_declared_range_still_binds(text, declared, window):
+    import numpy as np
+    from utils.enhanced_simulation_engine import draw_numeric_answer, infer_numeric_answer_spec
+
+    box = dict(declared, content_type="ValidNumber")
+    spec = infer_numeric_answer_spec(text, "Box", box)
+    draws = [float(draw_numeric_answer(spec, np.random.RandomState(seed))) for seed in range(300)]
+    assert window[0] <= min(draws) and max(draws) <= window[1], (text, min(draws), max(draws))
+    if declared["number_max"] == 2.0:   # the window is used, not just clipped: all of 0, 1 and 2 occur
+        assert {0.0, 1.0, 2.0} <= set(draws)
+
+
 # ---------------------------------------------------------------------------------------------------------------------
 # The real app (AppTest): helpers
 # ---------------------------------------------------------------------------------------------------------------------
