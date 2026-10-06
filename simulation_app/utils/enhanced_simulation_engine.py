@@ -4280,7 +4280,7 @@ class EnhancedSimulationEngine:
         #   1. Track cumulative effect contributions per domain
         #   2. Attenuate effects from NON-detected domains by 0.5×
         #      (they may still be relevant, but less likely)
-        #   3. Cap total STEP 2 effect to ±0.45 to prevent runaway stacking
+        #   3. Cap total STEP 2 effect to ±0.50 to prevent runaway stacking
         #
         # This prevents a consumer study's "premium brand" condition from
         # also triggering social psychology (+authority), behavioral economics
@@ -4322,12 +4322,6 @@ class EnhancedSimulationEngine:
             42: {'behavioral_economics', 'organizational_behavior'},             # negotiation/bargaining
             43: {'behavioral_economics', 'moral_psychology', 'social_psychology'},  # charitable giving
         }
-
-        def _domain_is_relevant(domain_num: int) -> bool:
-            """Check if a STEP 2 domain is relevant to the detected study domains."""
-            if not _detected:
-                return True  # No detection → all domains equally relevant
-            return bool(_detected & _DOMAIN_RELEVANCE.get(domain_num, set()))
 
         # =====================================================================
         # DOMAIN 1: AI/TECHNOLOGY MANIPULATIONS
@@ -6134,7 +6128,7 @@ class EnhancedSimulationEngine:
         # After all STEP 2 domains have been checked, apply two safeguards:
         # 1. If total STEP 2 contribution is large AND came from domains not
         #    in self.detected_domains, attenuate by 0.5× (less likely relevant)
-        # 2. Cap total STEP 2 semantic_effect to ±0.45 to prevent runaway stacking
+        # 2. Cap total STEP 2 semantic_effect to ±0.50 to prevent runaway stacking
         # =====================================================================
         _step2_contribution = semantic_effect - _effect_before_step2
         if abs(_step2_contribution) > 0.30 and _detected:
